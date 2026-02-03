@@ -5,11 +5,11 @@
  * - Connector resolution
  * - Tool manager initialization
  * - Permission manager initialization
- * - Session management (via AgentContext)
+ * - Session management (via AgentContextNextGen)
  * - Lifecycle/cleanup
  *
  * This is an INTERNAL class - not exported in the public API.
- * Use Agent, TaskAgent, or UniversalAgent instead.
+ * Use Agent instead.
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -19,8 +19,8 @@ import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 import type { AgentPermissionsConfig } from './permissions/types.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
-import { AgentContext } from './AgentContext.js';
-import type { AgentContextConfig } from './AgentContext.js';
+import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
+import type { AgentContextNextGenConfig, SerializedContextState } from './context-nextgen/types.js';
 import { createProvider } from './createProvider.js';
 import type { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import type { LLMResponse } from '../domain/entities/Response.js';
@@ -203,12 +203,12 @@ export interface BaseAgentConfig {
   lifecycleHooks?: AgentLifecycleHooks;
 
   /**
-   * Optional AgentContext configuration.
-   * If provided as AgentContext instance, it will be used directly.
-   * If provided as config object, a new AgentContext will be created.
-   * If not provided, a default AgentContext will be created.
+   * Optional AgentContextNextGen configuration.
+   * If provided as AgentContextNextGen instance, it will be used directly.
+   * If provided as config object, a new AgentContextNextGen will be created.
+   * If not provided, a default AgentContextNextGen will be created.
    */
-  context?: AgentContext | AgentContextConfig;
+  context?: AgentContextNextGen | AgentContextNextGenConfig;
 }
 
 /**
@@ -267,7 +267,7 @@ export abstract class BaseAgent<
 
   // ===== Protected State =====
   protected _config: TConfig;
-  protected _agentContext: AgentContext;  // SINGLE SOURCE OF TRUTH for tools and sessions
+  protected _agentContext: AgentContextNextGen;  // SINGLE SOURCE OF TRUTH for tools and sessions
   protected _permissionManager: ToolPermissionManager;
   protected _isDestroyed = false;
   protected _cleanupCallbacks: Array<() => void | Promise<void>> = [];
@@ -343,30 +343,29 @@ export abstract class BaseAgent<
   }
 
   /**
-   * Initialize AgentContext (single source of truth for tools and sessions).
-   * If AgentContext is provided, use it directly.
+   * Initialize AgentContextNextGen (single source of truth for tools and sessions).
+   * If AgentContextNextGen is provided, use it directly.
    * Otherwise, create a new one with the provided configuration.
    */
-  protected initializeAgentContext(config: TConfig): AgentContext {
-    // If AgentContext instance is provided, use it directly
-    if (config.context instanceof AgentContext) {
+  protected initializeAgentContext(config: TConfig): AgentContextNextGen {
+    // If AgentContextNextGen instance is provided, use it directly
+    if (config.context instanceof AgentContextNextGen) {
       return config.context;
     }
 
-    // Create new AgentContext with merged config
+    // Create new AgentContextNextGen with merged config
     // NOTE: Don't pass tools here - they're registered separately after creation
     // to allow subclasses to wrap or modify tools before registration
-    const contextConfig: AgentContextConfig = {
+    const contextConfig: AgentContextNextGenConfig = {
       model: config.model,
       agentId: config.name,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
-      sessionId: config.session?.id,
       // Subclasses can add systemPrompt via their config
       ...(typeof config.context === 'object' && config.context !== null ? config.context : {}),
     };
 
-    return AgentContext.create(contextConfig);
+    return AgentContextNextGen.create(contextConfig);
   }
 
   /**
@@ -511,7 +510,7 @@ export abstract class BaseAgent<
    * Get context state for session persistence.
    * Override in subclasses to include agent-specific state in agentState field.
    */
-  async getContextState(): Promise<import('./AgentContext.js').SerializedAgentContextState> {
+  async getContextState(): Promise<SerializedContextState> {
     return this._agentContext.getState();
   }
 
@@ -519,25 +518,25 @@ export abstract class BaseAgent<
    * Restore context from saved state.
    * Override in subclasses to restore agent-specific state from agentState field.
    */
-  async restoreContextState(state: import('./AgentContext.js').SerializedAgentContextState): Promise<void> {
-    await this._agentContext.restoreState(state);
+  async restoreContextState(state: SerializedContextState): Promise<void> {
+    this._agentContext.restoreState(state);
   }
 
   // ===== Public Permission API =====
 
   /**
    * Advanced tool management. Returns ToolManager for fine-grained control.
-   * This is delegated to AgentContext.tools (single source of truth).
+   * This is delegated to AgentContextNextGen.tools (single source of truth).
    */
   get tools(): ToolManager {
     return this._agentContext.tools;
   }
 
   /**
-   * Get the AgentContext (unified context management).
-   * This is the primary way to access tools, memory, cache, permissions, and history.
+   * Get the AgentContextNextGen (unified context management).
+   * This is the primary way to access tools, memory, and history.
    */
-  get context(): AgentContext {
+  get context(): AgentContextNextGen {
     return this._agentContext;
   }
 

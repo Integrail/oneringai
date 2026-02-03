@@ -25,6 +25,7 @@ export type {
   IContextStorage,
   SerializedContextState,
   ContextEvents,
+  PluginConfigs,
 } from './types.js';
 
 export {

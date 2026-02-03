@@ -2,20 +2,19 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs16 = require('fs');
+var fs15 = require('fs');
 var eventemitter3 = require('eventemitter3');
-var path2 = require('path');
+var path3 = require('path');
 var os = require('os');
+var OpenAI2 = require('openai');
+var Anthropic = require('@anthropic-ai/sdk');
+var genai = require('@google/genai');
 require('zod/v3');
 var z4mini = require('zod/v4-mini');
 var z = require('zod/v4');
 var process2 = require('process');
 var stream = require('stream');
-var OpenAI2 = require('openai');
-var Anthropic = require('@anthropic-ai/sdk');
-var genai = require('@google/genai');
-var fs15 = require('fs/promises');
-var glob = require('glob');
+var fs14 = require('fs/promises');
 var simpleIcons = require('simple-icons');
 var child_process = require('child_process');
 var util = require('util');
@@ -45,15 +44,15 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
-var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
+var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
+var path3__namespace = /*#__PURE__*/_interopNamespace(path3);
 var os__namespace = /*#__PURE__*/_interopNamespace(os);
+var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
+var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
 var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
-var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
-var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
-var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
+var fs14__namespace = /*#__PURE__*/_interopNamespace(fs14);
 var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
@@ -632,7 +631,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs16__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs15__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1149,7 +1148,7 @@ function addJitter(delay, factor = 0.1) {
 }
 async function backoffWait(attempt, config = exports.DEFAULT_BACKOFF_CONFIG) {
   const delay = calculateBackoff(attempt, config);
-  await new Promise((resolve5) => setTimeout(resolve5, delay));
+  await new Promise((resolve4) => setTimeout(resolve4, delay));
   return delay;
 }
 function* backoffSequence(config = exports.DEFAULT_BACKOFF_CONFIG, maxAttempts) {
@@ -1282,11 +1281,11 @@ var init_Logger = __esm({
        */
       initFileStream(filePath) {
         try {
-          const dir = path2__namespace.dirname(filePath);
-          if (!fs16__namespace.existsSync(dir)) {
-            fs16__namespace.mkdirSync(dir, { recursive: true });
+          const dir = path3__namespace.dirname(filePath);
+          if (!fs15__namespace.existsSync(dir)) {
+            fs15__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs16__namespace.createWriteStream(filePath, {
+          this.fileStream = fs15__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -2072,7 +2071,7 @@ var init_Connector = __esm({
       }
       // ============ Private Helpers ============
       sleep(ms) {
-        return new Promise((resolve5) => setTimeout(resolve5, ms));
+        return new Promise((resolve4) => setTimeout(resolve4, ms));
       }
       logRequest(url2, options) {
         const logData = {
@@ -5082,7 +5081,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -5109,7 +5108,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -5323,8 +5322,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path6) {
-      let input = path6;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -5522,8 +5521,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path6, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path6 && path6 !== "/" ? path6 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -5681,55 +5680,55 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve5(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative5, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative5 = parse(serialize(relative5, options), options);
+        relative4 = parse(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative5.scheme) {
-        target.scheme = relative5.scheme;
-        target.userinfo = relative5.userinfo;
-        target.host = relative5.host;
-        target.port = relative5.port;
-        target.path = removeDotSegments(relative5.path || "");
-        target.query = relative5.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative5.userinfo !== void 0 || relative5.host !== void 0 || relative5.port !== void 0) {
-          target.userinfo = relative5.userinfo;
-          target.host = relative5.host;
-          target.port = relative5.port;
-          target.path = removeDotSegments(relative5.path || "");
-          target.query = relative5.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative5.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative5.query !== void 0) {
-              target.query = relative5.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative5.path[0] === "/") {
-              target.path = removeDotSegments(relative5.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative5.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative5.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative5.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative5.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -5737,7 +5736,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative5.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -5908,7 +5907,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve5,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -6461,13 +6460,13 @@ var require_core = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger6) {
-      if (logger6 === false)
+    function getLogger(logger4) {
+      if (logger4 === false)
         return noLogs;
-      if (logger6 === void 0)
+      if (logger4 === void 0)
         return console;
-      if (logger6.log && logger6.warn && logger6.error)
-        return logger6;
+      if (logger4.log && logger4.warn && logger4.error)
+        return logger4;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -11626,7 +11625,7 @@ var require_compile2 = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -11653,7 +11652,7 @@ var require_compile2 = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -12286,13 +12285,13 @@ var require_core3 = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger6) {
-      if (logger6 === false)
+    function getLogger(logger4) {
+      if (logger4 === false)
         return noLogs;
-      if (logger6 === void 0)
+      if (logger4 === void 0)
         return console;
-      if (logger6.log && logger6.warn && logger6.error)
-        return logger6;
+      if (logger4.log && logger4.warn && logger4.error)
+        return logger4;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -14453,12 +14452,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs17, exportName) {
+    function addFormats(ajv, list, fs16, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs17[f]);
+        ajv.addFormat(f, fs16[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -14471,8 +14470,8 @@ var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs17 = __require("fs");
-    function checkPathExt(path6, options) {
+    var fs16 = __require("fs");
+    function checkPathExt(path5, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
         return true;
@@ -14483,25 +14482,25 @@ var require_windows = __commonJS({
       }
       for (var i = 0; i < pathext.length; i++) {
         var p = pathext[i].toLowerCase();
-        if (p && path6.substr(-p.length).toLowerCase() === p) {
+        if (p && path5.substr(-p.length).toLowerCase() === p) {
           return true;
         }
       }
       return false;
     }
-    function checkStat(stat6, path6, options) {
-      if (!stat6.isSymbolicLink() && !stat6.isFile()) {
+    function checkStat(stat5, path5, options) {
+      if (!stat5.isSymbolicLink() && !stat5.isFile()) {
         return false;
       }
-      return checkPathExt(path6, options);
+      return checkPathExt(path5, options);
     }
-    function isexe(path6, options, cb) {
-      fs17.stat(path6, function(er, stat6) {
-        cb(er, er ? false : checkStat(stat6, path6, options));
+    function isexe(path5, options, cb) {
+      fs16.stat(path5, function(er, stat5) {
+        cb(er, er ? false : checkStat(stat5, path5, options));
       });
     }
-    function sync(path6, options) {
-      return checkStat(fs17.statSync(path6), path6, options);
+    function sync(path5, options) {
+      return checkStat(fs16.statSync(path5), path5, options);
     }
   }
 });
@@ -14511,22 +14510,22 @@ var require_mode = __commonJS({
   "node_modules/isexe/mode.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs17 = __require("fs");
-    function isexe(path6, options, cb) {
-      fs17.stat(path6, function(er, stat6) {
-        cb(er, er ? false : checkStat(stat6, options));
+    var fs16 = __require("fs");
+    function isexe(path5, options, cb) {
+      fs16.stat(path5, function(er, stat5) {
+        cb(er, er ? false : checkStat(stat5, options));
       });
     }
-    function sync(path6, options) {
-      return checkStat(fs17.statSync(path6), options);
+    function sync(path5, options) {
+      return checkStat(fs16.statSync(path5), options);
     }
-    function checkStat(stat6, options) {
-      return stat6.isFile() && checkMode(stat6, options);
+    function checkStat(stat5, options) {
+      return stat5.isFile() && checkMode(stat5, options);
     }
-    function checkMode(stat6, options) {
-      var mod = stat6.mode;
-      var uid = stat6.uid;
-      var gid = stat6.gid;
+    function checkMode(stat5, options) {
+      var mod = stat5.mode;
+      var uid = stat5.uid;
+      var gid = stat5.gid;
       var myUid = options.uid !== void 0 ? options.uid : process.getuid && process.getuid();
       var myGid = options.gid !== void 0 ? options.gid : process.getgid && process.getgid();
       var u = parseInt("100", 8);
@@ -14551,7 +14550,7 @@ var require_isexe = __commonJS({
     }
     module.exports = isexe;
     isexe.sync = sync;
-    function isexe(path6, options, cb) {
+    function isexe(path5, options, cb) {
       if (typeof options === "function") {
         cb = options;
         options = {};
@@ -14560,17 +14559,17 @@ var require_isexe = __commonJS({
         if (typeof Promise !== "function") {
           throw new TypeError("callback not provided");
         }
-        return new Promise(function(resolve5, reject) {
-          isexe(path6, options || {}, function(er, is) {
+        return new Promise(function(resolve4, reject) {
+          isexe(path5, options || {}, function(er, is) {
             if (er) {
               reject(er);
             } else {
-              resolve5(is);
+              resolve4(is);
             }
           });
         });
       }
-      core(path6, options || {}, function(er, is) {
+      core(path5, options || {}, function(er, is) {
         if (er) {
           if (er.code === "EACCES" || options && options.ignoreErrors) {
             er = null;
@@ -14580,9 +14579,9 @@ var require_isexe = __commonJS({
         cb(er, is);
       });
     }
-    function sync(path6, options) {
+    function sync(path5, options) {
       try {
-        return core.sync(path6, options || {});
+        return core.sync(path5, options || {});
       } catch (er) {
         if (options && options.ignoreErrors || er.code === "EACCES") {
           return false;
@@ -14598,7 +14597,7 @@ var require_isexe = __commonJS({
 var require_which = __commonJS({
   "node_modules/which/which.js"(exports$1, module) {
     var isWindows = process.platform === "win32" || process.env.OSTYPE === "cygwin" || process.env.OSTYPE === "msys";
-    var path6 = __require("path");
+    var path5 = __require("path");
     var COLON = isWindows ? ";" : ":";
     var isexe = require_isexe();
     var getNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: "ENOENT" });
@@ -14631,27 +14630,27 @@ var require_which = __commonJS({
         opt = {};
       const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
       const found = [];
-      const step = (i) => new Promise((resolve5, reject) => {
+      const step = (i) => new Promise((resolve4, reject) => {
         if (i === pathEnv.length)
-          return opt.all && found.length ? resolve5(found) : reject(getNotFoundError(cmd));
+          return opt.all && found.length ? resolve4(found) : reject(getNotFoundError(cmd));
         const ppRaw = pathEnv[i];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path6.join(pathPart, cmd);
+        const pCmd = path5.join(pathPart, cmd);
         const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
-        resolve5(subStep(p, i, 0));
+        resolve4(subStep(p, i, 0));
       });
-      const subStep = (p, i, ii) => new Promise((resolve5, reject) => {
+      const subStep = (p, i, ii) => new Promise((resolve4, reject) => {
         if (ii === pathExt.length)
-          return resolve5(step(i + 1));
+          return resolve4(step(i + 1));
         const ext = pathExt[ii];
         isexe(p + ext, { pathExt: pathExtExe }, (er, is) => {
           if (!er && is) {
             if (opt.all)
               found.push(p + ext);
             else
-              return resolve5(p + ext);
+              return resolve4(p + ext);
           }
-          return resolve5(subStep(p, i, ii + 1));
+          return resolve4(subStep(p, i, ii + 1));
         });
       });
       return cb ? step(0).then((res) => cb(null, res), cb) : step(0);
@@ -14663,7 +14662,7 @@ var require_which = __commonJS({
       for (let i = 0; i < pathEnv.length; i++) {
         const ppRaw = pathEnv[i];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path6.join(pathPart, cmd);
+        const pCmd = path5.join(pathPart, cmd);
         const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
         for (let j = 0; j < pathExt.length; j++) {
           const cur = p + pathExt[j];
@@ -14709,7 +14708,7 @@ var require_path_key = __commonJS({
 // node_modules/cross-spawn/lib/util/resolveCommand.js
 var require_resolveCommand = __commonJS({
   "node_modules/cross-spawn/lib/util/resolveCommand.js"(exports$1, module) {
-    var path6 = __require("path");
+    var path5 = __require("path");
     var which = require_which();
     var getPathKey = require_path_key();
     function resolveCommandAttempt(parsed, withoutPathExt) {
@@ -14727,7 +14726,7 @@ var require_resolveCommand = __commonJS({
       try {
         resolved = which.sync(parsed.command, {
           path: env[getPathKey({ env })],
-          pathExt: withoutPathExt ? path6.delimiter : void 0
+          pathExt: withoutPathExt ? path5.delimiter : void 0
         });
       } catch (e) {
       } finally {
@@ -14736,7 +14735,7 @@ var require_resolveCommand = __commonJS({
         }
       }
       if (resolved) {
-        resolved = path6.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
+        resolved = path5.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
       }
       return resolved;
     }
@@ -14787,8 +14786,8 @@ var require_shebang_command = __commonJS({
       if (!match) {
         return null;
       }
-      const [path6, argument] = match[0].replace(/#! ?/, "").split(" ");
-      const binary = path6.split("/").pop();
+      const [path5, argument] = match[0].replace(/#! ?/, "").split(" ");
+      const binary = path5.split("/").pop();
       if (binary === "env") {
         return argument;
       }
@@ -14800,16 +14799,16 @@ var require_shebang_command = __commonJS({
 // node_modules/cross-spawn/lib/util/readShebang.js
 var require_readShebang = __commonJS({
   "node_modules/cross-spawn/lib/util/readShebang.js"(exports$1, module) {
-    var fs17 = __require("fs");
+    var fs16 = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command) {
       const size = 150;
       const buffer = Buffer.alloc(size);
       let fd;
       try {
-        fd = fs17.openSync(command, "r");
-        fs17.readSync(fd, buffer, 0, size, 0);
-        fs17.closeSync(fd);
+        fd = fs16.openSync(command, "r");
+        fs16.readSync(fd, buffer, 0, size, 0);
+        fs16.closeSync(fd);
       } catch (e) {
       }
       return shebangCommand(buffer.toString());
@@ -14821,7 +14820,7 @@ var require_readShebang = __commonJS({
 // node_modules/cross-spawn/lib/parse.js
 var require_parse = __commonJS({
   "node_modules/cross-spawn/lib/parse.js"(exports$1, module) {
-    var path6 = __require("path");
+    var path5 = __require("path");
     var resolveCommand = require_resolveCommand();
     var escape2 = require_escape();
     var readShebang = require_readShebang();
@@ -14846,7 +14845,7 @@ var require_parse = __commonJS({
       const needsShell = !isExecutableRegExp.test(commandFile);
       if (parsed.options.forceShell || needsShell) {
         const needsDoubleEscapeMetaChars = isCmdShimRegExp.test(commandFile);
-        parsed.command = path6.normalize(parsed.command);
+        parsed.command = path5.normalize(parsed.command);
         parsed.command = escape2.command(parsed.command);
         parsed.args = parsed.args.map((arg) => escape2.argument(arg, needsDoubleEscapeMetaChars));
         const shellCommand = [parsed.command].concat(parsed.args).join(" ");
@@ -15456,9 +15455,6 @@ var ToolPermissionManager = class extends eventemitter3.EventEmitter {
 // src/core/BaseAgent.ts
 init_Logger();
 
-// src/core/AgentContext.ts
-init_Logger();
-
 // src/core/ToolManager.ts
 init_CircuitBreaker();
 
@@ -15703,12 +15699,6 @@ var ToolManager = class extends eventemitter3.EventEmitter {
   _isDestroyed = false;
   /** Optional tool context for execution (set by agent before runs) */
   _toolContext;
-  /**
-   * Parent AgentContext reference for auto-building ToolContext
-   * This ensures tools always have access to agentContext, memory, cache, etc.
-   * even when execute() is called directly (e.g., by Agent)
-   */
-  _parentContext = null;
   constructor() {
     super();
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
@@ -15749,44 +15739,6 @@ var ToolManager = class extends eventemitter3.EventEmitter {
    */
   getToolContext() {
     return this._toolContext;
-  }
-  /**
-   * Set parent AgentContext for automatic context building
-   * Called by AgentContext after construction to enable auto-context in execute()
-   *
-   * This is the KEY to making tools work correctly:
-   * - When Agent calls ToolManager.execute() directly, we auto-build context
-   * - When AgentContext.executeTool() is used, it sets explicit _toolContext
-   *
-   * @param context - The parent AgentContext that owns this ToolManager
-   */
-  setParentContext(context) {
-    this._parentContext = context;
-  }
-  /**
-   * Get current parent context
-   */
-  getParentContext() {
-    return this._parentContext;
-  }
-  /**
-   * Build ToolContext from parent AgentContext
-   * Used when execute() is called directly without explicit context
-   * @private
-   */
-  _buildContextFromParent() {
-    if (!this._parentContext) {
-      return void 0;
-    }
-    const ctx = this._parentContext;
-    return {
-      agentId: ctx.agentId,
-      memory: ctx.memory?.getAccess(),
-      agentContext: ctx,
-      idempotencyCache: ctx.cache ?? void 0,
-      inContextMemory: ctx.inContextMemory ?? void 0,
-      persistentInstructions: ctx.persistentInstructions ?? void 0
-    };
   }
   // ==========================================================================
   // Registration
@@ -16203,6 +16155,9 @@ var ToolManager = class extends eventemitter3.EventEmitter {
   /**
    * Execute a tool function with circuit breaker protection
    * Implements IToolExecutor interface
+   *
+   * Simple execution - no caching, no parent context.
+   * Context must be set via setToolContext() before calling.
    */
   async execute(toolName, args) {
     const registration = this.registry.get(toolName);
@@ -16216,26 +16171,11 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     this.toolLogger.debug({ toolName, args }, "Tool execution started");
     const startTime = Date.now();
     exports.metrics.increment("tool.executed", 1, { tool: toolName });
-    const effectiveContext = this._toolContext ?? this._buildContextFromParent();
-    const cache = this._parentContext?.cache;
-    const cacheEnabled = this._parentContext?.isCacheEnabled() ?? false;
-    if (cache && cacheEnabled) {
-      const cached = await cache.get(registration.tool, args);
-      if (cached !== void 0) {
-        this.toolLogger.debug({ toolName }, "Tool cache hit");
-        exports.metrics.increment("tool.cache_hit", 1, { tool: toolName });
-        this.recordExecution(toolName, 0, true);
-        return cached;
-      }
-    }
     try {
       const result = await breaker.execute(async () => {
-        return await registration.tool.execute(args, effectiveContext);
+        return await registration.tool.execute(args, this._toolContext);
       });
       const duration = Date.now() - startTime;
-      if (cache && cacheEnabled) {
-        await cache.set(registration.tool, args, result);
-      }
       this.recordExecution(toolName, duration, true);
       const resultSummary = this.summarizeResult(result);
       this.toolLogger.debug({
@@ -16459,1858 +16399,6 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     return nameTokens + descTokens + paramTokens + 20;
   }
 };
-
-// src/core/IdempotencyCache.ts
-var DEFAULT_IDEMPOTENCY_CONFIG = {
-  defaultTtlMs: 36e5,
-  // 1 hour
-  maxEntries: 1e3
-};
-var IdempotencyCache = class {
-  config;
-  cache = /* @__PURE__ */ new Map();
-  hits = 0;
-  misses = 0;
-  cleanupInterval;
-  _isDestroyed = false;
-  constructor(config = DEFAULT_IDEMPOTENCY_CONFIG) {
-    this.config = config;
-    this.cleanupInterval = setInterval(() => {
-      this.pruneExpired();
-    }, 3e5);
-  }
-  /**
-   * Returns true if destroy() has been called.
-   * Operations on a destroyed cache are no-ops.
-   */
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Releases all resources held by this cache.
-   * Clears the background cleanup interval and all cached entries.
-   * Safe to call multiple times (idempotent).
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = void 0;
-    }
-    this.cache.clear();
-    this.hits = 0;
-    this.misses = 0;
-  }
-  /**
-   * Check if a tool's results should be cached.
-   * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
-   *
-   * Logic:
-   * - If 'cacheable' is defined, use it directly
-   * - If only 'safe' is defined, cache when safe=false (backward compat)
-   * - If neither defined, don't cache
-   */
-  shouldCache(tool) {
-    const idempotency = tool.idempotency;
-    if (!idempotency) return false;
-    if (idempotency.cacheable !== void 0) {
-      return idempotency.cacheable;
-    }
-    if (idempotency.safe !== void 0) {
-      return !idempotency.safe;
-    }
-    return false;
-  }
-  /**
-   * Get cached result for tool call
-   */
-  async get(tool, args) {
-    if (this._isDestroyed) {
-      return void 0;
-    }
-    if (!this.shouldCache(tool)) {
-      this.misses++;
-      return void 0;
-    }
-    const key = this.generateKey(tool, args);
-    const cached = this.cache.get(key);
-    if (!cached) {
-      this.misses++;
-      return void 0;
-    }
-    if (Date.now() > cached.expiresAt) {
-      this.cache.delete(key);
-      this.misses++;
-      return void 0;
-    }
-    this.hits++;
-    return cached.value;
-  }
-  /**
-   * Cache result for tool call
-   */
-  async set(tool, args, result) {
-    if (this._isDestroyed) {
-      return;
-    }
-    if (!this.shouldCache(tool)) {
-      return;
-    }
-    const key = this.generateKey(tool, args);
-    const ttl = tool.idempotency?.ttlMs ?? this.config.defaultTtlMs;
-    const expiresAt = Date.now() + ttl;
-    this.cache.set(key, { value: result, expiresAt });
-    if (this.cache.size > this.config.maxEntries) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
-    }
-  }
-  /**
-   * Check if tool call is cached
-   */
-  async has(tool, args) {
-    if (this._isDestroyed) {
-      return false;
-    }
-    if (!this.shouldCache(tool)) {
-      return false;
-    }
-    const key = this.generateKey(tool, args);
-    const cached = this.cache.get(key);
-    if (!cached) {
-      return false;
-    }
-    if (Date.now() > cached.expiresAt) {
-      this.cache.delete(key);
-      return false;
-    }
-    return true;
-  }
-  /**
-   * Invalidate cached result
-   */
-  async invalidate(tool, args) {
-    if (!tool.idempotency) {
-      return;
-    }
-    const key = this.generateKey(tool, args);
-    this.cache.delete(key);
-  }
-  /**
-   * Invalidate all cached results for a tool
-   */
-  async invalidateTool(tool) {
-    const toolName = tool.definition.function.name;
-    const keysToDelete = [];
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(`${toolName}:`)) {
-        keysToDelete.push(key);
-      }
-    }
-    for (const key of keysToDelete) {
-      this.cache.delete(key);
-    }
-  }
-  /**
-   * Prune expired entries from cache
-   */
-  pruneExpired() {
-    if (this._isDestroyed) {
-      return 0;
-    }
-    const now = Date.now();
-    const toDelete = [];
-    for (const [key, entry] of this.cache.entries()) {
-      if (now > entry.expiresAt) {
-        toDelete.push(key);
-      }
-    }
-    toDelete.forEach((key) => this.cache.delete(key));
-    return toDelete.length;
-  }
-  /**
-   * Clear all cached results and stop background cleanup.
-   * @deprecated Use destroy() instead for explicit lifecycle management.
-   *             This method is kept for backward compatibility.
-   */
-  async clear() {
-    this.destroy();
-  }
-  /**
-   * Get cache statistics
-   */
-  getStats() {
-    const total = this.hits + this.misses;
-    const hitRate = total > 0 ? this.hits / total : 0;
-    return {
-      entries: this.cache.size,
-      hits: this.hits,
-      misses: this.misses,
-      hitRate
-    };
-  }
-  /**
-   * Generate cache key for tool + args
-   */
-  generateKey(tool, args) {
-    const toolName = tool.definition.function.name;
-    if (tool.idempotency?.keyFn) {
-      return `${toolName}:${tool.idempotency.keyFn(args)}`;
-    }
-    const sortedArgs = Object.keys(args).sort().reduce((obj, key) => {
-      obj[key] = args[key];
-      return obj;
-    }, {});
-    const argsHash = this.hashObject(sortedArgs);
-    return `${toolName}:${argsHash}`;
-  }
-  /**
-   * Simple hash function for objects
-   */
-  hashObject(obj) {
-    const str = JSON.stringify(obj);
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash.toString(36);
-  }
-};
-
-// src/domain/entities/Memory.ts
-function isTaskAwareScope(scope) {
-  return typeof scope === "object" && scope !== null && "type" in scope;
-}
-function isSimpleScope(scope) {
-  return scope === "session" || scope === "persistent";
-}
-function scopeEquals(a, b) {
-  if (isSimpleScope(a) && isSimpleScope(b)) {
-    return a === b;
-  }
-  if (isTaskAwareScope(a) && isTaskAwareScope(b)) {
-    if (a.type !== b.type) return false;
-    if (a.type === "task" && b.type === "task") {
-      if (a.taskIds.length !== b.taskIds.length) return false;
-      const sortedA = [...a.taskIds].sort();
-      const sortedB = [...b.taskIds].sort();
-      return sortedA.every((id, i) => id === sortedB[i]);
-    }
-    return true;
-  }
-  return false;
-}
-function scopeMatches(entryScope, filterScope) {
-  if (scopeEquals(entryScope, filterScope)) return true;
-  if (isSimpleScope(filterScope)) return false;
-  if (isTaskAwareScope(entryScope) && isTaskAwareScope(filterScope)) {
-    return entryScope.type === filterScope.type;
-  }
-  return false;
-}
-var MEMORY_PRIORITY_VALUES = {
-  critical: 4,
-  high: 3,
-  normal: 2,
-  low: 1
-};
-var TIER_PRIORITIES = {
-  raw: "low",
-  summary: "normal",
-  findings: "high"
-};
-var TIER_KEY_PREFIXES = {
-  raw: "raw.",
-  summary: "summary.",
-  findings: "findings."
-};
-function getTierFromKey(key) {
-  if (key.startsWith(TIER_KEY_PREFIXES.raw)) return "raw";
-  if (key.startsWith(TIER_KEY_PREFIXES.summary)) return "summary";
-  if (key.startsWith(TIER_KEY_PREFIXES.findings)) return "findings";
-  return void 0;
-}
-function stripTierPrefix(key) {
-  const tier = getTierFromKey(key);
-  if (!tier) return key;
-  return key.substring(TIER_KEY_PREFIXES[tier].length);
-}
-function addTierPrefix(key, tier) {
-  const existingTier = getTierFromKey(key);
-  if (existingTier) {
-    const baseKey = stripTierPrefix(key);
-    return TIER_KEY_PREFIXES[tier] + baseKey;
-  }
-  return TIER_KEY_PREFIXES[tier] + key;
-}
-var TERMINAL_MEMORY_STATUSES = ["completed", "failed", "skipped", "cancelled"];
-function isTerminalMemoryStatus(status) {
-  return TERMINAL_MEMORY_STATUSES.includes(status);
-}
-var staticPriorityCalculator = (entry) => {
-  if (entry.pinned) return "critical";
-  return entry.basePriority;
-};
-function detectStaleEntries(entries, completedTaskId, taskStates) {
-  const stale = [];
-  for (const entry of entries) {
-    if (entry.pinned) continue;
-    const scope = entry.scope;
-    if (!isTaskAwareScope(scope) || scope.type !== "task") continue;
-    if (!scope.taskIds.includes(completedTaskId)) continue;
-    const allTerminal = scope.taskIds.every((taskId) => {
-      const status = taskStates.get(taskId);
-      return status ? isTerminalMemoryStatus(status) : false;
-    });
-    if (allTerminal) {
-      stale.push({
-        key: entry.key,
-        description: entry.description,
-        reason: "task_completed",
-        previousPriority: entry.basePriority,
-        newPriority: "low",
-        taskIds: scope.taskIds
-      });
-    }
-  }
-  return stale;
-}
-function forTasks(key, description, value, taskIds, options) {
-  return {
-    key,
-    description,
-    value,
-    scope: { type: "task", taskIds },
-    priority: options?.priority,
-    pinned: options?.pinned
-  };
-}
-function forPlan(key, description, value, options) {
-  return {
-    key,
-    description,
-    value,
-    scope: { type: "plan" },
-    priority: options?.priority,
-    pinned: options?.pinned
-  };
-}
-var DEFAULT_MEMORY_CONFIG = {
-  maxSizeBytes: 25 * 1024 * 1024,
-  // 25MB default
-  maxIndexEntries: 30,
-  // Limit index entries to prevent context bloat
-  descriptionMaxLength: 150,
-  softLimitPercent: 80,
-  contextAllocationPercent: 20
-};
-function validateMemoryKey(key) {
-  if (!key || key.length === 0) {
-    throw new Error("Memory key cannot be empty");
-  }
-  if (key.startsWith(".") || key.endsWith(".") || key.includes("..")) {
-    throw new Error("Invalid memory key format: keys cannot start/end with dots or contain consecutive dots");
-  }
-  if (!/^[a-zA-Z0-9._-]+$/.test(key)) {
-    throw new Error("Invalid memory key format: only alphanumeric, dots, dashes, and underscores allowed");
-  }
-}
-function calculateEntrySize(value) {
-  if (value === void 0) {
-    return 0;
-  }
-  const serialized = JSON.stringify(value);
-  if (typeof Buffer !== "undefined") {
-    return Buffer.byteLength(serialized, "utf8");
-  }
-  return new Blob([serialized]).size;
-}
-function createMemoryEntry(input, config = DEFAULT_MEMORY_CONFIG) {
-  validateMemoryKey(input.key);
-  if (input.description.length > config.descriptionMaxLength) {
-    throw new Error(`Description exceeds maximum length of ${config.descriptionMaxLength} characters`);
-  }
-  if (input.scope && isTaskAwareScope(input.scope) && input.scope.type === "task") {
-    if (input.scope.taskIds.length === 0) {
-      console.warn(`Memory entry "${input.key}" has empty taskIds array - will have low priority`);
-    }
-  }
-  const now = Date.now();
-  const sizeBytes = calculateEntrySize(input.value);
-  const pinned = input.pinned ?? false;
-  const priority = pinned ? "critical" : input.priority ?? "normal";
-  return {
-    key: input.key,
-    description: input.description,
-    value: input.value,
-    sizeBytes,
-    scope: input.scope ?? "session",
-    basePriority: priority,
-    pinned,
-    createdAt: now,
-    lastAccessedAt: now,
-    accessCount: 0
-  };
-}
-function formatSizeHuman(bytes) {
-  if (bytes === 0) return "0B";
-  if (bytes < 1024) return `${bytes}B`;
-  const kb = bytes / 1024;
-  if (bytes < 1024 * 1024) {
-    return `${kb.toFixed(1).replace(/\.0$/, "")}KB`;
-  }
-  const mb = bytes / (1024 * 1024);
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${mb.toFixed(1).replace(/\.0$/, "")}MB`;
-  }
-  const gb = bytes / (1024 * 1024 * 1024);
-  return `${gb.toFixed(1).replace(/\.0$/, "")}GB`;
-}
-function formatScope(scope) {
-  if (isSimpleScope(scope)) {
-    return scope;
-  }
-  if (scope.type === "task") {
-    return `task:${scope.taskIds.join(",")}`;
-  }
-  return scope.type;
-}
-function formatEntryFlags(entry) {
-  const flags = [];
-  if (entry.pinned) {
-    flags.push("pinned");
-  } else if (entry.effectivePriority !== "normal") {
-    flags.push(entry.effectivePriority);
-  }
-  flags.push(formatScope(entry.scope));
-  return flags.join(", ");
-}
-function formatMemoryIndex(index) {
-  const lines = [];
-  const utilPercent = Number.isInteger(index.utilizationPercent) ? index.utilizationPercent.toString() : index.utilizationPercent.toFixed(1).replace(/\.0$/, "");
-  lines.push(`## Working Memory (${index.totalSizeHuman} / ${index.limitHuman} - ${utilPercent}%)`);
-  lines.push("");
-  if (index.entries.length === 0) {
-    lines.push("Memory is empty.");
-  } else {
-    const pinned = index.entries.filter((e) => e.pinned);
-    const critical = index.entries.filter((e) => !e.pinned && e.effectivePriority === "critical");
-    const high = index.entries.filter((e) => !e.pinned && e.effectivePriority === "high");
-    const normal = index.entries.filter((e) => !e.pinned && e.effectivePriority === "normal");
-    const low = index.entries.filter((e) => !e.pinned && e.effectivePriority === "low");
-    if (pinned.length > 0) {
-      lines.push("**Pinned (never evicted):**");
-      for (const entry of pinned) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (critical.length > 0) {
-      lines.push("**Critical priority:**");
-      for (const entry of critical) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (high.length > 0) {
-      lines.push("**High priority:**");
-      for (const entry of high) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (normal.length > 0) {
-      lines.push("**Normal priority:**");
-      for (const entry of normal) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (low.length > 0) {
-      lines.push("**Low priority (evicted first):**");
-      for (const entry of low) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (index.utilizationPercent > 80) {
-      lines.push("Warning: Memory utilization is high. Consider deleting unused entries.");
-      lines.push("");
-    }
-    if (index.omittedCount > 0) {
-      lines.push(`*${index.omittedCount} additional low-priority entries not shown. Use \`memory_query()\` to see all.*`);
-      lines.push("");
-    }
-  }
-  lines.push('Use `memory_retrieve("key")` to load full content.');
-  lines.push('Use `memory_persist("key")` to keep data after task completion.');
-  return lines.join("\n");
-}
-
-// src/capabilities/taskAgent/WorkingMemory.ts
-var WorkingMemory = class extends eventemitter3.EventEmitter {
-  storage;
-  config;
-  priorityCalculator;
-  priorityContext;
-  _isDestroyed = false;
-  /**
-   * Create a WorkingMemory instance
-   *
-   * @param storage - Storage backend for memory entries
-   * @param config - Memory configuration (limits, etc.)
-   * @param priorityCalculator - Strategy for computing effective priority (default: static)
-   */
-  constructor(storage, config = DEFAULT_MEMORY_CONFIG, priorityCalculator = staticPriorityCalculator) {
-    super();
-    this.storage = storage;
-    this.config = config;
-    this.priorityCalculator = priorityCalculator;
-    this.priorityContext = {};
-  }
-  /**
-   * Set the priority calculator (for switching strategies at runtime)
-   */
-  setPriorityCalculator(calculator) {
-    this.priorityCalculator = calculator;
-  }
-  /**
-   * Update priority context (e.g., task states for TaskAgent)
-   */
-  setPriorityContext(context) {
-    this.priorityContext = context;
-  }
-  /**
-   * Get the current priority context
-   */
-  getPriorityContext() {
-    return this.priorityContext;
-  }
-  /**
-   * Compute effective priority for an entry using the current calculator
-   */
-  computeEffectivePriority(entry) {
-    return this.priorityCalculator(entry, this.priorityContext);
-  }
-  /**
-   * Get all entries with their computed effective priorities
-   * This is a performance optimization to avoid repeated getAll() + map() calls
-   */
-  async getEntriesWithPriority() {
-    const entries = await this.storage.getAll();
-    return entries.map((entry) => ({
-      entry,
-      effectivePriority: this.computeEffectivePriority(entry)
-    }));
-  }
-  /**
-   * Get evictable entries sorted by eviction priority
-   * Filters out pinned and critical entries, sorts by priority then by strategy
-   */
-  getEvictableEntries(entriesWithPriority, strategy) {
-    return entriesWithPriority.filter(({ entry, effectivePriority }) => {
-      if (entry.pinned) return false;
-      if (effectivePriority === "critical") return false;
-      return true;
-    }).sort((a, b) => {
-      const priorityDiff = MEMORY_PRIORITY_VALUES[a.effectivePriority] - MEMORY_PRIORITY_VALUES[b.effectivePriority];
-      if (priorityDiff !== 0) return priorityDiff;
-      if (strategy === "lru") {
-        return a.entry.lastAccessedAt - b.entry.lastAccessedAt;
-      } else {
-        return b.entry.sizeBytes - a.entry.sizeBytes;
-      }
-    });
-  }
-  /**
-   * Store a value in working memory
-   *
-   * @param key - Unique key for the entry
-   * @param description - Short description for the index (max 150 chars)
-   * @param value - The data to store
-   * @param options - Optional scope, priority, and pinned settings
-   */
-  async store(key, description, value, options) {
-    const input = {
-      key,
-      description,
-      value,
-      scope: options?.scope ?? "session",
-      priority: options?.priority,
-      pinned: options?.pinned
-    };
-    const entry = createMemoryEntry(input, this.config);
-    const currentSize = await this.storage.getTotalSize();
-    const existing = await this.storage.get(key);
-    const existingSize = existing?.sizeBytes ?? 0;
-    const newTotalSize = currentSize - existingSize + entry.sizeBytes;
-    const limit = this.getLimit();
-    if (newTotalSize > limit) {
-      throw new Error(`Memory limit exceeded: ${newTotalSize} bytes > ${limit} bytes`);
-    }
-    const utilization = newTotalSize / limit * 100;
-    if (utilization > this.config.softLimitPercent) {
-      this.emit("limit_warning", { utilizationPercent: utilization });
-    }
-    await this.storage.set(key, entry);
-    this.emit("stored", { key, description, scope: entry.scope });
-    await this.enforceEntryCountLimit();
-  }
-  /**
-   * Enforce the maxIndexEntries limit by evicting excess entries
-   * Only evicts if entry count exceeds the configured limit
-   */
-  async enforceEntryCountLimit() {
-    const maxEntries = this.getMaxIndexEntries();
-    if (!maxEntries) return;
-    const entries = await this.storage.getAll();
-    const excessCount = entries.length - maxEntries;
-    if (excessCount > 0) {
-      const evictedKeys = await this.evict(excessCount, "lru");
-      if (evictedKeys.length > 0) ;
-    }
-  }
-  /**
-   * Get the configured max index entries limit
-   */
-  getMaxIndexEntries() {
-    return this.config.maxIndexEntries;
-  }
-  /**
-   * Store a value scoped to specific tasks
-   * Convenience method for task-aware memory
-   */
-  async storeForTasks(key, description, value, taskIds, options) {
-    await this.store(key, description, value, {
-      scope: { type: "task", taskIds },
-      priority: options?.priority,
-      pinned: options?.pinned
-    });
-  }
-  /**
-   * Store a value scoped to the entire plan
-   * Convenience method for plan-scoped memory
-   */
-  async storeForPlan(key, description, value, options) {
-    await this.store(key, description, value, {
-      scope: { type: "plan" },
-      priority: options?.priority,
-      pinned: options?.pinned
-    });
-  }
-  /**
-   * Retrieve a value from working memory
-   *
-   * Note: Access stats update is not strictly atomic. Under very high concurrency,
-   * accessCount may be slightly inaccurate. This is acceptable for memory management
-   * purposes where exact counts are not critical.
-   */
-  async retrieve(key) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      return void 0;
-    }
-    const value = entry.value;
-    const freshEntry = await this.storage.get(key);
-    if (freshEntry) {
-      freshEntry.lastAccessedAt = Date.now();
-      freshEntry.accessCount += 1;
-      await this.storage.set(key, freshEntry);
-    }
-    this.emit("retrieved", { key });
-    return value;
-  }
-  /**
-   * Retrieve multiple values
-   */
-  async retrieveMany(keys) {
-    const result = {};
-    for (const key of keys) {
-      const value = await this.retrieve(key);
-      if (value !== void 0) {
-        result[key] = value;
-      }
-    }
-    return result;
-  }
-  /**
-   * Delete a value from working memory
-   */
-  async delete(key) {
-    await this.storage.delete(key);
-    this.emit("deleted", { key });
-  }
-  /**
-   * Check if key exists
-   */
-  async has(key) {
-    return this.storage.has(key);
-  }
-  /**
-   * Promote an entry to persistent scope
-   * Works with both simple and task-aware scopes
-   */
-  async persist(key) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    const isPersistent = isSimpleScope(entry.scope) ? entry.scope === "persistent" : isTaskAwareScope(entry.scope) && entry.scope.type === "persistent";
-    if (!isPersistent) {
-      entry.scope = { type: "persistent" };
-      await this.storage.set(key, entry);
-    }
-  }
-  /**
-   * Pin an entry (never evicted)
-   */
-  async pin(key) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    if (!entry.pinned) {
-      entry.pinned = true;
-      entry.basePriority = "critical";
-      await this.storage.set(key, entry);
-    }
-  }
-  /**
-   * Unpin an entry
-   */
-  async unpin(key, newPriority = "normal") {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    if (entry.pinned) {
-      entry.pinned = false;
-      entry.basePriority = newPriority;
-      await this.storage.set(key, entry);
-    }
-  }
-  /**
-   * Set the base priority of an entry
-   */
-  async setPriority(key, priority) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    entry.basePriority = priority;
-    await this.storage.set(key, entry);
-  }
-  /**
-   * Update the scope of an entry without re-storing the value
-   */
-  async updateScope(key, scope) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    entry.scope = scope;
-    await this.storage.set(key, entry);
-  }
-  /**
-   * Add task IDs to an existing task-scoped entry
-   * If entry is not task-scoped, converts it to task-scoped
-   */
-  async addTasksToScope(key, taskIds) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    if (isTaskAwareScope(entry.scope) && entry.scope.type === "task") {
-      const existingIds = new Set(entry.scope.taskIds);
-      for (const id of taskIds) {
-        existingIds.add(id);
-      }
-      entry.scope = { type: "task", taskIds: Array.from(existingIds) };
-    } else {
-      entry.scope = { type: "task", taskIds };
-    }
-    await this.storage.set(key, entry);
-  }
-  /**
-   * Clear all entries of a specific scope
-   */
-  async clearScope(scope) {
-    await this.storage.clearScope(scope);
-  }
-  /**
-   * Clear all entries
-   */
-  async clear() {
-    await this.storage.clear();
-  }
-  /**
-   * Get memory index with computed effective priorities
-   * Respects maxIndexEntries limit for context display
-   */
-  async getIndex() {
-    const entriesWithPriority = await this.getEntriesWithPriority();
-    const totalSizeBytes = await this.storage.getTotalSize();
-    const limitBytes = this.getLimit();
-    const totalEntryCount = entriesWithPriority.length;
-    const sortedEntries = [...entriesWithPriority].sort((a, b) => {
-      if (a.entry.pinned && !b.entry.pinned) return -1;
-      if (!a.entry.pinned && b.entry.pinned) return 1;
-      const priorityDiff = MEMORY_PRIORITY_VALUES[b.effectivePriority] - MEMORY_PRIORITY_VALUES[a.effectivePriority];
-      if (priorityDiff !== 0) return priorityDiff;
-      return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
-    });
-    const maxEntries = this.config.maxIndexEntries;
-    const displayEntries = maxEntries ? sortedEntries.slice(0, maxEntries) : sortedEntries;
-    const omittedCount = sortedEntries.length - displayEntries.length;
-    const indexEntries = displayEntries.map(({ entry, effectivePriority }) => ({
-      key: entry.key,
-      description: entry.description,
-      size: formatSizeHuman(entry.sizeBytes),
-      scope: entry.scope,
-      effectivePriority,
-      pinned: entry.pinned
-    }));
-    return {
-      entries: indexEntries,
-      totalSizeBytes,
-      totalSizeHuman: formatSizeHuman(totalSizeBytes),
-      limitBytes,
-      limitHuman: formatSizeHuman(limitBytes),
-      utilizationPercent: totalSizeBytes / limitBytes * 100,
-      totalEntryCount,
-      omittedCount
-    };
-  }
-  /**
-   * Format index for context injection
-   */
-  async formatIndex() {
-    const index = await this.getIndex();
-    return formatMemoryIndex(index);
-  }
-  /**
-   * Evict entries using specified strategy
-   *
-   * Eviction order:
-   * 1. Never evict pinned entries
-   * 2. Evict low priority first, then normal, then high (never critical)
-   * 3. Within same priority, use strategy (LRU or largest size)
-   *
-   * @param count - Number of entries to evict
-   * @param strategy - Eviction strategy ('lru' or 'size')
-   * @returns Keys of evicted entries
-   */
-  async evict(count, strategy = "lru") {
-    const entriesWithPriority = await this.getEntriesWithPriority();
-    const evictable = this.getEvictableEntries(entriesWithPriority, strategy);
-    const toEvict = evictable.slice(0, count);
-    const evictedKeys = [];
-    for (const { entry } of toEvict) {
-      await this.storage.delete(entry.key);
-      evictedKeys.push(entry.key);
-    }
-    if (evictedKeys.length > 0) {
-      this.emit("evicted", { keys: evictedKeys, reason: strategy });
-    }
-    return evictedKeys;
-  }
-  /**
-   * Evict entries using priority-aware LRU algorithm
-   * @deprecated Use evict(count, 'lru') instead
-   */
-  async evictLRU(count) {
-    return this.evict(count, "lru");
-  }
-  /**
-   * Evict largest entries first (priority-aware)
-   * @deprecated Use evict(count, 'size') instead
-   */
-  async evictBySize(count) {
-    return this.evict(count, "size");
-  }
-  /**
-   * Handle task completion - detect and notify about stale entries
-   *
-   * Call this when a task completes to:
-   * 1. Update priority context with new task state
-   * 2. Detect entries that became stale
-   * 3. Emit event to notify LLM about stale entries
-   *
-   * @param taskId - The completed task ID
-   * @param taskStates - Current task states map
-   * @returns Information about stale entries
-   */
-  async onTaskComplete(taskId, taskStates) {
-    this.priorityContext.taskStates = taskStates;
-    const entries = await this.storage.getAll();
-    const staleEntries = detectStaleEntries(entries, taskId, taskStates);
-    if (staleEntries.length > 0) {
-      this.emit("stale_entries", { entries: staleEntries });
-    }
-    return staleEntries;
-  }
-  /**
-   * Evict entries for completed tasks
-   *
-   * Removes entries that were scoped only to completed tasks.
-   * Use after onTaskComplete() if you want automatic cleanup.
-   *
-   * @param taskStates - Current task states map
-   * @returns Keys of evicted entries
-   */
-  async evictCompletedTaskEntries(taskStates) {
-    const entries = await this.storage.getAll();
-    const evictedKeys = [];
-    for (const entry of entries) {
-      if (entry.pinned) continue;
-      if (!isTaskAwareScope(entry.scope) || entry.scope.type !== "task") continue;
-      const allTerminal = entry.scope.taskIds.every((taskId) => {
-        const status = taskStates.get(taskId);
-        return status ? isTerminalMemoryStatus(status) : false;
-      });
-      if (allTerminal) {
-        await this.storage.delete(entry.key);
-        evictedKeys.push(entry.key);
-      }
-    }
-    if (evictedKeys.length > 0) {
-      this.emit("evicted", { keys: evictedKeys, reason: "task_completed" });
-    }
-    return evictedKeys;
-  }
-  /**
-   * Get limited memory access for tools
-   *
-   * This provides a simplified interface for tools to interact with memory
-   * without exposing the full WorkingMemory API.
-   */
-  getAccess() {
-    return {
-      get: async (key) => this.retrieve(key),
-      set: async (key, description, value, options) => this.store(key, description, value, options),
-      delete: async (key) => this.delete(key),
-      has: async (key) => this.has(key),
-      list: async () => {
-        const index = await this.getIndex();
-        return index.entries.map((e) => ({
-          key: e.key,
-          description: e.description,
-          effectivePriority: e.effectivePriority,
-          pinned: e.pinned
-        }));
-      }
-    };
-  }
-  // ============================================================================
-  // HIERARCHICAL MEMORY HELPERS
-  // ============================================================================
-  /**
-   * Store raw data (low priority, first to be evicted)
-   *
-   * Use this for original/unprocessed data that should be summarized.
-   * Raw data is automatically evicted first when memory pressure is high.
-   *
-   * @param key - Key without tier prefix (prefix is added automatically)
-   * @param description - Brief description for the index
-   * @param value - The raw data to store
-   * @param options - Optional scope and task IDs
-   */
-  async storeRaw(key, description, value, options) {
-    const fullKey = addTierPrefix(key, "raw");
-    const scope = options?.taskIds ? { type: "task", taskIds: options.taskIds } : options?.scope ?? "session";
-    await this.store(fullKey, description, value, {
-      scope,
-      priority: TIER_PRIORITIES.raw
-    });
-  }
-  /**
-   * Store a summary derived from raw data (normal priority)
-   *
-   * Use this for processed/summarized data that extracts key information.
-   * Links back to source data for cleanup tracking.
-   *
-   * @param key - Key without tier prefix (prefix is added automatically)
-   * @param description - Brief description for the index
-   * @param value - The summary data
-   * @param derivedFrom - Key(s) this summary was derived from
-   * @param options - Optional scope and task IDs
-   */
-  async storeSummary(key, description, value, derivedFrom, options) {
-    const fullKey = addTierPrefix(key, "summary");
-    const sourceKeys = Array.isArray(derivedFrom) ? derivedFrom : [derivedFrom];
-    const scope = options?.taskIds ? { type: "task", taskIds: options.taskIds } : options?.scope ?? { type: "plan" };
-    await this.store(fullKey, description, value, {
-      scope,
-      priority: TIER_PRIORITIES.summary
-    });
-    for (const sourceKey of sourceKeys) {
-      try {
-        const sourceEntry = await this.storage.get(sourceKey);
-        if (sourceEntry) {
-          const metadata = sourceEntry.value?.metadata;
-          const existingDerivedTo = metadata?.derivedTo ?? [];
-          if (!existingDerivedTo.includes(fullKey)) {
-          }
-        }
-      } catch {
-      }
-    }
-  }
-  /**
-   * Store final findings (high priority, kept longest)
-   *
-   * Use this for conclusions, insights, or final results that should be preserved.
-   * These are the last to be evicted and typically span the entire plan.
-   *
-   * @param key - Key without tier prefix (prefix is added automatically)
-   * @param description - Brief description for the index
-   * @param value - The findings data
-   * @param derivedFrom - Optional key(s) these findings were derived from
-   * @param options - Optional scope, task IDs, and pinned flag
-   */
-  async storeFindings(key, description, value, _derivedFrom, options) {
-    const fullKey = addTierPrefix(key, "findings");
-    const scope = options?.scope ?? { type: "plan" };
-    await this.store(fullKey, description, value, {
-      scope,
-      priority: TIER_PRIORITIES.findings,
-      pinned: options?.pinned
-    });
-  }
-  /**
-   * Clean up raw data after summary/findings are created
-   *
-   * Call this after creating summaries to free up memory used by raw data.
-   * Only deletes entries in the 'raw' tier.
-   *
-   * @param derivedFromKeys - Keys to delete (typically from derivedFrom metadata)
-   * @returns Number of entries deleted
-   */
-  async cleanupRawData(derivedFromKeys) {
-    let deletedCount = 0;
-    for (const key of derivedFromKeys) {
-      const tier = getTierFromKey(key);
-      if (tier === "raw") {
-        const exists = await this.has(key);
-        if (exists) {
-          await this.delete(key);
-          deletedCount++;
-        }
-      }
-    }
-    return deletedCount;
-  }
-  /**
-   * Get all entries by tier
-   *
-   * @param tier - The tier to filter by
-   * @returns Array of entries in that tier
-   */
-  async getByTier(tier) {
-    const entries = await this.storage.getAll();
-    const prefix = TIER_KEY_PREFIXES[tier];
-    return entries.filter((e) => e.key.startsWith(prefix));
-  }
-  /**
-   * Promote an entry to a higher tier
-   *
-   * Changes the key prefix and updates priority.
-   * Use this when raw data becomes more valuable (e.g., frequently accessed).
-   *
-   * @param key - Current key (with tier prefix)
-   * @param toTier - Target tier to promote to
-   * @returns New key with updated prefix
-   */
-  async promote(key, toTier) {
-    const currentTier = getTierFromKey(key);
-    if (currentTier === toTier) {
-      return key;
-    }
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    const newKey = addTierPrefix(key, toTier);
-    const newPriority = TIER_PRIORITIES[toTier];
-    await this.store(newKey, entry.description, entry.value, {
-      scope: entry.scope,
-      priority: newPriority,
-      pinned: entry.pinned
-    });
-    await this.delete(key);
-    return newKey;
-  }
-  /**
-   * Get tier statistics
-   *
-   * @returns Count and size by tier
-   */
-  async getTierStats() {
-    const entries = await this.storage.getAll();
-    const stats = {
-      raw: { count: 0, sizeBytes: 0 },
-      summary: { count: 0, sizeBytes: 0 },
-      findings: { count: 0, sizeBytes: 0 }
-    };
-    for (const entry of entries) {
-      const tier = getTierFromKey(entry.key);
-      if (tier) {
-        stats[tier].count++;
-        stats[tier].sizeBytes += entry.sizeBytes;
-      }
-    }
-    return stats;
-  }
-  /**
-   * Get statistics about memory usage
-   */
-  async getStats() {
-    const entriesWithPriority = await this.getEntriesWithPriority();
-    const totalSizeBytes = await this.storage.getTotalSize();
-    const limit = this.getLimit();
-    const byPriority = {
-      critical: 0,
-      high: 0,
-      normal: 0,
-      low: 0
-    };
-    let pinnedCount = 0;
-    for (const { entry, effectivePriority } of entriesWithPriority) {
-      byPriority[effectivePriority]++;
-      if (entry.pinned) pinnedCount++;
-    }
-    return {
-      totalEntries: entriesWithPriority.length,
-      totalSizeBytes,
-      utilizationPercent: totalSizeBytes / limit * 100,
-      byPriority,
-      pinnedCount
-    };
-  }
-  /**
-   * Get the configured memory limit
-   */
-  getLimit() {
-    return this.config.maxSizeBytes ?? 25 * 1024 * 1024;
-  }
-  /**
-   * Check if the WorkingMemory instance has been destroyed
-   */
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Destroy the WorkingMemory instance
-   * Removes all event listeners and clears internal state
-   */
-  destroy() {
-    if (this._isDestroyed) return;
-    this._isDestroyed = true;
-    this.removeAllListeners();
-    this.priorityContext = {};
-  }
-  // ============================================================================
-  // Serialization (for session persistence)
-  // ============================================================================
-  /**
-   * Serialize all memory entries for persistence
-   *
-   * Returns a serializable representation of all memory entries
-   * that can be saved to storage and restored later.
-   *
-   * @returns Serialized memory state
-   */
-  async serialize() {
-    const entries = await this.storage.getAll();
-    const serializedEntries = entries.map((entry) => ({
-      key: entry.key,
-      description: entry.description,
-      value: entry.value,
-      scope: entry.scope,
-      sizeBytes: entry.sizeBytes,
-      basePriority: entry.basePriority,
-      pinned: entry.pinned
-      // Note: createdAt, lastAccessedAt, accessCount are not persisted
-      // They will be reset on restore (entries start fresh)
-    }));
-    return {
-      version: 1,
-      entries: serializedEntries
-    };
-  }
-  /**
-   * Restore memory entries from serialized state
-   *
-   * Clears existing memory and repopulates from the serialized state.
-   * Timestamps are reset to current time.
-   *
-   * @param state - Previously serialized memory state
-   */
-  async restore(state) {
-    if (state.version !== 1) {
-      throw new Error(`Unsupported memory serialization version: ${state.version}`);
-    }
-    await this.storage.clear();
-    const now = Date.now();
-    for (const entry of state.entries) {
-      const fullEntry = {
-        key: entry.key,
-        description: entry.description,
-        value: entry.value,
-        scope: entry.scope,
-        sizeBytes: entry.sizeBytes,
-        basePriority: entry.basePriority ?? "normal",
-        pinned: entry.pinned ?? false,
-        createdAt: now,
-        lastAccessedAt: now,
-        accessCount: 0
-      };
-      await this.storage.set(entry.key, fullEntry);
-    }
-  }
-};
-
-// src/infrastructure/storage/InMemoryStorage.ts
-var InMemoryStorage = class {
-  store = /* @__PURE__ */ new Map();
-  async get(key) {
-    return this.store.get(key);
-  }
-  async set(key, entry) {
-    this.store.set(key, entry);
-  }
-  async delete(key) {
-    this.store.delete(key);
-  }
-  async has(key) {
-    return this.store.has(key);
-  }
-  async getAll() {
-    return Array.from(this.store.values());
-  }
-  async getByScope(scope) {
-    return Array.from(this.store.values()).filter((entry) => scopeMatches(entry.scope, scope));
-  }
-  async clearScope(scope) {
-    const toDelete = [];
-    for (const [key, entry] of this.store.entries()) {
-      if (scopeMatches(entry.scope, scope)) {
-        toDelete.push(key);
-      }
-    }
-    for (const key of toDelete) {
-      this.store.delete(key);
-    }
-  }
-  async clear() {
-    this.store.clear();
-  }
-  async getTotalSize() {
-    let total = 0;
-    for (const entry of this.store.values()) {
-      total += entry.sizeBytes;
-    }
-    return total;
-  }
-};
-var InMemoryPlanStorage = class {
-  plans = /* @__PURE__ */ new Map();
-  async savePlan(plan) {
-    this.plans.set(plan.id, JSON.parse(JSON.stringify(plan)));
-  }
-  async getPlan(planId) {
-    const plan = this.plans.get(planId);
-    return plan ? JSON.parse(JSON.stringify(plan)) : void 0;
-  }
-  async updateTask(planId, task) {
-    const plan = this.plans.get(planId);
-    if (!plan) {
-      throw new Error(`Plan ${planId} not found`);
-    }
-    const taskIndex = plan.tasks.findIndex((t) => t.id === task.id);
-    if (taskIndex === -1) {
-      throw new Error(`Task ${task.id} not found in plan ${planId}`);
-    }
-    plan.tasks[taskIndex] = JSON.parse(JSON.stringify(task));
-  }
-  async addTask(planId, task) {
-    const plan = this.plans.get(planId);
-    if (!plan) {
-      throw new Error(`Plan ${planId} not found`);
-    }
-    plan.tasks.push(JSON.parse(JSON.stringify(task)));
-  }
-  async deletePlan(planId) {
-    this.plans.delete(planId);
-  }
-  async listPlans(filter) {
-    const allPlans = Array.from(this.plans.values());
-    if (!filter || !filter.status) {
-      return allPlans.map((p) => JSON.parse(JSON.stringify(p)));
-    }
-    return allPlans.filter((plan) => filter.status.includes(plan.status)).map((p) => JSON.parse(JSON.stringify(p)));
-  }
-  async findByWebhookId(webhookId) {
-    for (const plan of this.plans.values()) {
-      for (const task of plan.tasks) {
-        if (task.externalDependency?.webhookId === webhookId) {
-          return {
-            plan: JSON.parse(JSON.stringify(plan)),
-            task: JSON.parse(JSON.stringify(task))
-          };
-        }
-      }
-    }
-    return void 0;
-  }
-};
-var InMemoryAgentStateStorage = class {
-  agents = /* @__PURE__ */ new Map();
-  async save(state) {
-    this.agents.set(state.id, JSON.parse(JSON.stringify(state)));
-  }
-  async load(agentId) {
-    const state = this.agents.get(agentId);
-    return state ? JSON.parse(JSON.stringify(state)) : void 0;
-  }
-  async delete(agentId) {
-    this.agents.delete(agentId);
-  }
-  async list(filter) {
-    const allStates = Array.from(this.agents.values());
-    if (!filter || !filter.status) {
-      return allStates.map((s) => JSON.parse(JSON.stringify(s)));
-    }
-    return allStates.filter((state) => filter.status.includes(state.status)).map((s) => JSON.parse(JSON.stringify(s)));
-  }
-  async patch(agentId, updates) {
-    const state = this.agents.get(agentId);
-    if (!state) {
-      throw new Error(`Agent ${agentId} not found`);
-    }
-    Object.assign(state, updates);
-  }
-};
-function createAgentStorage(options = {}) {
-  return {
-    memory: options.memory ?? new InMemoryStorage(),
-    plan: options.plan ?? new InMemoryPlanStorage(),
-    agent: options.agent ?? new InMemoryAgentStateStorage()
-  };
-}
-
-// src/domain/entities/Message.ts
-var MessageRole = /* @__PURE__ */ ((MessageRole2) => {
-  MessageRole2["USER"] = "user";
-  MessageRole2["ASSISTANT"] = "assistant";
-  MessageRole2["DEVELOPER"] = "developer";
-  return MessageRole2;
-})(MessageRole || {});
-
-// src/domain/entities/Content.ts
-var ContentType = /* @__PURE__ */ ((ContentType2) => {
-  ContentType2["INPUT_TEXT"] = "input_text";
-  ContentType2["INPUT_IMAGE_URL"] = "input_image_url";
-  ContentType2["INPUT_FILE"] = "input_file";
-  ContentType2["OUTPUT_TEXT"] = "output_text";
-  ContentType2["TOOL_USE"] = "tool_use";
-  ContentType2["TOOL_RESULT"] = "tool_result";
-  return ContentType2;
-})(ContentType || {});
-
-// src/core/context/types.ts
-var DEFAULT_CONTEXT_CONFIG = {
-  maxContextTokens: 128e3,
-  compactionThreshold: 0.75,
-  hardLimit: 0.9,
-  responseReserve: 0.15,
-  estimator: "approximate",
-  autoCompact: true,
-  strategy: "proactive",
-  strategyOptions: {}
-};
-
-// src/core/context/utils/ContextUtils.ts
-function estimateComponentTokens(component, estimator) {
-  if (typeof component.content === "string") {
-    return estimator.estimateTokens(component.content);
-  }
-  return estimator.estimateDataTokens(component.content);
-}
-function sortCompactableByPriority(components) {
-  return components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-}
-function findCompactorForComponent(component, compactors) {
-  return compactors.find((c) => c.canCompact(component));
-}
-async function executeCompactionLoop(options) {
-  const {
-    components,
-    tokensToFree,
-    compactors,
-    estimator,
-    calculateTargetSize,
-    maxRounds = 1,
-    logPrefix = ""
-  } = options;
-  const log = [];
-  let current = [...components];
-  let freedTokens = 0;
-  let round = 0;
-  const sortedComponents = sortCompactableByPriority(current);
-  while (freedTokens < tokensToFree && round < maxRounds) {
-    round++;
-    let roundFreed = 0;
-    for (const component of sortedComponents) {
-      if (freedTokens >= tokensToFree) break;
-      const compactor = findCompactorForComponent(component, compactors);
-      if (!compactor) continue;
-      const beforeSize = estimateComponentTokens(component, estimator);
-      const targetSize = calculateTargetSize(beforeSize, round);
-      if (targetSize >= beforeSize) continue;
-      const compacted = await compactor.compact(component, targetSize);
-      const index = current.findIndex((c) => c.name === component.name);
-      if (index !== -1) {
-        current[index] = compacted;
-      }
-      const afterSize = estimateComponentTokens(compacted, estimator);
-      const saved = beforeSize - afterSize;
-      freedTokens += saved;
-      roundFreed += saved;
-      const prefix = logPrefix ? `${logPrefix}: ` : "";
-      const roundInfo = maxRounds > 1 ? `Round ${round}: ` : "";
-      log.push(
-        `${prefix}${roundInfo}${compactor.name} compacted "${component.name}" by ${saved} tokens`
-      );
-    }
-    if (roundFreed === 0) break;
-  }
-  return { components: current, log, tokensFreed: freedTokens };
-}
-
-// src/core/context/strategies/BaseCompactionStrategy.ts
-var BaseCompactionStrategy = class {
-  metrics = {
-    compactionCount: 0,
-    totalTokensFreed: 0,
-    avgTokensFreedPerCompaction: 0
-  };
-  /**
-   * Get the maximum number of compaction rounds.
-   * Override in subclasses for multi-round strategies.
-   */
-  getMaxRounds() {
-    return 1;
-  }
-  /**
-   * Get the log prefix for compaction messages.
-   * Override to customize logging.
-   */
-  getLogPrefix() {
-    return this.name.charAt(0).toUpperCase() + this.name.slice(1);
-  }
-  /**
-   * Compact components to fit within budget.
-   * Uses the shared compaction loop with strategy-specific target calculation.
-   */
-  async compact(components, budget, compactors, estimator) {
-    const targetUsage = Math.floor(budget.total * this.getTargetUtilization());
-    const tokensToFree = budget.used - targetUsage;
-    const result = await executeCompactionLoop({
-      components,
-      tokensToFree,
-      compactors,
-      estimator,
-      calculateTargetSize: this.calculateTargetSize.bind(this),
-      maxRounds: this.getMaxRounds(),
-      logPrefix: this.getLogPrefix()
-    });
-    this.updateMetrics(result.tokensFreed);
-    return result;
-  }
-  /**
-   * Update internal metrics after compaction
-   */
-  updateMetrics(tokensFreed) {
-    this.metrics.compactionCount++;
-    this.metrics.totalTokensFreed += tokensFreed;
-    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
-  }
-  /**
-   * Get strategy metrics
-   */
-  getMetrics() {
-    return { ...this.metrics };
-  }
-  /**
-   * Reset metrics (useful for testing)
-   */
-  resetMetrics() {
-    this.metrics = {
-      compactionCount: 0,
-      totalTokensFreed: 0,
-      avgTokensFreedPerCompaction: 0
-    };
-  }
-};
-
-// src/core/constants.ts
-var TASK_DEFAULTS = {
-  /** Default timeout for task execution in milliseconds (5 minutes) */
-  TIMEOUT_MS: 3e5};
-var CONTEXT_DEFAULTS = {
-  /** Default maximum context tokens (128K) */
-  MAX_TOKENS: 128e3};
-var PROACTIVE_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.65,
-  /** Base reduction factor for round 1 */
-  BASE_REDUCTION_FACTOR: 0.5,
-  /** Reduction step per round (more aggressive each round) */
-  REDUCTION_STEP: 0.15,
-  /** Maximum compaction rounds */
-  MAX_ROUNDS: 3
-};
-var AGGRESSIVE_STRATEGY_DEFAULTS = {
-  /** Threshold to trigger compaction */
-  THRESHOLD: 0.6,
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.5,
-  /** Reduction factor (keep 30% of original) */
-  REDUCTION_FACTOR: 0.3
-};
-var LAZY_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.85,
-  /** Reduction factor (keep 70% of original) */
-  REDUCTION_FACTOR: 0.7
-};
-var ADAPTIVE_STRATEGY_DEFAULTS = {
-  /** Number of compactions to learn from */
-  LEARNING_WINDOW: 10,
-  /** Compactions per minute threshold to switch to aggressive */
-  SWITCH_THRESHOLD: 5,
-  /** Low utilization threshold to switch to lazy */
-  LOW_UTILIZATION_THRESHOLD: 70,
-  /** Low frequency threshold to switch to lazy */
-  LOW_FREQUENCY_THRESHOLD: 0.5
-};
-var ROLLING_WINDOW_DEFAULTS = {
-  /** Default maximum messages to keep */
-  MAX_MESSAGES: 20
-};
-var STRATEGY_THRESHOLDS = {
-  proactive: {
-    // Most balanced - good for general use
-    compactionTrigger: 0.75,
-    // Start compaction at 75%
-    compactionTarget: 0.65,
-    // Reduce to 65%
-    smartCompactionTrigger: 0.7,
-    // Trigger smart compaction at 70%
-    maxToolResultsPercent: 0.3,
-    // Tool results can use up to 30% of context
-    protectedContextPercent: 0.1
-    // Protect at least 10% of context (recent messages)
-  },
-  aggressive: {
-    // Memory-constrained - compact early and often
-    compactionTrigger: 0.6,
-    compactionTarget: 0.5,
-    smartCompactionTrigger: 0.55,
-    maxToolResultsPercent: 0.25,
-    protectedContextPercent: 0.08
-  },
-  lazy: {
-    // Preserve context - only compact when critical
-    compactionTrigger: 0.9,
-    compactionTarget: 0.85,
-    smartCompactionTrigger: 0.85,
-    maxToolResultsPercent: 0.4,
-    // Allow more tool results
-    protectedContextPercent: 0.15
-    // Protect more recent context
-  },
-  adaptive: {
-    // Starts with proactive, adjusts based on performance
-    compactionTrigger: 0.75,
-    compactionTarget: 0.65,
-    smartCompactionTrigger: 0.7,
-    maxToolResultsPercent: 0.3,
-    protectedContextPercent: 0.1
-  },
-  "rolling-window": {
-    // Fixed window, similar to lazy but with message count focus
-    compactionTrigger: 0.85,
-    compactionTarget: 0.75,
-    smartCompactionTrigger: 0.8,
-    maxToolResultsPercent: 0.35,
-    protectedContextPercent: 0.12
-  }
-};
-var SAFETY_CAPS = {
-  /** Safety cap for max tool results (only triggers if percentage doesn't) */
-  MAX_FULL_RESULTS: 100,
-  /** Always keep at least this many messages */
-  MIN_PROTECTED_MESSAGES: 10
-};
-var TOOL_RETENTION_MULTIPLIERS = {
-  proactive: 1,
-  aggressive: 0.7,
-  lazy: 1.5,
-  adaptive: 1,
-  "rolling-window": 1.2
-};
-var TOOL_RESULT_EVICTION_DEFAULTS = {
-  /** Keep last N tool result pairs in conversation (LEGACY - use SAFETY_CAPS instead) */
-  MAX_FULL_RESULTS: 10,
-  /** Evict results after N iterations (LEGACY - use percentage-based) */
-  MAX_AGE_ITERATIONS: 5,
-  /** Only evict results larger than this (bytes, default: 1KB) */
-  MIN_SIZE_TO_EVICT: 1024,
-  /** Trigger size-based eviction when total exceeds this (bytes, default: 100KB) */
-  MAX_TOTAL_SIZE_BYTES: 100 * 1024
-};
-var DEFAULT_TOOL_RETENTION = {
-  // Long retention - outputs often referenced later
-  read_file: 20,
-  bash: 15,
-  grep: 15,
-  glob: 12,
-  edit_file: 12,
-  // Medium retention
-  memory_retrieve: 10,
-  list_directory: 10,
-  autospill_process: 8,
-  // Short retention - web content can be re-fetched
-  web_fetch: 6,
-  web_search: 6,
-  web_scrape: 6,
-  web_fetch_js: 6
-};
-var GUARDIAN_DEFAULTS = {
-  /** Enable guardian validation (can be disabled for testing) */
-  ENABLED: true,
-  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
-  MAX_TOOL_RESULT_TOKENS: 2e3,
-  /** Minimum system prompt tokens to preserve during emergency compaction */
-  MIN_SYSTEM_PROMPT_TOKENS: 3e3,
-  /** Number of most recent messages to always protect (increased from 4) */
-  PROTECTED_RECENT_MESSAGES: 20,
-  /** Truncation suffix for oversized content */
-  TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
-};
-
-// src/core/context/strategies/ProactiveStrategy.ts
-var DEFAULT_OPTIONS = {
-  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
-  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
-  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS
-};
-var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "proactive";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS, ...options };
-  }
-  shouldCompact(budget, _config) {
-    return budget.status === "warning" || budget.status === "critical";
-  }
-  calculateTargetSize(beforeSize, round) {
-    const reductionFactor = this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
-    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1));
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getMaxRounds() {
-    return this.options.maxRounds;
-  }
-  getLogPrefix() {
-    return "Proactive";
-  }
-};
-
-// src/core/context/strategies/AggressiveStrategy.ts
-var DEFAULT_OPTIONS2 = {
-  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
-  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR
-};
-var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "aggressive";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS2, ...options };
-  }
-  shouldCompact(budget, _config) {
-    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
-    return utilizationRatio >= this.options.threshold;
-  }
-  calculateTargetSize(beforeSize, _round) {
-    return Math.floor(beforeSize * this.options.reductionFactor);
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getLogPrefix() {
-    return "Aggressive";
-  }
-};
-
-// src/core/context/strategies/LazyStrategy.ts
-var DEFAULT_OPTIONS3 = {
-  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR
-};
-var LazyCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "lazy";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS3, ...options };
-  }
-  shouldCompact(budget, _config) {
-    return budget.status === "critical";
-  }
-  calculateTargetSize(beforeSize, _round) {
-    return Math.floor(beforeSize * this.options.reductionFactor);
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getLogPrefix() {
-    return "Lazy";
-  }
-};
-
-// src/core/context/strategies/RollingWindowStrategy.ts
-var RollingWindowStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  name = "rolling-window";
-  shouldCompact(_budget, _config) {
-    return false;
-  }
-  async prepareComponents(components) {
-    return components.map((component) => {
-      if (Array.isArray(component.content)) {
-        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
-        if (component.content.length > maxMessages) {
-          return {
-            ...component,
-            content: component.content.slice(-maxMessages),
-            metadata: {
-              ...component.metadata,
-              windowed: true,
-              originalLength: component.content.length,
-              keptLength: maxMessages
-            }
-          };
-        }
-      }
-      return component;
-    });
-  }
-  async compact() {
-    return { components: [], log: [], tokensFreed: 0 };
-  }
-};
-
-// src/core/context/strategies/AdaptiveStrategy.ts
-var AdaptiveStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-    this.currentStrategy = new ProactiveCompactionStrategy();
-  }
-  name = "adaptive";
-  currentStrategy;
-  metrics = {
-    avgUtilization: 0,
-    compactionFrequency: 0,
-    lastCompactions: []
-  };
-  shouldCompact(budget, config) {
-    this.updateMetrics(budget);
-    this.maybeAdapt();
-    return this.currentStrategy.shouldCompact(budget, config);
-  }
-  async compact(components, budget, compactors, estimator) {
-    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
-    this.metrics.lastCompactions.push(Date.now());
-    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
-    if (this.metrics.lastCompactions.length > window) {
-      this.metrics.lastCompactions.shift();
-    }
-    return {
-      ...result,
-      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
-    };
-  }
-  updateMetrics(budget) {
-    const alpha = 0.1;
-    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
-  }
-  maybeAdapt() {
-    const now = Date.now();
-    if (this.metrics.lastCompactions.length >= 2) {
-      const firstCompaction = this.metrics.lastCompactions[0];
-      if (firstCompaction !== void 0) {
-        const timeSpan = now - firstCompaction;
-        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
-      }
-    }
-    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
-    if (this.metrics.compactionFrequency > threshold) {
-      if (this.currentStrategy.name !== "aggressive") {
-        this.currentStrategy = new AggressiveCompactionStrategy();
-      }
-    } else if (this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD && this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD) {
-      if (this.currentStrategy.name !== "lazy") {
-        this.currentStrategy = new LazyCompactionStrategy();
-      }
-    } else {
-      if (this.currentStrategy.name !== "proactive") {
-        this.currentStrategy = new ProactiveCompactionStrategy();
-      }
-    }
-  }
-  getMetrics() {
-    return {
-      ...this.metrics,
-      currentStrategy: this.currentStrategy.name
-    };
-  }
-};
-
-// src/core/context/strategies/index.ts
-function createStrategy(name, options = {}) {
-  switch (name) {
-    case "proactive":
-      return new ProactiveCompactionStrategy(options);
-    case "aggressive":
-      return new AggressiveCompactionStrategy(options);
-    case "lazy":
-      return new LazyCompactionStrategy(options);
-    case "rolling-window":
-      return new RollingWindowStrategy(options);
-    case "adaptive":
-      return new AdaptiveStrategy(options);
-    default:
-      throw new Error(`Unknown context strategy: ${name}`);
-  }
-}
 
 // src/core/Vendor.ts
 var Vendor = {
@@ -19669,24 +17757,1022 @@ function calculateCost(model, inputTokens, outputTokens, options) {
   return inputCost + outputCost;
 }
 
-// src/core/context/plugins/IContextPlugin.ts
-var BaseContextPlugin = class {
-  // Default implementations - override as needed
-  async compact(_targetTokens, _estimator) {
+// src/domain/entities/Message.ts
+var MessageRole = /* @__PURE__ */ ((MessageRole2) => {
+  MessageRole2["USER"] = "user";
+  MessageRole2["ASSISTANT"] = "assistant";
+  MessageRole2["DEVELOPER"] = "developer";
+  return MessageRole2;
+})(MessageRole || {});
+
+// src/domain/entities/Content.ts
+var ContentType = /* @__PURE__ */ ((ContentType2) => {
+  ContentType2["INPUT_TEXT"] = "input_text";
+  ContentType2["INPUT_IMAGE_URL"] = "input_image_url";
+  ContentType2["INPUT_FILE"] = "input_file";
+  ContentType2["OUTPUT_TEXT"] = "output_text";
+  ContentType2["TOOL_USE"] = "tool_use";
+  ContentType2["TOOL_RESULT"] = "tool_result";
+  return ContentType2;
+})(ContentType || {});
+
+// src/core/context-nextgen/BasePluginNextGen.ts
+var simpleTokenEstimator = {
+  estimateTokens(text) {
+    if (!text || text.length === 0) return 0;
+    return Math.ceil(text.length / 3.5);
+  },
+  estimateDataTokens(data) {
+    const text = typeof data === "string" ? data : JSON.stringify(data);
+    return this.estimateTokens(text);
+  }
+};
+var BasePluginNextGen = class {
+  /** Cached token size for content */
+  _contentTokenCache = null;
+  /** Cached token size for instructions */
+  _instructionsTokenCache = null;
+  /** Token estimator */
+  estimator = simpleTokenEstimator;
+  // ============================================================================
+  // Token size tracking
+  // ============================================================================
+  /**
+   * Get current token size of content.
+   * Uses caching - call invalidateTokenCache() when content changes.
+   */
+  getTokenSize() {
+    if (this._contentTokenCache === null) {
+      return 0;
+    }
+    return this._contentTokenCache;
+  }
+  /**
+   * Get token size of instructions (cached after first call).
+   */
+  getInstructionsTokenSize() {
+    if (this._instructionsTokenCache === null) {
+      const instructions = this.getInstructions();
+      this._instructionsTokenCache = instructions ? this.estimator.estimateTokens(instructions) : 0;
+    }
+    return this._instructionsTokenCache;
+  }
+  /**
+   * Invalidate token cache - call when content changes.
+   */
+  invalidateTokenCache() {
+    this._contentTokenCache = null;
+  }
+  /**
+   * Update token cache with new size.
+   * Call this after modifying content.
+   */
+  updateTokenCache(tokens) {
+    this._contentTokenCache = tokens;
+  }
+  /**
+   * Recalculate and cache token size from current content.
+   */
+  async recalculateTokenCache() {
+    const content = await this.getContent();
+    const tokens = content ? this.estimator.estimateTokens(content) : 0;
+    this._contentTokenCache = tokens;
+    return tokens;
+  }
+  // ============================================================================
+  // Default implementations
+  // ============================================================================
+  /**
+   * Default: not compactable. Override if plugin supports compaction.
+   */
+  isCompactable() {
+    return false;
+  }
+  /**
+   * Default: no compaction. Override if plugin supports compaction.
+   */
+  async compact(_targetTokensToFree) {
     return 0;
   }
-  async onPrepared(_budget) {
+  /**
+   * Default: no tools. Override to provide plugin-specific tools.
+   */
+  getTools() {
+    return [];
   }
+  /**
+   * Default: no-op cleanup. Override if plugin has resources to release.
+   */
   destroy() {
   }
+  /**
+   * Default: return empty state. Override for persistence.
+   */
   getState() {
-    return void 0;
+    return {};
   }
+  /**
+   * Default: no-op restore. Override for persistence.
+   */
   restoreState(_state) {
   }
 };
 
-// src/core/context/plugins/InContextMemoryPlugin.ts
+// src/domain/entities/Memory.ts
+function isTaskAwareScope(scope) {
+  return typeof scope === "object" && scope !== null && "type" in scope;
+}
+function isSimpleScope(scope) {
+  return scope === "session" || scope === "persistent";
+}
+function scopeEquals(a, b) {
+  if (isSimpleScope(a) && isSimpleScope(b)) {
+    return a === b;
+  }
+  if (isTaskAwareScope(a) && isTaskAwareScope(b)) {
+    if (a.type !== b.type) return false;
+    if (a.type === "task" && b.type === "task") {
+      if (a.taskIds.length !== b.taskIds.length) return false;
+      const sortedA = [...a.taskIds].sort();
+      const sortedB = [...b.taskIds].sort();
+      return sortedA.every((id, i) => id === sortedB[i]);
+    }
+    return true;
+  }
+  return false;
+}
+function scopeMatches(entryScope, filterScope) {
+  if (scopeEquals(entryScope, filterScope)) return true;
+  if (isSimpleScope(filterScope)) return false;
+  if (isTaskAwareScope(entryScope) && isTaskAwareScope(filterScope)) {
+    return entryScope.type === filterScope.type;
+  }
+  return false;
+}
+var MEMORY_PRIORITY_VALUES = {
+  critical: 4,
+  high: 3,
+  normal: 2,
+  low: 1
+};
+var TIER_PRIORITIES = {
+  raw: "low",
+  summary: "normal",
+  findings: "high"
+};
+var TIER_KEY_PREFIXES = {
+  raw: "raw.",
+  summary: "summary.",
+  findings: "findings."
+};
+function getTierFromKey(key) {
+  if (key.startsWith(TIER_KEY_PREFIXES.raw)) return "raw";
+  if (key.startsWith(TIER_KEY_PREFIXES.summary)) return "summary";
+  if (key.startsWith(TIER_KEY_PREFIXES.findings)) return "findings";
+  return void 0;
+}
+function stripTierPrefix(key) {
+  const tier = getTierFromKey(key);
+  if (!tier) return key;
+  return key.substring(TIER_KEY_PREFIXES[tier].length);
+}
+function addTierPrefix(key, tier) {
+  const existingTier = getTierFromKey(key);
+  if (existingTier) {
+    const baseKey = stripTierPrefix(key);
+    return TIER_KEY_PREFIXES[tier] + baseKey;
+  }
+  return TIER_KEY_PREFIXES[tier] + key;
+}
+var TERMINAL_MEMORY_STATUSES = ["completed", "failed", "skipped", "cancelled"];
+function isTerminalMemoryStatus(status) {
+  return TERMINAL_MEMORY_STATUSES.includes(status);
+}
+var staticPriorityCalculator = (entry) => {
+  if (entry.pinned) return "critical";
+  return entry.basePriority;
+};
+function detectStaleEntries(entries, completedTaskId, taskStates) {
+  const stale = [];
+  for (const entry of entries) {
+    if (entry.pinned) continue;
+    const scope = entry.scope;
+    if (!isTaskAwareScope(scope) || scope.type !== "task") continue;
+    if (!scope.taskIds.includes(completedTaskId)) continue;
+    const allTerminal = scope.taskIds.every((taskId) => {
+      const status = taskStates.get(taskId);
+      return status ? isTerminalMemoryStatus(status) : false;
+    });
+    if (allTerminal) {
+      stale.push({
+        key: entry.key,
+        description: entry.description,
+        reason: "task_completed",
+        previousPriority: entry.basePriority,
+        newPriority: "low",
+        taskIds: scope.taskIds
+      });
+    }
+  }
+  return stale;
+}
+function forTasks(key, description, value, taskIds, options) {
+  return {
+    key,
+    description,
+    value,
+    scope: { type: "task", taskIds },
+    priority: options?.priority,
+    pinned: options?.pinned
+  };
+}
+function forPlan(key, description, value, options) {
+  return {
+    key,
+    description,
+    value,
+    scope: { type: "plan" },
+    priority: options?.priority,
+    pinned: options?.pinned
+  };
+}
+var DEFAULT_MEMORY_CONFIG = {
+  maxSizeBytes: 25 * 1024 * 1024,
+  // 25MB default
+  maxIndexEntries: 30,
+  // Limit index entries to prevent context bloat
+  descriptionMaxLength: 150,
+  softLimitPercent: 80,
+  contextAllocationPercent: 20
+};
+function validateMemoryKey(key) {
+  if (!key || key.length === 0) {
+    throw new Error("Memory key cannot be empty");
+  }
+  if (key.startsWith(".") || key.endsWith(".") || key.includes("..")) {
+    throw new Error("Invalid memory key format: keys cannot start/end with dots or contain consecutive dots");
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(key)) {
+    throw new Error("Invalid memory key format: only alphanumeric, dots, dashes, and underscores allowed");
+  }
+}
+function calculateEntrySize(value) {
+  if (value === void 0) {
+    return 0;
+  }
+  const serialized = JSON.stringify(value);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.byteLength(serialized, "utf8");
+  }
+  return new Blob([serialized]).size;
+}
+function createMemoryEntry(input, config = DEFAULT_MEMORY_CONFIG) {
+  validateMemoryKey(input.key);
+  if (input.description.length > config.descriptionMaxLength) {
+    throw new Error(`Description exceeds maximum length of ${config.descriptionMaxLength} characters`);
+  }
+  if (input.scope && isTaskAwareScope(input.scope) && input.scope.type === "task") {
+    if (input.scope.taskIds.length === 0) {
+      console.warn(`Memory entry "${input.key}" has empty taskIds array - will have low priority`);
+    }
+  }
+  const now = Date.now();
+  const sizeBytes = calculateEntrySize(input.value);
+  const pinned = input.pinned ?? false;
+  const priority = pinned ? "critical" : input.priority ?? "normal";
+  return {
+    key: input.key,
+    description: input.description,
+    value: input.value,
+    sizeBytes,
+    scope: input.scope ?? "session",
+    basePriority: priority,
+    pinned,
+    createdAt: now,
+    lastAccessedAt: now,
+    accessCount: 0
+  };
+}
+function formatSizeHuman(bytes) {
+  if (bytes === 0) return "0B";
+  if (bytes < 1024) return `${bytes}B`;
+  const kb = bytes / 1024;
+  if (bytes < 1024 * 1024) {
+    return `${kb.toFixed(1).replace(/\.0$/, "")}KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${mb.toFixed(1).replace(/\.0$/, "")}MB`;
+  }
+  const gb = bytes / (1024 * 1024 * 1024);
+  return `${gb.toFixed(1).replace(/\.0$/, "")}GB`;
+}
+function formatScope(scope) {
+  if (isSimpleScope(scope)) {
+    return scope;
+  }
+  if (scope.type === "task") {
+    return `task:${scope.taskIds.join(",")}`;
+  }
+  return scope.type;
+}
+function formatEntryFlags(entry) {
+  const flags = [];
+  if (entry.pinned) {
+    flags.push("pinned");
+  } else if (entry.effectivePriority !== "normal") {
+    flags.push(entry.effectivePriority);
+  }
+  flags.push(formatScope(entry.scope));
+  return flags.join(", ");
+}
+function formatMemoryIndex(index) {
+  const lines = [];
+  const utilPercent = Number.isInteger(index.utilizationPercent) ? index.utilizationPercent.toString() : index.utilizationPercent.toFixed(1).replace(/\.0$/, "");
+  lines.push(`## Working Memory (${index.totalSizeHuman} / ${index.limitHuman} - ${utilPercent}%)`);
+  lines.push("");
+  if (index.entries.length === 0) {
+    lines.push("Memory is empty.");
+  } else {
+    const pinned = index.entries.filter((e) => e.pinned);
+    const critical = index.entries.filter((e) => !e.pinned && e.effectivePriority === "critical");
+    const high = index.entries.filter((e) => !e.pinned && e.effectivePriority === "high");
+    const normal = index.entries.filter((e) => !e.pinned && e.effectivePriority === "normal");
+    const low = index.entries.filter((e) => !e.pinned && e.effectivePriority === "low");
+    if (pinned.length > 0) {
+      lines.push("**Pinned (never evicted):**");
+      for (const entry of pinned) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (critical.length > 0) {
+      lines.push("**Critical priority:**");
+      for (const entry of critical) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (high.length > 0) {
+      lines.push("**High priority:**");
+      for (const entry of high) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (normal.length > 0) {
+      lines.push("**Normal priority:**");
+      for (const entry of normal) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (low.length > 0) {
+      lines.push("**Low priority (evicted first):**");
+      for (const entry of low) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (index.utilizationPercent > 80) {
+      lines.push("Warning: Memory utilization is high. Consider deleting unused entries.");
+      lines.push("");
+    }
+    if (index.omittedCount > 0) {
+      lines.push(`*${index.omittedCount} additional low-priority entries not shown. Use \`memory_query()\` to see all.*`);
+      lines.push("");
+    }
+  }
+  lines.push('Use `memory_retrieve("key")` to load full content.');
+  lines.push('Use `memory_persist("key")` to keep data after task completion.');
+  return lines.join("\n");
+}
+
+// src/infrastructure/storage/InMemoryStorage.ts
+var InMemoryStorage = class {
+  store = /* @__PURE__ */ new Map();
+  async get(key) {
+    return this.store.get(key);
+  }
+  async set(key, entry) {
+    this.store.set(key, entry);
+  }
+  async delete(key) {
+    this.store.delete(key);
+  }
+  async has(key) {
+    return this.store.has(key);
+  }
+  async getAll() {
+    return Array.from(this.store.values());
+  }
+  async getByScope(scope) {
+    return Array.from(this.store.values()).filter((entry) => scopeMatches(entry.scope, scope));
+  }
+  async clearScope(scope) {
+    const toDelete = [];
+    for (const [key, entry] of this.store.entries()) {
+      if (scopeMatches(entry.scope, scope)) {
+        toDelete.push(key);
+      }
+    }
+    for (const key of toDelete) {
+      this.store.delete(key);
+    }
+  }
+  async clear() {
+    this.store.clear();
+  }
+  async getTotalSize() {
+    let total = 0;
+    for (const entry of this.store.values()) {
+      total += entry.sizeBytes;
+    }
+    return total;
+  }
+};
+var InMemoryPlanStorage = class {
+  plans = /* @__PURE__ */ new Map();
+  async savePlan(plan) {
+    this.plans.set(plan.id, JSON.parse(JSON.stringify(plan)));
+  }
+  async getPlan(planId) {
+    const plan = this.plans.get(planId);
+    return plan ? JSON.parse(JSON.stringify(plan)) : void 0;
+  }
+  async updateTask(planId, task) {
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      throw new Error(`Plan ${planId} not found`);
+    }
+    const taskIndex = plan.tasks.findIndex((t) => t.id === task.id);
+    if (taskIndex === -1) {
+      throw new Error(`Task ${task.id} not found in plan ${planId}`);
+    }
+    plan.tasks[taskIndex] = JSON.parse(JSON.stringify(task));
+  }
+  async addTask(planId, task) {
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      throw new Error(`Plan ${planId} not found`);
+    }
+    plan.tasks.push(JSON.parse(JSON.stringify(task)));
+  }
+  async deletePlan(planId) {
+    this.plans.delete(planId);
+  }
+  async listPlans(filter) {
+    const allPlans = Array.from(this.plans.values());
+    if (!filter || !filter.status) {
+      return allPlans.map((p) => JSON.parse(JSON.stringify(p)));
+    }
+    return allPlans.filter((plan) => filter.status.includes(plan.status)).map((p) => JSON.parse(JSON.stringify(p)));
+  }
+  async findByWebhookId(webhookId) {
+    for (const plan of this.plans.values()) {
+      for (const task of plan.tasks) {
+        if (task.externalDependency?.webhookId === webhookId) {
+          return {
+            plan: JSON.parse(JSON.stringify(plan)),
+            task: JSON.parse(JSON.stringify(task))
+          };
+        }
+      }
+    }
+    return void 0;
+  }
+};
+var InMemoryAgentStateStorage = class {
+  agents = /* @__PURE__ */ new Map();
+  async save(state) {
+    this.agents.set(state.id, JSON.parse(JSON.stringify(state)));
+  }
+  async load(agentId) {
+    const state = this.agents.get(agentId);
+    return state ? JSON.parse(JSON.stringify(state)) : void 0;
+  }
+  async delete(agentId) {
+    this.agents.delete(agentId);
+  }
+  async list(filter) {
+    const allStates = Array.from(this.agents.values());
+    if (!filter || !filter.status) {
+      return allStates.map((s) => JSON.parse(JSON.stringify(s)));
+    }
+    return allStates.filter((state) => filter.status.includes(state.status)).map((s) => JSON.parse(JSON.stringify(s)));
+  }
+  async patch(agentId, updates) {
+    const state = this.agents.get(agentId);
+    if (!state) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    Object.assign(state, updates);
+  }
+};
+function createAgentStorage(options = {}) {
+  return {
+    memory: options.memory ?? new InMemoryStorage(),
+    plan: options.plan ?? new InMemoryPlanStorage(),
+    agent: options.agent ?? new InMemoryAgentStateStorage()
+  };
+}
+
+// src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts
+var memoryStoreDefinition = {
+  type: "function",
+  function: {
+    name: "memory_store",
+    description: `Store data in working memory. Use this to save important information.
+
+TIER SYSTEM (for research/analysis):
+- "raw": Low priority, evicted first. Unprocessed data.
+- "summary": Normal priority. Processed summaries.
+- "findings": High priority, kept longest. Final conclusions.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: 'Namespaced key (e.g., "user.profile")' },
+        description: { type: "string", description: "Brief description (max 150 chars)" },
+        value: { description: "Data to store (any JSON value)" },
+        tier: {
+          type: "string",
+          enum: ["raw", "summary", "findings"],
+          description: "Memory tier (sets priority automatically)"
+        },
+        scope: {
+          type: "string",
+          enum: ["session", "plan", "persistent"],
+          description: "Lifecycle scope (default: session)"
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "critical"],
+          description: "Override priority (ignored if tier is set)"
+        },
+        pinned: { type: "boolean", description: "Never evict this entry" }
+      },
+      required: ["key", "description", "value"]
+    }
+  }
+};
+var memoryRetrieveDefinition = {
+  type: "function",
+  function: {
+    name: "memory_retrieve",
+    description: "Retrieve full data from working memory by key.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Key to retrieve" }
+      },
+      required: ["key"]
+    }
+  }
+};
+var memoryDeleteDefinition = {
+  type: "function",
+  function: {
+    name: "memory_delete",
+    description: "Delete data from working memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Key to delete" }
+      },
+      required: ["key"]
+    }
+  }
+};
+var memoryQueryDefinition = {
+  type: "function",
+  function: {
+    name: "memory_query",
+    description: `Query working memory. List, search, or retrieve values.
+
+Examples:
+- memory_query() \u2192 list all keys
+- memory_query({ pattern: "findings.*" }) \u2192 match pattern
+- memory_query({ tier: "raw", includeValues: true }) \u2192 get raw tier values`,
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: 'Glob pattern (e.g., "raw.*")' },
+        tier: { type: "string", enum: ["raw", "summary", "findings"], description: "Filter by tier" },
+        includeValues: { type: "boolean", description: "Include values (default: false)" },
+        includeStats: { type: "boolean", description: "Include memory stats" }
+      },
+      required: []
+    }
+  }
+};
+var memoryCleanupRawDefinition = {
+  type: "function",
+  function: {
+    name: "memory_cleanup_raw",
+    description: "Delete ALL entries in the raw tier. Use after creating summaries.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+var WORKING_MEMORY_INSTRUCTIONS = `Working Memory stores data EXTERNALLY with an index shown below.
+You see descriptions but must use memory_retrieve(key) to get full values.
+
+**Tier System** (for research/analysis):
+- \`raw\`: Low priority, evicted first. Unprocessed data to summarize later.
+- \`summary\`: Normal priority. Processed summaries of raw data.
+- \`findings\`: High priority, kept longest. Final conclusions and insights.
+
+**Workflow:**
+1. Store raw data: \`memory_store({ key: "topic", tier: "raw", ... })\`
+2. Process and summarize: \`memory_store({ key: "topic", tier: "summary", ... })\`
+3. Extract findings: \`memory_store({ key: "topic", tier: "findings", ... })\`
+4. Clean up raw: \`memory_cleanup_raw()\` or \`memory_delete(key)\`
+
+**Tools:** memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw`;
+var WorkingMemoryPluginNextGen = class {
+  name = "working_memory";
+  storage;
+  config;
+  priorityCalculator;
+  priorityContext = {};
+  estimator = simpleTokenEstimator;
+  _destroyed = false;
+  _tokenCache = null;
+  _instructionsTokenCache = null;
+  constructor(pluginConfig = {}) {
+    this.storage = pluginConfig.storage ?? new InMemoryStorage();
+    this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
+    this.priorityCalculator = pluginConfig.priorityCalculator ?? staticPriorityCalculator;
+  }
+  // ============================================================================
+  // IContextPluginNextGen Implementation
+  // ============================================================================
+  getInstructions() {
+    return WORKING_MEMORY_INSTRUCTIONS;
+  }
+  async getContent() {
+    const entries = await this.storage.getAll();
+    if (entries.length === 0) {
+      return null;
+    }
+    const index = this.buildMemoryIndex(entries);
+    const formatted = formatMemoryIndex(index);
+    this._tokenCache = this.estimator.estimateTokens(formatted);
+    return formatted;
+  }
+  getContents() {
+    return this.storage.getAll();
+  }
+  getTokenSize() {
+    return this._tokenCache ?? 0;
+  }
+  getInstructionsTokenSize() {
+    if (this._instructionsTokenCache === null) {
+      this._instructionsTokenCache = this.estimator.estimateTokens(WORKING_MEMORY_INSTRUCTIONS);
+    }
+    return this._instructionsTokenCache;
+  }
+  isCompactable() {
+    return true;
+  }
+  async compact(_targetTokensToFree) {
+    const before = this.getTokenSize();
+    await this.evict(3, "lru");
+    const content = await this.getContent();
+    const after = content ? this.estimator.estimateTokens(content) : 0;
+    return Math.max(0, before - after);
+  }
+  getTools() {
+    return [
+      this.createMemoryStoreTool(),
+      this.createMemoryRetrieveTool(),
+      this.createMemoryDeleteTool(),
+      this.createMemoryQueryTool(),
+      this.createMemoryCleanupRawTool()
+    ];
+  }
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+    this._tokenCache = null;
+  }
+  getState() {
+    return {
+      version: 1,
+      entries: []
+      // Will be populated by async getStateAsync()
+    };
+  }
+  async getStateAsync() {
+    const entries = await this.storage.getAll();
+    return {
+      version: 1,
+      entries: entries.map((e) => ({
+        key: e.key,
+        description: e.description,
+        value: e.value,
+        scope: e.scope,
+        sizeBytes: e.sizeBytes,
+        basePriority: e.basePriority,
+        pinned: e.pinned
+      }))
+    };
+  }
+  restoreState(state) {
+    const s = state;
+    if (!s || !s.entries) return;
+    for (const entry of s.entries) {
+      const memEntry = createMemoryEntry({
+        key: entry.key,
+        description: entry.description,
+        value: entry.value,
+        scope: entry.scope,
+        priority: entry.basePriority,
+        pinned: entry.pinned
+      }, this.config);
+      this.storage.set(entry.key, memEntry);
+    }
+    this._tokenCache = null;
+  }
+  // ============================================================================
+  // Memory Operations (Core Implementation)
+  // ============================================================================
+  /**
+   * Store a value in memory
+   */
+  async store(key, description, value, options) {
+    this.assertNotDestroyed();
+    let finalKey = key;
+    let finalPriority = options?.priority;
+    if (options?.tier) {
+      finalKey = addTierPrefix(key, options.tier);
+      finalPriority = TIER_PRIORITIES[options.tier];
+    }
+    let scope = options?.scope ?? "session";
+    const entry = createMemoryEntry({
+      key: finalKey,
+      description,
+      value,
+      scope,
+      priority: finalPriority,
+      pinned: options?.pinned
+    }, this.config);
+    await this.ensureCapacity(entry.sizeBytes);
+    await this.storage.set(finalKey, entry);
+    this._tokenCache = null;
+    return { key: finalKey, sizeBytes: entry.sizeBytes };
+  }
+  /**
+   * Retrieve a value from memory
+   */
+  async retrieve(key) {
+    this.assertNotDestroyed();
+    const entry = await this.storage.get(key);
+    if (entry) {
+      entry.lastAccessedAt = Date.now();
+      entry.accessCount++;
+      await this.storage.set(key, entry);
+      return entry.value;
+    }
+    return void 0;
+  }
+  /**
+   * Delete a key from memory
+   */
+  async delete(key) {
+    this.assertNotDestroyed();
+    const exists = await this.storage.has(key);
+    if (exists) {
+      await this.storage.delete(key);
+      this._tokenCache = null;
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Query memory entries
+   */
+  async query(options) {
+    this.assertNotDestroyed();
+    let entries = await this.storage.getAll();
+    if (options?.tier) {
+      entries = entries.filter((e) => getTierFromKey(e.key) === options.tier);
+    }
+    if (options?.pattern && options.pattern !== "*") {
+      const regex = new RegExp(
+        "^" + options.pattern.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$"
+      );
+      entries = entries.filter((e) => regex.test(e.key));
+    }
+    const result = entries.map((e) => ({
+      key: e.key,
+      description: e.description,
+      tier: getTierFromKey(e.key),
+      ...options?.includeValues ? { value: e.value } : {}
+    }));
+    if (options?.includeStats) {
+      return {
+        entries: result,
+        stats: {
+          count: entries.length,
+          totalBytes: entries.reduce((sum, e) => sum + e.sizeBytes, 0)
+        }
+      };
+    }
+    return { entries: result };
+  }
+  /**
+   * Format memory index for context
+   */
+  async formatIndex() {
+    const entries = await this.storage.getAll();
+    const index = this.buildMemoryIndex(entries);
+    return formatMemoryIndex(index);
+  }
+  /**
+   * Evict entries to free space
+   */
+  async evict(count, strategy = "lru") {
+    const entries = await this.storage.getAll();
+    const evictable = entries.filter((e) => !e.pinned && this.computePriority(e) !== "critical").sort((a, b) => {
+      const priorityDiff = MEMORY_PRIORITY_VALUES[this.computePriority(a)] - MEMORY_PRIORITY_VALUES[this.computePriority(b)];
+      if (priorityDiff !== 0) return priorityDiff;
+      if (strategy === "lru") {
+        return a.lastAccessedAt - b.lastAccessedAt;
+      } else {
+        return b.sizeBytes - a.sizeBytes;
+      }
+    });
+    const toEvict = evictable.slice(0, count);
+    const evictedKeys = [];
+    for (const entry of toEvict) {
+      await this.storage.delete(entry.key);
+      evictedKeys.push(entry.key);
+    }
+    if (evictedKeys.length > 0) {
+      this._tokenCache = null;
+    }
+    return evictedKeys;
+  }
+  /**
+   * Cleanup raw tier entries
+   */
+  async cleanupRaw() {
+    const entries = await this.storage.getAll();
+    const rawEntries = entries.filter((e) => getTierFromKey(e.key) === "raw");
+    const keys = [];
+    for (const entry of rawEntries) {
+      await this.storage.delete(entry.key);
+      keys.push(entry.key);
+    }
+    if (keys.length > 0) {
+      this._tokenCache = null;
+    }
+    return { deleted: keys.length, keys };
+  }
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+  computePriority(entry) {
+    return this.priorityCalculator(entry, this.priorityContext);
+  }
+  /**
+   * Build a MemoryIndex from raw entries
+   */
+  buildMemoryIndex(entries) {
+    const maxSize = this.config.maxSizeBytes ?? DEFAULT_MEMORY_CONFIG.maxSizeBytes;
+    const maxIndexEntries = this.config.maxIndexEntries ?? DEFAULT_MEMORY_CONFIG.maxIndexEntries;
+    const totalSize = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
+    const sorted = [...entries].sort((a, b) => {
+      const priorityDiff = MEMORY_PRIORITY_VALUES[this.computePriority(b)] - MEMORY_PRIORITY_VALUES[this.computePriority(a)];
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.lastAccessedAt - a.lastAccessedAt;
+    });
+    const displayed = sorted.slice(0, maxIndexEntries);
+    const omittedCount = Math.max(0, entries.length - maxIndexEntries);
+    const indexEntries = displayed.map((e) => ({
+      key: e.key,
+      description: e.description,
+      size: formatSizeHuman(e.sizeBytes),
+      scope: e.scope,
+      effectivePriority: this.computePriority(e),
+      pinned: e.pinned
+    }));
+    return {
+      entries: indexEntries,
+      totalSizeBytes: totalSize,
+      totalSizeHuman: formatSizeHuman(totalSize),
+      limitBytes: maxSize,
+      limitHuman: formatSizeHuman(maxSize),
+      utilizationPercent: maxSize > 0 ? totalSize / maxSize * 100 : 0,
+      totalEntryCount: entries.length,
+      omittedCount
+    };
+  }
+  async ensureCapacity(neededBytes) {
+    const entries = await this.storage.getAll();
+    const currentSize = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
+    const maxSize = this.config.maxSizeBytes ?? DEFAULT_MEMORY_CONFIG.maxSizeBytes;
+    if (currentSize + neededBytes > maxSize) {
+      const toFree = currentSize + neededBytes - maxSize * 0.8;
+      let freed = 0;
+      const evictable = entries.filter((e) => !e.pinned && this.computePriority(e) !== "critical").sort((a, b) => {
+        const priorityDiff = MEMORY_PRIORITY_VALUES[this.computePriority(a)] - MEMORY_PRIORITY_VALUES[this.computePriority(b)];
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.lastAccessedAt - b.lastAccessedAt;
+      });
+      for (const entry of evictable) {
+        if (freed >= toFree) break;
+        await this.storage.delete(entry.key);
+        freed += entry.sizeBytes;
+      }
+    }
+  }
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("WorkingMemoryPluginNextGen is destroyed");
+    }
+  }
+  // ============================================================================
+  // Tool Factories
+  // ============================================================================
+  createMemoryStoreTool() {
+    return {
+      definition: memoryStoreDefinition,
+      execute: async (args) => {
+        const result = await this.store(
+          args.key,
+          args.description,
+          args.value,
+          {
+            tier: args.tier,
+            scope: args.scope,
+            priority: args.priority,
+            pinned: args.pinned
+          }
+        );
+        return { success: true, ...result };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `store ${args.key}`
+    };
+  }
+  createMemoryRetrieveTool() {
+    return {
+      definition: memoryRetrieveDefinition,
+      execute: async (args) => {
+        const value = await this.retrieve(args.key);
+        if (value === void 0) {
+          return { found: false, key: args.key };
+        }
+        return { found: true, key: args.key, value };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `retrieve ${args.key}`
+    };
+  }
+  createMemoryDeleteTool() {
+    return {
+      definition: memoryDeleteDefinition,
+      execute: async (args) => {
+        const deleted = await this.delete(args.key);
+        return { deleted, key: args.key };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `delete ${args.key}`
+    };
+  }
+  createMemoryQueryTool() {
+    return {
+      definition: memoryQueryDefinition,
+      execute: async (args) => {
+        return await this.query({
+          pattern: args.pattern,
+          tier: args.tier,
+          includeValues: args.includeValues,
+          includeStats: args.includeStats
+        });
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => args.pattern ? `query ${args.pattern}` : "query all"
+    };
+  }
+  createMemoryCleanupRawTool() {
+    return {
+      definition: memoryCleanupRawDefinition,
+      execute: async () => {
+        return await this.cleanupRaw();
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: () => "cleanup raw tier"
+    };
+  }
+};
+
+// src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts
 var PRIORITY_VALUES = {
   low: 1,
   normal: 2,
@@ -19697,40 +18783,160 @@ var DEFAULT_CONFIG = {
   maxEntries: 20,
   maxTotalTokens: 4e3,
   defaultPriority: "normal",
-  showTimestamps: false,
-  headerText: "## Live Context"
+  showTimestamps: false
 };
-var InContextMemoryPlugin = class extends BaseContextPlugin {
+var IN_CONTEXT_MEMORY_INSTRUCTIONS = `In-Context Memory stores key-value pairs DIRECTLY in context.
+Values are immediately visible - no retrieval needed.
+
+**Use for:** Current state, preferences, counters, small results.
+**Do NOT use for:** Large data (use Working Memory instead).
+
+**Priority levels** (for eviction when space is tight):
+- \`low\`: Evicted first. Temporary data.
+- \`normal\`: Default. Standard importance.
+- \`high\`: Keep longer. Important state.
+- \`critical\`: Never auto-evicted.
+
+**Tools:** context_set, context_delete, context_list`;
+var contextSetDefinition = {
+  type: "function",
+  function: {
+    name: "context_set",
+    description: `Store or update a key-value pair in live context.
+Value appears directly in context - no retrieval needed.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: 'Unique key (e.g., "current_state")' },
+        description: { type: "string", description: "Brief description (shown in context)" },
+        value: { description: "Value to store (any JSON-serializable data)" },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "critical"],
+          description: 'Eviction priority. Default: "normal"'
+        }
+      },
+      required: ["key", "description", "value"]
+    }
+  }
+};
+var contextDeleteDefinition = {
+  type: "function",
+  function: {
+    name: "context_delete",
+    description: "Delete an entry from live context to free space.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Key to delete" }
+      },
+      required: ["key"]
+    }
+  }
+};
+var contextListDefinition = {
+  type: "function",
+  function: {
+    name: "context_list",
+    description: "List all keys in live context with metadata.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+var InContextMemoryPluginNextGen = class {
   name = "in_context_memory";
-  priority = 5;
-  // Medium priority for compaction
-  compactable = true;
   entries = /* @__PURE__ */ new Map();
   config;
-  destroyed = false;
-  /**
-   * Create an InContextMemoryPlugin
-   *
-   * @param config - Configuration options
-   */
+  estimator = simpleTokenEstimator;
+  _destroyed = false;
+  _tokenCache = null;
+  _instructionsTokenCache = null;
   constructor(config = {}) {
-    super();
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
-  /**
-   * Check if plugin is destroyed
-   */
-  get isDestroyed() {
-    return this.destroyed;
+  // ============================================================================
+  // IContextPluginNextGen Implementation
+  // ============================================================================
+  getInstructions() {
+    return IN_CONTEXT_MEMORY_INSTRUCTIONS;
   }
-  // ============ Entry Management ============
+  async getContent() {
+    if (this.entries.size === 0) {
+      return null;
+    }
+    const content = this.formatEntries();
+    this._tokenCache = this.estimator.estimateTokens(content);
+    return content;
+  }
+  getContents() {
+    return new Map(this.entries);
+  }
+  getTokenSize() {
+    return this._tokenCache ?? 0;
+  }
+  getInstructionsTokenSize() {
+    if (this._instructionsTokenCache === null) {
+      this._instructionsTokenCache = this.estimator.estimateTokens(IN_CONTEXT_MEMORY_INSTRUCTIONS);
+    }
+    return this._instructionsTokenCache;
+  }
+  isCompactable() {
+    return true;
+  }
+  async compact(targetTokensToFree) {
+    const before = this.getTokenSize();
+    const evictable = Array.from(this.entries.values()).filter((e) => e.priority !== "critical").sort((a, b) => {
+      const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.updatedAt - b.updatedAt;
+    });
+    let freed = 0;
+    for (const entry of evictable) {
+      if (freed >= targetTokensToFree) break;
+      const entryTokens = this.estimator.estimateTokens(this.formatEntry(entry));
+      this.entries.delete(entry.key);
+      freed += entryTokens;
+    }
+    this._tokenCache = null;
+    const content = await this.getContent();
+    const after = content ? this.estimator.estimateTokens(content) : 0;
+    return Math.max(0, before - after);
+  }
+  getTools() {
+    return [
+      this.createContextSetTool(),
+      this.createContextDeleteTool(),
+      this.createContextListTool()
+    ];
+  }
+  destroy() {
+    if (this._destroyed) return;
+    this.entries.clear();
+    this._destroyed = true;
+    this._tokenCache = null;
+  }
+  getState() {
+    return {
+      entries: Array.from(this.entries.values())
+    };
+  }
+  restoreState(state) {
+    const s = state;
+    if (!s || !s.entries) return;
+    this.entries.clear();
+    for (const entry of s.entries) {
+      this.entries.set(entry.key, entry);
+    }
+    this._tokenCache = null;
+  }
+  // ============================================================================
+  // Entry Management
+  // ============================================================================
   /**
    * Store or update a key-value pair
-   *
-   * @param key - Unique key for this entry
-   * @param description - Human-readable description (shown in context)
-   * @param value - The value to store (any JSON-serializable data)
-   * @param priority - Eviction priority (default from config)
    */
   set(key, description, value, priority) {
     this.assertNotDestroyed();
@@ -19743,12 +18949,10 @@ var InContextMemoryPlugin = class extends BaseContextPlugin {
     };
     this.entries.set(key, entry);
     this.enforceMaxEntries();
+    this._tokenCache = null;
   }
   /**
    * Get a value by key
-   *
-   * @param key - The key to retrieve
-   * @returns The value, or undefined if not found
    */
   get(key) {
     this.assertNotDestroyed();
@@ -19756,27 +18960,22 @@ var InContextMemoryPlugin = class extends BaseContextPlugin {
   }
   /**
    * Check if a key exists
-   *
-   * @param key - The key to check
    */
   has(key) {
     this.assertNotDestroyed();
     return this.entries.has(key);
   }
   /**
-   * Delete an entry by key
-   *
-   * @param key - The key to delete
-   * @returns true if the key existed and was deleted
+   * Delete an entry
    */
   delete(key) {
     this.assertNotDestroyed();
-    return this.entries.delete(key);
+    const deleted = this.entries.delete(key);
+    if (deleted) this._tokenCache = null;
+    return deleted;
   }
   /**
    * List all entries with metadata
-   *
-   * @returns Array of entry metadata (without full values)
    */
   list() {
     this.assertNotDestroyed();
@@ -19793,366 +18992,102 @@ var InContextMemoryPlugin = class extends BaseContextPlugin {
   clear() {
     this.assertNotDestroyed();
     this.entries.clear();
+    this._tokenCache = null;
   }
-  /**
-   * Get the number of entries
-   */
-  get size() {
-    return this.entries.size;
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+  formatEntries() {
+    const lines = [];
+    const sorted = Array.from(this.entries.values()).sort((a, b) => PRIORITY_VALUES[b.priority] - PRIORITY_VALUES[a.priority]);
+    for (const entry of sorted) {
+      lines.push(this.formatEntry(entry));
+    }
+    return lines.join("\n\n");
   }
-  // ============ IContextPlugin Implementation ============
-  /**
-   * Get the context component for this plugin
-   */
-  async getComponent() {
-    this.assertNotDestroyed();
-    if (this.entries.size === 0) {
-      return null;
+  formatEntry(entry) {
+    const valueStr = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value, null, 2);
+    let line = `**${entry.key}** (${entry.priority}): ${entry.description}`;
+    if (this.config.showTimestamps) {
+      line += ` [${new Date(entry.updatedAt).toISOString()}]`;
     }
-    const content = this.formatContent();
-    return {
-      name: this.name,
-      content,
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        entryCount: this.entries.size
-      }
-    };
+    line += `
+\`\`\`
+${valueStr}
+\`\`\``;
+    return line;
   }
-  /**
-   * Compact by evicting low-priority entries
-   *
-   * Eviction order: low → normal → high (critical is never auto-evicted)
-   * Within same priority, oldest entries are evicted first
-   *
-   * @param targetTokens - Target token count to reduce to
-   * @param estimator - Token estimator
-   * @returns Number of tokens freed
-   */
-  async compact(targetTokens, estimator) {
-    this.assertNotDestroyed();
-    const beforeContent = this.formatContent();
-    const beforeTokens = estimator.estimateTokens(beforeContent);
-    if (beforeTokens <= targetTokens) {
-      return 0;
-    }
-    const sortedEntries = this.getSortedEntriesForEviction();
-    for (const entry of sortedEntries) {
-      if (entry.priority === "critical") {
-        break;
-      }
-      this.entries.delete(entry.key);
-      const currentContent = this.formatContent();
-      const currentTokens = estimator.estimateTokens(currentContent);
-      if (currentTokens <= targetTokens) {
-        break;
-      }
-    }
-    const afterContent = this.formatContent();
-    const afterTokens = estimator.estimateTokens(afterContent);
-    return Math.max(0, beforeTokens - afterTokens);
-  }
-  /**
-   * Get serialized state for session persistence
-   */
-  getState() {
-    return {
-      entries: Array.from(this.entries.values()),
-      config: this.config
-    };
-  }
-  /**
-   * Restore state from serialization
-   *
-   * @param state - Previously serialized state
-   */
-  restoreState(state) {
-    this.assertNotDestroyed();
-    if (!state || typeof state !== "object") {
-      return;
-    }
-    const typedState = state;
-    if (typedState.entries && Array.isArray(typedState.entries)) {
-      this.entries.clear();
-      for (const entry of typedState.entries) {
-        if (entry.key && typeof entry.key === "string") {
-          this.entries.set(entry.key, entry);
-        }
-      }
-    }
-    if (typedState.config && typeof typedState.config === "object") {
-      this.config = { ...DEFAULT_CONFIG, ...typedState.config };
-    }
-  }
-  /**
-   * Clean up resources
-   */
-  destroy() {
-    this.entries.clear();
-    this.destroyed = true;
-  }
-  // ============ Private Methods ============
-  /**
-   * Format entries as markdown for context
-   */
-  formatContent() {
-    if (this.entries.size === 0) {
-      return "";
-    }
-    const lines = [
-      this.config.headerText,
-      "Data below is always current. Use directly - no retrieval needed.",
-      ""
-    ];
-    for (const entry of this.entries.values()) {
-      lines.push(`### ${entry.key}`);
-      lines.push(entry.description);
-      const valueStr = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value, null, 2);
-      lines.push("```json");
-      lines.push(valueStr);
-      lines.push("```");
-      if (this.config.showTimestamps) {
-        const date = new Date(entry.updatedAt);
-        lines.push(`_Updated: ${date.toISOString()}_`);
-      }
-      lines.push("");
-    }
-    return lines.join("\n");
-  }
-  /**
-   * Get entries sorted by eviction priority (lowest priority first, then oldest)
-   */
-  getSortedEntriesForEviction() {
-    return Array.from(this.entries.values()).sort((a, b) => {
+  enforceMaxEntries() {
+    if (this.entries.size <= this.config.maxEntries) return;
+    const evictable = Array.from(this.entries.values()).filter((e) => e.priority !== "critical").sort((a, b) => {
       const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
+      if (priorityDiff !== 0) return priorityDiff;
       return a.updatedAt - b.updatedAt;
     });
-  }
-  /**
-   * Enforce max entries limit by evicting lowest-priority entries
-   */
-  enforceMaxEntries() {
-    if (this.entries.size <= this.config.maxEntries) {
-      return;
-    }
-    const sorted = this.getSortedEntriesForEviction();
-    while (this.entries.size > this.config.maxEntries && sorted.length > 0) {
-      const toEvict = sorted.shift();
-      if (toEvict.priority === "critical") {
-        break;
-      }
+    while (this.entries.size > this.config.maxEntries && evictable.length > 0) {
+      const toEvict = evictable.shift();
       this.entries.delete(toEvict.key);
     }
   }
-  /**
-   * Assert that the plugin hasn't been destroyed
-   */
   assertNotDestroyed() {
-    if (this.destroyed) {
-      throw new Error("InContextMemoryPlugin has been destroyed");
+    if (this._destroyed) {
+      throw new Error("InContextMemoryPluginNextGen is destroyed");
     }
   }
-};
-
-// src/core/context/plugins/inContextMemoryTools.ts
-var contextSetDefinition = {
-  type: "function",
-  function: {
-    name: "context_set",
-    description: `Store or update a key-value pair in the live context.
-The value will appear directly in the context and can be read without retrieval calls.
-
-Use for:
-- Current state/status that changes during execution
-- User preferences or settings
-- Counters, flags, or control variables
-- Small accumulated results
-
-Priority levels (for eviction when space is needed):
-- "low": Evicted first. Temporary or easily recreated data.
-- "normal": Default. Standard importance.
-- "high": Keep longer. Important state.
-- "critical": Never auto-evicted. Only removed via context_delete.`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'Unique key for this entry (e.g., "current_state", "user_prefs")'
-        },
-        description: {
-          type: "string",
-          description: "Brief description of what this data represents (shown in context)"
-        },
-        value: {
-          description: "The value to store (any JSON-serializable data)"
-        },
-        priority: {
-          type: "string",
-          enum: ["low", "normal", "high", "critical"],
-          description: 'Eviction priority. Default: "normal"'
-        }
-      },
-      required: ["key", "description", "value"]
-    }
-  }
-};
-var contextDeleteDefinition = {
-  type: "function",
-  function: {
-    name: "context_delete",
-    description: `Delete an entry from the live context to free space.
-
-Use this to:
-- Remove entries that are no longer needed
-- Free space when approaching limits
-- Clean up after a task completes`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to delete"
-        }
-      },
-      required: ["key"]
-    }
-  }
-};
-var contextListDefinition = {
-  type: "function",
-  function: {
-    name: "context_list",
-    description: `List all keys stored in the live context with their metadata.
-
-Returns key, description, priority, and last update time for each entry.
-Use to see what's stored and identify entries to clean up.`,
-    parameters: {
-      type: "object",
-      properties: {},
-      required: []
-    }
-  }
-};
-function createInContextMemoryTools() {
-  return [
-    // context_set
-    {
+  // ============================================================================
+  // Tool Factories
+  // ============================================================================
+  createContextSetTool() {
+    return {
       definition: contextSetDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext(context, "context_set");
-        const key = args.key;
-        const description = args.description;
-        const value = args.value;
-        const priority = args.priority;
-        plugin.set(key, description, value, priority);
+      execute: async (args) => {
+        this.set(
+          args.key,
+          args.description,
+          args.value,
+          args.priority
+        );
         return {
           success: true,
-          key,
-          priority: priority ?? "normal",
-          message: `Stored "${key}" in live context`
+          key: args.key,
+          message: `Stored "${args.key}" in live context`
         };
       },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        // Auto-approve context operations
-        riskLevel: "low"
-      },
-      describeCall: (args) => args.key
-    },
-    // context_delete
-    {
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `set ${args.key}`
+    };
+  }
+  createContextDeleteTool() {
+    return {
       definition: contextDeleteDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext(context, "context_delete");
-        const key = args.key;
-        const existed = plugin.delete(key);
-        return {
-          success: true,
-          key,
-          existed,
-          message: existed ? `Deleted "${key}" from live context` : `Key "${key}" did not exist`
-        };
+      execute: async (args) => {
+        const deleted = this.delete(args.key);
+        return { deleted, key: args.key };
       },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: (args) => args.key
-    },
-    // context_list
-    {
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `delete ${args.key}`
+    };
+  }
+  createContextListTool() {
+    return {
       definition: contextListDefinition,
-      execute: async (_args, context) => {
-        const plugin = getPluginFromContext(context, "context_list");
-        const entries = plugin.list();
-        return {
-          entries: entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            priority: e.priority,
-            updatedAt: new Date(e.updatedAt).toISOString()
-          })),
-          count: entries.length
-        };
+      execute: async () => {
+        return { entries: this.list() };
       },
-      idempotency: { cacheable: true, ttlMs: 500 },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: () => "all"
-    }
-  ];
-}
-function createInContextMemory(config) {
-  const plugin = new InContextMemoryPlugin(config);
-  const tools = createInContextMemoryTools();
-  return { plugin, tools };
-}
-function setupInContextMemory(agentContext, config) {
-  const { plugin, tools } = createInContextMemory(config);
-  agentContext.registerPlugin(plugin);
-  for (const tool of tools) {
-    agentContext.tools.register(tool);
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: () => "list entries"
+    };
   }
-  agentContext.inContextMemory = plugin;
-  return plugin;
-}
-function getPluginFromContext(context, toolName) {
-  if (!context) {
-    throw new ToolExecutionError(
-      toolName,
-      "InContextMemory tools require a tool context"
-    );
-  }
-  const plugin = context.inContextMemory;
-  if (!plugin) {
-    throw new ToolExecutionError(
-      toolName,
-      "InContextMemory plugin not found. Use setupInContextMemory() to initialize."
-    );
-  }
-  return plugin;
-}
+};
 function getDefaultBaseDirectory() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path2.join(appData, "oneringai", "agents");
+      return path3.join(appData, "oneringai", "agents");
     }
   }
-  return path2.join(os.homedir(), ".oneringai", "agents");
+  return path3.join(os.homedir(), ".oneringai", "agents");
 }
 function sanitizeAgentId(agentId) {
   return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -20166,15 +19101,15 @@ var FilePersistentInstructionsStorage = class {
     const sanitizedId = sanitizeAgentId(config.agentId);
     const baseDir = config.baseDirectory ?? getDefaultBaseDirectory();
     const filename = config.filename ?? "custom_instructions.md";
-    this.directory = path2.join(baseDir, sanitizedId);
-    this.filePath = path2.join(this.directory, filename);
+    this.directory = path3.join(baseDir, sanitizedId);
+    this.filePath = path3.join(this.directory, filename);
   }
   /**
    * Load instructions from file
    */
   async load() {
     try {
-      const content = await fs16.promises.readFile(this.filePath, "utf-8");
+      const content = await fs15.promises.readFile(this.filePath, "utf-8");
       return content.trim() || null;
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -20191,11 +19126,11 @@ var FilePersistentInstructionsStorage = class {
     await this.ensureDirectory();
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs16.promises.writeFile(tempPath, content, "utf-8");
-      await fs16.promises.rename(tempPath, this.filePath);
+      await fs15.promises.writeFile(tempPath, content, "utf-8");
+      await fs15.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
-        await fs16.promises.unlink(tempPath);
+        await fs15.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -20206,7 +19141,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async delete() {
     try {
-      await fs16.promises.unlink(this.filePath);
+      await fs15.promises.unlink(this.filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -20218,7 +19153,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async exists() {
     try {
-      await fs16.promises.access(this.filePath);
+      await fs15.promises.access(this.filePath);
       return true;
     } catch {
       return false;
@@ -20241,7 +19176,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async ensureDirectory() {
     try {
-      await fs16.promises.mkdir(this.directory, { recursive: true });
+      await fs15.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -20250,284 +19185,28 @@ var FilePersistentInstructionsStorage = class {
   }
 };
 
-// src/core/context/plugins/PersistentInstructionsPlugin.ts
-var DEFAULT_CONFIG2 = {
-  maxLength: 5e4
-};
-function buildContextExplanation(path6) {
-  return `## Custom Instructions
+// src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts
+var DEFAULT_MAX_LENGTH = 5e4;
+var PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = `Persistent Instructions are stored on disk and survive across sessions.
 
-These are your persistent instructions that apply across all sessions.
-They are stored on disk and automatically loaded when you start.
+**To modify:**
+- \`instructions_set(content)\`: Replace all instructions
+- \`instructions_append(section)\`: Add a section
+- \`instructions_clear(confirm: true)\`: Remove all (destructive!)
 
-**To modify:** Use \`instructions_set\` (replace all), \`instructions_append\` (add section), or \`instructions_clear\` (remove all).
-**Storage path:** ${path6}
-
----
-`;
-}
-var PersistentInstructionsPlugin = class extends BaseContextPlugin {
-  name = "persistent_instructions";
-  priority = 0;
-  // Never compact
-  compactable = false;
-  _content = null;
-  _dirty = false;
-  _initialized = false;
-  _destroyed = false;
-  storage;
-  maxLength;
-  agentId;
-  /**
-   * Create a PersistentInstructionsPlugin
-   *
-   * @param config - Configuration options (agentId is required)
-   */
-  constructor(config) {
-    super();
-    this.agentId = config.agentId;
-    this.maxLength = config.maxLength ?? DEFAULT_CONFIG2.maxLength;
-    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
-      agentId: config.agentId
-    });
-  }
-  /**
-   * Check if plugin is destroyed
-   */
-  get isDestroyed() {
-    return this._destroyed;
-  }
-  /**
-   * Check if plugin has been initialized (loaded from disk)
-   */
-  get isInitialized() {
-    return this._initialized;
-  }
-  /**
-   * Check if content has been modified since last save
-   */
-  get isDirty() {
-    return this._dirty;
-  }
-  // ============ Initialization ============
-  /**
-   * Initialize by loading instructions from storage
-   * Called lazily on first getComponent() call
-   */
-  async initialize() {
-    if (this._initialized || this._destroyed) {
-      return;
-    }
-    try {
-      this._content = await this.storage.load();
-      this._initialized = true;
-      this._dirty = false;
-    } catch (error) {
-      console.warn(`Failed to load persistent instructions for agent '${this.agentId}':`, error);
-      this._content = null;
-      this._initialized = true;
-    }
-  }
-  // ============ Content Management ============
-  /**
-   * Set the entire instructions content (replaces existing)
-   *
-   * @param content - New instructions content
-   * @returns true if set successfully, false if content exceeds max length
-   */
-  async set(content) {
-    this.assertNotDestroyed();
-    if (content.length > this.maxLength) {
-      return false;
-    }
-    this._content = content.trim() || null;
-    this._dirty = true;
-    if (this._content) {
-      await this.storage.save(this._content);
-    } else {
-      await this.storage.delete();
-    }
-    this._dirty = false;
-    return true;
-  }
-  /**
-   * Append a section to existing instructions
-   *
-   * @param section - Section to append (will add newlines before)
-   * @returns true if appended successfully, false if would exceed max length
-   */
-  async append(section) {
-    this.assertNotDestroyed();
-    const trimmedSection = section.trim();
-    if (!trimmedSection) {
-      return true;
-    }
-    const currentContent = this._content || "";
-    const newContent = currentContent ? `${currentContent}
-
-${trimmedSection}` : trimmedSection;
-    if (newContent.length > this.maxLength) {
-      return false;
-    }
-    this._content = newContent;
-    this._dirty = true;
-    await this.storage.save(this._content);
-    this._dirty = false;
-    return true;
-  }
-  /**
-   * Get current instructions content
-   *
-   * @returns Instructions content, or null if none
-   */
-  get() {
-    this.assertNotDestroyed();
-    return this._content;
-  }
-  /**
-   * Check if instructions exist
-   */
-  has() {
-    this.assertNotDestroyed();
-    return this._content !== null && this._content.length > 0;
-  }
-  /**
-   * Clear all instructions
-   */
-  async clear() {
-    this.assertNotDestroyed();
-    this._content = null;
-    this._dirty = true;
-    await this.storage.delete();
-    this._dirty = false;
-  }
-  /**
-   * Get storage path (for display/debugging)
-   */
-  getPath() {
-    return this.storage.getPath();
-  }
-  /**
-   * Get agent ID
-   */
-  getAgentId() {
-    return this.agentId;
-  }
-  /**
-   * Get current content length
-   */
-  getLength() {
-    return this._content?.length ?? 0;
-  }
-  /**
-   * Get maximum allowed content length
-   */
-  getMaxLength() {
-    return this.maxLength;
-  }
-  // ============ IContextPlugin Implementation ============
-  /**
-   * Get the context component for this plugin
-   * Performs lazy initialization on first call
-   */
-  async getComponent() {
-    this.assertNotDestroyed();
-    if (!this._initialized) {
-      await this.initialize();
-    }
-    if (!this._content) {
-      return null;
-    }
-    const explanation = buildContextExplanation(this.storage.getPath());
-    const content = `${explanation}
-${this._content}`;
-    return {
-      name: this.name,
-      content,
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        agentId: this.agentId,
-        length: this._content.length,
-        path: this.storage.getPath()
-      }
-    };
-  }
-  /**
-   * Compact - not applicable (compactable is false)
-   */
-  async compact(_targetTokens, _estimator) {
-    return 0;
-  }
-  /**
-   * Get serialized state for session persistence
-   */
-  getState() {
-    return {
-      content: this._content,
-      dirty: this._dirty,
-      agentId: this.agentId
-    };
-  }
-  /**
-   * Restore state from serialization
-   * Note: This restores in-memory state, not disk state
-   */
-  restoreState(state) {
-    this.assertNotDestroyed();
-    if (!state || typeof state !== "object") {
-      return;
-    }
-    const typedState = state;
-    if ("content" in typedState) {
-      this._content = typedState.content;
-    }
-    if ("dirty" in typedState) {
-      this._dirty = typedState.dirty;
-    }
-    this._initialized = true;
-  }
-  /**
-   * Clean up resources
-   */
-  destroy() {
-    this._content = null;
-    this._initialized = false;
-    this._destroyed = true;
-  }
-  // ============ Private Methods ============
-  /**
-   * Assert that the plugin hasn't been destroyed
-   */
-  assertNotDestroyed() {
-    if (this._destroyed) {
-      throw new Error("PersistentInstructionsPlugin has been destroyed");
-    }
-  }
-};
-
-// src/core/context/plugins/persistentInstructionsTools.ts
+**Use for:** Agent personality, user preferences, learned rules, guidelines.`;
 var instructionsSetDefinition = {
   type: "function",
   function: {
     name: "instructions_set",
-    description: `Set or replace all custom instructions for this agent.
-
-Custom instructions persist across sessions and are stored on disk.
-Use this to define:
-- Agent personality/behavior
-- User preferences
-- Custom rules and guidelines
-- Tool usage patterns
-
-The instructions will be loaded automatically in future sessions.
+    description: `Set or replace all custom instructions. Persists across sessions.
 IMPORTANT: This replaces ALL existing instructions.`,
     parameters: {
       type: "object",
       properties: {
         content: {
           type: "string",
-          description: "The full instructions content (markdown supported)"
+          description: "Full instructions content (markdown supported)"
         }
       },
       required: ["content"]
@@ -20538,20 +19217,13 @@ var instructionsAppendDefinition = {
   type: "function",
   function: {
     name: "instructions_append",
-    description: `Append a new section to existing custom instructions.
-
-Use this to incrementally add:
-- New rules based on user feedback
-- Learned preferences
-- Additional guidelines
-
-The section will be added with appropriate spacing.`,
+    description: "Append a section to existing instructions.",
     parameters: {
       type: "object",
       properties: {
         section: {
           type: "string",
-          description: "The section to append (will add newlines before)"
+          description: "Section to append (will add newlines before)"
         }
       },
       required: ["section"]
@@ -20562,13 +19234,7 @@ var instructionsGetDefinition = {
   type: "function",
   function: {
     name: "instructions_get",
-    description: `Get current custom instructions.
-
-Returns the full instructions content and metadata.
-Instructions are also shown in context, so this is mainly for:
-- Verification before modifications
-- Getting programmatic access
-- Debugging`,
+    description: "Get current custom instructions.",
     parameters: {
       type: "object",
       properties: {},
@@ -20580,10 +19246,7 @@ var instructionsClearDefinition = {
   type: "function",
   function: {
     name: "instructions_clear",
-    description: `Clear all custom instructions (DESTRUCTIVE).
-
-This permanently removes all custom instructions from disk.
-Requires explicit confirmation.`,
+    description: "Clear all custom instructions (DESTRUCTIVE). Requires confirmation.",
     parameters: {
       type: "object",
       properties: {
@@ -20596,2944 +19259,6688 @@ Requires explicit confirmation.`,
     }
   }
 };
-function createPersistentInstructionsTools() {
-  return [
-    // instructions_set
-    {
-      definition: instructionsSetDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext2(context, "instructions_set");
-        const content = args.content;
-        if (!content || content.trim().length === 0) {
-          return {
-            error: "Content cannot be empty. Use instructions_clear to remove instructions."
-          };
-        }
-        const success = await plugin.set(content);
-        if (!success) {
-          return {
-            error: `Instructions too long. Maximum ${plugin.getMaxLength()} characters, got ${content.length}.`
-          };
-        }
-        return {
-          success: true,
-          message: "Instructions saved successfully",
-          path: plugin.getPath(),
-          length: plugin.getLength()
-        };
-      },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        // Auto-approve - instructions management is safe
-        riskLevel: "low"
-      },
-      describeCall: () => "set"
-    },
-    // instructions_append
-    {
-      definition: instructionsAppendDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext2(context, "instructions_append");
-        const section = args.section;
-        if (!section || section.trim().length === 0) {
-          return {
-            error: "Section cannot be empty"
-          };
-        }
-        const success = await plugin.append(section);
-        if (!success) {
-          return {
-            error: `Would exceed maximum length of ${plugin.getMaxLength()} characters. Current: ${plugin.getLength()}, Adding: ${section.length}.`
-          };
-        }
-        return {
-          success: true,
-          message: "Section appended successfully",
-          newLength: plugin.getLength()
-        };
-      },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: () => "append"
-    },
-    // instructions_get
-    {
-      definition: instructionsGetDefinition,
-      execute: async (_args, context) => {
-        const plugin = getPluginFromContext2(context, "instructions_get");
-        const content = plugin.get();
-        if (!content) {
-          return {
-            exists: false,
-            message: "No custom instructions set",
-            path: plugin.getPath()
-          };
-        }
-        return {
-          exists: true,
-          content,
-          length: content.length,
-          maxLength: plugin.getMaxLength(),
-          path: plugin.getPath()
-        };
-      },
-      idempotency: { cacheable: true, ttlMs: 1e3 },
-      output: { expectedSize: "variable" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: () => "read"
-    },
-    // instructions_clear
-    {
-      definition: instructionsClearDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext2(context, "instructions_clear");
-        const confirm = args.confirm;
-        if (confirm !== true) {
-          return {
-            error: "Must set confirm: true to clear instructions"
-          };
-        }
-        const hadContent = plugin.has();
-        await plugin.clear();
-        return {
-          success: true,
-          message: hadContent ? "Instructions cleared successfully" : "No instructions to clear",
-          path: plugin.getPath()
-        };
-      },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: () => "clear"
+var PersistentInstructionsPluginNextGen = class {
+  name = "persistent_instructions";
+  _content = null;
+  _initialized = false;
+  _destroyed = false;
+  storage;
+  maxLength;
+  agentId;
+  estimator = simpleTokenEstimator;
+  _tokenCache = null;
+  _instructionsTokenCache = null;
+  constructor(config) {
+    if (!config.agentId) {
+      throw new Error("PersistentInstructionsPluginNextGen requires agentId");
     }
-  ];
-}
-function createPersistentInstructions(config) {
-  const plugin = new PersistentInstructionsPlugin(config);
-  const tools = createPersistentInstructionsTools();
-  return { plugin, tools };
-}
-function setupPersistentInstructions(agentContext, config) {
-  const { plugin, tools } = createPersistentInstructions(config);
-  agentContext.registerPlugin(plugin);
-  for (const tool of tools) {
-    agentContext.tools.register(tool);
-  }
-  agentContext.persistentInstructions = plugin;
-  return plugin;
-}
-function getPluginFromContext2(context, toolName) {
-  if (!context) {
-    throw new ToolExecutionError(
-      toolName,
-      "PersistentInstructions tools require a tool context"
-    );
-  }
-  const plugin = context.persistentInstructions;
-  if (!plugin) {
-    throw new ToolExecutionError(
-      toolName,
-      "PersistentInstructions plugin not found. Enable features.persistentInstructions or use setupPersistentInstructions()."
-    );
-  }
-  return plugin;
-}
-
-// src/core/context/plugins/ToolOutputPlugin.ts
-var DEFAULT_CONFIG3 = {
-  maxOutputs: 10,
-  maxTokensPerOutput: 1e3,
-  includeTimestamps: false
-};
-var MAX_CHARS_PER_OUTPUT = 4e3;
-var ToolOutputPlugin = class extends BaseContextPlugin {
-  name = "tool_outputs";
-  priority = 10;
-  // Highest = first to compact
-  compactable = true;
-  outputs = [];
-  config;
-  constructor(config = {}) {
-    super();
-    this.config = { ...DEFAULT_CONFIG3, ...config };
-    if (!config.suppressDeprecationWarning) {
-      console.warn(
-        "[DEPRECATION] ToolOutputPlugin is deprecated and will be removed in a future version. It duplicates data already in conversation history. Consider using ToolResultEvictionPlugin for smarter eviction to WorkingMemory. To suppress this warning, pass { suppressDeprecationWarning: true } to the constructor."
-      );
-    }
-  }
-  /**
-   * Add a tool output
-   * Truncates large outputs immediately to prevent context overflow
-   */
-  addOutput(toolName, result) {
-    let outputStr = this.stringifyOutput(result);
-    let truncated = false;
-    if (outputStr.length > MAX_CHARS_PER_OUTPUT) {
-      const originalLength = outputStr.length;
-      outputStr = outputStr.slice(0, MAX_CHARS_PER_OUTPUT) + `
-
-[Truncated from ${Math.round(originalLength / 1024)}KB - full output in conversation history or memory]`;
-      truncated = true;
-    }
-    this.outputs.push({
-      tool: toolName,
-      output: outputStr,
-      timestamp: Date.now(),
-      truncated
+    this.agentId = config.agentId;
+    this.maxLength = config.maxLength ?? DEFAULT_MAX_LENGTH;
+    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
+      agentId: config.agentId
     });
-    if (this.outputs.length > this.config.maxOutputs * 2) {
-      this.outputs = this.outputs.slice(-this.config.maxOutputs);
-    }
   }
-  /**
-   * Get recent outputs
-   */
-  getOutputs() {
-    return this.outputs.slice(-this.config.maxOutputs);
+  // ============================================================================
+  // IContextPluginNextGen Implementation
+  // ============================================================================
+  getInstructions() {
+    return PERSISTENT_INSTRUCTIONS_INSTRUCTIONS;
   }
-  /**
-   * Clear all outputs
-   */
-  clear() {
-    this.outputs = [];
-  }
-  /**
-   * Get component for context
-   */
-  async getComponent() {
-    const recentOutputs = this.getOutputs();
-    if (recentOutputs.length === 0) {
+  async getContent() {
+    await this.ensureInitialized();
+    if (!this._content) {
       return null;
     }
-    return {
-      name: this.name,
-      content: this.formatOutputs(recentOutputs),
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        outputCount: recentOutputs.length,
-        oldestTimestamp: recentOutputs[0]?.timestamp,
-        newestTimestamp: recentOutputs[recentOutputs.length - 1]?.timestamp
-      }
-    };
+    this._tokenCache = this.estimator.estimateTokens(this._content);
+    return this._content;
   }
-  /**
-   * Compact by removing oldest outputs and truncating large ones
-   */
-  async compact(_targetTokens, estimator) {
-    const before = estimator.estimateTokens(this.formatOutputs(this.outputs));
-    const keepCount = Math.max(3, Math.floor(this.outputs.length / 2));
-    this.outputs = this.outputs.slice(-keepCount);
-    for (const output of this.outputs) {
-      const outputStr = this.stringifyOutput(output.output);
-      const tokens = estimator.estimateTokens(outputStr);
-      if (tokens > this.config.maxTokensPerOutput) {
-        const maxChars = this.config.maxTokensPerOutput * 4;
-        const truncated = outputStr.slice(0, maxChars) + "... [truncated]";
-        output.output = truncated;
-        output.truncated = true;
-      }
-    }
-    const after = estimator.estimateTokens(this.formatOutputs(this.outputs));
-    return Math.max(0, before - after);
+  getContents() {
+    return this._content;
   }
-  /**
-   * Format outputs for context
-   */
-  formatOutputs(outputs) {
-    if (outputs.length === 0) return "";
-    const lines = ["## Recent Tool Outputs", ""];
-    for (const output of outputs) {
-      const outputStr = this.stringifyOutput(output.output);
-      const truncatedNote = output.truncated ? " (truncated)" : "";
-      const timeNote = this.config.includeTimestamps ? ` at ${new Date(output.timestamp).toISOString()}` : "";
-      lines.push(`### ${output.tool}${truncatedNote}${timeNote}`);
-      lines.push("```");
-      lines.push(outputStr);
-      lines.push("```");
-      lines.push("");
-    }
-    return lines.join("\n");
+  getTokenSize() {
+    return this._tokenCache ?? 0;
   }
-  /**
-   * Safely stringify output
-   */
-  stringifyOutput(output) {
-    if (typeof output === "string") {
-      return output;
+  getInstructionsTokenSize() {
+    if (this._instructionsTokenCache === null) {
+      this._instructionsTokenCache = this.estimator.estimateTokens(PERSISTENT_INSTRUCTIONS_INSTRUCTIONS);
     }
-    try {
-      return JSON.stringify(output, null, 2);
-    } catch {
-      return String(output);
-    }
+    return this._instructionsTokenCache;
   }
-  // Session persistence
-  getState() {
-    return { outputs: this.outputs };
-  }
-  restoreState(state) {
-    const s = state;
-    if (s?.outputs && Array.isArray(s.outputs)) {
-      this.outputs = s.outputs;
-    }
-  }
-};
-var DEFAULT_CONFIG4 = {
-  sizeThreshold: 5 * 1024,
-  // 5KB - more aggressive to prevent context overflow
-  tools: [],
-  toolPatterns: [],
-  maxTrackedEntries: 100,
-  autoCleanupAfterIterations: 5,
-  keyPrefix: "autospill"
-};
-var AutoSpillPlugin = class extends BaseContextPlugin {
-  name = "auto_spill_tracker";
-  priority = 9;
-  // High priority - compact before conversation but after tool outputs
-  compactable = true;
-  memory;
-  config;
-  entries = /* @__PURE__ */ new Map();
-  iterationsSinceCleanup = 0;
-  entryCounter = 0;
-  events = new eventemitter3.EventEmitter();
-  constructor(memory, config = {}) {
-    super();
-    this.memory = memory;
-    this.config = { ...DEFAULT_CONFIG4, ...config };
-  }
-  /**
-   * Subscribe to events
-   */
-  on(event, listener) {
-    this.events.on(event, listener);
-    return this;
-  }
-  /**
-   * Check if a tool should be auto-spilled
-   */
-  shouldSpill(toolName, outputSize) {
-    if (outputSize < this.config.sizeThreshold) {
-      return false;
-    }
-    if (this.config.tools.length > 0) {
-      if (this.config.tools.includes(toolName)) {
-        return true;
-      }
-    }
-    if (this.config.toolPatterns.length > 0) {
-      for (const pattern of this.config.toolPatterns) {
-        if (pattern.test(toolName)) {
-          return true;
-        }
-      }
-    }
-    if (this.config.tools.length === 0 && this.config.toolPatterns.length === 0) {
-      return true;
-    }
+  isCompactable() {
     return false;
   }
-  /**
-   * Called when a tool produces output
-   * Should be called from afterToolExecution hook
-   *
-   * @param toolName - Name of the tool
-   * @param output - Tool output
-   * @param toolArgs - Optional tool arguments for better descriptions
-   * @param describeCall - Optional describeCall function from the tool
-   * @returns The memory key if spilled, undefined otherwise
-   */
-  async onToolOutput(toolName, output, toolArgs, describeCall) {
-    const outputStr = typeof output === "string" ? output : JSON.stringify(output);
-    const sizeBytes = Buffer.byteLength(outputStr, "utf8");
-    if (!this.shouldSpill(toolName, sizeBytes)) {
-      return void 0;
-    }
-    const description = this.generateDescription(toolName, output, sizeBytes, toolArgs, describeCall);
-    const sanitizedDesc = this.sanitizeKeyPart(description);
-    const key = `${this.config.keyPrefix}_${toolName}_${sanitizedDesc}_${this.entryCounter++}`;
-    const fullKey = addTierPrefix(key, "raw");
-    await this.memory.storeRaw(
-      key,
-      description,
-      output
-    );
-    const entry = {
-      key: fullKey,
-      sourceTool: toolName,
-      description,
-      toolArgs,
-      sizeBytes,
-      timestamp: Date.now(),
-      consumed: false,
-      derivedSummaries: []
-    };
-    this.entries.set(fullKey, entry);
-    this.events.emit("spilled", { key: fullKey, tool: toolName, sizeBytes });
-    this.pruneOldEntries();
-    return fullKey;
+  async compact(_targetTokensToFree) {
+    return 0;
   }
-  /**
-   * Generate a human-readable description for the spilled entry
-   */
-  generateDescription(toolName, _output, sizeBytes, toolArgs, describeCall) {
-    if (describeCall && toolArgs) {
-      try {
-        const desc = describeCall(toolArgs);
-        return `${toolName}: ${desc} (${formatBytes(sizeBytes)})`;
-      } catch {
-      }
-    }
-    if (toolArgs) {
-      switch (toolName) {
-        case "web_scrape":
-        case "web_fetch":
-        case "web_fetch_js": {
-          const url2 = String(toolArgs["url"] || "");
-          try {
-            const u = new URL(url2);
-            return `${toolName}: ${u.hostname}${u.pathname.slice(0, 40)} (${formatBytes(sizeBytes)})`;
-          } catch {
-            return `${toolName}: ${url2.slice(0, 50)} (${formatBytes(sizeBytes)})`;
-          }
-        }
-        case "web_search": {
-          const query = String(toolArgs["query"] || "").slice(0, 40);
-          return `${toolName}: "${query}" (${formatBytes(sizeBytes)})`;
-        }
-        case "read_file": {
-          const path6 = String(toolArgs["file_path"] || toolArgs["path"] || "");
-          const file = path6.split("/").pop() ?? path6;
-          return `${toolName}: ${file.slice(0, 50)} (${formatBytes(sizeBytes)})`;
-        }
-        case "bash": {
-          const cmd = (String(toolArgs["command"] || "").split("\n")[0] ?? "").slice(0, 40);
-          return `${toolName}: \`${cmd}\` (${formatBytes(sizeBytes)})`;
-        }
-        default: {
-          for (const key of ["query", "url", "path", "command", "pattern", "key"]) {
-            if (toolArgs[key]) {
-              return `${toolName}: ${key}="${String(toolArgs[key]).slice(0, 40)}" (${formatBytes(sizeBytes)})`;
-            }
-          }
-        }
-      }
-    }
-    return `Auto-spilled ${toolName} output (${formatBytes(sizeBytes)})`;
-  }
-  /**
-   * Sanitize a string for use in a memory key
-   */
-  sanitizeKeyPart(str) {
-    return str.toLowerCase().replace(/[^a-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 30);
-  }
-  /**
-   * Mark a spilled entry as consumed (summarized)
-   * Call this when the agent creates a summary from raw data
-   *
-   * @param rawKey - Key of the spilled raw entry
-   * @param summaryKey - Key of the summary created from it
-   */
-  markConsumed(rawKey, summaryKey) {
-    const entry = this.entries.get(rawKey);
-    if (entry) {
-      entry.consumed = true;
-      entry.derivedSummaries.push(summaryKey);
-      this.events.emit("consumed", { key: rawKey, summaryKey });
-    }
-  }
-  /**
-   * Get all tracked spilled entries
-   */
-  getEntries() {
-    return Array.from(this.entries.values());
-  }
-  /**
-   * Get unconsumed entries (not yet summarized)
-   */
-  getUnconsumed() {
-    return this.getEntries().filter((e) => !e.consumed);
-  }
-  /**
-   * Get consumed entries (ready for cleanup)
-   */
-  getConsumed() {
-    return this.getEntries().filter((e) => e.consumed);
-  }
-  /**
-   * Cleanup consumed entries from memory
-   *
-   * @returns Keys that were deleted
-   */
-  async cleanupConsumed() {
-    const consumed = this.getConsumed();
-    const deleted = [];
-    for (const entry of consumed) {
-      try {
-        const tier = getTierFromKey(entry.key);
-        if (tier === "raw") {
-          const exists = await this.memory.has(entry.key);
-          if (exists) {
-            await this.memory.delete(entry.key);
-            deleted.push(entry.key);
-          }
-        }
-        this.entries.delete(entry.key);
-      } catch {
-      }
-    }
-    if (deleted.length > 0) {
-      this.events.emit("cleaned", { keys: deleted, reason: "consumed" });
-    }
-    return deleted;
-  }
-  /**
-   * Cleanup specific entries
-   *
-   * @param keys - Keys to cleanup
-   * @returns Keys that were actually deleted
-   */
-  async cleanup(keys) {
-    const deleted = [];
-    for (const key of keys) {
-      try {
-        const tier = getTierFromKey(key);
-        if (tier === "raw") {
-          const exists = await this.memory.has(key);
-          if (exists) {
-            await this.memory.delete(key);
-            deleted.push(key);
-          }
-        }
-        this.entries.delete(key);
-      } catch {
-      }
-    }
-    if (deleted.length > 0) {
-      this.events.emit("cleaned", { keys: deleted, reason: "manual" });
-    }
-    return deleted;
-  }
-  /**
-   * Cleanup all tracked entries
-   */
-  async cleanupAll() {
-    const keys = Array.from(this.entries.keys());
-    return this.cleanup(keys);
-  }
-  /**
-   * Called after each agent iteration
-   * Handles automatic cleanup if configured
-   */
-  async onIteration() {
-    this.iterationsSinceCleanup++;
-    if (this.iterationsSinceCleanup >= this.config.autoCleanupAfterIterations) {
-      await this.cleanupConsumed();
-      this.iterationsSinceCleanup = 0;
-    }
-  }
-  /**
-   * Get spill info for a specific key
-   */
-  getSpillInfo(key) {
-    return this.entries.get(key);
-  }
-  /**
-   * Get entry by key (alias for getSpillInfo for cleaner API)
-   */
-  getEntry(key) {
-    return this.entries.get(key);
-  }
-  // ============================================================================
-  // IContextPlugin implementation
-  // ============================================================================
-  async getComponent() {
-    const unconsumed = this.getUnconsumed();
-    if (unconsumed.length === 0) {
-      return null;
-    }
-    const lines = [
-      "## Auto-Spilled Data (Awaiting Processing)",
-      "",
-      `${unconsumed.length} large tool output(s) were auto-stored in memory:`,
-      ""
+  getTools() {
+    return [
+      this.createInstructionsSetTool(),
+      this.createInstructionsAppendTool(),
+      this.createInstructionsGetTool(),
+      this.createInstructionsClearTool()
     ];
-    for (const entry of unconsumed) {
-      lines.push(`- **${entry.key}**`);
-      lines.push(`  - Description: ${entry.description}`);
-      lines.push(`  - Size: ${formatBytes(entry.sizeBytes)}`);
-      lines.push(`  - Status: \u23F3 Awaiting processing`);
-    }
-    lines.push("");
-    lines.push("### How to Process");
-    lines.push("Use `autospill_process()` to retrieve, summarize, and mark as consumed:");
-    lines.push("```");
-    lines.push("autospill_process({");
-    lines.push('  key: "raw.autospill_...",');
-    lines.push('  summary: "Key findings from this data...",');
-    lines.push('  summary_key: "findings.topic_name"  // optional');
-    lines.push("})");
-    lines.push("```");
-    lines.push("");
-    lines.push("**IMPORTANT:** Process these entries to prevent them from reappearing.");
-    return {
-      name: this.name,
-      content: lines.join("\n"),
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        unconsumedCount: unconsumed.length,
-        consumedCount: this.getConsumed().length,
-        totalSizeBytes: unconsumed.reduce((sum, e) => sum + e.sizeBytes, 0)
-      }
-    };
-  }
-  async compact(_targetTokens, _estimator) {
-    const deleted = await this.cleanupConsumed();
-    return deleted.length * 12;
-  }
-  getState() {
-    return {
-      entries: Array.from(this.entries.values()),
-      iterationsSinceCleanup: this.iterationsSinceCleanup
-    };
-  }
-  restoreState(state) {
-    const s = state;
-    if (s?.entries && Array.isArray(s.entries)) {
-      this.entries.clear();
-      for (const entry of s.entries) {
-        this.entries.set(entry.key, entry);
-      }
-    }
-    if (typeof s?.iterationsSinceCleanup === "number") {
-      this.iterationsSinceCleanup = s.iterationsSinceCleanup;
-    }
   }
   destroy() {
-    this.events.removeAllListeners();
-    this.entries.clear();
-  }
-  // ============================================================================
-  // Private helpers
-  // ============================================================================
-  pruneOldEntries() {
-    if (this.entries.size <= this.config.maxTrackedEntries) {
-      return;
-    }
-    const sorted = Array.from(this.entries.entries()).sort(
-      ([, a], [, b]) => a.timestamp - b.timestamp
-    );
-    const toRemove = sorted.slice(0, sorted.length - this.config.maxTrackedEntries);
-    for (const [key] of toRemove) {
-      this.entries.delete(key);
-    }
-  }
-};
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-init_Logger();
-var logger2 = exports.logger.child({ component: "ToolResultEvictionPlugin" });
-var ToolResultEvictionPlugin = class extends BaseContextPlugin {
-  name = "tool_result_eviction";
-  priority = 8;
-  // Higher than tool outputs (9), lower than conversation (5)
-  compactable = true;
-  memory;
-  config;
-  tracked = /* @__PURE__ */ new Map();
-  currentIteration = 0;
-  totalTrackedSize = 0;
-  totalEvicted = 0;
-  totalTokensFreed = 0;
-  events = new eventemitter3.EventEmitter();
-  /**
-   * Callback to remove tool pairs from conversation.
-   * Set by AgentContext during registration.
-   */
-  removeToolPairCallback = null;
-  constructor(memory, config = {}) {
-    super();
-    this.memory = memory;
-    const strategy = config.strategy ?? "proactive";
-    this.config = {
-      strategy,
-      maxContextTokens: config.maxContextTokens,
-      maxFullResults: config.maxFullResults ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_FULL_RESULTS,
-      maxAgeIterations: config.maxAgeIterations ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_AGE_ITERATIONS,
-      minSizeToEvict: config.minSizeToEvict ?? TOOL_RESULT_EVICTION_DEFAULTS.MIN_SIZE_TO_EVICT,
-      maxTotalSizeBytes: config.maxTotalSizeBytes ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_TOTAL_SIZE_BYTES,
-      toolRetention: { ...DEFAULT_TOOL_RETENTION, ...config.toolRetention },
-      keyPrefix: config.keyPrefix ?? "tool_result"
-    };
-    logger2.debug({
-      config: this.config,
-      strategyThresholds: STRATEGY_THRESHOLDS[strategy]
-    }, "ToolResultEvictionPlugin created");
-  }
-  /**
-   * Get effective retention for a tool, considering strategy multiplier
-   */
-  getEffectiveRetention(toolName) {
-    const baseRetention = this.config.toolRetention[toolName] ?? this.config.maxAgeIterations;
-    const multiplier = TOOL_RETENTION_MULTIPLIERS[this.config.strategy] ?? 1;
-    return Math.ceil(baseRetention * multiplier);
-  }
-  /**
-   * Get effective max results, considering strategy and token-based limits
-   */
-  getEffectiveMaxResults() {
-    if (this.config.maxContextTokens) {
-      const thresholds = STRATEGY_THRESHOLDS[this.config.strategy];
-      const maxTokensForResults = Math.floor(this.config.maxContextTokens * thresholds.maxToolResultsPercent);
-      const percentageBased = Math.floor(maxTokensForResults / 500);
-      return Math.min(Math.max(percentageBased, this.config.maxFullResults), SAFETY_CAPS.MAX_FULL_RESULTS);
-    }
-    return Math.min(this.config.maxFullResults, SAFETY_CAPS.MAX_FULL_RESULTS);
-  }
-  // ============================================================================
-  // Event Handling
-  // ============================================================================
-  /**
-   * Subscribe to events
-   */
-  on(event, listener) {
-    this.events.on(event, listener);
-    return this;
-  }
-  /**
-   * Unsubscribe from events
-   */
-  off(event, listener) {
-    this.events.off(event, listener);
-    return this;
-  }
-  // ============================================================================
-  // Configuration
-  // ============================================================================
-  /**
-   * Set the callback for removing tool pairs from conversation.
-   * This is called by AgentContext during plugin registration.
-   */
-  setRemoveCallback(callback) {
-    this.removeToolPairCallback = callback;
-  }
-  /**
-   * Get current configuration
-   */
-  getConfig() {
-    return this.config;
-  }
-  // ============================================================================
-  // Tracking
-  // ============================================================================
-  /**
-   * Track a new tool result.
-   * Called by AgentContext when tool results are added to conversation.
-   *
-   * @param toolUseId - The tool_use ID linking request/response
-   * @param toolName - Name of the executed tool
-   * @param toolArgs - Arguments passed to the tool
-   * @param result - The tool result content
-   * @param messageIndex - Index of the message in conversation
-   * @param describeCall - Optional describeCall function from the tool
-   */
-  onToolResult(toolUseId, toolName, toolArgs, result, messageIndex, describeCall) {
-    const resultStr = typeof result === "string" ? result : JSON.stringify(result);
-    const sizeBytes = Buffer.byteLength(resultStr, "utf8");
-    const description = generateResultDescription(
-      toolName,
-      toolArgs,
-      result,
-      sizeBytes,
-      describeCall
-    );
-    const tracked = {
-      toolUseId,
-      toolName,
-      toolArgs,
-      result,
-      description,
-      sizeBytes,
-      addedAtIteration: this.currentIteration,
-      messageIndex,
-      timestamp: Date.now()
-    };
-    this.tracked.set(toolUseId, tracked);
-    this.totalTrackedSize += sizeBytes;
-    logger2.debug({
-      toolUseId,
-      toolName,
-      description,
-      sizeBytes,
-      sizeMeetsMinimum: sizeBytes >= this.config.minSizeToEvict,
-      minSizeToEvict: this.config.minSizeToEvict,
-      currentIteration: this.currentIteration,
-      messageIndex,
-      trackedCount: this.tracked.size,
-      totalTrackedSize: this.totalTrackedSize
-    }, `Tracking tool result: ${toolName} (${formatBytes2(sizeBytes)})`);
-    this.events.emit("tracked", { toolUseId, toolName, sizeBytes });
-  }
-  /**
-   * Called at the start of each agent iteration.
-   * Advances the iteration counter for age-based eviction.
-   */
-  onIteration() {
-    this.currentIteration++;
-    logger2.debug({
-      currentIteration: this.currentIteration,
-      trackedCount: this.tracked.size,
-      totalTrackedSize: this.totalTrackedSize,
-      maxFullResults: this.config.maxFullResults,
-      maxTotalSizeBytes: this.config.maxTotalSizeBytes
-    }, `Iteration advanced to ${this.currentIteration}`);
-    this.events.emit("iteration", { current: this.currentIteration });
-  }
-  /**
-   * Get the current iteration number
-   */
-  getCurrentIteration() {
-    return this.currentIteration;
-  }
-  // ============================================================================
-  // Eviction Logic
-  // ============================================================================
-  /**
-   * Check if eviction is needed based on current state.
-   * Returns true if any eviction trigger is met.
-   * Uses strategy-dependent thresholds for more balanced behavior.
-   */
-  shouldEvict() {
-    const { maxTotalSizeBytes, minSizeToEvict } = this.config;
-    const effectiveMaxResults = this.getEffectiveMaxResults();
-    const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
-    const countPressure = this.tracked.size > effectiveMaxResults;
-    if (sizePressure) {
-      logger2.debug({
-        totalTrackedSize: this.totalTrackedSize,
-        maxTotalSizeBytes,
-        trackedCount: this.tracked.size,
-        strategy: this.config.strategy
-      }, "shouldEvict: TRUE - size pressure");
-      return true;
-    }
-    if (countPressure) {
-      logger2.debug({
-        trackedCount: this.tracked.size,
-        effectiveMaxResults,
-        totalTrackedSize: this.totalTrackedSize,
-        strategy: this.config.strategy
-      }, "shouldEvict: TRUE - count pressure");
-      return true;
-    }
-    for (const r of this.tracked.values()) {
-      if (r.sizeBytes < minSizeToEvict) {
-        logger2.debug({
-          toolUseId: r.toolUseId,
-          toolName: r.toolName,
-          sizeBytes: r.sizeBytes,
-          minSizeToEvict
-        }, `shouldEvict: skipping ${r.toolName} - below size minimum`);
-        continue;
-      }
-      const age = this.currentIteration - r.addedAtIteration;
-      const toolMaxAge = this.getEffectiveRetention(r.toolName);
-      if (age >= toolMaxAge) {
-        logger2.debug({
-          toolUseId: r.toolUseId,
-          toolName: r.toolName,
-          age,
-          toolMaxAge,
-          strategy: this.config.strategy
-        }, "shouldEvict: TRUE - staleness");
-        return true;
-      }
-    }
-    logger2.debug({
-      trackedCount: this.tracked.size,
-      effectiveMaxResults,
-      totalTrackedSize: this.totalTrackedSize,
-      maxTotalSizeBytes,
-      currentIteration: this.currentIteration,
-      strategy: this.config.strategy
-    }, "shouldEvict: FALSE - no triggers");
-    return false;
-  }
-  /**
-   * Get candidates for eviction, sorted by priority.
-   * Candidates are selected to bring the system under all thresholds.
-   * Uses strategy-dependent thresholds for more balanced behavior.
-   */
-  getEvictionCandidates() {
-    const { maxTotalSizeBytes, minSizeToEvict } = this.config;
-    const effectiveMaxResults = this.getEffectiveMaxResults();
-    const allTracked = [...this.tracked.values()];
-    const countPressure = this.tracked.size > effectiveMaxResults;
-    const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
-    logger2.debug({
-      totalTracked: allTracked.length,
-      countPressure,
-      sizePressure,
-      minSizeToEvict,
-      effectiveMaxResults,
-      maxTotalSizeBytes,
-      strategy: this.config.strategy
-    }, "getEvictionCandidates: starting");
-    const evictable = allTracked.filter(
-      (r) => r.sizeBytes >= minSizeToEvict
-    );
-    const filteredOut = allTracked.filter((r) => r.sizeBytes < minSizeToEvict);
-    logger2.debug({
-      evictableCount: evictable.length,
-      filteredOutCount: filteredOut.length,
-      filteredOutTools: filteredOut.map((r) => ({
-        toolName: r.toolName,
-        sizeBytes: r.sizeBytes,
-        sizeMeetsMin: r.sizeBytes >= minSizeToEvict
-      }))
-    }, `getEvictionCandidates: filtered ${filteredOut.length} results below minSizeToEvict (${minSizeToEvict} bytes)`);
-    if (evictable.length === 0) {
-      logger2.debug({
-        totalTracked: allTracked.length,
-        minSizeToEvict,
-        allSizes: allTracked.map((r) => ({ tool: r.toolName, size: r.sizeBytes }))
-      }, "getEvictionCandidates: NO evictable candidates - all below size minimum!");
-      return [];
-    }
-    evictable.sort((a, b) => {
-      const ageDiff = a.addedAtIteration - b.addedAtIteration;
-      if (ageDiff !== 0) return ageDiff;
-      return b.sizeBytes - a.sizeBytes;
-    });
-    const candidates = [];
-    let projectedSize = this.totalTrackedSize;
-    let projectedCount = this.tracked.size;
-    for (const r of evictable) {
-      const underSizeLimit = projectedSize <= maxTotalSizeBytes;
-      const underCountLimit = projectedCount <= effectiveMaxResults;
-      const age = this.currentIteration - r.addedAtIteration;
-      const toolMaxAge = this.getEffectiveRetention(r.toolName);
-      const isStale = age >= toolMaxAge;
-      logger2.debug({
-        toolUseId: r.toolUseId,
-        toolName: r.toolName,
-        age,
-        toolMaxAge,
-        isStale,
-        projectedCount,
-        effectiveMaxResults,
-        underCountLimit,
-        projectedSize,
-        maxTotalSizeBytes,
-        underSizeLimit,
-        strategy: this.config.strategy
-      }, `getEvictionCandidates: evaluating ${r.toolName}`);
-      if (!isStale && underSizeLimit && underCountLimit) {
-        logger2.debug({
-          toolUseId: r.toolUseId,
-          reason: "under limits and not stale"
-        }, "getEvictionCandidates: stopping - under all limits");
-        break;
-      }
-      candidates.push(r);
-      projectedSize -= r.sizeBytes;
-      projectedCount--;
-    }
-    logger2.debug({
-      candidateCount: candidates.length,
-      candidates: candidates.map((c) => ({ tool: c.toolName, size: c.sizeBytes })),
-      strategy: this.config.strategy
-    }, `getEvictionCandidates: returning ${candidates.length} candidates`);
-    return candidates;
-  }
-  /**
-   * Evict old results to memory and remove from conversation.
-   * This is the main eviction entry point.
-   *
-   * @returns Eviction result with counts and log
-   */
-  async evictOldResults() {
-    const result = {
-      evicted: 0,
-      tokensFreed: 0,
-      memoryKeys: [],
-      log: []
-    };
-    logger2.debug({
-      trackedCount: this.tracked.size,
-      totalTrackedSize: this.totalTrackedSize
-    }, "evictOldResults: starting");
-    if (!this.shouldEvict()) {
-      logger2.debug({}, "evictOldResults: shouldEvict=false, skipping");
-      return result;
-    }
-    if (!this.removeToolPairCallback) {
-      logger2.warn({}, "evictOldResults: removeToolPairCallback not set!");
-      result.log.push("Cannot evict: removeToolPairCallback not set");
-      return result;
-    }
-    const candidates = this.getEvictionCandidates();
-    if (candidates.length === 0) {
-      logger2.debug({
-        trackedCount: this.tracked.size,
-        minSizeToEvict: this.config.minSizeToEvict
-      }, "evictOldResults: NO candidates returned (likely all below size threshold)");
-      result.log.push("No candidates for eviction (all below size threshold)");
-      return result;
-    }
-    logger2.debug({
-      candidateCount: candidates.length
-    }, `evictOldResults: proceeding with ${candidates.length} candidates`);
-    result.log.push(`Evicting ${candidates.length} tool result pairs`);
-    for (const candidate of candidates) {
-      try {
-        const memoryKey = `${this.config.keyPrefix}.${candidate.toolName}.${candidate.toolUseId}`;
-        await this.memory.storeRaw(
-          memoryKey,
-          candidate.description,
-          // Use the smart description
-          candidate.result
-        );
-        result.memoryKeys.push(memoryKey);
-        const tokensFreed = this.removeToolPairCallback(candidate.toolUseId);
-        result.tokensFreed += tokensFreed;
-        this.totalTrackedSize -= candidate.sizeBytes;
-        this.tracked.delete(candidate.toolUseId);
-        result.evicted++;
-        result.log.push(
-          `  Evicted ${candidate.toolName}:${candidate.toolUseId} \u2192 ${memoryKey} (${tokensFreed} tokens)`
-        );
-      } catch (error) {
-        result.log.push(
-          `  Failed to evict ${candidate.toolUseId}: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    }
-    this.totalEvicted += result.evicted;
-    this.totalTokensFreed += result.tokensFreed;
-    if (result.evicted > 0) {
-      this.events.emit("evicted", {
-        count: result.evicted,
-        tokensFreed: result.tokensFreed,
-        keys: result.memoryKeys
-      });
-    }
-    return result;
-  }
-  // ============================================================================
-  // Stats and Info
-  // ============================================================================
-  /**
-   * Get current tracking statistics
-   */
-  getStats() {
-    let oldestAge = 0;
-    for (const r of this.tracked.values()) {
-      const age = this.currentIteration - r.addedAtIteration;
-      if (age > oldestAge) oldestAge = age;
-    }
-    return {
-      count: this.tracked.size,
-      totalSizeBytes: this.totalTrackedSize,
-      oldestAge,
-      currentIteration: this.currentIteration,
-      totalEvicted: this.totalEvicted,
-      totalTokensFreed: this.totalTokensFreed
-    };
-  }
-  /**
-   * Get all tracked results
-   */
-  getTracked() {
-    return [...this.tracked.values()];
-  }
-  /**
-   * Check if a specific tool result is tracked
-   */
-  isTracked(toolUseId) {
-    return this.tracked.has(toolUseId);
-  }
-  /**
-   * Get tracked result by ID
-   */
-  getTrackedResult(toolUseId) {
-    return this.tracked.get(toolUseId);
-  }
-  // ============================================================================
-  // Message Index Updates
-  // ============================================================================
-  /**
-   * Update message indices after conversation modification.
-   * Called when messages are removed from conversation.
-   *
-   * @param removedIndices - Set of indices that were removed
-   */
-  updateMessageIndices(removedIndices) {
-    for (const tracked of this.tracked.values()) {
-      if (removedIndices.has(tracked.messageIndex)) {
-        this.totalTrackedSize -= tracked.sizeBytes;
-        this.tracked.delete(tracked.toolUseId);
-        continue;
-      }
-      let shift = 0;
-      for (const idx of removedIndices) {
-        if (idx < tracked.messageIndex) shift++;
-      }
-      tracked.messageIndex -= shift;
-    }
-  }
-  // ============================================================================
-  // IContextPlugin Implementation
-  // ============================================================================
-  async getComponent() {
-    const stats = this.getStats();
-    if (stats.count === 0 && stats.totalEvicted === 0) {
-      return null;
-    }
-    return {
-      name: this.name,
-      content: `Tool Result Eviction: ${stats.count} tracked, ${stats.totalEvicted} evicted to memory`,
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: stats
-    };
-  }
-  async compact(_targetTokens, _estimator) {
-    const result = await this.evictOldResults();
-    return result.tokensFreed;
-  }
-  async onPrepared(_budget) {
+    if (this._destroyed) return;
+    this._content = null;
+    this._destroyed = true;
+    this._tokenCache = null;
   }
   getState() {
     return {
-      tracked: [...this.tracked.values()],
-      currentIteration: this.currentIteration,
-      totalEvicted: this.totalEvicted,
-      totalTokensFreed: this.totalTokensFreed
+      content: this._content,
+      agentId: this.agentId
     };
   }
   restoreState(state) {
     const s = state;
     if (!s) return;
-    if (Array.isArray(s.tracked)) {
-      this.tracked.clear();
-      this.totalTrackedSize = 0;
-      for (const t of s.tracked) {
-        this.tracked.set(t.toolUseId, t);
-        this.totalTrackedSize += t.sizeBytes;
-      }
+    this._content = s.content;
+    this._initialized = true;
+    this._tokenCache = null;
+  }
+  // ============================================================================
+  // Content Management
+  // ============================================================================
+  /**
+   * Initialize by loading from storage (called lazily)
+   */
+  async initialize() {
+    if (this._initialized || this._destroyed) return;
+    try {
+      this._content = await this.storage.load();
+      this._initialized = true;
+    } catch (error) {
+      console.warn(`Failed to load persistent instructions for agent '${this.agentId}':`, error);
+      this._content = null;
+      this._initialized = true;
     }
-    if (typeof s.currentIteration === "number") {
-      this.currentIteration = s.currentIteration;
+    this._tokenCache = null;
+  }
+  /**
+   * Set entire instructions content (replaces existing)
+   */
+  async set(content) {
+    this.assertNotDestroyed();
+    if (content.length > this.maxLength) {
+      return false;
     }
-    if (typeof s.totalEvicted === "number") {
-      this.totalEvicted = s.totalEvicted;
+    this._content = content.trim() || null;
+    if (this._content) {
+      await this.storage.save(this._content);
+    } else {
+      await this.storage.delete();
     }
-    if (typeof s.totalTokensFreed === "number") {
-      this.totalTokensFreed = s.totalTokensFreed;
+    this._tokenCache = null;
+    return true;
+  }
+  /**
+   * Append a section to existing instructions
+   */
+  async append(section) {
+    this.assertNotDestroyed();
+    await this.ensureInitialized();
+    const trimmedSection = section.trim();
+    if (!trimmedSection) return true;
+    const currentContent = this._content || "";
+    const newContent = currentContent ? `${currentContent}
+
+${trimmedSection}` : trimmedSection;
+    if (newContent.length > this.maxLength) {
+      return false;
+    }
+    this._content = newContent;
+    await this.storage.save(this._content);
+    this._tokenCache = null;
+    return true;
+  }
+  /**
+   * Get current content
+   */
+  async get() {
+    this.assertNotDestroyed();
+    await this.ensureInitialized();
+    return this._content;
+  }
+  /**
+   * Clear all instructions
+   */
+  async clear() {
+    this.assertNotDestroyed();
+    this._content = null;
+    await this.storage.delete();
+    this._tokenCache = null;
+  }
+  /**
+   * Check if initialized
+   */
+  get isInitialized() {
+    return this._initialized;
+  }
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+  async ensureInitialized() {
+    if (!this._initialized) {
+      await this.initialize();
     }
   }
-  destroy() {
-    this.events.removeAllListeners();
-    this.tracked.clear();
-    this.totalTrackedSize = 0;
-    this.removeToolPairCallback = null;
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("PersistentInstructionsPluginNextGen is destroyed");
+    }
+  }
+  // ============================================================================
+  // Tool Factories
+  // ============================================================================
+  createInstructionsSetTool() {
+    return {
+      definition: instructionsSetDefinition,
+      execute: async (args) => {
+        const content = args.content;
+        if (!content || content.trim().length === 0) {
+          return { error: "Content cannot be empty. Use instructions_clear to remove." };
+        }
+        const success = await this.set(content);
+        if (!success) {
+          return { error: `Content exceeds maximum length (${this.maxLength} chars)` };
+        }
+        return {
+          success: true,
+          message: "Custom instructions updated",
+          length: content.length
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: () => "set instructions"
+    };
+  }
+  createInstructionsAppendTool() {
+    return {
+      definition: instructionsAppendDefinition,
+      execute: async (args) => {
+        const section = args.section;
+        if (!section || section.trim().length === 0) {
+          return { error: "Section cannot be empty" };
+        }
+        const success = await this.append(section);
+        if (!success) {
+          return { error: `Would exceed maximum length (${this.maxLength} chars)` };
+        }
+        return {
+          success: true,
+          message: "Section appended to instructions",
+          newLength: this._content?.length ?? 0
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: () => "append to instructions"
+    };
+  }
+  createInstructionsGetTool() {
+    return {
+      definition: instructionsGetDefinition,
+      execute: async () => {
+        const content = await this.get();
+        return {
+          hasContent: content !== null,
+          content: content ?? "(no custom instructions set)",
+          length: content?.length ?? 0,
+          agentId: this.agentId
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: () => "get instructions"
+    };
+  }
+  createInstructionsClearTool() {
+    return {
+      definition: instructionsClearDefinition,
+      execute: async (args) => {
+        if (args.confirm !== true) {
+          return { error: "Must pass confirm: true to clear instructions" };
+        }
+        await this.clear();
+        return {
+          success: true,
+          message: "Custom instructions cleared"
+        };
+      },
+      permission: { scope: "once", riskLevel: "medium" },
+      describeCall: () => "clear instructions"
+    };
   }
 };
-function formatBytes2(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-function generateResultDescription(toolName, args, result, sizeBytes, describeCall) {
-  let baseDesc;
-  if (describeCall) {
-    try {
-      baseDesc = describeCall(args);
-    } catch {
-    }
-  }
-  switch (toolName) {
-    case "web_search": {
-      const query = String(args["query"] || "").slice(0, 40);
-      const count = Array.isArray(result) ? result.length : result?.results?.length ?? "?";
-      return `search: "${query}" \u2192 ${count} results`;
-    }
-    case "bash": {
-      const cmd = (String(args["command"] || "").split("\n")[0] ?? "").slice(0, 50);
-      const ok = !result?.error;
-      return `bash: \`${cmd}\` ${ok ? "\u2713" : "\u2717"}`;
-    }
-    case "read_file": {
-      const path6 = String(args["file_path"] || args["path"] || "");
-      const file = path6.split("/").pop() ?? path6;
-      const offset = args["offset"] ? ` @${args["offset"]}` : "";
-      return `read: ${file.slice(0, 50)}${offset}`;
-    }
-    case "web_fetch":
-    case "web_fetch_js": {
-      const url2 = String(args["url"] || "");
-      try {
-        const u = new URL(url2);
-        return `fetch: ${u.hostname}${u.pathname.slice(0, 30)}`;
-      } catch {
-        return `fetch: ${url2.slice(0, 50)}`;
-      }
-    }
-    case "glob": {
-      const pattern = String(args["pattern"] || "").slice(0, 35);
-      const count = Array.isArray(result) ? result.length : "?";
-      return `glob: "${pattern}" \u2192 ${count} files`;
-    }
-    case "grep": {
-      const pattern = String(args["pattern"] || "").slice(0, 30);
-      const count = Array.isArray(result) ? result.length : "?";
-      return `grep: "${pattern}" \u2192 ${count} matches`;
-    }
-    case "edit_file":
-    case "write_file": {
-      const path6 = String(args["file_path"] || args["path"] || "");
-      const file = path6.split("/").pop() || path6;
-      return `${toolName.split("_")[0]}: ${file.slice(0, 55)}`;
-    }
-    default: {
-      if (baseDesc) {
-        return `${toolName}: ${baseDesc.slice(0, 50)}`;
-      }
-      for (const key of ["query", "url", "path", "command", "pattern", "key"]) {
-        if (args[key]) {
-          return `${toolName}: ${key}="${String(args[key]).slice(0, 40)}"`;
-        }
-      }
-      return `${toolName} (${formatBytes2(sizeBytes)})`;
-    }
-  }
-}
 
-// src/core/context/ContextGuardian.ts
-init_Logger();
-var logger3 = exports.logger.child({ component: "ContextGuardian" });
-var ContextGuardian = class {
-  _enabled;
-  _maxToolResultTokens;
-  _minSystemPromptTokens;
-  _configuredProtectedMessages;
+// src/core/context-nextgen/types.ts
+var STRATEGY_THRESHOLDS = {
+  proactive: 0.7,
+  // Compact at 70% usage
+  balanced: 0.8,
+  // Compact at 80% usage
+  lazy: 0.9
+  // Compact at 90% usage
+};
+var DEFAULT_FEATURES = {
+  workingMemory: true,
+  inContextMemory: false,
+  persistentInstructions: false
+};
+var DEFAULT_CONFIG2 = {
+  responseReserve: 4096,
+  strategy: "balanced"
+};
+
+// src/core/context-nextgen/AgentContextNextGen.ts
+var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.EventEmitter {
+  // ============================================================================
+  // Private State
+  // ============================================================================
+  /** Configuration */
+  _config;
+  /** Maximum context tokens for the model */
   _maxContextTokens;
-  _strategy;
-  _estimator;
-  constructor(estimator, config = {}) {
-    this._estimator = estimator;
-    this._enabled = config.enabled ?? GUARDIAN_DEFAULTS.ENABLED;
-    this._maxToolResultTokens = config.maxToolResultTokens ?? GUARDIAN_DEFAULTS.MAX_TOOL_RESULT_TOKENS;
-    this._minSystemPromptTokens = config.minSystemPromptTokens ?? GUARDIAN_DEFAULTS.MIN_SYSTEM_PROMPT_TOKENS;
-    this._configuredProtectedMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
-    this._maxContextTokens = config.maxContextTokens;
-    this._strategy = config.strategy ?? "proactive";
-  }
+  /** Compaction strategy threshold */
+  _strategyThreshold;
+  /** System prompt (user-provided) */
+  _systemPrompt;
+  /** Conversation history (excludes current input) */
+  _conversation = [];
+  /** Current input (pending, will be added to conversation after LLM response) */
+  _currentInput = [];
+  /** Registered plugins */
+  _plugins = /* @__PURE__ */ new Map();
+  /** Tool manager */
+  _tools;
+  /** Token estimator for conversation/input */
+  _estimator = simpleTokenEstimator;
+  /** Session ID (if loaded/saved) */
+  _sessionId = null;
+  /** Agent ID */
+  _agentId;
+  /** Storage backend */
+  _storage;
+  /** Destroyed flag */
+  _destroyed = false;
+  // ============================================================================
+  // Static Factory
+  // ============================================================================
   /**
-   * Get effective protected message count, considering strategy and context size.
-   * Uses percentage-based calculation if maxContextTokens is available.
-   *
-   * NOTE: If an explicit value was configured (not using default), it's honored
-   * without applying minimum caps - this allows tests and special cases to work.
+   * Create a new AgentContextNextGen instance.
    */
-  get _protectedRecentMessages() {
-    if (this._configuredProtectedMessages !== GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES) {
-      return this._configuredProtectedMessages;
-    }
-    if (this._maxContextTokens) {
-      const thresholds = STRATEGY_THRESHOLDS[this._strategy];
-      const percentBasedTokens = Math.floor(this._maxContextTokens * thresholds.protectedContextPercent);
-      const percentBasedMessages = Math.floor(percentBasedTokens / 100);
-      const calculated = Math.max(percentBasedMessages, this._configuredProtectedMessages);
-      return Math.max(calculated, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
-    }
-    return Math.max(this._configuredProtectedMessages, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
+  static create(config) {
+    return new _AgentContextNextGen(config);
   }
-  /**
-   * Check if guardian is enabled
-   */
-  get enabled() {
-    return this._enabled;
-  }
-  /**
-   * Validate that input fits within token limits
-   *
-   * @param input - The InputItem[] to validate
-   * @param maxTokens - Maximum allowed tokens (after reserving for response)
-   * @returns Validation result with actual counts and breakdown
-   */
-  validate(input, maxTokens) {
-    const breakdown = {
-      system: 0,
-      user: 0,
-      assistant: 0,
-      tool_use: 0,
-      tool_result: 0,
-      other: 0
+  // ============================================================================
+  // Constructor
+  // ============================================================================
+  constructor(config) {
+    super();
+    const modelInfo = getModelInfo(config.model);
+    this._maxContextTokens = config.maxContextTokens ?? modelInfo?.features?.input?.tokens ?? 128e3;
+    this._config = {
+      model: config.model,
+      maxContextTokens: this._maxContextTokens,
+      responseReserve: config.responseReserve ?? DEFAULT_CONFIG2.responseReserve,
+      systemPrompt: config.systemPrompt,
+      strategy: config.strategy ?? DEFAULT_CONFIG2.strategy,
+      features: { ...DEFAULT_FEATURES, ...config.features },
+      agentId: config.agentId ?? this.generateId(),
+      storage: config.storage
     };
-    let actualTokens = 0;
-    for (const item of input) {
-      const tokens = this.estimateInputItemTokens(item);
-      actualTokens += tokens;
-      if (item.type === "message") {
+    this._systemPrompt = config.systemPrompt;
+    this._agentId = this._config.agentId;
+    this._storage = config.storage;
+    this._strategyThreshold = STRATEGY_THRESHOLDS[this._config.strategy];
+    this._tools = new ToolManager();
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._tools.register(tool);
+      }
+    }
+    this.initializePlugins(config.plugins);
+  }
+  /**
+   * Initialize plugins based on feature flags.
+   * Called automatically in constructor.
+   */
+  initializePlugins(pluginConfigs) {
+    const features = this._config.features;
+    const configs = pluginConfigs ?? {};
+    if (features.workingMemory) {
+      this.registerPlugin(new WorkingMemoryPluginNextGen(
+        configs.workingMemory
+      ));
+    }
+    if (features.inContextMemory) {
+      this.registerPlugin(new InContextMemoryPluginNextGen(
+        configs.inContextMemory
+      ));
+    }
+    if (features.persistentInstructions) {
+      if (!this._agentId) {
+        throw new Error("persistentInstructions feature requires agentId to be set");
+      }
+      const piConfig = configs.persistentInstructions;
+      this.registerPlugin(new PersistentInstructionsPluginNextGen({
+        agentId: this._agentId,
+        ...piConfig
+      }));
+    }
+  }
+  // ============================================================================
+  // Public Properties
+  // ============================================================================
+  /** Get the tool manager */
+  get tools() {
+    return this._tools;
+  }
+  /** Get the model name */
+  get model() {
+    return this._config.model;
+  }
+  /** Get the agent ID */
+  get agentId() {
+    return this._agentId;
+  }
+  /** Get/set system prompt */
+  get systemPrompt() {
+    return this._systemPrompt;
+  }
+  set systemPrompt(value) {
+    this._systemPrompt = value;
+  }
+  /** Get feature configuration */
+  get features() {
+    return this._config.features;
+  }
+  /** Check if destroyed */
+  get isDestroyed() {
+    return this._destroyed;
+  }
+  /** Get current session ID */
+  get sessionId() {
+    return this._sessionId;
+  }
+  /** Get storage (null if not configured) */
+  get storage() {
+    return this._storage ?? null;
+  }
+  /** Get max context tokens */
+  get maxContextTokens() {
+    return this._maxContextTokens;
+  }
+  /** Get response reserve tokens */
+  get responseReserve() {
+    return this._config.responseReserve;
+  }
+  /** Get current tools token usage (useful for debugging) */
+  get toolsTokens() {
+    return this.calculateToolsTokens();
+  }
+  // ============================================================================
+  // Compatibility / Migration Helpers
+  // ============================================================================
+  /**
+   * Get working memory plugin (if registered).
+   * This is a compatibility accessor for code expecting ctx.memory
+   */
+  get memory() {
+    const plugin = this._plugins.get("working_memory");
+    return plugin;
+  }
+  /**
+   * Get the last message (most recent user message or tool results).
+   * Used for compatibility with old code that expected a single item.
+   */
+  getLastUserMessage() {
+    if (this._conversation.length === 0) return null;
+    const last = this._conversation[this._conversation.length - 1];
+    if (!last) return null;
+    if ("role" in last && last.role === "user" /* USER */) return last;
+    return null;
+  }
+  /**
+   * Set current input (user message).
+   * Adds a user message to the conversation and sets it as the current input for prepare().
+   */
+  setCurrentInput(content) {
+    this.assertNotDestroyed();
+    this._currentInput = [];
+    this.addUserMessage(content);
+    const lastMsg = this._conversation[this._conversation.length - 1];
+    if (lastMsg) {
+      this._currentInput.push(lastMsg);
+    }
+  }
+  /**
+   * Add multiple input items to conversation (legacy compatibility).
+   */
+  addInputItems(items) {
+    this.assertNotDestroyed();
+    for (const item of items) {
+      this._conversation.push(item);
+    }
+  }
+  /**
+   * Legacy alias for prepare() - returns prepared context.
+   */
+  async prepareConversation() {
+    return this.prepare();
+  }
+  /**
+   * Add a message (legacy compatibility).
+   * For user messages, use addUserMessage instead.
+   * For assistant messages, use addAssistantResponse instead.
+   */
+  addMessage(role, content) {
+    this.assertNotDestroyed();
+    if (role === "user") {
+      return this.addUserMessage(content);
+    }
+    const outputItem = {
+      type: "message",
+      role: "assistant" /* ASSISTANT */,
+      content: [{
+        type: "output_text" /* OUTPUT_TEXT */,
+        text: typeof content === "string" ? content : JSON.stringify(content)
+      }]
+    };
+    return this.addAssistantResponse([outputItem]);
+  }
+  // ============================================================================
+  // Plugin Management
+  // ============================================================================
+  /**
+   * Register a plugin.
+   * Plugin's tools are automatically registered with ToolManager.
+   */
+  registerPlugin(plugin) {
+    this.assertNotDestroyed();
+    if (this._plugins.has(plugin.name)) {
+      throw new Error(`Plugin '${plugin.name}' is already registered`);
+    }
+    this._plugins.set(plugin.name, plugin);
+    const tools = plugin.getTools();
+    for (const tool of tools) {
+      this._tools.register(tool);
+    }
+  }
+  /**
+   * Get a plugin by name.
+   */
+  getPlugin(name) {
+    return this._plugins.get(name) ?? null;
+  }
+  /**
+   * Check if a plugin is registered.
+   */
+  hasPlugin(name) {
+    return this._plugins.has(name);
+  }
+  /**
+   * Get all registered plugins.
+   */
+  getPlugins() {
+    return Array.from(this._plugins.values());
+  }
+  // ============================================================================
+  // Conversation Management
+  // ============================================================================
+  /**
+   * Add a user message.
+   * Returns the message ID.
+   */
+  addUserMessage(content) {
+    this.assertNotDestroyed();
+    const id = this.generateId();
+    const contentArray = typeof content === "string" ? [{ type: "input_text" /* INPUT_TEXT */, text: content }] : content;
+    const message = {
+      type: "message",
+      id,
+      role: "user" /* USER */,
+      content: contentArray
+    };
+    this._currentInput = [message];
+    this.emit("message:added", { role: "user", index: this._conversation.length });
+    return id;
+  }
+  /**
+   * Add assistant response (from LLM output).
+   * Also moves current input to conversation history.
+   * Returns the message ID.
+   */
+  addAssistantResponse(output) {
+    this.assertNotDestroyed();
+    if (this._currentInput.length > 0) {
+      this._conversation.push(...this._currentInput);
+      this._currentInput = [];
+    }
+    const id = this.generateId();
+    const contentArray = [];
+    for (const item of output) {
+      if (item.type === "message" && "content" in item) {
         const msg = item;
-        if (msg.role === "developer" /* DEVELOPER */) {
-          breakdown.system += tokens;
-        } else if (msg.role === "user" /* USER */) {
-          const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
-          if (hasToolResult) {
-            breakdown.tool_result += tokens;
-          } else {
-            breakdown.user += tokens;
-          }
-        } else if (msg.role === "assistant" /* ASSISTANT */) {
-          const hasToolUse = msg.content.some((c) => c.type === "tool_use" /* TOOL_USE */);
-          if (hasToolUse) {
-            breakdown.tool_use += tokens;
-          } else {
-            breakdown.assistant += tokens;
+        for (const c of msg.content) {
+          if (c.type === "output_text" /* OUTPUT_TEXT */ || c.type === "input_text" /* INPUT_TEXT */) {
+            contentArray.push({
+              type: "output_text" /* OUTPUT_TEXT */,
+              text: c.text || ""
+            });
+          } else if (c.type === "tool_use" /* TOOL_USE */) {
+            contentArray.push(c);
           }
         }
-      } else {
-        breakdown.other += tokens;
+      } else if (item.type === "compaction" || item.type === "reasoning") {
+        continue;
       }
     }
-    const valid = actualTokens <= maxTokens;
-    const overageTokens = valid ? 0 : actualTokens - maxTokens;
-    logger3.debug({
-      actualTokens,
-      maxTokens,
-      valid,
-      overageTokens,
-      breakdown
-    }, `Guardian validation: ${valid ? "PASS" : "FAIL"}`);
+    if (contentArray.length > 0) {
+      const message = {
+        type: "message",
+        id,
+        role: "assistant" /* ASSISTANT */,
+        content: contentArray
+      };
+      this._conversation.push(message);
+      this.emit("message:added", { role: "assistant", index: this._conversation.length - 1 });
+    }
+    return id;
+  }
+  /**
+   * Add tool results.
+   * Returns the message ID.
+   */
+  addToolResults(results) {
+    this.assertNotDestroyed();
+    if (results.length === 0) {
+      return "";
+    }
+    const id = this.generateId();
+    const contentArray = results.map((r) => ({
+      type: "tool_result" /* TOOL_RESULT */,
+      tool_use_id: r.tool_use_id,
+      content: typeof r.content === "string" ? r.content : JSON.stringify(r.content),
+      error: r.error
+    }));
+    const message = {
+      type: "message",
+      id,
+      role: "user" /* USER */,
+      // Tool results are user role in most APIs
+      content: contentArray
+    };
+    this._currentInput = [message];
+    this.emit("message:added", { role: "tool", index: this._conversation.length });
+    return id;
+  }
+  /**
+   * Get conversation history (read-only).
+   */
+  getConversation() {
+    return this._conversation;
+  }
+  /**
+   * Get current input (read-only).
+   */
+  getCurrentInput() {
+    return this._currentInput;
+  }
+  /**
+   * Get conversation length.
+   */
+  getConversationLength() {
+    return this._conversation.length;
+  }
+  /**
+   * Clear conversation history.
+   */
+  clearConversation(reason) {
+    this.assertNotDestroyed();
+    this._conversation = [];
+    this._currentInput = [];
+    this.emit("conversation:cleared", { reason });
+  }
+  // ============================================================================
+  // Context Preparation (THE main method)
+  // ============================================================================
+  /**
+   * Prepare context for LLM call.
+   *
+   * This method:
+   * 1. Calculates tool definition tokens (never compacted)
+   * 2. Builds the system message from all components
+   * 3. Calculates token budget
+   * 4. Handles oversized current input if needed
+   * 5. Runs compaction if needed
+   * 6. Returns final InputItem[] ready for LLM
+   *
+   * IMPORTANT: Call this ONCE right before each LLM call!
+   */
+  async prepare() {
+    this.assertNotDestroyed();
+    const compactionLog = [];
+    const toolsTokens = this.calculateToolsTokens();
+    const availableForContent = this._maxContextTokens - this._config.responseReserve - toolsTokens;
+    if (availableForContent <= 0) {
+      throw new Error(
+        `Too many tools registered: tools use ${toolsTokens} tokens, only ${this._maxContextTokens - this._config.responseReserve} available. Consider reducing the number of tools or their descriptions.`
+      );
+    }
+    const { systemMessage, systemTokens, breakdown } = await this.buildSystemMessage();
+    let currentInputTokens = this.calculateInputTokens(this._currentInput);
+    const systemPlusInput = systemTokens + currentInputTokens;
+    if (systemPlusInput > availableForContent) {
+      const result = await this.handleOversizedInput(
+        availableForContent - systemTokens
+      );
+      this.emit("input:oversized", { result });
+      if (!result.accepted) {
+        throw new Error(result.error || "Current input is too large for context");
+      }
+      currentInputTokens = this.calculateInputTokens(this._currentInput);
+    }
+    let conversationTokens = this.calculateConversationTokens();
+    let totalUsed = systemTokens + conversationTokens + currentInputTokens;
+    let compacted = false;
+    if (totalUsed / availableForContent > this._strategyThreshold) {
+      const targetToFree = totalUsed - Math.floor(availableForContent * (this._strategyThreshold - 0.1));
+      const freed = await this.runCompaction(targetToFree, compactionLog);
+      compacted = freed > 0;
+      conversationTokens = this.calculateConversationTokens();
+      totalUsed = systemTokens + conversationTokens + currentInputTokens;
+    }
+    const totalUsedWithTools = totalUsed + toolsTokens;
+    const budget = {
+      maxTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve,
+      systemMessageTokens: systemTokens,
+      toolsTokens,
+      conversationTokens,
+      currentInputTokens,
+      totalUsed: totalUsedWithTools,
+      available: this._maxContextTokens - this._config.responseReserve - totalUsedWithTools,
+      utilizationPercent: totalUsedWithTools / (this._maxContextTokens - this._config.responseReserve) * 100,
+      breakdown: {
+        ...breakdown,
+        tools: toolsTokens,
+        conversation: conversationTokens,
+        currentInput: currentInputTokens
+      }
+    };
+    if (budget.utilizationPercent >= 90) {
+      this.emit("budget:critical", { budget });
+    } else if (budget.utilizationPercent >= 70) {
+      this.emit("budget:warning", { budget });
+    }
+    const input = [
+      systemMessage,
+      ...this._conversation,
+      ...this._currentInput
+    ];
+    this.emit("context:prepared", { budget, compacted });
     return {
-      valid,
-      actualTokens,
-      targetTokens: maxTokens,
-      overageTokens,
-      breakdown
+      input,
+      budget,
+      compacted,
+      compactionLog
     };
   }
-  /**
-   * Apply graceful degradation to reduce input size
-   *
-   * @param input - The InputItem[] to potentially modify
-   * @param targetTokens - Target token count to achieve
-   * @returns Degradation result with potentially modified input
-   */
-  applyGracefulDegradation(input, targetTokens) {
-    const log = [];
-    let tokensFreed = 0;
-    let currentInput = [...input];
-    const initialValidation = this.validate(currentInput, targetTokens);
-    if (initialValidation.valid) {
-      return {
-        input: currentInput,
-        log: ["No degradation needed"],
-        finalTokens: initialValidation.actualTokens,
-        tokensFreed: 0,
-        success: true
-      };
-    }
-    log.push(`Starting graceful degradation: ${initialValidation.actualTokens} tokens, target: ${targetTokens}`);
-    const level1Result = this.truncateToolResults(currentInput, log);
-    currentInput = level1Result.input;
-    tokensFreed += level1Result.tokensFreed;
-    let validation = this.validate(currentInput, targetTokens);
-    if (validation.valid) {
-      log.push(`Level 1 (truncate tool results) successful: ${validation.actualTokens} tokens`);
-      return {
-        input: currentInput,
-        log,
-        finalTokens: validation.actualTokens,
-        tokensFreed,
-        success: true
-      };
-    }
-    const level2Result = this.removeOldestToolPairs(currentInput, validation.overageTokens, log);
-    currentInput = level2Result.input;
-    tokensFreed += level2Result.tokensFreed;
-    validation = this.validate(currentInput, targetTokens);
-    if (validation.valid) {
-      log.push(`Level 2 (remove tool pairs) successful: ${validation.actualTokens} tokens`);
-      return {
-        input: currentInput,
-        log,
-        finalTokens: validation.actualTokens,
-        tokensFreed,
-        success: true
-      };
-    }
-    const level3Result = this.truncateSystemPrompt(currentInput, log);
-    currentInput = level3Result.input;
-    tokensFreed += level3Result.tokensFreed;
-    validation = this.validate(currentInput, targetTokens);
-    if (validation.valid) {
-      log.push(`Level 3 (truncate system prompt) successful: ${validation.actualTokens} tokens`);
-      return {
-        input: currentInput,
-        log,
-        finalTokens: validation.actualTokens,
-        tokensFreed,
-        success: true
-      };
-    }
-    log.push(`All degradation levels exhausted: ${validation.actualTokens} tokens (target: ${targetTokens})`);
-    throw new ContextOverflowError(
-      "All graceful degradation levels exhausted",
-      {
-        actualTokens: validation.actualTokens,
-        maxTokens: targetTokens,
-        overageTokens: validation.overageTokens,
-        breakdown: validation.breakdown,
-        degradationLog: log
-      }
-    );
-  }
-  /**
-   * Emergency compact - more aggressive than graceful degradation
-   * Used when even graceful degradation fails
-   *
-   * @param input - The InputItem[] to compact
-   * @param targetTokens - Target token count
-   * @returns Compacted InputItem[] (may lose significant data)
-   */
-  emergencyCompact(input, targetTokens) {
-    const log = ["EMERGENCY COMPACTION"];
-    let result = [...input];
-    const systemMessages = [];
-    const otherMessages = [];
-    for (const item of result) {
-      if (item.type === "message" && item.role === "developer" /* DEVELOPER */) {
-        systemMessages.push(item);
-      } else {
-        otherMessages.push(item);
-      }
-    }
-    const truncatedSystem = systemMessages.map(
-      (item) => this.truncateMessage(item, this._minSystemPromptTokens)
-    );
-    const protectedMessages = otherMessages.slice(-this._protectedRecentMessages);
-    result = [...truncatedSystem, ...protectedMessages];
-    const validation = this.validate(result, targetTokens);
-    if (!validation.valid) {
-      log.push(`Emergency compaction failed: still at ${validation.actualTokens} tokens`);
-      logger3.error({ validation, log }, "Emergency compaction failed");
-    }
-    return result;
-  }
   // ============================================================================
-  // Private Helper Methods
+  // System Message Building
   // ============================================================================
   /**
-   * Estimate tokens for an InputItem
+   * Build the system message containing all context components.
    */
-  estimateInputItemTokens(item) {
-    if (item.type !== "message") {
-      return 50;
+  async buildSystemMessage() {
+    const parts = [];
+    const breakdown = {
+      systemPrompt: 0,
+      persistentInstructions: 0,
+      pluginInstructions: 0,
+      pluginContents: {}
+    };
+    if (this._systemPrompt) {
+      parts.push(`# System Prompt
+
+${this._systemPrompt}`);
+      breakdown.systemPrompt = this._estimator.estimateTokens(this._systemPrompt);
     }
+    const persistentPlugin = this._plugins.get("persistent_instructions");
+    if (persistentPlugin) {
+      const content = await persistentPlugin.getContent();
+      if (content) {
+        parts.push(`# Persistent Instructions
+
+${content}`);
+        breakdown.persistentInstructions = persistentPlugin.getTokenSize();
+      }
+    }
+    const instructionParts = [];
+    let totalInstructionTokens = 0;
+    for (const plugin of this._plugins.values()) {
+      const instructions = plugin.getInstructions();
+      if (instructions) {
+        instructionParts.push(`## ${this.formatPluginName(plugin.name)}
+
+${instructions}`);
+        totalInstructionTokens += plugin.getInstructionsTokenSize();
+      }
+    }
+    if (instructionParts.length > 0) {
+      parts.push(`# Instructions for Context Plugins
+
+${instructionParts.join("\n\n")}`);
+      breakdown.pluginInstructions = totalInstructionTokens;
+    }
+    for (const plugin of this._plugins.values()) {
+      if (plugin.name === "persistent_instructions") continue;
+      const content = await plugin.getContent();
+      if (content) {
+        const sectionTitle = this.formatPluginName(plugin.name);
+        parts.push(`# ${sectionTitle}
+
+${content}`);
+        breakdown.pluginContents[plugin.name] = plugin.getTokenSize();
+      }
+    }
+    const systemText = parts.join("\n\n---\n\n");
+    const systemTokens = this._estimator.estimateTokens(systemText);
+    const systemMessage = {
+      type: "message",
+      role: "developer" /* DEVELOPER */,
+      content: [{ type: "input_text" /* INPUT_TEXT */, text: systemText }]
+    };
+    return { systemMessage, systemTokens, breakdown };
+  }
+  /**
+   * Format plugin name for display (e.g., 'working_memory' -> 'Working Memory')
+   */
+  formatPluginName(name) {
+    return name.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  }
+  // ============================================================================
+  // Token Calculations
+  // ============================================================================
+  /**
+   * Calculate tokens used by tool definitions.
+   * Tools are sent separately to the LLM and take up context space.
+   */
+  calculateToolsTokens() {
+    const enabledTools = this._tools.getEnabled();
+    if (enabledTools.length === 0) return 0;
+    let total = 0;
+    for (const tool of enabledTools) {
+      const fn = tool.definition.function;
+      total += this._estimator.estimateTokens(fn.name);
+      if (fn.description) {
+        total += this._estimator.estimateTokens(fn.description);
+      }
+      if (fn.parameters) {
+        total += this._estimator.estimateDataTokens(fn.parameters);
+      }
+      total += 10;
+    }
+    total += 20;
+    return total;
+  }
+  /**
+   * Calculate tokens for conversation history.
+   */
+  calculateConversationTokens() {
+    let total = 0;
+    for (const item of this._conversation) {
+      total += this.estimateItemTokens(item);
+    }
+    return total;
+  }
+  /**
+   * Calculate tokens for current input.
+   */
+  calculateInputTokens(items) {
+    let total = 0;
+    for (const item of items) {
+      total += this.estimateItemTokens(item);
+    }
+    return total;
+  }
+  /**
+   * Estimate tokens for a single InputItem.
+   */
+  estimateItemTokens(item) {
+    if (item.type !== "message") return 50;
     const msg = item;
     let total = 4;
-    for (const content of msg.content) {
-      if (content.type === "input_text" /* INPUT_TEXT */ || content.type === "output_text" /* OUTPUT_TEXT */) {
-        total += this._estimator.estimateTokens(content.text || "");
-      } else if (content.type === "tool_use" /* TOOL_USE */) {
-        total += this._estimator.estimateTokens(content.name || "");
-        total += this._estimator.estimateDataTokens(content.input || {});
-      } else if (content.type === "tool_result" /* TOOL_RESULT */) {
-        total += this._estimator.estimateTokens(content.content || "");
-      } else if (content.type === "input_image_url" /* INPUT_IMAGE_URL */) {
+    for (const c of msg.content) {
+      if (c.type === "input_text" /* INPUT_TEXT */ || c.type === "output_text" /* OUTPUT_TEXT */) {
+        total += this._estimator.estimateTokens(c.text || "");
+      } else if (c.type === "tool_use" /* TOOL_USE */) {
+        total += this._estimator.estimateTokens(c.name || "");
+        total += this._estimator.estimateDataTokens(c.input || {});
+      } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+        total += this._estimator.estimateTokens(c.content || "");
+      } else if (c.type === "input_image_url" /* INPUT_IMAGE_URL */) {
         total += 200;
       }
     }
     return total;
   }
+  // ============================================================================
+  // Compaction
+  // ============================================================================
   /**
-   * Level 1: Truncate large tool results
+   * Run compaction to free up tokens.
+   * Returns total tokens freed.
    */
-  truncateToolResults(input, log) {
-    let tokensFreed = 0;
-    const result = [];
-    for (const item of input) {
-      if (item.type !== "message") {
-        result.push(item);
-        continue;
+  async runCompaction(targetToFree, log) {
+    let totalFreed = 0;
+    let remaining = targetToFree;
+    log.push(`Compaction started: need to free ~${targetToFree} tokens`);
+    const compactablePlugins = Array.from(this._plugins.values()).filter((p) => p.isCompactable()).sort((a, b) => {
+      const order = {
+        "in_context_memory": 1,
+        "working_memory": 2
+      };
+      return (order[a.name] ?? 10) - (order[b.name] ?? 10);
+    });
+    for (const plugin of compactablePlugins) {
+      if (remaining <= 0) break;
+      const freed = await plugin.compact(remaining);
+      if (freed > 0) {
+        totalFreed += freed;
+        remaining -= freed;
+        log.push(`Compacted ${plugin.name}: freed ~${freed} tokens`);
       }
-      const msg = item;
-      const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
-      if (!hasToolResult) {
-        result.push(item);
-        continue;
-      }
-      const newContent = msg.content.map((c) => {
-        if (c.type !== "tool_result" /* TOOL_RESULT */) return c;
-        const toolResult = c;
-        const content = toolResult.content || "";
-        const currentTokens = this._estimator.estimateTokens(content);
-        if (currentTokens > this._maxToolResultTokens) {
-          const targetChars = this._maxToolResultTokens * 4;
-          const truncated = content.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
-          const freed = currentTokens - this._estimator.estimateTokens(truncated);
-          tokensFreed += freed;
-          log.push(`Truncated tool result ${toolResult.tool_use_id}: ${currentTokens} \u2192 ${currentTokens - freed} tokens`);
-          return {
-            ...toolResult,
-            content: truncated
-          };
-        }
-        return c;
-      });
-      result.push({
-        ...msg,
-        content: newContent
-      });
     }
-    if (tokensFreed > 0) {
-      log.push(`Level 1: Truncated tool results, freed ${tokensFreed} tokens`);
+    if (remaining > 0) {
+      const conversationFreed = await this.compactConversation(remaining, log);
+      totalFreed += conversationFreed;
+      remaining -= conversationFreed;
     }
-    return { input: result, tokensFreed };
+    log.push(`Compaction complete: freed ~${totalFreed} tokens total`);
+    if (totalFreed > 0) {
+      this.emit("context:compacted", { tokensFreed: totalFreed, log });
+    }
+    return totalFreed;
   }
   /**
-   * Level 2: Remove oldest unprotected tool pairs
+   * Compact conversation history.
+   * Removes oldest messages while preserving tool pairs.
    */
-  removeOldestToolPairs(input, overageTokens, log) {
-    const toolPairs = /* @__PURE__ */ new Map();
-    for (let i = 0; i < input.length; i++) {
-      const item = input[i];
+  async compactConversation(targetToFree, log) {
+    if (this._conversation.length === 0) return 0;
+    const toolPairs = this.findToolPairs();
+    const safeToRemove = [];
+    const inPair = /* @__PURE__ */ new Set();
+    for (const indices of toolPairs.values()) {
+      for (const idx of indices) {
+        inPair.add(idx);
+      }
+    }
+    for (let i = 0; i < this._conversation.length; i++) {
+      if (!inPair.has(i)) {
+        safeToRemove.push(i);
+      }
+    }
+    for (const [_toolUseId, indices] of toolPairs) {
+      if (indices.length >= 2) {
+        for (const idx of indices) {
+          if (!safeToRemove.includes(idx)) {
+            safeToRemove.push(idx);
+          }
+        }
+      }
+    }
+    safeToRemove.sort((a, b) => a - b);
+    let tokensFreed = 0;
+    const indicesToRemove = /* @__PURE__ */ new Set();
+    for (const idx of safeToRemove) {
+      if (tokensFreed >= targetToFree) break;
+      const item = this._conversation[idx];
+      if (!item) continue;
+      const msg = item;
+      for (const c of msg.content) {
+        if (c.type === "tool_use" /* TOOL_USE */) {
+          const toolUseId = c.id;
+          const pairIndices = toolPairs.get(toolUseId);
+          if (pairIndices) {
+            for (const pairIdx of pairIndices) {
+              indicesToRemove.add(pairIdx);
+              tokensFreed += this.estimateItemTokens(this._conversation[pairIdx]);
+            }
+          }
+        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+          const toolUseId = c.tool_use_id;
+          const pairIndices = toolPairs.get(toolUseId);
+          if (pairIndices) {
+            for (const pairIdx of pairIndices) {
+              indicesToRemove.add(pairIdx);
+              tokensFreed += this.estimateItemTokens(this._conversation[pairIdx]);
+            }
+          }
+        }
+      }
+      if (!indicesToRemove.has(idx)) {
+        indicesToRemove.add(idx);
+        tokensFreed += this.estimateItemTokens(item);
+      }
+    }
+    if (indicesToRemove.size > 0) {
+      this._conversation = this._conversation.filter((_, i) => !indicesToRemove.has(i));
+      log.push(`Removed ${indicesToRemove.size} messages from conversation: freed ~${tokensFreed} tokens`);
+    }
+    return tokensFreed;
+  }
+  /**
+   * Find tool_use/tool_result pairs in conversation.
+   * Returns Map<tool_use_id, array of message indices>.
+   */
+  findToolPairs() {
+    const pairs = /* @__PURE__ */ new Map();
+    for (let i = 0; i < this._conversation.length; i++) {
+      const item = this._conversation[i];
       if (item?.type !== "message") continue;
       const msg = item;
-      for (const content of msg.content) {
-        if (content.type === "tool_use" /* TOOL_USE */) {
-          const toolUseId = content.id;
+      for (const c of msg.content) {
+        if (c.type === "tool_use" /* TOOL_USE */) {
+          const toolUseId = c.id;
           if (toolUseId) {
-            toolPairs.set(toolUseId, { useIndex: i, resultIndex: null });
+            const existing = pairs.get(toolUseId) ?? [];
+            existing.push(i);
+            pairs.set(toolUseId, existing);
           }
-        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
-          const toolUseId = content.tool_use_id;
-          const pair = toolPairs.get(toolUseId);
-          if (pair) {
-            pair.resultIndex = i;
+        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+          const toolUseId = c.tool_use_id;
+          if (toolUseId) {
+            const existing = pairs.get(toolUseId) ?? [];
+            existing.push(i);
+            pairs.set(toolUseId, existing);
           }
         }
       }
     }
-    const sortedPairs = [...toolPairs.entries()].filter(([, pair]) => pair.resultIndex !== null).sort(([, a], [, b]) => a.useIndex - b.useIndex);
-    const protectedStart = input.length - this._protectedRecentMessages;
-    const indicesToRemove = /* @__PURE__ */ new Set();
-    let tokensFreed = 0;
-    for (const [toolUseId, pair] of sortedPairs) {
-      if (tokensFreed >= overageTokens) break;
-      if (pair.useIndex >= protectedStart || pair.resultIndex !== null && pair.resultIndex >= protectedStart) {
-        continue;
-      }
-      indicesToRemove.add(pair.useIndex);
-      if (pair.resultIndex !== null) {
-        indicesToRemove.add(pair.resultIndex);
-      }
-      const useItem = input[pair.useIndex];
-      const resultItem = pair.resultIndex !== null ? input[pair.resultIndex] : null;
-      if (useItem) tokensFreed += this.estimateInputItemTokens(useItem);
-      if (resultItem) tokensFreed += this.estimateInputItemTokens(resultItem);
-      log.push(`Removing tool pair ${toolUseId}`);
+    return pairs;
+  }
+  // ============================================================================
+  // Oversized Input Handling
+  // ============================================================================
+  /**
+   * Handle oversized current input.
+   */
+  async handleOversizedInput(maxTokens) {
+    if (this._currentInput.length === 0) {
+      return { accepted: true, content: "", originalSize: 0, finalSize: 0 };
     }
-    const result = input.filter((_, i) => !indicesToRemove.has(i));
-    if (indicesToRemove.size > 0) {
-      log.push(`Level 2: Removed ${indicesToRemove.size} messages (${sortedPairs.length} tool pairs evaluated), freed ${tokensFreed} tokens`);
+    const input = this._currentInput[0];
+    if (input?.type !== "message") {
+      return { accepted: false, content: "", error: "Invalid input type", originalSize: 0, finalSize: 0 };
     }
-    return { input: result, tokensFreed };
+    const msg = input;
+    const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
+    if (!hasToolResult) {
+      const originalSize = this.estimateItemTokens(input);
+      return {
+        accepted: false,
+        content: "",
+        error: `User input is too large (${originalSize} tokens) for available context (${maxTokens} tokens). Please provide shorter input.`,
+        originalSize,
+        finalSize: 0
+      };
+    }
+    return this.emergencyToolResultsTruncation(msg, maxTokens);
   }
   /**
-   * Level 3: Truncate system prompt
+   * Emergency truncation of tool results to fit in context.
    */
-  truncateSystemPrompt(input, log) {
-    let tokensFreed = 0;
-    const result = [];
-    for (const item of input) {
-      if (item.type !== "message") {
-        result.push(item);
-        continue;
-      }
-      const msg = item;
-      if (msg.role !== "developer" /* DEVELOPER */) {
-        result.push(item);
-        continue;
-      }
-      const currentTokens = this.estimateInputItemTokens(msg);
-      if (currentTokens > this._minSystemPromptTokens) {
-        const truncated = this.truncateMessage(msg, this._minSystemPromptTokens);
-        const newTokens = this.estimateInputItemTokens(truncated);
-        tokensFreed += currentTokens - newTokens;
-        log.push(`Truncated system prompt: ${currentTokens} \u2192 ${newTokens} tokens`);
-        result.push(truncated);
+  emergencyToolResultsTruncation(msg, maxTokens) {
+    const originalSize = this.estimateItemTokens(msg);
+    const truncatedContent = [];
+    const maxChars = Math.floor(maxTokens * 3.5);
+    let totalCharsUsed = 0;
+    for (const c of msg.content) {
+      if (c.type === "tool_result" /* TOOL_RESULT */) {
+        const toolResult = c;
+        const content = toolResult.content || "";
+        if (this.isBinaryContent(content)) {
+          truncatedContent.push({
+            type: "tool_result" /* TOOL_RESULT */,
+            tool_use_id: toolResult.tool_use_id,
+            content: "[Binary content too large - rejected. Please try a different approach or request smaller output.]",
+            error: "Binary content too large"
+          });
+          totalCharsUsed += 100;
+        } else {
+          const availableChars = maxChars - totalCharsUsed - 200;
+          if (content.length > availableChars && availableChars > 0) {
+            const truncated = content.slice(0, availableChars);
+            truncatedContent.push({
+              type: "tool_result" /* TOOL_RESULT */,
+              tool_use_id: toolResult.tool_use_id,
+              content: `${truncated}
+
+[TRUNCATED: Original output was ${Math.round(content.length / 1024)}KB. Only first ${Math.round(availableChars / 1024)}KB shown. Consider using more targeted queries.]`
+            });
+            totalCharsUsed += truncated.length + 150;
+          } else if (availableChars > 0) {
+            truncatedContent.push(c);
+            totalCharsUsed += content.length;
+          } else {
+            truncatedContent.push({
+              type: "tool_result" /* TOOL_RESULT */,
+              tool_use_id: toolResult.tool_use_id,
+              content: "[Output too large - skipped due to context limits. Try a more targeted query.]",
+              error: "Output too large"
+            });
+            totalCharsUsed += 100;
+          }
+        }
       } else {
-        result.push(item);
+        truncatedContent.push(c);
       }
     }
-    if (tokensFreed > 0) {
-      log.push(`Level 3: Truncated system prompt, freed ${tokensFreed} tokens`);
-    }
-    return { input: result, tokensFreed };
+    msg.content = truncatedContent;
+    const finalSize = this.estimateItemTokens(msg);
+    return {
+      accepted: true,
+      content: JSON.stringify(truncatedContent),
+      warning: `Tool results truncated from ${originalSize} to ${finalSize} tokens to fit in context.`,
+      originalSize,
+      finalSize
+    };
   }
   /**
-   * Truncate a message to target token count
+   * Check if content appears to be binary (base64, etc.)
    */
-  truncateMessage(msg, targetTokens) {
-    const newContent = msg.content.map((c) => {
-      if (c.type !== "input_text" /* INPUT_TEXT */ && c.type !== "output_text" /* OUTPUT_TEXT */) {
-        return c;
+  isBinaryContent(content) {
+    if (!content || content.length < 100) return false;
+    const base64Ratio = (content.match(/[A-Za-z0-9+/=]/g)?.length ?? 0) / content.length;
+    if (base64Ratio > 0.95 && content.length > 1e3) {
+      return true;
+    }
+    if (/^[A-Za-z0-9+/]{50,}={0,2}$/.test(content.slice(0, 100))) {
+      return true;
+    }
+    return false;
+  }
+  // ============================================================================
+  // Session Persistence
+  // ============================================================================
+  /**
+   * Save context state to storage.
+   *
+   * @param sessionId - Optional session ID (uses current or generates new)
+   * @param metadata - Optional additional metadata to merge
+   * @param stateOverride - Optional state override (for agent-level state injection)
+   */
+  async save(sessionId, metadata, stateOverride) {
+    this.assertNotDestroyed();
+    if (!this._storage) {
+      throw new Error("No storage configured");
+    }
+    const targetSessionId = sessionId ?? this._sessionId ?? this.generateId();
+    const state = stateOverride ?? this.getState();
+    if (metadata) {
+      state.metadata = { ...state.metadata, ...metadata };
+    }
+    await this._storage.save(targetSessionId, state);
+    this._sessionId = targetSessionId;
+  }
+  /**
+   * Load context state from storage.
+   */
+  async load(sessionId) {
+    this.assertNotDestroyed();
+    if (!this._storage) {
+      throw new Error("No storage configured");
+    }
+    const stored = await this._storage.load(sessionId);
+    if (!stored) {
+      return false;
+    }
+    const state = stored.state;
+    this._conversation = state.conversation;
+    this._systemPrompt = state.systemPrompt;
+    for (const [name, pluginState] of Object.entries(state.pluginStates)) {
+      const plugin = this._plugins.get(name);
+      if (plugin) {
+        plugin.restoreState(pluginState);
       }
-      const text = c.text || "";
-      const currentTokens = this._estimator.estimateTokens(text);
-      if (currentTokens > targetTokens) {
-        const targetChars = targetTokens * 4;
-        const truncated = text.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
-        return { ...c, text: truncated };
+    }
+    this._sessionId = sessionId;
+    return true;
+  }
+  /**
+   * Load raw state from storage without restoring.
+   * Used by BaseAgent for custom state restoration.
+   */
+  async loadRaw(sessionId) {
+    this.assertNotDestroyed();
+    if (!this._storage) {
+      throw new Error("No storage configured");
+    }
+    const stored = await this._storage.load(sessionId);
+    if (!stored) {
+      return null;
+    }
+    this._sessionId = sessionId;
+    return { state: stored.state, stored };
+  }
+  /**
+   * Check if session exists in storage.
+   */
+  async sessionExists(sessionId) {
+    if (!this._storage) {
+      return false;
+    }
+    return this._storage.exists(sessionId);
+  }
+  /**
+   * Delete a session from storage.
+   */
+  async deleteSession(sessionId) {
+    if (!this._storage) {
+      throw new Error("No storage configured");
+    }
+    const targetSessionId = sessionId ?? this._sessionId;
+    if (!targetSessionId) {
+      throw new Error("No session ID provided or loaded");
+    }
+    await this._storage.delete(targetSessionId);
+    if (targetSessionId === this._sessionId) {
+      this._sessionId = null;
+    }
+  }
+  /**
+   * Get serialized state for persistence.
+   * Used by BaseAgent to inject agent-level state.
+   */
+  getState() {
+    this.assertNotDestroyed();
+    const pluginStates = {};
+    for (const [name, plugin] of this._plugins) {
+      pluginStates[name] = plugin.getState();
+    }
+    return {
+      conversation: this._conversation,
+      pluginStates,
+      systemPrompt: this._systemPrompt,
+      metadata: {
+        savedAt: Date.now(),
+        agentId: this._agentId,
+        model: this._config.model
       }
-      return c;
-    });
-    return { ...msg, content: newContent };
+    };
+  }
+  /**
+   * Restore state from serialized form.
+   * Used by BaseAgent for custom state restoration.
+   */
+  restoreState(state) {
+    this.assertNotDestroyed();
+    this._conversation = state.conversation ?? [];
+    this._systemPrompt = state.systemPrompt;
+    if (state.pluginStates) {
+      for (const [name, pluginState] of Object.entries(state.pluginStates)) {
+        const plugin = this._plugins.get(name);
+        if (plugin) {
+          plugin.restoreState(pluginState);
+        }
+      }
+    }
+  }
+  // ============================================================================
+  // Utilities
+  // ============================================================================
+  /**
+   * Generate unique ID.
+   */
+  generateId() {
+    return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  }
+  /**
+   * Assert context is not destroyed.
+   */
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("AgentContextNextGen is destroyed");
+    }
+  }
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+  /**
+   * Destroy context and release resources.
+   */
+  destroy() {
+    if (this._destroyed) return;
+    for (const plugin of this._plugins.values()) {
+      plugin.destroy();
+    }
+    this._plugins.clear();
+    this._tools.destroy();
+    this._conversation = [];
+    this._currentInput = [];
+    this.removeAllListeners();
+    this._destroyed = true;
   }
 };
 
-// src/core/context/SmartCompactor.ts
-init_Logger();
-var logger4 = exports.logger.child({ component: "SmartCompactor" });
-var SmartCompactor = class {
-  constructor(provider, memory, config) {
-    this.provider = provider;
-    this.memory = memory;
-    this.config = {
-      strategy: config.strategy,
-      maxContextTokens: config.maxContextTokens,
-      model: config.model ?? "gpt-4o-mini",
-      // Use a fast model for compaction
-      maxAnalysisTokens: config.maxAnalysisTokens ?? 2e3,
-      enableSpillToMemory: config.enableSpillToMemory ?? memory !== null,
-      minMessagesToCompact: config.minMessagesToCompact ?? 10
-    };
-  }
-  config;
-  /**
-   * Check if smart compaction should trigger based on current context usage
-   */
-  shouldTrigger(currentTokens) {
-    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
-    const triggerAt = this.config.maxContextTokens * thresholds.smartCompactionTrigger;
-    return currentTokens >= triggerAt;
+// src/infrastructure/providers/base/BaseProvider.ts
+var BaseProvider = class {
+  constructor(config) {
+    this.config = config;
   }
   /**
-   * Get target token count after compaction (strategy-dependent)
+   * Validate provider configuration
+   * Returns validation result with details
    */
-  getTargetTokens() {
-    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
-    return Math.floor(this.config.maxContextTokens * thresholds.compactionTarget);
+  async validateConfig() {
+    const validation = this.validateApiKey();
+    return validation.isValid;
   }
   /**
-   * Get the number of protected messages based on strategy
+   * Validate API key format and presence
+   * Can be overridden by providers with specific key formats
    */
-  getProtectedMessageCount() {
-    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
-    const estimatedProtected = Math.floor(
-      this.config.maxContextTokens * thresholds.protectedContextPercent / 100
-    );
-    return Math.max(estimatedProtected, 10);
-  }
-  /**
-   * Run smart compaction on the provided context
-   *
-   * @param context - The prepared context to compact
-   * @param targetReduction - Optional target reduction percentage (0-100)
-   */
-  async compact(context, targetReduction) {
-    const log = [];
-    log.push(`[SmartCompactor] Starting compaction with strategy: ${this.config.strategy}`);
-    const conversationComponent = context.components.find(
-      (c) => c.name === "conversation_history" || c.name === "conversation"
-    );
-    if (!conversationComponent) {
-      log.push("[SmartCompactor] No conversation component found - skipping");
+  validateApiKey() {
+    const apiKey = this.config.apiKey;
+    if (!apiKey || apiKey.trim().length === 0) {
+      return { isValid: false };
+    }
+    const placeholders = [
+      "your-api-key",
+      "YOUR_API_KEY",
+      "sk-xxx",
+      "api-key-here",
+      "REPLACE_ME",
+      "<your-key>"
+    ];
+    if (placeholders.some((p) => apiKey.includes(p))) {
       return {
-        summaries: [],
-        spilled: [],
-        removed: [],
-        tokensFreed: 0,
-        log,
-        success: true
+        isValid: false,
+        warning: `API key appears to be a placeholder value`
       };
     }
-    const messages = this.parseMessages(conversationComponent);
-    if (messages.length < this.config.minMessagesToCompact) {
-      log.push(`[SmartCompactor] Only ${messages.length} messages, min ${this.config.minMessagesToCompact} required`);
-      return {
-        summaries: [],
-        spilled: [],
-        removed: [],
-        tokensFreed: 0,
-        log,
-        success: true
-      };
-    }
-    const targetTokens = targetReduction ? Math.floor(context.budget.used * (1 - targetReduction / 100)) : this.getTargetTokens();
-    const tokensToFree = context.budget.used - targetTokens;
-    if (tokensToFree <= 0) {
-      log.push("[SmartCompactor] No tokens need to be freed");
-      return {
-        summaries: [],
-        spilled: [],
-        removed: [],
-        tokensFreed: 0,
-        log,
-        success: true
-      };
-    }
-    log.push(`[SmartCompactor] Target: free ${tokensToFree} tokens (${Math.round(tokensToFree / context.budget.used * 100)}%)`);
-    try {
-      const analysisPrompt = this.buildAnalysisPrompt(
-        messages,
-        context.budget,
-        targetTokens
+    return this.validateProviderSpecificKeyFormat(apiKey);
+  }
+  /**
+   * Override this method in provider implementations for specific key format validation
+   */
+  validateProviderSpecificKeyFormat(_apiKey) {
+    return { isValid: true };
+  }
+  /**
+   * Validate config and throw if invalid
+   */
+  assertValidConfig() {
+    const validation = this.validateApiKey();
+    if (!validation.isValid) {
+      throw new InvalidConfigError(
+        `Invalid API key for provider '${this.name}'${validation.warning ? `: ${validation.warning}` : ""}`
       );
-      const response = await this.provider.generate({
-        model: this.config.model,
-        input: analysisPrompt,
-        max_output_tokens: this.config.maxAnalysisTokens,
-        response_format: { type: "json_object" },
-        temperature: 0.3
-        // More deterministic for analysis
-      });
-      const responseText = this.extractTextFromResponse(response.output);
-      const decisions = this.parseDecisions(responseText);
-      log.push(`[SmartCompactor] LLM reasoning: ${decisions.reasoning}`);
-      return await this.executeDecisions(decisions, messages, log);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      log.push(`[SmartCompactor] Error: ${errorMsg}`);
-      logger4.error({ error: errorMsg }, "Smart compaction failed");
-      return {
-        summaries: [],
-        spilled: [],
-        removed: [],
-        tokensFreed: 0,
-        log,
-        success: false,
-        error: errorMsg
-      };
     }
   }
   /**
-   * Parse messages from a context component
+   * Get API key from config
    */
-  parseMessages(component) {
-    const content = component.content;
-    if (typeof content === "string") {
-      try {
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          return parsed.map((m, i) => ({
-            id: m.id || `msg_${i}`,
-            role: m.role || "unknown",
-            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-            timestamp: m.timestamp,
-            tokens: m.tokens
-          }));
+  getApiKey() {
+    return this.config.apiKey;
+  }
+  /**
+   * Get base URL if configured
+   */
+  getBaseURL() {
+    return this.config.baseURL;
+  }
+  /**
+   * Get timeout configuration
+   */
+  getTimeout() {
+    return this.config.timeout || 6e4;
+  }
+  /**
+   * Get max retries configuration
+   */
+  getMaxRetries() {
+    return this.config.maxRetries || 3;
+  }
+};
+
+// src/infrastructure/providers/base/BaseTextProvider.ts
+init_CircuitBreaker();
+init_Logger();
+init_Metrics();
+var BaseTextProvider = class extends BaseProvider {
+  circuitBreaker;
+  logger;
+  _isObservabilityInitialized = false;
+  constructor(config) {
+    super(config);
+    this.logger = exports.logger.child({
+      component: "Provider",
+      provider: "unknown"
+    });
+  }
+  /**
+   * Auto-initialize observability on first use (lazy initialization)
+   * This is called automatically by executeWithCircuitBreaker()
+   * @internal
+   */
+  ensureObservabilityInitialized() {
+    if (this._isObservabilityInitialized) {
+      return;
+    }
+    const providerName = this.name || "unknown";
+    const cbConfig = this.config.circuitBreaker || exports.DEFAULT_CIRCUIT_BREAKER_CONFIG;
+    this.circuitBreaker = new exports.CircuitBreaker(
+      `provider:${providerName}`,
+      cbConfig
+    );
+    this.logger = exports.logger.child({
+      component: "Provider",
+      provider: providerName
+    });
+    this.circuitBreaker.on("opened", (data) => {
+      this.logger.warn(data, "Circuit breaker opened");
+      exports.metrics.increment("circuit_breaker.opened", 1, {
+        breaker: data.name,
+        provider: providerName
+      });
+    });
+    this.circuitBreaker.on("closed", (data) => {
+      this.logger.info(data, "Circuit breaker closed");
+      exports.metrics.increment("circuit_breaker.closed", 1, {
+        breaker: data.name,
+        provider: providerName
+      });
+    });
+    this._isObservabilityInitialized = true;
+  }
+  /**
+   * DEPRECATED: No longer needed, kept for backward compatibility
+   * Observability is now auto-initialized on first use
+   * @deprecated Initialization happens automatically
+   */
+  initializeObservability(_providerName) {
+    this.ensureObservabilityInitialized();
+  }
+  /**
+   * Execute with circuit breaker protection (helper for subclasses)
+   */
+  async executeWithCircuitBreaker(operation, model) {
+    this.ensureObservabilityInitialized();
+    const startTime = Date.now();
+    const operationName = "llm.generate";
+    this.logger.debug({
+      operation: operationName,
+      model
+    }, "LLM call started");
+    exports.metrics.increment("provider.llm.request", 1, {
+      provider: this.name,
+      model: model || "unknown"
+    });
+    try {
+      if (!this.circuitBreaker) {
+        return await operation();
+      }
+      const result = await this.circuitBreaker.execute(operation);
+      const duration = Date.now() - startTime;
+      this.logger.info({
+        operation: operationName,
+        model,
+        duration
+      }, "LLM call completed");
+      exports.metrics.timing("provider.llm.latency", duration, {
+        provider: this.name,
+        model: model || "unknown"
+      });
+      exports.metrics.increment("provider.llm.response", 1, {
+        provider: this.name,
+        model: model || "unknown",
+        status: "success"
+      });
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error({
+        operation: operationName,
+        model,
+        error: error.message,
+        duration
+      }, "LLM call failed");
+      exports.metrics.increment("provider.llm.error", 1, {
+        provider: this.name,
+        model: model || "unknown",
+        error: error.name
+      });
+      throw error;
+    }
+  }
+  /**
+   * Get circuit breaker metrics
+   */
+  getCircuitBreakerMetrics() {
+    if (!this.circuitBreaker) {
+      return null;
+    }
+    return this.circuitBreaker.getMetrics();
+  }
+  /**
+   * Normalize input to string (helper for providers that don't support complex input)
+   */
+  normalizeInputToString(input) {
+    if (typeof input === "string") {
+      return input;
+    }
+    const textParts = [];
+    for (const item of input) {
+      if (item.type === "message") {
+        for (const content of item.content) {
+          if (content.type === "input_text") {
+            textParts.push(content.text);
+          } else if (content.type === "output_text") {
+            textParts.push(content.text);
+          }
         }
-      } catch {
-        return [{
-          id: "msg_0",
-          role: "unknown",
-          content
-        }];
       }
     }
-    if (Array.isArray(content)) {
-      return content.map((m, i) => ({
-        id: m.id || `msg_${i}`,
-        role: m.role || "unknown",
-        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-        timestamp: m.timestamp,
-        tokens: m.tokens
-      }));
+    return textParts.join("\n");
+  }
+  /**
+   * Clean up provider resources (circuit breaker listeners, etc.)
+   * Should be called when the provider is no longer needed.
+   */
+  destroy() {
+    if (this.circuitBreaker) {
+      this.circuitBreaker.removeAllListeners();
+      this.circuitBreaker = void 0;
+    }
+    this._isObservabilityInitialized = false;
+  }
+};
+
+// src/infrastructure/providers/openai/OpenAIResponsesConverter.ts
+var OpenAIResponsesConverter = class {
+  /**
+   * Convert our input format to Responses API format
+   */
+  convertInput(input, instructions) {
+    if (typeof input === "string") {
+      return {
+        input,
+        instructions
+      };
+    }
+    const items = [];
+    for (const item of input) {
+      if (item.type === "message") {
+        const messageContent = [];
+        const isAssistant = item.role === "assistant";
+        for (const content of item.content) {
+          switch (content.type) {
+            case "input_text":
+            case "output_text":
+              messageContent.push({
+                type: isAssistant ? "output_text" : "input_text",
+                text: content.text
+              });
+              break;
+            case "input_image_url":
+              if (!isAssistant) {
+                messageContent.push({
+                  type: "input_image",
+                  image_url: content.image_url.url,
+                  ...content.image_url.detail && { detail: content.image_url.detail }
+                });
+              }
+              break;
+            case "tool_use":
+              items.push({
+                type: "function_call",
+                call_id: content.id,
+                name: content.name,
+                arguments: content.arguments
+              });
+              break;
+            case "tool_result":
+              const output = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
+              items.push({
+                type: "function_call_output",
+                call_id: content.tool_use_id,
+                output
+              });
+              break;
+          }
+        }
+        if (messageContent.length > 0) {
+          items.push({
+            type: "message",
+            role: item.role,
+            content: messageContent,
+            // Only include id if it's a valid OpenAI message ID (starts with msg_)
+            // New messages shouldn't have id; previous outputs keep their original id
+            ...item.id?.startsWith("msg_") ? { id: item.id } : {},
+            status: "completed"
+          });
+        }
+      } else if (item.type === "compaction") {
+        items.push({
+          type: "compaction",
+          id: item.id,
+          encrypted_content: item.encrypted_content
+        });
+      }
+    }
+    return {
+      input: items,
+      instructions
+    };
+  }
+  /**
+   * Convert Responses API response to our LLMResponse format
+   */
+  convertResponse(response) {
+    const content = [];
+    let outputText = "";
+    let messageId;
+    for (const item of response.output || []) {
+      if (item.type === "message") {
+        const messageItem = item;
+        if (!messageId && messageItem.id) {
+          messageId = messageItem.id;
+        }
+        for (const contentItem of messageItem.content || []) {
+          if (contentItem.type === "output_text") {
+            const textContent = contentItem;
+            content.push({
+              type: "output_text",
+              text: textContent.text,
+              annotations: textContent.annotations || []
+            });
+            outputText += textContent.text;
+          }
+        }
+      } else if (item.type === "function_call") {
+        const functionCall = item;
+        content.push({
+          type: "tool_use",
+          id: functionCall.call_id,
+          name: functionCall.name,
+          arguments: functionCall.arguments
+        });
+      } else if (item.type === "reasoning") {
+        const reasoning = item;
+        if (reasoning.summary) {
+          content.push({
+            type: "reasoning",
+            summary: reasoning.summary,
+            // effort field may not exist in all versions
+            ..."effort" in reasoning && { effort: reasoning.effort }
+          });
+        }
+      }
+    }
+    if (!outputText) {
+      outputText = response.output_text || "";
+    }
+    const finalMessageId = messageId || response.id;
+    return {
+      id: response.id,
+      object: "response",
+      created_at: response.created_at,
+      status: response.status || "completed",
+      model: response.model,
+      output: [
+        {
+          type: "message",
+          id: finalMessageId,
+          role: "assistant" /* ASSISTANT */,
+          content
+        }
+      ],
+      output_text: outputText,
+      usage: {
+        input_tokens: response.usage?.input_tokens || 0,
+        output_tokens: response.usage?.output_tokens || 0,
+        total_tokens: response.usage?.total_tokens || 0
+      }
+    };
+  }
+  /**
+   * Convert our tool definitions to Responses API format
+   *
+   * Key difference: Responses API uses internally-tagged format
+   * (no nested `function` object) and strict mode requires proper schemas
+   */
+  convertTools(tools) {
+    return tools.map((tool) => {
+      if (tool.type === "function") {
+        const funcDef = tool.function;
+        const useStrict = funcDef.strict === true;
+        return {
+          type: "function",
+          name: funcDef.name,
+          description: funcDef.description || "",
+          parameters: funcDef.parameters || null,
+          strict: useStrict
+        };
+      }
+      return tool;
+    });
+  }
+  /**
+   * Convert tool_choice option to Responses API format
+   */
+  convertToolChoice(toolChoice) {
+    if (!toolChoice || toolChoice === "auto") {
+      return "auto";
+    }
+    if (toolChoice === "required") {
+      return "required";
+    }
+    return {
+      type: "function",
+      name: toolChoice.function.name
+    };
+  }
+  /**
+   * Convert response_format option to Responses API format (modalities)
+   */
+  convertResponseFormat(responseFormat) {
+    if (!responseFormat) {
+      return void 0;
+    }
+    if (responseFormat.type === "json_schema" && responseFormat.json_schema) {
+      return {
+        type: "text",
+        text: {
+          type: "json_schema",
+          name: responseFormat.json_schema.name || "response",
+          schema: responseFormat.json_schema.schema || responseFormat.json_schema,
+          description: responseFormat.json_schema.description,
+          strict: responseFormat.json_schema.strict !== false
+        }
+      };
+    }
+    if (responseFormat.type === "json_object") {
+      return {
+        type: "text",
+        text: {
+          type: "json_object"
+        }
+      };
+    }
+    return {
+      type: "text",
+      text: {
+        type: "text"
+      }
+    };
+  }
+};
+
+// src/domain/entities/StreamEvent.ts
+var StreamEventType = /* @__PURE__ */ ((StreamEventType2) => {
+  StreamEventType2["RESPONSE_CREATED"] = "response.created";
+  StreamEventType2["RESPONSE_IN_PROGRESS"] = "response.in_progress";
+  StreamEventType2["OUTPUT_TEXT_DELTA"] = "response.output_text.delta";
+  StreamEventType2["OUTPUT_TEXT_DONE"] = "response.output_text.done";
+  StreamEventType2["TOOL_CALL_START"] = "response.tool_call.start";
+  StreamEventType2["TOOL_CALL_ARGUMENTS_DELTA"] = "response.tool_call_arguments.delta";
+  StreamEventType2["TOOL_CALL_ARGUMENTS_DONE"] = "response.tool_call_arguments.done";
+  StreamEventType2["TOOL_EXECUTION_START"] = "response.tool_execution.start";
+  StreamEventType2["TOOL_EXECUTION_DONE"] = "response.tool_execution.done";
+  StreamEventType2["ITERATION_COMPLETE"] = "response.iteration.complete";
+  StreamEventType2["RESPONSE_COMPLETE"] = "response.complete";
+  StreamEventType2["ERROR"] = "response.error";
+  return StreamEventType2;
+})(StreamEventType || {});
+function isStreamEvent(event, type) {
+  return event.type === type;
+}
+function isOutputTextDelta(event) {
+  return event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */;
+}
+function isToolCallStart(event) {
+  return event.type === "response.tool_call.start" /* TOOL_CALL_START */;
+}
+function isToolCallArgumentsDelta(event) {
+  return event.type === "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */;
+}
+function isToolCallArgumentsDone(event) {
+  return event.type === "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */;
+}
+function isResponseComplete(event) {
+  return event.type === "response.complete" /* RESPONSE_COMPLETE */;
+}
+function isErrorEvent(event) {
+  return event.type === "response.error" /* ERROR */;
+}
+
+// src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts
+var OpenAIResponsesStreamConverter = class {
+  /**
+   * Convert Responses API stream to our StreamEvent format
+   */
+  async *convertStream(stream) {
+    let responseId = "";
+    let sequenceNumber = 0;
+    const activeItems = /* @__PURE__ */ new Map();
+    const toolCallBuffers = /* @__PURE__ */ new Map();
+    for await (const event of stream) {
+      if (process.env.DEBUG_OPENAI) {
+        console.error("[DEBUG] Responses API event:", event.type);
+      }
+      switch (event.type) {
+        case "response.created": {
+          responseId = event.response.id;
+          yield {
+            type: "response.created" /* RESPONSE_CREATED */,
+            response_id: responseId,
+            model: event.response.model,
+            created_at: event.response.created_at
+          };
+          break;
+        }
+        case "response.output_item.added": {
+          const addedEvent = event;
+          const item = addedEvent.item;
+          activeItems.set(addedEvent.output_index.toString(), {
+            type: item.type
+          });
+          if (item.type === "function_call") {
+            const functionCall = item;
+            const toolCallId = functionCall.call_id;
+            const toolName = functionCall.name;
+            activeItems.set(addedEvent.output_index.toString(), {
+              type: "function_call",
+              toolCallId,
+              toolName
+            });
+            toolCallBuffers.set(toolCallId, {
+              id: toolCallId,
+              name: toolName,
+              args: ""
+            });
+            yield {
+              type: "response.tool_call.start" /* TOOL_CALL_START */,
+              response_id: responseId,
+              item_id: `item_${addedEvent.output_index}`,
+              tool_call_id: toolCallId,
+              tool_name: toolName
+            };
+          }
+          break;
+        }
+        case "response.output_text.delta": {
+          const textEvent = event;
+          yield {
+            type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
+            response_id: responseId,
+            item_id: textEvent.item_id,
+            output_index: textEvent.output_index,
+            content_index: textEvent.content_index,
+            delta: textEvent.delta || "",
+            sequence_number: sequenceNumber++
+          };
+          break;
+        }
+        case "response.function_call_arguments.delta": {
+          const argsEvent = event;
+          const itemInfo = activeItems.get(argsEvent.output_index.toString());
+          if (itemInfo?.toolCallId) {
+            const buffer = toolCallBuffers.get(itemInfo.toolCallId);
+            if (buffer) {
+              buffer.args += argsEvent.delta || "";
+              yield {
+                type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
+                response_id: responseId,
+                item_id: argsEvent.item_id,
+                tool_call_id: buffer.id,
+                tool_name: buffer.name,
+                delta: argsEvent.delta || "",
+                sequence_number: sequenceNumber++
+              };
+            }
+          }
+          break;
+        }
+        case "response.output_item.done": {
+          const doneEvent = event;
+          const item = doneEvent.item;
+          if (item.type === "function_call") {
+            const functionCall = item;
+            const buffer = toolCallBuffers.get(functionCall.call_id);
+            if (buffer) {
+              yield {
+                type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
+                response_id: responseId,
+                tool_call_id: buffer.id,
+                tool_name: buffer.name,
+                arguments: buffer.args || functionCall.arguments
+              };
+            }
+          }
+          break;
+        }
+        case "response.completed": {
+          const completedEvent = event;
+          const response = completedEvent.response;
+          let status = "completed";
+          if (response.status === "failed") {
+            status = "failed";
+          } else if (response.status === "incomplete") {
+            status = "incomplete";
+          }
+          yield {
+            type: "response.complete" /* RESPONSE_COMPLETE */,
+            response_id: responseId,
+            status,
+            usage: {
+              input_tokens: response.usage?.input_tokens || 0,
+              output_tokens: response.usage?.output_tokens || 0,
+              total_tokens: response.usage?.total_tokens || 0
+            },
+            iterations: 1
+          };
+          break;
+        }
+        // Handle other event types if needed
+        default:
+          if (process.env.DEBUG_OPENAI) {
+            console.error("[DEBUG] Unhandled Responses API event type:", event.type);
+          }
+      }
+    }
+  }
+};
+
+// src/infrastructure/providers/openai/OpenAITextProvider.ts
+var OpenAITextProvider = class extends BaseTextProvider {
+  name = "openai";
+  capabilities = {
+    text: true,
+    images: true,
+    videos: false,
+    audio: true
+  };
+  client;
+  converter;
+  streamConverter;
+  constructor(config) {
+    super(config);
+    this.client = new OpenAI2__default.default({
+      apiKey: this.getApiKey(),
+      baseURL: this.getBaseURL(),
+      organization: config.organization,
+      timeout: this.getTimeout(),
+      maxRetries: this.getMaxRetries()
+    });
+    this.converter = new OpenAIResponsesConverter();
+    this.streamConverter = new OpenAIResponsesStreamConverter();
+  }
+  /**
+   * Check if a parameter is supported by the model
+   */
+  supportsParameter(model, parameter) {
+    const modelInfo = getModelInfo(model);
+    if (!modelInfo?.features.parameters) {
+      return true;
+    }
+    return modelInfo.features.parameters[parameter] !== false;
+  }
+  /**
+   * Generate response using OpenAI Responses API
+   */
+  async generate(options) {
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        const { input, instructions } = this.converter.convertInput(
+          options.input,
+          options.instructions
+        );
+        const params = {
+          model: options.model,
+          input,
+          ...instructions && { instructions },
+          ...options.tools && options.tools.length > 0 && {
+            tools: this.converter.convertTools(options.tools)
+          },
+          ...options.tool_choice && {
+            tool_choice: this.converter.convertToolChoice(options.tool_choice)
+          },
+          ...options.temperature !== void 0 && this.supportsParameter(options.model, "temperature") && { temperature: options.temperature },
+          ...options.max_output_tokens && { max_output_tokens: options.max_output_tokens },
+          ...options.response_format && {
+            text: this.converter.convertResponseFormat(options.response_format)
+          },
+          ...options.parallel_tool_calls !== void 0 && {
+            parallel_tool_calls: options.parallel_tool_calls
+          },
+          ...options.previous_response_id && {
+            previous_response_id: options.previous_response_id
+          },
+          ...options.metadata && { metadata: options.metadata }
+        };
+        const response = await this.client.responses.create(params);
+        return this.converter.convertResponse(response);
+      } catch (error) {
+        this.handleError(error);
+        throw error;
+      }
+    }, options.model);
+  }
+  /**
+   * Stream response using OpenAI Responses API
+   */
+  async *streamGenerate(options) {
+    try {
+      const { input, instructions } = this.converter.convertInput(
+        options.input,
+        options.instructions
+      );
+      const params = {
+        model: options.model,
+        input,
+        ...instructions && { instructions },
+        ...options.tools && options.tools.length > 0 && {
+          tools: this.converter.convertTools(options.tools)
+        },
+        ...options.tool_choice && {
+          tool_choice: this.converter.convertToolChoice(options.tool_choice)
+        },
+        ...options.temperature !== void 0 && this.supportsParameter(options.model, "temperature") && { temperature: options.temperature },
+        ...options.max_output_tokens && { max_output_tokens: options.max_output_tokens },
+        ...options.response_format && {
+          text: this.converter.convertResponseFormat(options.response_format)
+        },
+        ...options.parallel_tool_calls !== void 0 && {
+          parallel_tool_calls: options.parallel_tool_calls
+        },
+        ...options.previous_response_id && {
+          previous_response_id: options.previous_response_id
+        },
+        ...options.metadata && { metadata: options.metadata },
+        stream: true
+      };
+      const stream = await this.client.responses.create(params);
+      yield* this.streamConverter.convertStream(stream);
+    } catch (error) {
+      this.handleError(error);
+      throw error;
+    }
+  }
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model) {
+    if (model.startsWith("gpt-4")) {
+      return {
+        supportsTools: true,
+        supportsVision: model.includes("vision") || !model.includes("0613"),
+        supportsJSON: true,
+        supportsJSONSchema: true,
+        maxTokens: model.includes("turbo") ? 128e3 : 8192,
+        maxOutputTokens: 16384
+      };
+    }
+    if (model.startsWith("gpt-3.5")) {
+      return {
+        supportsTools: true,
+        supportsVision: false,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 16385,
+        maxOutputTokens: 4096
+      };
+    }
+    if (model.startsWith("o1") || model.startsWith("o3")) {
+      return {
+        supportsTools: false,
+        supportsVision: true,
+        supportsJSON: false,
+        supportsJSONSchema: false,
+        maxTokens: 2e5,
+        maxOutputTokens: 1e5
+      };
+    }
+    return {
+      supportsTools: false,
+      supportsVision: false,
+      supportsJSON: false,
+      supportsJSONSchema: false,
+      maxTokens: 4096,
+      maxOutputTokens: 4096
+    };
+  }
+  /**
+   * Handle OpenAI-specific errors
+   */
+  handleError(error) {
+    if (error.status === 401) {
+      throw new ProviderAuthError("openai", "Invalid API key");
+    }
+    if (error.status === 429) {
+      const retryAfter = error.headers?.["retry-after"];
+      throw new ProviderRateLimitError(
+        "openai",
+        retryAfter ? parseInt(retryAfter) * 1e3 : void 0
+      );
+    }
+    if (error.code === "context_length_exceeded" || error.status === 413) {
+      throw new ProviderContextLengthError("openai", 128e3);
+    }
+    throw error;
+  }
+};
+function buildLLMResponse(options) {
+  const {
+    provider,
+    rawId,
+    model,
+    status,
+    content,
+    usage,
+    messageId,
+    createdAt = Math.floor(Date.now() / 1e3)
+  } = options;
+  const responseId = rawId ? `resp_${provider}_${rawId}` : `resp_${provider}_${crypto2.randomUUID()}`;
+  const msgId = messageId || `msg_${provider}_${crypto2.randomUUID()}`;
+  const output = [
+    {
+      type: "message",
+      id: msgId,
+      role: "assistant" /* ASSISTANT */,
+      content
+    }
+  ];
+  const outputText = extractTextFromContent(content);
+  return {
+    id: responseId,
+    object: "response",
+    created_at: createdAt,
+    status,
+    model,
+    output,
+    output_text: outputText,
+    usage: {
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      total_tokens: usage.totalTokens ?? usage.inputTokens + usage.outputTokens
+    }
+  };
+}
+function extractTextFromContent(content) {
+  return content.filter(
+    (c) => c.type === "output_text" /* OUTPUT_TEXT */
+  ).map((c) => c.text).join("\n");
+}
+function createTextContent(text) {
+  return {
+    type: "output_text" /* OUTPUT_TEXT */,
+    text,
+    annotations: []
+  };
+}
+function createToolUseContent(id, name, args) {
+  return {
+    type: "tool_use" /* TOOL_USE */,
+    id,
+    name,
+    arguments: typeof args === "string" ? args : JSON.stringify(args)
+  };
+}
+function mapAnthropicStatus(stopReason) {
+  switch (stopReason) {
+    case "end_turn":
+    case "tool_use":
+    case "stop_sequence":
+      return "completed";
+    case "max_tokens":
+      return "incomplete";
+    default:
+      return "incomplete";
+  }
+}
+function mapGoogleStatus(finishReason) {
+  switch (finishReason) {
+    case "STOP":
+      return "completed";
+    case "MAX_TOKENS":
+      return "incomplete";
+    case "SAFETY":
+    case "RECITATION":
+      return "failed";
+    case "OTHER":
+    default:
+      return "incomplete";
+  }
+}
+function generateToolCallId(provider) {
+  const uuid = crypto2.randomUUID();
+  return `${provider}_${uuid}` ;
+}
+
+// src/infrastructure/providers/shared/ToolConversionUtils.ts
+function extractFunctionTools(tools) {
+  return tools.filter((t) => t.type === "function");
+}
+function convertToolsToStandardFormat(tools) {
+  return extractFunctionTools(tools).map((tool) => ({
+    name: tool.function.name,
+    description: tool.function.description || "",
+    parameters: tool.function.parameters || { type: "object", properties: {} }
+  }));
+}
+function transformForAnthropic(tool) {
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.parameters
+  };
+}
+
+// src/infrastructure/providers/base/BaseConverter.ts
+var BaseConverter = class {
+  // ==========================================================================
+  // Protected Helper Methods (shared by all providers)
+  // ==========================================================================
+  /**
+   * Convert InputItem array to provider messages
+   * @param input - String or InputItem array
+   * @returns Normalized input ready for provider conversion
+   */
+  normalizeInput(input) {
+    if (typeof input === "string") {
+      return [
+        {
+          type: "message",
+          role: "user" /* USER */,
+          content: [{ type: "input_text" /* INPUT_TEXT */, text: input }]
+        }
+      ];
+    }
+    return input;
+  }
+  /**
+   * Map our role to provider-specific role
+   * Override in subclass if provider uses different role names
+   */
+  mapRole(role) {
+    if (role === "developer" /* DEVELOPER */) {
+      return "user";
+    }
+    return role;
+  }
+  /**
+   * Convert our Tool[] to provider-specific tool format
+   */
+  convertTools(tools) {
+    if (!tools || tools.length === 0) {
+      return void 0;
+    }
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => this.transformTool(tool));
+  }
+  /**
+   * Parse tool arguments from JSON string
+   * Throws InvalidToolArgumentsError on parse failure
+   */
+  parseToolArguments(name, argsString) {
+    try {
+      return JSON.parse(argsString);
+    } catch (parseError) {
+      throw new InvalidToolArgumentsError(
+        name,
+        argsString,
+        parseError instanceof Error ? parseError : new Error(String(parseError))
+      );
+    }
+  }
+  /**
+   * Parse a data URI into components
+   * @returns Parsed image data or null if not a data URI
+   */
+  parseDataUri(url2) {
+    const matches = url2.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches || matches.length < 3) {
+      return null;
+    }
+    const format = matches[1];
+    const data = matches[2];
+    return {
+      format,
+      mediaType: `image/${format}`,
+      data
+    };
+  }
+  /**
+   * Check if URL is a data URI
+   */
+  isDataUri(url2) {
+    return url2.startsWith("data:");
+  }
+  /**
+   * Build standardized LLMResponse using shared utility
+   */
+  buildResponse(options) {
+    return buildLLMResponse({
+      provider: this.providerName,
+      ...options
+    });
+  }
+  /**
+   * Create a text content block
+   */
+  createText(text) {
+    return createTextContent(text);
+  }
+  /**
+   * Create a tool_use content block
+   */
+  createToolUse(id, name, args) {
+    return createToolUseContent(id, name, args);
+  }
+  /**
+   * Extract text from Content array
+   */
+  extractText(content) {
+    return content.filter((c) => c.type === "output_text" /* OUTPUT_TEXT */).map((c) => c.text).join("\n");
+  }
+  /**
+   * Handle content conversion for common content types
+   * Can be used as a starting point in subclass convertContent methods
+   */
+  handleCommonContent(content, _handlers) {
+    const handlers = _handlers;
+    switch (content.type) {
+      case "input_text" /* INPUT_TEXT */:
+      case "output_text" /* OUTPUT_TEXT */:
+        handlers.onText?.(content.text);
+        return true;
+      case "input_image_url" /* INPUT_IMAGE_URL */: {
+        const imgContent = content;
+        const parsed = this.parseDataUri(imgContent.image_url.url);
+        handlers.onImage?.(imgContent.image_url.url, parsed);
+        return true;
+      }
+      case "tool_use" /* TOOL_USE */: {
+        const toolContent = content;
+        const parsedArgs = this.parseToolArguments(toolContent.name, toolContent.arguments);
+        handlers.onToolUse?.(toolContent.id, toolContent.name, parsedArgs);
+        return true;
+      }
+      case "tool_result" /* TOOL_RESULT */: {
+        const resultContent = content;
+        const isError = !!resultContent.error;
+        handlers.onToolResult?.(
+          resultContent.tool_use_id,
+          resultContent.content,
+          isError,
+          resultContent.error
+        );
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+  // ==========================================================================
+  // Resource Cleanup (required lifecycle method)
+  // ==========================================================================
+  /**
+   * Clean up any internal state/caches
+   * Should be called after each request/response cycle to prevent memory leaks
+   *
+   * Default implementation does nothing - override if subclass maintains state
+   */
+  clear() {
+  }
+  /**
+   * Alias for clear() - reset converter state
+   */
+  reset() {
+    this.clear();
+  }
+};
+
+// src/infrastructure/providers/anthropic/AnthropicConverter.ts
+var AnthropicConverter = class extends BaseConverter {
+  providerName = "anthropic";
+  /**
+   * Convert our format -> Anthropic Messages API format
+   */
+  convertRequest(options) {
+    const messages = this.convertMessages(options.input);
+    const tools = this.convertAnthropicTools(options.tools);
+    const params = {
+      model: options.model,
+      max_tokens: options.max_output_tokens || 4096,
+      messages
+    };
+    if (options.instructions) {
+      params.system = options.instructions;
+    }
+    if (tools && tools.length > 0) {
+      params.tools = tools;
+    }
+    if (options.temperature !== void 0) {
+      params.temperature = options.temperature;
+    }
+    return params;
+  }
+  /**
+   * Convert Anthropic response -> our LLMResponse format
+   */
+  convertResponse(response) {
+    return this.buildResponse({
+      rawId: response.id,
+      model: response.model,
+      status: this.mapProviderStatus(response.stop_reason),
+      content: this.convertProviderContent(response.content),
+      messageId: response.id,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens
+      }
+    });
+  }
+  // ==========================================================================
+  // BaseConverter Abstract Method Implementations
+  // ==========================================================================
+  /**
+   * Transform standardized tool to Anthropic format
+   */
+  transformTool(tool) {
+    return {
+      ...transformForAnthropic(tool),
+      input_schema: {
+        type: "object",
+        ...tool.parameters
+      }
+    };
+  }
+  /**
+   * Convert Anthropic content blocks to our Content[]
+   */
+  convertProviderContent(blocks) {
+    const content = [];
+    for (const block of blocks) {
+      if (block.type === "text") {
+        content.push(this.createText(block.text));
+      } else if (block.type === "tool_use") {
+        content.push(this.createToolUse(block.id, block.name, block.input));
+      }
+    }
+    return content;
+  }
+  /**
+   * Map Anthropic stop_reason to ResponseStatus
+   */
+  mapProviderStatus(status) {
+    return mapAnthropicStatus(status);
+  }
+  // ==========================================================================
+  // Anthropic-Specific Conversion Methods
+  // ==========================================================================
+  /**
+   * Convert our InputItem[] -> Anthropic messages
+   */
+  convertMessages(input) {
+    if (typeof input === "string") {
+      return [{ role: "user", content: input }];
+    }
+    const messages = [];
+    for (const item of input) {
+      if (item.type === "message") {
+        const role = this.mapRole(item.role);
+        const content = this.convertContent(item.content);
+        if (!content || Array.isArray(content) && content.length === 0 || content === "") {
+          continue;
+        }
+        messages.push({
+          role,
+          content
+        });
+      }
+    }
+    return messages;
+  }
+  /**
+   * Convert our Content[] -> Anthropic content blocks
+   */
+  convertContent(content) {
+    const blocks = [];
+    for (const c of content) {
+      switch (c.type) {
+        case "input_text" /* INPUT_TEXT */:
+        case "output_text" /* OUTPUT_TEXT */: {
+          const textContent = c.text;
+          if (textContent && textContent.trim()) {
+            blocks.push({
+              type: "text",
+              text: textContent
+            });
+          }
+          break;
+        }
+        case "input_image_url" /* INPUT_IMAGE_URL */: {
+          const imgContent = c;
+          const block = this.convertImageToAnthropicBlock(imgContent.image_url.url);
+          if (block) {
+            blocks.push(block);
+          }
+          break;
+        }
+        case "tool_result" /* TOOL_RESULT */: {
+          const resultContent = c;
+          blocks.push(this.convertToolResultToAnthropicBlock(resultContent));
+          break;
+        }
+        case "tool_use" /* TOOL_USE */: {
+          const toolContent = c;
+          const parsedInput = this.parseToolArguments(toolContent.name, toolContent.arguments);
+          blocks.push({
+            type: "tool_use",
+            id: toolContent.id,
+            name: toolContent.name,
+            input: parsedInput
+          });
+          break;
+        }
+      }
+    }
+    if (blocks.length === 1 && blocks[0]?.type === "text") {
+      return blocks[0].text;
+    }
+    return blocks;
+  }
+  /**
+   * Convert image URL to Anthropic image block
+   */
+  convertImageToAnthropicBlock(url2) {
+    const parsed = this.parseDataUri(url2);
+    if (parsed) {
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: parsed.mediaType,
+          data: parsed.data
+        }
+      };
+    } else {
+      return {
+        type: "image",
+        source: {
+          type: "url",
+          url: url2
+        }
+      };
+    }
+  }
+  /**
+   * Convert tool result to Anthropic block
+   * Anthropic requires non-empty content when is_error is true
+   */
+  convertToolResultToAnthropicBlock(resultContent) {
+    const isError = !!resultContent.error;
+    let toolResultContent;
+    if (typeof resultContent.content === "string") {
+      toolResultContent = resultContent.content || (isError ? resultContent.error : "");
+    } else {
+      toolResultContent = JSON.stringify(resultContent.content);
+    }
+    if (isError && !toolResultContent) {
+      toolResultContent = resultContent.error || "Tool execution failed";
+    }
+    return {
+      type: "tool_result",
+      tool_use_id: resultContent.tool_use_id,
+      content: toolResultContent,
+      is_error: isError
+    };
+  }
+  /**
+   * Convert our Tool[] -> Anthropic tools
+   * Uses shared conversion utilities (DRY)
+   */
+  convertAnthropicTools(tools) {
+    if (!tools || tools.length === 0) {
+      return void 0;
+    }
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => this.transformTool(tool));
+  }
+};
+
+// src/infrastructure/providers/base/BaseStreamConverter.ts
+var BaseStreamConverter = class {
+  // ==========================================================================
+  // Protected State (shared across all stream converters)
+  // ==========================================================================
+  /** Current response ID */
+  responseId = "";
+  /** Model name */
+  model = "";
+  /** Event sequence number for ordering */
+  sequenceNumber = 0;
+  /** Usage statistics */
+  usage = { inputTokens: 0, outputTokens: 0 };
+  /** Buffers for accumulating tool call arguments */
+  toolCallBuffers = /* @__PURE__ */ new Map();
+  // ==========================================================================
+  // Public API
+  // ==========================================================================
+  /**
+   * Convert provider stream to our StreamEvent format
+   *
+   * @param stream - Provider-specific async stream
+   * @param model - Model name (may not be available in all events)
+   */
+  async *convertStream(stream, model) {
+    this.reset();
+    if (model) {
+      this.model = model;
+    }
+    try {
+      for await (const event of stream) {
+        const converted = this.convertEvent(event);
+        for (const evt of converted) {
+          yield evt;
+        }
+      }
+    } finally {
+    }
+  }
+  /**
+   * Clear all internal state
+   * Should be called after stream is fully processed
+   */
+  clear() {
+    this.responseId = "";
+    this.model = "";
+    this.sequenceNumber = 0;
+    this.usage = { inputTokens: 0, outputTokens: 0 };
+    this.toolCallBuffers.clear();
+  }
+  /**
+   * Reset converter state for a new stream
+   * Alias for clear()
+   */
+  reset() {
+    this.clear();
+  }
+  // ==========================================================================
+  // Protected Helper Methods
+  // ==========================================================================
+  /**
+   * Generate a response ID with provider prefix
+   */
+  generateResponseId() {
+    const uuid = crypto.randomUUID();
+    return `resp_${this.providerName}_${uuid}`;
+  }
+  /**
+   * Get next sequence number (auto-increments)
+   */
+  nextSequence() {
+    return this.sequenceNumber++;
+  }
+  /**
+   * Create RESPONSE_CREATED event
+   */
+  emitResponseCreated(responseId) {
+    if (responseId) {
+      this.responseId = responseId;
+    } else if (!this.responseId) {
+      this.responseId = this.generateResponseId();
+    }
+    return {
+      type: "response.created" /* RESPONSE_CREATED */,
+      response_id: this.responseId,
+      model: this.model,
+      created_at: Date.now()
+    };
+  }
+  /**
+   * Create OUTPUT_TEXT_DELTA event
+   */
+  emitTextDelta(delta, options) {
+    return {
+      type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
+      response_id: this.responseId,
+      item_id: options?.itemId || `msg_${this.responseId}`,
+      output_index: options?.outputIndex ?? 0,
+      content_index: options?.contentIndex ?? 0,
+      delta,
+      sequence_number: this.nextSequence()
+    };
+  }
+  /**
+   * Create TOOL_CALL_START event
+   */
+  emitToolCallStart(toolCallId, toolName, itemId) {
+    this.toolCallBuffers.set(toolCallId, {
+      id: toolCallId,
+      name: toolName,
+      args: ""
+    });
+    return {
+      type: "response.tool_call.start" /* TOOL_CALL_START */,
+      response_id: this.responseId,
+      item_id: itemId || `msg_${this.responseId}`,
+      tool_call_id: toolCallId,
+      tool_name: toolName
+    };
+  }
+  /**
+   * Create TOOL_CALL_ARGUMENTS_DELTA event and accumulate args
+   */
+  emitToolCallArgsDelta(toolCallId, delta, toolName) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    if (buffer) {
+      buffer.args += delta;
+    }
+    return {
+      type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
+      response_id: this.responseId,
+      item_id: `msg_${this.responseId}`,
+      tool_call_id: toolCallId,
+      tool_name: toolName || buffer?.name || "",
+      delta,
+      sequence_number: this.nextSequence()
+    };
+  }
+  /**
+   * Create TOOL_CALL_ARGUMENTS_DONE event with accumulated args
+   */
+  emitToolCallArgsDone(toolCallId, toolName) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    const args = buffer?.args || "{}";
+    const name = toolName || buffer?.name || "";
+    return {
+      type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
+      response_id: this.responseId,
+      tool_call_id: toolCallId,
+      tool_name: name,
+      arguments: args
+    };
+  }
+  /**
+   * Create RESPONSE_COMPLETE event
+   */
+  emitResponseComplete(status = "completed") {
+    return {
+      type: "response.complete" /* RESPONSE_COMPLETE */,
+      response_id: this.responseId,
+      status,
+      usage: {
+        input_tokens: this.usage.inputTokens,
+        output_tokens: this.usage.outputTokens,
+        total_tokens: this.usage.inputTokens + this.usage.outputTokens
+      },
+      iterations: 1
+    };
+  }
+  /**
+   * Update usage statistics
+   */
+  updateUsage(inputTokens, outputTokens) {
+    if (inputTokens !== void 0) {
+      this.usage.inputTokens = inputTokens;
+    }
+    if (outputTokens !== void 0) {
+      this.usage.outputTokens = outputTokens;
+    }
+  }
+  /**
+   * Get accumulated arguments for a tool call
+   */
+  getAccumulatedArgs(toolCallId) {
+    return this.toolCallBuffers.get(toolCallId)?.args || "{}";
+  }
+  /**
+   * Check if we have buffered data for a tool call
+   */
+  hasToolCallBuffer(toolCallId) {
+    return this.toolCallBuffers.has(toolCallId);
+  }
+};
+
+// src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts
+var AnthropicStreamConverter = class extends BaseStreamConverter {
+  providerName = "anthropic";
+  /** Map of content block index to block info */
+  contentBlockIndex = /* @__PURE__ */ new Map();
+  /**
+   * Convert a single Anthropic event to our StreamEvent(s)
+   */
+  convertEvent(event) {
+    const eventType = event.type;
+    switch (eventType) {
+      case "message_start":
+        return this.handleMessageStart(event);
+      case "content_block_start":
+        return this.handleContentBlockStart(event);
+      case "content_block_delta":
+        return this.handleContentBlockDelta(event);
+      case "content_block_stop":
+        return this.handleContentBlockStop(event);
+      case "message_delta":
+        return this.handleMessageDelta(event);
+      case "message_stop":
+        return this.handleMessageStop();
+      default:
+        return [];
+    }
+  }
+  /**
+   * Clear all internal state
+   */
+  clear() {
+    super.clear();
+    this.contentBlockIndex.clear();
+  }
+  // ==========================================================================
+  // Anthropic-Specific Event Handlers
+  // ==========================================================================
+  /**
+   * Handle message_start event
+   */
+  handleMessageStart(event) {
+    this.responseId = event.message.id;
+    if (event.message.usage) {
+      this.updateUsage(event.message.usage.input_tokens, void 0);
+    }
+    return [this.emitResponseCreated(this.responseId)];
+  }
+  /**
+   * Handle content_block_start event
+   */
+  handleContentBlockStart(event) {
+    const index = event.index;
+    const block = event.content_block;
+    if (block.type === "text") {
+      this.contentBlockIndex.set(index, { type: "text" });
+      return [];
+    } else if (block.type === "tool_use") {
+      this.contentBlockIndex.set(index, {
+        type: "tool_use",
+        id: block.id,
+        name: block.name
+      });
+      return [this.emitToolCallStart(block.id, block.name, `msg_${this.responseId}`)];
     }
     return [];
   }
   /**
-   * Build the analysis prompt for LLM decision-making
+   * Handle content_block_delta event
    */
-  buildAnalysisPrompt(messages, budget, targetTokens) {
-    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
-    const protectedPercent = Math.round(thresholds.protectedContextPercent * 100);
-    const protectedCount = this.getProtectedMessageCount();
-    const messageSummaries = messages.map((m) => {
-      const truncatedContent = m.content.length > 500 ? m.content.slice(0, 500) + "...[truncated]" : m.content;
-      return `[${m.id}] ${m.role}: ${truncatedContent}`;
+  handleContentBlockDelta(event) {
+    const index = event.index;
+    const delta = event.delta;
+    const blockInfo = this.contentBlockIndex.get(index);
+    if (!blockInfo) return [];
+    if (delta.type === "text_delta") {
+      return [
+        this.emitTextDelta(delta.text, {
+          itemId: `msg_${this.responseId}`,
+          contentIndex: index
+        })
+      ];
+    } else if (delta.type === "input_json_delta") {
+      const toolCallId = blockInfo.id || "";
+      return [this.emitToolCallArgsDelta(toolCallId, delta.partial_json, blockInfo.name)];
+    }
+    return [];
+  }
+  /**
+   * Handle content_block_stop event
+   */
+  handleContentBlockStop(event) {
+    const index = event.index;
+    const blockInfo = this.contentBlockIndex.get(index);
+    if (!blockInfo) return [];
+    if (blockInfo.type === "tool_use") {
+      return [this.emitToolCallArgsDone(blockInfo.id || "", blockInfo.name)];
+    }
+    return [];
+  }
+  /**
+   * Handle message_delta event (usage info, stop_reason)
+   */
+  handleMessageDelta(event) {
+    if (event.usage) {
+      this.updateUsage(void 0, event.usage.output_tokens);
+    }
+    return [];
+  }
+  /**
+   * Handle message_stop event (final event)
+   */
+  handleMessageStop() {
+    return [this.emitResponseComplete("completed")];
+  }
+};
+
+// src/infrastructure/providers/anthropic/AnthropicTextProvider.ts
+var AnthropicTextProvider = class extends BaseTextProvider {
+  name = "anthropic";
+  capabilities = {
+    text: true,
+    images: true,
+    // Claude 3+ supports vision
+    videos: false,
+    audio: false
+  };
+  client;
+  converter;
+  streamConverter;
+  constructor(config) {
+    super(config);
+    this.client = new Anthropic__default.default({
+      apiKey: this.getApiKey(),
+      baseURL: this.getBaseURL(),
+      maxRetries: this.getMaxRetries()
     });
-    return `You are a context compaction assistant. Analyze this conversation and decide how to reduce context size while preserving important information.
-
-## Current State
-- Current tokens: ${budget.used}
-- Target tokens: ${targetTokens} (${Math.round(targetTokens / this.config.maxContextTokens * 100)}% of max)
-- Need to free: ${budget.used - targetTokens} tokens
-- Strategy: ${this.config.strategy}
-- Protected messages: last ${protectedCount} messages (~${protectedPercent}% of context)
-
-## Messages (${messages.length} total)
-${messageSummaries.join("\n\n")}
-
-## Your Task
-Respond with JSON only:
-
-{
-  "summaries": [
-    { "messageIds": ["id1", "id2"], "summary": "Concise summary of these messages", "importance": "high|medium|low" }
-  ],
-  "spill_to_memory": [
-    { "messageId": "id3", "key": "findings.topic_name", "reason": "Large data block that can be retrieved later" }
-  ],
-  "safe_to_remove": ["id4", "id5"],
-  "must_keep": ["id6", "id7"],
-  "reasoning": "Brief explanation of your decisions"
-}
-
-## Guidelines
-- ALWAYS keep the last ${protectedCount} messages (they are protected)
-- Summarize older conversation segments that established context
-- Spill large data blobs (tool outputs, code blocks >500 chars) to memory with descriptive keys
-- Remove acknowledgments ("Got it", "Sure", "OK"), greetings, and low-value exchanges
-- NEVER remove system prompts, current task context, or recent tool results
-- When summarizing, preserve: key decisions, important findings, action items
-- Use meaningful memory keys like "findings.api_research" or "summary.user_requirements"`;
+    this.converter = new AnthropicConverter();
+    this.streamConverter = new AnthropicStreamConverter();
   }
   /**
-   * Parse LLM response into compaction decisions
+   * Generate response using Anthropic Messages API
    */
-  parseDecisions(output) {
-    try {
-      const jsonMatch = output.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("No JSON found in response");
-      }
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        summaries: parsed.summaries || [],
-        spill_to_memory: parsed.spill_to_memory || [],
-        safe_to_remove: parsed.safe_to_remove || [],
-        must_keep: parsed.must_keep || [],
-        reasoning: parsed.reasoning || "No reasoning provided"
-      };
-    } catch (error) {
-      logger4.warn({ error, output }, "Failed to parse compaction decisions");
-      return {
-        summaries: [],
-        spill_to_memory: [],
-        safe_to_remove: [],
-        must_keep: [],
-        reasoning: "Failed to parse LLM response"
-      };
-    }
-  }
-  /**
-   * Execute the compaction decisions
-   */
-  async executeDecisions(decisions, messages, log) {
-    const summaries = [];
-    const spilled = [];
-    const removed = [];
-    let tokensFreed = 0;
-    const messageMap = new Map(messages.map((m) => [m.id, m]));
-    for (const summaryDecision of decisions.summaries) {
-      let summaryTokens = 0;
-      for (const msgId of summaryDecision.messageIds) {
-        const msg = messageMap.get(msgId);
-        if (msg) {
-          summaryTokens += msg.tokens ?? Math.ceil(msg.content.length / 4);
-        }
-      }
-      let summaryKey;
-      if (this.memory && this.config.enableSpillToMemory) {
-        summaryKey = `summary.compacted_${Date.now()}`;
-        try {
-          await this.memory.store(
-            summaryKey,
-            `Summary of ${summaryDecision.messageIds.length} messages`,
-            summaryDecision.summary,
-            { priority: summaryDecision.importance === "high" ? "high" : "normal" }
-          );
-          log.push(`[SmartCompactor] Stored summary at ${summaryKey}`);
-        } catch (error) {
-          logger4.warn({ error, key: summaryKey }, "Failed to store summary in memory");
-        }
-      }
-      summaries.push({
-        key: summaryKey,
-        summary: summaryDecision.summary,
-        messageIds: summaryDecision.messageIds,
-        importance: summaryDecision.importance
-      });
-      const summarySize = Math.ceil(summaryDecision.summary.length / 4);
-      tokensFreed += Math.max(0, summaryTokens - summarySize);
-    }
-    for (const spillDecision of decisions.spill_to_memory) {
-      if (!this.memory || !this.config.enableSpillToMemory) {
-        log.push(`[SmartCompactor] Memory not available, skipping spill for ${spillDecision.messageId}`);
-        continue;
-      }
-      const msg = messageMap.get(spillDecision.messageId);
-      if (!msg) {
-        continue;
-      }
+  async generate(options) {
+    return this.executeWithCircuitBreaker(async () => {
       try {
-        await this.memory.store(
-          spillDecision.key,
-          spillDecision.reason,
-          msg.content,
-          { priority: "normal" }
-        );
-        spilled.push({
-          key: spillDecision.key,
-          messageId: spillDecision.messageId,
-          reason: spillDecision.reason
+        const anthropicRequest = this.converter.convertRequest(options);
+        const anthropicResponse = await this.client.messages.create({
+          ...anthropicRequest,
+          stream: false
         });
-        const msgTokens = msg.tokens ?? Math.ceil(msg.content.length / 4);
-        tokensFreed += msgTokens;
-        log.push(`[SmartCompactor] Spilled ${spillDecision.messageId} to ${spillDecision.key} (${msgTokens} tokens)`);
+        return this.converter.convertResponse(anthropicResponse);
       } catch (error) {
-        logger4.warn({ error, key: spillDecision.key }, "Failed to spill to memory");
+        this.handleError(error);
+        throw error;
       }
+    }, options.model);
+  }
+  /**
+   * Stream response using Anthropic Messages API
+   */
+  async *streamGenerate(options) {
+    try {
+      const anthropicRequest = this.converter.convertRequest(options);
+      const stream = await this.client.messages.create({
+        ...anthropicRequest,
+        stream: true
+      });
+      this.streamConverter.reset();
+      yield* this.streamConverter.convertStream(stream, options.model);
+    } catch (error) {
+      this.handleError(error);
+      throw error;
+    } finally {
+      this.streamConverter.clear();
     }
-    for (const msgId of decisions.safe_to_remove) {
-      const msg = messageMap.get(msgId);
-      if (msg) {
-        removed.push(msgId);
-        const msgTokens = msg.tokens ?? Math.ceil(msg.content.length / 4);
-        tokensFreed += msgTokens;
-      }
+  }
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model) {
+    if (model.includes("claude-sonnet-4") || model.includes("claude-opus-4") || model.includes("claude-haiku-4")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        // Use prompt engineering
+        maxTokens: 2e5,
+        maxOutputTokens: 8192
+      };
     }
-    log.push(`[SmartCompactor] Completed: ${summaries.length} summaries, ${spilled.length} spilled, ${removed.length} removed, ${tokensFreed} tokens freed`);
+    if (model.includes("claude-3-5-sonnet") || model.includes("claude-3-7-sonnet")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 2e5,
+        maxOutputTokens: 8192
+      };
+    }
+    if (model.includes("claude-3-opus")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 2e5,
+        maxOutputTokens: 4096
+      };
+    }
+    if (model.includes("claude-3-sonnet")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 2e5,
+        maxOutputTokens: 4096
+      };
+    }
+    if (model.includes("claude-3-haiku")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 2e5,
+        maxOutputTokens: 4096
+      };
+    }
     return {
-      summaries,
-      spilled,
-      removed,
-      tokensFreed,
-      log,
-      success: true
+      supportsTools: true,
+      supportsVision: true,
+      supportsJSON: true,
+      supportsJSONSchema: false,
+      maxTokens: 2e5,
+      maxOutputTokens: 4096
     };
   }
   /**
-   * Get compactor configuration
+   * Handle Anthropic-specific errors
    */
-  getConfig() {
-    return this.config;
+  handleError(error) {
+    if (error.status === 401) {
+      throw new ProviderAuthError("anthropic", "Invalid API key");
+    }
+    if (error.status === 429) {
+      const retryAfter = error.headers?.["retry-after"];
+      throw new ProviderRateLimitError(
+        "anthropic",
+        retryAfter ? parseInt(retryAfter) * 1e3 : void 0
+      );
+    }
+    if (error.type === "invalid_request_error" && (error.message?.includes("prompt is too long") || error.message?.includes("maximum context length"))) {
+      throw new ProviderContextLengthError("anthropic", 2e5);
+    }
+    throw error;
+  }
+};
+
+// src/utils/imageUtils.ts
+var DEFAULT_TIMEOUT_MS = 3e4;
+var DEFAULT_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+async function fetchImageAsBase64(url2, options) {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, maxSizeBytes = DEFAULT_MAX_SIZE_BYTES } = {};
+  if (url2.startsWith("data:image/")) {
+    const matches = url2.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (matches) {
+      const base64Data = matches[2] || "";
+      const size = calculateBase64Size(base64Data);
+      if (size > maxSizeBytes) {
+        throw new Error(`Image size (${formatBytes(size)}) exceeds maximum allowed (${formatBytes(maxSizeBytes)})`);
+      }
+      return {
+        mimeType: matches[1] || "image/png",
+        base64Data,
+        size
+      };
+    }
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url2, {
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    const contentLength = response.headers.get("content-length");
+    if (contentLength) {
+      const size = parseInt(contentLength, 10);
+      if (size > maxSizeBytes) {
+        throw new Error(
+          `Image size (${formatBytes(size)}) exceeds maximum allowed (${formatBytes(maxSizeBytes)})`
+        );
+      }
+    }
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Failed to get response body reader");
+    }
+    const chunks = [];
+    let totalSize = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalSize += value.length;
+      if (totalSize > maxSizeBytes) {
+        reader.cancel();
+        throw new Error(
+          `Image size exceeds maximum allowed (${formatBytes(maxSizeBytes)})`
+        );
+      }
+      chunks.push(value);
+    }
+    const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+    const base64Data = buffer.toString("base64");
+    let mimeType = response.headers.get("content-type") || "image/png";
+    if (!mimeType.startsWith("image/")) {
+      mimeType = detectImageFormatFromBuffer(buffer);
+    }
+    return {
+      mimeType,
+      base64Data,
+      size: buffer.length
+    };
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`Image fetch timed out after ${timeoutMs}ms`);
+    }
+    throw new Error(`Failed to fetch image from URL: ${error.message}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+function detectImageFormatFromBuffer(buffer) {
+  const magic = buffer.slice(0, 4).toString("hex");
+  if (magic.startsWith("89504e47")) return "image/png";
+  if (magic.startsWith("ffd8ff")) return "image/jpeg";
+  if (magic.startsWith("47494638")) return "image/gif";
+  if (magic.startsWith("52494646")) return "image/webp";
+  throw new Error("URL does not point to a valid image");
+}
+function calculateBase64Size(base64Data) {
+  const data = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+  if (!data || data.length === 0) return 0;
+  let padding = 0;
+  if (data.endsWith("==")) padding = 2;
+  else if (data.endsWith("=")) padding = 1;
+  return Math.floor(data.length * 3 / 4) - padding;
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// src/infrastructure/providers/google/GoogleConverter.ts
+var GoogleConverter = class {
+  // Track tool call ID → tool name mapping for tool results
+  toolCallMapping = /* @__PURE__ */ new Map();
+  // Track tool call ID → thought signature for Gemini 3+
+  // NOTE: This map is shared with GoogleStreamConverter for streaming responses
+  thoughtSignatures = /* @__PURE__ */ new Map();
+  /**
+   * Get the thought signatures storage map
+   * Used by GoogleStreamConverter to store signatures from streaming responses
+   */
+  getThoughtSignatureStorage() {
+    return this.thoughtSignatures;
   }
   /**
-   * Extract text content from LLM response output
+   * Get the tool call mapping storage
+   * Used by GoogleStreamConverter to store tool name mappings from streaming responses
    */
-  extractTextFromResponse(output) {
-    if (typeof output === "string") {
-      return output;
-    }
-    if (Array.isArray(output)) {
-      const texts = [];
-      for (const item of output) {
-        if (typeof item === "string") {
-          texts.push(item);
-        } else if (item && typeof item === "object") {
-          if ("text" in item && typeof item.text === "string") {
-            texts.push(item.text);
-          } else if ("content" in item && typeof item.content === "string") {
-            texts.push(item.content);
-          }
-        }
-      }
-      return texts.join("\n");
-    }
-    return JSON.stringify(output);
+  getToolCallMappingStorage() {
+    return this.toolCallMapping;
   }
-};
-
-// src/capabilities/taskAgent/memoryTools.ts
-var memoryStoreDefinition = {
-  type: "function",
-  function: {
-    name: "memory_store",
-    description: `Store data in working memory for later use. Use this to save important information from tool outputs.
-
-TIER SYSTEM (for research/analysis tasks):
-- "raw": Low priority, evicted first. Use for unprocessed data you'll summarize later.
-- "summary": Normal priority. Use for processed summaries of raw data.
-- "findings": High priority, kept longest. Use for final conclusions and insights.
-
-The tier automatically sets priority and adds a key prefix (e.g., "findings.topic" for tier="findings").`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'Namespaced key (e.g., "user.profile", "search.ai_news"). If using tier, prefix is added automatically.'
-        },
-        description: {
-          type: "string",
-          description: "Brief description of what this data contains (max 150 chars)"
-        },
-        value: {
-          description: "The data to store (can be any JSON value)"
-        },
-        tier: {
-          type: "string",
-          enum: ["raw", "summary", "findings"],
-          description: 'Optional: Memory tier. "raw" (low priority, evict first), "summary" (normal), "findings" (high priority, keep longest). Automatically sets key prefix and priority.'
-        },
-        derivedFrom: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional: Keys this data was derived from (for tracking data lineage, useful with tiers)"
-        },
-        neededForTasks: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional: Task IDs that need this data. Data will be auto-cleaned when all tasks complete."
-        },
-        scope: {
-          type: "string",
-          enum: ["session", "plan", "persistent"],
-          description: 'Optional: Lifecycle scope. "session" (default), "plan" (kept for entire plan), or "persistent" (never auto-cleaned)'
-        },
-        priority: {
-          type: "string",
-          enum: ["low", "normal", "high", "critical"],
-          description: "Optional: Override eviction priority. Ignored if tier is set (tier determines priority)."
-        },
-        pinned: {
-          type: "boolean",
-          description: "Optional: If true, this data will never be evicted."
-        }
-      },
-      required: ["key", "description", "value"]
+  /**
+   * Convert our format → Google Gemini format
+   */
+  async convertRequest(options) {
+    if (process.env.DEBUG_GOOGLE && Array.isArray(options.input)) {
+      console.error("[DEBUG] Input messages:", JSON.stringify(options.input.map((msg) => ({
+        type: msg.type,
+        role: msg.role,
+        contentTypes: msg.content?.map((c) => c.type)
+      })), null, 2));
     }
-  }
-};
-var memoryRetrieveDefinition = {
-  type: "function",
-  function: {
-    name: "memory_retrieve",
-    description: "Retrieve full data from working memory by key. Use when you need the complete data, not just the description.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'The key to retrieve (include tier prefix if applicable, e.g., "findings.topic")'
-        }
-      },
-      required: ["key"]
+    const contents = await this.convertMessages(options.input);
+    const tools = this.convertTools(options.tools);
+    if (process.env.DEBUG_GOOGLE) {
+      console.error("[DEBUG] Final contents array length:", contents.length);
     }
-  }
-};
-var memoryDeleteDefinition = {
-  type: "function",
-  function: {
-    name: "memory_delete",
-    description: "Delete data from working memory to free up space.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to delete"
-        }
-      },
-      required: ["key"]
+    const request = {
+      contents
+    };
+    if (options.instructions) {
+      request.systemInstruction = { parts: [{ text: options.instructions }] };
     }
-  }
-};
-var memoryQueryDefinition = {
-  type: "function",
-  function: {
-    name: "memory_query",
-    description: `Query working memory. List entries, search by pattern, or retrieve values.
-
-Examples:
-- memory_query() \u2192 list all keys
-- memory_query({ pattern: "findings.*" }) \u2192 list matching keys
-- memory_query({ pattern: "findings.*", includeValues: true }) \u2192 retrieve values
-- memory_query({ includeStats: true }) \u2192 include memory statistics`,
-    parameters: {
-      type: "object",
-      properties: {
-        pattern: {
-          type: "string",
-          description: 'Glob pattern to match keys (e.g., "raw.*", "findings.*", "*"). Default: "*" (all)'
-        },
-        tier: {
-          type: "string",
-          enum: ["raw", "summary", "findings", "data"],
-          description: "Filter by tier (overrides pattern)"
-        },
-        scope: {
-          type: "string",
-          enum: ["session", "persistent"],
-          description: "Filter by scope"
-        },
-        includeValues: {
-          type: "boolean",
-          description: "Include actual values (default: false = list keys only)"
-        },
-        includeMetadata: {
-          type: "boolean",
-          description: "Include metadata (priority, tier, pinned) for each entry"
-        },
-        includeStats: {
-          type: "boolean",
-          description: "Include memory statistics (entry count, size, utilization)"
+    if (tools && tools.length > 0) {
+      request.tools = [{ functionDeclarations: tools }];
+      request.toolConfig = {
+        functionCallingConfig: {
+          mode: options.tool_choice === "required" ? "ANY" : "AUTO"
         }
-      },
-      required: []
-    }
-  }
-};
-var memoryCleanupRawDefinition = {
-  type: "function",
-  function: {
-    name: "memory_cleanup_raw",
-    description: 'Clean up raw tier data after creating summaries/findings. Only deletes entries with "raw." prefix.',
-    parameters: {
-      type: "object",
-      properties: {
-        keys: {
-          type: "array",
-          items: { type: "string" },
-          description: "Keys to delete (only raw tier entries will be deleted)"
-        }
-      },
-      required: ["keys"]
-    }
-  }
-};
-function matchPattern(key, pattern) {
-  const regexPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  const regex = new RegExp(`^${regexPattern}$`);
-  return regex.test(key);
-}
-function createMemoryStoreTool() {
-  return {
-    definition: memoryStoreDefinition,
-    execute: async (args, context) => {
-      if (!context || !context.memory) {
-        throw new ToolExecutionError("memory_store", "Memory tools require TaskAgent context");
-      }
-      try {
-        let key = args.key;
-        const tier = args.tier;
-        const derivedFrom = args.derivedFrom;
-        if (tier) {
-          key = addTierPrefix(key, tier);
-        }
-        let scope;
-        if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
-          scope = { type: "task", taskIds: args.neededForTasks };
-        } else if (args.scope === "plan") {
-          scope = { type: "plan" };
-        } else if (args.scope === "persistent") {
-          scope = { type: "persistent" };
-        } else if (tier === "findings") {
-          scope = { type: "plan" };
-        } else {
-          scope = "session";
-        }
-        let priority = args.priority;
-        if (tier) {
-          priority = TIER_PRIORITIES[tier];
-        }
-        await context.memory.set(
-          key,
-          args.description,
-          args.value,
-          {
-            scope,
-            priority,
-            pinned: args.pinned
-          }
-        );
-        return {
-          success: true,
-          key,
-          tier: tier ?? getTierFromKey(key) ?? "none",
-          scope: typeof scope === "string" ? scope : scope.type,
-          priority: priority ?? "normal",
-          derivedFrom: derivedFrom ?? []
-        };
-      } catch (error) {
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: "small" },
-    describeCall: (args) => {
-      const tier = args.tier;
-      const key = args.key;
-      return tier ? `${tier}:${key}` : key;
-    }
-  };
-}
-function createMemoryRetrieveTool() {
-  return {
-    definition: memoryRetrieveDefinition,
-    execute: async (args, context) => {
-      if (!context || !context.memory) {
-        throw new ToolExecutionError("memory_retrieve", "Memory tools require TaskAgent context");
-      }
-      const value = await context.memory.get(args.key);
-      if (value === void 0) {
-        return { error: `Key "${args.key}" not found in memory` };
-      }
-      return value;
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: "variable" },
-    describeCall: (args) => args.key
-  };
-}
-function createMemoryDeleteTool() {
-  return {
-    definition: memoryDeleteDefinition,
-    execute: async (args, context) => {
-      if (!context || !context.memory) {
-        throw new ToolExecutionError("memory_delete", "Memory tools require TaskAgent context");
-      }
-      await context.memory.delete(args.key);
-      return { success: true, deleted: args.key };
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: "small" },
-    describeCall: (args) => args.key
-  };
-}
-function createMemoryQueryTool() {
-  return {
-    definition: memoryQueryDefinition,
-    execute: async (args, context) => {
-      if (!context || !context.memory) {
-        throw new ToolExecutionError("memory_query", "Memory tools require TaskAgent context");
-      }
-      const pattern = args.pattern;
-      const tier = args.tier;
-      const includeValues = args.includeValues;
-      const includeMetadata = args.includeMetadata;
-      const includeStats = args.includeStats;
-      let entries = await context.memory.list();
-      if (tier) {
-        const prefix = `${tier}.`;
-        entries = entries.filter((e) => e.key.startsWith(prefix));
-      } else if (pattern && pattern !== "*") {
-        entries = entries.filter((e) => matchPattern(e.key, pattern));
-      }
-      const result = {
-        count: entries.length,
-        filter: tier ? `tier:${tier}` : pattern ? `pattern:${pattern}` : "all"
       };
-      if (includeValues) {
-        const entriesWithValues = {};
-        const metadata = {};
-        for (const entry of entries) {
-          const value = await context.memory.get(entry.key);
-          if (value !== void 0) {
-            entriesWithValues[entry.key] = value;
-            if (includeMetadata) {
-              metadata[entry.key] = {
-                tier: getTierFromKey(entry.key) ?? "none",
-                priority: entry.effectivePriority ?? "normal",
-                pinned: entry.pinned ?? false,
-                description: entry.description
-              };
+    }
+    request.generationConfig = {
+      temperature: options.temperature,
+      maxOutputTokens: options.max_output_tokens
+    };
+    if (options.vendorOptions?.thinkingLevel) {
+      request.generationConfig.thinkingConfig = {
+        thinkingLevel: options.vendorOptions.thinkingLevel
+      };
+    }
+    if (tools && tools.length > 0) {
+      request.generationConfig.allowCodeExecution = false;
+    }
+    if (options.response_format) {
+      if (options.response_format.type === "json_object") {
+        request.generationConfig.responseMimeType = "application/json";
+      } else if (options.response_format.type === "json_schema") {
+        request.generationConfig.responseMimeType = "application/json";
+      }
+    }
+    return request;
+  }
+  /**
+   * Convert our InputItem[] → Google contents
+   */
+  async convertMessages(input) {
+    if (typeof input === "string") {
+      return [
+        {
+          role: "user",
+          parts: [{ text: input }]
+        }
+      ];
+    }
+    const contents = [];
+    for (const item of input) {
+      if (item.type === "message") {
+        const role = item.role === "user" /* USER */ || item.role === "developer" /* DEVELOPER */ ? "user" : "model";
+        const parts = await this.convertContentToParts(item.content);
+        if (process.env.DEBUG_GOOGLE) {
+          console.error(
+            `[DEBUG] Converting message - role: ${item.role} \u2192 ${role}, parts: ${parts.length}`,
+            parts.map((p) => Object.keys(p))
+          );
+        }
+        if (parts.length > 0) {
+          contents.push({
+            role,
+            parts
+          });
+        }
+      }
+    }
+    return contents;
+  }
+  /**
+   * Convert our Content[] → Google parts
+   */
+  async convertContentToParts(content) {
+    const parts = [];
+    for (const c of content) {
+      switch (c.type) {
+        case "input_text" /* INPUT_TEXT */:
+        case "output_text" /* OUTPUT_TEXT */:
+          parts.push({ text: c.text });
+          break;
+        case "input_image_url" /* INPUT_IMAGE_URL */:
+          try {
+            const imageData = await fetchImageAsBase64(c.image_url.url);
+            parts.push({
+              inlineData: {
+                mimeType: imageData.mimeType,
+                data: imageData.base64Data
+              }
+            });
+          } catch (error) {
+            console.error(`Failed to fetch image: ${error.message}`);
+            parts.push({
+              text: `[Error: Could not load image from ${c.image_url.url}]`
+            });
+          }
+          break;
+        case "tool_use" /* TOOL_USE */:
+          this.toolCallMapping.set(c.id, c.name);
+          let parsedArgs;
+          try {
+            parsedArgs = JSON.parse(c.arguments);
+          } catch (parseError) {
+            throw new InvalidToolArgumentsError(
+              c.name,
+              c.arguments,
+              parseError instanceof Error ? parseError : new Error(String(parseError))
+            );
+          }
+          const functionCallPart = {
+            functionCall: {
+              name: c.name,
+              args: parsedArgs
+            }
+          };
+          const signature = this.thoughtSignatures.get(c.id);
+          if (process.env.DEBUG_GOOGLE) {
+            console.error(`[DEBUG] Looking up signature for tool ID: ${c.id}`);
+            console.error(`[DEBUG] Found signature:`, signature ? "YES" : "NO");
+            console.error(`[DEBUG] Available signatures:`, Array.from(this.thoughtSignatures.keys()));
+          }
+          if (signature) {
+            functionCallPart.thoughtSignature = signature;
+          }
+          parts.push(functionCallPart);
+          break;
+        case "tool_result" /* TOOL_RESULT */:
+          const functionName = this.toolCallMapping.get(c.tool_use_id) || this.extractToolName(c.tool_use_id);
+          parts.push({
+            functionResponse: {
+              name: functionName,
+              // Use actual function name from mapping
+              response: {
+                result: typeof c.content === "string" ? c.content : c.content
+              }
+            }
+          });
+          break;
+      }
+    }
+    return parts;
+  }
+  /**
+   * Convert our Tool[] → Google function declarations
+   */
+  convertTools(tools) {
+    if (!tools || tools.length === 0) {
+      return void 0;
+    }
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: this.convertParametersSchema(tool.parameters)
+    }));
+  }
+  /**
+   * Convert JSON Schema parameters to Google's format
+   */
+  convertParametersSchema(schema) {
+    if (!schema) return void 0;
+    const converted = {
+      type: "OBJECT",
+      // Google uses uppercase 'OBJECT'
+      properties: {}
+    };
+    if (schema.properties) {
+      for (const [key, value] of Object.entries(schema.properties)) {
+        const prop = value;
+        converted.properties[key] = {
+          type: prop.type?.toUpperCase() || "STRING",
+          description: prop.description
+        };
+        if (prop.enum) {
+          converted.properties[key].enum = prop.enum;
+        }
+        if (prop.type === "object" && prop.properties) {
+          converted.properties[key] = this.convertParametersSchema(prop);
+        }
+        if (prop.type === "array" && prop.items) {
+          converted.properties[key].items = this.convertParametersSchema(prop.items);
+        }
+      }
+    }
+    if (schema.required) {
+      converted.required = schema.required;
+    }
+    return converted;
+  }
+  /**
+   * Convert Google response → our LLMResponse format
+   */
+  convertResponse(response) {
+    const candidate = response.candidates?.[0];
+    const geminiContent = candidate?.content;
+    const content = this.convertGeminiPartsToContent(geminiContent?.parts || []);
+    if (process.env.DEBUG_GOOGLE) {
+      console.error("[DEBUG] Content array:", JSON.stringify(content, null, 2));
+      console.error("[DEBUG] Raw parts:", JSON.stringify(geminiContent?.parts, null, 2));
+    }
+    return buildLLMResponse({
+      provider: "google",
+      model: response.modelVersion || "gemini",
+      status: mapGoogleStatus(candidate?.finishReason),
+      content,
+      messageId: response.id,
+      usage: {
+        inputTokens: response.usageMetadata?.promptTokenCount || 0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
+        totalTokens: response.usageMetadata?.totalTokenCount || 0
+      }
+    });
+  }
+  /**
+   * Convert Google parts → our Content[]
+   */
+  convertGeminiPartsToContent(parts) {
+    const content = [];
+    for (const part of parts) {
+      if ("text" in part && part.text) {
+        content.push(createTextContent(part.text));
+      } else if ("functionCall" in part && part.functionCall) {
+        const toolId = generateToolCallId("google");
+        const functionName = part.functionCall.name || "";
+        if ("thoughtSignature" in part && part.thoughtSignature) {
+          const sig = part.thoughtSignature;
+          this.thoughtSignatures.set(toolId, sig);
+          if (process.env.DEBUG_GOOGLE) {
+            console.error(`[DEBUG] Captured thought signature for tool ID: ${toolId}`);
+            console.error(`[DEBUG] Signature length:`, sig.length);
+          }
+        } else if (process.env.DEBUG_GOOGLE) {
+          console.error(`[DEBUG] NO thought signature in part for ${functionName}`);
+          console.error(`[DEBUG] Part keys:`, Object.keys(part));
+        }
+        content.push(createToolUseContent(toolId, functionName, part.functionCall.args || {}));
+      }
+    }
+    return content;
+  }
+  /**
+   * Extract tool name from tool_use_id using tracked mapping
+   */
+  extractToolName(toolUseId) {
+    const name = this.toolCallMapping.get(toolUseId);
+    if (name) {
+      return name;
+    }
+    console.warn(`[GoogleConverter] Tool name not found for ID: ${toolUseId}`);
+    return "unknown_tool";
+  }
+  /**
+   * Check if content array has tool calls requiring follow-up
+   * Used to determine when to clear thought signatures (must persist across tool execution)
+   */
+  hasToolCalls(content) {
+    return content.some((c) => c.type === "tool_use" /* TOOL_USE */);
+  }
+  /**
+   * Clear all internal mappings
+   * Should be called after each request/response cycle to prevent memory leaks
+   */
+  clearMappings() {
+    this.toolCallMapping.clear();
+    this.thoughtSignatures.clear();
+  }
+  /**
+   * Reset converter state for a new request
+   * Alias for clearMappings()
+   */
+  reset() {
+    this.clearMappings();
+  }
+};
+var GoogleStreamConverter = class {
+  responseId = "";
+  model = "";
+  sequenceNumber = 0;
+  isFirst = true;
+  toolCallBuffers = /* @__PURE__ */ new Map();
+  hadToolCalls = false;
+  // External storage for thought signatures (shared with GoogleConverter)
+  thoughtSignatureStorage = null;
+  // External storage for tool call ID → name mapping (shared with GoogleConverter)
+  toolCallMappingStorage = null;
+  /**
+   * Set external storage for thought signatures
+   * This allows sharing signatures with GoogleConverter for multi-turn conversations
+   */
+  setThoughtSignatureStorage(storage) {
+    this.thoughtSignatureStorage = storage;
+  }
+  /**
+   * Set external storage for tool call mappings
+   * This allows sharing tool name lookups with GoogleConverter
+   */
+  setToolCallMappingStorage(storage) {
+    this.toolCallMappingStorage = storage;
+  }
+  /**
+   * Convert Google stream to our StreamEvent format
+   */
+  async *convertStream(googleStream, model) {
+    this.model = model;
+    this.sequenceNumber = 0;
+    this.isFirst = true;
+    this.toolCallBuffers.clear();
+    this.hadToolCalls = false;
+    let lastUsage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    };
+    for await (const chunk of googleStream) {
+      if (this.isFirst) {
+        this.responseId = this.generateResponseId();
+        yield {
+          type: "response.created" /* RESPONSE_CREATED */,
+          response_id: this.responseId,
+          model: this.model,
+          created_at: Date.now()
+        };
+        this.isFirst = false;
+      }
+      const usage = this.extractUsage(chunk);
+      if (usage) {
+        lastUsage = usage;
+      }
+      const events = this.convertChunk(chunk);
+      for (const event of events) {
+        yield event;
+      }
+    }
+    if (this.toolCallBuffers.size > 0) {
+      for (const [toolCallId, buffer] of this.toolCallBuffers) {
+        yield {
+          type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
+          response_id: this.responseId,
+          tool_call_id: toolCallId,
+          tool_name: buffer.name,
+          arguments: buffer.args
+        };
+      }
+    }
+    yield {
+      type: "response.complete" /* RESPONSE_COMPLETE */,
+      response_id: this.responseId,
+      status: "completed",
+      usage: lastUsage,
+      iterations: 1
+    };
+  }
+  /**
+   * Extract usage from Google chunk
+   */
+  extractUsage(chunk) {
+    const usage = chunk.usageMetadata;
+    if (!usage) return null;
+    return {
+      input_tokens: usage.promptTokenCount || 0,
+      output_tokens: usage.candidatesTokenCount || 0,
+      total_tokens: usage.totalTokenCount || 0
+    };
+  }
+  /**
+   * Convert single Google chunk to our event(s)
+   */
+  convertChunk(chunk) {
+    const events = [];
+    const candidate = chunk.candidates?.[0];
+    if (!candidate?.content?.parts) return events;
+    for (const part of candidate.content.parts) {
+      if (part.text) {
+        events.push({
+          type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
+          response_id: this.responseId,
+          item_id: `msg_${this.responseId}`,
+          output_index: 0,
+          content_index: 0,
+          delta: part.text,
+          sequence_number: this.sequenceNumber++
+        });
+      } else if (part.functionCall) {
+        const functionCall = part.functionCall;
+        const toolName = functionCall.name || "unknown";
+        const toolCallId = `call_${this.responseId}_${toolName}`;
+        const thoughtSignature = "thoughtSignature" in part ? part.thoughtSignature : void 0;
+        if (!this.toolCallBuffers.has(toolCallId)) {
+          this.hadToolCalls = true;
+          this.toolCallBuffers.set(toolCallId, {
+            name: toolName,
+            args: "",
+            signature: thoughtSignature
+          });
+          if (this.toolCallMappingStorage) {
+            this.toolCallMappingStorage.set(toolCallId, toolName);
+          }
+          if (thoughtSignature && this.thoughtSignatureStorage) {
+            this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
+            if (process.env.DEBUG_GOOGLE) {
+              console.error(`[DEBUG] Stream: Captured thought signature for tool ID: ${toolCallId}`);
+            }
+          } else if (process.env.DEBUG_GOOGLE && !thoughtSignature) {
+            console.error(`[DEBUG] Stream: NO thought signature in part for ${toolName}`);
+          }
+          events.push({
+            type: "response.tool_call.start" /* TOOL_CALL_START */,
+            response_id: this.responseId,
+            item_id: `msg_${this.responseId}`,
+            tool_call_id: toolCallId,
+            tool_name: toolName
+          });
+        } else if (thoughtSignature) {
+          const buffer = this.toolCallBuffers.get(toolCallId);
+          if (!buffer.signature) {
+            buffer.signature = thoughtSignature;
+            if (this.thoughtSignatureStorage) {
+              this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
+              if (process.env.DEBUG_GOOGLE) {
+                console.error(`[DEBUG] Stream: Updated thought signature for tool ID: ${toolCallId}`);
+              }
             }
           }
         }
-        result.entries = entriesWithValues;
-        if (includeMetadata) {
-          result.metadata = metadata;
-        }
-      } else {
-        result.entries = entries.map((e) => {
-          const entryInfo = {
-            key: e.key,
-            description: e.description
-          };
-          if (includeMetadata) {
-            entryInfo.priority = e.effectivePriority ?? "normal";
-            entryInfo.tier = getTierFromKey(e.key) ?? "none";
-            entryInfo.pinned = e.pinned ?? false;
+        if (functionCall.args) {
+          const argsJson = JSON.stringify(functionCall.args);
+          const buffer = this.toolCallBuffers.get(toolCallId);
+          if (argsJson !== buffer.args) {
+            const delta = argsJson.slice(buffer.args.length);
+            buffer.args = argsJson;
+            if (delta) {
+              events.push({
+                type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
+                response_id: this.responseId,
+                item_id: `msg_${this.responseId}`,
+                tool_call_id: toolCallId,
+                tool_name: toolName,
+                delta,
+                sequence_number: this.sequenceNumber++
+              });
+            }
           }
-          return entryInfo;
-        });
-      }
-      if (includeStats) {
-        const allEntries = await context.memory.list();
-        const byTier = {};
-        for (const entry of allEntries) {
-          const entryTier = getTierFromKey(entry.key) ?? "other";
-          byTier[entryTier] = (byTier[entryTier] || 0) + 1;
         }
-        result.stats = {
-          totalEntries: allEntries.length,
-          byTier
-        };
       }
-      return result;
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: "variable" },
-    describeCall: (args) => {
-      const pattern = args.pattern;
-      const tier = args.tier;
-      const includeValues = args.includeValues;
-      if (tier) return `tier:${tier}${includeValues ? "+values" : ""}`;
-      if (pattern) return `pattern:${pattern}${includeValues ? "+values" : ""}`;
-      return includeValues ? "all+values" : "all";
     }
-  };
-}
-function createMemoryCleanupRawTool() {
-  return {
-    definition: memoryCleanupRawDefinition,
-    execute: async (args, context) => {
-      if (!context || !context.memory) {
-        throw new ToolExecutionError("memory_cleanup_raw", "Memory tools require TaskAgent context");
-      }
-      const keys = args.keys;
-      let deletedCount = 0;
-      const skipped = [];
-      for (const key of keys) {
-        const tier = getTierFromKey(key);
-        if (tier === "raw") {
-          const exists = await context.memory.has(key);
-          if (exists) {
-            await context.memory.delete(key);
-            deletedCount++;
-          }
-        } else {
-          skipped.push(key);
-        }
-      }
-      return {
-        success: true,
-        deleted: deletedCount,
-        skipped: skipped.length > 0 ? skipped : void 0,
-        skippedReason: skipped.length > 0 ? "Not raw tier entries" : void 0
-      };
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: "small" },
-    describeCall: (args) => `${args.keys.length} keys`
-  };
-}
-var autospillProcessDefinition = {
-  type: "function",
-  function: {
-    name: "autospill_process",
-    description: `Process an auto-spilled entry: retrieve the data, acknowledge you've seen it, and store a summary.
-This PREVENTS the entry from appearing repeatedly in your context.
-
-WORKFLOW:
-1. Call this tool with the autospill key and your summary
-2. The tool retrieves the full data, stores your summary, marks entry as consumed
-3. The entry will no longer appear in "Auto-Spilled Data" section
-
-IMPORTANT: Always process auto-spilled entries promptly to keep context clean.`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'The autospill key to process (e.g., "raw.autospill_web_scrape_...")'
-        },
-        summary: {
-          type: "string",
-          description: "A concise summary of the key findings/data from this entry (will be stored in findings tier)"
-        },
-        summary_key: {
-          type: "string",
-          description: 'Optional: Key name for the summary. Defaults to "findings.<toolname>_summary_<timestamp>"'
-        },
-        retrieve_first: {
-          type: "boolean",
-          description: "Optional: If true, returns the full content before marking as consumed. Default: false (just mark consumed)"
-        }
-      },
-      required: ["key", "summary"]
-    }
+    return events;
+  }
+  /**
+   * Generate unique response ID using cryptographically secure UUID
+   */
+  generateResponseId() {
+    return `resp_google_${crypto2.randomUUID()}`;
+  }
+  /**
+   * Check if the stream had tool calls
+   * Used to determine when to clear thought signatures (must persist across tool execution)
+   */
+  hasToolCalls() {
+    return this.hadToolCalls;
+  }
+  /**
+   * Clear all internal state
+   * Should be called after each stream completes to prevent memory leaks
+   */
+  clear() {
+    this.responseId = "";
+    this.model = "";
+    this.sequenceNumber = 0;
+    this.isFirst = true;
+    this.toolCallBuffers.clear();
+    this.hadToolCalls = false;
+  }
+  /**
+   * Reset converter state for a new stream
+   * Alias for clear()
+   */
+  reset() {
+    this.clear();
   }
 };
-function createAutoSpillProcessTool() {
-  return {
-    definition: autospillProcessDefinition,
-    execute: async (args, context) => {
-      const agentCtx = context?.agentContext;
-      if (!agentCtx) {
-        return { error: "AgentContext not available" };
+
+// src/infrastructure/providers/google/GoogleTextProvider.ts
+var GoogleTextProvider = class extends BaseTextProvider {
+  name = "google";
+  capabilities = {
+    text: true,
+    images: true,
+    // Gemini supports vision
+    videos: false,
+    audio: false
+  };
+  client;
+  converter;
+  streamConverter;
+  constructor(config) {
+    super(config);
+    this.client = new genai.GoogleGenAI({
+      apiKey: this.getApiKey()
+    });
+    this.converter = new GoogleConverter();
+    this.streamConverter = new GoogleStreamConverter();
+    this.streamConverter.setThoughtSignatureStorage(this.converter.getThoughtSignatureStorage());
+    this.streamConverter.setToolCallMappingStorage(this.converter.getToolCallMappingStorage());
+  }
+  /**
+   * Generate response using Google Gemini API
+   */
+  async generate(options) {
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        const googleRequest = await this.converter.convertRequest(options);
+        if (process.env.DEBUG_GOOGLE) {
+          console.error("[DEBUG] Google Request:", JSON.stringify({
+            model: options.model,
+            tools: googleRequest.tools,
+            toolConfig: googleRequest.toolConfig,
+            generationConfig: googleRequest.generationConfig,
+            contents: googleRequest.contents?.slice(0, 1)
+            // First message only
+          }, null, 2));
+        }
+        const result = await this.client.models.generateContent({
+          model: options.model,
+          contents: googleRequest.contents,
+          config: {
+            systemInstruction: googleRequest.systemInstruction,
+            tools: googleRequest.tools,
+            toolConfig: googleRequest.toolConfig,
+            ...googleRequest.generationConfig
+          }
+        });
+        if (process.env.DEBUG_GOOGLE) {
+          console.error("[DEBUG] Google Response:", JSON.stringify({
+            candidates: result.candidates?.map((c) => ({
+              finishReason: c.finishReason,
+              content: c.content
+            })),
+            usageMetadata: result.usageMetadata
+          }, null, 2));
+        }
+        const response = this.converter.convertResponse(result);
+        const firstOutput = response.output?.[0];
+        const outputContent = firstOutput && "content" in firstOutput ? firstOutput.content : [];
+        const hasToolCalls = this.converter.hasToolCalls(outputContent);
+        if (!hasToolCalls) {
+          this.converter.clearMappings();
+        }
+        return response;
+      } catch (error) {
+        this.converter.clearMappings();
+        this.handleError(error);
+        throw error;
       }
-      const plugin = agentCtx.autoSpillPlugin;
-      const memory = context.memory;
-      if (!plugin) {
-        return { error: "AutoSpill plugin not enabled. This tool requires features.autoSpill: true" };
+    }, options.model);
+  }
+  /**
+   * Stream response using Google Gemini API
+   */
+  async *streamGenerate(options) {
+    try {
+      const googleRequest = await this.converter.convertRequest(options);
+      const stream = await this.client.models.generateContentStream({
+        model: options.model,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          ...googleRequest.generationConfig
+        }
+      });
+      this.streamConverter.reset();
+      yield* this.streamConverter.convertStream(stream, options.model);
+      if (!this.streamConverter.hasToolCalls()) {
+        this.converter.clearMappings();
+        this.streamConverter.clear();
       }
-      const key = args.key;
-      const summary = args.summary;
-      const retrieveFirst = args.retrieve_first;
-      const entry = plugin.getEntry(key);
-      if (!entry) {
-        return {
-          error: `Entry "${key}" not found in auto-spill tracker`,
-          hint: 'The entry may have already been consumed or cleaned up. Use memory_query({ pattern: "raw.*" }) to list available entries.'
-        };
-      }
-      let fullContent = void 0;
-      if (retrieveFirst && memory) {
-        fullContent = await memory.get(key);
-      }
-      const baseKey = args.summary_key || `${entry.sourceTool}_summary_${Date.now()}`;
-      const summaryKey = addTierPrefix(baseKey.replace(/^findings\./, ""), "findings");
-      if (memory) {
-        await memory.set(
-          summaryKey,
-          `Summary of ${entry.description}`,
-          summary,
-          { priority: "high", scope: { type: "plan" } }
-          // Findings = high priority, plan scope
+    } catch (error) {
+      this.converter.clearMappings();
+      this.streamConverter.clear();
+      this.handleError(error);
+      throw error;
+    }
+  }
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model) {
+    if (model.includes("gemini-3") || model.includes("gemini-2.5") || model.includes("gemini-2.0") || model.includes("gemini-1.5") || model.includes("gemini-pro") || model.includes("gemini-flash")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 1048576,
+        // 1M tokens
+        maxOutputTokens: 8192
+      };
+    }
+    return {
+      supportsTools: true,
+      supportsVision: true,
+      supportsJSON: true,
+      supportsJSONSchema: false,
+      maxTokens: 1048576,
+      maxOutputTokens: 8192
+    };
+  }
+  /**
+   * Handle Google-specific errors
+   */
+  handleError(error) {
+    const errorMessage = error.message || "";
+    if (error.status === 401 || errorMessage.includes("API key not valid")) {
+      throw new ProviderAuthError("google", "Invalid API key");
+    }
+    if (error.status === 429 || errorMessage.includes("Resource exhausted")) {
+      throw new ProviderRateLimitError("google");
+    }
+    if (errorMessage.includes("context length") || errorMessage.includes("too long")) {
+      throw new ProviderContextLengthError("google", 1048576);
+    }
+    throw error;
+  }
+};
+var VertexAITextProvider = class extends BaseTextProvider {
+  name = "vertex-ai";
+  capabilities = {
+    text: true,
+    images: true,
+    videos: true,
+    // Vertex AI supports video input
+    audio: true
+    // Vertex AI supports audio input
+  };
+  client;
+  converter;
+  config;
+  constructor(config) {
+    super(config);
+    this.config = config;
+    if (!config.projectId) {
+      throw new InvalidConfigError("Vertex AI requires projectId");
+    }
+    if (!config.location) {
+      throw new InvalidConfigError('Vertex AI requires location (e.g., "us-central1")');
+    }
+    process.env.GOOGLE_GENAI_USE_VERTEXAI = "True";
+    process.env.GOOGLE_CLOUD_PROJECT = config.projectId;
+    process.env.GOOGLE_CLOUD_LOCATION = config.location;
+    if (config.credentials) ;
+    this.client = new genai.GoogleGenAI({
+      // No API key for Vertex AI - uses Application Default Credentials
+    });
+    this.converter = new GoogleConverter();
+  }
+  /**
+   * Generate response using Vertex AI
+   */
+  async generate(options) {
+    try {
+      const googleRequest = await this.converter.convertRequest(options);
+      const result = await this.client.models.generateContent({
+        model: options.model,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          ...googleRequest.generationConfig
+        }
+      });
+      return this.converter.convertResponse(result);
+    } catch (error) {
+      this.handleError(error);
+      throw error;
+    }
+  }
+  /**
+   * Stream response using Vertex AI
+   */
+  async *streamGenerate(options) {
+    try {
+      const googleRequest = await this.converter.convertRequest(options);
+      const stream = await this.client.models.generateContentStream({
+        model: options.model,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          ...googleRequest.generationConfig
+        }
+      });
+      const streamConverter = new GoogleStreamConverter();
+      yield* streamConverter.convertStream(stream, options.model);
+    } catch (error) {
+      this.handleError(error);
+      throw error;
+    }
+  }
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model) {
+    if (model.includes("gemini-3") || model.includes("gemini-2.5") || model.includes("gemini-2.0") || model.includes("gemini-1.5") || model.includes("gemini-pro") || model.includes("gemini-flash")) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 1048576,
+        // 1M tokens
+        maxOutputTokens: 8192
+      };
+    }
+    return {
+      supportsTools: true,
+      supportsVision: true,
+      supportsJSON: true,
+      supportsJSONSchema: false,
+      maxTokens: 1048576,
+      maxOutputTokens: 8192
+    };
+  }
+  /**
+   * Handle Vertex AI-specific errors
+   */
+  handleError(error) {
+    const errorMessage = error.message || "";
+    if (error.status === 401 || error.status === 403 || errorMessage.includes("not authenticated") || errorMessage.includes("permission denied")) {
+      throw new ProviderAuthError(
+        "vertex-ai",
+        "Authentication failed. Make sure you have set up Application Default Credentials or provided service account credentials."
+      );
+    }
+    if (error.status === 429 || errorMessage.includes("Resource exhausted")) {
+      throw new ProviderRateLimitError("vertex-ai");
+    }
+    if (errorMessage.includes("context length") || errorMessage.includes("too long")) {
+      throw new ProviderContextLengthError("vertex-ai", 1048576);
+    }
+    throw error;
+  }
+};
+
+// src/infrastructure/providers/generic/GenericOpenAIProvider.ts
+var GenericOpenAIProvider = class extends OpenAITextProvider {
+  name;
+  capabilities;
+  constructor(name, config, capabilities) {
+    super(config);
+    this.name = name;
+    if (capabilities) {
+      this.capabilities = {
+        text: capabilities.text ?? true,
+        images: capabilities.images ?? false,
+        videos: capabilities.videos ?? false,
+        audio: capabilities.audio ?? false
+      };
+    } else {
+      this.capabilities = {
+        text: true,
+        images: false,
+        // Conservative default
+        videos: false,
+        audio: false
+      };
+    }
+  }
+  /**
+   * Override model capabilities for generic providers
+   * Can be customized per provider
+   */
+  getModelCapabilities(model) {
+    const hasVision = model.toLowerCase().includes("vision") || model.toLowerCase().includes("llava") || model.toLowerCase().includes("llama-3.2-90b");
+    const isLargeContext = model.includes("128k") || model.includes("200k") || model.toLowerCase().includes("longtext");
+    return {
+      supportsTools: true,
+      // Most OpenAI-compatible APIs support tools
+      supportsVision: hasVision,
+      supportsJSON: true,
+      // Most support JSON mode
+      supportsJSONSchema: false,
+      // Conservative - not all support schema
+      maxTokens: isLargeContext ? 128e3 : 32e3,
+      // Conservative default
+      maxOutputTokens: 4096
+      // Common default
+    };
+  }
+};
+
+// src/core/createProvider.ts
+function createProvider(connector) {
+  const injectedProvider = connector.getOptions().provider;
+  if (injectedProvider && typeof injectedProvider.generate === "function") {
+    return injectedProvider;
+  }
+  const vendor = connector.vendor;
+  if (!vendor) {
+    throw new Error(
+      `Connector '${connector.name}' has no vendor specified. Set vendor to create an AI provider.`
+    );
+  }
+  const config = extractProviderConfig(connector);
+  switch (vendor) {
+    case Vendor.OpenAI:
+      return new OpenAITextProvider({
+        ...config,
+        organization: connector.getOptions().organization,
+        project: connector.getOptions().project
+      });
+    case Vendor.Anthropic:
+      return new AnthropicTextProvider({
+        ...config,
+        anthropicVersion: connector.getOptions().anthropicVersion
+      });
+    case Vendor.Google:
+      return new GoogleTextProvider(config);
+    case Vendor.GoogleVertex:
+      return new VertexAITextProvider({
+        ...config,
+        projectId: connector.getOptions().projectId || "",
+        location: connector.getOptions().location || "us-central1"
+      });
+    // OpenAI-compatible providers (use connector.name for unique identification)
+    case Vendor.Groq:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.groq.com/openai/v1"
+      });
+    case Vendor.Together:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.together.xyz/v1"
+      });
+    case Vendor.Perplexity:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.perplexity.ai"
+      });
+    case Vendor.Grok:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.x.ai/v1"
+      });
+    case Vendor.DeepSeek:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.deepseek.com/v1"
+      });
+    case Vendor.Mistral:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.mistral.ai/v1"
+      });
+    case Vendor.Ollama:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "http://localhost:11434/v1"
+      });
+    case Vendor.Custom:
+      if (!config.baseURL) {
+        throw new Error(
+          `Connector '${connector.name}' with Custom vendor requires baseURL`
         );
       }
-      plugin.markConsumed(key, summaryKey);
-      const result = {
-        success: true,
-        message: `Processed "${key}" - entry will no longer appear in context`,
-        processed_entry: {
-          key: entry.key,
-          source_tool: entry.sourceTool,
-          description: entry.description,
-          size_bytes: entry.sizeBytes
-        },
-        summary_stored_at: summaryKey
-      };
-      if (fullContent !== void 0) {
-        result.content = fullContent;
-      }
-      return result;
-    },
-    idempotency: { safe: false },
-    // Has side effects (marks consumed)
-    output: { expectedSize: "variable" },
-    describeCall: (args) => {
-      const key = args.key;
-      return key.replace("raw.autospill_", "").slice(0, 40);
-    }
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL
+      });
+    default:
+      throw new Error(`Unknown vendor: ${vendor}`);
+  }
+}
+function extractProviderConfig(connector) {
+  const auth2 = connector.config.auth;
+  let apiKey;
+  if (auth2.type === "api_key") {
+    apiKey = auth2.apiKey;
+  } else if (auth2.type === "none") {
+    apiKey = "mock-key";
+  } else if (auth2.type === "oauth") {
+    throw new Error(
+      `Connector '${connector.name}' uses OAuth. Call connector.getToken() to get the access token first.`
+    );
+  } else if (auth2.type === "jwt") {
+    throw new Error(
+      `Connector '${connector.name}' uses JWT auth. JWT auth for AI providers is not yet supported.`
+    );
+  } else {
+    throw new Error(`Unknown auth type for connector '${connector.name}'`);
+  }
+  return {
+    apiKey,
+    baseURL: connector.config.baseURL,
+    timeout: connector.getOptions().timeout,
+    maxRetries: connector.getOptions().maxRetries
   };
 }
-function createMemoryTools() {
-  return [
-    createMemoryStoreTool(),
-    createMemoryRetrieveTool(),
-    createMemoryDeleteTool(),
-    createMemoryQueryTool(),
-    createMemoryCleanupRawTool(),
-    createAutoSpillProcessTool()
-  ];
-}
 
-// src/capabilities/taskAgent/contextTools.ts
-var contextCompactDefinition = {
-  type: "function",
-  function: {
-    name: "context_compact",
-    description: `Trigger smart context compaction using LLM analysis.
-
-Use this when:
-- Context is getting full (check with context_stats first)
-- You want to consolidate findings before starting a new phase
-- You have many old messages/tool results that are no longer needed
-
-The system will:
-- Summarize older conversation segments
-- Move large data blobs to Working Memory
-- Remove low-value exchanges (acknowledgments, greetings)
-- Preserve recent tool calls and critical context
-
-Example: context_compact({ target_reduction: 30 }) - Reduce context by ~30%`,
-    parameters: {
-      type: "object",
-      properties: {
-        target_reduction: {
-          type: "number",
-          description: "Target percentage to reduce (e.g., 30 for 30% reduction). Default: uses strategy threshold.",
-          minimum: 10,
-          maximum: 70
-        },
-        dry_run: {
-          type: "boolean",
-          description: "If true, analyze but do not execute compaction. Returns what would be done."
-        }
-      },
-      required: []
+// src/core/BaseAgent.ts
+var BaseAgent = class extends eventemitter3.EventEmitter {
+  // ===== Core Properties =====
+  name;
+  connector;
+  model;
+  // ===== Protected State =====
+  _config;
+  _agentContext;
+  // SINGLE SOURCE OF TRUTH for tools and sessions
+  _permissionManager;
+  _isDestroyed = false;
+  _cleanupCallbacks = [];
+  _logger;
+  _lifecycleHooks;
+  // Session state
+  _sessionConfig = null;
+  _autoSaveInterval = null;
+  _pendingSessionLoad = null;
+  // Provider for LLM calls - single instance shared by all methods
+  _provider;
+  // ===== Constructor =====
+  constructor(config, loggerComponent) {
+    super();
+    this._config = config;
+    this.connector = this.resolveConnector(config.connector);
+    this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
+    this.model = config.model;
+    this._logger = exports.logger.child({
+      component: loggerComponent,
+      agentName: this.name,
+      model: this.model,
+      connector: this.connector.name
+    });
+    this._agentContext = this.initializeAgentContext(config);
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._agentContext.tools.register(tool);
+      }
     }
+    this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
+    this._lifecycleHooks = config.lifecycleHooks ?? {};
+    this._provider = createProvider(this.connector);
   }
-};
-var contextStatsDefinition = {
-  type: "function",
-  function: {
-    name: "context_stats",
-    description: `Get comprehensive context statistics and health metrics.
-
-Examples:
-- context_stats() \u2192 budget summary (used/total/remaining tokens)
-- context_stats({ sections: ["breakdown"] }) \u2192 token breakdown by component
-- context_stats({ sections: ["memory"] }) \u2192 memory stats (entries, tiers)
-- context_stats({ sections: ["cache"] }) \u2192 cache stats (hits, misses)
-- context_stats({ sections: ["all"] }) \u2192 everything`,
-    parameters: {
-      type: "object",
-      properties: {
-        sections: {
-          type: "array",
-          items: {
-            type: "string",
-            enum: ["budget", "breakdown", "memory", "cache", "all"]
-          },
-          description: 'Sections to include. Default: ["budget"]'
-        }
-      },
-      required: []
+  // ===== Protected Initialization Helpers =====
+  /**
+   * Resolve connector from string name or instance
+   */
+  resolveConnector(ref) {
+    if (typeof ref === "string") {
+      return exports.Connector.get(ref);
     }
+    return ref;
   }
-};
-function createContextStatsTool() {
-  return {
-    definition: contextStatsDefinition,
-    execute: async (args, context) => {
-      const agentCtx = context?.agentContext;
-      if (!agentCtx) {
-        return {
-          error: "AgentContext not available",
-          message: "Tool context missing agentContext"
-        };
-      }
-      const requestedSections = args.sections ?? ["budget"];
-      const sections = new Set(
-        requestedSections.includes("all") ? ["budget", "breakdown", "memory", "cache"] : requestedSections
-      );
-      const result = {};
-      if (sections.has("budget")) {
-        const budget = agentCtx.getLastBudget();
-        if (!budget) {
-          result.budget = {
-            status: "no_budget_data",
-            message: "No context budget calculated yet. Run prepare() first."
-          };
-        } else {
-          result.budget = {
-            total_tokens: budget.total,
-            reserved_tokens: budget.reserved,
-            used_tokens: budget.used,
-            available_tokens: budget.available,
-            utilization_percent: Math.round(budget.utilizationPercent * 10) / 10,
-            status: budget.status,
-            warning: budget.status === "warning" ? "Context approaching limit - automatic compaction may trigger" : budget.status === "critical" ? "Context at critical level - compaction will trigger" : null
-          };
+  /**
+   * Initialize AgentContextNextGen (single source of truth for tools and sessions).
+   * If AgentContextNextGen is provided, use it directly.
+   * Otherwise, create a new one with the provided configuration.
+   */
+  initializeAgentContext(config) {
+    if (config.context instanceof AgentContextNextGen) {
+      return config.context;
+    }
+    const contextConfig = {
+      model: config.model,
+      agentId: config.name,
+      // Include storage and sessionId if session config is provided
+      storage: config.session?.storage,
+      // Subclasses can add systemPrompt via their config
+      ...typeof config.context === "object" && config.context !== null ? config.context : {}
+    };
+    return AgentContextNextGen.create(contextConfig);
+  }
+  /**
+   * Initialize permission manager
+   */
+  initializePermissionManager(config, tools) {
+    const manager = new ToolPermissionManager(config);
+    if (tools) {
+      for (const tool of tools) {
+        if (tool.permission) {
+          manager.setToolConfig(tool.definition.function.name, tool.permission);
         }
       }
-      if (sections.has("breakdown")) {
-        const budget = agentCtx.getLastBudget();
-        if (!budget) {
-          result.breakdown = {
-            status: "no_budget_data",
-            message: "No context budget calculated yet. Run prepare() first."
-          };
-        } else {
-          const components = Object.entries(budget.breakdown).map(([name, tokens]) => ({
-            name,
-            tokens,
-            percent: budget.used > 0 ? Math.round(tokens / budget.used * 1e3) / 10 : 0
-          }));
-          result.breakdown = {
-            total_used: budget.used,
-            by_component: budget.breakdown,
-            components
-          };
-        }
-      }
-      if (sections.has("memory")) {
-        if (!context?.memory) {
-          result.memory = {
-            status: "feature_disabled",
-            message: "Memory feature is not enabled."
-          };
-        } else {
-          const entries = await context.memory.list();
-          const byTier = {};
-          for (const entry of entries) {
-            const tier = getTierFromKey(entry.key) ?? "other";
-            byTier[tier] = (byTier[tier] || 0) + 1;
+    }
+    return manager;
+  }
+  /**
+   * Initialize session management (call from subclass constructor after other setup)
+   * Now uses AgentContext.save()/load() for persistence.
+   */
+  initializeSession(sessionConfig) {
+    if (!sessionConfig) {
+      return;
+    }
+    this._sessionConfig = sessionConfig;
+    if (sessionConfig.id) {
+      this._pendingSessionLoad = this.loadSession(sessionConfig.id);
+    }
+    if (sessionConfig.autoSave) {
+      const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
+      this._autoSaveInterval = setInterval(async () => {
+        try {
+          if (this._agentContext.sessionId) {
+            await this._agentContext.save();
+            this._logger.debug({ sessionId: this._agentContext.sessionId }, "Auto-saved session");
           }
-          result.memory = {
-            total_entries: entries.length,
-            by_tier: byTier,
-            entries: entries.map((e) => ({
-              key: e.key,
-              description: e.description,
-              priority: e.effectivePriority ?? "normal"
-            }))
-          };
+        } catch (error) {
+          this._logger.error({ error: error.message }, "Auto-save failed");
         }
+      }, interval);
+    }
+  }
+  /**
+   * Ensure any pending session load is complete
+   */
+  async ensureSessionLoaded() {
+    if (this._pendingSessionLoad) {
+      await this._pendingSessionLoad;
+      this._pendingSessionLoad = null;
+    }
+  }
+  // ===== Public Session API =====
+  /**
+   * Get the current session ID (if session is enabled)
+   * Delegates to AgentContext.
+   */
+  getSessionId() {
+    return this._agentContext.sessionId;
+  }
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession() {
+    return this._agentContext.storage !== null;
+  }
+  /**
+   * Save the current session to storage.
+   * Uses getContextState() to get state, allowing subclasses to inject agent-level state.
+   *
+   * @param sessionId - Optional session ID (uses current or generates new)
+   * @param metadata - Optional session metadata
+   * @throws Error if storage is not configured
+   */
+  async saveSession(sessionId, metadata) {
+    await this.ensureSessionLoaded();
+    const state = await this.getContextState();
+    await this._agentContext.save(sessionId, metadata, state);
+    this._logger.debug({ sessionId: this._agentContext.sessionId }, "Session saved");
+    this.emit("session:saved", { sessionId: this._agentContext.sessionId });
+  }
+  /**
+   * Load a session from storage.
+   * Uses restoreContextState() to restore state, allowing subclasses to restore agent-level state.
+   *
+   * @param sessionId - Session ID to load
+   * @returns true if session was found and loaded, false if not found
+   * @throws Error if storage is not configured
+   */
+  async loadSession(sessionId) {
+    const result = await this._agentContext.loadRaw(sessionId);
+    if (!result) {
+      this._logger.warn({ sessionId }, "Session not found");
+      return false;
+    }
+    await this.restoreContextState(result.state);
+    this._logger.info({ sessionId }, "Session loaded");
+    this.emit("session:loaded", { sessionId });
+    return true;
+  }
+  /**
+   * Check if a session exists in storage.
+   * Delegates to AgentContext.sessionExists().
+   */
+  async sessionExists(sessionId) {
+    return this._agentContext.sessionExists(sessionId);
+  }
+  /**
+   * Delete a session from storage.
+   * Delegates to AgentContext.deleteSession().
+   */
+  async deleteSession(sessionId) {
+    await this._agentContext.deleteSession(sessionId);
+    this._logger.debug({ sessionId }, "Session deleted");
+  }
+  /**
+   * Get context state for session persistence.
+   * Override in subclasses to include agent-specific state in agentState field.
+   */
+  async getContextState() {
+    return this._agentContext.getState();
+  }
+  /**
+   * Restore context from saved state.
+   * Override in subclasses to restore agent-specific state from agentState field.
+   */
+  async restoreContextState(state) {
+    this._agentContext.restoreState(state);
+  }
+  // ===== Public Permission API =====
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   * This is delegated to AgentContextNextGen.tools (single source of truth).
+   */
+  get tools() {
+    return this._agentContext.tools;
+  }
+  /**
+   * Get the AgentContextNextGen (unified context management).
+   * This is the primary way to access tools, memory, and history.
+   */
+  get context() {
+    return this._agentContext;
+  }
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   */
+  get permissions() {
+    return this._permissionManager;
+  }
+  // ===== Tool Management =====
+  /**
+   * Add a tool to the agent.
+   * Tools are registered with AgentContext (single source of truth).
+   */
+  addTool(tool) {
+    this._agentContext.tools.register(tool);
+    if (tool.permission) {
+      this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+    }
+  }
+  /**
+   * Remove a tool from the agent.
+   * Tools are unregistered from AgentContext (single source of truth).
+   */
+  removeTool(toolName) {
+    this._agentContext.tools.unregister(toolName);
+  }
+  /**
+   * List registered tools (returns enabled tool names)
+   */
+  listTools() {
+    return this._agentContext.tools.listEnabled();
+  }
+  /**
+   * Replace all tools with a new array
+   */
+  setTools(tools) {
+    this._agentContext.tools.clear();
+    for (const tool of tools) {
+      this._agentContext.tools.register(tool);
+      if (tool.permission) {
+        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
       }
-      if (sections.has("cache")) {
-        if (!context?.idempotencyCache) {
-          result.cache = {
-            status: "feature_disabled",
-            message: "Cache is not enabled (requires memory feature)."
-          };
-        } else {
-          const stats = context.idempotencyCache.getStats();
-          result.cache = {
-            entries: stats.entries,
-            hits: stats.hits,
-            misses: stats.misses,
-            hit_rate_percent: Math.round(stats.hitRate * 100),
-            effectiveness: stats.hitRate > 0.5 ? "high" : stats.hitRate > 0.2 ? "medium" : stats.hitRate > 0 ? "low" : "none"
-          };
+    }
+  }
+  /**
+   * Get enabled tool definitions (for passing to LLM).
+   * This is a helper that extracts definitions from enabled tools.
+   */
+  getEnabledToolDefinitions() {
+    return this._agentContext.tools.getEnabled().map((t) => t.definition);
+  }
+  // ===== Direct LLM Access (Bypasses AgentContext) =====
+  /**
+   * Get the provider for LLM calls.
+   * Returns the single shared provider instance.
+   */
+  getProvider() {
+    return this._provider;
+  }
+  /**
+   * Make a direct LLM call bypassing all context management.
+   *
+   * This method:
+   * - Does NOT track messages in history
+   * - Does NOT use AgentContext features (memory, cache, etc.)
+   * - Does NOT prepare context or run compaction
+   * - Does NOT go through the agentic loop (no tool execution)
+   *
+   * Use this for simple, stateless interactions where you want raw LLM access
+   * without the overhead of context management.
+   *
+   * @param input - Text string or array of InputItems (supports multimodal: text + images)
+   * @param options - Optional configuration for the call
+   * @returns Raw LLM response
+   *
+   * @example
+   * ```typescript
+   * // Simple text call
+   * const response = await agent.runDirect('What is 2 + 2?');
+   * console.log(response.output_text);
+   *
+   * // With options
+   * const response = await agent.runDirect('Summarize this', {
+   *   instructions: 'Be concise',
+   *   temperature: 0.5,
+   * });
+   *
+   * // Multimodal (text + image)
+   * const response = await agent.runDirect([
+   *   { type: 'message', role: 'user', content: [
+   *     { type: 'input_text', text: 'What is in this image?' },
+   *     { type: 'input_image', image_url: 'https://...' }
+   *   ]}
+   * ]);
+   *
+   * // With tools (single call, no loop)
+   * const response = await agent.runDirect('Get the weather', {
+   *   includeTools: true,
+   * });
+   * // Note: If the LLM returns a tool call, you must handle it yourself
+   * ```
+   */
+  async runDirect(input, options = {}) {
+    if (this._isDestroyed) {
+      throw new Error("Agent has been destroyed");
+    }
+    const provider = this.getProvider();
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: options.instructions,
+      tools: options.includeTools ? this.getEnabledToolDefinitions() : void 0,
+      temperature: options.temperature,
+      max_output_tokens: options.maxOutputTokens,
+      response_format: options.responseFormat,
+      vendorOptions: options.vendorOptions
+    };
+    this._logger.debug({ inputType: typeof input }, "runDirect called");
+    try {
+      const response = await provider.generate(generateOptions);
+      this._logger.debug({ outputLength: response.output_text?.length }, "runDirect completed");
+      return response;
+    } catch (error) {
+      this._logger.error({ error: error.message }, "runDirect failed");
+      throw error;
+    }
+  }
+  /**
+   * Stream a direct LLM call bypassing all context management.
+   *
+   * Same as runDirect but returns a stream of events instead of waiting
+   * for the complete response. Useful for real-time output display.
+   *
+   * @param input - Text string or array of InputItems (supports multimodal)
+   * @param options - Optional configuration for the call
+   * @returns Async iterator of stream events
+   *
+   * @example
+   * ```typescript
+   * for await (const event of agent.streamDirect('Tell me a story')) {
+   *   if (event.type === 'output_text_delta') {
+   *     process.stdout.write(event.delta);
+   *   }
+   * }
+   * ```
+   */
+  async *streamDirect(input, options = {}) {
+    if (this._isDestroyed) {
+      throw new Error("Agent has been destroyed");
+    }
+    const provider = this.getProvider();
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: options.instructions,
+      tools: options.includeTools ? this.getEnabledToolDefinitions() : void 0,
+      temperature: options.temperature,
+      max_output_tokens: options.maxOutputTokens,
+      response_format: options.responseFormat,
+      vendorOptions: options.vendorOptions
+    };
+    this._logger.debug({ inputType: typeof input }, "streamDirect called");
+    try {
+      yield* provider.streamGenerate(generateOptions);
+      this._logger.debug("streamDirect completed");
+    } catch (error) {
+      this._logger.error({ error: error.message }, "streamDirect failed");
+      throw error;
+    }
+  }
+  // ===== Lifecycle Hooks =====
+  /**
+   * Get the current lifecycle hooks configuration
+   */
+  get lifecycleHooks() {
+    return this._lifecycleHooks;
+  }
+  /**
+   * Set or update lifecycle hooks at runtime
+   */
+  setLifecycleHooks(hooks) {
+    this._lifecycleHooks = { ...this._lifecycleHooks, ...hooks };
+  }
+  /**
+   * Invoke beforeToolExecution hook if defined.
+   * Call this before executing a tool.
+   *
+   * @throws Error if hook throws (prevents tool execution)
+   */
+  async invokeBeforeToolExecution(context) {
+    if (this._lifecycleHooks.beforeToolExecution) {
+      try {
+        await this._lifecycleHooks.beforeToolExecution(context);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, toolName: context.toolName },
+          "beforeToolExecution hook failed"
+        );
+        throw error;
+      }
+    }
+  }
+  /**
+   * Invoke afterToolExecution hook if defined.
+   * Call this after tool execution completes (success or failure).
+   */
+  async invokeAfterToolExecution(result) {
+    if (this._lifecycleHooks.afterToolExecution) {
+      try {
+        await this._lifecycleHooks.afterToolExecution(result);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, toolName: result.toolName },
+          "afterToolExecution hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke beforeContextPrepare hook if defined.
+   * Call this before preparing context for LLM.
+   */
+  async invokeBeforeContextPrepare() {
+    if (this._lifecycleHooks.beforeContextPrepare) {
+      try {
+        await this._lifecycleHooks.beforeContextPrepare(this.name);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message },
+          "beforeContextPrepare hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke beforeCompaction hook if defined.
+   * Call this before context compaction occurs.
+   * Gives the agent a chance to save important data to memory.
+   */
+  async invokeBeforeCompaction(context) {
+    if (this._lifecycleHooks.beforeCompaction) {
+      try {
+        await this._lifecycleHooks.beforeCompaction(context);
+      } catch (error) {
+        this._logger.error(
+          {
+            error: error.message,
+            strategy: context.strategy,
+            estimatedTokensToFree: context.estimatedTokensToFree
+          },
+          "beforeCompaction hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke afterCompaction hook if defined.
+   * Call this after context compaction occurs.
+   */
+  async invokeAfterCompaction(log, tokensFreed) {
+    if (this._lifecycleHooks.afterCompaction) {
+      try {
+        await this._lifecycleHooks.afterCompaction(log, tokensFreed);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, tokensFreed },
+          "afterCompaction hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke onError hook if defined.
+   * Call this when the agent encounters an error.
+   */
+  async invokeOnError(error, phase) {
+    if (this._lifecycleHooks.onError) {
+      try {
+        await this._lifecycleHooks.onError(error, { phase, agentId: this.name });
+      } catch (hookError) {
+        this._logger.error(
+          { error: hookError.message, originalError: error.message, phase },
+          "onError hook failed"
+        );
+      }
+    }
+  }
+  // ===== Lifecycle =====
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Register a cleanup callback
+   */
+  onCleanup(callback) {
+    this._cleanupCallbacks.push(callback);
+  }
+  /**
+   * Base cleanup for session and listeners.
+   * Subclasses should call super.baseDestroy() in their destroy() method.
+   */
+  baseDestroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    this._logger.debug("Agent destroy started");
+    if (this._autoSaveInterval) {
+      clearInterval(this._autoSaveInterval);
+      this._autoSaveInterval = null;
+    }
+    this._agentContext.destroy();
+    this._permissionManager.removeAllListeners();
+    this.removeAllListeners();
+  }
+  /**
+   * Run cleanup callbacks
+   */
+  async runCleanupCallbacks() {
+    for (const callback of this._cleanupCallbacks) {
+      try {
+        await callback();
+      } catch (error) {
+        this._logger.error({ error: error.message }, "Cleanup callback error");
+      }
+    }
+    this._cleanupCallbacks = [];
+  }
+};
+
+// src/domain/entities/Tool.ts
+var ToolCallState = /* @__PURE__ */ ((ToolCallState2) => {
+  ToolCallState2["PENDING"] = "pending";
+  ToolCallState2["EXECUTING"] = "executing";
+  ToolCallState2["COMPLETED"] = "completed";
+  ToolCallState2["FAILED"] = "failed";
+  ToolCallState2["TIMEOUT"] = "timeout";
+  return ToolCallState2;
+})(ToolCallState || {});
+function defaultDescribeCall(args, maxLength = 60) {
+  if (!args || typeof args !== "object") {
+    return "";
+  }
+  const priorityKeys = [
+    "file_path",
+    "path",
+    "command",
+    "query",
+    "pattern",
+    "url",
+    "key",
+    "name",
+    "message",
+    "content",
+    "expression",
+    "prompt"
+  ];
+  for (const key of priorityKeys) {
+    if (key in args && args[key] != null) {
+      const value = args[key];
+      const str = typeof value === "string" ? value : JSON.stringify(value);
+      return str.length > maxLength ? str.slice(0, maxLength - 3) + "..." : str;
+    }
+  }
+  for (const [, value] of Object.entries(args)) {
+    if (typeof value === "string" && value.length > 0) {
+      return value.length > maxLength ? value.slice(0, maxLength - 3) + "..." : value;
+    }
+  }
+  const firstEntry = Object.entries(args)[0];
+  if (firstEntry) {
+    const [key, value] = firstEntry;
+    const str = typeof value === "string" ? value : JSON.stringify(value);
+    if (str.length > maxLength) {
+      return `${key}=${str.slice(0, maxLength - key.length - 4)}...`;
+    }
+    return `${key}=${str}`;
+  }
+  return "";
+}
+function getToolCallDescription(tool, args) {
+  if (tool.describeCall) {
+    try {
+      return tool.describeCall(args);
+    } catch {
+    }
+  }
+  return defaultDescribeCall(args);
+}
+
+// src/capabilities/agents/ExecutionContext.ts
+var ExecutionContext = class {
+  // Execution metadata
+  executionId;
+  startTime;
+  iteration = 0;
+  // Tool tracking
+  toolCalls = /* @__PURE__ */ new Map();
+  toolResults = /* @__PURE__ */ new Map();
+  // Control state
+  paused = false;
+  pauseReason;
+  cancelled = false;
+  cancelReason;
+  // User data (for hooks to share state)
+  metadata = /* @__PURE__ */ new Map();
+  // History storage (memory-safe)
+  config;
+  iterations = [];
+  iterationSummaries = [];
+  // Metrics
+  metrics = {
+    totalDuration: 0,
+    llmDuration: 0,
+    toolDuration: 0,
+    hookDuration: 0,
+    iterationCount: 0,
+    toolCallCount: 0,
+    toolSuccessCount: 0,
+    toolFailureCount: 0,
+    toolTimeoutCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    errors: []
+  };
+  // Audit trail
+  auditTrail = [];
+  constructor(executionId, config = {}) {
+    this.executionId = executionId;
+    this.startTime = /* @__PURE__ */ new Date();
+    this.config = {
+      maxHistorySize: config.maxHistorySize || 10,
+      historyMode: config.historyMode || "summary",
+      maxAuditTrailSize: config.maxAuditTrailSize || 1e3
+    };
+  }
+  /**
+   * Add iteration to history (memory-safe)
+   */
+  addIteration(record2) {
+    switch (this.config.historyMode) {
+      case "none":
+        break;
+      case "summary":
+        this.iterationSummaries.push({
+          iteration: record2.iteration,
+          tokens: record2.response.usage.total_tokens,
+          toolCount: record2.toolCalls.length,
+          duration: record2.endTime.getTime() - record2.startTime.getTime(),
+          timestamp: record2.startTime
+        });
+        if (this.iterationSummaries.length > this.config.maxHistorySize) {
+          this.iterationSummaries.shift();
         }
+        break;
+      case "full":
+        this.iterations.push(record2);
+        if (this.iterations.length > this.config.maxHistorySize) {
+          this.iterations.shift();
+        }
+        break;
+    }
+  }
+  /**
+   * Get iteration history
+   */
+  getHistory() {
+    return this.config.historyMode === "full" ? this.iterations : this.iterationSummaries;
+  }
+  /**
+   * Add audit entry
+   */
+  audit(type, details, hookName, toolName) {
+    this.auditTrail.push({
+      timestamp: /* @__PURE__ */ new Date(),
+      type,
+      hookName,
+      toolName,
+      details
+    });
+    if (this.auditTrail.length > this.config.maxAuditTrailSize) {
+      this.auditTrail.shift();
+    }
+  }
+  /**
+   * Get audit trail
+   */
+  getAuditTrail() {
+    return this.auditTrail;
+  }
+  /**
+   * Update metrics
+   */
+  updateMetrics(update) {
+    Object.assign(this.metrics, update);
+  }
+  /**
+   * Add tool call to tracking
+   */
+  addToolCall(toolCall) {
+    this.toolCalls.set(toolCall.id, toolCall);
+    this.metrics.toolCallCount++;
+  }
+  /**
+   * Add tool result to tracking
+   */
+  addToolResult(result) {
+    this.toolResults.set(result.tool_use_id, result);
+    if (result.state === "completed" /* COMPLETED */) {
+      this.metrics.toolSuccessCount++;
+    } else if (result.state === "failed" /* FAILED */) {
+      this.metrics.toolFailureCount++;
+    } else if (result.state === "timeout" /* TIMEOUT */) {
+      this.metrics.toolTimeoutCount++;
+    }
+  }
+  /**
+   * Check resource limits
+   */
+  checkLimits(limits) {
+    if (!limits) return;
+    if (limits.maxExecutionTime) {
+      const elapsed = Date.now() - this.startTime.getTime();
+      if (elapsed > limits.maxExecutionTime) {
+        throw new Error(
+          `Execution time limit exceeded: ${elapsed}ms > ${limits.maxExecutionTime}ms`
+        );
+      }
+    }
+    if (limits.maxToolCalls && this.toolCalls.size > limits.maxToolCalls) {
+      throw new Error(
+        `Tool call limit exceeded: ${this.toolCalls.size} > ${limits.maxToolCalls}`
+      );
+    }
+    if (limits.maxContextSize) {
+      const size = this.estimateSize();
+      if (size > limits.maxContextSize) {
+        throw new Error(
+          `Context size limit exceeded: ${size} bytes > ${limits.maxContextSize} bytes`
+        );
+      }
+    }
+  }
+  /**
+   * Estimate memory usage (rough approximation)
+   */
+  estimateSize() {
+    try {
+      const data = {
+        toolCalls: Array.from(this.toolCalls.values()),
+        toolResults: Array.from(this.toolResults.values()),
+        iterations: this.config.historyMode === "full" ? this.iterations : this.iterationSummaries,
+        auditTrail: this.auditTrail
+      };
+      return JSON.stringify(data).length;
+    } catch {
+      return 0;
+    }
+  }
+  /**
+   * Cleanup resources and release memory
+   * Clears all internal arrays and maps to allow garbage collection
+   */
+  cleanup() {
+    const summary = {
+      executionId: this.executionId,
+      totalIterations: this.iteration,
+      totalToolCalls: this.metrics.toolCallCount,
+      totalDuration: Date.now() - this.startTime.getTime(),
+      success: !this.cancelled && this.metrics.errors.length === 0
+    };
+    this.toolCalls.clear();
+    this.toolResults.clear();
+    this.metadata.clear();
+    this.iterations.length = 0;
+    this.iterationSummaries.length = 0;
+    this.auditTrail.length = 0;
+    this.metrics.errors.length = 0;
+    this.metadata.set("execution_summary", summary);
+  }
+  /**
+   * Get execution summary
+   */
+  getSummary() {
+    return {
+      executionId: this.executionId,
+      startTime: this.startTime,
+      currentIteration: this.iteration,
+      paused: this.paused,
+      cancelled: this.cancelled,
+      metrics: { ...this.metrics },
+      totalDuration: Date.now() - this.startTime.getTime()
+    };
+  }
+};
+
+// src/capabilities/agents/HookManager.ts
+var HookManager = class {
+  hooks = /* @__PURE__ */ new Map();
+  timeout;
+  parallel;
+  // Per-hook error tracking: hookKey -> consecutive error count
+  hookErrorCounts = /* @__PURE__ */ new Map();
+  // Disabled hooks that exceeded error threshold
+  disabledHooks = /* @__PURE__ */ new Set();
+  maxConsecutiveErrors = 3;
+  emitter;
+  constructor(config = {}, emitter, errorHandling) {
+    this.timeout = config.hookTimeout || 5e3;
+    this.parallel = config.parallelHooks || false;
+    this.emitter = emitter;
+    this.maxConsecutiveErrors = errorHandling?.maxConsecutiveErrors || 3;
+    this.registerFromConfig(config);
+  }
+  /**
+   * Register hooks from configuration
+   */
+  registerFromConfig(config) {
+    const hookNames = [
+      "before:execution",
+      "after:execution",
+      "before:llm",
+      "after:llm",
+      "before:tool",
+      "after:tool",
+      "approve:tool",
+      "pause:check"
+    ];
+    for (const name of hookNames) {
+      const hook = config[name];
+      if (hook) {
+        this.register(name, hook);
+      }
+    }
+  }
+  /**
+   * Register a hook
+   */
+  register(name, hook) {
+    if (typeof hook !== "function") {
+      throw new Error(`Hook must be a function, got: ${typeof hook}`);
+    }
+    if (!this.hooks.has(name)) {
+      this.hooks.set(name, []);
+    }
+    const existing = this.hooks.get(name);
+    if (existing.length >= 10) {
+      throw new Error(`Too many hooks for ${name} (max: 10)`);
+    }
+    existing.push(hook);
+  }
+  /**
+   * Execute hooks for a given name
+   */
+  async executeHooks(name, context, defaultResult) {
+    const hooks = this.hooks.get(name);
+    if (!hooks || hooks.length === 0) {
+      return defaultResult;
+    }
+    if (this.parallel && hooks.length > 1) {
+      return this.executeHooksParallel(hooks, context, defaultResult);
+    }
+    return this.executeHooksSequential(hooks, context, defaultResult);
+  }
+  /**
+   * Execute hooks sequentially
+   */
+  async executeHooksSequential(hooks, context, defaultResult) {
+    let result = defaultResult;
+    for (let i = 0; i < hooks.length; i++) {
+      const hook = hooks[i];
+      const hookKey = this.getHookKey(hook, i);
+      const hookResult = await this.executeHookSafely(hook, context, hookKey);
+      if (hookResult === null) {
+        continue;
+      }
+      result = { ...result, ...hookResult };
+      if (hookResult.skip === true) {
+        break;
+      }
+    }
+    return result;
+  }
+  /**
+   * Execute hooks in parallel
+   */
+  async executeHooksParallel(hooks, context, defaultResult) {
+    const results = await Promise.all(
+      hooks.map((hook, i) => {
+        const hookKey = this.getHookKey(hook, i);
+        return this.executeHookSafely(hook, context, hookKey);
+      })
+    );
+    const validResults = results.filter((r) => r !== null);
+    return validResults.reduce(
+      (acc, hookResult) => ({ ...acc, ...hookResult }),
+      defaultResult
+    );
+  }
+  /**
+   * Generate unique key for a hook
+   */
+  getHookKey(hook, index) {
+    return `${hook.name || "anonymous"}_${index}`;
+  }
+  /**
+   * Execute single hook with error isolation and timeout (with per-hook error tracking)
+   */
+  async executeHookSafely(hook, context, hookKey) {
+    const key = hookKey || hook.name || "anonymous";
+    if (this.disabledHooks.has(key)) {
+      return null;
+    }
+    const startTime = Date.now();
+    try {
+      const result = await Promise.race([
+        hook(context),
+        new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Hook timeout")), this.timeout)
+        )
+      ]);
+      this.hookErrorCounts.delete(key);
+      const duration = Date.now() - startTime;
+      if (context.context?.updateMetrics) {
+        context.context.updateMetrics({
+          hookDuration: (context.context.metrics.hookDuration || 0) + duration
+        });
       }
       return result;
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: "small" },
-    describeCall: (args) => {
-      const sections = args.sections;
-      if (!sections || sections.length === 0) return "budget";
-      if (sections.includes("all")) return "all";
-      return sections.join("+");
+    } catch (error) {
+      const errorCount = (this.hookErrorCounts.get(key) || 0) + 1;
+      this.hookErrorCounts.set(key, errorCount);
+      this.emitter.emit("hook:error", {
+        executionId: context.executionId,
+        hookName: hook.name || "anonymous",
+        error,
+        consecutiveErrors: errorCount,
+        timestamp: /* @__PURE__ */ new Date()
+      });
+      if (errorCount >= this.maxConsecutiveErrors) {
+        this.disabledHooks.add(key);
+        console.warn(
+          `Hook "${key}" disabled after ${errorCount} consecutive failures. Last error: ${error.message}`
+        );
+      } else {
+        console.warn(
+          `Hook execution failed (${key}): ${error.message} (${errorCount}/${this.maxConsecutiveErrors} errors)`
+        );
+      }
+      return null;
     }
-  };
+  }
+  /**
+   * Check if there are any hooks registered
+   */
+  hasHooks(name) {
+    const hooks = this.hooks.get(name);
+    return !!hooks && hooks.length > 0;
+  }
+  /**
+   * Get hook count
+   */
+  getHookCount(name) {
+    if (name) {
+      return this.hooks.get(name)?.length || 0;
+    }
+    return Array.from(this.hooks.values()).reduce((sum, arr) => sum + arr.length, 0);
+  }
+  /**
+   * Clear all hooks and reset error tracking
+   */
+  clear() {
+    this.hooks.clear();
+    this.hookErrorCounts.clear();
+    this.disabledHooks.clear();
+  }
+  /**
+   * Re-enable a disabled hook
+   */
+  enableHook(hookKey) {
+    this.disabledHooks.delete(hookKey);
+    this.hookErrorCounts.delete(hookKey);
+  }
+  /**
+   * Get list of disabled hooks
+   */
+  getDisabledHooks() {
+    return Array.from(this.disabledHooks);
+  }
+};
+
+// src/domain/entities/StreamState.ts
+var StreamState = class {
+  // Core identifiers
+  responseId;
+  model;
+  createdAt;
+  // Text accumulation: item_id -> text chunks
+  textBuffers;
+  // Tool call accumulation: tool_call_id -> buffer
+  toolCallBuffers;
+  // Completed tool calls
+  completedToolCalls;
+  // Tool execution results
+  toolResults;
+  // Metadata
+  currentIteration;
+  usage;
+  status;
+  startTime;
+  endTime;
+  // Statistics
+  totalChunks;
+  totalTextDeltas;
+  totalToolCalls;
+  constructor(responseId, model, createdAt) {
+    this.responseId = responseId;
+    this.model = model;
+    this.createdAt = createdAt || Date.now();
+    this.textBuffers = /* @__PURE__ */ new Map();
+    this.toolCallBuffers = /* @__PURE__ */ new Map();
+    this.completedToolCalls = [];
+    this.toolResults = /* @__PURE__ */ new Map();
+    this.currentIteration = 0;
+    this.usage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    };
+    this.status = "in_progress";
+    this.startTime = /* @__PURE__ */ new Date();
+    this.totalChunks = 0;
+    this.totalTextDeltas = 0;
+    this.totalToolCalls = 0;
+  }
+  /**
+   * Accumulate text delta for a specific item
+   */
+  accumulateTextDelta(itemId, delta) {
+    if (!this.textBuffers.has(itemId)) {
+      this.textBuffers.set(itemId, []);
+    }
+    this.textBuffers.get(itemId).push(delta);
+    this.totalTextDeltas++;
+    this.totalChunks++;
+  }
+  /**
+   * Get complete accumulated text for an item
+   */
+  getCompleteText(itemId) {
+    const chunks = this.textBuffers.get(itemId);
+    return chunks ? chunks.join("") : "";
+  }
+  /**
+   * Get all accumulated text (all items concatenated)
+   */
+  getAllText() {
+    const allText = [];
+    for (const chunks of this.textBuffers.values()) {
+      allText.push(chunks.join(""));
+    }
+    return allText.join("");
+  }
+  /**
+   * Start accumulating tool call arguments
+   */
+  startToolCall(toolCallId, toolName) {
+    this.toolCallBuffers.set(toolCallId, {
+      toolName,
+      argumentChunks: [],
+      isComplete: false,
+      startTime: /* @__PURE__ */ new Date()
+    });
+  }
+  /**
+   * Accumulate tool argument delta
+   */
+  accumulateToolArguments(toolCallId, delta) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    if (!buffer) {
+      throw new Error(`Tool call buffer not found for id: ${toolCallId}`);
+    }
+    buffer.argumentChunks.push(delta);
+    this.totalChunks++;
+  }
+  /**
+   * Mark tool call arguments as complete
+   */
+  completeToolCall(toolCallId) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    if (!buffer) {
+      throw new Error(`Tool call buffer not found for id: ${toolCallId}`);
+    }
+    buffer.isComplete = true;
+    this.totalToolCalls++;
+  }
+  /**
+   * Get complete tool arguments (joined chunks)
+   */
+  getCompleteToolArguments(toolCallId) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    if (!buffer) {
+      throw new Error(`Tool call buffer not found for id: ${toolCallId}`);
+    }
+    return buffer.argumentChunks.join("");
+  }
+  /**
+   * Check if tool call is complete
+   */
+  isToolCallComplete(toolCallId) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    return buffer ? buffer.isComplete : false;
+  }
+  /**
+   * Get tool name for a tool call
+   */
+  getToolName(toolCallId) {
+    return this.toolCallBuffers.get(toolCallId)?.toolName;
+  }
+  /**
+   * Add completed tool call
+   */
+  addCompletedToolCall(toolCall) {
+    this.completedToolCalls.push(toolCall);
+  }
+  /**
+   * Get all completed tool calls
+   */
+  getCompletedToolCalls() {
+    return [...this.completedToolCalls];
+  }
+  /**
+   * Store tool execution result
+   */
+  setToolResult(toolCallId, result) {
+    this.toolResults.set(toolCallId, result);
+  }
+  /**
+   * Get tool execution result
+   */
+  getToolResult(toolCallId) {
+    return this.toolResults.get(toolCallId);
+  }
+  /**
+   * Update token usage (replaces values, doesn't accumulate)
+   */
+  updateUsage(usage) {
+    if (usage.input_tokens !== void 0) {
+      this.usage.input_tokens = usage.input_tokens;
+    }
+    if (usage.output_tokens !== void 0) {
+      this.usage.output_tokens = usage.output_tokens;
+    }
+    if (usage.total_tokens !== void 0) {
+      this.usage.total_tokens = usage.total_tokens;
+    } else {
+      this.usage.total_tokens = this.usage.input_tokens + this.usage.output_tokens;
+    }
+  }
+  /**
+   * Accumulate token usage (adds to existing values)
+   */
+  accumulateUsage(usage) {
+    if (usage.input_tokens !== void 0) {
+      this.usage.input_tokens += usage.input_tokens;
+    }
+    if (usage.output_tokens !== void 0) {
+      this.usage.output_tokens += usage.output_tokens;
+    }
+    if (usage.total_tokens !== void 0) {
+      this.usage.total_tokens += usage.total_tokens;
+    } else {
+      this.usage.total_tokens = this.usage.input_tokens + this.usage.output_tokens;
+    }
+  }
+  /**
+   * Mark stream as complete
+   */
+  markComplete(status = "completed") {
+    this.status = status;
+    this.endTime = /* @__PURE__ */ new Date();
+  }
+  /**
+   * Get duration in milliseconds
+   */
+  getDuration() {
+    const end = this.endTime || /* @__PURE__ */ new Date();
+    return end.getTime() - this.startTime.getTime();
+  }
+  /**
+   * Increment iteration counter
+   */
+  incrementIteration() {
+    this.currentIteration++;
+  }
+  /**
+   * Get summary statistics
+   */
+  getStatistics() {
+    return {
+      responseId: this.responseId,
+      model: this.model,
+      status: this.status,
+      iterations: this.currentIteration,
+      totalChunks: this.totalChunks,
+      totalTextDeltas: this.totalTextDeltas,
+      totalToolCalls: this.totalToolCalls,
+      textItemsCount: this.textBuffers.size,
+      toolCallBuffersCount: this.toolCallBuffers.size,
+      completedToolCallsCount: this.completedToolCalls.length,
+      durationMs: this.getDuration(),
+      usage: { ...this.usage }
+    };
+  }
+  /**
+   * Check if stream has any accumulated text
+   */
+  hasText() {
+    return this.textBuffers.size > 0;
+  }
+  /**
+   * Check if stream has any tool calls
+   */
+  hasToolCalls() {
+    return this.toolCallBuffers.size > 0;
+  }
+  /**
+   * Clear all buffers (for memory management)
+   */
+  clear() {
+    this.textBuffers.clear();
+    this.toolCallBuffers.clear();
+    this.completedToolCalls = [];
+    this.toolResults.clear();
+  }
+  /**
+   * Create a snapshot for checkpointing (error recovery)
+   */
+  createSnapshot() {
+    return {
+      responseId: this.responseId,
+      model: this.model,
+      createdAt: this.createdAt,
+      textBuffers: new Map(this.textBuffers),
+      toolCallBuffers: new Map(this.toolCallBuffers),
+      completedToolCalls: [...this.completedToolCalls],
+      toolResults: new Map(this.toolResults),
+      currentIteration: this.currentIteration,
+      usage: { ...this.usage },
+      status: this.status,
+      startTime: this.startTime,
+      endTime: this.endTime
+    };
+  }
+};
+
+// src/domain/interfaces/IDisposable.ts
+function assertNotDestroyed(obj, operation) {
+  if (obj.isDestroyed) {
+    throw new Error(`Cannot ${operation}: instance has been destroyed`);
+  }
 }
-function createContextCompactTool() {
-  return {
-    definition: contextCompactDefinition,
-    execute: async (args, context) => {
-      const agentCtx = context?.agentContext;
-      if (!agentCtx) {
-        return {
-          error: "AgentContext not available",
-          message: "Tool context missing agentContext"
+
+// src/core/Agent.ts
+init_Metrics();
+var Agent = class _Agent extends BaseAgent {
+  // ===== Agent-specific State =====
+  hookManager;
+  executionContext = null;
+  // Pause/resume/cancel state
+  _paused = false;
+  _cancelled = false;
+  _pausePromise = null;
+  _resumeCallback = null;
+  _pauseResumeMutex = Promise.resolve();
+  // ===== Static Factory =====
+  /**
+   * Create a new agent
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',  // or Connector instance
+   *   model: 'gpt-4',
+   *   instructions: 'You are a helpful assistant',
+   *   tools: [myTool]
+   * });
+   * ```
+   */
+  static create(config) {
+    return new _Agent(config);
+  }
+  /**
+   * Resume an agent from a saved session
+   *
+   * @example
+   * ```typescript
+   * const agent = await Agent.resume('session-123', {
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   session: { storage: myStorage }
+   * });
+   * ```
+   */
+  static async resume(sessionId, config) {
+    const agent = new _Agent({
+      ...config,
+      session: {
+        ...config.session,
+        id: sessionId
+      }
+    });
+    await agent.ensureSessionLoaded();
+    return agent;
+  }
+  /**
+   * Create an agent from a stored definition
+   *
+   * Loads agent configuration from storage and creates a new Agent instance.
+   * The connector must be registered at runtime before calling this method.
+   *
+   * @param agentId - Agent identifier to load
+   * @param storage - Storage backend to load from
+   * @param overrides - Optional config overrides
+   * @returns Agent instance, or null if not found
+   */
+  static async fromStorage(agentId, storage, overrides) {
+    const definition = await storage.load(agentId);
+    if (!definition) {
+      return null;
+    }
+    const contextConfig = {
+      model: definition.connector.model,
+      agentId: definition.agentId,
+      systemPrompt: definition.systemPrompt ?? definition.instructions
+    };
+    if (definition.features) {
+      contextConfig.features = definition.features;
+    }
+    const config = {
+      connector: definition.connector.name,
+      model: definition.connector.model,
+      instructions: definition.systemPrompt,
+      context: contextConfig,
+      ...definition.typeConfig,
+      ...overrides
+    };
+    return new _Agent(config);
+  }
+  // ===== Constructor =====
+  constructor(config) {
+    super(config, "Agent");
+    this._logger.debug({ model: this.model, connector: this.connector.name }, "Agent created");
+    exports.metrics.increment("agent.created", 1, {
+      model: this.model,
+      connector: this.connector.name
+    });
+    if (config.instructions) {
+      this._agentContext.systemPrompt = config.instructions;
+    }
+    this._agentContext.tools.on("tool:registered", ({ name }) => {
+      const permission = this._agentContext.tools.getPermission(name);
+      if (permission) {
+        this._permissionManager.setToolConfig(name, permission);
+      }
+    });
+    this.hookManager = new HookManager(
+      config.hooks || {},
+      this,
+      config.errorHandling
+    );
+    this.initializeSession(config.session);
+  }
+  // ===== Abstract Method Implementations =====
+  getAgentType() {
+    return "agent";
+  }
+  // ===== Context Access =====
+  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
+  /**
+   * Check if context management is enabled.
+   * Always returns true since AgentContext is always created by BaseAgent.
+   */
+  hasContext() {
+    return true;
+  }
+  // getContextState() and restoreContextState() are inherited from BaseAgent
+  // ===== Shared Execution Helpers =====
+  /**
+   * Prepare execution - shared setup for run() and stream()
+   */
+  async _prepareExecution(input, methodName) {
+    assertNotDestroyed(this, `${methodName} agent`);
+    await this.ensureSessionLoaded();
+    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
+    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, `Agent ${methodName} started`);
+    exports.metrics.increment(`agent.${methodName}.started`, 1, { model: this.model, connector: this.connector.name });
+    const startTime = Date.now();
+    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
+    this._agentContext.setCurrentInput(userContent);
+    const executionId = `exec_${crypto2.randomUUID()}`;
+    this.executionContext = new ExecutionContext(executionId, {
+      maxHistorySize: 10,
+      historyMode: this._config.historyMode || "summary",
+      maxAuditTrailSize: 1e3
+    });
+    this._paused = false;
+    this._cancelled = false;
+    if (methodName === "stream") {
+      this._pausePromise = null;
+      this._resumeCallback = null;
+    }
+    if (typeof input === "string") {
+      this._agentContext.addUserMessage(input);
+    } else {
+      this._agentContext.addInputItems(input);
+    }
+    this.emit("execution:start", {
+      executionId,
+      config: { model: this.model, maxIterations: this._config.maxIterations || 10 },
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    await this.hookManager.executeHooks("before:execution", {
+      executionId,
+      config: { model: this.model },
+      timestamp: /* @__PURE__ */ new Date()
+    }, void 0);
+    return {
+      executionId,
+      startTime,
+      maxIterations: this._config.maxIterations || 10
+    };
+  }
+  /**
+   * Check iteration preconditions - pause, cancel, limits, hooks
+   */
+  async _checkIterationPreconditions(executionId, iteration) {
+    await this.checkPause();
+    if (this._cancelled) {
+      return { shouldExit: true, exitReason: "cancelled" };
+    }
+    if (this.executionContext) {
+      this.executionContext.checkLimits(this._config.limits);
+    }
+    const pauseCheck = await this.hookManager.executeHooks("pause:check", {
+      executionId,
+      iteration,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date()
+    }, { shouldPause: false });
+    if (pauseCheck.shouldPause) {
+      this.pause(pauseCheck.reason || "Hook requested pause");
+      await this.checkPause();
+    }
+    if (this.executionContext) {
+      this.executionContext.iteration = iteration;
+    }
+    this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
+    return { shouldExit: false };
+  }
+  /**
+   * Record iteration metrics and store iteration record
+   */
+  _recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared) {
+    if (!this.executionContext) return;
+    this.executionContext.addIteration({
+      iteration,
+      request: {
+        model: this.model,
+        input: prepared.input,
+        instructions: this._config.instructions,
+        tools: this.getEnabledToolDefinitions(),
+        temperature: this._config.temperature
+      },
+      response,
+      toolCalls,
+      toolResults,
+      startTime: new Date(iterationStartTime),
+      endTime: /* @__PURE__ */ new Date()
+    });
+    this.executionContext.updateMetrics({
+      iterationCount: iteration + 1,
+      inputTokens: this.executionContext.metrics.inputTokens + (response.usage?.input_tokens || 0),
+      outputTokens: this.executionContext.metrics.outputTokens + (response.usage?.output_tokens || 0),
+      totalTokens: this.executionContext.metrics.totalTokens + (response.usage?.total_tokens || 0)
+    });
+  }
+  /**
+   * Finalize successful execution - hooks, events, metrics
+   */
+  async _finalizeExecution(executionId, startTime, response, methodName) {
+    const totalDuration = this.executionContext ? Date.now() - this.executionContext.startTime.getTime() : Date.now() - startTime;
+    if (this.executionContext) {
+      this.executionContext.updateMetrics({ totalDuration });
+    }
+    await this.hookManager.executeHooks("after:execution", {
+      executionId,
+      response,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date(),
+      duration: totalDuration
+    }, void 0);
+    this.emit("execution:complete", {
+      executionId,
+      response,
+      timestamp: /* @__PURE__ */ new Date(),
+      duration: totalDuration
+    });
+    const duration = Date.now() - startTime;
+    this._logger.info({ duration }, `Agent ${methodName} completed`);
+    exports.metrics.timing(`agent.${methodName}.duration`, duration, { model: this.model, connector: this.connector.name });
+    exports.metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: "success" });
+  }
+  /**
+   * Handle execution error - events, metrics, logging
+   */
+  _handleExecutionError(executionId, error, startTime, methodName) {
+    this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
+    this.executionContext?.metrics.errors.push({
+      type: "execution_error",
+      message: error.message,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    const duration = Date.now() - startTime;
+    this._logger.error({ error: error.message, duration }, `Agent ${methodName} failed`);
+    exports.metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: "error" });
+  }
+  /**
+   * Cleanup execution resources
+   */
+  _cleanupExecution(streamState) {
+    streamState?.clear();
+    this.executionContext?.cleanup();
+    this.hookManager.clear();
+  }
+  /**
+   * Emit iteration complete event (helper for run loop)
+   */
+  _emitIterationComplete(executionId, iteration, response, iterationStartTime) {
+    this.emit("iteration:complete", {
+      executionId,
+      iteration,
+      response,
+      timestamp: /* @__PURE__ */ new Date(),
+      duration: Date.now() - iterationStartTime
+    });
+  }
+  // ===== Main API =====
+  /**
+   * Run the agent with input
+   */
+  async run(input) {
+    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, "run");
+    let iteration = 0;
+    let finalResponse = null;
+    try {
+      while (iteration < maxIterations) {
+        const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
+        if (shouldExit) {
+          throw new Error("Execution cancelled");
+        }
+        const iterationStartTime = Date.now();
+        const prepared = await this._agentContext.prepare();
+        const response = await this.generateWithHooks(prepared.input, iteration, executionId);
+        const toolCalls = this.extractToolCalls(response.output);
+        this._agentContext.addAssistantResponse(response.output);
+        if (toolCalls.length > 0) {
+          this.emit("tool:detected", { executionId, iteration, toolCalls, timestamp: /* @__PURE__ */ new Date() });
+        }
+        if (toolCalls.length === 0) {
+          this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
+          finalResponse = response;
+          break;
+        }
+        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
+        this._agentContext.addToolResults(toolResults);
+        this._recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared);
+        this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
+        iteration++;
+      }
+      if (iteration >= maxIterations && !finalResponse) {
+        throw new Error(`Max iterations (${maxIterations}) reached without completion`);
+      }
+      await this._finalizeExecution(executionId, startTime, finalResponse, "run");
+      return finalResponse;
+    } catch (error) {
+      this._handleExecutionError(executionId, error, startTime, "run");
+      throw error;
+    } finally {
+      this._cleanupExecution();
+    }
+  }
+  // ===== Stream-Specific Helpers =====
+  /**
+   * Build tool calls array from accumulated map
+   */
+  _buildToolCallsFromMap(toolCallsMap) {
+    const toolCalls = [];
+    for (const [toolCallId, buffer] of toolCallsMap) {
+      toolCalls.push({
+        id: toolCallId,
+        type: "function",
+        function: {
+          name: buffer.name,
+          arguments: buffer.args
+        },
+        blocking: true,
+        state: "pending" /* PENDING */
+      });
+    }
+    return toolCalls;
+  }
+  /**
+   * Build and add streaming assistant message to context
+   */
+  _addStreamingAssistantMessage(streamState, toolCalls) {
+    const assistantText = streamState.getAllText();
+    const assistantContent = [];
+    if (assistantText && assistantText.trim()) {
+      assistantContent.push({
+        type: "output_text" /* OUTPUT_TEXT */,
+        text: assistantText
+      });
+    }
+    for (const tc of toolCalls) {
+      assistantContent.push({
+        type: "tool_use" /* TOOL_USE */,
+        id: tc.id,
+        name: tc.function.name,
+        arguments: tc.function.arguments
+      });
+    }
+    const assistantMessage = {
+      type: "message",
+      role: "assistant" /* ASSISTANT */,
+      content: assistantContent
+    };
+    this._agentContext.addInputItems([assistantMessage]);
+  }
+  /**
+   * Build placeholder response for streaming finalization
+   */
+  _buildPlaceholderResponse(executionId, startTime, streamState) {
+    return {
+      id: executionId,
+      object: "response",
+      created_at: Math.floor(startTime / 1e3),
+      status: "completed",
+      model: this.model,
+      output: [],
+      usage: streamState.usage
+    };
+  }
+  /**
+   * Stream response from the agent
+   */
+  async *stream(input) {
+    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, "stream");
+    const globalStreamState = new StreamState(executionId, this.model);
+    let iteration = 0;
+    try {
+      while (iteration < maxIterations) {
+        iteration++;
+        const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
+        if (shouldExit) {
+          this.emit("execution:cancelled", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
+          break;
+        }
+        const prepared = await this._agentContext.prepare();
+        const iterationStreamState = new StreamState(executionId, this.model);
+        const toolCallsMap = /* @__PURE__ */ new Map();
+        yield* this.streamGenerateWithHooks(
+          prepared.input,
+          iteration,
+          executionId,
+          iterationStreamState,
+          toolCallsMap
+        );
+        globalStreamState.accumulateUsage(iterationStreamState.usage);
+        const toolCalls = this._buildToolCallsFromMap(toolCallsMap);
+        if (toolCalls.length === 0) {
+          yield {
+            type: "response.iteration.complete" /* ITERATION_COMPLETE */,
+            response_id: executionId,
+            iteration,
+            tool_calls_count: 0,
+            has_more_iterations: false
+          };
+          yield {
+            type: "response.complete" /* RESPONSE_COMPLETE */,
+            response_id: executionId,
+            status: "completed",
+            usage: globalStreamState.usage,
+            iterations: iteration,
+            duration_ms: Date.now() - startTime
+          };
+          break;
+        }
+        const toolResults = [];
+        for (const toolCall of toolCalls) {
+          let parsedArgs;
+          try {
+            parsedArgs = JSON.parse(toolCall.function.arguments);
+          } catch (error) {
+            yield {
+              type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
+              response_id: executionId,
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              result: null,
+              execution_time_ms: 0,
+              error: `Invalid tool arguments JSON: ${error.message}`
+            };
+            continue;
+          }
+          yield {
+            type: "response.tool_execution.start" /* TOOL_EXECUTION_START */,
+            response_id: executionId,
+            tool_call_id: toolCall.id,
+            tool_name: toolCall.function.name,
+            arguments: parsedArgs
+          };
+          const toolStartTime = Date.now();
+          try {
+            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+            toolResults.push(result);
+            yield {
+              type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
+              response_id: executionId,
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              result: result.content,
+              execution_time_ms: Date.now() - toolStartTime
+            };
+          } catch (error) {
+            yield {
+              type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
+              response_id: executionId,
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              result: null,
+              execution_time_ms: Date.now() - toolStartTime,
+              error: error.message
+            };
+            const failureMode = this._config.errorHandling?.toolFailureMode || "continue";
+            if (failureMode === "fail") {
+              throw error;
+            }
+            toolResults.push({
+              tool_use_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              tool_args: parsedArgs,
+              content: "",
+              error: error.message,
+              state: "failed" /* FAILED */
+            });
+          }
+        }
+        this._addStreamingAssistantMessage(iterationStreamState, toolCalls);
+        this._agentContext.addToolResults(toolResults);
+        yield {
+          type: "response.iteration.complete" /* ITERATION_COMPLETE */,
+          response_id: executionId,
+          iteration,
+          tool_calls_count: toolCalls.length,
+          has_more_iterations: true
+        };
+        globalStreamState.incrementIteration();
+        iterationStreamState.clear();
+        toolCallsMap.clear();
+      }
+      if (iteration >= maxIterations) {
+        yield {
+          type: "response.complete" /* RESPONSE_COMPLETE */,
+          response_id: executionId,
+          status: "incomplete",
+          usage: globalStreamState.usage,
+          iterations: iteration,
+          duration_ms: Date.now() - startTime
         };
       }
-      if (!agentCtx.smartCompactor) {
-        return {
-          error: "Smart compaction not available",
-          message: "SmartCompactor is not configured. Enable it via AgentContext config.",
-          suggestion: "You can still manually consolidate by storing summaries in memory and continuing."
-        };
+      const placeholderResponse = this._buildPlaceholderResponse(executionId, startTime, globalStreamState);
+      await this._finalizeExecution(executionId, startTime, placeholderResponse, "stream");
+    } catch (error) {
+      this._handleExecutionError(executionId, error, startTime, "stream");
+      yield {
+        type: "response.error" /* ERROR */,
+        response_id: executionId,
+        error: {
+          type: "execution_error",
+          message: error.message
+        },
+        recoverable: false
+      };
+      throw error;
+    } finally {
+      this._cleanupExecution(globalStreamState);
+    }
+  }
+  // ===== LLM Generation with Hooks =====
+  /**
+   * Generate LLM response with hooks
+   */
+  async generateWithHooks(input, iteration, executionId) {
+    const llmStartTime = Date.now();
+    let generateOptions = {
+      model: this.model,
+      input,
+      instructions: this._config.instructions,
+      tools: this.getEnabledToolDefinitions(),
+      tool_choice: "auto",
+      temperature: this._config.temperature,
+      vendorOptions: this._config.vendorOptions
+    };
+    const beforeLLM = await this.hookManager.executeHooks("before:llm", {
+      executionId,
+      iteration,
+      options: generateOptions,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date()
+    }, {});
+    if (beforeLLM.modified) {
+      generateOptions = { ...generateOptions, ...beforeLLM.modified };
+    }
+    if (beforeLLM.skip) {
+      throw new Error("LLM call skipped by hook");
+    }
+    this.emit("llm:request", {
+      executionId,
+      iteration,
+      options: generateOptions,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    try {
+      const response = await this._provider.generate(generateOptions);
+      const llmDuration = Date.now() - llmStartTime;
+      this.executionContext?.updateMetrics({
+        llmDuration: (this.executionContext.metrics.llmDuration || 0) + llmDuration
+      });
+      this.emit("llm:response", {
+        executionId,
+        iteration,
+        response,
+        timestamp: /* @__PURE__ */ new Date(),
+        duration: llmDuration
+      });
+      await this.hookManager.executeHooks("after:llm", {
+        executionId,
+        iteration,
+        response,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date(),
+        duration: llmDuration
+      }, {});
+      return response;
+    } catch (error) {
+      this.emit("llm:error", {
+        executionId,
+        iteration,
+        error,
+        timestamp: /* @__PURE__ */ new Date()
+      });
+      throw error;
+    }
+  }
+  /**
+   * Stream LLM response with hooks
+   */
+  async *streamGenerateWithHooks(input, iteration, executionId, streamState, toolCallsMap) {
+    const llmStartTime = Date.now();
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: this._config.instructions,
+      tools: this.getEnabledToolDefinitions(),
+      tool_choice: "auto",
+      temperature: this._config.temperature,
+      vendorOptions: this._config.vendorOptions
+    };
+    await this.hookManager.executeHooks("before:llm", {
+      executionId,
+      iteration,
+      options: generateOptions,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date()
+    }, {});
+    this.emit("llm:request", {
+      executionId,
+      iteration,
+      model: this.model,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    try {
+      for await (const event of this._provider.streamGenerate(generateOptions)) {
+        if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
+          streamState.accumulateTextDelta(event.item_id, event.delta);
+        } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
+          streamState.startToolCall(event.tool_call_id, event.tool_name);
+          toolCallsMap.set(event.tool_call_id, { name: event.tool_name, args: "" });
+        } else if (event.type === "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */) {
+          streamState.accumulateToolArguments(event.tool_call_id, event.delta);
+          const buffer = toolCallsMap.get(event.tool_call_id);
+          if (buffer) {
+            buffer.args += event.delta;
+          }
+        } else if (isToolCallArgumentsDone(event)) {
+          streamState.completeToolCall(event.tool_call_id);
+          const buffer = toolCallsMap.get(event.tool_call_id);
+          if (buffer) {
+            buffer.args = event.arguments;
+          }
+        } else if (event.type === "response.complete" /* RESPONSE_COMPLETE */) {
+          streamState.updateUsage(event.usage);
+          continue;
+        }
+        yield event;
       }
-      const targetReduction = args.target_reduction;
-      const dryRun = args.dry_run;
-      if (dryRun) {
-        const budget = agentCtx.getLastBudget();
-        return {
-          dry_run: true,
-          current_budget: budget ? {
-            used: budget.used,
-            available: budget.available,
-            utilization: budget.utilizationPercent
-          } : null,
-          message: "Dry run not fully implemented yet. Would analyze and compact context.",
-          target_reduction: targetReduction ?? "strategy default"
+      if (this.executionContext) {
+        this.executionContext.metrics.llmDuration += Date.now() - llmStartTime;
+        this.executionContext.metrics.inputTokens += streamState.usage.input_tokens;
+        this.executionContext.metrics.outputTokens += streamState.usage.output_tokens;
+        this.executionContext.metrics.totalTokens += streamState.usage.total_tokens;
+      }
+      const llmPlaceholderResponse = {
+        id: executionId,
+        object: "response",
+        created_at: Math.floor(llmStartTime / 1e3),
+        status: "completed",
+        model: this.model,
+        output: [],
+        usage: streamState.usage
+      };
+      await this.hookManager.executeHooks("after:llm", {
+        executionId,
+        iteration,
+        response: llmPlaceholderResponse,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date(),
+        duration: Date.now() - llmStartTime
+      }, {});
+      this.emit("llm:response", {
+        executionId,
+        iteration,
+        timestamp: /* @__PURE__ */ new Date()
+      });
+    } catch (error) {
+      this.emit("llm:error", {
+        executionId,
+        iteration,
+        error,
+        timestamp: /* @__PURE__ */ new Date()
+      });
+      throw error;
+    }
+  }
+  // ===== Tool Execution =====
+  /**
+   * Extract tool calls from response output
+   */
+  extractToolCalls(output) {
+    const toolCalls = [];
+    const toolDefinitions = this.getEnabledToolDefinitions();
+    const toolMap = /* @__PURE__ */ new Map();
+    for (const tool of toolDefinitions) {
+      if (tool.type === "function") {
+        toolMap.set(tool.function.name, tool);
+      }
+    }
+    for (const item of output) {
+      if (item.type === "message" && item.role === "assistant" /* ASSISTANT */) {
+        for (const content of item.content) {
+          if (content.type === "tool_use" /* TOOL_USE */) {
+            const toolDef = toolMap.get(content.name);
+            const isBlocking = toolDef?.blocking !== false;
+            const toolCall = {
+              id: content.id,
+              type: "function",
+              function: {
+                name: content.name,
+                arguments: content.arguments
+              },
+              blocking: isBlocking,
+              state: "pending" /* PENDING */
+            };
+            toolCalls.push(toolCall);
+          }
+        }
+      }
+    }
+    return toolCalls;
+  }
+  /**
+   * Execute tools with hooks
+   */
+  async executeToolsWithHooks(toolCalls, iteration, executionId) {
+    const results = [];
+    for (const toolCall of toolCalls) {
+      this.executionContext?.addToolCall(toolCall);
+      await this.checkPause();
+      const beforeTool = await this.hookManager.executeHooks("before:tool", {
+        executionId,
+        iteration,
+        toolCall,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date()
+      }, {});
+      if (beforeTool.skip) {
+        this.executionContext?.audit("tool_skipped", { toolCall }, void 0, toolCall.function.name);
+        let parsedArgs = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch {
+        }
+        const mockResult = {
+          tool_use_id: toolCall.id,
+          tool_name: toolCall.function.name,
+          tool_args: parsedArgs,
+          content: beforeTool.mockResult || "",
+          state: "completed" /* COMPLETED */,
+          executionTime: 0
         };
+        results.push(mockResult);
+        this.executionContext?.addToolResult(mockResult);
+        continue;
+      }
+      if (beforeTool.modified) {
+        Object.assign(toolCall, beforeTool.modified);
+        this.executionContext?.audit("tool_modified", { modifications: beforeTool.modified }, void 0, toolCall.function.name);
       }
       try {
-        const result = await agentCtx.triggerSmartCompaction(targetReduction);
-        return {
-          success: result.success,
-          tokens_freed: result.tokensFreed,
-          summaries_created: result.summaries.length,
-          data_spilled: result.spilled.length,
-          messages_removed: result.removed.length,
-          details: {
-            summaries: result.summaries.map((s) => ({
-              key: s.key,
-              importance: s.importance,
-              message_count: s.messageIds.length
-            })),
-            spilled: result.spilled.map((s) => ({
-              key: s.key,
-              reason: s.reason
-            }))
-          },
-          error: result.error
-        };
+        const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+        results.push(result);
+        this.executionContext?.addToolResult(result);
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        return {
-          error: "Compaction failed",
-          message: errorMsg,
-          suggestion: "Try manual cleanup: store important findings in memory, then continue."
+        let parsedArgs = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch {
+        }
+        const toolResult = {
+          tool_use_id: toolCall.id,
+          tool_name: toolCall.function.name,
+          tool_args: parsedArgs,
+          content: "",
+          error: error.message,
+          state: "failed" /* FAILED */
         };
+        results.push(toolResult);
+        this.executionContext?.addToolResult(toolResult);
+        const failureMode = this._config.errorHandling?.toolFailureMode || "continue";
+        if (failureMode === "fail") {
+          throw error;
+        }
       }
-    },
-    idempotency: { safe: false },
-    // Modifies context
-    output: { expectedSize: "small" },
-    describeCall: (args) => {
-      const reduction = args.target_reduction;
-      return reduction ? `reduce ${reduction}%` : "auto";
     }
-  };
-}
-function createContextTools(includeCompact = true) {
-  const tools = [
-    createContextStatsTool()
-  ];
-  if (includeCompact) {
-    tools.push(createContextCompactTool());
+    return results;
   }
-  return tools;
-}
-
-// src/core/context/FeatureInstructions.ts
-var INTROSPECTION_INSTRUCTIONS = `## Context Budget Management
-
-### Monitoring
-Check budget with \`context_stats()\`:
-- \`remaining_percent\` > 50%: Comfortable
-- \`remaining_percent\` 20-50%: Consider cleanup
-- \`remaining_percent\` < 20%: Aggressive cleanup needed
-
-### When to Check
-- After storing large outputs
-- Before intensive multi-step operations
-- Periodically during long conversations
-
-### Response to Low Budget
-1. Summarize raw memory entries
-2. Delete consumed in-context entries
-3. Run \`memory_cleanup_raw()\` if applicable`;
-var WORKING_MEMORY_INSTRUCTIONS = `## Working Memory Usage
-
-### Decision Matrix
-| Data Type | Storage | Why |
-|-----------|---------|-----|
-| Large outputs (>2KB) | memory_store | Keeps context lean |
-| Intermediate results | memory_store (tier: raw) | Can summarize later |
-| Final findings | memory_store (tier: findings) | Persists across cleanup |
-| Fast-changing state | context_set | Immediate visibility |
-| User preferences | instructions_append | Cross-session persistence |
-
-### Naming Conventions
-- \`raw.<source>.<id>\` - Raw data (e.g., \`raw.web.page1\`)
-- \`summary.<topic>\` - Summarized content
-- \`findings.<category>\` - Final insights
-- \`data.<type>\` - Reference data
-
-### Workflow
-1. Store raw data: \`memory_store({ key: "raw.web.page1", value: "...", tier: "raw" })\`
-2. Process and summarize
-3. Store summary: \`memory_store({ key: "summary.research", value: "...", tier: "summary" })\`
-4. Cleanup raw: \`memory_cleanup_raw()\` (removes tier=raw entries)
-5. Keep findings: \`memory_store({ key: "findings.conclusion", value: "...", tier: "findings" })\`
-
-### Query Patterns
-- List all: \`memory_query()\`
-- List by tier: \`memory_query({ tier: "findings" })\`
-- Search pattern: \`memory_query({ pattern: "raw.*" })\`
-- Retrieve values: \`memory_query({ pattern: "findings.*", includeValues: true })\`
-- With stats: \`memory_query({ includeStats: true })\``;
-var IN_CONTEXT_MEMORY_INSTRUCTIONS = `## In-Context Memory Usage
-
-Values stored here are **immediately visible** in your context - no retrieval needed.
-
-### When to Use
-- Current state/status that changes during execution
-- Flags, counters, progress indicators
-- Small accumulated results (<500 tokens each)
-
-### When NOT to Use
-- Large data (use Working Memory instead)
-- Rarely accessed reference data
-
-### Naming Conventions
-- \`state.<name>\` - Current state
-- \`progress.<task>\` - Progress tracking
-- \`flags.<name>\` - Boolean flags
-- \`prefs.<name>\` - Session preferences
-
-### Priority Levels
-- \`low\` - Evicted first when space needed
-- \`normal\` - Default
-- \`high\` - Evicted only if necessary
-- \`critical\` - Never auto-evicted
-
-### Best Practices
-- Keep values small (<500 tokens)
-- Delete entries when no longer needed: \`context_delete({ key: "state.temp" })\`
-- Use appropriate priority based on importance`;
-var PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = `## Persistent Instructions Usage
-
-Persistent instructions survive across sessions. Use for stable user preferences and workflows.
-
-### When to Use
-- User preferences (coding style, communication preferences)
-- Project-specific guidelines
-- Workflow templates
-
-### When NOT to Use
-- Secrets or credentials (security risk)
-- Session-specific temporary data
-- Frequently changing information
-
-### Best Practices
-- Prefer \`instructions_append\` over \`instructions_set\` (preserves existing content)
-- Use markdown headers for organization
-- Keep concise - these consume context every session
-- Review periodically with \`instructions_get\``;
-var TOOL_OUTPUT_TRACKING_INSTRUCTIONS = `## Tool Output Tracking
-
-Recent tool outputs are tracked and available in context. This helps you reference previous results.
-
-### Automatic Behavior
-- Tool outputs are automatically tracked
-- Oldest outputs are evicted when space is needed
-- Large outputs may be truncated in context
-
-### Best Practices
-- Reference previous outputs by tool name
-- For large outputs, immediately extract and store key information in memory
-- Don't rely on tool outputs persisting - they are compacted aggressively`;
-var AUTO_SPILL_INSTRUCTIONS = `## Auto-Spill (Large Output Management)
-
-Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier.
-
-### What You'll See
-When a tool returns large output, you'll see it listed in "Auto-Spilled Data (Awaiting Processing)":
-\`\`\`
-- **raw.autospill_web_scrape_example_com_0**
-  - Description: web_scrape: example.com/page (45.2 KB)
-  - Status: \u23F3 Awaiting processing
-\`\`\`
-
-### REQUIRED Workflow (CRITICAL)
-Use \`autospill_process()\` to handle these entries:
-\`\`\`
-autospill_process({
-  key: "raw.autospill_web_scrape_example_com_0",
-  summary: "Key findings: 1) Topic A discussed, 2) Topic B mentioned, 3) Conclusion C"
-})
-\`\`\`
-
-This does THREE things:
-1. Retrieves the full data (you can add \`retrieve_first: true\` to see it)
-2. Stores your summary in findings tier
-3. **Marks entry as consumed** - it will no longer appear in context
-
-### Why This Matters
-**If you don't process entries**, they will keep appearing in your context repeatedly,
-causing you to re-process the same data in an infinite loop.
-
-### Best Practice
-Process auto-spilled entries AS SOON as you've extracted what you need from them.`;
-var TOOL_RESULT_EVICTION_INSTRUCTIONS = `## Tool Result Eviction
-
-Old tool results are automatically moved to memory to save context space.
-
-### What Happens
-- Results older than 3 iterations are evicted to memory
-- Results are stored under \`tool_result:<tool>:<id>\` keys
-- Both tool_use and tool_result messages are removed together
-- This keeps your conversation history lean while preserving data
-
-### Retrieving Evicted Results
-If you need a previously evicted result:
-\`\`\`
-memory_query({ pattern: "tool_result:*" })  // List evicted results
-memory_retrieve({ key: "tool_result:web_fetch:toolu_abc" })  // Get full content
-\`\`\`
-
-### Per-Tool Retention
-Some tools keep results longer in conversation:
-- \`read_file\`, \`bash\`, \`grep\`: 6-10 iterations (often referenced)
-- \`web_fetch\`, \`web_search\`: 3 iterations (can re-fetch if needed)
-
-### Best Practices
-- Extract and store key information promptly before eviction
-- Use \`memory_store()\` for findings you'll need later
-- Don't rely on tool results persisting in conversation`;
-function buildFeatureInstructions(features) {
-  const sections = [];
-  sections.push(INTROSPECTION_INSTRUCTIONS);
-  if (features.memory) {
-    sections.push(WORKING_MEMORY_INSTRUCTIONS);
+  /**
+   * Execute single tool with hooks
+   */
+  async executeToolWithHooks(toolCall, iteration, executionId) {
+    const toolStartTime = Date.now();
+    toolCall.state = "executing" /* EXECUTING */;
+    toolCall.startTime = /* @__PURE__ */ new Date();
+    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId);
+    if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
+      const approval = await this.hookManager.executeHooks("approve:tool", {
+        executionId,
+        iteration,
+        toolCall,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date()
+      }, { approved: permissionApproved });
+      if (!approval.approved) {
+        throw new Error(`Tool execution rejected: ${approval.reason || "No reason provided"}`);
+      }
+    }
+    this.emit("tool:start", { executionId, iteration, toolCall, timestamp: /* @__PURE__ */ new Date() });
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      const timeout = this._config.toolTimeout ?? 3e4;
+      const result = await this.executeWithTimeout(
+        () => this._agentContext.tools.execute(toolCall.function.name, args),
+        timeout
+      );
+      toolCall.state = "completed" /* COMPLETED */;
+      toolCall.endTime = /* @__PURE__ */ new Date();
+      let toolResult = {
+        tool_use_id: toolCall.id,
+        tool_name: toolCall.function.name,
+        tool_args: args,
+        content: result,
+        state: "completed" /* COMPLETED */,
+        executionTime: Date.now() - toolStartTime
+      };
+      const afterTool = await this.hookManager.executeHooks("after:tool", {
+        executionId,
+        iteration,
+        toolCall,
+        result: toolResult,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date()
+      }, {});
+      if (afterTool.modified) {
+        toolResult = { ...toolResult, ...afterTool.modified };
+      }
+      if (this.executionContext) {
+        this.executionContext.metrics.toolCallCount++;
+        this.executionContext.metrics.toolSuccessCount++;
+        this.executionContext.metrics.toolDuration += toolResult.executionTime || 0;
+      }
+      this.emit("tool:complete", { executionId, iteration, toolCall, result: toolResult, timestamp: /* @__PURE__ */ new Date() });
+      return toolResult;
+    } catch (error) {
+      toolCall.state = "failed" /* FAILED */;
+      toolCall.endTime = /* @__PURE__ */ new Date();
+      toolCall.error = error.message;
+      if (this.executionContext) {
+        this.executionContext.metrics.toolFailureCount++;
+      }
+      if (error instanceof ToolTimeoutError) {
+        this.emit("tool:timeout", {
+          executionId,
+          iteration,
+          toolCall,
+          timeout: this._config.toolTimeout ?? 3e4,
+          timestamp: /* @__PURE__ */ new Date()
+        });
+      } else {
+        this.emit("tool:error", { executionId, iteration, toolCall, error, timestamp: /* @__PURE__ */ new Date() });
+      }
+      throw error;
+    }
   }
-  if (features.inContextMemory) {
-    sections.push(IN_CONTEXT_MEMORY_INSTRUCTIONS);
+  /**
+   * Check tool permission before execution
+   */
+  async checkToolPermission(toolCall, iteration, executionId) {
+    if (this._permissionManager.isBlocked(toolCall.function.name)) {
+      this.executionContext?.audit("tool_blocked", { reason: "Tool is blocklisted" }, void 0, toolCall.function.name);
+      throw new Error(`Tool "${toolCall.function.name}" is blocked and cannot be executed`);
+    }
+    if (this._permissionManager.isApproved(toolCall.function.name)) {
+      return true;
+    }
+    const checkResult = this._permissionManager.checkPermission(toolCall.function.name);
+    if (!checkResult.needsApproval) {
+      return true;
+    }
+    let parsedArgs = {};
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch {
+    }
+    const context = {
+      toolCall,
+      parsedArgs,
+      config: checkResult.config || {},
+      executionId,
+      iteration,
+      agentType: "agent"
+    };
+    const decision = await this._permissionManager.requestApproval(context);
+    if (decision.approved) {
+      this.executionContext?.audit("tool_permission_approved", {
+        scope: decision.scope,
+        approvedBy: decision.approvedBy
+      }, void 0, toolCall.function.name);
+      return true;
+    }
+    return false;
   }
-  if (features.persistentInstructions) {
-    sections.push(PERSISTENT_INSTRUCTIONS_INSTRUCTIONS);
+  /**
+   * Execute function with timeout
+   */
+  async executeWithTimeout(fn, timeoutMs) {
+    return new Promise((resolve4, reject) => {
+      const timer = setTimeout(() => {
+        reject(new ToolTimeoutError("tool", timeoutMs));
+      }, timeoutMs);
+      fn().then((result) => {
+        clearTimeout(timer);
+        resolve4(result);
+      }).catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
   }
-  if (features.toolOutputTracking) {
-    sections.push(TOOL_OUTPUT_TRACKING_INSTRUCTIONS);
+  // ===== Pause/Resume/Cancel =====
+  /**
+   * Pause execution
+   */
+  pause(reason) {
+    this._pauseResumeMutex = this._pauseResumeMutex.then(() => {
+      if (this._paused) return;
+      this._paused = true;
+      this._pausePromise = new Promise((resolve4) => {
+        this._resumeCallback = resolve4;
+      });
+      if (this.executionContext) {
+        this.executionContext.paused = true;
+        this.executionContext.pauseReason = reason;
+        this.executionContext.audit("execution_paused", { reason });
+      }
+      this.emit("execution:paused", {
+        executionId: this.executionContext?.executionId || "unknown",
+        reason: reason || "Manual pause",
+        timestamp: /* @__PURE__ */ new Date()
+      });
+    });
   }
-  if (features.autoSpill && features.memory) {
-    sections.push(AUTO_SPILL_INSTRUCTIONS);
+  /**
+   * Resume execution
+   */
+  resume() {
+    this._pauseResumeMutex = this._pauseResumeMutex.then(() => {
+      if (!this._paused) return;
+      this._paused = false;
+      if (this.executionContext) {
+        this.executionContext.paused = false;
+        this.executionContext.pauseReason = void 0;
+        this.executionContext.audit("execution_resumed", {});
+      }
+      if (this._resumeCallback) {
+        this._resumeCallback();
+        this._resumeCallback = null;
+      }
+      this._pausePromise = null;
+      this.emit("execution:resumed", {
+        executionId: this.executionContext?.executionId || "unknown",
+        timestamp: /* @__PURE__ */ new Date()
+      });
+    });
   }
-  if (features.toolResultEviction && features.memory) {
-    sections.push(TOOL_RESULT_EVICTION_INSTRUCTIONS);
+  /**
+   * Cancel execution
+   */
+  cancel(reason) {
+    this._cancelled = true;
+    if (this.executionContext) {
+      this.executionContext.cancelled = true;
+      this.executionContext.cancelReason = reason;
+    }
+    if (this._paused) {
+      this._paused = false;
+      if (this._resumeCallback) {
+        this._resumeCallback();
+        this._resumeCallback = null;
+      }
+      this._pausePromise = null;
+    }
+    this.emit("execution:cancelled", {
+      executionId: this.executionContext?.executionId || "unknown",
+      reason: reason || "Manual cancellation",
+      timestamp: /* @__PURE__ */ new Date()
+    });
   }
-  if (sections.length === 0) {
+  /**
+   * Check if paused and wait
+   */
+  async checkPause() {
+    if (this._paused && this._pausePromise) {
+      await this._pausePromise;
+    }
+  }
+  // ===== Tool Management =====
+  // Note: addTool, removeTool, listTools, setTools are inherited from BaseAgent
+  // ===== Permission Convenience Methods =====
+  approveToolForSession(toolName) {
+    this._permissionManager.approveForSession(toolName);
+  }
+  revokeToolApproval(toolName) {
+    this._permissionManager.revoke(toolName);
+  }
+  getApprovedTools() {
+    return this._permissionManager.getApprovedTools();
+  }
+  toolNeedsApproval(toolName) {
+    return this._permissionManager.checkPermission(toolName).needsApproval;
+  }
+  toolIsBlocked(toolName) {
+    return this._permissionManager.isBlocked(toolName);
+  }
+  allowlistTool(toolName) {
+    this._permissionManager.allowlistAdd(toolName);
+  }
+  blocklistTool(toolName) {
+    this._permissionManager.blocklistAdd(toolName);
+  }
+  // ===== Configuration Methods =====
+  setModel(model) {
+    this.model = model;
+    this._config.model = model;
+  }
+  getTemperature() {
+    return this._config.temperature;
+  }
+  setTemperature(temperature) {
+    this._config.temperature = temperature;
+  }
+  // ===== Definition Persistence =====
+  async saveDefinition(storage, metadata) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const definition = {
+      version: 1,
+      agentId: this._agentContext.agentId,
+      name: this._agentContext.agentId,
+      agentType: "agent",
+      createdAt: now,
+      updatedAt: now,
+      connector: {
+        name: this.connector.name,
+        model: this.model
+      },
+      systemPrompt: this._agentContext.systemPrompt,
+      instructions: this._config.instructions,
+      features: this._agentContext.features,
+      metadata,
+      typeConfig: {
+        temperature: this._config.temperature,
+        maxIterations: this._config.maxIterations,
+        vendorOptions: this._config.vendorOptions
+      }
+    };
+    await storage.save(definition);
+  }
+  // ===== Introspection =====
+  getExecutionContext() {
+    return this.executionContext;
+  }
+  /**
+   * Alias for getExecutionContext() for backward compatibility
+   */
+  getContext() {
+    return this.executionContext;
+  }
+  getMetrics() {
+    return this.executionContext?.metrics || null;
+  }
+  getSummary() {
+    return this.executionContext?.getSummary() || null;
+  }
+  getAuditTrail() {
+    return this.executionContext?.getAuditTrail() || [];
+  }
+  getProviderCircuitBreakerMetrics() {
+    if ("getCircuitBreakerMetrics" in this._provider) {
+      return this._provider.getCircuitBreakerMetrics();
+    }
     return null;
   }
-  const content = sections.join("\n\n");
-  return {
-    name: "feature_instructions",
-    content,
-    priority: 1,
-    // High priority - keep in context
-    compactable: true,
-    // Can be compacted if absolutely necessary
-    metadata: {
-      featureCount: sections.length,
-      memoryEnabled: features.memory,
-      inContextMemoryEnabled: features.inContextMemory,
-      persistentInstructionsEnabled: features.persistentInstructions,
-      toolOutputTrackingEnabled: features.toolOutputTracking,
-      autoSpillEnabled: features.autoSpill,
-      toolResultEvictionEnabled: features.toolResultEviction
+  getToolCircuitBreakerStates() {
+    return this._agentContext.tools.getCircuitBreakerStates();
+  }
+  getToolCircuitBreakerMetrics(toolName) {
+    return this._agentContext.tools.getToolCircuitBreakerMetrics(toolName);
+  }
+  resetToolCircuitBreaker(toolName) {
+    this._agentContext.tools.resetToolCircuitBreaker(toolName);
+    this._logger.info({ toolName }, "Tool circuit breaker reset by user");
+  }
+  isRunning() {
+    return this.executionContext !== null && !this._cancelled;
+  }
+  isPaused() {
+    return this._paused;
+  }
+  isCancelled() {
+    return this._cancelled;
+  }
+  // ===== Cleanup =====
+  destroy() {
+    if (this._isDestroyed) {
+      return;
     }
-  };
-}
-function getAllInstructions() {
-  return {
-    introspection: INTROSPECTION_INSTRUCTIONS,
-    workingMemory: WORKING_MEMORY_INSTRUCTIONS,
-    inContextMemory: IN_CONTEXT_MEMORY_INSTRUCTIONS,
-    persistentInstructions: PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
-    toolOutputTracking: TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
-    autoSpill: AUTO_SPILL_INSTRUCTIONS,
-    toolResultEviction: TOOL_RESULT_EVICTION_INSTRUCTIONS
-  };
-}
+    this._logger.debug("Agent destroy started");
+    try {
+      this.cancel("Agent destroyed");
+    } catch {
+    }
+    this.executionContext?.cleanup();
+    this.executionContext = null;
+    for (const callback of this._cleanupCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        this._logger.error({ error: error.message }, "Cleanup callback error");
+      }
+    }
+    this._cleanupCallbacks = [];
+    this.baseDestroy();
+    exports.metrics.increment("agent.destroyed", 1, {
+      model: this.model,
+      connector: this.connector.name
+    });
+    this._logger.debug("Agent destroyed");
+  }
+};
+
+// src/core/constants.ts
+var PROACTIVE_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.65,
+  /** Base reduction factor for round 1 */
+  BASE_REDUCTION_FACTOR: 0.5,
+  /** Reduction step per round (more aggressive each round) */
+  REDUCTION_STEP: 0.15,
+  /** Maximum compaction rounds */
+  MAX_ROUNDS: 3
+};
+var AGGRESSIVE_STRATEGY_DEFAULTS = {
+  /** Threshold to trigger compaction */
+  THRESHOLD: 0.6,
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.5,
+  /** Reduction factor (keep 30% of original) */
+  REDUCTION_FACTOR: 0.3
+};
+var LAZY_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.85,
+  /** Reduction factor (keep 70% of original) */
+  REDUCTION_FACTOR: 0.7
+};
+var ADAPTIVE_STRATEGY_DEFAULTS = {
+  /** Number of compactions to learn from */
+  LEARNING_WINDOW: 10,
+  /** Compactions per minute threshold to switch to aggressive */
+  SWITCH_THRESHOLD: 5,
+  /** Low utilization threshold to switch to lazy */
+  LOW_UTILIZATION_THRESHOLD: 70,
+  /** Low frequency threshold to switch to lazy */
+  LOW_FREQUENCY_THRESHOLD: 0.5
+};
+var ROLLING_WINDOW_DEFAULTS = {
+  /** Default maximum messages to keep */
+  MAX_MESSAGES: 20
+};
+var STRATEGY_THRESHOLDS2 = {
+  proactive: {
+    // Most balanced - good for general use
+    compactionTrigger: 0.75,
+    // Start compaction at 75%
+    compactionTarget: 0.65,
+    // Reduce to 65%
+    smartCompactionTrigger: 0.7,
+    // Trigger smart compaction at 70%
+    maxToolResultsPercent: 0.3,
+    // Tool results can use up to 30% of context
+    protectedContextPercent: 0.1
+    // Protect at least 10% of context (recent messages)
+  },
+  aggressive: {
+    // Memory-constrained - compact early and often
+    compactionTrigger: 0.6,
+    compactionTarget: 0.5,
+    smartCompactionTrigger: 0.55,
+    maxToolResultsPercent: 0.25,
+    protectedContextPercent: 0.08
+  },
+  lazy: {
+    // Preserve context - only compact when critical
+    compactionTrigger: 0.9,
+    compactionTarget: 0.85,
+    smartCompactionTrigger: 0.85,
+    maxToolResultsPercent: 0.4,
+    // Allow more tool results
+    protectedContextPercent: 0.15
+    // Protect more recent context
+  },
+  adaptive: {
+    // Starts with proactive, adjusts based on performance
+    compactionTrigger: 0.75,
+    compactionTarget: 0.65,
+    smartCompactionTrigger: 0.7,
+    maxToolResultsPercent: 0.3,
+    protectedContextPercent: 0.1
+  },
+  "rolling-window": {
+    // Fixed window, similar to lazy but with message count focus
+    compactionTrigger: 0.85,
+    compactionTarget: 0.75,
+    smartCompactionTrigger: 0.8,
+    maxToolResultsPercent: 0.35,
+    protectedContextPercent: 0.12
+  }
+};
+var SAFETY_CAPS = {
+  /** Always keep at least this many messages */
+  MIN_PROTECTED_MESSAGES: 10
+};
+var GUARDIAN_DEFAULTS = {
+  /** Enable guardian validation (can be disabled for testing) */
+  ENABLED: true,
+  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
+  MAX_TOOL_RESULT_TOKENS: 2e3,
+  /** Minimum system prompt tokens to preserve during emergency compaction */
+  MIN_SYSTEM_PROMPT_TOKENS: 3e3,
+  /** Number of most recent messages to always protect (increased from 4) */
+  PROTECTED_RECENT_MESSAGES: 20,
+  /** Truncation suffix for oversized content */
+  TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
+};
+
+// src/core/context/SmartCompactor.ts
+init_Logger();
+exports.logger.child({ component: "SmartCompactor" });
+(class {
+  static DEFAULT_PATHS = [
+    "./oneringai.config.json",
+    path3.join(os.homedir(), ".oneringai", "config.json")
+  ];
+  /**
+   * Load configuration from file
+   */
+  static async load(path5) {
+    const configPath = path5 ? path3.resolve(path5) : await this.findConfig();
+    if (!configPath) {
+      throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
+    }
+    try {
+      const content = await fs15.promises.readFile(configPath, "utf-8");
+      let config = JSON.parse(content);
+      config = this.interpolateEnvVars(config);
+      this.validate(config);
+      return config;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(`Invalid JSON in configuration file '${configPath}': ${error.message}`);
+      }
+      throw error;
+    }
+  }
+  /**
+   * Load configuration synchronously
+   */
+  static loadSync(path5) {
+    const configPath = path5 ? path3.resolve(path5) : this.findConfigSync();
+    if (!configPath) {
+      throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
+    }
+    try {
+      const fs16 = __require("fs");
+      const content = fs16.readFileSync(configPath, "utf-8");
+      let config = JSON.parse(content);
+      config = this.interpolateEnvVars(config);
+      this.validate(config);
+      return config;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(`Invalid JSON in configuration file '${configPath}': ${error.message}`);
+      }
+      throw error;
+    }
+  }
+  /**
+   * Find configuration file in default paths
+   */
+  static async findConfig() {
+    for (const path5 of this.DEFAULT_PATHS) {
+      try {
+        await fs15.promises.access(path3.resolve(path5));
+        return path3.resolve(path5);
+      } catch {
+      }
+    }
+    return null;
+  }
+  /**
+   * Find configuration file synchronously
+   */
+  static findConfigSync() {
+    const fs16 = __require("fs");
+    for (const path5 of this.DEFAULT_PATHS) {
+      try {
+        fs16.accessSync(path3.resolve(path5));
+        return path3.resolve(path5);
+      } catch {
+      }
+    }
+    return null;
+  }
+  /**
+   * Interpolate environment variables in configuration
+   * Replaces ${ENV_VAR} with process.env.ENV_VAR
+   */
+  static interpolateEnvVars(config) {
+    const jsonString = JSON.stringify(config);
+    const interpolated = jsonString.replace(/\$\{([^}]+)\}/g, (match, envVar) => {
+      const value = process.env[envVar];
+      if (value === void 0) {
+        console.warn(`Warning: Environment variable '${envVar}' is not set`);
+        return match;
+      }
+      return value;
+    });
+    return JSON.parse(interpolated);
+  }
+  /**
+   * Basic validation of configuration structure
+   */
+  static validate(config) {
+    if (typeof config !== "object" || config === null) {
+      throw new Error("Configuration must be an object");
+    }
+    if (config.mcp) {
+      if (!Array.isArray(config.mcp.servers)) {
+        throw new Error('MCP configuration must have a "servers" array');
+      }
+      for (const server of config.mcp.servers) {
+        if (!server.name) {
+          throw new Error('Each MCP server must have a "name" field');
+        }
+        if (!server.transport) {
+          throw new Error(`MCP server '${server.name}' must have a "transport" field`);
+        }
+        if (!server.transportConfig) {
+          throw new Error(`MCP server '${server.name}' must have a "transportConfig" field`);
+        }
+      }
+    }
+  }
+});
 function isZ4Schema(s) {
   const schema = s;
   return !!schema._zod;
@@ -25612,7 +28019,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error) {
@@ -25629,7 +28036,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error) => {
         reject(error);
       };
@@ -25707,7 +28114,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve5(parseResult.data);
+            resolve4(parseResult.data);
           }
         } catch (error) {
           reject(error);
@@ -25968,12 +28375,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve4, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve5, interval);
+      const timeoutId = setTimeout(resolve4, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -26906,7 +29313,7 @@ var StdioClientTransport = class {
     if (this._process) {
       throw new Error("StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.");
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve4, reject) => {
       this._process = (0, import_cross_spawn.default)(this._serverParams.command, this._serverParams.args ?? [], {
         // merge default env with server env because mcp server needs some env vars
         env: {
@@ -26923,7 +29330,7 @@ var StdioClientTransport = class {
         this.onerror?.(error);
       });
       this._process.on("spawn", () => {
-        resolve5();
+        resolve4();
       });
       this._process.on("close", (_code) => {
         this._process = void 0;
@@ -26982,22 +29389,22 @@ var StdioClientTransport = class {
     if (this._process) {
       const processToClose = this._process;
       this._process = void 0;
-      const closePromise = new Promise((resolve5) => {
+      const closePromise = new Promise((resolve4) => {
         processToClose.once("close", () => {
-          resolve5();
+          resolve4();
         });
       });
       try {
         processToClose.stdin?.end();
       } catch {
       }
-      await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
+      await Promise.race([closePromise, new Promise((resolve4) => setTimeout(resolve4, 2e3).unref())]);
       if (processToClose.exitCode === null) {
         try {
           processToClose.kill("SIGTERM");
         } catch {
         }
-        await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
+        await Promise.race([closePromise, new Promise((resolve4) => setTimeout(resolve4, 2e3).unref())]);
       }
       if (processToClose.exitCode === null) {
         try {
@@ -27009,15 +29416,15 @@ var StdioClientTransport = class {
     this._readBuffer.clear();
   }
   send(message) {
-    return new Promise((resolve5) => {
+    return new Promise((resolve4) => {
       if (!this._process?.stdin) {
         throw new Error("Not connected");
       }
       const json = serializeMessage(message);
       if (this._process.stdin.write(json)) {
-        resolve5();
+        resolve4();
       } else {
-        this._process.stdin.once("drain", resolve5);
+        this._process.stdin.once("drain", resolve4);
       }
     });
   }
@@ -29039,10 +31446,10 @@ var MCPRegistry = class {
   /**
    * Load MCP configuration from file and create clients
    */
-  static async loadFromConfigFile(path6) {
+  static async loadFromConfigFile(path5) {
     try {
-      const configPath = path2.resolve(path6);
-      const content = await fs16.promises.readFile(configPath, "utf-8");
+      const configPath = path3.resolve(path5);
+      const content = await fs15.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -29053,7 +31460,7 @@ var MCPRegistry = class {
       if (error instanceof MCPError) {
         throw error;
       }
-      throw new MCPError(`Failed to load MCP configuration from '${path6}'`, void 0, error);
+      throw new MCPError(`Failed to load MCP configuration from '${path5}'`, void 0, error);
     }
   }
   /**
@@ -29125,7635 +31532,6 @@ var MCPRegistry = class {
     return JSON.parse(interpolated);
   }
 };
-
-// src/core/AgentContext.ts
-var logger5 = exports.logger.child({ component: "AgentContext" });
-var PRIORITY_PROFILES = {
-  research: {
-    memory_index: 3,
-    // Keep longest (summaries!)
-    tool_outputs: 5,
-    // Keep long (research data!)
-    conversation_history: 10
-    // Compact first (old chat less critical)
-  },
-  coding: {
-    memory_index: 5,
-    conversation_history: 8,
-    // Keep more context
-    tool_outputs: 10
-    // Compact first (output less critical once seen)
-  },
-  analysis: {
-    memory_index: 4,
-    tool_outputs: 6,
-    // Analysis results important
-    conversation_history: 7
-  },
-  general: {
-    memory_index: 8,
-    conversation_history: 6,
-    // Balanced
-    tool_outputs: 10
-  }
-};
-var TASK_TYPE_PROMPTS = {
-  research: `## Research Protocol
-
-You are conducting research. Follow this workflow to preserve findings:
-
-### 1. SEARCH PHASE
-- Execute searches to find relevant sources
-- After EACH search, immediately store key findings in memory
-
-### 2. READ PHASE
-For each promising result:
-- Read/scrape the content
-- Extract key points (2-3 sentences per source)
-- Store IMMEDIATELY in memory - do NOT keep full articles in conversation
-
-### 3. SYNTHESIZE PHASE
-Before writing final report:
-- Use memory_list() to see all stored findings
-- Retrieve relevant findings with memory_retrieve(key)
-- Cross-reference and consolidate
-
-### 4. CONTEXT MANAGEMENT
-- Your context may be compacted automatically
-- Always store important findings in memory IMMEDIATELY
-- Stored data survives compaction; conversation history may not`,
-  coding: `## Coding Protocol
-
-You are implementing code changes. Guidelines:
-- Read relevant files before making changes
-- Implement incrementally
-- Store key design decisions in memory if they'll be needed later
-- Code file contents are large - summarize structure after reading`,
-  analysis: `## Analysis Protocol
-
-You are performing analysis. Guidelines:
-- Store intermediate results in memory
-- Summarize data immediately after loading (raw data is large)
-- Keep only essential context for current analysis step`,
-  general: `## Task Execution
-
-Guidelines:
-- Store important information in memory for later reference
-- Monitor your context usage with context_inspect()`
-};
-var DEFAULT_FEATURES = {
-  memory: true,
-  inContextMemory: false,
-  history: true,
-  permissions: true,
-  persistentInstructions: false,
-  toolOutputTracking: true,
-  autoSpill: true,
-  toolResultEviction: true
-};
-var DEFAULT_AGENT_CONTEXT_CONFIG = {
-  model: "gpt-4",
-  maxContextTokens: 128e3,
-  systemPrompt: "",
-  instructions: "",
-  history: {
-    maxMessages: 100,
-    preserveRecent: 20
-  },
-  strategy: "proactive",
-  responseReserve: 0.15,
-  autoCompact: true
-};
-var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
-  // ===== Composed Managers (conditionally created based on features) =====
-  _tools;
-  _memory;
-  _cache;
-  _permissions;
-  _inContextMemory = null;
-  _persistentInstructions = null;
-  _toolOutputPlugin = null;
-  _autoSpillPlugin = null;
-  _toolResultEvictionPlugin = null;
-  _guardian;
-  _smartCompactor = null;
-  _smartCompactionConfig = void 0;
-  _agentId;
-  // ===== Feature Configuration =====
-  _features;
-  // ===== Built-in State =====
-  _systemPrompt;
-  _instructions;
-  _toolCalls = [];
-  _currentInput = "";
-  _historyEnabled;
-  // ===== Conversation State (NEW - THE source of truth) =====
-  /** Conversation stored as InputItem[] - THE source of truth */
-  _conversation = [];
-  /** Metadata for each message (keyed by message ID) */
-  _messageMetadata = /* @__PURE__ */ new Map();
-  /** Messages at or after this index cannot be compacted (current iteration protection) */
-  _protectedFromIndex = 0;
-  // ===== Plugins =====
-  _plugins = /* @__PURE__ */ new Map();
-  // ===== Configuration =====
-  _config;
-  _maxContextTokens;
-  _strategy;
-  _estimator;
-  _cacheEnabled;
-  // ===== Metrics =====
-  _compactionCount = 0;
-  _totalTokensFreed = 0;
-  _lastBudget = null;
-  // ===== Task Type =====
-  _explicitTaskType;
-  _autoDetectedTaskType;
-  _autoDetectTaskType = true;
-  // ===== Session Persistence =====
-  _storage = null;
-  _sessionId = null;
-  _sessionMetadata = {};
-  // ===== MCP Server Integration =====
-  /**
-   * MCP clients that were connected during initialization.
-   * These are tracked for cleanup during destroy().
-   */
-  _mcpClients = [];
-  /**
-   * MCP server references from config (for serialization/deserialization)
-   */
-  _mcpServerRefs = [];
-  /**
-   * Flag indicating MCP initialization is pending (async)
-   */
-  _mcpInitializationPending = false;
-  // ============================================================================
-  // Constructor & Factory
-  // ============================================================================
-  constructor(config = {}) {
-    super();
-    this._features = { ...DEFAULT_FEATURES, ...config.features };
-    if (config.cache?.enabled === false) {
-      this._features.memory = false;
-    }
-    this.validateFeatures(this._features);
-    this._config = {
-      ...DEFAULT_AGENT_CONTEXT_CONFIG,
-      ...config,
-      history: { ...DEFAULT_AGENT_CONTEXT_CONFIG.history, ...config.history }
-    };
-    this._systemPrompt = config.systemPrompt ?? "";
-    this._instructions = config.instructions ?? "";
-    this._agentId = config.agentId ?? config.persistentInstructions?.agentId ?? `agent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    this._historyEnabled = this._features.history;
-    this._maxContextTokens = config.maxContextTokens ?? getModelInfo(config.model ?? "gpt-4")?.features.input.tokens ?? 128e3;
-    this._strategy = createStrategy(this._config.strategy, {});
-    this._estimator = this.createEstimator();
-    this._guardian = new ContextGuardian(this._estimator, config.guardian);
-    this._tools = new ToolManager();
-    this._tools.setParentContext(this);
-    if (config.tools) {
-      for (const tool of config.tools) {
-        this._tools.register(tool);
-      }
-    }
-    if (this._features.permissions) {
-      this._permissions = new ToolPermissionManager(config.permissions);
-    } else {
-      this._permissions = null;
-    }
-    if (this._features.memory) {
-      const memoryStorage = config.memory?.storage ?? new InMemoryStorage();
-      const memoryConfig = {
-        ...DEFAULT_MEMORY_CONFIG,
-        ...config.memory
-      };
-      this._memory = new WorkingMemory(memoryStorage, memoryConfig);
-      this._cacheEnabled = true;
-      const cacheConfig = {
-        ...DEFAULT_IDEMPOTENCY_CONFIG,
-        ...config.cache
-      };
-      this._cache = new IdempotencyCache(cacheConfig);
-    } else {
-      this._memory = null;
-      this._cache = null;
-      this._cacheEnabled = false;
-    }
-    if (this._features.inContextMemory) {
-      const { plugin, tools } = createInContextMemory(config.inContextMemory);
-      this._inContextMemory = plugin;
-      this.registerPlugin(plugin);
-      for (const tool of tools) {
-        this._tools.register(tool);
-      }
-    }
-    if (this._features.persistentInstructions) {
-      const { plugin, tools } = createPersistentInstructions({
-        agentId: this._agentId,
-        ...config.persistentInstructions
-      });
-      this._persistentInstructions = plugin;
-      this.registerPlugin(plugin);
-      for (const tool of tools) {
-        this._tools.register(tool);
-      }
-    }
-    if (this._features.toolOutputTracking) {
-      this._toolOutputPlugin = new ToolOutputPlugin({
-        ...config.toolOutputTracking,
-        suppressDeprecationWarning: true
-        // Suppress warning when used internally
-      });
-      this.registerPlugin(this._toolOutputPlugin);
-    }
-    if (this._features.autoSpill && this._memory) {
-      this._autoSpillPlugin = new AutoSpillPlugin(this._memory, {
-        sizeThreshold: 10 * 1024,
-        // 10KB default
-        toolPatterns: [/^web_/, /^research_/, /^read_file/],
-        // Common large-output tools
-        ...config.autoSpill
-      });
-      this.registerPlugin(this._autoSpillPlugin);
-    }
-    if (this._features.toolResultEviction && this._memory) {
-      logger5.debug({
-        toolResultEviction: this._features.toolResultEviction,
-        memoryEnabled: !!this._memory,
-        config: config.toolResultEviction
-      }, "Creating ToolResultEvictionPlugin");
-      this._toolResultEvictionPlugin = new ToolResultEvictionPlugin(this._memory, {
-        ...config.toolResultEviction
-      });
-      this._toolResultEvictionPlugin.setRemoveCallback((toolUseId) => {
-        return this.removeToolPair(toolUseId);
-      });
-      this.registerPlugin(this._toolResultEvictionPlugin);
-      logger5.debug({
-        pluginName: this._toolResultEvictionPlugin.name,
-        pluginConfig: this._toolResultEvictionPlugin.getConfig()
-      }, "ToolResultEvictionPlugin created and registered");
-    } else {
-      logger5.debug({
-        toolResultEviction: this._features.toolResultEviction,
-        memoryEnabled: !!this._memory
-      }, "ToolResultEvictionPlugin NOT created (feature disabled or no memory)");
-    }
-    this._smartCompactionConfig = config.smartCompaction;
-    if (config.smartCompaction?.enabled) {
-      logger5.debug({
-        enabled: true,
-        model: config.smartCompaction.model,
-        memoryEnabled: !!this._memory
-      }, "SmartCompaction configured (waiting for provider)");
-    }
-    this._registerFeatureTools();
-    this._explicitTaskType = config.taskType;
-    this._autoDetectTaskType = config.autoDetectTaskType !== false;
-    this._storage = config.storage ?? null;
-    this._sessionMetadata = config.sessionMetadata ?? {};
-    this._sessionId = config.sessionId ?? null;
-    this._mcpServerRefs = config.mcpServers ?? [];
-    if (this._mcpServerRefs.length > 0) {
-      this._mcpInitializationPending = true;
-      this._initializeMCPServers().catch((err) => {
-        logger5.error({ error: err }, "Failed to initialize MCP servers");
-      });
-    }
-  }
-  /**
-   * Create a new AgentContext
-   */
-  static create(config = {}) {
-    return new _AgentContext(config);
-  }
-  /**
-   * Create a new AgentContext and wait for MCP servers to initialize.
-   * Use this factory method when you need MCP tools to be available immediately.
-   */
-  static async createAsync(config = {}) {
-    const ctx = new _AgentContext(config);
-    await ctx.ensureMCPInitialized();
-    return ctx;
-  }
-  // ============================================================================
-  // Public Accessors (expose composed managers for direct access)
-  // ============================================================================
-  /** Tool manager - register, enable/disable, execute tools */
-  get tools() {
-    return this._tools;
-  }
-  /** Working memory - store/retrieve agent state (null if memory feature disabled) */
-  get memory() {
-    return this._memory;
-  }
-  /** Tool result cache - automatic deduplication (null if memory feature disabled) */
-  get cache() {
-    return this._cache;
-  }
-  /** Tool permissions - approval workflow (null if permissions feature disabled) */
-  get permissions() {
-    return this._permissions;
-  }
-  /** InContextMemory plugin (null if inContextMemory feature disabled) */
-  get inContextMemory() {
-    return this._inContextMemory;
-  }
-  /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
-  get persistentInstructions() {
-    return this._persistentInstructions;
-  }
-  /** ToolOutputPlugin (null if toolOutputTracking feature disabled) */
-  get toolOutputPlugin() {
-    return this._toolOutputPlugin;
-  }
-  /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
-  get autoSpillPlugin() {
-    return this._autoSpillPlugin;
-  }
-  /** ToolResultEvictionPlugin (null if toolResultEviction feature disabled or memory disabled) */
-  get toolResultEvictionPlugin() {
-    return this._toolResultEvictionPlugin;
-  }
-  /** ContextGuardian - mandatory checkpoint for context validation */
-  get guardian() {
-    return this._guardian;
-  }
-  /** Agent ID (auto-generated or from config) */
-  get agentId() {
-    return this._agentId;
-  }
-  /** Current session ID (null if no session loaded/saved) */
-  get sessionId() {
-    return this._sessionId;
-  }
-  /** Storage backend for session persistence (null if not configured) */
-  get storage() {
-    return this._storage;
-  }
-  /** Connected MCP clients (readonly) */
-  get mcpClients() {
-    return this._mcpClients;
-  }
-  /**
-   * Check if MCP initialization is still pending.
-   * If true, call ensureMCPInitialized() to wait for completion.
-   */
-  get mcpInitializationPending() {
-    return this._mcpInitializationPending;
-  }
-  /** SmartCompactor for LLM-powered context compaction (null if not configured or no provider) */
-  get smartCompactor() {
-    return this._smartCompactor;
-  }
-  /**
-   * Set the text provider for SmartCompactor.
-   * This must be called to enable smart compaction (typically by Agent after provider is created).
-   *
-   * @param provider - The ITextProvider to use for compaction analysis
-   */
-  setSmartCompactorProvider(provider) {
-    if (this._smartCompactionConfig?.enabled && provider) {
-      const strategy = this._config.strategy;
-      this._smartCompactor = new SmartCompactor(provider, this._memory, {
-        strategy,
-        maxContextTokens: this._maxContextTokens,
-        model: this._smartCompactionConfig.model,
-        maxAnalysisTokens: this._smartCompactionConfig.maxAnalysisTokens,
-        enableSpillToMemory: this._smartCompactionConfig.enableSpillToMemory ?? this._memory !== null,
-        minMessagesToCompact: this._smartCompactionConfig.minMessagesToCompact
-      });
-      this._tools.register(createContextCompactTool());
-      logger5.info({
-        model: this._smartCompactionConfig.model ?? "gpt-4o-mini",
-        strategy
-      }, "SmartCompactor initialized");
-    }
-  }
-  /**
-   * Trigger smart compaction of the context.
-   * Returns the compaction result with details about what was done.
-   *
-   * @param targetReduction - Optional target reduction percentage (0-100)
-   * @throws Error if SmartCompactor is not configured
-   */
-  async triggerSmartCompaction(targetReduction) {
-    if (!this._smartCompactor) {
-      throw new Error("SmartCompactor is not configured. Enable it via smartCompaction config and call setSmartCompactorProvider().");
-    }
-    const preparedResult = await this.prepare({ returnFormat: "components" });
-    if (!preparedResult.components) {
-      throw new Error("Failed to prepare context for compaction");
-    }
-    const preparedContext = {
-      components: preparedResult.components,
-      budget: preparedResult.budget,
-      compacted: preparedResult.compacted,
-      compactionLog: preparedResult.compactionLog
-    };
-    const result = await this._smartCompactor.compact(preparedContext, targetReduction);
-    if (result.tokensFreed > 0) {
-      this.emit("compacted", { log: result.log, tokensFreed: result.tokensFreed });
-    }
-    return result;
-  }
-  // ============================================================================
-  // MCP Server Management
-  // ============================================================================
-  /**
-   * Ensure MCP servers are initialized before proceeding.
-   * Call this if you need MCP tools to be available immediately.
-   */
-  async ensureMCPInitialized() {
-    if (this._mcpInitializationPending) {
-      await this._initializeMCPServers();
-    }
-  }
-  /**
-   * Get MCP client by server name
-   */
-  getMCPClient(name) {
-    return this._mcpClients.find((c) => c.name === name);
-  }
-  /**
-   * Get all tools available from connected MCP servers
-   */
-  getMCPTools() {
-    return this._mcpClients.filter((c) => c.isConnected()).map((c) => ({
-      server: c.name,
-      tools: c.tools.map((t) => t.name)
-    }));
-  }
-  // ============================================================================
-  // Feature Configuration
-  // ============================================================================
-  /**
-   * Get the resolved feature configuration
-   */
-  get features() {
-    return this._features;
-  }
-  /**
-   * Check if a specific feature is enabled
-   */
-  isFeatureEnabled(feature) {
-    return this._features[feature];
-  }
-  /**
-   * Get memory, throwing if disabled
-   * Use when memory is required for an operation
-   */
-  requireMemory() {
-    if (!this._memory) {
-      throw new Error('WorkingMemory is not available. Enable the "memory" feature in AgentContextConfig.');
-    }
-    return this._memory;
-  }
-  /**
-   * Get cache, throwing if disabled
-   * Use when cache is required for an operation
-   */
-  requireCache() {
-    if (!this._cache) {
-      throw new Error('IdempotencyCache is not available. Enable the "memory" feature in AgentContextConfig.');
-    }
-    return this._cache;
-  }
-  /**
-   * Get permissions, throwing if disabled
-   * Use when permissions is required for an operation
-   */
-  requirePermissions() {
-    if (!this._permissions) {
-      throw new Error('ToolPermissionManager is not available. Enable the "permissions" feature in AgentContextConfig.');
-    }
-    return this._permissions;
-  }
-  /**
-   * Validate feature dependencies and warn about potential issues
-   * Called during construction after feature resolution
-   */
-  validateFeatures(features) {
-    if (features.autoSpill && !features.memory) {
-      throw new Error(
-        "AgentContext: autoSpill feature requires memory feature to be enabled. Either enable memory (features.memory: true) or disable autoSpill (features.autoSpill: false)."
-      );
-    }
-    if (features.toolResultEviction && !features.memory) {
-      throw new Error(
-        "AgentContext: toolResultEviction feature requires memory feature to be enabled. Either enable memory (features.memory: true) or disable toolResultEviction (features.toolResultEviction: false)."
-      );
-    }
-    if (features.inContextMemory && !features.memory) {
-      console.warn(
-        "AgentContext: inContextMemory enabled without memory feature. In-context data will not be backed by WorkingMemory for persistence or large data spilling."
-      );
-    }
-  }
-  /**
-   * Initialize MCP servers from config.
-   * This is called asynchronously during construction and can be awaited via ensureMCPInitialized().
-   */
-  async _initializeMCPServers() {
-    if (this._mcpServerRefs.length === 0) {
-      this._mcpInitializationPending = false;
-      return;
-    }
-    for (const ref of this._mcpServerRefs) {
-      try {
-        let client;
-        if (typeof ref.server === "string") {
-          if (!MCPRegistry.has(ref.server)) {
-            logger5.warn({ server: ref.server }, "MCP server not found in registry, skipping");
-            continue;
-          }
-          client = MCPRegistry.get(ref.server);
-        } else {
-          if (MCPRegistry.has(ref.server.name)) {
-            client = MCPRegistry.get(ref.server.name);
-          } else {
-            client = MCPRegistry.create(ref.server);
-          }
-        }
-        if (ref.autoConnect !== false && !client.isConnected()) {
-          logger5.debug({ server: client.name }, "Connecting to MCP server");
-          try {
-            await client.connect();
-          } catch (connectError) {
-            logger5.warn(
-              { server: client.name, error: connectError },
-              "Failed to connect to MCP server, tools will not be available"
-            );
-            continue;
-          }
-        }
-        if (client.isConnected()) {
-          client.registerToolsSelective(this._tools, ref.tools);
-          this._mcpClients.push(client);
-          logger5.debug(
-            { server: client.name, toolCount: ref.tools?.length ?? client.tools.length },
-            "Registered MCP tools"
-          );
-        }
-      } catch (error) {
-        logger5.warn({ server: ref.server, error }, "Failed to initialize MCP server");
-      }
-    }
-    this._mcpInitializationPending = false;
-  }
-  // ============================================================================
-  // Core Context (Built-in)
-  // ============================================================================
-  /** Get/set system prompt */
-  get systemPrompt() {
-    return this._systemPrompt;
-  }
-  set systemPrompt(value) {
-    this._systemPrompt = value;
-  }
-  /** Get/set instructions */
-  get instructions() {
-    return this._instructions;
-  }
-  set instructions(value) {
-    this._instructions = value;
-  }
-  /** Set current input for this turn */
-  setCurrentInput(input) {
-    this._currentInput = input;
-  }
-  /** Get current input */
-  getCurrentInput() {
-    return this._currentInput;
-  }
-  // ============================================================================
-  // Conversation Management (NEW - Primary API)
-  // ============================================================================
-  /**
-   * Add user message to conversation.
-   *
-   * @param content - String or Content[] for the message
-   * @returns Message ID
-   */
-  addUserMessage(content) {
-    const id = this.generateId();
-    const contentArray = typeof content === "string" ? [{ type: "input_text" /* INPUT_TEXT */, text: content }] : content;
-    const message = {
-      type: "message",
-      id,
-      role: "user" /* USER */,
-      content: contentArray
-    };
-    this._conversation.push(message);
-    this._messageMetadata.set(id, {
-      timestamp: Date.now(),
-      tokenCount: this.estimateMessageTokens(message)
-    });
-    const textContent = this.extractTextFromContent(contentArray);
-    if (textContent) {
-      this.setCurrentInput(textContent);
-    }
-    const index = this._conversation.length - 1;
-    this.emit("message:added", { item: message, index });
-    this.emit("message:user", { item: message });
-    return id;
-  }
-  /**
-   * Add raw InputItem[] to conversation (for complex inputs with images, files, etc.)
-   *
-   * @param items - InputItem[] to add
-   */
-  addInputItems(items) {
-    for (const item of items) {
-      if (item.type === "message") {
-        const id = item.id || this.generateId();
-        const messageWithId = { ...item, id };
-        this._conversation.push(messageWithId);
-        this._messageMetadata.set(id, {
-          timestamp: Date.now(),
-          tokenCount: this.estimateMessageTokens(messageWithId)
-        });
-        const index = this._conversation.length - 1;
-        this.emit("message:added", { item: messageWithId, index });
-      }
-    }
-  }
-  /**
-   * Add assistant response to conversation (including tool calls).
-   *
-   * @param output - OutputItem[] from LLM response
-   * @returns Array of message IDs added
-   */
-  addAssistantResponse(output) {
-    const ids = [];
-    for (const item of output) {
-      if (item.type === "message" && item.role === "assistant" /* ASSISTANT */) {
-        const id = item.id || this.generateId();
-        const messageWithId = { ...item, id };
-        this._conversation.push(messageWithId);
-        this._messageMetadata.set(id, {
-          timestamp: Date.now(),
-          tokenCount: this.estimateMessageTokens(messageWithId)
-        });
-        ids.push(id);
-        const index = this._conversation.length - 1;
-        this.emit("message:added", { item: messageWithId, index });
-        this.emit("message:assistant", { item: messageWithId });
-      }
-    }
-    return ids;
-  }
-  /**
-   * Add tool results to conversation.
-   * Includes safety truncation to prevent context overflow.
-   *
-   * @param results - ToolResult[] from tool execution
-   * @returns Message ID of the tool results message
-   */
-  addToolResults(results) {
-    const id = this.generateId();
-    const MAX_RESULT_CHARS = 2e4;
-    const message = {
-      type: "message",
-      id,
-      role: "user" /* USER */,
-      // Tool results go as user message per API spec
-      content: results.map((r) => {
-        let content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
-        if (content.length > MAX_RESULT_CHARS) {
-          const originalSize = content.length;
-          content = content.slice(0, MAX_RESULT_CHARS) + `
-
-[Safety truncated from ${Math.round(originalSize / 1024)}KB - use memory_retrieve if available]`;
-          logger5.warn({
-            toolName: r.tool_name,
-            originalSize,
-            truncatedTo: MAX_RESULT_CHARS
-          }, "addToolResults: safety truncation applied");
-        }
-        return {
-          type: "tool_result" /* TOOL_RESULT */,
-          tool_use_id: r.tool_use_id,
-          content,
-          error: r.error
-        };
-      })
-    };
-    this._conversation.push(message);
-    this._messageMetadata.set(id, {
-      timestamp: Date.now(),
-      tokenCount: this.estimateMessageTokens(message)
-    });
-    for (const r of results) {
-      this._toolCalls.push({
-        id: r.tool_use_id,
-        name: r.tool_name || "unknown",
-        args: {},
-        result: r.content,
-        error: r.error,
-        timestamp: Date.now()
-      });
-    }
-    const index = this._conversation.length - 1;
-    this.emit("message:added", { item: message, index });
-    if (this._toolResultEvictionPlugin) {
-      logger5.debug({
-        resultsCount: results.length,
-        messageIndex: index,
-        pluginTrackedBefore: this._toolResultEvictionPlugin.getTracked().length
-      }, "addToolResults: tracking results for eviction");
-      for (const r of results) {
-        const toolName = r.tool_name || "unknown";
-        const toolArgs = r.tool_args || {};
-        const toolFn = this._tools.get(toolName);
-        const describeCall = toolFn?.describeCall;
-        logger5.debug({
-          toolUseId: r.tool_use_id,
-          toolName,
-          hasArgs: Object.keys(toolArgs).length > 0,
-          hasDescribeCall: !!describeCall,
-          contentLength: typeof r.content === "string" ? r.content.length : JSON.stringify(r.content).length
-        }, `addToolResults: tracking ${toolName}`);
-        this._toolResultEvictionPlugin.onToolResult(
-          r.tool_use_id,
-          toolName,
-          toolArgs,
-          r.content,
-          index,
-          describeCall
-        );
-      }
-      logger5.debug({
-        pluginTrackedAfter: this._toolResultEvictionPlugin.getTracked().length,
-        pluginStats: this._toolResultEvictionPlugin.getStats()
-      }, "addToolResults: tracking complete");
-    } else {
-      logger5.debug({
-        resultsCount: results.length,
-        pluginEnabled: !!this._toolResultEvictionPlugin
-      }, "addToolResults: NOT tracking (plugin not enabled)");
-    }
-    return id;
-  }
-  /**
-   * Mark current position as protected from compaction.
-   * Messages at or after this index cannot be compacted.
-   * Called at the start of each iteration by Agent.
-   */
-  protectFromCompaction() {
-    this._protectedFromIndex = this._conversation.length;
-  }
-  /**
-   * Get conversation (read-only).
-   */
-  getConversation() {
-    return this._conversation;
-  }
-  /**
-   * Get conversation length.
-   */
-  getConversationLength() {
-    return this._conversation.length;
-  }
-  /**
-   * Clear conversation.
-   */
-  clearConversation(reason) {
-    this._conversation = [];
-    this._messageMetadata.clear();
-    this._protectedFromIndex = 0;
-    this.emit("history:cleared", { reason });
-  }
-  /**
-   * Unified context preparation method.
-   *
-   * Handles everything for preparing context before LLM calls:
-   * 1. Marks current position as protected from compaction
-   * 2. Advances iteration counter and evicts old tool results (if enabled)
-   * 3. Builds components and calculates token usage
-   * 4. Emits budget warnings if needed
-   * 5. Compacts conversation if needed (respecting protection & tool pairs)
-   * 6. Builds final output based on returnFormat option
-   *
-   * @param options - Preparation options
-   * @returns PreparedResult with budget, compaction info, and either input or components
-   *
-   * @example
-   * ```typescript
-   * // For LLM calls (default)
-   * const { input, budget } = await ctx.prepare();
-   *
-   * // For component inspection/custom assembly
-   * const { components, budget } = await ctx.prepare({ returnFormat: 'components' });
-   * ```
-   */
-  async prepare(options) {
-    if (this._mcpInitializationPending) {
-      await this.ensureMCPInitialized();
-    }
-    const returnFormat = options?.returnFormat ?? "llm-input";
-    let compactionLog = [];
-    this.protectFromCompaction();
-    if (this._toolResultEvictionPlugin) {
-      const statsBefore = this._toolResultEvictionPlugin.getStats();
-      logger5.debug({
-        statsBefore,
-        conversationLength: this._conversation.length
-      }, "prepare: before tool result eviction");
-      this._toolResultEvictionPlugin.onIteration();
-      const shouldEvict = this._toolResultEvictionPlugin.shouldEvict();
-      logger5.debug({
-        shouldEvict,
-        trackedCount: statsBefore.count,
-        config: this._toolResultEvictionPlugin.getConfig()
-      }, `prepare: shouldEvict=${shouldEvict}`);
-      if (shouldEvict) {
-        const evictionResult = await this._toolResultEvictionPlugin.evictOldResults();
-        logger5.debug({
-          evictionResult: {
-            evicted: evictionResult.evicted,
-            tokensFreed: evictionResult.tokensFreed,
-            memoryKeys: evictionResult.memoryKeys,
-            log: evictionResult.log
-          }
-        }, `prepare: eviction result - ${evictionResult.evicted} evicted`);
-        if (evictionResult.evicted > 0) {
-          compactionLog.push(
-            `Evicted ${evictionResult.evicted} tool results to memory (${evictionResult.tokensFreed} tokens freed)`
-          );
-        }
-      }
-      const statsAfter = this._toolResultEvictionPlugin.getStats();
-      logger5.debug({
-        statsAfter
-      }, "prepare: after tool result eviction");
-    } else {
-      logger5.debug({
-        pluginEnabled: false
-      }, "prepare: tool result eviction plugin not enabled");
-    }
-    let components = await this.buildComponents();
-    let budget = this.calculateBudget(components);
-    this._lastBudget = budget;
-    if (budget.status === "warning") {
-      this.emit("budget:warning", { budget });
-    } else if (budget.status === "critical") {
-      this.emit("budget:critical", { budget });
-    }
-    const needsCompaction = this._config.autoCompact && this._strategy.shouldCompact(budget, {
-      ...DEFAULT_CONTEXT_CONFIG,
-      maxContextTokens: this._maxContextTokens,
-      responseReserve: this._config.responseReserve
-    });
-    if (needsCompaction) {
-      const compactionResult = await this.compactConversation(budget);
-      compactionLog.push(...compactionResult.log);
-      components = await this.buildComponents();
-      budget = this.calculateBudget(components);
-      this._lastBudget = budget;
-    }
-    this.emit("context:prepared", { budget, compacted: needsCompaction });
-    if (returnFormat === "components") {
-      return {
-        components,
-        budget,
-        compacted: needsCompaction,
-        compactionLog
-      };
-    }
-    let input = await this.buildLLMInput(options?.instructionOverride);
-    if (this._guardian.enabled) {
-      const availableTokens = this._maxContextTokens - budget.reserved;
-      const validation = this._guardian.validate(input, availableTokens);
-      if (!validation.valid) {
-        logger5.warn({
-          actualTokens: validation.actualTokens,
-          targetTokens: validation.targetTokens,
-          overageTokens: validation.overageTokens,
-          breakdown: validation.breakdown
-        }, "Guardian validation failed - applying graceful degradation");
-        this.emit("guardian:validation-failed", { validation });
-        const degradation = this._guardian.applyGracefulDegradation(input, validation.targetTokens);
-        input = degradation.input;
-        compactionLog.push(...degradation.log);
-        const finalValidation = this._guardian.validate(input, availableTokens);
-        budget = {
-          ...budget,
-          used: finalValidation.actualTokens,
-          available: availableTokens - finalValidation.actualTokens,
-          utilizationPercent: finalValidation.actualTokens / availableTokens * 100,
-          status: finalValidation.valid ? "ok" : "critical",
-          breakdown: finalValidation.breakdown
-        };
-        this._lastBudget = budget;
-        logger5.info({
-          finalTokens: finalValidation.actualTokens,
-          tokensFreed: degradation.tokensFreed,
-          degradationSteps: degradation.log.length
-        }, "Guardian degradation complete");
-        this.emit("guardian:degradation-applied", {
-          tokensFreed: degradation.tokensFreed,
-          log: degradation.log
-        });
-      }
-    }
-    return {
-      input,
-      budget,
-      compacted: needsCompaction || compactionLog.length > 0,
-      compactionLog
-    };
-  }
-  /**
-   * Prepare conversation for LLM call.
-   * @deprecated Use prepare() instead. This is a thin wrapper for backward compatibility.
-   */
-  async prepareConversation(options) {
-    const result = await this.prepare({
-      instructionOverride: options?.instructionOverride,
-      returnFormat: "llm-input"
-    });
-    return {
-      input: result.input,
-      budget: result.budget,
-      compacted: result.compacted,
-      compactionLog: result.compactionLog
-    };
-  }
-  // ============================================================================
-  // Task Type Management
-  // ============================================================================
-  /**
-   * Set explicit task type (overrides auto-detection)
-   */
-  setTaskType(type) {
-    this._explicitTaskType = type;
-  }
-  /**
-   * Clear explicit task type (re-enables auto-detection)
-   */
-  clearTaskType() {
-    this._explicitTaskType = void 0;
-    this._autoDetectedTaskType = void 0;
-  }
-  /**
-   * Get current task type
-   * Priority: explicit > auto-detected > 'general'
-   */
-  getTaskType() {
-    if (this._explicitTaskType) {
-      return this._explicitTaskType;
-    }
-    if (this._autoDetectTaskType) {
-      this._autoDetectedTaskType = this.detectTaskTypeFromPlan();
-      return this._autoDetectedTaskType ?? "general";
-    }
-    return "general";
-  }
-  /**
-   * Get task-type-specific system prompt addition
-   */
-  getTaskTypePrompt() {
-    return TASK_TYPE_PROMPTS[this.getTaskType()];
-  }
-  /**
-   * Register feature-aware tools based on enabled features.
-   * Called once during construction to ensure ALL agent types have consistent tools.
-   *
-   * This is the SINGLE source of truth for context-related tool registration.
-   * All agent types (Agent, TaskAgent, UniversalAgent) automatically get these tools.
-   *
-   * Consolidated tools (Phase 1):
-   * - Always: context_stats (unified introspection - gracefully handles disabled features)
-   * - When memory feature enabled: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
-   * - When autoSpill feature enabled: autospill_process (CRITICAL for breaking infinite loops)
-   * - InContextMemory (context_set, context_delete, context_list) & PersistentInstructions tools
-   *   are registered separately in the constructor when those features are enabled.
-   */
-  _registerFeatureTools() {
-    this._tools.register(createContextStatsTool());
-    if (this._features.memory) {
-      this._tools.register(createMemoryStoreTool());
-      this._tools.register(createMemoryRetrieveTool());
-      this._tools.register(createMemoryDeleteTool());
-      this._tools.register(createMemoryQueryTool());
-      this._tools.register(createMemoryCleanupRawTool());
-    }
-    if (this._features.autoSpill && this._memory) {
-      this._tools.register(createAutoSpillProcessTool());
-    }
-  }
-  /**
-   * Auto-detect task type from plan (if PlanPlugin is registered)
-   * Uses keyword matching - NO LLM calls
-   */
-  detectTaskTypeFromPlan() {
-    const planPlugin = this.getPlugin("plan");
-    const plan = planPlugin?.getPlan();
-    if (!plan) return void 0;
-    const text = `${plan.goal} ${plan.tasks.map((t) => `${t.name} ${t.description}`).join(" ")}`.toLowerCase();
-    if (/\b(research|search|find|investigate|discover|explore|gather|look\s*up|scrape|web\s*search|crawl|collect\s*data|survey|study)\b/.test(text)) {
-      return "research";
-    }
-    if (/\b(code|implement|develop|program|function|class|refactor|debug|fix\s*bug|write\s*code|api|endpoint|module|component|typescript|javascript|python)\b/.test(text)) {
-      return "coding";
-    }
-    if (/\b(analyze|analysis|calculate|compute|evaluate|assess|compare|statistics|metrics|measure|data|report|chart|graph)\b/.test(text)) {
-      return "analysis";
-    }
-    return "general";
-  }
-  // ============================================================================
-  // History Management (Built-in)
-  // ============================================================================
-  /**
-   * Add a message to history with automatic capacity management.
-   *
-   * This async version checks if adding the message would exceed context budget
-   * and triggers compaction BEFORE adding if needed. Use this for large content
-   * like tool outputs.
-   *
-   * @param role - Message role (user, assistant, system, tool)
-   * @param content - Message content
-   * @param metadata - Optional metadata
-   * @returns The added message, or null if history feature is disabled
-   *
-   * @deprecated Use addUserMessage() or addAssistantResponse() instead
-   *
-   * @example
-   * ```typescript
-   * // For large tool outputs, capacity is checked automatically
-   * await ctx.addMessage('tool', largeWebFetchResult);
-   *
-   * // For small messages, same API but less overhead
-   * await ctx.addMessage('user', 'Hello');
-   * ```
-   */
-  async addMessage(role, content, metadata) {
-    if (!this._historyEnabled) {
-      return null;
-    }
-    const estimatedTokens = this._estimator.estimateTokens(content);
-    if (estimatedTokens > 1e3) {
-      const hasCapacity = await this.ensureCapacity(estimatedTokens);
-      if (!hasCapacity) {
-        this.emit("budget:critical", { budget: this._lastBudget });
-      }
-    }
-    const msgRole = role === "user" ? "user" /* USER */ : role === "assistant" ? "assistant" /* ASSISTANT */ : role === "system" ? "developer" /* DEVELOPER */ : "user" /* USER */;
-    const id = this.generateId();
-    const message = {
-      type: "message",
-      id,
-      role: msgRole,
-      content: [{ type: "input_text" /* INPUT_TEXT */, text: content }]
-    };
-    this._conversation.push(message);
-    this._messageMetadata.set(id, {
-      timestamp: Date.now(),
-      tokenCount: estimatedTokens,
-      legacyRole: role
-      // Preserve original role for backward compat
-    });
-    const index = this._conversation.length - 1;
-    this.emit("message:added", { item: message, index });
-    const historyMessage = {
-      id,
-      role,
-      content,
-      timestamp: Date.now(),
-      metadata
-    };
-    return historyMessage;
-  }
-  /**
-   * Add a message to history synchronously (without capacity checking).
-   *
-   * Use this when you need synchronous behavior or for small messages where
-   * capacity checking overhead is not worth it. For large content (tool outputs,
-   * fetched documents), prefer the async `addMessage()` instead.
-   *
-   * @param role - Message role (user, assistant, system, tool)
-   * @param content - Message content
-   * @param metadata - Optional metadata
-   * @returns The added message, or null if history feature is disabled
-   *
-   * @deprecated Use addUserMessage() or addAssistantResponse() instead
-   */
-  addMessageSync(role, content, metadata) {
-    if (!this._historyEnabled) {
-      return null;
-    }
-    const msgRole = role === "user" ? "user" /* USER */ : role === "assistant" ? "assistant" /* ASSISTANT */ : role === "system" ? "developer" /* DEVELOPER */ : "user" /* USER */;
-    const id = this.generateId();
-    const message = {
-      type: "message",
-      id,
-      role: msgRole,
-      content: [{ type: "input_text" /* INPUT_TEXT */, text: content }]
-    };
-    this._conversation.push(message);
-    this._messageMetadata.set(id, {
-      timestamp: Date.now(),
-      tokenCount: this._estimator.estimateTokens(content),
-      legacyRole: role
-      // Preserve original role for backward compat
-    });
-    const index = this._conversation.length - 1;
-    this.emit("message:added", { item: message, index });
-    const historyMessage = {
-      id,
-      role,
-      content,
-      timestamp: Date.now(),
-      metadata
-    };
-    return historyMessage;
-  }
-  /**
-   * Add a tool result to context with automatic capacity management.
-   *
-   * This is a convenience method for adding tool outputs. It:
-   * - Stringifies non-string results
-   * - Checks capacity and triggers compaction if needed
-   * - Adds as a 'tool' role message
-   *
-   * Use this for large tool outputs like web_fetch results, file contents, etc.
-   *
-   * @param result - The tool result (will be stringified for token estimation)
-   * @param metadata - Optional metadata (e.g., tool name, duration)
-   * @returns The added message, or null if history feature is disabled
-   *
-   * @deprecated Use addToolResults() with ToolResult[] instead
-   *
-   * @example
-   * ```typescript
-   * // Add large web fetch result
-   * const html = await webFetch('https://example.com');
-   * await ctx.addToolResult(html, { tool: 'web_fetch', url: 'https://example.com' });
-   *
-   * // Add structured data
-   * await ctx.addToolResult({ items: [...], count: 100 }, { tool: 'search' });
-   * ```
-   */
-  async addToolResult(result, metadata) {
-    if (!this._historyEnabled) {
-      return null;
-    }
-    const content = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-    return this.addMessage("tool", content, metadata);
-  }
-  /**
-   * Get all history messages as InputItem[]
-   * @deprecated Use getConversation() instead - this is an alias
-   */
-  getHistory() {
-    return [...this._conversation];
-  }
-  /**
-   * Get recent N messages as InputItem[]
-   * @deprecated Use getConversation().slice(-count) instead
-   */
-  getRecentHistory(count) {
-    return this._conversation.slice(-count);
-  }
-  /**
-   * Get message count
-   * @deprecated Use getConversationLength() instead
-   */
-  getMessageCount() {
-    return this._conversation.length;
-  }
-  /**
-   * Clear history
-   * @deprecated Use clearConversation() instead
-   */
-  clearHistory(reason) {
-    this.clearConversation(reason);
-  }
-  /**
-   * Get all tool call records
-   */
-  getToolCalls() {
-    return [...this._toolCalls];
-  }
-  // ============================================================================
-  // Tool Execution (with caching integration)
-  // ============================================================================
-  /**
-   * Execute a tool with automatic caching
-   *
-   * This is the recommended way to execute tools - it integrates:
-   * - Permission checking
-   * - Result caching (if tool is cacheable and memory feature enabled)
-   * - History recording
-   * - Metrics tracking
-   */
-  async executeTool(toolName, args, context) {
-    const tool = this._tools.get(toolName);
-    if (!tool) {
-      throw new Error(`Tool '${toolName}' not found`);
-    }
-    const startTime = Date.now();
-    let result;
-    let error;
-    let cached = false;
-    try {
-      if (this._cacheEnabled && this._cache) {
-        const cachedResult = await this._cache.get(tool, args);
-        if (cachedResult !== void 0) {
-          cached = true;
-          result = cachedResult;
-          this.emit("tool:cached", { name: toolName, args });
-        }
-      }
-      if (!cached) {
-        const fullContext = {
-          agentId: context?.agentId ?? this._agentId,
-          taskId: context?.taskId,
-          memory: this._memory?.getAccess(),
-          // May be undefined if memory disabled
-          agentContext: this,
-          // THE source of truth for context management
-          idempotencyCache: this._cache ?? void 0,
-          // May be undefined if memory disabled
-          inContextMemory: this._inContextMemory ?? void 0,
-          // May be undefined if inContextMemory disabled
-          persistentInstructions: this._persistentInstructions ?? void 0,
-          // May be undefined if persistentInstructions disabled
-          signal: context?.signal
-        };
-        this._tools.setToolContext(fullContext);
-        result = await this._tools.execute(toolName, args);
-        if (this._cacheEnabled && this._cache) {
-          await this._cache.set(tool, args, result);
-        }
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-      throw err;
-    } finally {
-      const record2 = {
-        id: this.generateId(),
-        name: toolName,
-        args,
-        result: error ? void 0 : result,
-        error,
-        durationMs: Date.now() - startTime,
-        cached,
-        timestamp: Date.now()
-      };
-      this._toolCalls.push(record2);
-      this.emit("tool:executed", { record: record2 });
-    }
-    return result;
-  }
-  // ============================================================================
-  // Plugin System
-  // ============================================================================
-  /**
-   * Register a context plugin
-   */
-  registerPlugin(plugin) {
-    if (this._plugins.has(plugin.name)) {
-      throw new Error(`Plugin '${plugin.name}' is already registered`);
-    }
-    this._plugins.set(plugin.name, plugin);
-    this.emit("plugin:registered", { name: plugin.name });
-  }
-  /**
-   * Unregister a plugin
-   */
-  unregisterPlugin(name) {
-    const plugin = this._plugins.get(name);
-    if (plugin) {
-      plugin.destroy?.();
-      this._plugins.delete(name);
-      this.emit("plugin:unregistered", { name });
-      return true;
-    }
-    return false;
-  }
-  /**
-   * Get a plugin by name
-   */
-  getPlugin(name) {
-    return this._plugins.get(name);
-  }
-  /**
-   * List all registered plugins
-   */
-  listPlugins() {
-    return Array.from(this._plugins.keys());
-  }
-  // ============================================================================
-  // Context Preparation (Unified)
-  // ============================================================================
-  /**
-   * Get context components for custom assembly.
-   * @deprecated Use prepare({ returnFormat: 'components' }) instead.
-   */
-  async prepareComponents() {
-    const result = await this.prepare({ returnFormat: "components" });
-    return {
-      components: result.components,
-      budget: result.budget,
-      compacted: result.compacted
-    };
-  }
-  /**
-   * Get current budget without full preparation
-   */
-  async getBudget() {
-    const components = await this.buildComponents();
-    return this.calculateBudget(components);
-  }
-  /**
-   * Force compaction
-   */
-  async compact() {
-    const components = await this.buildComponents();
-    const budget = this.calculateBudget(components);
-    return this.doCompaction(components, budget);
-  }
-  // ============================================================================
-  // Configuration
-  // ============================================================================
-  /**
-   * Set compaction strategy
-   */
-  setStrategy(strategy) {
-    this._strategy = createStrategy(strategy, {});
-  }
-  /**
-   * Get max context tokens
-   */
-  getMaxContextTokens() {
-    return this._maxContextTokens;
-  }
-  /**
-   * Set max context tokens
-   */
-  setMaxContextTokens(tokens) {
-    this._maxContextTokens = tokens;
-  }
-  /**
-   * Enable/disable caching
-   */
-  setCacheEnabled(enabled) {
-    this._cacheEnabled = enabled;
-  }
-  /**
-   * Check if caching is enabled
-   */
-  isCacheEnabled() {
-    return this._cacheEnabled;
-  }
-  // ============================================================================
-  // Introspection
-  // ============================================================================
-  /**
-   * Estimate tokens for content
-   */
-  estimateTokens(content, type) {
-    return this._estimator.estimateTokens(content, type);
-  }
-  /**
-   * Get utilization percentage
-   */
-  getUtilization() {
-    return this._lastBudget?.utilizationPercent ?? 0;
-  }
-  /**
-   * Get last calculated budget
-   */
-  getLastBudget() {
-    return this._lastBudget;
-  }
-  // ============================================================================
-  // Auto-Compaction Guard
-  // ============================================================================
-  /**
-   * Ensure there's enough capacity for new content.
-   * If adding the estimated tokens would exceed budget, triggers compaction first.
-   *
-   * This method enables proactive compaction BEFORE content is added, preventing
-   * context overflow. It uses the configured strategy to determine when to compact.
-   *
-   * @param estimatedTokens - Estimated tokens of content to be added
-   * @returns true if capacity is available (after potential compaction), false if cannot make room
-   *
-   * @example
-   * ```typescript
-   * const tokens = ctx.estimateTokens(largeToolOutput);
-   * const hasRoom = await ctx.ensureCapacity(tokens);
-   * if (hasRoom) {
-   *   await ctx.addMessage('tool', largeToolOutput);
-   * } else {
-   *   // Handle overflow - truncate or summarize
-   * }
-   * ```
-   */
-  async ensureCapacity(estimatedTokens) {
-    const components = await this.buildComponents();
-    const budget = this.calculateBudget(components);
-    const projectedUsed = budget.used + estimatedTokens;
-    const availableForContent = budget.total - budget.reserved;
-    const projectedUtilization = projectedUsed / availableForContent;
-    const projectedBudget = {
-      ...budget,
-      used: projectedUsed,
-      available: budget.available - estimatedTokens,
-      utilizationPercent: projectedUtilization * 100,
-      status: projectedUtilization >= 0.9 ? "critical" : projectedUtilization >= 0.75 ? "warning" : "ok"
-    };
-    const needsCompaction = this._strategy.shouldCompact(projectedBudget, {
-      ...DEFAULT_CONTEXT_CONFIG,
-      maxContextTokens: this._maxContextTokens,
-      responseReserve: this._config.responseReserve
-    });
-    if (!needsCompaction) {
-      return true;
-    }
-    this.emit("budget:warning", { budget });
-    await this.doCompaction(components, budget);
-    const newComponents = await this.buildComponents();
-    const newBudget = this.calculateBudget(newComponents);
-    this._lastBudget = newBudget;
-    return newBudget.available >= estimatedTokens;
-  }
-  /**
-   * Get comprehensive metrics
-   */
-  async getMetrics() {
-    let memoryStats;
-    if (this._memory) {
-      const stats = await this._memory.getStats();
-      memoryStats = {
-        totalEntries: stats.totalEntries,
-        totalSizeBytes: stats.totalSizeBytes,
-        utilizationPercent: stats.utilizationPercent
-      };
-    } else {
-      memoryStats = {
-        totalEntries: 0,
-        totalSizeBytes: 0,
-        utilizationPercent: 0
-      };
-    }
-    const cacheStats = this._cache?.getStats() ?? {
-      entries: 0,
-      hits: 0,
-      misses: 0,
-      hitRate: 0
-    };
-    return {
-      historyMessageCount: this._conversation.length,
-      toolCallCount: this._toolCalls.length,
-      cacheStats,
-      memoryStats,
-      pluginCount: this._plugins.size,
-      utilizationPercent: this._lastBudget?.utilizationPercent ?? 0
-    };
-  }
-  // ============================================================================
-  // Session Persistence (Unified)
-  // ============================================================================
-  /**
-   * Get state for session persistence
-   *
-   * Serializes ALL state:
-   * - History and tool calls
-   * - Tool enable/disable state
-   * - Memory entries (if enabled)
-   * - Permission state (if enabled)
-   * - Plugin state
-   * - Feature configuration
-   */
-  async getState() {
-    const pluginStates = {};
-    for (const [name, plugin] of this._plugins) {
-      const state = plugin.getState?.();
-      if (state !== void 0) {
-        pluginStates[name] = state;
-      }
-    }
-    let memory;
-    if (this._memory) {
-      memory = await this._memory.serialize();
-    }
-    const permissionState = this._permissions?.getState() ?? {
-      version: 1,
-      approvals: {},
-      blocklist: [],
-      allowlist: []
-    };
-    const metadataObj = {};
-    for (const [key, value] of this._messageMetadata) {
-      metadataObj[key] = value;
-    }
-    return {
-      version: 2,
-      // v2 format with conversation as InputItem[] only
-      core: {
-        systemPrompt: this._systemPrompt,
-        instructions: this._instructions,
-        // v2: Store conversation as InputItem[] (no legacy HistoryMessage[])
-        conversation: this._conversation,
-        messageMetadata: metadataObj,
-        toolCalls: this._toolCalls
-      },
-      tools: this._tools.getState(),
-      memory,
-      permissions: permissionState,
-      plugins: pluginStates,
-      config: {
-        model: this._config.model,
-        maxContextTokens: this._maxContextTokens,
-        strategy: this._strategy.name,
-        features: this._features
-      }
-    };
-  }
-  /**
-   * Restore from saved state
-   *
-   * Restores ALL state from a previous session.
-   * Handles both v1 (HistoryMessage[]) and v2 (InputItem[]) formats.
-   */
-  async restoreState(state) {
-    this._systemPrompt = state.core.systemPrompt || "";
-    this._instructions = state.core.instructions || "";
-    this._toolCalls = state.core.toolCalls || [];
-    if (state.version >= 2 && state.core.conversation) {
-      this._conversation = state.core.conversation;
-      this._messageMetadata.clear();
-      if (state.core.messageMetadata) {
-        for (const [key, value] of Object.entries(state.core.messageMetadata)) {
-          this._messageMetadata.set(key, value);
-        }
-      }
-    } else if (state.core.history) {
-      this._conversation = [];
-      this._messageMetadata.clear();
-      for (const msg of state.core.history) {
-        const role = msg.role === "user" ? "user" /* USER */ : msg.role === "assistant" ? "assistant" /* ASSISTANT */ : msg.role === "system" ? "developer" /* DEVELOPER */ : "user" /* USER */;
-        const inputItem = {
-          type: "message",
-          id: msg.id,
-          role,
-          content: [{ type: "input_text" /* INPUT_TEXT */, text: msg.content }]
-        };
-        this._conversation.push(inputItem);
-        this._messageMetadata.set(msg.id, {
-          timestamp: msg.timestamp,
-          tokenCount: this._estimator.estimateTokens(msg.content)
-        });
-      }
-    } else {
-      this._conversation = [];
-      this._messageMetadata.clear();
-    }
-    this._protectedFromIndex = 0;
-    if (state.config.maxContextTokens) {
-      this._maxContextTokens = state.config.maxContextTokens;
-    }
-    if (state.config.strategy) {
-      this._strategy = createStrategy(state.config.strategy, {});
-    }
-    if (state.tools) {
-      this._tools.loadState(state.tools);
-    }
-    if (state.memory && this._memory) {
-      await this._memory.restore(state.memory);
-    }
-    if (state.permissions && this._permissions) {
-      this._permissions.loadState(state.permissions);
-    }
-    for (const [name, pluginState] of Object.entries(state.plugins)) {
-      const plugin = this._plugins.get(name);
-      if (plugin?.restoreState) {
-        plugin.restoreState(pluginState);
-      }
-    }
-  }
-  /**
-   * Save the current context state to storage.
-   *
-   * @param sessionId - Session ID to save as. If not provided, uses the current sessionId.
-   * @param metadata - Optional metadata to merge with existing session metadata.
-   * @throws Error if no storage is configured or no sessionId is available.
-   *
-   * @example
-   * ```typescript
-   * // Save to a new session
-   * await ctx.save('my-session-001', { title: 'Research on AI' });
-   *
-   * // Save to current session (must have been loaded or saved before)
-   * await ctx.save();
-   * ```
-   */
-  async save(sessionId, metadata, stateOverride) {
-    if (!this._storage) {
-      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
-    }
-    const targetSessionId = sessionId ?? this._sessionId;
-    if (!targetSessionId) {
-      throw new Error("No sessionId provided and no current session. Provide a sessionId or load a session first.");
-    }
-    const state = stateOverride ?? await this.getState();
-    const finalMetadata = {
-      ...this._sessionMetadata,
-      ...metadata
-    };
-    await this._storage.save(targetSessionId, state, finalMetadata);
-    this._sessionId = targetSessionId;
-    this._sessionMetadata = finalMetadata;
-  }
-  /**
-   * Load a session from storage and restore its state.
-   *
-   * @param sessionId - Session ID to load.
-   * @returns true if the session was found and loaded, false if not found.
-   * @throws Error if no storage is configured.
-   *
-   * @example
-   * ```typescript
-   * const loaded = await ctx.load('my-session-001');
-   * if (loaded) {
-   *   console.log('Session restored!');
-   * } else {
-   *   console.log('Session not found, starting fresh.');
-   * }
-   * ```
-   */
-  async load(sessionId) {
-    const result = await this.loadRaw(sessionId);
-    if (!result) {
-      return false;
-    }
-    await this.restoreState(result.state);
-    return true;
-  }
-  /**
-   * Load session state from storage without restoring it.
-   * Useful for agents that need to process state before restoring (e.g., to restore agentState).
-   *
-   * @param sessionId - Session ID to load.
-   * @returns The stored state and metadata, or null if not found.
-   */
-  async loadRaw(sessionId) {
-    if (!this._storage) {
-      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
-    }
-    const stored = await this._storage.load(sessionId);
-    if (!stored) {
-      return null;
-    }
-    this._sessionId = sessionId;
-    this._sessionMetadata = stored.metadata;
-    return { state: stored.state, metadata: stored.metadata };
-  }
-  /**
-   * Check if a session exists in storage.
-   *
-   * @param sessionId - Session ID to check.
-   * @returns true if the session exists.
-   * @throws Error if no storage is configured.
-   */
-  async sessionExists(sessionId) {
-    if (!this._storage) {
-      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
-    }
-    return this._storage.exists(sessionId);
-  }
-  /**
-   * Delete a session from storage.
-   *
-   * @param sessionId - Session ID to delete. If not provided, deletes the current session.
-   * @throws Error if no storage is configured or no sessionId is available.
-   */
-  async deleteSession(sessionId) {
-    if (!this._storage) {
-      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
-    }
-    const targetSessionId = sessionId ?? this._sessionId;
-    if (!targetSessionId) {
-      throw new Error("No sessionId provided and no current session.");
-    }
-    await this._storage.delete(targetSessionId);
-    if (targetSessionId === this._sessionId) {
-      this._sessionId = null;
-      this._sessionMetadata = {};
-    }
-  }
-  // ============================================================================
-  // Cleanup
-  // ============================================================================
-  /**
-   * Destroy the context and release resources
-   */
-  destroy() {
-    for (const client of this._mcpClients) {
-      client.unregisterTools(this._tools);
-    }
-    this._mcpClients = [];
-    this._mcpServerRefs = [];
-    for (const plugin of this._plugins.values()) {
-      plugin.destroy?.();
-    }
-    this._plugins.clear();
-    this._cache?.destroy();
-    this._memory?.destroy();
-    this._tools.destroy();
-    this._conversation = [];
-    this._messageMetadata.clear();
-    this._protectedFromIndex = 0;
-    this._toolCalls = [];
-    this.removeAllListeners();
-  }
-  // ============================================================================
-  // Private Methods
-  // ============================================================================
-  /**
-   * Build all context components
-   * Uses task-type-aware priority profiles for compaction ordering
-   * Conditionally includes components based on enabled features
-   */
-  async buildComponents() {
-    const components = [];
-    const taskType = this.getTaskType();
-    const priorityProfile = PRIORITY_PROFILES[taskType];
-    const taskTypePrompt = this.buildTaskTypePromptForFeatures(taskType);
-    const fullSystemPrompt = this._systemPrompt ? `${this._systemPrompt}
-
-${taskTypePrompt}` : taskTypePrompt;
-    if (fullSystemPrompt) {
-      components.push({
-        name: "system_prompt",
-        content: fullSystemPrompt,
-        priority: 0,
-        compactable: false
-      });
-    }
-    if (this._instructions) {
-      components.push({
-        name: "instructions",
-        content: this._instructions,
-        priority: 0,
-        compactable: false
-      });
-    }
-    const featureInstructions = buildFeatureInstructions(this._features);
-    if (featureInstructions) {
-      components.push(featureInstructions);
-    }
-    if (this._features.history && this._conversation.length > 0) {
-      components.push({
-        name: "conversation_history",
-        content: this.formatConversationForContext(),
-        priority: priorityProfile.conversation_history ?? 6,
-        compactable: true,
-        metadata: {
-          messageCount: this._conversation.length,
-          strategy: taskType === "research" ? "summarize" : "truncate"
-        }
-      });
-    }
-    if (this._features.memory && this._memory) {
-      const memoryIndex = await this._memory.formatIndex();
-      const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes("Memory is empty.");
-      if (!isEmpty) {
-        components.push({
-          name: "memory_index",
-          content: memoryIndex,
-          priority: priorityProfile.memory_index ?? 8,
-          compactable: true,
-          metadata: {
-            strategy: "evict"
-          }
-        });
-      }
-    }
-    for (const plugin of this._plugins.values()) {
-      try {
-        const component = await plugin.getComponent();
-        if (component) {
-          const overridePriority = priorityProfile[component.name];
-          if (overridePriority !== void 0) {
-            component.priority = overridePriority;
-          }
-          components.push(component);
-        }
-      } catch (error) {
-        console.warn(`Plugin '${plugin.name}' failed to get component:`, error);
-      }
-    }
-    if (this._currentInput) {
-      components.push({
-        name: "current_input",
-        content: this._currentInput,
-        priority: 0,
-        compactable: false
-      });
-    }
-    return components;
-  }
-  /**
-   * Build task-type prompt adjusted for enabled features
-   */
-  buildTaskTypePromptForFeatures(taskType) {
-    const basePrompt = TASK_TYPE_PROMPTS[taskType];
-    if (!this._features.memory) {
-      if (taskType === "research") {
-        return `## Research Protocol
-
-You are conducting research. Follow this workflow:
-
-### 1. SEARCH PHASE
-- Execute searches to find relevant sources
-
-### 2. READ PHASE
-For each promising result:
-- Read/scrape the content
-- Extract key points (2-3 sentences per source)
-
-### 3. SYNTHESIZE PHASE
-- Cross-reference and consolidate findings
-- Write the final report`;
-      } else if (taskType === "coding") {
-        return `## Coding Protocol
-
-You are implementing code changes. Guidelines:
-- Read relevant files before making changes
-- Implement incrementally
-- Code file contents are large - summarize structure after reading`;
-      } else if (taskType === "analysis") {
-        return `## Analysis Protocol
-
-You are performing analysis. Guidelines:
-- Summarize data immediately after loading (raw data is large)
-- Keep only essential context for current analysis step`;
-      } else {
-        return `## Task Execution
-
-Guidelines:
-- Focus on completing the task efficiently`;
-      }
-    }
-    return basePrompt;
-  }
-  /**
-   * Calculate budget
-   */
-  calculateBudget(components) {
-    const breakdown = {};
-    let used = 0;
-    for (const component of components) {
-      const tokens = estimateComponentTokens(component, this._estimator);
-      breakdown[component.name] = tokens;
-      used += tokens;
-    }
-    const total = this._maxContextTokens;
-    const reserved = Math.floor(total * this._config.responseReserve);
-    const available = total - reserved - used;
-    const utilizationRatio = (used + reserved) / total;
-    const utilizationPercent = used / (total - reserved) * 100;
-    let status;
-    if (utilizationRatio >= 0.9) {
-      status = "critical";
-    } else if (utilizationRatio >= 0.75) {
-      status = "warning";
-    } else {
-      status = "ok";
-    }
-    return {
-      total,
-      reserved,
-      used,
-      available,
-      utilizationPercent,
-      status,
-      breakdown
-    };
-  }
-  /**
-   * Perform compaction
-   */
-  async doCompaction(components, budget) {
-    const log = [];
-    let tokensFreed = 0;
-    let currentBudget = budget;
-    const compactable = components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-    for (const component of compactable) {
-      if (currentBudget.status === "ok") break;
-      let freed = 0;
-      if (component.name === "conversation_history") {
-        const result = await this.compactConversation(currentBudget);
-        freed = result.tokensFreed;
-        log.push(...result.log);
-      } else if (component.name === "memory_index") {
-        freed = await this.compactMemory();
-        if (freed > 0) log.push(`Compacted memory: freed ~${freed} tokens`);
-      } else {
-        const plugin = this._plugins.get(component.name);
-        if (plugin?.compact) {
-          freed = await plugin.compact(currentBudget.available, this._estimator);
-          if (freed > 0) log.push(`Compacted ${component.name}: freed ~${freed} tokens`);
-        }
-      }
-      tokensFreed += freed;
-      const newComponents = await this.buildComponents();
-      currentBudget = this.calculateBudget(newComponents);
-    }
-    this._compactionCount++;
-    this._totalTokensFreed += tokensFreed;
-    const finalComponents = await this.buildComponents();
-    const finalBudget = this.calculateBudget(finalComponents);
-    this.emit("compacted", { log, tokensFreed });
-    return {
-      components: finalComponents,
-      budget: finalBudget,
-      compacted: true,
-      compactionLog: log
-    };
-  }
-  /**
-   * Compact memory
-   */
-  async compactMemory() {
-    if (!this._memory) {
-      return 0;
-    }
-    const beforeIndex = await this._memory.formatIndex();
-    const beforeTokens = this._estimator.estimateTokens(beforeIndex);
-    await this._memory.evict(3, "lru");
-    const afterIndex = await this._memory.formatIndex();
-    const afterTokens = this._estimator.estimateTokens(afterIndex);
-    return Math.max(0, beforeTokens - afterTokens);
-  }
-  /**
-   * Create token estimator
-   */
-  createEstimator() {
-    return {
-      estimateTokens: (text, contentType) => {
-        if (!text || text.length === 0) return 0;
-        const ratio = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
-        return Math.ceil(text.length / ratio);
-      },
-      estimateDataTokens: (data, contentType) => {
-        const serialized = JSON.stringify(data);
-        const ratio = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
-        return Math.ceil(serialized.length / ratio);
-      }
-    };
-  }
-  /**
-   * Generate unique ID
-   */
-  generateId() {
-    return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  }
-  // ============================================================================
-  // Helper Methods for Conversation Management (NEW)
-  // ============================================================================
-  /**
-   * Extract text content from Content array
-   */
-  extractTextFromContent(content) {
-    const texts = [];
-    for (const c of content) {
-      if (c.type === "input_text" /* INPUT_TEXT */ || c.type === "output_text" /* OUTPUT_TEXT */) {
-        texts.push(c.text || "");
-      } else if (c.type === "tool_result" /* TOOL_RESULT */) {
-        texts.push(c.content || "");
-      }
-    }
-    return texts.join(" ");
-  }
-  /**
-   * Estimate tokens for a single InputItem
-   */
-  estimateMessageTokens(item) {
-    if (item.type === "message") {
-      const msg = item;
-      let total = 4;
-      for (const c of msg.content) {
-        if (c.type === "input_text" /* INPUT_TEXT */ || c.type === "output_text" /* OUTPUT_TEXT */) {
-          total += this._estimator.estimateTokens(c.text || "");
-        } else if (c.type === "tool_use" /* TOOL_USE */) {
-          total += this._estimator.estimateTokens(c.name || "");
-          total += this._estimator.estimateDataTokens(c.input || {});
-        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
-          total += this._estimator.estimateTokens(c.content || "");
-        } else if (c.type === "input_image_url" /* INPUT_IMAGE_URL */) {
-          total += 200;
-        }
-      }
-      return total;
-    }
-    return 50;
-  }
-  /**
-   * Find tool_use/tool_result pairs in conversation
-   * Returns Map<tool_use_id, message_index>
-   */
-  findToolPairs() {
-    const pairs = /* @__PURE__ */ new Map();
-    for (let i = 0; i < this._conversation.length; i++) {
-      const item = this._conversation[i];
-      if (!item) continue;
-      if (item.type === "message") {
-        const msg = item;
-        for (const content of msg.content) {
-          if (content.type === "tool_use" /* TOOL_USE */) {
-            const toolUseId = content.id;
-            if (toolUseId) {
-              pairs.set(toolUseId, { useIndex: i, resultIndex: null });
-            }
-          } else if (content.type === "tool_result" /* TOOL_RESULT */) {
-            const toolUseId = content.tool_use_id;
-            const pair = pairs.get(toolUseId);
-            if (pair) {
-              pair.resultIndex = i;
-            }
-          }
-        }
-      }
-    }
-    return pairs;
-  }
-  /**
-   * Remove a tool_use/tool_result pair from conversation by toolUseId.
-   * Used by ToolResultEvictionPlugin to evict old tool results.
-   *
-   * @param toolUseId - The tool_use ID linking request/response
-   * @returns Estimated tokens freed
-   */
-  removeToolPair(toolUseId) {
-    let tokensFreed = 0;
-    const indicesToRemove = /* @__PURE__ */ new Set();
-    for (let i = 0; i < this._conversation.length; i++) {
-      const item = this._conversation[i];
-      if (item?.type !== "message") continue;
-      const msg = item;
-      for (const content of msg.content) {
-        if (content.type === "tool_use" /* TOOL_USE */ && content.id === toolUseId) {
-          indicesToRemove.add(i);
-          const meta = this._messageMetadata.get(msg.id);
-          tokensFreed += meta?.tokenCount ?? this.estimateMessageTokens(msg);
-        }
-        if (content.type === "tool_result" /* TOOL_RESULT */ && content.tool_use_id === toolUseId) {
-          indicesToRemove.add(i);
-          const meta = this._messageMetadata.get(msg.id);
-          tokensFreed += meta?.tokenCount ?? this.estimateMessageTokens(msg);
-        }
-      }
-    }
-    if (indicesToRemove.size === 0) return 0;
-    const sortedIndices = [...indicesToRemove].sort((a, b) => b - a);
-    for (const idx of sortedIndices) {
-      const item = this._conversation[idx];
-      const id = item?.id;
-      if (id) this._messageMetadata.delete(id);
-      this._conversation.splice(idx, 1);
-    }
-    let removedBeforeProtected = 0;
-    for (const idx of indicesToRemove) {
-      if (idx < this._protectedFromIndex) removedBeforeProtected++;
-    }
-    this._protectedFromIndex = Math.max(0, this._protectedFromIndex - removedBeforeProtected);
-    if (this._toolResultEvictionPlugin) {
-      this._toolResultEvictionPlugin.updateMessageIndices(indicesToRemove);
-    }
-    return tokensFreed;
-  }
-  /**
-   * Compact conversation respecting tool pairs and protected messages
-   */
-  async compactConversation(_budget) {
-    const log = [];
-    const toolPairs = this.findToolPairs();
-    const compactableEnd = this._protectedFromIndex;
-    if (compactableEnd <= 0) {
-      log.push("No compactable messages (all protected)");
-      return { log, tokensFreed: 0 };
-    }
-    const toolPairIndices = /* @__PURE__ */ new Map();
-    for (const [, pair] of toolPairs) {
-      if (pair.resultIndex !== null) {
-        const group = /* @__PURE__ */ new Set([pair.useIndex, pair.resultIndex]);
-        toolPairIndices.set(pair.useIndex, group);
-        toolPairIndices.set(pair.resultIndex, group);
-      }
-    }
-    const safeIndices = [];
-    for (let i = 0; i < compactableEnd; i++) {
-      let isSafe = true;
-      const pairGroup = toolPairIndices.get(i);
-      if (pairGroup) {
-        for (const pairIndex of pairGroup) {
-          if (pairIndex >= compactableEnd) {
-            isSafe = false;
-            break;
-          }
-        }
-      }
-      if (isSafe) {
-        safeIndices.push(i);
-      }
-    }
-    if (safeIndices.length === 0) {
-      log.push("No safe messages to compact (all involved in tool pairs)");
-      return { log, tokensFreed: 0 };
-    }
-    const toRemove = /* @__PURE__ */ new Set();
-    let removed = 0;
-    const targetRemoval = Math.min(
-      Math.floor(safeIndices.length / 2),
-      safeIndices.length
-    );
-    for (const idx of safeIndices) {
-      if (removed >= targetRemoval) break;
-      const pairGroup = toolPairIndices.get(idx);
-      if (pairGroup) {
-        if (!toRemove.has(idx)) {
-          for (const pairIdx of pairGroup) {
-            toRemove.add(pairIdx);
-            removed++;
-          }
-        }
-      } else {
-        toRemove.add(idx);
-        removed++;
-      }
-    }
-    let tokensFreed = 0;
-    const newConversation = [];
-    for (let i = 0; i < this._conversation.length; i++) {
-      const item = this._conversation[i];
-      if (!item) continue;
-      if (toRemove.has(i)) {
-        const id = item.id;
-        const metadata = id ? this._messageMetadata.get(id) : null;
-        tokensFreed += metadata?.tokenCount || this.estimateMessageTokens(item);
-        if (id) {
-          this._messageMetadata.delete(id);
-        }
-      } else {
-        newConversation.push(item);
-      }
-    }
-    this._conversation = newConversation;
-    let removedBeforeProtected = 0;
-    for (const idx of toRemove) {
-      if (idx < this._protectedFromIndex) {
-        removedBeforeProtected++;
-      }
-    }
-    this._protectedFromIndex -= removedBeforeProtected;
-    log.push(`Removed ${toRemove.size} messages, freed ~${tokensFreed} tokens`);
-    this._compactionCount++;
-    this._totalTokensFreed += tokensFreed;
-    this.emit("history:compacted", { removedCount: toRemove.size });
-    return { log, tokensFreed };
-  }
-  /**
-   * Build final InputItem[] for LLM call
-   */
-  async buildLLMInput(instructionOverride) {
-    const input = [];
-    const systemParts = [];
-    if (this._systemPrompt) {
-      systemParts.push(this._systemPrompt);
-    }
-    const taskTypePrompt = this.buildTaskTypePromptForFeatures(this.getTaskType());
-    if (taskTypePrompt) {
-      systemParts.push(taskTypePrompt);
-    }
-    const instructions = instructionOverride ?? this._instructions;
-    if (instructions) {
-      systemParts.push(instructions);
-    }
-    const featureInstructions = buildFeatureInstructions(this._features);
-    if (featureInstructions?.content && typeof featureInstructions.content === "string") {
-      systemParts.push(featureInstructions.content);
-    }
-    if (this._features.memory && this._memory) {
-      const memoryIndex = await this._memory.formatIndex();
-      if (memoryIndex && !memoryIndex.includes("Memory is empty.")) {
-        systemParts.push(`## Working Memory
-${memoryIndex}`);
-      }
-    }
-    for (const plugin of this._plugins.values()) {
-      try {
-        const component = await plugin.getComponent();
-        if (component?.content && typeof component.content === "string") {
-          systemParts.push(component.content);
-        }
-      } catch {
-      }
-    }
-    if (systemParts.length > 0) {
-      input.push({
-        type: "message",
-        role: "developer" /* DEVELOPER */,
-        content: [{ type: "input_text" /* INPUT_TEXT */, text: systemParts.join("\n\n") }]
-      });
-    }
-    input.push(...this._conversation);
-    return input;
-  }
-  /**
-   * Format conversation for context (backward compat for buildComponents)
-   */
-  formatConversationForContext() {
-    const lines = [];
-    for (const item of this._conversation) {
-      if (item.type === "message") {
-        const msg = item;
-        const roleLabel = msg.role === "user" /* USER */ ? "User" : msg.role === "assistant" /* ASSISTANT */ ? "Assistant" : msg.role === "developer" /* DEVELOPER */ ? "System" : "Message";
-        const textContent = this.extractTextFromContent(msg.content);
-        if (textContent) {
-          lines.push(`${roleLabel}: ${textContent}`);
-        }
-        for (const c of msg.content) {
-          if (c.type === "tool_use" /* TOOL_USE */) {
-            const toolUse = c;
-            lines.push(`${roleLabel}: [Called tool: ${toolUse.name}]`);
-          } else if (c.type === "tool_result" /* TOOL_RESULT */) {
-            const toolResult = c;
-            const preview = (toolResult.content || "").slice(0, 200);
-            lines.push(`${roleLabel}: [Tool result: ${preview}${toolResult.content?.length > 200 ? "..." : ""}]`);
-          }
-        }
-      }
-    }
-    return lines.join("\n\n");
-  }
-};
-
-// src/infrastructure/providers/base/BaseProvider.ts
-var BaseProvider = class {
-  constructor(config) {
-    this.config = config;
-  }
-  /**
-   * Validate provider configuration
-   * Returns validation result with details
-   */
-  async validateConfig() {
-    const validation = this.validateApiKey();
-    return validation.isValid;
-  }
-  /**
-   * Validate API key format and presence
-   * Can be overridden by providers with specific key formats
-   */
-  validateApiKey() {
-    const apiKey = this.config.apiKey;
-    if (!apiKey || apiKey.trim().length === 0) {
-      return { isValid: false };
-    }
-    const placeholders = [
-      "your-api-key",
-      "YOUR_API_KEY",
-      "sk-xxx",
-      "api-key-here",
-      "REPLACE_ME",
-      "<your-key>"
-    ];
-    if (placeholders.some((p) => apiKey.includes(p))) {
-      return {
-        isValid: false,
-        warning: `API key appears to be a placeholder value`
-      };
-    }
-    return this.validateProviderSpecificKeyFormat(apiKey);
-  }
-  /**
-   * Override this method in provider implementations for specific key format validation
-   */
-  validateProviderSpecificKeyFormat(_apiKey) {
-    return { isValid: true };
-  }
-  /**
-   * Validate config and throw if invalid
-   */
-  assertValidConfig() {
-    const validation = this.validateApiKey();
-    if (!validation.isValid) {
-      throw new InvalidConfigError(
-        `Invalid API key for provider '${this.name}'${validation.warning ? `: ${validation.warning}` : ""}`
-      );
-    }
-  }
-  /**
-   * Get API key from config
-   */
-  getApiKey() {
-    return this.config.apiKey;
-  }
-  /**
-   * Get base URL if configured
-   */
-  getBaseURL() {
-    return this.config.baseURL;
-  }
-  /**
-   * Get timeout configuration
-   */
-  getTimeout() {
-    return this.config.timeout || 6e4;
-  }
-  /**
-   * Get max retries configuration
-   */
-  getMaxRetries() {
-    return this.config.maxRetries || 3;
-  }
-};
-
-// src/infrastructure/providers/base/BaseTextProvider.ts
-init_CircuitBreaker();
-init_Logger();
-init_Metrics();
-var BaseTextProvider = class extends BaseProvider {
-  circuitBreaker;
-  logger;
-  _isObservabilityInitialized = false;
-  constructor(config) {
-    super(config);
-    this.logger = exports.logger.child({
-      component: "Provider",
-      provider: "unknown"
-    });
-  }
-  /**
-   * Auto-initialize observability on first use (lazy initialization)
-   * This is called automatically by executeWithCircuitBreaker()
-   * @internal
-   */
-  ensureObservabilityInitialized() {
-    if (this._isObservabilityInitialized) {
-      return;
-    }
-    const providerName = this.name || "unknown";
-    const cbConfig = this.config.circuitBreaker || exports.DEFAULT_CIRCUIT_BREAKER_CONFIG;
-    this.circuitBreaker = new exports.CircuitBreaker(
-      `provider:${providerName}`,
-      cbConfig
-    );
-    this.logger = exports.logger.child({
-      component: "Provider",
-      provider: providerName
-    });
-    this.circuitBreaker.on("opened", (data) => {
-      this.logger.warn(data, "Circuit breaker opened");
-      exports.metrics.increment("circuit_breaker.opened", 1, {
-        breaker: data.name,
-        provider: providerName
-      });
-    });
-    this.circuitBreaker.on("closed", (data) => {
-      this.logger.info(data, "Circuit breaker closed");
-      exports.metrics.increment("circuit_breaker.closed", 1, {
-        breaker: data.name,
-        provider: providerName
-      });
-    });
-    this._isObservabilityInitialized = true;
-  }
-  /**
-   * DEPRECATED: No longer needed, kept for backward compatibility
-   * Observability is now auto-initialized on first use
-   * @deprecated Initialization happens automatically
-   */
-  initializeObservability(_providerName) {
-    this.ensureObservabilityInitialized();
-  }
-  /**
-   * Execute with circuit breaker protection (helper for subclasses)
-   */
-  async executeWithCircuitBreaker(operation, model) {
-    this.ensureObservabilityInitialized();
-    const startTime = Date.now();
-    const operationName = "llm.generate";
-    this.logger.debug({
-      operation: operationName,
-      model
-    }, "LLM call started");
-    exports.metrics.increment("provider.llm.request", 1, {
-      provider: this.name,
-      model: model || "unknown"
-    });
-    try {
-      if (!this.circuitBreaker) {
-        return await operation();
-      }
-      const result = await this.circuitBreaker.execute(operation);
-      const duration = Date.now() - startTime;
-      this.logger.info({
-        operation: operationName,
-        model,
-        duration
-      }, "LLM call completed");
-      exports.metrics.timing("provider.llm.latency", duration, {
-        provider: this.name,
-        model: model || "unknown"
-      });
-      exports.metrics.increment("provider.llm.response", 1, {
-        provider: this.name,
-        model: model || "unknown",
-        status: "success"
-      });
-      return result;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error({
-        operation: operationName,
-        model,
-        error: error.message,
-        duration
-      }, "LLM call failed");
-      exports.metrics.increment("provider.llm.error", 1, {
-        provider: this.name,
-        model: model || "unknown",
-        error: error.name
-      });
-      throw error;
-    }
-  }
-  /**
-   * Get circuit breaker metrics
-   */
-  getCircuitBreakerMetrics() {
-    if (!this.circuitBreaker) {
-      return null;
-    }
-    return this.circuitBreaker.getMetrics();
-  }
-  /**
-   * Normalize input to string (helper for providers that don't support complex input)
-   */
-  normalizeInputToString(input) {
-    if (typeof input === "string") {
-      return input;
-    }
-    const textParts = [];
-    for (const item of input) {
-      if (item.type === "message") {
-        for (const content of item.content) {
-          if (content.type === "input_text") {
-            textParts.push(content.text);
-          } else if (content.type === "output_text") {
-            textParts.push(content.text);
-          }
-        }
-      }
-    }
-    return textParts.join("\n");
-  }
-  /**
-   * Clean up provider resources (circuit breaker listeners, etc.)
-   * Should be called when the provider is no longer needed.
-   */
-  destroy() {
-    if (this.circuitBreaker) {
-      this.circuitBreaker.removeAllListeners();
-      this.circuitBreaker = void 0;
-    }
-    this._isObservabilityInitialized = false;
-  }
-};
-
-// src/infrastructure/providers/openai/OpenAIResponsesConverter.ts
-var OpenAIResponsesConverter = class {
-  /**
-   * Convert our input format to Responses API format
-   */
-  convertInput(input, instructions) {
-    if (typeof input === "string") {
-      return {
-        input,
-        instructions
-      };
-    }
-    const items = [];
-    for (const item of input) {
-      if (item.type === "message") {
-        const messageContent = [];
-        const isAssistant = item.role === "assistant";
-        for (const content of item.content) {
-          switch (content.type) {
-            case "input_text":
-            case "output_text":
-              messageContent.push({
-                type: isAssistant ? "output_text" : "input_text",
-                text: content.text
-              });
-              break;
-            case "input_image_url":
-              if (!isAssistant) {
-                messageContent.push({
-                  type: "input_image",
-                  image_url: content.image_url.url,
-                  ...content.image_url.detail && { detail: content.image_url.detail }
-                });
-              }
-              break;
-            case "tool_use":
-              items.push({
-                type: "function_call",
-                call_id: content.id,
-                name: content.name,
-                arguments: content.arguments
-              });
-              break;
-            case "tool_result":
-              const output = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
-              items.push({
-                type: "function_call_output",
-                call_id: content.tool_use_id,
-                output
-              });
-              break;
-          }
-        }
-        if (messageContent.length > 0) {
-          items.push({
-            type: "message",
-            role: item.role,
-            content: messageContent,
-            // Only include id if it's a valid OpenAI message ID (starts with msg_)
-            // New messages shouldn't have id; previous outputs keep their original id
-            ...item.id?.startsWith("msg_") ? { id: item.id } : {},
-            status: "completed"
-          });
-        }
-      } else if (item.type === "compaction") {
-        items.push({
-          type: "compaction",
-          id: item.id,
-          encrypted_content: item.encrypted_content
-        });
-      }
-    }
-    return {
-      input: items,
-      instructions
-    };
-  }
-  /**
-   * Convert Responses API response to our LLMResponse format
-   */
-  convertResponse(response) {
-    const content = [];
-    let outputText = "";
-    let messageId;
-    for (const item of response.output || []) {
-      if (item.type === "message") {
-        const messageItem = item;
-        if (!messageId && messageItem.id) {
-          messageId = messageItem.id;
-        }
-        for (const contentItem of messageItem.content || []) {
-          if (contentItem.type === "output_text") {
-            const textContent = contentItem;
-            content.push({
-              type: "output_text",
-              text: textContent.text,
-              annotations: textContent.annotations || []
-            });
-            outputText += textContent.text;
-          }
-        }
-      } else if (item.type === "function_call") {
-        const functionCall = item;
-        content.push({
-          type: "tool_use",
-          id: functionCall.call_id,
-          name: functionCall.name,
-          arguments: functionCall.arguments
-        });
-      } else if (item.type === "reasoning") {
-        const reasoning = item;
-        if (reasoning.summary) {
-          content.push({
-            type: "reasoning",
-            summary: reasoning.summary,
-            // effort field may not exist in all versions
-            ..."effort" in reasoning && { effort: reasoning.effort }
-          });
-        }
-      }
-    }
-    if (!outputText) {
-      outputText = response.output_text || "";
-    }
-    const finalMessageId = messageId || response.id;
-    return {
-      id: response.id,
-      object: "response",
-      created_at: response.created_at,
-      status: response.status || "completed",
-      model: response.model,
-      output: [
-        {
-          type: "message",
-          id: finalMessageId,
-          role: "assistant" /* ASSISTANT */,
-          content
-        }
-      ],
-      output_text: outputText,
-      usage: {
-        input_tokens: response.usage?.input_tokens || 0,
-        output_tokens: response.usage?.output_tokens || 0,
-        total_tokens: response.usage?.total_tokens || 0
-      }
-    };
-  }
-  /**
-   * Convert our tool definitions to Responses API format
-   *
-   * Key difference: Responses API uses internally-tagged format
-   * (no nested `function` object) and strict mode requires proper schemas
-   */
-  convertTools(tools) {
-    return tools.map((tool) => {
-      if (tool.type === "function") {
-        const funcDef = tool.function;
-        const useStrict = funcDef.strict === true;
-        return {
-          type: "function",
-          name: funcDef.name,
-          description: funcDef.description || "",
-          parameters: funcDef.parameters || null,
-          strict: useStrict
-        };
-      }
-      return tool;
-    });
-  }
-  /**
-   * Convert tool_choice option to Responses API format
-   */
-  convertToolChoice(toolChoice) {
-    if (!toolChoice || toolChoice === "auto") {
-      return "auto";
-    }
-    if (toolChoice === "required") {
-      return "required";
-    }
-    return {
-      type: "function",
-      name: toolChoice.function.name
-    };
-  }
-  /**
-   * Convert response_format option to Responses API format (modalities)
-   */
-  convertResponseFormat(responseFormat) {
-    if (!responseFormat) {
-      return void 0;
-    }
-    if (responseFormat.type === "json_schema" && responseFormat.json_schema) {
-      return {
-        type: "text",
-        text: {
-          type: "json_schema",
-          name: responseFormat.json_schema.name || "response",
-          schema: responseFormat.json_schema.schema || responseFormat.json_schema,
-          description: responseFormat.json_schema.description,
-          strict: responseFormat.json_schema.strict !== false
-        }
-      };
-    }
-    if (responseFormat.type === "json_object") {
-      return {
-        type: "text",
-        text: {
-          type: "json_object"
-        }
-      };
-    }
-    return {
-      type: "text",
-      text: {
-        type: "text"
-      }
-    };
-  }
-};
-
-// src/domain/entities/StreamEvent.ts
-var StreamEventType = /* @__PURE__ */ ((StreamEventType2) => {
-  StreamEventType2["RESPONSE_CREATED"] = "response.created";
-  StreamEventType2["RESPONSE_IN_PROGRESS"] = "response.in_progress";
-  StreamEventType2["OUTPUT_TEXT_DELTA"] = "response.output_text.delta";
-  StreamEventType2["OUTPUT_TEXT_DONE"] = "response.output_text.done";
-  StreamEventType2["TOOL_CALL_START"] = "response.tool_call.start";
-  StreamEventType2["TOOL_CALL_ARGUMENTS_DELTA"] = "response.tool_call_arguments.delta";
-  StreamEventType2["TOOL_CALL_ARGUMENTS_DONE"] = "response.tool_call_arguments.done";
-  StreamEventType2["TOOL_EXECUTION_START"] = "response.tool_execution.start";
-  StreamEventType2["TOOL_EXECUTION_DONE"] = "response.tool_execution.done";
-  StreamEventType2["ITERATION_COMPLETE"] = "response.iteration.complete";
-  StreamEventType2["RESPONSE_COMPLETE"] = "response.complete";
-  StreamEventType2["ERROR"] = "response.error";
-  return StreamEventType2;
-})(StreamEventType || {});
-function isStreamEvent(event, type) {
-  return event.type === type;
-}
-function isOutputTextDelta(event) {
-  return event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */;
-}
-function isToolCallStart(event) {
-  return event.type === "response.tool_call.start" /* TOOL_CALL_START */;
-}
-function isToolCallArgumentsDelta(event) {
-  return event.type === "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */;
-}
-function isToolCallArgumentsDone(event) {
-  return event.type === "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */;
-}
-function isResponseComplete(event) {
-  return event.type === "response.complete" /* RESPONSE_COMPLETE */;
-}
-function isErrorEvent(event) {
-  return event.type === "response.error" /* ERROR */;
-}
-
-// src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts
-var OpenAIResponsesStreamConverter = class {
-  /**
-   * Convert Responses API stream to our StreamEvent format
-   */
-  async *convertStream(stream) {
-    let responseId = "";
-    let sequenceNumber = 0;
-    const activeItems = /* @__PURE__ */ new Map();
-    const toolCallBuffers = /* @__PURE__ */ new Map();
-    for await (const event of stream) {
-      if (process.env.DEBUG_OPENAI) {
-        console.error("[DEBUG] Responses API event:", event.type);
-      }
-      switch (event.type) {
-        case "response.created": {
-          responseId = event.response.id;
-          yield {
-            type: "response.created" /* RESPONSE_CREATED */,
-            response_id: responseId,
-            model: event.response.model,
-            created_at: event.response.created_at
-          };
-          break;
-        }
-        case "response.output_item.added": {
-          const addedEvent = event;
-          const item = addedEvent.item;
-          activeItems.set(addedEvent.output_index.toString(), {
-            type: item.type
-          });
-          if (item.type === "function_call") {
-            const functionCall = item;
-            const toolCallId = functionCall.call_id;
-            const toolName = functionCall.name;
-            activeItems.set(addedEvent.output_index.toString(), {
-              type: "function_call",
-              toolCallId,
-              toolName
-            });
-            toolCallBuffers.set(toolCallId, {
-              id: toolCallId,
-              name: toolName,
-              args: ""
-            });
-            yield {
-              type: "response.tool_call.start" /* TOOL_CALL_START */,
-              response_id: responseId,
-              item_id: `item_${addedEvent.output_index}`,
-              tool_call_id: toolCallId,
-              tool_name: toolName
-            };
-          }
-          break;
-        }
-        case "response.output_text.delta": {
-          const textEvent = event;
-          yield {
-            type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
-            response_id: responseId,
-            item_id: textEvent.item_id,
-            output_index: textEvent.output_index,
-            content_index: textEvent.content_index,
-            delta: textEvent.delta || "",
-            sequence_number: sequenceNumber++
-          };
-          break;
-        }
-        case "response.function_call_arguments.delta": {
-          const argsEvent = event;
-          const itemInfo = activeItems.get(argsEvent.output_index.toString());
-          if (itemInfo?.toolCallId) {
-            const buffer = toolCallBuffers.get(itemInfo.toolCallId);
-            if (buffer) {
-              buffer.args += argsEvent.delta || "";
-              yield {
-                type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
-                response_id: responseId,
-                item_id: argsEvent.item_id,
-                tool_call_id: buffer.id,
-                tool_name: buffer.name,
-                delta: argsEvent.delta || "",
-                sequence_number: sequenceNumber++
-              };
-            }
-          }
-          break;
-        }
-        case "response.output_item.done": {
-          const doneEvent = event;
-          const item = doneEvent.item;
-          if (item.type === "function_call") {
-            const functionCall = item;
-            const buffer = toolCallBuffers.get(functionCall.call_id);
-            if (buffer) {
-              yield {
-                type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
-                response_id: responseId,
-                tool_call_id: buffer.id,
-                tool_name: buffer.name,
-                arguments: buffer.args || functionCall.arguments
-              };
-            }
-          }
-          break;
-        }
-        case "response.completed": {
-          const completedEvent = event;
-          const response = completedEvent.response;
-          let status = "completed";
-          if (response.status === "failed") {
-            status = "failed";
-          } else if (response.status === "incomplete") {
-            status = "incomplete";
-          }
-          yield {
-            type: "response.complete" /* RESPONSE_COMPLETE */,
-            response_id: responseId,
-            status,
-            usage: {
-              input_tokens: response.usage?.input_tokens || 0,
-              output_tokens: response.usage?.output_tokens || 0,
-              total_tokens: response.usage?.total_tokens || 0
-            },
-            iterations: 1
-          };
-          break;
-        }
-        // Handle other event types if needed
-        default:
-          if (process.env.DEBUG_OPENAI) {
-            console.error("[DEBUG] Unhandled Responses API event type:", event.type);
-          }
-      }
-    }
-  }
-};
-
-// src/infrastructure/providers/openai/OpenAITextProvider.ts
-var OpenAITextProvider = class extends BaseTextProvider {
-  name = "openai";
-  capabilities = {
-    text: true,
-    images: true,
-    videos: false,
-    audio: true
-  };
-  client;
-  converter;
-  streamConverter;
-  constructor(config) {
-    super(config);
-    this.client = new OpenAI2__default.default({
-      apiKey: this.getApiKey(),
-      baseURL: this.getBaseURL(),
-      organization: config.organization,
-      timeout: this.getTimeout(),
-      maxRetries: this.getMaxRetries()
-    });
-    this.converter = new OpenAIResponsesConverter();
-    this.streamConverter = new OpenAIResponsesStreamConverter();
-  }
-  /**
-   * Check if a parameter is supported by the model
-   */
-  supportsParameter(model, parameter) {
-    const modelInfo = getModelInfo(model);
-    if (!modelInfo?.features.parameters) {
-      return true;
-    }
-    return modelInfo.features.parameters[parameter] !== false;
-  }
-  /**
-   * Generate response using OpenAI Responses API
-   */
-  async generate(options) {
-    return this.executeWithCircuitBreaker(async () => {
-      try {
-        const { input, instructions } = this.converter.convertInput(
-          options.input,
-          options.instructions
-        );
-        const params = {
-          model: options.model,
-          input,
-          ...instructions && { instructions },
-          ...options.tools && options.tools.length > 0 && {
-            tools: this.converter.convertTools(options.tools)
-          },
-          ...options.tool_choice && {
-            tool_choice: this.converter.convertToolChoice(options.tool_choice)
-          },
-          ...options.temperature !== void 0 && this.supportsParameter(options.model, "temperature") && { temperature: options.temperature },
-          ...options.max_output_tokens && { max_output_tokens: options.max_output_tokens },
-          ...options.response_format && {
-            text: this.converter.convertResponseFormat(options.response_format)
-          },
-          ...options.parallel_tool_calls !== void 0 && {
-            parallel_tool_calls: options.parallel_tool_calls
-          },
-          ...options.previous_response_id && {
-            previous_response_id: options.previous_response_id
-          },
-          ...options.metadata && { metadata: options.metadata }
-        };
-        const response = await this.client.responses.create(params);
-        return this.converter.convertResponse(response);
-      } catch (error) {
-        this.handleError(error);
-        throw error;
-      }
-    }, options.model);
-  }
-  /**
-   * Stream response using OpenAI Responses API
-   */
-  async *streamGenerate(options) {
-    try {
-      const { input, instructions } = this.converter.convertInput(
-        options.input,
-        options.instructions
-      );
-      const params = {
-        model: options.model,
-        input,
-        ...instructions && { instructions },
-        ...options.tools && options.tools.length > 0 && {
-          tools: this.converter.convertTools(options.tools)
-        },
-        ...options.tool_choice && {
-          tool_choice: this.converter.convertToolChoice(options.tool_choice)
-        },
-        ...options.temperature !== void 0 && this.supportsParameter(options.model, "temperature") && { temperature: options.temperature },
-        ...options.max_output_tokens && { max_output_tokens: options.max_output_tokens },
-        ...options.response_format && {
-          text: this.converter.convertResponseFormat(options.response_format)
-        },
-        ...options.parallel_tool_calls !== void 0 && {
-          parallel_tool_calls: options.parallel_tool_calls
-        },
-        ...options.previous_response_id && {
-          previous_response_id: options.previous_response_id
-        },
-        ...options.metadata && { metadata: options.metadata },
-        stream: true
-      };
-      const stream = await this.client.responses.create(params);
-      yield* this.streamConverter.convertStream(stream);
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    }
-  }
-  /**
-   * Get model capabilities
-   */
-  getModelCapabilities(model) {
-    if (model.startsWith("gpt-4")) {
-      return {
-        supportsTools: true,
-        supportsVision: model.includes("vision") || !model.includes("0613"),
-        supportsJSON: true,
-        supportsJSONSchema: true,
-        maxTokens: model.includes("turbo") ? 128e3 : 8192,
-        maxOutputTokens: 16384
-      };
-    }
-    if (model.startsWith("gpt-3.5")) {
-      return {
-        supportsTools: true,
-        supportsVision: false,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 16385,
-        maxOutputTokens: 4096
-      };
-    }
-    if (model.startsWith("o1") || model.startsWith("o3")) {
-      return {
-        supportsTools: false,
-        supportsVision: true,
-        supportsJSON: false,
-        supportsJSONSchema: false,
-        maxTokens: 2e5,
-        maxOutputTokens: 1e5
-      };
-    }
-    return {
-      supportsTools: false,
-      supportsVision: false,
-      supportsJSON: false,
-      supportsJSONSchema: false,
-      maxTokens: 4096,
-      maxOutputTokens: 4096
-    };
-  }
-  /**
-   * Handle OpenAI-specific errors
-   */
-  handleError(error) {
-    if (error.status === 401) {
-      throw new ProviderAuthError("openai", "Invalid API key");
-    }
-    if (error.status === 429) {
-      const retryAfter = error.headers?.["retry-after"];
-      throw new ProviderRateLimitError(
-        "openai",
-        retryAfter ? parseInt(retryAfter) * 1e3 : void 0
-      );
-    }
-    if (error.code === "context_length_exceeded" || error.status === 413) {
-      throw new ProviderContextLengthError("openai", 128e3);
-    }
-    throw error;
-  }
-};
-function buildLLMResponse(options) {
-  const {
-    provider,
-    rawId,
-    model,
-    status,
-    content,
-    usage,
-    messageId,
-    createdAt = Math.floor(Date.now() / 1e3)
-  } = options;
-  const responseId = rawId ? `resp_${provider}_${rawId}` : `resp_${provider}_${crypto2.randomUUID()}`;
-  const msgId = messageId || `msg_${provider}_${crypto2.randomUUID()}`;
-  const output = [
-    {
-      type: "message",
-      id: msgId,
-      role: "assistant" /* ASSISTANT */,
-      content
-    }
-  ];
-  const outputText = extractTextFromContent(content);
-  return {
-    id: responseId,
-    object: "response",
-    created_at: createdAt,
-    status,
-    model,
-    output,
-    output_text: outputText,
-    usage: {
-      input_tokens: usage.inputTokens,
-      output_tokens: usage.outputTokens,
-      total_tokens: usage.totalTokens ?? usage.inputTokens + usage.outputTokens
-    }
-  };
-}
-function extractTextFromContent(content) {
-  return content.filter(
-    (c) => c.type === "output_text" /* OUTPUT_TEXT */
-  ).map((c) => c.text).join("\n");
-}
-function createTextContent(text) {
-  return {
-    type: "output_text" /* OUTPUT_TEXT */,
-    text,
-    annotations: []
-  };
-}
-function createToolUseContent(id, name, args) {
-  return {
-    type: "tool_use" /* TOOL_USE */,
-    id,
-    name,
-    arguments: typeof args === "string" ? args : JSON.stringify(args)
-  };
-}
-function mapAnthropicStatus(stopReason) {
-  switch (stopReason) {
-    case "end_turn":
-    case "tool_use":
-    case "stop_sequence":
-      return "completed";
-    case "max_tokens":
-      return "incomplete";
-    default:
-      return "incomplete";
-  }
-}
-function mapGoogleStatus(finishReason) {
-  switch (finishReason) {
-    case "STOP":
-      return "completed";
-    case "MAX_TOKENS":
-      return "incomplete";
-    case "SAFETY":
-    case "RECITATION":
-      return "failed";
-    case "OTHER":
-    default:
-      return "incomplete";
-  }
-}
-function generateToolCallId(provider) {
-  const uuid = crypto2.randomUUID();
-  return `${provider}_${uuid}` ;
-}
-
-// src/infrastructure/providers/shared/ToolConversionUtils.ts
-function extractFunctionTools(tools) {
-  return tools.filter((t) => t.type === "function");
-}
-function convertToolsToStandardFormat(tools) {
-  return extractFunctionTools(tools).map((tool) => ({
-    name: tool.function.name,
-    description: tool.function.description || "",
-    parameters: tool.function.parameters || { type: "object", properties: {} }
-  }));
-}
-function transformForAnthropic(tool) {
-  return {
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.parameters
-  };
-}
-
-// src/infrastructure/providers/base/BaseConverter.ts
-var BaseConverter = class {
-  // ==========================================================================
-  // Protected Helper Methods (shared by all providers)
-  // ==========================================================================
-  /**
-   * Convert InputItem array to provider messages
-   * @param input - String or InputItem array
-   * @returns Normalized input ready for provider conversion
-   */
-  normalizeInput(input) {
-    if (typeof input === "string") {
-      return [
-        {
-          type: "message",
-          role: "user" /* USER */,
-          content: [{ type: "input_text" /* INPUT_TEXT */, text: input }]
-        }
-      ];
-    }
-    return input;
-  }
-  /**
-   * Map our role to provider-specific role
-   * Override in subclass if provider uses different role names
-   */
-  mapRole(role) {
-    if (role === "developer" /* DEVELOPER */) {
-      return "user";
-    }
-    return role;
-  }
-  /**
-   * Convert our Tool[] to provider-specific tool format
-   */
-  convertTools(tools) {
-    if (!tools || tools.length === 0) {
-      return void 0;
-    }
-    const standardTools = convertToolsToStandardFormat(tools);
-    return standardTools.map((tool) => this.transformTool(tool));
-  }
-  /**
-   * Parse tool arguments from JSON string
-   * Throws InvalidToolArgumentsError on parse failure
-   */
-  parseToolArguments(name, argsString) {
-    try {
-      return JSON.parse(argsString);
-    } catch (parseError) {
-      throw new InvalidToolArgumentsError(
-        name,
-        argsString,
-        parseError instanceof Error ? parseError : new Error(String(parseError))
-      );
-    }
-  }
-  /**
-   * Parse a data URI into components
-   * @returns Parsed image data or null if not a data URI
-   */
-  parseDataUri(url2) {
-    const matches = url2.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches || matches.length < 3) {
-      return null;
-    }
-    const format = matches[1];
-    const data = matches[2];
-    return {
-      format,
-      mediaType: `image/${format}`,
-      data
-    };
-  }
-  /**
-   * Check if URL is a data URI
-   */
-  isDataUri(url2) {
-    return url2.startsWith("data:");
-  }
-  /**
-   * Build standardized LLMResponse using shared utility
-   */
-  buildResponse(options) {
-    return buildLLMResponse({
-      provider: this.providerName,
-      ...options
-    });
-  }
-  /**
-   * Create a text content block
-   */
-  createText(text) {
-    return createTextContent(text);
-  }
-  /**
-   * Create a tool_use content block
-   */
-  createToolUse(id, name, args) {
-    return createToolUseContent(id, name, args);
-  }
-  /**
-   * Extract text from Content array
-   */
-  extractText(content) {
-    return content.filter((c) => c.type === "output_text" /* OUTPUT_TEXT */).map((c) => c.text).join("\n");
-  }
-  /**
-   * Handle content conversion for common content types
-   * Can be used as a starting point in subclass convertContent methods
-   */
-  handleCommonContent(content, _handlers) {
-    const handlers = _handlers;
-    switch (content.type) {
-      case "input_text" /* INPUT_TEXT */:
-      case "output_text" /* OUTPUT_TEXT */:
-        handlers.onText?.(content.text);
-        return true;
-      case "input_image_url" /* INPUT_IMAGE_URL */: {
-        const imgContent = content;
-        const parsed = this.parseDataUri(imgContent.image_url.url);
-        handlers.onImage?.(imgContent.image_url.url, parsed);
-        return true;
-      }
-      case "tool_use" /* TOOL_USE */: {
-        const toolContent = content;
-        const parsedArgs = this.parseToolArguments(toolContent.name, toolContent.arguments);
-        handlers.onToolUse?.(toolContent.id, toolContent.name, parsedArgs);
-        return true;
-      }
-      case "tool_result" /* TOOL_RESULT */: {
-        const resultContent = content;
-        const isError = !!resultContent.error;
-        handlers.onToolResult?.(
-          resultContent.tool_use_id,
-          resultContent.content,
-          isError,
-          resultContent.error
-        );
-        return true;
-      }
-      default:
-        return false;
-    }
-  }
-  // ==========================================================================
-  // Resource Cleanup (required lifecycle method)
-  // ==========================================================================
-  /**
-   * Clean up any internal state/caches
-   * Should be called after each request/response cycle to prevent memory leaks
-   *
-   * Default implementation does nothing - override if subclass maintains state
-   */
-  clear() {
-  }
-  /**
-   * Alias for clear() - reset converter state
-   */
-  reset() {
-    this.clear();
-  }
-};
-
-// src/infrastructure/providers/anthropic/AnthropicConverter.ts
-var AnthropicConverter = class extends BaseConverter {
-  providerName = "anthropic";
-  /**
-   * Convert our format -> Anthropic Messages API format
-   */
-  convertRequest(options) {
-    const messages = this.convertMessages(options.input);
-    const tools = this.convertAnthropicTools(options.tools);
-    const params = {
-      model: options.model,
-      max_tokens: options.max_output_tokens || 4096,
-      messages
-    };
-    if (options.instructions) {
-      params.system = options.instructions;
-    }
-    if (tools && tools.length > 0) {
-      params.tools = tools;
-    }
-    if (options.temperature !== void 0) {
-      params.temperature = options.temperature;
-    }
-    return params;
-  }
-  /**
-   * Convert Anthropic response -> our LLMResponse format
-   */
-  convertResponse(response) {
-    return this.buildResponse({
-      rawId: response.id,
-      model: response.model,
-      status: this.mapProviderStatus(response.stop_reason),
-      content: this.convertProviderContent(response.content),
-      messageId: response.id,
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens
-      }
-    });
-  }
-  // ==========================================================================
-  // BaseConverter Abstract Method Implementations
-  // ==========================================================================
-  /**
-   * Transform standardized tool to Anthropic format
-   */
-  transformTool(tool) {
-    return {
-      ...transformForAnthropic(tool),
-      input_schema: {
-        type: "object",
-        ...tool.parameters
-      }
-    };
-  }
-  /**
-   * Convert Anthropic content blocks to our Content[]
-   */
-  convertProviderContent(blocks) {
-    const content = [];
-    for (const block of blocks) {
-      if (block.type === "text") {
-        content.push(this.createText(block.text));
-      } else if (block.type === "tool_use") {
-        content.push(this.createToolUse(block.id, block.name, block.input));
-      }
-    }
-    return content;
-  }
-  /**
-   * Map Anthropic stop_reason to ResponseStatus
-   */
-  mapProviderStatus(status) {
-    return mapAnthropicStatus(status);
-  }
-  // ==========================================================================
-  // Anthropic-Specific Conversion Methods
-  // ==========================================================================
-  /**
-   * Convert our InputItem[] -> Anthropic messages
-   */
-  convertMessages(input) {
-    if (typeof input === "string") {
-      return [{ role: "user", content: input }];
-    }
-    const messages = [];
-    for (const item of input) {
-      if (item.type === "message") {
-        const role = this.mapRole(item.role);
-        const content = this.convertContent(item.content);
-        if (!content || Array.isArray(content) && content.length === 0 || content === "") {
-          continue;
-        }
-        messages.push({
-          role,
-          content
-        });
-      }
-    }
-    return messages;
-  }
-  /**
-   * Convert our Content[] -> Anthropic content blocks
-   */
-  convertContent(content) {
-    const blocks = [];
-    for (const c of content) {
-      switch (c.type) {
-        case "input_text" /* INPUT_TEXT */:
-        case "output_text" /* OUTPUT_TEXT */: {
-          const textContent = c.text;
-          if (textContent && textContent.trim()) {
-            blocks.push({
-              type: "text",
-              text: textContent
-            });
-          }
-          break;
-        }
-        case "input_image_url" /* INPUT_IMAGE_URL */: {
-          const imgContent = c;
-          const block = this.convertImageToAnthropicBlock(imgContent.image_url.url);
-          if (block) {
-            blocks.push(block);
-          }
-          break;
-        }
-        case "tool_result" /* TOOL_RESULT */: {
-          const resultContent = c;
-          blocks.push(this.convertToolResultToAnthropicBlock(resultContent));
-          break;
-        }
-        case "tool_use" /* TOOL_USE */: {
-          const toolContent = c;
-          const parsedInput = this.parseToolArguments(toolContent.name, toolContent.arguments);
-          blocks.push({
-            type: "tool_use",
-            id: toolContent.id,
-            name: toolContent.name,
-            input: parsedInput
-          });
-          break;
-        }
-      }
-    }
-    if (blocks.length === 1 && blocks[0]?.type === "text") {
-      return blocks[0].text;
-    }
-    return blocks;
-  }
-  /**
-   * Convert image URL to Anthropic image block
-   */
-  convertImageToAnthropicBlock(url2) {
-    const parsed = this.parseDataUri(url2);
-    if (parsed) {
-      return {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: parsed.mediaType,
-          data: parsed.data
-        }
-      };
-    } else {
-      return {
-        type: "image",
-        source: {
-          type: "url",
-          url: url2
-        }
-      };
-    }
-  }
-  /**
-   * Convert tool result to Anthropic block
-   * Anthropic requires non-empty content when is_error is true
-   */
-  convertToolResultToAnthropicBlock(resultContent) {
-    const isError = !!resultContent.error;
-    let toolResultContent;
-    if (typeof resultContent.content === "string") {
-      toolResultContent = resultContent.content || (isError ? resultContent.error : "");
-    } else {
-      toolResultContent = JSON.stringify(resultContent.content);
-    }
-    if (isError && !toolResultContent) {
-      toolResultContent = resultContent.error || "Tool execution failed";
-    }
-    return {
-      type: "tool_result",
-      tool_use_id: resultContent.tool_use_id,
-      content: toolResultContent,
-      is_error: isError
-    };
-  }
-  /**
-   * Convert our Tool[] -> Anthropic tools
-   * Uses shared conversion utilities (DRY)
-   */
-  convertAnthropicTools(tools) {
-    if (!tools || tools.length === 0) {
-      return void 0;
-    }
-    const standardTools = convertToolsToStandardFormat(tools);
-    return standardTools.map((tool) => this.transformTool(tool));
-  }
-};
-
-// src/infrastructure/providers/base/BaseStreamConverter.ts
-var BaseStreamConverter = class {
-  // ==========================================================================
-  // Protected State (shared across all stream converters)
-  // ==========================================================================
-  /** Current response ID */
-  responseId = "";
-  /** Model name */
-  model = "";
-  /** Event sequence number for ordering */
-  sequenceNumber = 0;
-  /** Usage statistics */
-  usage = { inputTokens: 0, outputTokens: 0 };
-  /** Buffers for accumulating tool call arguments */
-  toolCallBuffers = /* @__PURE__ */ new Map();
-  // ==========================================================================
-  // Public API
-  // ==========================================================================
-  /**
-   * Convert provider stream to our StreamEvent format
-   *
-   * @param stream - Provider-specific async stream
-   * @param model - Model name (may not be available in all events)
-   */
-  async *convertStream(stream, model) {
-    this.reset();
-    if (model) {
-      this.model = model;
-    }
-    try {
-      for await (const event of stream) {
-        const converted = this.convertEvent(event);
-        for (const evt of converted) {
-          yield evt;
-        }
-      }
-    } finally {
-    }
-  }
-  /**
-   * Clear all internal state
-   * Should be called after stream is fully processed
-   */
-  clear() {
-    this.responseId = "";
-    this.model = "";
-    this.sequenceNumber = 0;
-    this.usage = { inputTokens: 0, outputTokens: 0 };
-    this.toolCallBuffers.clear();
-  }
-  /**
-   * Reset converter state for a new stream
-   * Alias for clear()
-   */
-  reset() {
-    this.clear();
-  }
-  // ==========================================================================
-  // Protected Helper Methods
-  // ==========================================================================
-  /**
-   * Generate a response ID with provider prefix
-   */
-  generateResponseId() {
-    const uuid = crypto.randomUUID();
-    return `resp_${this.providerName}_${uuid}`;
-  }
-  /**
-   * Get next sequence number (auto-increments)
-   */
-  nextSequence() {
-    return this.sequenceNumber++;
-  }
-  /**
-   * Create RESPONSE_CREATED event
-   */
-  emitResponseCreated(responseId) {
-    if (responseId) {
-      this.responseId = responseId;
-    } else if (!this.responseId) {
-      this.responseId = this.generateResponseId();
-    }
-    return {
-      type: "response.created" /* RESPONSE_CREATED */,
-      response_id: this.responseId,
-      model: this.model,
-      created_at: Date.now()
-    };
-  }
-  /**
-   * Create OUTPUT_TEXT_DELTA event
-   */
-  emitTextDelta(delta, options) {
-    return {
-      type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
-      response_id: this.responseId,
-      item_id: options?.itemId || `msg_${this.responseId}`,
-      output_index: options?.outputIndex ?? 0,
-      content_index: options?.contentIndex ?? 0,
-      delta,
-      sequence_number: this.nextSequence()
-    };
-  }
-  /**
-   * Create TOOL_CALL_START event
-   */
-  emitToolCallStart(toolCallId, toolName, itemId) {
-    this.toolCallBuffers.set(toolCallId, {
-      id: toolCallId,
-      name: toolName,
-      args: ""
-    });
-    return {
-      type: "response.tool_call.start" /* TOOL_CALL_START */,
-      response_id: this.responseId,
-      item_id: itemId || `msg_${this.responseId}`,
-      tool_call_id: toolCallId,
-      tool_name: toolName
-    };
-  }
-  /**
-   * Create TOOL_CALL_ARGUMENTS_DELTA event and accumulate args
-   */
-  emitToolCallArgsDelta(toolCallId, delta, toolName) {
-    const buffer = this.toolCallBuffers.get(toolCallId);
-    if (buffer) {
-      buffer.args += delta;
-    }
-    return {
-      type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
-      response_id: this.responseId,
-      item_id: `msg_${this.responseId}`,
-      tool_call_id: toolCallId,
-      tool_name: toolName || buffer?.name || "",
-      delta,
-      sequence_number: this.nextSequence()
-    };
-  }
-  /**
-   * Create TOOL_CALL_ARGUMENTS_DONE event with accumulated args
-   */
-  emitToolCallArgsDone(toolCallId, toolName) {
-    const buffer = this.toolCallBuffers.get(toolCallId);
-    const args = buffer?.args || "{}";
-    const name = toolName || buffer?.name || "";
-    return {
-      type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
-      response_id: this.responseId,
-      tool_call_id: toolCallId,
-      tool_name: name,
-      arguments: args
-    };
-  }
-  /**
-   * Create RESPONSE_COMPLETE event
-   */
-  emitResponseComplete(status = "completed") {
-    return {
-      type: "response.complete" /* RESPONSE_COMPLETE */,
-      response_id: this.responseId,
-      status,
-      usage: {
-        input_tokens: this.usage.inputTokens,
-        output_tokens: this.usage.outputTokens,
-        total_tokens: this.usage.inputTokens + this.usage.outputTokens
-      },
-      iterations: 1
-    };
-  }
-  /**
-   * Update usage statistics
-   */
-  updateUsage(inputTokens, outputTokens) {
-    if (inputTokens !== void 0) {
-      this.usage.inputTokens = inputTokens;
-    }
-    if (outputTokens !== void 0) {
-      this.usage.outputTokens = outputTokens;
-    }
-  }
-  /**
-   * Get accumulated arguments for a tool call
-   */
-  getAccumulatedArgs(toolCallId) {
-    return this.toolCallBuffers.get(toolCallId)?.args || "{}";
-  }
-  /**
-   * Check if we have buffered data for a tool call
-   */
-  hasToolCallBuffer(toolCallId) {
-    return this.toolCallBuffers.has(toolCallId);
-  }
-};
-
-// src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts
-var AnthropicStreamConverter = class extends BaseStreamConverter {
-  providerName = "anthropic";
-  /** Map of content block index to block info */
-  contentBlockIndex = /* @__PURE__ */ new Map();
-  /**
-   * Convert a single Anthropic event to our StreamEvent(s)
-   */
-  convertEvent(event) {
-    const eventType = event.type;
-    switch (eventType) {
-      case "message_start":
-        return this.handleMessageStart(event);
-      case "content_block_start":
-        return this.handleContentBlockStart(event);
-      case "content_block_delta":
-        return this.handleContentBlockDelta(event);
-      case "content_block_stop":
-        return this.handleContentBlockStop(event);
-      case "message_delta":
-        return this.handleMessageDelta(event);
-      case "message_stop":
-        return this.handleMessageStop();
-      default:
-        return [];
-    }
-  }
-  /**
-   * Clear all internal state
-   */
-  clear() {
-    super.clear();
-    this.contentBlockIndex.clear();
-  }
-  // ==========================================================================
-  // Anthropic-Specific Event Handlers
-  // ==========================================================================
-  /**
-   * Handle message_start event
-   */
-  handleMessageStart(event) {
-    this.responseId = event.message.id;
-    if (event.message.usage) {
-      this.updateUsage(event.message.usage.input_tokens, void 0);
-    }
-    return [this.emitResponseCreated(this.responseId)];
-  }
-  /**
-   * Handle content_block_start event
-   */
-  handleContentBlockStart(event) {
-    const index = event.index;
-    const block = event.content_block;
-    if (block.type === "text") {
-      this.contentBlockIndex.set(index, { type: "text" });
-      return [];
-    } else if (block.type === "tool_use") {
-      this.contentBlockIndex.set(index, {
-        type: "tool_use",
-        id: block.id,
-        name: block.name
-      });
-      return [this.emitToolCallStart(block.id, block.name, `msg_${this.responseId}`)];
-    }
-    return [];
-  }
-  /**
-   * Handle content_block_delta event
-   */
-  handleContentBlockDelta(event) {
-    const index = event.index;
-    const delta = event.delta;
-    const blockInfo = this.contentBlockIndex.get(index);
-    if (!blockInfo) return [];
-    if (delta.type === "text_delta") {
-      return [
-        this.emitTextDelta(delta.text, {
-          itemId: `msg_${this.responseId}`,
-          contentIndex: index
-        })
-      ];
-    } else if (delta.type === "input_json_delta") {
-      const toolCallId = blockInfo.id || "";
-      return [this.emitToolCallArgsDelta(toolCallId, delta.partial_json, blockInfo.name)];
-    }
-    return [];
-  }
-  /**
-   * Handle content_block_stop event
-   */
-  handleContentBlockStop(event) {
-    const index = event.index;
-    const blockInfo = this.contentBlockIndex.get(index);
-    if (!blockInfo) return [];
-    if (blockInfo.type === "tool_use") {
-      return [this.emitToolCallArgsDone(blockInfo.id || "", blockInfo.name)];
-    }
-    return [];
-  }
-  /**
-   * Handle message_delta event (usage info, stop_reason)
-   */
-  handleMessageDelta(event) {
-    if (event.usage) {
-      this.updateUsage(void 0, event.usage.output_tokens);
-    }
-    return [];
-  }
-  /**
-   * Handle message_stop event (final event)
-   */
-  handleMessageStop() {
-    return [this.emitResponseComplete("completed")];
-  }
-};
-
-// src/infrastructure/providers/anthropic/AnthropicTextProvider.ts
-var AnthropicTextProvider = class extends BaseTextProvider {
-  name = "anthropic";
-  capabilities = {
-    text: true,
-    images: true,
-    // Claude 3+ supports vision
-    videos: false,
-    audio: false
-  };
-  client;
-  converter;
-  streamConverter;
-  constructor(config) {
-    super(config);
-    this.client = new Anthropic__default.default({
-      apiKey: this.getApiKey(),
-      baseURL: this.getBaseURL(),
-      maxRetries: this.getMaxRetries()
-    });
-    this.converter = new AnthropicConverter();
-    this.streamConverter = new AnthropicStreamConverter();
-  }
-  /**
-   * Generate response using Anthropic Messages API
-   */
-  async generate(options) {
-    return this.executeWithCircuitBreaker(async () => {
-      try {
-        const anthropicRequest = this.converter.convertRequest(options);
-        const anthropicResponse = await this.client.messages.create({
-          ...anthropicRequest,
-          stream: false
-        });
-        return this.converter.convertResponse(anthropicResponse);
-      } catch (error) {
-        this.handleError(error);
-        throw error;
-      }
-    }, options.model);
-  }
-  /**
-   * Stream response using Anthropic Messages API
-   */
-  async *streamGenerate(options) {
-    try {
-      const anthropicRequest = this.converter.convertRequest(options);
-      const stream = await this.client.messages.create({
-        ...anthropicRequest,
-        stream: true
-      });
-      this.streamConverter.reset();
-      yield* this.streamConverter.convertStream(stream, options.model);
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    } finally {
-      this.streamConverter.clear();
-    }
-  }
-  /**
-   * Get model capabilities
-   */
-  getModelCapabilities(model) {
-    if (model.includes("claude-sonnet-4") || model.includes("claude-opus-4") || model.includes("claude-haiku-4")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        // Use prompt engineering
-        maxTokens: 2e5,
-        maxOutputTokens: 8192
-      };
-    }
-    if (model.includes("claude-3-5-sonnet") || model.includes("claude-3-7-sonnet")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 2e5,
-        maxOutputTokens: 8192
-      };
-    }
-    if (model.includes("claude-3-opus")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 2e5,
-        maxOutputTokens: 4096
-      };
-    }
-    if (model.includes("claude-3-sonnet")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 2e5,
-        maxOutputTokens: 4096
-      };
-    }
-    if (model.includes("claude-3-haiku")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 2e5,
-        maxOutputTokens: 4096
-      };
-    }
-    return {
-      supportsTools: true,
-      supportsVision: true,
-      supportsJSON: true,
-      supportsJSONSchema: false,
-      maxTokens: 2e5,
-      maxOutputTokens: 4096
-    };
-  }
-  /**
-   * Handle Anthropic-specific errors
-   */
-  handleError(error) {
-    if (error.status === 401) {
-      throw new ProviderAuthError("anthropic", "Invalid API key");
-    }
-    if (error.status === 429) {
-      const retryAfter = error.headers?.["retry-after"];
-      throw new ProviderRateLimitError(
-        "anthropic",
-        retryAfter ? parseInt(retryAfter) * 1e3 : void 0
-      );
-    }
-    if (error.type === "invalid_request_error" && (error.message?.includes("prompt is too long") || error.message?.includes("maximum context length"))) {
-      throw new ProviderContextLengthError("anthropic", 2e5);
-    }
-    throw error;
-  }
-};
-
-// src/utils/imageUtils.ts
-var DEFAULT_TIMEOUT_MS = 3e4;
-var DEFAULT_MAX_SIZE_BYTES = 10 * 1024 * 1024;
-async function fetchImageAsBase64(url2, options) {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, maxSizeBytes = DEFAULT_MAX_SIZE_BYTES } = {};
-  if (url2.startsWith("data:image/")) {
-    const matches = url2.match(/^data:(image\/\w+);base64,(.+)$/);
-    if (matches) {
-      const base64Data = matches[2] || "";
-      const size = calculateBase64Size(base64Data);
-      if (size > maxSizeBytes) {
-        throw new Error(`Image size (${formatBytes3(size)}) exceeds maximum allowed (${formatBytes3(maxSizeBytes)})`);
-      }
-      return {
-        mimeType: matches[1] || "image/png",
-        base64Data,
-        size
-      };
-    }
-  }
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url2, {
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-    }
-    const contentLength = response.headers.get("content-length");
-    if (contentLength) {
-      const size = parseInt(contentLength, 10);
-      if (size > maxSizeBytes) {
-        throw new Error(
-          `Image size (${formatBytes3(size)}) exceeds maximum allowed (${formatBytes3(maxSizeBytes)})`
-        );
-      }
-    }
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Failed to get response body reader");
-    }
-    const chunks = [];
-    let totalSize = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalSize += value.length;
-      if (totalSize > maxSizeBytes) {
-        reader.cancel();
-        throw new Error(
-          `Image size exceeds maximum allowed (${formatBytes3(maxSizeBytes)})`
-        );
-      }
-      chunks.push(value);
-    }
-    const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
-    const base64Data = buffer.toString("base64");
-    let mimeType = response.headers.get("content-type") || "image/png";
-    if (!mimeType.startsWith("image/")) {
-      mimeType = detectImageFormatFromBuffer(buffer);
-    }
-    return {
-      mimeType,
-      base64Data,
-      size: buffer.length
-    };
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error(`Image fetch timed out after ${timeoutMs}ms`);
-    }
-    throw new Error(`Failed to fetch image from URL: ${error.message}`);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-function detectImageFormatFromBuffer(buffer) {
-  const magic = buffer.slice(0, 4).toString("hex");
-  if (magic.startsWith("89504e47")) return "image/png";
-  if (magic.startsWith("ffd8ff")) return "image/jpeg";
-  if (magic.startsWith("47494638")) return "image/gif";
-  if (magic.startsWith("52494646")) return "image/webp";
-  throw new Error("URL does not point to a valid image");
-}
-function calculateBase64Size(base64Data) {
-  const data = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
-  if (!data || data.length === 0) return 0;
-  let padding = 0;
-  if (data.endsWith("==")) padding = 2;
-  else if (data.endsWith("=")) padding = 1;
-  return Math.floor(data.length * 3 / 4) - padding;
-}
-function formatBytes3(bytes) {
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// src/infrastructure/providers/google/GoogleConverter.ts
-var GoogleConverter = class {
-  // Track tool call ID → tool name mapping for tool results
-  toolCallMapping = /* @__PURE__ */ new Map();
-  // Track tool call ID → thought signature for Gemini 3+
-  // NOTE: This map is shared with GoogleStreamConverter for streaming responses
-  thoughtSignatures = /* @__PURE__ */ new Map();
-  /**
-   * Get the thought signatures storage map
-   * Used by GoogleStreamConverter to store signatures from streaming responses
-   */
-  getThoughtSignatureStorage() {
-    return this.thoughtSignatures;
-  }
-  /**
-   * Get the tool call mapping storage
-   * Used by GoogleStreamConverter to store tool name mappings from streaming responses
-   */
-  getToolCallMappingStorage() {
-    return this.toolCallMapping;
-  }
-  /**
-   * Convert our format → Google Gemini format
-   */
-  async convertRequest(options) {
-    if (process.env.DEBUG_GOOGLE && Array.isArray(options.input)) {
-      console.error("[DEBUG] Input messages:", JSON.stringify(options.input.map((msg) => ({
-        type: msg.type,
-        role: msg.role,
-        contentTypes: msg.content?.map((c) => c.type)
-      })), null, 2));
-    }
-    const contents = await this.convertMessages(options.input);
-    const tools = this.convertTools(options.tools);
-    if (process.env.DEBUG_GOOGLE) {
-      console.error("[DEBUG] Final contents array length:", contents.length);
-    }
-    const request = {
-      contents
-    };
-    if (options.instructions) {
-      request.systemInstruction = { parts: [{ text: options.instructions }] };
-    }
-    if (tools && tools.length > 0) {
-      request.tools = [{ functionDeclarations: tools }];
-      request.toolConfig = {
-        functionCallingConfig: {
-          mode: options.tool_choice === "required" ? "ANY" : "AUTO"
-        }
-      };
-    }
-    request.generationConfig = {
-      temperature: options.temperature,
-      maxOutputTokens: options.max_output_tokens
-    };
-    if (options.vendorOptions?.thinkingLevel) {
-      request.generationConfig.thinkingConfig = {
-        thinkingLevel: options.vendorOptions.thinkingLevel
-      };
-    }
-    if (tools && tools.length > 0) {
-      request.generationConfig.allowCodeExecution = false;
-    }
-    if (options.response_format) {
-      if (options.response_format.type === "json_object") {
-        request.generationConfig.responseMimeType = "application/json";
-      } else if (options.response_format.type === "json_schema") {
-        request.generationConfig.responseMimeType = "application/json";
-      }
-    }
-    return request;
-  }
-  /**
-   * Convert our InputItem[] → Google contents
-   */
-  async convertMessages(input) {
-    if (typeof input === "string") {
-      return [
-        {
-          role: "user",
-          parts: [{ text: input }]
-        }
-      ];
-    }
-    const contents = [];
-    for (const item of input) {
-      if (item.type === "message") {
-        const role = item.role === "user" /* USER */ || item.role === "developer" /* DEVELOPER */ ? "user" : "model";
-        const parts = await this.convertContentToParts(item.content);
-        if (process.env.DEBUG_GOOGLE) {
-          console.error(
-            `[DEBUG] Converting message - role: ${item.role} \u2192 ${role}, parts: ${parts.length}`,
-            parts.map((p) => Object.keys(p))
-          );
-        }
-        if (parts.length > 0) {
-          contents.push({
-            role,
-            parts
-          });
-        }
-      }
-    }
-    return contents;
-  }
-  /**
-   * Convert our Content[] → Google parts
-   */
-  async convertContentToParts(content) {
-    const parts = [];
-    for (const c of content) {
-      switch (c.type) {
-        case "input_text" /* INPUT_TEXT */:
-        case "output_text" /* OUTPUT_TEXT */:
-          parts.push({ text: c.text });
-          break;
-        case "input_image_url" /* INPUT_IMAGE_URL */:
-          try {
-            const imageData = await fetchImageAsBase64(c.image_url.url);
-            parts.push({
-              inlineData: {
-                mimeType: imageData.mimeType,
-                data: imageData.base64Data
-              }
-            });
-          } catch (error) {
-            console.error(`Failed to fetch image: ${error.message}`);
-            parts.push({
-              text: `[Error: Could not load image from ${c.image_url.url}]`
-            });
-          }
-          break;
-        case "tool_use" /* TOOL_USE */:
-          this.toolCallMapping.set(c.id, c.name);
-          let parsedArgs;
-          try {
-            parsedArgs = JSON.parse(c.arguments);
-          } catch (parseError) {
-            throw new InvalidToolArgumentsError(
-              c.name,
-              c.arguments,
-              parseError instanceof Error ? parseError : new Error(String(parseError))
-            );
-          }
-          const functionCallPart = {
-            functionCall: {
-              name: c.name,
-              args: parsedArgs
-            }
-          };
-          const signature = this.thoughtSignatures.get(c.id);
-          if (process.env.DEBUG_GOOGLE) {
-            console.error(`[DEBUG] Looking up signature for tool ID: ${c.id}`);
-            console.error(`[DEBUG] Found signature:`, signature ? "YES" : "NO");
-            console.error(`[DEBUG] Available signatures:`, Array.from(this.thoughtSignatures.keys()));
-          }
-          if (signature) {
-            functionCallPart.thoughtSignature = signature;
-          }
-          parts.push(functionCallPart);
-          break;
-        case "tool_result" /* TOOL_RESULT */:
-          const functionName = this.toolCallMapping.get(c.tool_use_id) || this.extractToolName(c.tool_use_id);
-          parts.push({
-            functionResponse: {
-              name: functionName,
-              // Use actual function name from mapping
-              response: {
-                result: typeof c.content === "string" ? c.content : c.content
-              }
-            }
-          });
-          break;
-      }
-    }
-    return parts;
-  }
-  /**
-   * Convert our Tool[] → Google function declarations
-   */
-  convertTools(tools) {
-    if (!tools || tools.length === 0) {
-      return void 0;
-    }
-    const standardTools = convertToolsToStandardFormat(tools);
-    return standardTools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: this.convertParametersSchema(tool.parameters)
-    }));
-  }
-  /**
-   * Convert JSON Schema parameters to Google's format
-   */
-  convertParametersSchema(schema) {
-    if (!schema) return void 0;
-    const converted = {
-      type: "OBJECT",
-      // Google uses uppercase 'OBJECT'
-      properties: {}
-    };
-    if (schema.properties) {
-      for (const [key, value] of Object.entries(schema.properties)) {
-        const prop = value;
-        converted.properties[key] = {
-          type: prop.type?.toUpperCase() || "STRING",
-          description: prop.description
-        };
-        if (prop.enum) {
-          converted.properties[key].enum = prop.enum;
-        }
-        if (prop.type === "object" && prop.properties) {
-          converted.properties[key] = this.convertParametersSchema(prop);
-        }
-        if (prop.type === "array" && prop.items) {
-          converted.properties[key].items = this.convertParametersSchema(prop.items);
-        }
-      }
-    }
-    if (schema.required) {
-      converted.required = schema.required;
-    }
-    return converted;
-  }
-  /**
-   * Convert Google response → our LLMResponse format
-   */
-  convertResponse(response) {
-    const candidate = response.candidates?.[0];
-    const geminiContent = candidate?.content;
-    const content = this.convertGeminiPartsToContent(geminiContent?.parts || []);
-    if (process.env.DEBUG_GOOGLE) {
-      console.error("[DEBUG] Content array:", JSON.stringify(content, null, 2));
-      console.error("[DEBUG] Raw parts:", JSON.stringify(geminiContent?.parts, null, 2));
-    }
-    return buildLLMResponse({
-      provider: "google",
-      model: response.modelVersion || "gemini",
-      status: mapGoogleStatus(candidate?.finishReason),
-      content,
-      messageId: response.id,
-      usage: {
-        inputTokens: response.usageMetadata?.promptTokenCount || 0,
-        outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
-        totalTokens: response.usageMetadata?.totalTokenCount || 0
-      }
-    });
-  }
-  /**
-   * Convert Google parts → our Content[]
-   */
-  convertGeminiPartsToContent(parts) {
-    const content = [];
-    for (const part of parts) {
-      if ("text" in part && part.text) {
-        content.push(createTextContent(part.text));
-      } else if ("functionCall" in part && part.functionCall) {
-        const toolId = generateToolCallId("google");
-        const functionName = part.functionCall.name || "";
-        if ("thoughtSignature" in part && part.thoughtSignature) {
-          const sig = part.thoughtSignature;
-          this.thoughtSignatures.set(toolId, sig);
-          if (process.env.DEBUG_GOOGLE) {
-            console.error(`[DEBUG] Captured thought signature for tool ID: ${toolId}`);
-            console.error(`[DEBUG] Signature length:`, sig.length);
-          }
-        } else if (process.env.DEBUG_GOOGLE) {
-          console.error(`[DEBUG] NO thought signature in part for ${functionName}`);
-          console.error(`[DEBUG] Part keys:`, Object.keys(part));
-        }
-        content.push(createToolUseContent(toolId, functionName, part.functionCall.args || {}));
-      }
-    }
-    return content;
-  }
-  /**
-   * Extract tool name from tool_use_id using tracked mapping
-   */
-  extractToolName(toolUseId) {
-    const name = this.toolCallMapping.get(toolUseId);
-    if (name) {
-      return name;
-    }
-    console.warn(`[GoogleConverter] Tool name not found for ID: ${toolUseId}`);
-    return "unknown_tool";
-  }
-  /**
-   * Check if content array has tool calls requiring follow-up
-   * Used to determine when to clear thought signatures (must persist across tool execution)
-   */
-  hasToolCalls(content) {
-    return content.some((c) => c.type === "tool_use" /* TOOL_USE */);
-  }
-  /**
-   * Clear all internal mappings
-   * Should be called after each request/response cycle to prevent memory leaks
-   */
-  clearMappings() {
-    this.toolCallMapping.clear();
-    this.thoughtSignatures.clear();
-  }
-  /**
-   * Reset converter state for a new request
-   * Alias for clearMappings()
-   */
-  reset() {
-    this.clearMappings();
-  }
-};
-var GoogleStreamConverter = class {
-  responseId = "";
-  model = "";
-  sequenceNumber = 0;
-  isFirst = true;
-  toolCallBuffers = /* @__PURE__ */ new Map();
-  hadToolCalls = false;
-  // External storage for thought signatures (shared with GoogleConverter)
-  thoughtSignatureStorage = null;
-  // External storage for tool call ID → name mapping (shared with GoogleConverter)
-  toolCallMappingStorage = null;
-  /**
-   * Set external storage for thought signatures
-   * This allows sharing signatures with GoogleConverter for multi-turn conversations
-   */
-  setThoughtSignatureStorage(storage) {
-    this.thoughtSignatureStorage = storage;
-  }
-  /**
-   * Set external storage for tool call mappings
-   * This allows sharing tool name lookups with GoogleConverter
-   */
-  setToolCallMappingStorage(storage) {
-    this.toolCallMappingStorage = storage;
-  }
-  /**
-   * Convert Google stream to our StreamEvent format
-   */
-  async *convertStream(googleStream, model) {
-    this.model = model;
-    this.sequenceNumber = 0;
-    this.isFirst = true;
-    this.toolCallBuffers.clear();
-    this.hadToolCalls = false;
-    let lastUsage = {
-      input_tokens: 0,
-      output_tokens: 0,
-      total_tokens: 0
-    };
-    for await (const chunk of googleStream) {
-      if (this.isFirst) {
-        this.responseId = this.generateResponseId();
-        yield {
-          type: "response.created" /* RESPONSE_CREATED */,
-          response_id: this.responseId,
-          model: this.model,
-          created_at: Date.now()
-        };
-        this.isFirst = false;
-      }
-      const usage = this.extractUsage(chunk);
-      if (usage) {
-        lastUsage = usage;
-      }
-      const events = this.convertChunk(chunk);
-      for (const event of events) {
-        yield event;
-      }
-    }
-    if (this.toolCallBuffers.size > 0) {
-      for (const [toolCallId, buffer] of this.toolCallBuffers) {
-        yield {
-          type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
-          response_id: this.responseId,
-          tool_call_id: toolCallId,
-          tool_name: buffer.name,
-          arguments: buffer.args
-        };
-      }
-    }
-    yield {
-      type: "response.complete" /* RESPONSE_COMPLETE */,
-      response_id: this.responseId,
-      status: "completed",
-      usage: lastUsage,
-      iterations: 1
-    };
-  }
-  /**
-   * Extract usage from Google chunk
-   */
-  extractUsage(chunk) {
-    const usage = chunk.usageMetadata;
-    if (!usage) return null;
-    return {
-      input_tokens: usage.promptTokenCount || 0,
-      output_tokens: usage.candidatesTokenCount || 0,
-      total_tokens: usage.totalTokenCount || 0
-    };
-  }
-  /**
-   * Convert single Google chunk to our event(s)
-   */
-  convertChunk(chunk) {
-    const events = [];
-    const candidate = chunk.candidates?.[0];
-    if (!candidate?.content?.parts) return events;
-    for (const part of candidate.content.parts) {
-      if (part.text) {
-        events.push({
-          type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          output_index: 0,
-          content_index: 0,
-          delta: part.text,
-          sequence_number: this.sequenceNumber++
-        });
-      } else if (part.functionCall) {
-        const functionCall = part.functionCall;
-        const toolName = functionCall.name || "unknown";
-        const toolCallId = `call_${this.responseId}_${toolName}`;
-        const thoughtSignature = "thoughtSignature" in part ? part.thoughtSignature : void 0;
-        if (!this.toolCallBuffers.has(toolCallId)) {
-          this.hadToolCalls = true;
-          this.toolCallBuffers.set(toolCallId, {
-            name: toolName,
-            args: "",
-            signature: thoughtSignature
-          });
-          if (this.toolCallMappingStorage) {
-            this.toolCallMappingStorage.set(toolCallId, toolName);
-          }
-          if (thoughtSignature && this.thoughtSignatureStorage) {
-            this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
-            if (process.env.DEBUG_GOOGLE) {
-              console.error(`[DEBUG] Stream: Captured thought signature for tool ID: ${toolCallId}`);
-            }
-          } else if (process.env.DEBUG_GOOGLE && !thoughtSignature) {
-            console.error(`[DEBUG] Stream: NO thought signature in part for ${toolName}`);
-          }
-          events.push({
-            type: "response.tool_call.start" /* TOOL_CALL_START */,
-            response_id: this.responseId,
-            item_id: `msg_${this.responseId}`,
-            tool_call_id: toolCallId,
-            tool_name: toolName
-          });
-        } else if (thoughtSignature) {
-          const buffer = this.toolCallBuffers.get(toolCallId);
-          if (!buffer.signature) {
-            buffer.signature = thoughtSignature;
-            if (this.thoughtSignatureStorage) {
-              this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
-              if (process.env.DEBUG_GOOGLE) {
-                console.error(`[DEBUG] Stream: Updated thought signature for tool ID: ${toolCallId}`);
-              }
-            }
-          }
-        }
-        if (functionCall.args) {
-          const argsJson = JSON.stringify(functionCall.args);
-          const buffer = this.toolCallBuffers.get(toolCallId);
-          if (argsJson !== buffer.args) {
-            const delta = argsJson.slice(buffer.args.length);
-            buffer.args = argsJson;
-            if (delta) {
-              events.push({
-                type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
-                response_id: this.responseId,
-                item_id: `msg_${this.responseId}`,
-                tool_call_id: toolCallId,
-                tool_name: toolName,
-                delta,
-                sequence_number: this.sequenceNumber++
-              });
-            }
-          }
-        }
-      }
-    }
-    return events;
-  }
-  /**
-   * Generate unique response ID using cryptographically secure UUID
-   */
-  generateResponseId() {
-    return `resp_google_${crypto2.randomUUID()}`;
-  }
-  /**
-   * Check if the stream had tool calls
-   * Used to determine when to clear thought signatures (must persist across tool execution)
-   */
-  hasToolCalls() {
-    return this.hadToolCalls;
-  }
-  /**
-   * Clear all internal state
-   * Should be called after each stream completes to prevent memory leaks
-   */
-  clear() {
-    this.responseId = "";
-    this.model = "";
-    this.sequenceNumber = 0;
-    this.isFirst = true;
-    this.toolCallBuffers.clear();
-    this.hadToolCalls = false;
-  }
-  /**
-   * Reset converter state for a new stream
-   * Alias for clear()
-   */
-  reset() {
-    this.clear();
-  }
-};
-
-// src/infrastructure/providers/google/GoogleTextProvider.ts
-var GoogleTextProvider = class extends BaseTextProvider {
-  name = "google";
-  capabilities = {
-    text: true,
-    images: true,
-    // Gemini supports vision
-    videos: false,
-    audio: false
-  };
-  client;
-  converter;
-  streamConverter;
-  constructor(config) {
-    super(config);
-    this.client = new genai.GoogleGenAI({
-      apiKey: this.getApiKey()
-    });
-    this.converter = new GoogleConverter();
-    this.streamConverter = new GoogleStreamConverter();
-    this.streamConverter.setThoughtSignatureStorage(this.converter.getThoughtSignatureStorage());
-    this.streamConverter.setToolCallMappingStorage(this.converter.getToolCallMappingStorage());
-  }
-  /**
-   * Generate response using Google Gemini API
-   */
-  async generate(options) {
-    return this.executeWithCircuitBreaker(async () => {
-      try {
-        const googleRequest = await this.converter.convertRequest(options);
-        if (process.env.DEBUG_GOOGLE) {
-          console.error("[DEBUG] Google Request:", JSON.stringify({
-            model: options.model,
-            tools: googleRequest.tools,
-            toolConfig: googleRequest.toolConfig,
-            generationConfig: googleRequest.generationConfig,
-            contents: googleRequest.contents?.slice(0, 1)
-            // First message only
-          }, null, 2));
-        }
-        const result = await this.client.models.generateContent({
-          model: options.model,
-          contents: googleRequest.contents,
-          config: {
-            systemInstruction: googleRequest.systemInstruction,
-            tools: googleRequest.tools,
-            toolConfig: googleRequest.toolConfig,
-            ...googleRequest.generationConfig
-          }
-        });
-        if (process.env.DEBUG_GOOGLE) {
-          console.error("[DEBUG] Google Response:", JSON.stringify({
-            candidates: result.candidates?.map((c) => ({
-              finishReason: c.finishReason,
-              content: c.content
-            })),
-            usageMetadata: result.usageMetadata
-          }, null, 2));
-        }
-        const response = this.converter.convertResponse(result);
-        const firstOutput = response.output?.[0];
-        const outputContent = firstOutput && "content" in firstOutput ? firstOutput.content : [];
-        const hasToolCalls = this.converter.hasToolCalls(outputContent);
-        if (!hasToolCalls) {
-          this.converter.clearMappings();
-        }
-        return response;
-      } catch (error) {
-        this.converter.clearMappings();
-        this.handleError(error);
-        throw error;
-      }
-    }, options.model);
-  }
-  /**
-   * Stream response using Google Gemini API
-   */
-  async *streamGenerate(options) {
-    try {
-      const googleRequest = await this.converter.convertRequest(options);
-      const stream = await this.client.models.generateContentStream({
-        model: options.model,
-        contents: googleRequest.contents,
-        config: {
-          systemInstruction: googleRequest.systemInstruction,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          ...googleRequest.generationConfig
-        }
-      });
-      this.streamConverter.reset();
-      yield* this.streamConverter.convertStream(stream, options.model);
-      if (!this.streamConverter.hasToolCalls()) {
-        this.converter.clearMappings();
-        this.streamConverter.clear();
-      }
-    } catch (error) {
-      this.converter.clearMappings();
-      this.streamConverter.clear();
-      this.handleError(error);
-      throw error;
-    }
-  }
-  /**
-   * Get model capabilities
-   */
-  getModelCapabilities(model) {
-    if (model.includes("gemini-3") || model.includes("gemini-2.5") || model.includes("gemini-2.0") || model.includes("gemini-1.5") || model.includes("gemini-pro") || model.includes("gemini-flash")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1048576,
-        // 1M tokens
-        maxOutputTokens: 8192
-      };
-    }
-    return {
-      supportsTools: true,
-      supportsVision: true,
-      supportsJSON: true,
-      supportsJSONSchema: false,
-      maxTokens: 1048576,
-      maxOutputTokens: 8192
-    };
-  }
-  /**
-   * Handle Google-specific errors
-   */
-  handleError(error) {
-    const errorMessage = error.message || "";
-    if (error.status === 401 || errorMessage.includes("API key not valid")) {
-      throw new ProviderAuthError("google", "Invalid API key");
-    }
-    if (error.status === 429 || errorMessage.includes("Resource exhausted")) {
-      throw new ProviderRateLimitError("google");
-    }
-    if (errorMessage.includes("context length") || errorMessage.includes("too long")) {
-      throw new ProviderContextLengthError("google", 1048576);
-    }
-    throw error;
-  }
-};
-var VertexAITextProvider = class extends BaseTextProvider {
-  name = "vertex-ai";
-  capabilities = {
-    text: true,
-    images: true,
-    videos: true,
-    // Vertex AI supports video input
-    audio: true
-    // Vertex AI supports audio input
-  };
-  client;
-  converter;
-  config;
-  constructor(config) {
-    super(config);
-    this.config = config;
-    if (!config.projectId) {
-      throw new InvalidConfigError("Vertex AI requires projectId");
-    }
-    if (!config.location) {
-      throw new InvalidConfigError('Vertex AI requires location (e.g., "us-central1")');
-    }
-    process.env.GOOGLE_GENAI_USE_VERTEXAI = "True";
-    process.env.GOOGLE_CLOUD_PROJECT = config.projectId;
-    process.env.GOOGLE_CLOUD_LOCATION = config.location;
-    if (config.credentials) ;
-    this.client = new genai.GoogleGenAI({
-      // No API key for Vertex AI - uses Application Default Credentials
-    });
-    this.converter = new GoogleConverter();
-  }
-  /**
-   * Generate response using Vertex AI
-   */
-  async generate(options) {
-    try {
-      const googleRequest = await this.converter.convertRequest(options);
-      const result = await this.client.models.generateContent({
-        model: options.model,
-        contents: googleRequest.contents,
-        config: {
-          systemInstruction: googleRequest.systemInstruction,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          ...googleRequest.generationConfig
-        }
-      });
-      return this.converter.convertResponse(result);
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    }
-  }
-  /**
-   * Stream response using Vertex AI
-   */
-  async *streamGenerate(options) {
-    try {
-      const googleRequest = await this.converter.convertRequest(options);
-      const stream = await this.client.models.generateContentStream({
-        model: options.model,
-        contents: googleRequest.contents,
-        config: {
-          systemInstruction: googleRequest.systemInstruction,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          ...googleRequest.generationConfig
-        }
-      });
-      const streamConverter = new GoogleStreamConverter();
-      yield* streamConverter.convertStream(stream, options.model);
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    }
-  }
-  /**
-   * Get model capabilities
-   */
-  getModelCapabilities(model) {
-    if (model.includes("gemini-3") || model.includes("gemini-2.5") || model.includes("gemini-2.0") || model.includes("gemini-1.5") || model.includes("gemini-pro") || model.includes("gemini-flash")) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1048576,
-        // 1M tokens
-        maxOutputTokens: 8192
-      };
-    }
-    return {
-      supportsTools: true,
-      supportsVision: true,
-      supportsJSON: true,
-      supportsJSONSchema: false,
-      maxTokens: 1048576,
-      maxOutputTokens: 8192
-    };
-  }
-  /**
-   * Handle Vertex AI-specific errors
-   */
-  handleError(error) {
-    const errorMessage = error.message || "";
-    if (error.status === 401 || error.status === 403 || errorMessage.includes("not authenticated") || errorMessage.includes("permission denied")) {
-      throw new ProviderAuthError(
-        "vertex-ai",
-        "Authentication failed. Make sure you have set up Application Default Credentials or provided service account credentials."
-      );
-    }
-    if (error.status === 429 || errorMessage.includes("Resource exhausted")) {
-      throw new ProviderRateLimitError("vertex-ai");
-    }
-    if (errorMessage.includes("context length") || errorMessage.includes("too long")) {
-      throw new ProviderContextLengthError("vertex-ai", 1048576);
-    }
-    throw error;
-  }
-};
-
-// src/infrastructure/providers/generic/GenericOpenAIProvider.ts
-var GenericOpenAIProvider = class extends OpenAITextProvider {
-  name;
-  capabilities;
-  constructor(name, config, capabilities) {
-    super(config);
-    this.name = name;
-    if (capabilities) {
-      this.capabilities = {
-        text: capabilities.text ?? true,
-        images: capabilities.images ?? false,
-        videos: capabilities.videos ?? false,
-        audio: capabilities.audio ?? false
-      };
-    } else {
-      this.capabilities = {
-        text: true,
-        images: false,
-        // Conservative default
-        videos: false,
-        audio: false
-      };
-    }
-  }
-  /**
-   * Override model capabilities for generic providers
-   * Can be customized per provider
-   */
-  getModelCapabilities(model) {
-    const hasVision = model.toLowerCase().includes("vision") || model.toLowerCase().includes("llava") || model.toLowerCase().includes("llama-3.2-90b");
-    const isLargeContext = model.includes("128k") || model.includes("200k") || model.toLowerCase().includes("longtext");
-    return {
-      supportsTools: true,
-      // Most OpenAI-compatible APIs support tools
-      supportsVision: hasVision,
-      supportsJSON: true,
-      // Most support JSON mode
-      supportsJSONSchema: false,
-      // Conservative - not all support schema
-      maxTokens: isLargeContext ? 128e3 : 32e3,
-      // Conservative default
-      maxOutputTokens: 4096
-      // Common default
-    };
-  }
-};
-
-// src/core/createProvider.ts
-function createProvider(connector) {
-  const injectedProvider = connector.getOptions().provider;
-  if (injectedProvider && typeof injectedProvider.generate === "function") {
-    return injectedProvider;
-  }
-  const vendor = connector.vendor;
-  if (!vendor) {
-    throw new Error(
-      `Connector '${connector.name}' has no vendor specified. Set vendor to create an AI provider.`
-    );
-  }
-  const config = extractProviderConfig(connector);
-  switch (vendor) {
-    case Vendor.OpenAI:
-      return new OpenAITextProvider({
-        ...config,
-        organization: connector.getOptions().organization,
-        project: connector.getOptions().project
-      });
-    case Vendor.Anthropic:
-      return new AnthropicTextProvider({
-        ...config,
-        anthropicVersion: connector.getOptions().anthropicVersion
-      });
-    case Vendor.Google:
-      return new GoogleTextProvider(config);
-    case Vendor.GoogleVertex:
-      return new VertexAITextProvider({
-        ...config,
-        projectId: connector.getOptions().projectId || "",
-        location: connector.getOptions().location || "us-central1"
-      });
-    // OpenAI-compatible providers (use connector.name for unique identification)
-    case Vendor.Groq:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.groq.com/openai/v1"
-      });
-    case Vendor.Together:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.together.xyz/v1"
-      });
-    case Vendor.Perplexity:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.perplexity.ai"
-      });
-    case Vendor.Grok:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.x.ai/v1"
-      });
-    case Vendor.DeepSeek:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.deepseek.com/v1"
-      });
-    case Vendor.Mistral:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.mistral.ai/v1"
-      });
-    case Vendor.Ollama:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "http://localhost:11434/v1"
-      });
-    case Vendor.Custom:
-      if (!config.baseURL) {
-        throw new Error(
-          `Connector '${connector.name}' with Custom vendor requires baseURL`
-        );
-      }
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL
-      });
-    default:
-      throw new Error(`Unknown vendor: ${vendor}`);
-  }
-}
-function extractProviderConfig(connector) {
-  const auth2 = connector.config.auth;
-  let apiKey;
-  if (auth2.type === "api_key") {
-    apiKey = auth2.apiKey;
-  } else if (auth2.type === "none") {
-    apiKey = "mock-key";
-  } else if (auth2.type === "oauth") {
-    throw new Error(
-      `Connector '${connector.name}' uses OAuth. Call connector.getToken() to get the access token first.`
-    );
-  } else if (auth2.type === "jwt") {
-    throw new Error(
-      `Connector '${connector.name}' uses JWT auth. JWT auth for AI providers is not yet supported.`
-    );
-  } else {
-    throw new Error(`Unknown auth type for connector '${connector.name}'`);
-  }
-  return {
-    apiKey,
-    baseURL: connector.config.baseURL,
-    timeout: connector.getOptions().timeout,
-    maxRetries: connector.getOptions().maxRetries
-  };
-}
-
-// src/core/BaseAgent.ts
-var BaseAgent = class extends eventemitter3.EventEmitter {
-  // ===== Core Properties =====
-  name;
-  connector;
-  model;
-  // ===== Protected State =====
-  _config;
-  _agentContext;
-  // SINGLE SOURCE OF TRUTH for tools and sessions
-  _permissionManager;
-  _isDestroyed = false;
-  _cleanupCallbacks = [];
-  _logger;
-  _lifecycleHooks;
-  // Session state
-  _sessionConfig = null;
-  _autoSaveInterval = null;
-  _pendingSessionLoad = null;
-  // Provider for LLM calls - single instance shared by all methods
-  _provider;
-  // ===== Constructor =====
-  constructor(config, loggerComponent) {
-    super();
-    this._config = config;
-    this.connector = this.resolveConnector(config.connector);
-    this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
-    this.model = config.model;
-    this._logger = exports.logger.child({
-      component: loggerComponent,
-      agentName: this.name,
-      model: this.model,
-      connector: this.connector.name
-    });
-    this._agentContext = this.initializeAgentContext(config);
-    if (config.tools) {
-      for (const tool of config.tools) {
-        this._agentContext.tools.register(tool);
-      }
-    }
-    this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
-    this._lifecycleHooks = config.lifecycleHooks ?? {};
-    this._provider = createProvider(this.connector);
-  }
-  // ===== Protected Initialization Helpers =====
-  /**
-   * Resolve connector from string name or instance
-   */
-  resolveConnector(ref) {
-    if (typeof ref === "string") {
-      return exports.Connector.get(ref);
-    }
-    return ref;
-  }
-  /**
-   * Initialize AgentContext (single source of truth for tools and sessions).
-   * If AgentContext is provided, use it directly.
-   * Otherwise, create a new one with the provided configuration.
-   */
-  initializeAgentContext(config) {
-    if (config.context instanceof AgentContext) {
-      return config.context;
-    }
-    const contextConfig = {
-      model: config.model,
-      agentId: config.name,
-      // Include storage and sessionId if session config is provided
-      storage: config.session?.storage,
-      sessionId: config.session?.id,
-      // Subclasses can add systemPrompt via their config
-      ...typeof config.context === "object" && config.context !== null ? config.context : {}
-    };
-    return AgentContext.create(contextConfig);
-  }
-  /**
-   * Initialize permission manager
-   */
-  initializePermissionManager(config, tools) {
-    const manager = new ToolPermissionManager(config);
-    if (tools) {
-      for (const tool of tools) {
-        if (tool.permission) {
-          manager.setToolConfig(tool.definition.function.name, tool.permission);
-        }
-      }
-    }
-    return manager;
-  }
-  /**
-   * Initialize session management (call from subclass constructor after other setup)
-   * Now uses AgentContext.save()/load() for persistence.
-   */
-  initializeSession(sessionConfig) {
-    if (!sessionConfig) {
-      return;
-    }
-    this._sessionConfig = sessionConfig;
-    if (sessionConfig.id) {
-      this._pendingSessionLoad = this.loadSession(sessionConfig.id);
-    }
-    if (sessionConfig.autoSave) {
-      const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
-      this._autoSaveInterval = setInterval(async () => {
-        try {
-          if (this._agentContext.sessionId) {
-            await this._agentContext.save();
-            this._logger.debug({ sessionId: this._agentContext.sessionId }, "Auto-saved session");
-          }
-        } catch (error) {
-          this._logger.error({ error: error.message }, "Auto-save failed");
-        }
-      }, interval);
-    }
-  }
-  /**
-   * Ensure any pending session load is complete
-   */
-  async ensureSessionLoaded() {
-    if (this._pendingSessionLoad) {
-      await this._pendingSessionLoad;
-      this._pendingSessionLoad = null;
-    }
-  }
-  // ===== Public Session API =====
-  /**
-   * Get the current session ID (if session is enabled)
-   * Delegates to AgentContext.
-   */
-  getSessionId() {
-    return this._agentContext.sessionId;
-  }
-  /**
-   * Check if this agent has session support enabled
-   */
-  hasSession() {
-    return this._agentContext.storage !== null;
-  }
-  /**
-   * Save the current session to storage.
-   * Uses getContextState() to get state, allowing subclasses to inject agent-level state.
-   *
-   * @param sessionId - Optional session ID (uses current or generates new)
-   * @param metadata - Optional session metadata
-   * @throws Error if storage is not configured
-   */
-  async saveSession(sessionId, metadata) {
-    await this.ensureSessionLoaded();
-    const state = await this.getContextState();
-    await this._agentContext.save(sessionId, metadata, state);
-    this._logger.debug({ sessionId: this._agentContext.sessionId }, "Session saved");
-    this.emit("session:saved", { sessionId: this._agentContext.sessionId });
-  }
-  /**
-   * Load a session from storage.
-   * Uses restoreContextState() to restore state, allowing subclasses to restore agent-level state.
-   *
-   * @param sessionId - Session ID to load
-   * @returns true if session was found and loaded, false if not found
-   * @throws Error if storage is not configured
-   */
-  async loadSession(sessionId) {
-    const result = await this._agentContext.loadRaw(sessionId);
-    if (!result) {
-      this._logger.warn({ sessionId }, "Session not found");
-      return false;
-    }
-    await this.restoreContextState(result.state);
-    this._logger.info({ sessionId }, "Session loaded");
-    this.emit("session:loaded", { sessionId });
-    return true;
-  }
-  /**
-   * Check if a session exists in storage.
-   * Delegates to AgentContext.sessionExists().
-   */
-  async sessionExists(sessionId) {
-    return this._agentContext.sessionExists(sessionId);
-  }
-  /**
-   * Delete a session from storage.
-   * Delegates to AgentContext.deleteSession().
-   */
-  async deleteSession(sessionId) {
-    await this._agentContext.deleteSession(sessionId);
-    this._logger.debug({ sessionId }, "Session deleted");
-  }
-  /**
-   * Get context state for session persistence.
-   * Override in subclasses to include agent-specific state in agentState field.
-   */
-  async getContextState() {
-    return this._agentContext.getState();
-  }
-  /**
-   * Restore context from saved state.
-   * Override in subclasses to restore agent-specific state from agentState field.
-   */
-  async restoreContextState(state) {
-    await this._agentContext.restoreState(state);
-  }
-  // ===== Public Permission API =====
-  /**
-   * Advanced tool management. Returns ToolManager for fine-grained control.
-   * This is delegated to AgentContext.tools (single source of truth).
-   */
-  get tools() {
-    return this._agentContext.tools;
-  }
-  /**
-   * Get the AgentContext (unified context management).
-   * This is the primary way to access tools, memory, cache, permissions, and history.
-   */
-  get context() {
-    return this._agentContext;
-  }
-  /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   */
-  get permissions() {
-    return this._permissionManager;
-  }
-  // ===== Tool Management =====
-  /**
-   * Add a tool to the agent.
-   * Tools are registered with AgentContext (single source of truth).
-   */
-  addTool(tool) {
-    this._agentContext.tools.register(tool);
-    if (tool.permission) {
-      this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
-    }
-  }
-  /**
-   * Remove a tool from the agent.
-   * Tools are unregistered from AgentContext (single source of truth).
-   */
-  removeTool(toolName) {
-    this._agentContext.tools.unregister(toolName);
-  }
-  /**
-   * List registered tools (returns enabled tool names)
-   */
-  listTools() {
-    return this._agentContext.tools.listEnabled();
-  }
-  /**
-   * Replace all tools with a new array
-   */
-  setTools(tools) {
-    this._agentContext.tools.clear();
-    for (const tool of tools) {
-      this._agentContext.tools.register(tool);
-      if (tool.permission) {
-        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
-      }
-    }
-  }
-  /**
-   * Get enabled tool definitions (for passing to LLM).
-   * This is a helper that extracts definitions from enabled tools.
-   */
-  getEnabledToolDefinitions() {
-    return this._agentContext.tools.getEnabled().map((t) => t.definition);
-  }
-  // ===== Direct LLM Access (Bypasses AgentContext) =====
-  /**
-   * Get the provider for LLM calls.
-   * Returns the single shared provider instance.
-   */
-  getProvider() {
-    return this._provider;
-  }
-  /**
-   * Make a direct LLM call bypassing all context management.
-   *
-   * This method:
-   * - Does NOT track messages in history
-   * - Does NOT use AgentContext features (memory, cache, etc.)
-   * - Does NOT prepare context or run compaction
-   * - Does NOT go through the agentic loop (no tool execution)
-   *
-   * Use this for simple, stateless interactions where you want raw LLM access
-   * without the overhead of context management.
-   *
-   * @param input - Text string or array of InputItems (supports multimodal: text + images)
-   * @param options - Optional configuration for the call
-   * @returns Raw LLM response
-   *
-   * @example
-   * ```typescript
-   * // Simple text call
-   * const response = await agent.runDirect('What is 2 + 2?');
-   * console.log(response.output_text);
-   *
-   * // With options
-   * const response = await agent.runDirect('Summarize this', {
-   *   instructions: 'Be concise',
-   *   temperature: 0.5,
-   * });
-   *
-   * // Multimodal (text + image)
-   * const response = await agent.runDirect([
-   *   { type: 'message', role: 'user', content: [
-   *     { type: 'input_text', text: 'What is in this image?' },
-   *     { type: 'input_image', image_url: 'https://...' }
-   *   ]}
-   * ]);
-   *
-   * // With tools (single call, no loop)
-   * const response = await agent.runDirect('Get the weather', {
-   *   includeTools: true,
-   * });
-   * // Note: If the LLM returns a tool call, you must handle it yourself
-   * ```
-   */
-  async runDirect(input, options = {}) {
-    if (this._isDestroyed) {
-      throw new Error("Agent has been destroyed");
-    }
-    const provider = this.getProvider();
-    const generateOptions = {
-      model: this.model,
-      input,
-      instructions: options.instructions,
-      tools: options.includeTools ? this.getEnabledToolDefinitions() : void 0,
-      temperature: options.temperature,
-      max_output_tokens: options.maxOutputTokens,
-      response_format: options.responseFormat,
-      vendorOptions: options.vendorOptions
-    };
-    this._logger.debug({ inputType: typeof input }, "runDirect called");
-    try {
-      const response = await provider.generate(generateOptions);
-      this._logger.debug({ outputLength: response.output_text?.length }, "runDirect completed");
-      return response;
-    } catch (error) {
-      this._logger.error({ error: error.message }, "runDirect failed");
-      throw error;
-    }
-  }
-  /**
-   * Stream a direct LLM call bypassing all context management.
-   *
-   * Same as runDirect but returns a stream of events instead of waiting
-   * for the complete response. Useful for real-time output display.
-   *
-   * @param input - Text string or array of InputItems (supports multimodal)
-   * @param options - Optional configuration for the call
-   * @returns Async iterator of stream events
-   *
-   * @example
-   * ```typescript
-   * for await (const event of agent.streamDirect('Tell me a story')) {
-   *   if (event.type === 'output_text_delta') {
-   *     process.stdout.write(event.delta);
-   *   }
-   * }
-   * ```
-   */
-  async *streamDirect(input, options = {}) {
-    if (this._isDestroyed) {
-      throw new Error("Agent has been destroyed");
-    }
-    const provider = this.getProvider();
-    const generateOptions = {
-      model: this.model,
-      input,
-      instructions: options.instructions,
-      tools: options.includeTools ? this.getEnabledToolDefinitions() : void 0,
-      temperature: options.temperature,
-      max_output_tokens: options.maxOutputTokens,
-      response_format: options.responseFormat,
-      vendorOptions: options.vendorOptions
-    };
-    this._logger.debug({ inputType: typeof input }, "streamDirect called");
-    try {
-      yield* provider.streamGenerate(generateOptions);
-      this._logger.debug("streamDirect completed");
-    } catch (error) {
-      this._logger.error({ error: error.message }, "streamDirect failed");
-      throw error;
-    }
-  }
-  // ===== Lifecycle Hooks =====
-  /**
-   * Get the current lifecycle hooks configuration
-   */
-  get lifecycleHooks() {
-    return this._lifecycleHooks;
-  }
-  /**
-   * Set or update lifecycle hooks at runtime
-   */
-  setLifecycleHooks(hooks) {
-    this._lifecycleHooks = { ...this._lifecycleHooks, ...hooks };
-  }
-  /**
-   * Invoke beforeToolExecution hook if defined.
-   * Call this before executing a tool.
-   *
-   * @throws Error if hook throws (prevents tool execution)
-   */
-  async invokeBeforeToolExecution(context) {
-    if (this._lifecycleHooks.beforeToolExecution) {
-      try {
-        await this._lifecycleHooks.beforeToolExecution(context);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message, toolName: context.toolName },
-          "beforeToolExecution hook failed"
-        );
-        throw error;
-      }
-    }
-  }
-  /**
-   * Invoke afterToolExecution hook if defined.
-   * Call this after tool execution completes (success or failure).
-   */
-  async invokeAfterToolExecution(result) {
-    if (this._lifecycleHooks.afterToolExecution) {
-      try {
-        await this._lifecycleHooks.afterToolExecution(result);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message, toolName: result.toolName },
-          "afterToolExecution hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke beforeContextPrepare hook if defined.
-   * Call this before preparing context for LLM.
-   */
-  async invokeBeforeContextPrepare() {
-    if (this._lifecycleHooks.beforeContextPrepare) {
-      try {
-        await this._lifecycleHooks.beforeContextPrepare(this.name);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message },
-          "beforeContextPrepare hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke beforeCompaction hook if defined.
-   * Call this before context compaction occurs.
-   * Gives the agent a chance to save important data to memory.
-   */
-  async invokeBeforeCompaction(context) {
-    if (this._lifecycleHooks.beforeCompaction) {
-      try {
-        await this._lifecycleHooks.beforeCompaction(context);
-      } catch (error) {
-        this._logger.error(
-          {
-            error: error.message,
-            strategy: context.strategy,
-            estimatedTokensToFree: context.estimatedTokensToFree
-          },
-          "beforeCompaction hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke afterCompaction hook if defined.
-   * Call this after context compaction occurs.
-   */
-  async invokeAfterCompaction(log, tokensFreed) {
-    if (this._lifecycleHooks.afterCompaction) {
-      try {
-        await this._lifecycleHooks.afterCompaction(log, tokensFreed);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message, tokensFreed },
-          "afterCompaction hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke onError hook if defined.
-   * Call this when the agent encounters an error.
-   */
-  async invokeOnError(error, phase) {
-    if (this._lifecycleHooks.onError) {
-      try {
-        await this._lifecycleHooks.onError(error, { phase, agentId: this.name });
-      } catch (hookError) {
-        this._logger.error(
-          { error: hookError.message, originalError: error.message, phase },
-          "onError hook failed"
-        );
-      }
-    }
-  }
-  // ===== Lifecycle =====
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Register a cleanup callback
-   */
-  onCleanup(callback) {
-    this._cleanupCallbacks.push(callback);
-  }
-  /**
-   * Base cleanup for session and listeners.
-   * Subclasses should call super.baseDestroy() in their destroy() method.
-   */
-  baseDestroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    this._logger.debug("Agent destroy started");
-    if (this._autoSaveInterval) {
-      clearInterval(this._autoSaveInterval);
-      this._autoSaveInterval = null;
-    }
-    this._agentContext.destroy();
-    this._permissionManager.removeAllListeners();
-    this.removeAllListeners();
-  }
-  /**
-   * Run cleanup callbacks
-   */
-  async runCleanupCallbacks() {
-    for (const callback of this._cleanupCallbacks) {
-      try {
-        await callback();
-      } catch (error) {
-        this._logger.error({ error: error.message }, "Cleanup callback error");
-      }
-    }
-    this._cleanupCallbacks = [];
-  }
-};
-
-// src/domain/entities/Tool.ts
-var ToolCallState = /* @__PURE__ */ ((ToolCallState2) => {
-  ToolCallState2["PENDING"] = "pending";
-  ToolCallState2["EXECUTING"] = "executing";
-  ToolCallState2["COMPLETED"] = "completed";
-  ToolCallState2["FAILED"] = "failed";
-  ToolCallState2["TIMEOUT"] = "timeout";
-  return ToolCallState2;
-})(ToolCallState || {});
-function defaultDescribeCall(args, maxLength = 60) {
-  if (!args || typeof args !== "object") {
-    return "";
-  }
-  const priorityKeys = [
-    "file_path",
-    "path",
-    "command",
-    "query",
-    "pattern",
-    "url",
-    "key",
-    "name",
-    "message",
-    "content",
-    "expression",
-    "prompt"
-  ];
-  for (const key of priorityKeys) {
-    if (key in args && args[key] != null) {
-      const value = args[key];
-      const str = typeof value === "string" ? value : JSON.stringify(value);
-      return str.length > maxLength ? str.slice(0, maxLength - 3) + "..." : str;
-    }
-  }
-  for (const [, value] of Object.entries(args)) {
-    if (typeof value === "string" && value.length > 0) {
-      return value.length > maxLength ? value.slice(0, maxLength - 3) + "..." : value;
-    }
-  }
-  const firstEntry = Object.entries(args)[0];
-  if (firstEntry) {
-    const [key, value] = firstEntry;
-    const str = typeof value === "string" ? value : JSON.stringify(value);
-    if (str.length > maxLength) {
-      return `${key}=${str.slice(0, maxLength - key.length - 4)}...`;
-    }
-    return `${key}=${str}`;
-  }
-  return "";
-}
-function getToolCallDescription(tool, args) {
-  if (tool.describeCall) {
-    try {
-      return tool.describeCall(args);
-    } catch {
-    }
-  }
-  return defaultDescribeCall(args);
-}
-
-// src/capabilities/agents/ExecutionContext.ts
-var ExecutionContext = class {
-  // Execution metadata
-  executionId;
-  startTime;
-  iteration = 0;
-  // Tool tracking
-  toolCalls = /* @__PURE__ */ new Map();
-  toolResults = /* @__PURE__ */ new Map();
-  // Control state
-  paused = false;
-  pauseReason;
-  cancelled = false;
-  cancelReason;
-  // User data (for hooks to share state)
-  metadata = /* @__PURE__ */ new Map();
-  // History storage (memory-safe)
-  config;
-  iterations = [];
-  iterationSummaries = [];
-  // Metrics
-  metrics = {
-    totalDuration: 0,
-    llmDuration: 0,
-    toolDuration: 0,
-    hookDuration: 0,
-    iterationCount: 0,
-    toolCallCount: 0,
-    toolSuccessCount: 0,
-    toolFailureCount: 0,
-    toolTimeoutCount: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    errors: []
-  };
-  // Audit trail
-  auditTrail = [];
-  constructor(executionId, config = {}) {
-    this.executionId = executionId;
-    this.startTime = /* @__PURE__ */ new Date();
-    this.config = {
-      maxHistorySize: config.maxHistorySize || 10,
-      historyMode: config.historyMode || "summary",
-      maxAuditTrailSize: config.maxAuditTrailSize || 1e3
-    };
-  }
-  /**
-   * Add iteration to history (memory-safe)
-   */
-  addIteration(record2) {
-    switch (this.config.historyMode) {
-      case "none":
-        break;
-      case "summary":
-        this.iterationSummaries.push({
-          iteration: record2.iteration,
-          tokens: record2.response.usage.total_tokens,
-          toolCount: record2.toolCalls.length,
-          duration: record2.endTime.getTime() - record2.startTime.getTime(),
-          timestamp: record2.startTime
-        });
-        if (this.iterationSummaries.length > this.config.maxHistorySize) {
-          this.iterationSummaries.shift();
-        }
-        break;
-      case "full":
-        this.iterations.push(record2);
-        if (this.iterations.length > this.config.maxHistorySize) {
-          this.iterations.shift();
-        }
-        break;
-    }
-  }
-  /**
-   * Get iteration history
-   */
-  getHistory() {
-    return this.config.historyMode === "full" ? this.iterations : this.iterationSummaries;
-  }
-  /**
-   * Add audit entry
-   */
-  audit(type, details, hookName, toolName) {
-    this.auditTrail.push({
-      timestamp: /* @__PURE__ */ new Date(),
-      type,
-      hookName,
-      toolName,
-      details
-    });
-    if (this.auditTrail.length > this.config.maxAuditTrailSize) {
-      this.auditTrail.shift();
-    }
-  }
-  /**
-   * Get audit trail
-   */
-  getAuditTrail() {
-    return this.auditTrail;
-  }
-  /**
-   * Update metrics
-   */
-  updateMetrics(update) {
-    Object.assign(this.metrics, update);
-  }
-  /**
-   * Add tool call to tracking
-   */
-  addToolCall(toolCall) {
-    this.toolCalls.set(toolCall.id, toolCall);
-    this.metrics.toolCallCount++;
-  }
-  /**
-   * Add tool result to tracking
-   */
-  addToolResult(result) {
-    this.toolResults.set(result.tool_use_id, result);
-    if (result.state === "completed" /* COMPLETED */) {
-      this.metrics.toolSuccessCount++;
-    } else if (result.state === "failed" /* FAILED */) {
-      this.metrics.toolFailureCount++;
-    } else if (result.state === "timeout" /* TIMEOUT */) {
-      this.metrics.toolTimeoutCount++;
-    }
-  }
-  /**
-   * Check resource limits
-   */
-  checkLimits(limits) {
-    if (!limits) return;
-    if (limits.maxExecutionTime) {
-      const elapsed = Date.now() - this.startTime.getTime();
-      if (elapsed > limits.maxExecutionTime) {
-        throw new Error(
-          `Execution time limit exceeded: ${elapsed}ms > ${limits.maxExecutionTime}ms`
-        );
-      }
-    }
-    if (limits.maxToolCalls && this.toolCalls.size > limits.maxToolCalls) {
-      throw new Error(
-        `Tool call limit exceeded: ${this.toolCalls.size} > ${limits.maxToolCalls}`
-      );
-    }
-    if (limits.maxContextSize) {
-      const size = this.estimateSize();
-      if (size > limits.maxContextSize) {
-        throw new Error(
-          `Context size limit exceeded: ${size} bytes > ${limits.maxContextSize} bytes`
-        );
-      }
-    }
-  }
-  /**
-   * Estimate memory usage (rough approximation)
-   */
-  estimateSize() {
-    try {
-      const data = {
-        toolCalls: Array.from(this.toolCalls.values()),
-        toolResults: Array.from(this.toolResults.values()),
-        iterations: this.config.historyMode === "full" ? this.iterations : this.iterationSummaries,
-        auditTrail: this.auditTrail
-      };
-      return JSON.stringify(data).length;
-    } catch {
-      return 0;
-    }
-  }
-  /**
-   * Cleanup resources and release memory
-   * Clears all internal arrays and maps to allow garbage collection
-   */
-  cleanup() {
-    const summary = {
-      executionId: this.executionId,
-      totalIterations: this.iteration,
-      totalToolCalls: this.metrics.toolCallCount,
-      totalDuration: Date.now() - this.startTime.getTime(),
-      success: !this.cancelled && this.metrics.errors.length === 0
-    };
-    this.toolCalls.clear();
-    this.toolResults.clear();
-    this.metadata.clear();
-    this.iterations.length = 0;
-    this.iterationSummaries.length = 0;
-    this.auditTrail.length = 0;
-    this.metrics.errors.length = 0;
-    this.metadata.set("execution_summary", summary);
-  }
-  /**
-   * Get execution summary
-   */
-  getSummary() {
-    return {
-      executionId: this.executionId,
-      startTime: this.startTime,
-      currentIteration: this.iteration,
-      paused: this.paused,
-      cancelled: this.cancelled,
-      metrics: { ...this.metrics },
-      totalDuration: Date.now() - this.startTime.getTime()
-    };
-  }
-};
-
-// src/capabilities/agents/HookManager.ts
-var HookManager = class {
-  hooks = /* @__PURE__ */ new Map();
-  timeout;
-  parallel;
-  // Per-hook error tracking: hookKey -> consecutive error count
-  hookErrorCounts = /* @__PURE__ */ new Map();
-  // Disabled hooks that exceeded error threshold
-  disabledHooks = /* @__PURE__ */ new Set();
-  maxConsecutiveErrors = 3;
-  emitter;
-  constructor(config = {}, emitter, errorHandling) {
-    this.timeout = config.hookTimeout || 5e3;
-    this.parallel = config.parallelHooks || false;
-    this.emitter = emitter;
-    this.maxConsecutiveErrors = errorHandling?.maxConsecutiveErrors || 3;
-    this.registerFromConfig(config);
-  }
-  /**
-   * Register hooks from configuration
-   */
-  registerFromConfig(config) {
-    const hookNames = [
-      "before:execution",
-      "after:execution",
-      "before:llm",
-      "after:llm",
-      "before:tool",
-      "after:tool",
-      "approve:tool",
-      "pause:check"
-    ];
-    for (const name of hookNames) {
-      const hook = config[name];
-      if (hook) {
-        this.register(name, hook);
-      }
-    }
-  }
-  /**
-   * Register a hook
-   */
-  register(name, hook) {
-    if (typeof hook !== "function") {
-      throw new Error(`Hook must be a function, got: ${typeof hook}`);
-    }
-    if (!this.hooks.has(name)) {
-      this.hooks.set(name, []);
-    }
-    const existing = this.hooks.get(name);
-    if (existing.length >= 10) {
-      throw new Error(`Too many hooks for ${name} (max: 10)`);
-    }
-    existing.push(hook);
-  }
-  /**
-   * Execute hooks for a given name
-   */
-  async executeHooks(name, context, defaultResult) {
-    const hooks = this.hooks.get(name);
-    if (!hooks || hooks.length === 0) {
-      return defaultResult;
-    }
-    if (this.parallel && hooks.length > 1) {
-      return this.executeHooksParallel(hooks, context, defaultResult);
-    }
-    return this.executeHooksSequential(hooks, context, defaultResult);
-  }
-  /**
-   * Execute hooks sequentially
-   */
-  async executeHooksSequential(hooks, context, defaultResult) {
-    let result = defaultResult;
-    for (let i = 0; i < hooks.length; i++) {
-      const hook = hooks[i];
-      const hookKey = this.getHookKey(hook, i);
-      const hookResult = await this.executeHookSafely(hook, context, hookKey);
-      if (hookResult === null) {
-        continue;
-      }
-      result = { ...result, ...hookResult };
-      if (hookResult.skip === true) {
-        break;
-      }
-    }
-    return result;
-  }
-  /**
-   * Execute hooks in parallel
-   */
-  async executeHooksParallel(hooks, context, defaultResult) {
-    const results = await Promise.all(
-      hooks.map((hook, i) => {
-        const hookKey = this.getHookKey(hook, i);
-        return this.executeHookSafely(hook, context, hookKey);
-      })
-    );
-    const validResults = results.filter((r) => r !== null);
-    return validResults.reduce(
-      (acc, hookResult) => ({ ...acc, ...hookResult }),
-      defaultResult
-    );
-  }
-  /**
-   * Generate unique key for a hook
-   */
-  getHookKey(hook, index) {
-    return `${hook.name || "anonymous"}_${index}`;
-  }
-  /**
-   * Execute single hook with error isolation and timeout (with per-hook error tracking)
-   */
-  async executeHookSafely(hook, context, hookKey) {
-    const key = hookKey || hook.name || "anonymous";
-    if (this.disabledHooks.has(key)) {
-      return null;
-    }
-    const startTime = Date.now();
-    try {
-      const result = await Promise.race([
-        hook(context),
-        new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Hook timeout")), this.timeout)
-        )
-      ]);
-      this.hookErrorCounts.delete(key);
-      const duration = Date.now() - startTime;
-      if (context.context?.updateMetrics) {
-        context.context.updateMetrics({
-          hookDuration: (context.context.metrics.hookDuration || 0) + duration
-        });
-      }
-      return result;
-    } catch (error) {
-      const errorCount = (this.hookErrorCounts.get(key) || 0) + 1;
-      this.hookErrorCounts.set(key, errorCount);
-      this.emitter.emit("hook:error", {
-        executionId: context.executionId,
-        hookName: hook.name || "anonymous",
-        error,
-        consecutiveErrors: errorCount,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      if (errorCount >= this.maxConsecutiveErrors) {
-        this.disabledHooks.add(key);
-        console.warn(
-          `Hook "${key}" disabled after ${errorCount} consecutive failures. Last error: ${error.message}`
-        );
-      } else {
-        console.warn(
-          `Hook execution failed (${key}): ${error.message} (${errorCount}/${this.maxConsecutiveErrors} errors)`
-        );
-      }
-      return null;
-    }
-  }
-  /**
-   * Check if there are any hooks registered
-   */
-  hasHooks(name) {
-    const hooks = this.hooks.get(name);
-    return !!hooks && hooks.length > 0;
-  }
-  /**
-   * Get hook count
-   */
-  getHookCount(name) {
-    if (name) {
-      return this.hooks.get(name)?.length || 0;
-    }
-    return Array.from(this.hooks.values()).reduce((sum, arr) => sum + arr.length, 0);
-  }
-  /**
-   * Clear all hooks and reset error tracking
-   */
-  clear() {
-    this.hooks.clear();
-    this.hookErrorCounts.clear();
-    this.disabledHooks.clear();
-  }
-  /**
-   * Re-enable a disabled hook
-   */
-  enableHook(hookKey) {
-    this.disabledHooks.delete(hookKey);
-    this.hookErrorCounts.delete(hookKey);
-  }
-  /**
-   * Get list of disabled hooks
-   */
-  getDisabledHooks() {
-    return Array.from(this.disabledHooks);
-  }
-};
-
-// src/domain/entities/StreamState.ts
-var StreamState = class {
-  // Core identifiers
-  responseId;
-  model;
-  createdAt;
-  // Text accumulation: item_id -> text chunks
-  textBuffers;
-  // Tool call accumulation: tool_call_id -> buffer
-  toolCallBuffers;
-  // Completed tool calls
-  completedToolCalls;
-  // Tool execution results
-  toolResults;
-  // Metadata
-  currentIteration;
-  usage;
-  status;
-  startTime;
-  endTime;
-  // Statistics
-  totalChunks;
-  totalTextDeltas;
-  totalToolCalls;
-  constructor(responseId, model, createdAt) {
-    this.responseId = responseId;
-    this.model = model;
-    this.createdAt = createdAt || Date.now();
-    this.textBuffers = /* @__PURE__ */ new Map();
-    this.toolCallBuffers = /* @__PURE__ */ new Map();
-    this.completedToolCalls = [];
-    this.toolResults = /* @__PURE__ */ new Map();
-    this.currentIteration = 0;
-    this.usage = {
-      input_tokens: 0,
-      output_tokens: 0,
-      total_tokens: 0
-    };
-    this.status = "in_progress";
-    this.startTime = /* @__PURE__ */ new Date();
-    this.totalChunks = 0;
-    this.totalTextDeltas = 0;
-    this.totalToolCalls = 0;
-  }
-  /**
-   * Accumulate text delta for a specific item
-   */
-  accumulateTextDelta(itemId, delta) {
-    if (!this.textBuffers.has(itemId)) {
-      this.textBuffers.set(itemId, []);
-    }
-    this.textBuffers.get(itemId).push(delta);
-    this.totalTextDeltas++;
-    this.totalChunks++;
-  }
-  /**
-   * Get complete accumulated text for an item
-   */
-  getCompleteText(itemId) {
-    const chunks = this.textBuffers.get(itemId);
-    return chunks ? chunks.join("") : "";
-  }
-  /**
-   * Get all accumulated text (all items concatenated)
-   */
-  getAllText() {
-    const allText = [];
-    for (const chunks of this.textBuffers.values()) {
-      allText.push(chunks.join(""));
-    }
-    return allText.join("");
-  }
-  /**
-   * Start accumulating tool call arguments
-   */
-  startToolCall(toolCallId, toolName) {
-    this.toolCallBuffers.set(toolCallId, {
-      toolName,
-      argumentChunks: [],
-      isComplete: false,
-      startTime: /* @__PURE__ */ new Date()
-    });
-  }
-  /**
-   * Accumulate tool argument delta
-   */
-  accumulateToolArguments(toolCallId, delta) {
-    const buffer = this.toolCallBuffers.get(toolCallId);
-    if (!buffer) {
-      throw new Error(`Tool call buffer not found for id: ${toolCallId}`);
-    }
-    buffer.argumentChunks.push(delta);
-    this.totalChunks++;
-  }
-  /**
-   * Mark tool call arguments as complete
-   */
-  completeToolCall(toolCallId) {
-    const buffer = this.toolCallBuffers.get(toolCallId);
-    if (!buffer) {
-      throw new Error(`Tool call buffer not found for id: ${toolCallId}`);
-    }
-    buffer.isComplete = true;
-    this.totalToolCalls++;
-  }
-  /**
-   * Get complete tool arguments (joined chunks)
-   */
-  getCompleteToolArguments(toolCallId) {
-    const buffer = this.toolCallBuffers.get(toolCallId);
-    if (!buffer) {
-      throw new Error(`Tool call buffer not found for id: ${toolCallId}`);
-    }
-    return buffer.argumentChunks.join("");
-  }
-  /**
-   * Check if tool call is complete
-   */
-  isToolCallComplete(toolCallId) {
-    const buffer = this.toolCallBuffers.get(toolCallId);
-    return buffer ? buffer.isComplete : false;
-  }
-  /**
-   * Get tool name for a tool call
-   */
-  getToolName(toolCallId) {
-    return this.toolCallBuffers.get(toolCallId)?.toolName;
-  }
-  /**
-   * Add completed tool call
-   */
-  addCompletedToolCall(toolCall) {
-    this.completedToolCalls.push(toolCall);
-  }
-  /**
-   * Get all completed tool calls
-   */
-  getCompletedToolCalls() {
-    return [...this.completedToolCalls];
-  }
-  /**
-   * Store tool execution result
-   */
-  setToolResult(toolCallId, result) {
-    this.toolResults.set(toolCallId, result);
-  }
-  /**
-   * Get tool execution result
-   */
-  getToolResult(toolCallId) {
-    return this.toolResults.get(toolCallId);
-  }
-  /**
-   * Update token usage (replaces values, doesn't accumulate)
-   */
-  updateUsage(usage) {
-    if (usage.input_tokens !== void 0) {
-      this.usage.input_tokens = usage.input_tokens;
-    }
-    if (usage.output_tokens !== void 0) {
-      this.usage.output_tokens = usage.output_tokens;
-    }
-    if (usage.total_tokens !== void 0) {
-      this.usage.total_tokens = usage.total_tokens;
-    } else {
-      this.usage.total_tokens = this.usage.input_tokens + this.usage.output_tokens;
-    }
-  }
-  /**
-   * Accumulate token usage (adds to existing values)
-   */
-  accumulateUsage(usage) {
-    if (usage.input_tokens !== void 0) {
-      this.usage.input_tokens += usage.input_tokens;
-    }
-    if (usage.output_tokens !== void 0) {
-      this.usage.output_tokens += usage.output_tokens;
-    }
-    if (usage.total_tokens !== void 0) {
-      this.usage.total_tokens += usage.total_tokens;
-    } else {
-      this.usage.total_tokens = this.usage.input_tokens + this.usage.output_tokens;
-    }
-  }
-  /**
-   * Mark stream as complete
-   */
-  markComplete(status = "completed") {
-    this.status = status;
-    this.endTime = /* @__PURE__ */ new Date();
-  }
-  /**
-   * Get duration in milliseconds
-   */
-  getDuration() {
-    const end = this.endTime || /* @__PURE__ */ new Date();
-    return end.getTime() - this.startTime.getTime();
-  }
-  /**
-   * Increment iteration counter
-   */
-  incrementIteration() {
-    this.currentIteration++;
-  }
-  /**
-   * Get summary statistics
-   */
-  getStatistics() {
-    return {
-      responseId: this.responseId,
-      model: this.model,
-      status: this.status,
-      iterations: this.currentIteration,
-      totalChunks: this.totalChunks,
-      totalTextDeltas: this.totalTextDeltas,
-      totalToolCalls: this.totalToolCalls,
-      textItemsCount: this.textBuffers.size,
-      toolCallBuffersCount: this.toolCallBuffers.size,
-      completedToolCallsCount: this.completedToolCalls.length,
-      durationMs: this.getDuration(),
-      usage: { ...this.usage }
-    };
-  }
-  /**
-   * Check if stream has any accumulated text
-   */
-  hasText() {
-    return this.textBuffers.size > 0;
-  }
-  /**
-   * Check if stream has any tool calls
-   */
-  hasToolCalls() {
-    return this.toolCallBuffers.size > 0;
-  }
-  /**
-   * Clear all buffers (for memory management)
-   */
-  clear() {
-    this.textBuffers.clear();
-    this.toolCallBuffers.clear();
-    this.completedToolCalls = [];
-    this.toolResults.clear();
-  }
-  /**
-   * Create a snapshot for checkpointing (error recovery)
-   */
-  createSnapshot() {
-    return {
-      responseId: this.responseId,
-      model: this.model,
-      createdAt: this.createdAt,
-      textBuffers: new Map(this.textBuffers),
-      toolCallBuffers: new Map(this.toolCallBuffers),
-      completedToolCalls: [...this.completedToolCalls],
-      toolResults: new Map(this.toolResults),
-      currentIteration: this.currentIteration,
-      usage: { ...this.usage },
-      status: this.status,
-      startTime: this.startTime,
-      endTime: this.endTime
-    };
-  }
-};
-
-// src/domain/interfaces/IDisposable.ts
-function assertNotDestroyed(obj, operation) {
-  if (obj.isDestroyed) {
-    throw new Error(`Cannot ${operation}: instance has been destroyed`);
-  }
-}
-
-// src/core/Agent.ts
-init_Metrics();
-var Agent = class _Agent extends BaseAgent {
-  // ===== Agent-specific State =====
-  hookManager;
-  executionContext = null;
-  // Pause/resume/cancel state
-  _paused = false;
-  _cancelled = false;
-  _pausePromise = null;
-  _resumeCallback = null;
-  _pauseResumeMutex = Promise.resolve();
-  // ===== Static Factory =====
-  /**
-   * Create a new agent
-   *
-   * @example
-   * ```typescript
-   * const agent = Agent.create({
-   *   connector: 'openai',  // or Connector instance
-   *   model: 'gpt-4',
-   *   instructions: 'You are a helpful assistant',
-   *   tools: [myTool]
-   * });
-   * ```
-   */
-  static create(config) {
-    return new _Agent(config);
-  }
-  /**
-   * Resume an agent from a saved session
-   *
-   * @example
-   * ```typescript
-   * const agent = await Agent.resume('session-123', {
-   *   connector: 'openai',
-   *   model: 'gpt-4',
-   *   session: { storage: myStorage }
-   * });
-   * ```
-   */
-  static async resume(sessionId, config) {
-    const agent = new _Agent({
-      ...config,
-      session: {
-        ...config.session,
-        id: sessionId
-      }
-    });
-    await agent.ensureSessionLoaded();
-    return agent;
-  }
-  /**
-   * Create an agent from a stored definition
-   *
-   * Loads agent configuration from storage and creates a new Agent instance.
-   * The connector must be registered at runtime before calling this method.
-   *
-   * @param agentId - Agent identifier to load
-   * @param storage - Storage backend to load from
-   * @param overrides - Optional config overrides
-   * @returns Agent instance, or null if not found
-   */
-  static async fromStorage(agentId, storage, overrides) {
-    const definition = await storage.load(agentId);
-    if (!definition) {
-      return null;
-    }
-    const config = {
-      connector: definition.connector.name,
-      model: definition.connector.model,
-      instructions: definition.systemPrompt,
-      context: {
-        agentId: definition.agentId,
-        systemPrompt: definition.systemPrompt,
-        instructions: definition.instructions,
-        features: definition.features
-      },
-      ...definition.typeConfig,
-      ...overrides
-    };
-    return new _Agent(config);
-  }
-  // ===== Constructor =====
-  constructor(config) {
-    super(config, "Agent");
-    this._logger.debug({ model: this.model, connector: this.connector.name }, "Agent created");
-    exports.metrics.increment("agent.created", 1, {
-      model: this.model,
-      connector: this.connector.name
-    });
-    if (config.instructions) {
-      this._agentContext.systemPrompt = config.instructions;
-    }
-    this._agentContext.tools.on("tool:registered", ({ name }) => {
-      const permission = this._agentContext.tools.getPermission(name);
-      if (permission) {
-        this._permissionManager.setToolConfig(name, permission);
-      }
-    });
-    this.hookManager = new HookManager(
-      config.hooks || {},
-      this,
-      config.errorHandling
-    );
-    this.initializeSession(config.session);
-  }
-  // ===== Abstract Method Implementations =====
-  getAgentType() {
-    return "agent";
-  }
-  // ===== Context Access =====
-  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
-  /**
-   * Check if context management is enabled.
-   * Always returns true since AgentContext is always created by BaseAgent.
-   */
-  hasContext() {
-    return true;
-  }
-  // getContextState() and restoreContextState() are inherited from BaseAgent
-  // ===== Shared Execution Helpers =====
-  /**
-   * Prepare execution - shared setup for run() and stream()
-   */
-  async _prepareExecution(input, methodName) {
-    assertNotDestroyed(this, `${methodName} agent`);
-    await this.ensureSessionLoaded();
-    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, `Agent ${methodName} started`);
-    exports.metrics.increment(`agent.${methodName}.started`, 1, { model: this.model, connector: this.connector.name });
-    const startTime = Date.now();
-    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.setCurrentInput(userContent);
-    const executionId = `exec_${crypto2.randomUUID()}`;
-    this.executionContext = new ExecutionContext(executionId, {
-      maxHistorySize: 10,
-      historyMode: this._config.historyMode || "summary",
-      maxAuditTrailSize: 1e3
-    });
-    this._paused = false;
-    this._cancelled = false;
-    if (methodName === "stream") {
-      this._pausePromise = null;
-      this._resumeCallback = null;
-    }
-    if (typeof input === "string") {
-      this._agentContext.addUserMessage(input);
-    } else {
-      this._agentContext.addInputItems(input);
-    }
-    this.emit("execution:start", {
-      executionId,
-      config: { model: this.model, maxIterations: this._config.maxIterations || 10 },
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    await this.hookManager.executeHooks("before:execution", {
-      executionId,
-      config: { model: this.model },
-      timestamp: /* @__PURE__ */ new Date()
-    }, void 0);
-    return {
-      executionId,
-      startTime,
-      maxIterations: this._config.maxIterations || 10
-    };
-  }
-  /**
-   * Check iteration preconditions - pause, cancel, limits, hooks
-   */
-  async _checkIterationPreconditions(executionId, iteration) {
-    await this.checkPause();
-    if (this._cancelled) {
-      return { shouldExit: true, exitReason: "cancelled" };
-    }
-    if (this.executionContext) {
-      this.executionContext.checkLimits(this._config.limits);
-    }
-    const pauseCheck = await this.hookManager.executeHooks("pause:check", {
-      executionId,
-      iteration,
-      context: this.executionContext,
-      timestamp: /* @__PURE__ */ new Date()
-    }, { shouldPause: false });
-    if (pauseCheck.shouldPause) {
-      this.pause(pauseCheck.reason || "Hook requested pause");
-      await this.checkPause();
-    }
-    if (this.executionContext) {
-      this.executionContext.iteration = iteration;
-    }
-    this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
-    return { shouldExit: false };
-  }
-  /**
-   * Record iteration metrics and store iteration record
-   */
-  _recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared) {
-    if (!this.executionContext) return;
-    this.executionContext.addIteration({
-      iteration,
-      request: {
-        model: this.model,
-        input: prepared.input,
-        instructions: this._config.instructions,
-        tools: this.getEnabledToolDefinitions(),
-        temperature: this._config.temperature
-      },
-      response,
-      toolCalls,
-      toolResults,
-      startTime: new Date(iterationStartTime),
-      endTime: /* @__PURE__ */ new Date()
-    });
-    this.executionContext.updateMetrics({
-      iterationCount: iteration + 1,
-      inputTokens: this.executionContext.metrics.inputTokens + (response.usage?.input_tokens || 0),
-      outputTokens: this.executionContext.metrics.outputTokens + (response.usage?.output_tokens || 0),
-      totalTokens: this.executionContext.metrics.totalTokens + (response.usage?.total_tokens || 0)
-    });
-  }
-  /**
-   * Finalize successful execution - hooks, events, metrics
-   */
-  async _finalizeExecution(executionId, startTime, response, methodName) {
-    const totalDuration = this.executionContext ? Date.now() - this.executionContext.startTime.getTime() : Date.now() - startTime;
-    if (this.executionContext) {
-      this.executionContext.updateMetrics({ totalDuration });
-    }
-    await this.hookManager.executeHooks("after:execution", {
-      executionId,
-      response,
-      context: this.executionContext,
-      timestamp: /* @__PURE__ */ new Date(),
-      duration: totalDuration
-    }, void 0);
-    this.emit("execution:complete", {
-      executionId,
-      response,
-      timestamp: /* @__PURE__ */ new Date(),
-      duration: totalDuration
-    });
-    const duration = Date.now() - startTime;
-    this._logger.info({ duration }, `Agent ${methodName} completed`);
-    exports.metrics.timing(`agent.${methodName}.duration`, duration, { model: this.model, connector: this.connector.name });
-    exports.metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: "success" });
-  }
-  /**
-   * Handle execution error - events, metrics, logging
-   */
-  _handleExecutionError(executionId, error, startTime, methodName) {
-    this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
-    this.executionContext?.metrics.errors.push({
-      type: "execution_error",
-      message: error.message,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    const duration = Date.now() - startTime;
-    this._logger.error({ error: error.message, duration }, `Agent ${methodName} failed`);
-    exports.metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: "error" });
-  }
-  /**
-   * Cleanup execution resources
-   */
-  _cleanupExecution(streamState) {
-    streamState?.clear();
-    this.executionContext?.cleanup();
-    this.hookManager.clear();
-  }
-  /**
-   * Emit iteration complete event (helper for run loop)
-   */
-  _emitIterationComplete(executionId, iteration, response, iterationStartTime) {
-    this.emit("iteration:complete", {
-      executionId,
-      iteration,
-      response,
-      timestamp: /* @__PURE__ */ new Date(),
-      duration: Date.now() - iterationStartTime
-    });
-  }
-  // ===== Main API =====
-  /**
-   * Run the agent with input
-   */
-  async run(input) {
-    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, "run");
-    let iteration = 0;
-    let finalResponse = null;
-    try {
-      while (iteration < maxIterations) {
-        const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
-        if (shouldExit) {
-          throw new Error("Execution cancelled");
-        }
-        const iterationStartTime = Date.now();
-        const prepared = await this._agentContext.prepareConversation({
-          instructionOverride: this._config.instructions
-        });
-        const response = await this.generateWithHooks(prepared.input, iteration, executionId);
-        const toolCalls = this.extractToolCalls(response.output);
-        this._agentContext.addAssistantResponse(response.output);
-        if (toolCalls.length > 0) {
-          this.emit("tool:detected", { executionId, iteration, toolCalls, timestamp: /* @__PURE__ */ new Date() });
-        }
-        if (toolCalls.length === 0) {
-          this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
-          finalResponse = response;
-          break;
-        }
-        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
-        this._agentContext.addToolResults(toolResults);
-        this._recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared);
-        this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
-        await this._agentContext.autoSpillPlugin?.onIteration();
-        iteration++;
-      }
-      if (iteration >= maxIterations && !finalResponse) {
-        throw new Error(`Max iterations (${maxIterations}) reached without completion`);
-      }
-      await this._finalizeExecution(executionId, startTime, finalResponse, "run");
-      return finalResponse;
-    } catch (error) {
-      this._handleExecutionError(executionId, error, startTime, "run");
-      throw error;
-    } finally {
-      this._cleanupExecution();
-    }
-  }
-  // ===== Stream-Specific Helpers =====
-  /**
-   * Build tool calls array from accumulated map
-   */
-  _buildToolCallsFromMap(toolCallsMap) {
-    const toolCalls = [];
-    for (const [toolCallId, buffer] of toolCallsMap) {
-      toolCalls.push({
-        id: toolCallId,
-        type: "function",
-        function: {
-          name: buffer.name,
-          arguments: buffer.args
-        },
-        blocking: true,
-        state: "pending" /* PENDING */
-      });
-    }
-    return toolCalls;
-  }
-  /**
-   * Build and add streaming assistant message to context
-   */
-  _addStreamingAssistantMessage(streamState, toolCalls) {
-    const assistantText = streamState.getAllText();
-    const assistantContent = [];
-    if (assistantText && assistantText.trim()) {
-      assistantContent.push({
-        type: "output_text" /* OUTPUT_TEXT */,
-        text: assistantText
-      });
-    }
-    for (const tc of toolCalls) {
-      assistantContent.push({
-        type: "tool_use" /* TOOL_USE */,
-        id: tc.id,
-        name: tc.function.name,
-        arguments: tc.function.arguments
-      });
-    }
-    const assistantMessage = {
-      type: "message",
-      role: "assistant" /* ASSISTANT */,
-      content: assistantContent
-    };
-    this._agentContext.addInputItems([assistantMessage]);
-  }
-  /**
-   * Build placeholder response for streaming finalization
-   */
-  _buildPlaceholderResponse(executionId, startTime, streamState) {
-    return {
-      id: executionId,
-      object: "response",
-      created_at: Math.floor(startTime / 1e3),
-      status: "completed",
-      model: this.model,
-      output: [],
-      usage: streamState.usage
-    };
-  }
-  /**
-   * Stream response from the agent
-   */
-  async *stream(input) {
-    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, "stream");
-    const globalStreamState = new StreamState(executionId, this.model);
-    let iteration = 0;
-    try {
-      while (iteration < maxIterations) {
-        iteration++;
-        const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
-        if (shouldExit) {
-          this.emit("execution:cancelled", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
-          break;
-        }
-        const prepared = await this._agentContext.prepareConversation({
-          instructionOverride: this._config.instructions
-        });
-        const iterationStreamState = new StreamState(executionId, this.model);
-        const toolCallsMap = /* @__PURE__ */ new Map();
-        yield* this.streamGenerateWithHooks(
-          prepared.input,
-          iteration,
-          executionId,
-          iterationStreamState,
-          toolCallsMap
-        );
-        globalStreamState.accumulateUsage(iterationStreamState.usage);
-        const toolCalls = this._buildToolCallsFromMap(toolCallsMap);
-        if (toolCalls.length === 0) {
-          yield {
-            type: "response.iteration.complete" /* ITERATION_COMPLETE */,
-            response_id: executionId,
-            iteration,
-            tool_calls_count: 0,
-            has_more_iterations: false
-          };
-          yield {
-            type: "response.complete" /* RESPONSE_COMPLETE */,
-            response_id: executionId,
-            status: "completed",
-            usage: globalStreamState.usage,
-            iterations: iteration,
-            duration_ms: Date.now() - startTime
-          };
-          break;
-        }
-        const toolResults = [];
-        for (const toolCall of toolCalls) {
-          let parsedArgs;
-          try {
-            parsedArgs = JSON.parse(toolCall.function.arguments);
-          } catch (error) {
-            yield {
-              type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
-              response_id: executionId,
-              tool_call_id: toolCall.id,
-              tool_name: toolCall.function.name,
-              result: null,
-              execution_time_ms: 0,
-              error: `Invalid tool arguments JSON: ${error.message}`
-            };
-            continue;
-          }
-          yield {
-            type: "response.tool_execution.start" /* TOOL_EXECUTION_START */,
-            response_id: executionId,
-            tool_call_id: toolCall.id,
-            tool_name: toolCall.function.name,
-            arguments: parsedArgs
-          };
-          const toolStartTime = Date.now();
-          try {
-            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
-            toolResults.push(result);
-            yield {
-              type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
-              response_id: executionId,
-              tool_call_id: toolCall.id,
-              tool_name: toolCall.function.name,
-              result: result.content,
-              execution_time_ms: Date.now() - toolStartTime
-            };
-          } catch (error) {
-            yield {
-              type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
-              response_id: executionId,
-              tool_call_id: toolCall.id,
-              tool_name: toolCall.function.name,
-              result: null,
-              execution_time_ms: Date.now() - toolStartTime,
-              error: error.message
-            };
-            const failureMode = this._config.errorHandling?.toolFailureMode || "continue";
-            if (failureMode === "fail") {
-              throw error;
-            }
-            toolResults.push({
-              tool_use_id: toolCall.id,
-              tool_name: toolCall.function.name,
-              tool_args: parsedArgs,
-              content: "",
-              error: error.message,
-              state: "failed" /* FAILED */
-            });
-          }
-        }
-        this._addStreamingAssistantMessage(iterationStreamState, toolCalls);
-        this._agentContext.addToolResults(toolResults);
-        await this._agentContext.autoSpillPlugin?.onIteration();
-        yield {
-          type: "response.iteration.complete" /* ITERATION_COMPLETE */,
-          response_id: executionId,
-          iteration,
-          tool_calls_count: toolCalls.length,
-          has_more_iterations: true
-        };
-        globalStreamState.incrementIteration();
-        iterationStreamState.clear();
-        toolCallsMap.clear();
-      }
-      if (iteration >= maxIterations) {
-        yield {
-          type: "response.complete" /* RESPONSE_COMPLETE */,
-          response_id: executionId,
-          status: "incomplete",
-          usage: globalStreamState.usage,
-          iterations: iteration,
-          duration_ms: Date.now() - startTime
-        };
-      }
-      const placeholderResponse = this._buildPlaceholderResponse(executionId, startTime, globalStreamState);
-      await this._finalizeExecution(executionId, startTime, placeholderResponse, "stream");
-    } catch (error) {
-      this._handleExecutionError(executionId, error, startTime, "stream");
-      yield {
-        type: "response.error" /* ERROR */,
-        response_id: executionId,
-        error: {
-          type: "execution_error",
-          message: error.message
-        },
-        recoverable: false
-      };
-      throw error;
-    } finally {
-      this._cleanupExecution(globalStreamState);
-    }
-  }
-  // ===== LLM Generation with Hooks =====
-  /**
-   * Generate LLM response with hooks
-   */
-  async generateWithHooks(input, iteration, executionId) {
-    const llmStartTime = Date.now();
-    let generateOptions = {
-      model: this.model,
-      input,
-      instructions: this._config.instructions,
-      tools: this.getEnabledToolDefinitions(),
-      tool_choice: "auto",
-      temperature: this._config.temperature,
-      vendorOptions: this._config.vendorOptions
-    };
-    const beforeLLM = await this.hookManager.executeHooks("before:llm", {
-      executionId,
-      iteration,
-      options: generateOptions,
-      context: this.executionContext,
-      timestamp: /* @__PURE__ */ new Date()
-    }, {});
-    if (beforeLLM.modified) {
-      generateOptions = { ...generateOptions, ...beforeLLM.modified };
-    }
-    if (beforeLLM.skip) {
-      throw new Error("LLM call skipped by hook");
-    }
-    this.emit("llm:request", {
-      executionId,
-      iteration,
-      options: generateOptions,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    try {
-      const response = await this._provider.generate(generateOptions);
-      const llmDuration = Date.now() - llmStartTime;
-      this.executionContext?.updateMetrics({
-        llmDuration: (this.executionContext.metrics.llmDuration || 0) + llmDuration
-      });
-      this.emit("llm:response", {
-        executionId,
-        iteration,
-        response,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: llmDuration
-      });
-      await this.hookManager.executeHooks("after:llm", {
-        executionId,
-        iteration,
-        response,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: llmDuration
-      }, {});
-      return response;
-    } catch (error) {
-      this.emit("llm:error", {
-        executionId,
-        iteration,
-        error,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      throw error;
-    }
-  }
-  /**
-   * Stream LLM response with hooks
-   */
-  async *streamGenerateWithHooks(input, iteration, executionId, streamState, toolCallsMap) {
-    const llmStartTime = Date.now();
-    const generateOptions = {
-      model: this.model,
-      input,
-      instructions: this._config.instructions,
-      tools: this.getEnabledToolDefinitions(),
-      tool_choice: "auto",
-      temperature: this._config.temperature,
-      vendorOptions: this._config.vendorOptions
-    };
-    await this.hookManager.executeHooks("before:llm", {
-      executionId,
-      iteration,
-      options: generateOptions,
-      context: this.executionContext,
-      timestamp: /* @__PURE__ */ new Date()
-    }, {});
-    this.emit("llm:request", {
-      executionId,
-      iteration,
-      model: this.model,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    try {
-      for await (const event of this._provider.streamGenerate(generateOptions)) {
-        if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
-          streamState.accumulateTextDelta(event.item_id, event.delta);
-        } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
-          streamState.startToolCall(event.tool_call_id, event.tool_name);
-          toolCallsMap.set(event.tool_call_id, { name: event.tool_name, args: "" });
-        } else if (event.type === "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */) {
-          streamState.accumulateToolArguments(event.tool_call_id, event.delta);
-          const buffer = toolCallsMap.get(event.tool_call_id);
-          if (buffer) {
-            buffer.args += event.delta;
-          }
-        } else if (isToolCallArgumentsDone(event)) {
-          streamState.completeToolCall(event.tool_call_id);
-          const buffer = toolCallsMap.get(event.tool_call_id);
-          if (buffer) {
-            buffer.args = event.arguments;
-          }
-        } else if (event.type === "response.complete" /* RESPONSE_COMPLETE */) {
-          streamState.updateUsage(event.usage);
-          continue;
-        }
-        yield event;
-      }
-      if (this.executionContext) {
-        this.executionContext.metrics.llmDuration += Date.now() - llmStartTime;
-        this.executionContext.metrics.inputTokens += streamState.usage.input_tokens;
-        this.executionContext.metrics.outputTokens += streamState.usage.output_tokens;
-        this.executionContext.metrics.totalTokens += streamState.usage.total_tokens;
-      }
-      const llmPlaceholderResponse = {
-        id: executionId,
-        object: "response",
-        created_at: Math.floor(llmStartTime / 1e3),
-        status: "completed",
-        model: this.model,
-        output: [],
-        usage: streamState.usage
-      };
-      await this.hookManager.executeHooks("after:llm", {
-        executionId,
-        iteration,
-        response: llmPlaceholderResponse,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: Date.now() - llmStartTime
-      }, {});
-      this.emit("llm:response", {
-        executionId,
-        iteration,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-    } catch (error) {
-      this.emit("llm:error", {
-        executionId,
-        iteration,
-        error,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      throw error;
-    }
-  }
-  // ===== Tool Execution =====
-  /**
-   * Extract tool calls from response output
-   */
-  extractToolCalls(output) {
-    const toolCalls = [];
-    const toolDefinitions = this.getEnabledToolDefinitions();
-    const toolMap = /* @__PURE__ */ new Map();
-    for (const tool of toolDefinitions) {
-      if (tool.type === "function") {
-        toolMap.set(tool.function.name, tool);
-      }
-    }
-    for (const item of output) {
-      if (item.type === "message" && item.role === "assistant" /* ASSISTANT */) {
-        for (const content of item.content) {
-          if (content.type === "tool_use" /* TOOL_USE */) {
-            const toolDef = toolMap.get(content.name);
-            const isBlocking = toolDef?.blocking !== false;
-            const toolCall = {
-              id: content.id,
-              type: "function",
-              function: {
-                name: content.name,
-                arguments: content.arguments
-              },
-              blocking: isBlocking,
-              state: "pending" /* PENDING */
-            };
-            toolCalls.push(toolCall);
-          }
-        }
-      }
-    }
-    return toolCalls;
-  }
-  /**
-   * Execute tools with hooks
-   */
-  async executeToolsWithHooks(toolCalls, iteration, executionId) {
-    const results = [];
-    for (const toolCall of toolCalls) {
-      this.executionContext?.addToolCall(toolCall);
-      await this.checkPause();
-      const beforeTool = await this.hookManager.executeHooks("before:tool", {
-        executionId,
-        iteration,
-        toolCall,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date()
-      }, {});
-      if (beforeTool.skip) {
-        this.executionContext?.audit("tool_skipped", { toolCall }, void 0, toolCall.function.name);
-        let parsedArgs = {};
-        try {
-          parsedArgs = JSON.parse(toolCall.function.arguments);
-        } catch {
-        }
-        const mockResult = {
-          tool_use_id: toolCall.id,
-          tool_name: toolCall.function.name,
-          tool_args: parsedArgs,
-          content: beforeTool.mockResult || "",
-          state: "completed" /* COMPLETED */,
-          executionTime: 0
-        };
-        results.push(mockResult);
-        this.executionContext?.addToolResult(mockResult);
-        continue;
-      }
-      if (beforeTool.modified) {
-        Object.assign(toolCall, beforeTool.modified);
-        this.executionContext?.audit("tool_modified", { modifications: beforeTool.modified }, void 0, toolCall.function.name);
-      }
-      try {
-        const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
-        results.push(result);
-        this.executionContext?.addToolResult(result);
-      } catch (error) {
-        let parsedArgs = {};
-        try {
-          parsedArgs = JSON.parse(toolCall.function.arguments);
-        } catch {
-        }
-        const toolResult = {
-          tool_use_id: toolCall.id,
-          tool_name: toolCall.function.name,
-          tool_args: parsedArgs,
-          content: "",
-          error: error.message,
-          state: "failed" /* FAILED */
-        };
-        results.push(toolResult);
-        this.executionContext?.addToolResult(toolResult);
-        const failureMode = this._config.errorHandling?.toolFailureMode || "continue";
-        if (failureMode === "fail") {
-          throw error;
-        }
-      }
-    }
-    return results;
-  }
-  /**
-   * Execute single tool with hooks
-   */
-  async executeToolWithHooks(toolCall, iteration, executionId) {
-    const toolStartTime = Date.now();
-    toolCall.state = "executing" /* EXECUTING */;
-    toolCall.startTime = /* @__PURE__ */ new Date();
-    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId);
-    if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
-      const approval = await this.hookManager.executeHooks("approve:tool", {
-        executionId,
-        iteration,
-        toolCall,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date()
-      }, { approved: permissionApproved });
-      if (!approval.approved) {
-        throw new Error(`Tool execution rejected: ${approval.reason || "No reason provided"}`);
-      }
-    }
-    this.emit("tool:start", { executionId, iteration, toolCall, timestamp: /* @__PURE__ */ new Date() });
-    try {
-      const args = JSON.parse(toolCall.function.arguments);
-      const timeout = this._config.toolTimeout ?? 3e4;
-      const result = await this.executeWithTimeout(
-        () => this._agentContext.tools.execute(toolCall.function.name, args),
-        timeout
-      );
-      toolCall.state = "completed" /* COMPLETED */;
-      toolCall.endTime = /* @__PURE__ */ new Date();
-      let toolResult = {
-        tool_use_id: toolCall.id,
-        tool_name: toolCall.function.name,
-        tool_args: args,
-        content: result,
-        state: "completed" /* COMPLETED */,
-        executionTime: Date.now() - toolStartTime
-      };
-      const afterTool = await this.hookManager.executeHooks("after:tool", {
-        executionId,
-        iteration,
-        toolCall,
-        result: toolResult,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date()
-      }, {});
-      if (afterTool.modified) {
-        toolResult = { ...toolResult, ...afterTool.modified };
-      }
-      if (toolResult.content) {
-        let finalContent = toolResult.content;
-        const autoSpillPlugin = this._agentContext.autoSpillPlugin;
-        if (autoSpillPlugin) {
-          const outputStr = typeof finalContent === "string" ? finalContent : JSON.stringify(finalContent);
-          const outputSize = Buffer.byteLength(outputStr, "utf8");
-          if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
-            const spillKey = await autoSpillPlugin.onToolOutput(
-              toolCall.function.name,
-              finalContent
-            );
-            if (spillKey) {
-              toolResult.spilledKey = spillKey;
-              finalContent = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
-              toolResult.content = finalContent;
-            }
-          }
-        }
-        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, finalContent);
-      }
-      if (this.executionContext) {
-        this.executionContext.metrics.toolCallCount++;
-        this.executionContext.metrics.toolSuccessCount++;
-        this.executionContext.metrics.toolDuration += toolResult.executionTime || 0;
-      }
-      this.emit("tool:complete", { executionId, iteration, toolCall, result: toolResult, timestamp: /* @__PURE__ */ new Date() });
-      return toolResult;
-    } catch (error) {
-      toolCall.state = "failed" /* FAILED */;
-      toolCall.endTime = /* @__PURE__ */ new Date();
-      toolCall.error = error.message;
-      if (this.executionContext) {
-        this.executionContext.metrics.toolFailureCount++;
-      }
-      if (error instanceof ToolTimeoutError) {
-        this.emit("tool:timeout", {
-          executionId,
-          iteration,
-          toolCall,
-          timeout: this._config.toolTimeout ?? 3e4,
-          timestamp: /* @__PURE__ */ new Date()
-        });
-      } else {
-        this.emit("tool:error", { executionId, iteration, toolCall, error, timestamp: /* @__PURE__ */ new Date() });
-      }
-      throw error;
-    }
-  }
-  /**
-   * Check tool permission before execution
-   */
-  async checkToolPermission(toolCall, iteration, executionId) {
-    if (this._permissionManager.isBlocked(toolCall.function.name)) {
-      this.executionContext?.audit("tool_blocked", { reason: "Tool is blocklisted" }, void 0, toolCall.function.name);
-      throw new Error(`Tool "${toolCall.function.name}" is blocked and cannot be executed`);
-    }
-    if (this._permissionManager.isApproved(toolCall.function.name)) {
-      return true;
-    }
-    const checkResult = this._permissionManager.checkPermission(toolCall.function.name);
-    if (!checkResult.needsApproval) {
-      return true;
-    }
-    let parsedArgs = {};
-    try {
-      parsedArgs = JSON.parse(toolCall.function.arguments);
-    } catch {
-    }
-    const context = {
-      toolCall,
-      parsedArgs,
-      config: checkResult.config || {},
-      executionId,
-      iteration,
-      agentType: "agent"
-    };
-    const decision = await this._permissionManager.requestApproval(context);
-    if (decision.approved) {
-      this.executionContext?.audit("tool_permission_approved", {
-        scope: decision.scope,
-        approvedBy: decision.approvedBy
-      }, void 0, toolCall.function.name);
-      return true;
-    }
-    return false;
-  }
-  /**
-   * Execute function with timeout
-   */
-  async executeWithTimeout(fn, timeoutMs) {
-    return new Promise((resolve5, reject) => {
-      const timer = setTimeout(() => {
-        reject(new ToolTimeoutError("tool", timeoutMs));
-      }, timeoutMs);
-      fn().then((result) => {
-        clearTimeout(timer);
-        resolve5(result);
-      }).catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-    });
-  }
-  // ===== Pause/Resume/Cancel =====
-  /**
-   * Pause execution
-   */
-  pause(reason) {
-    this._pauseResumeMutex = this._pauseResumeMutex.then(() => {
-      if (this._paused) return;
-      this._paused = true;
-      this._pausePromise = new Promise((resolve5) => {
-        this._resumeCallback = resolve5;
-      });
-      if (this.executionContext) {
-        this.executionContext.paused = true;
-        this.executionContext.pauseReason = reason;
-        this.executionContext.audit("execution_paused", { reason });
-      }
-      this.emit("execution:paused", {
-        executionId: this.executionContext?.executionId || "unknown",
-        reason: reason || "Manual pause",
-        timestamp: /* @__PURE__ */ new Date()
-      });
-    });
-  }
-  /**
-   * Resume execution
-   */
-  resume() {
-    this._pauseResumeMutex = this._pauseResumeMutex.then(() => {
-      if (!this._paused) return;
-      this._paused = false;
-      if (this.executionContext) {
-        this.executionContext.paused = false;
-        this.executionContext.pauseReason = void 0;
-        this.executionContext.audit("execution_resumed", {});
-      }
-      if (this._resumeCallback) {
-        this._resumeCallback();
-        this._resumeCallback = null;
-      }
-      this._pausePromise = null;
-      this.emit("execution:resumed", {
-        executionId: this.executionContext?.executionId || "unknown",
-        timestamp: /* @__PURE__ */ new Date()
-      });
-    });
-  }
-  /**
-   * Cancel execution
-   */
-  cancel(reason) {
-    this._cancelled = true;
-    if (this.executionContext) {
-      this.executionContext.cancelled = true;
-      this.executionContext.cancelReason = reason;
-    }
-    if (this._paused) {
-      this._paused = false;
-      if (this._resumeCallback) {
-        this._resumeCallback();
-        this._resumeCallback = null;
-      }
-      this._pausePromise = null;
-    }
-    this.emit("execution:cancelled", {
-      executionId: this.executionContext?.executionId || "unknown",
-      reason: reason || "Manual cancellation",
-      timestamp: /* @__PURE__ */ new Date()
-    });
-  }
-  /**
-   * Check if paused and wait
-   */
-  async checkPause() {
-    if (this._paused && this._pausePromise) {
-      await this._pausePromise;
-    }
-  }
-  // ===== Tool Management =====
-  // Note: addTool, removeTool, listTools, setTools are inherited from BaseAgent
-  // ===== Permission Convenience Methods =====
-  approveToolForSession(toolName) {
-    this._permissionManager.approveForSession(toolName);
-  }
-  revokeToolApproval(toolName) {
-    this._permissionManager.revoke(toolName);
-  }
-  getApprovedTools() {
-    return this._permissionManager.getApprovedTools();
-  }
-  toolNeedsApproval(toolName) {
-    return this._permissionManager.checkPermission(toolName).needsApproval;
-  }
-  toolIsBlocked(toolName) {
-    return this._permissionManager.isBlocked(toolName);
-  }
-  allowlistTool(toolName) {
-    this._permissionManager.allowlistAdd(toolName);
-  }
-  blocklistTool(toolName) {
-    this._permissionManager.blocklistAdd(toolName);
-  }
-  // ===== Configuration Methods =====
-  setModel(model) {
-    this.model = model;
-    this._config.model = model;
-  }
-  getTemperature() {
-    return this._config.temperature;
-  }
-  setTemperature(temperature) {
-    this._config.temperature = temperature;
-  }
-  // ===== Definition Persistence =====
-  async saveDefinition(storage, metadata) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const definition = {
-      version: 1,
-      agentId: this._agentContext.agentId,
-      name: this._agentContext.agentId,
-      agentType: "agent",
-      createdAt: now,
-      updatedAt: now,
-      connector: {
-        name: this.connector.name,
-        model: this.model
-      },
-      systemPrompt: this._agentContext.systemPrompt,
-      instructions: this._config.instructions,
-      features: this._agentContext.features,
-      metadata,
-      typeConfig: {
-        temperature: this._config.temperature,
-        maxIterations: this._config.maxIterations,
-        vendorOptions: this._config.vendorOptions
-      }
-    };
-    await storage.save(definition);
-  }
-  // ===== Introspection =====
-  getExecutionContext() {
-    return this.executionContext;
-  }
-  /**
-   * Alias for getExecutionContext() for backward compatibility
-   */
-  getContext() {
-    return this.executionContext;
-  }
-  getMetrics() {
-    return this.executionContext?.metrics || null;
-  }
-  getSummary() {
-    return this.executionContext?.getSummary() || null;
-  }
-  getAuditTrail() {
-    return this.executionContext?.getAuditTrail() || [];
-  }
-  getProviderCircuitBreakerMetrics() {
-    if ("getCircuitBreakerMetrics" in this._provider) {
-      return this._provider.getCircuitBreakerMetrics();
-    }
-    return null;
-  }
-  getToolCircuitBreakerStates() {
-    return this._agentContext.tools.getCircuitBreakerStates();
-  }
-  getToolCircuitBreakerMetrics(toolName) {
-    return this._agentContext.tools.getToolCircuitBreakerMetrics(toolName);
-  }
-  resetToolCircuitBreaker(toolName) {
-    this._agentContext.tools.resetToolCircuitBreaker(toolName);
-    this._logger.info({ toolName }, "Tool circuit breaker reset by user");
-  }
-  isRunning() {
-    return this.executionContext !== null && !this._cancelled;
-  }
-  isPaused() {
-    return this._paused;
-  }
-  isCancelled() {
-    return this._cancelled;
-  }
-  // ===== Cleanup =====
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._logger.debug("Agent destroy started");
-    try {
-      this.cancel("Agent destroyed");
-    } catch {
-    }
-    this.executionContext?.cleanup();
-    this.executionContext = null;
-    for (const callback of this._cleanupCallbacks) {
-      try {
-        callback();
-      } catch (error) {
-        this._logger.error({ error: error.message }, "Cleanup callback error");
-      }
-    }
-    this._cleanupCallbacks = [];
-    this.baseDestroy();
-    exports.metrics.increment("agent.destroyed", 1, {
-      model: this.model,
-      connector: this.connector.name
-    });
-    this._logger.debug("Agent destroyed");
-  }
-};
-
-// src/core/AgentContextTools.ts
-function getAgentContextTools(context) {
-  const tools = [];
-  tools.push(createContextStatsTool());
-  if (context.isFeatureEnabled("memory")) {
-    tools.push(createMemoryStoreTool());
-    tools.push(createMemoryRetrieveTool());
-    tools.push(createMemoryDeleteTool());
-    tools.push(createMemoryQueryTool());
-    tools.push(createMemoryCleanupRawTool());
-  }
-  return tools;
-}
-function getBasicIntrospectionTools() {
-  return [createContextStatsTool()];
-}
-function getMemoryTools() {
-  return [
-    createMemoryStoreTool(),
-    createMemoryRetrieveTool(),
-    createMemoryDeleteTool(),
-    createMemoryQueryTool(),
-    createMemoryCleanupRawTool()
-  ];
-}
-(class {
-  static DEFAULT_PATHS = [
-    "./oneringai.config.json",
-    path2.join(os.homedir(), ".oneringai", "config.json")
-  ];
-  /**
-   * Load configuration from file
-   */
-  static async load(path6) {
-    const configPath = path6 ? path2.resolve(path6) : await this.findConfig();
-    if (!configPath) {
-      throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
-    }
-    try {
-      const content = await fs16.promises.readFile(configPath, "utf-8");
-      let config = JSON.parse(content);
-      config = this.interpolateEnvVars(config);
-      this.validate(config);
-      return config;
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error(`Invalid JSON in configuration file '${configPath}': ${error.message}`);
-      }
-      throw error;
-    }
-  }
-  /**
-   * Load configuration synchronously
-   */
-  static loadSync(path6) {
-    const configPath = path6 ? path2.resolve(path6) : this.findConfigSync();
-    if (!configPath) {
-      throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
-    }
-    try {
-      const fs17 = __require("fs");
-      const content = fs17.readFileSync(configPath, "utf-8");
-      let config = JSON.parse(content);
-      config = this.interpolateEnvVars(config);
-      this.validate(config);
-      return config;
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error(`Invalid JSON in configuration file '${configPath}': ${error.message}`);
-      }
-      throw error;
-    }
-  }
-  /**
-   * Find configuration file in default paths
-   */
-  static async findConfig() {
-    for (const path6 of this.DEFAULT_PATHS) {
-      try {
-        await fs16.promises.access(path2.resolve(path6));
-        return path2.resolve(path6);
-      } catch {
-      }
-    }
-    return null;
-  }
-  /**
-   * Find configuration file synchronously
-   */
-  static findConfigSync() {
-    const fs17 = __require("fs");
-    for (const path6 of this.DEFAULT_PATHS) {
-      try {
-        fs17.accessSync(path2.resolve(path6));
-        return path2.resolve(path6);
-      } catch {
-      }
-    }
-    return null;
-  }
-  /**
-   * Interpolate environment variables in configuration
-   * Replaces ${ENV_VAR} with process.env.ENV_VAR
-   */
-  static interpolateEnvVars(config) {
-    const jsonString = JSON.stringify(config);
-    const interpolated = jsonString.replace(/\$\{([^}]+)\}/g, (match, envVar) => {
-      const value = process.env[envVar];
-      if (value === void 0) {
-        console.warn(`Warning: Environment variable '${envVar}' is not set`);
-        return match;
-      }
-      return value;
-    });
-    return JSON.parse(interpolated);
-  }
-  /**
-   * Basic validation of configuration structure
-   */
-  static validate(config) {
-    if (typeof config !== "object" || config === null) {
-      throw new Error("Configuration must be an object");
-    }
-    if (config.mcp) {
-      if (!Array.isArray(config.mcp.servers)) {
-        throw new Error('MCP configuration must have a "servers" array');
-      }
-      for (const server of config.mcp.servers) {
-        if (!server.name) {
-          throw new Error('Each MCP server must have a "name" field');
-        }
-        if (!server.transport) {
-          throw new Error(`MCP server '${server.name}' must have a "transport" field`);
-        }
-        if (!server.transportConfig) {
-          throw new Error(`MCP server '${server.name}' must have a "transportConfig" field`);
-        }
-      }
-    }
-  }
-});
 
 // src/core/TextToSpeech.ts
 init_Connector();
@@ -37276,7 +32054,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs16__namespace.createReadStream(audio);
+      return fs15__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -37829,7 +32607,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs15__namespace.writeFile(filePath, response.audio);
+    await fs14__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -38177,7 +32955,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs15__namespace.readFile(filePath);
+    const audio = await fs14__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -38503,7 +33281,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs16__namespace.createReadStream(image);
+    return fs15__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -38650,8 +33428,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs17 = await import('fs');
-      const buffer = fs17.readFileSync(image);
+      const fs16 = await import('fs');
+      const buffer = fs16.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -38812,7 +33590,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs16__namespace.createReadStream(image);
+    return fs15__namespace.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -39098,10 +33876,397 @@ var ErrorHandler = class extends eventemitter3.EventEmitter {
     return Math.min(jitter, this.config.maxRetryDelayMs);
   }
   delay(ms) {
-    return new Promise((resolve5) => setTimeout(resolve5, ms));
+    return new Promise((resolve4) => setTimeout(resolve4, ms));
   }
 };
 var globalErrorHandler = new ErrorHandler();
+
+// src/core/context/ContextGuardian.ts
+init_Logger();
+var logger3 = exports.logger.child({ component: "ContextGuardian" });
+var ContextGuardian = class {
+  _enabled;
+  _maxToolResultTokens;
+  _minSystemPromptTokens;
+  _configuredProtectedMessages;
+  _maxContextTokens;
+  _strategy;
+  _estimator;
+  constructor(estimator, config = {}) {
+    this._estimator = estimator;
+    this._enabled = config.enabled ?? GUARDIAN_DEFAULTS.ENABLED;
+    this._maxToolResultTokens = config.maxToolResultTokens ?? GUARDIAN_DEFAULTS.MAX_TOOL_RESULT_TOKENS;
+    this._minSystemPromptTokens = config.minSystemPromptTokens ?? GUARDIAN_DEFAULTS.MIN_SYSTEM_PROMPT_TOKENS;
+    this._configuredProtectedMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
+    this._maxContextTokens = config.maxContextTokens;
+    this._strategy = config.strategy ?? "proactive";
+  }
+  /**
+   * Get effective protected message count, considering strategy and context size.
+   * Uses percentage-based calculation if maxContextTokens is available.
+   *
+   * NOTE: If an explicit value was configured (not using default), it's honored
+   * without applying minimum caps - this allows tests and special cases to work.
+   */
+  get _protectedRecentMessages() {
+    if (this._configuredProtectedMessages !== GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES) {
+      return this._configuredProtectedMessages;
+    }
+    if (this._maxContextTokens) {
+      const thresholds = STRATEGY_THRESHOLDS2[this._strategy];
+      const percentBasedTokens = Math.floor(this._maxContextTokens * thresholds.protectedContextPercent);
+      const percentBasedMessages = Math.floor(percentBasedTokens / 100);
+      const calculated = Math.max(percentBasedMessages, this._configuredProtectedMessages);
+      return Math.max(calculated, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
+    }
+    return Math.max(this._configuredProtectedMessages, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
+  }
+  /**
+   * Check if guardian is enabled
+   */
+  get enabled() {
+    return this._enabled;
+  }
+  /**
+   * Validate that input fits within token limits
+   *
+   * @param input - The InputItem[] to validate
+   * @param maxTokens - Maximum allowed tokens (after reserving for response)
+   * @returns Validation result with actual counts and breakdown
+   */
+  validate(input, maxTokens) {
+    const breakdown = {
+      system: 0,
+      user: 0,
+      assistant: 0,
+      tool_use: 0,
+      tool_result: 0,
+      other: 0
+    };
+    let actualTokens = 0;
+    for (const item of input) {
+      const tokens = this.estimateInputItemTokens(item);
+      actualTokens += tokens;
+      if (item.type === "message") {
+        const msg = item;
+        if (msg.role === "developer" /* DEVELOPER */) {
+          breakdown.system += tokens;
+        } else if (msg.role === "user" /* USER */) {
+          const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
+          if (hasToolResult) {
+            breakdown.tool_result += tokens;
+          } else {
+            breakdown.user += tokens;
+          }
+        } else if (msg.role === "assistant" /* ASSISTANT */) {
+          const hasToolUse = msg.content.some((c) => c.type === "tool_use" /* TOOL_USE */);
+          if (hasToolUse) {
+            breakdown.tool_use += tokens;
+          } else {
+            breakdown.assistant += tokens;
+          }
+        }
+      } else {
+        breakdown.other += tokens;
+      }
+    }
+    const valid = actualTokens <= maxTokens;
+    const overageTokens = valid ? 0 : actualTokens - maxTokens;
+    logger3.debug({
+      actualTokens,
+      maxTokens,
+      valid,
+      overageTokens,
+      breakdown
+    }, `Guardian validation: ${valid ? "PASS" : "FAIL"}`);
+    return {
+      valid,
+      actualTokens,
+      targetTokens: maxTokens,
+      overageTokens,
+      breakdown
+    };
+  }
+  /**
+   * Apply graceful degradation to reduce input size
+   *
+   * @param input - The InputItem[] to potentially modify
+   * @param targetTokens - Target token count to achieve
+   * @returns Degradation result with potentially modified input
+   */
+  applyGracefulDegradation(input, targetTokens) {
+    const log = [];
+    let tokensFreed = 0;
+    let currentInput = [...input];
+    const initialValidation = this.validate(currentInput, targetTokens);
+    if (initialValidation.valid) {
+      return {
+        input: currentInput,
+        log: ["No degradation needed"],
+        finalTokens: initialValidation.actualTokens,
+        tokensFreed: 0,
+        success: true
+      };
+    }
+    log.push(`Starting graceful degradation: ${initialValidation.actualTokens} tokens, target: ${targetTokens}`);
+    const level1Result = this.truncateToolResults(currentInput, log);
+    currentInput = level1Result.input;
+    tokensFreed += level1Result.tokensFreed;
+    let validation = this.validate(currentInput, targetTokens);
+    if (validation.valid) {
+      log.push(`Level 1 (truncate tool results) successful: ${validation.actualTokens} tokens`);
+      return {
+        input: currentInput,
+        log,
+        finalTokens: validation.actualTokens,
+        tokensFreed,
+        success: true
+      };
+    }
+    const level2Result = this.removeOldestToolPairs(currentInput, validation.overageTokens, log);
+    currentInput = level2Result.input;
+    tokensFreed += level2Result.tokensFreed;
+    validation = this.validate(currentInput, targetTokens);
+    if (validation.valid) {
+      log.push(`Level 2 (remove tool pairs) successful: ${validation.actualTokens} tokens`);
+      return {
+        input: currentInput,
+        log,
+        finalTokens: validation.actualTokens,
+        tokensFreed,
+        success: true
+      };
+    }
+    const level3Result = this.truncateSystemPrompt(currentInput, log);
+    currentInput = level3Result.input;
+    tokensFreed += level3Result.tokensFreed;
+    validation = this.validate(currentInput, targetTokens);
+    if (validation.valid) {
+      log.push(`Level 3 (truncate system prompt) successful: ${validation.actualTokens} tokens`);
+      return {
+        input: currentInput,
+        log,
+        finalTokens: validation.actualTokens,
+        tokensFreed,
+        success: true
+      };
+    }
+    log.push(`All degradation levels exhausted: ${validation.actualTokens} tokens (target: ${targetTokens})`);
+    throw new ContextOverflowError(
+      "All graceful degradation levels exhausted",
+      {
+        actualTokens: validation.actualTokens,
+        maxTokens: targetTokens,
+        overageTokens: validation.overageTokens,
+        breakdown: validation.breakdown,
+        degradationLog: log
+      }
+    );
+  }
+  /**
+   * Emergency compact - more aggressive than graceful degradation
+   * Used when even graceful degradation fails
+   *
+   * @param input - The InputItem[] to compact
+   * @param targetTokens - Target token count
+   * @returns Compacted InputItem[] (may lose significant data)
+   */
+  emergencyCompact(input, targetTokens) {
+    const log = ["EMERGENCY COMPACTION"];
+    let result = [...input];
+    const systemMessages = [];
+    const otherMessages = [];
+    for (const item of result) {
+      if (item.type === "message" && item.role === "developer" /* DEVELOPER */) {
+        systemMessages.push(item);
+      } else {
+        otherMessages.push(item);
+      }
+    }
+    const truncatedSystem = systemMessages.map(
+      (item) => this.truncateMessage(item, this._minSystemPromptTokens)
+    );
+    const protectedMessages = otherMessages.slice(-this._protectedRecentMessages);
+    result = [...truncatedSystem, ...protectedMessages];
+    const validation = this.validate(result, targetTokens);
+    if (!validation.valid) {
+      log.push(`Emergency compaction failed: still at ${validation.actualTokens} tokens`);
+      logger3.error({ validation, log }, "Emergency compaction failed");
+    }
+    return result;
+  }
+  // ============================================================================
+  // Private Helper Methods
+  // ============================================================================
+  /**
+   * Estimate tokens for an InputItem
+   */
+  estimateInputItemTokens(item) {
+    if (item.type !== "message") {
+      return 50;
+    }
+    const msg = item;
+    let total = 4;
+    for (const content of msg.content) {
+      if (content.type === "input_text" /* INPUT_TEXT */ || content.type === "output_text" /* OUTPUT_TEXT */) {
+        total += this._estimator.estimateTokens(content.text || "");
+      } else if (content.type === "tool_use" /* TOOL_USE */) {
+        total += this._estimator.estimateTokens(content.name || "");
+        total += this._estimator.estimateDataTokens(content.input || {});
+      } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+        total += this._estimator.estimateTokens(content.content || "");
+      } else if (content.type === "input_image_url" /* INPUT_IMAGE_URL */) {
+        total += 200;
+      }
+    }
+    return total;
+  }
+  /**
+   * Level 1: Truncate large tool results
+   */
+  truncateToolResults(input, log) {
+    let tokensFreed = 0;
+    const result = [];
+    for (const item of input) {
+      if (item.type !== "message") {
+        result.push(item);
+        continue;
+      }
+      const msg = item;
+      const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
+      if (!hasToolResult) {
+        result.push(item);
+        continue;
+      }
+      const newContent = msg.content.map((c) => {
+        if (c.type !== "tool_result" /* TOOL_RESULT */) return c;
+        const toolResult = c;
+        const content = toolResult.content || "";
+        const currentTokens = this._estimator.estimateTokens(content);
+        if (currentTokens > this._maxToolResultTokens) {
+          const targetChars = this._maxToolResultTokens * 4;
+          const truncated = content.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
+          const freed = currentTokens - this._estimator.estimateTokens(truncated);
+          tokensFreed += freed;
+          log.push(`Truncated tool result ${toolResult.tool_use_id}: ${currentTokens} \u2192 ${currentTokens - freed} tokens`);
+          return {
+            ...toolResult,
+            content: truncated
+          };
+        }
+        return c;
+      });
+      result.push({
+        ...msg,
+        content: newContent
+      });
+    }
+    if (tokensFreed > 0) {
+      log.push(`Level 1: Truncated tool results, freed ${tokensFreed} tokens`);
+    }
+    return { input: result, tokensFreed };
+  }
+  /**
+   * Level 2: Remove oldest unprotected tool pairs
+   */
+  removeOldestToolPairs(input, overageTokens, log) {
+    const toolPairs = /* @__PURE__ */ new Map();
+    for (let i = 0; i < input.length; i++) {
+      const item = input[i];
+      if (item?.type !== "message") continue;
+      const msg = item;
+      for (const content of msg.content) {
+        if (content.type === "tool_use" /* TOOL_USE */) {
+          const toolUseId = content.id;
+          if (toolUseId) {
+            toolPairs.set(toolUseId, { useIndex: i, resultIndex: null });
+          }
+        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+          const toolUseId = content.tool_use_id;
+          const pair = toolPairs.get(toolUseId);
+          if (pair) {
+            pair.resultIndex = i;
+          }
+        }
+      }
+    }
+    const sortedPairs = [...toolPairs.entries()].filter(([, pair]) => pair.resultIndex !== null).sort(([, a], [, b]) => a.useIndex - b.useIndex);
+    const protectedStart = input.length - this._protectedRecentMessages;
+    const indicesToRemove = /* @__PURE__ */ new Set();
+    let tokensFreed = 0;
+    for (const [toolUseId, pair] of sortedPairs) {
+      if (tokensFreed >= overageTokens) break;
+      if (pair.useIndex >= protectedStart || pair.resultIndex !== null && pair.resultIndex >= protectedStart) {
+        continue;
+      }
+      indicesToRemove.add(pair.useIndex);
+      if (pair.resultIndex !== null) {
+        indicesToRemove.add(pair.resultIndex);
+      }
+      const useItem = input[pair.useIndex];
+      const resultItem = pair.resultIndex !== null ? input[pair.resultIndex] : null;
+      if (useItem) tokensFreed += this.estimateInputItemTokens(useItem);
+      if (resultItem) tokensFreed += this.estimateInputItemTokens(resultItem);
+      log.push(`Removing tool pair ${toolUseId}`);
+    }
+    const result = input.filter((_, i) => !indicesToRemove.has(i));
+    if (indicesToRemove.size > 0) {
+      log.push(`Level 2: Removed ${indicesToRemove.size} messages (${sortedPairs.length} tool pairs evaluated), freed ${tokensFreed} tokens`);
+    }
+    return { input: result, tokensFreed };
+  }
+  /**
+   * Level 3: Truncate system prompt
+   */
+  truncateSystemPrompt(input, log) {
+    let tokensFreed = 0;
+    const result = [];
+    for (const item of input) {
+      if (item.type !== "message") {
+        result.push(item);
+        continue;
+      }
+      const msg = item;
+      if (msg.role !== "developer" /* DEVELOPER */) {
+        result.push(item);
+        continue;
+      }
+      const currentTokens = this.estimateInputItemTokens(msg);
+      if (currentTokens > this._minSystemPromptTokens) {
+        const truncated = this.truncateMessage(msg, this._minSystemPromptTokens);
+        const newTokens = this.estimateInputItemTokens(truncated);
+        tokensFreed += currentTokens - newTokens;
+        log.push(`Truncated system prompt: ${currentTokens} \u2192 ${newTokens} tokens`);
+        result.push(truncated);
+      } else {
+        result.push(item);
+      }
+    }
+    if (tokensFreed > 0) {
+      log.push(`Level 3: Truncated system prompt, freed ${tokensFreed} tokens`);
+    }
+    return { input: result, tokensFreed };
+  }
+  /**
+   * Truncate a message to target token count
+   */
+  truncateMessage(msg, targetTokens) {
+    const newContent = msg.content.map((c) => {
+      if (c.type !== "input_text" /* INPUT_TEXT */ && c.type !== "output_text" /* OUTPUT_TEXT */) {
+        return c;
+      }
+      const text = c.text || "";
+      const currentTokens = this._estimator.estimateTokens(text);
+      if (currentTokens > targetTokens) {
+        const targetChars = targetTokens * 4;
+        const truncated = text.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
+        return { ...c, text: truncated };
+      }
+      return c;
+    });
+    return { ...msg, content: newContent };
+  }
+};
 
 // src/capabilities/images/ImageGeneration.ts
 init_Connector();
@@ -40153,8 +35318,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs17 = await import('fs');
-      const data = fs17.readFileSync(image);
+      const fs16 = await import('fs');
+      const data = fs16.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -40332,22 +35497,22 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs17 = await import('fs/promises');
+            const fs16 = await import('fs/promises');
             const os2 = await import('os');
-            const path6 = await import('path');
+            const path5 = await import('path');
             const tempDir = os2.tmpdir();
-            const tempFile = path6.join(tempDir, `veo-${Date.now()}.mp4`);
+            const tempFile = path5.join(tempDir, `veo-${Date.now()}.mp4`);
             try {
               await this.client.files.download({
                 file: { video },
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs17.readFile(tempFile);
-              await fs17.unlink(tempFile).catch(() => {
+              buffer = await fs16.readFile(tempFile);
+              await fs16.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs17.unlink(tempFile).catch(() => {
+              await fs16.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -40444,7 +35609,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
       if (status.status === "completed" || status.status === "failed") {
         return status;
       }
-      await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
     }
     throw new ProviderError("google", `Video generation timed out after ${timeoutMs}ms`);
   }
@@ -40469,8 +35634,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs17 = await import('fs/promises');
-    const data = await fs17.readFile(image);
+    const fs16 = await import('fs/promises');
+    const data = await fs16.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -40777,8 +35942,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs17 = await import('fs');
-    const data = fs17.readFileSync(image);
+    const fs16 = await import('fs');
+    const data = fs16.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -41163,7 +36328,7 @@ var VideoGeneration = class _VideoGeneration {
           `Video generation failed: ${status.error || "Unknown error"}`
         );
       }
-      await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
     }
     throw new ProviderError(
       this.connector.vendor || "unknown",
@@ -41978,9 +37143,986 @@ var CONTEXT_SESSION_FORMAT_VERSION = 1;
 
 // src/domain/interfaces/IAgentDefinitionStorage.ts
 var AGENT_DEFINITION_FORMAT_VERSION = 1;
+var WorkingMemory = class extends eventemitter3.EventEmitter {
+  storage;
+  config;
+  priorityCalculator;
+  priorityContext;
+  _isDestroyed = false;
+  /**
+   * Create a WorkingMemory instance
+   *
+   * @param storage - Storage backend for memory entries
+   * @param config - Memory configuration (limits, etc.)
+   * @param priorityCalculator - Strategy for computing effective priority (default: static)
+   */
+  constructor(storage, config = DEFAULT_MEMORY_CONFIG, priorityCalculator = staticPriorityCalculator) {
+    super();
+    this.storage = storage;
+    this.config = config;
+    this.priorityCalculator = priorityCalculator;
+    this.priorityContext = {};
+  }
+  /**
+   * Set the priority calculator (for switching strategies at runtime)
+   */
+  setPriorityCalculator(calculator) {
+    this.priorityCalculator = calculator;
+  }
+  /**
+   * Update priority context (e.g., task states for TaskAgent)
+   */
+  setPriorityContext(context) {
+    this.priorityContext = context;
+  }
+  /**
+   * Get the current priority context
+   */
+  getPriorityContext() {
+    return this.priorityContext;
+  }
+  /**
+   * Compute effective priority for an entry using the current calculator
+   */
+  computeEffectivePriority(entry) {
+    return this.priorityCalculator(entry, this.priorityContext);
+  }
+  /**
+   * Get all entries with their computed effective priorities
+   * This is a performance optimization to avoid repeated getAll() + map() calls
+   */
+  async getEntriesWithPriority() {
+    const entries = await this.storage.getAll();
+    return entries.map((entry) => ({
+      entry,
+      effectivePriority: this.computeEffectivePriority(entry)
+    }));
+  }
+  /**
+   * Get evictable entries sorted by eviction priority
+   * Filters out pinned and critical entries, sorts by priority then by strategy
+   */
+  getEvictableEntries(entriesWithPriority, strategy) {
+    return entriesWithPriority.filter(({ entry, effectivePriority }) => {
+      if (entry.pinned) return false;
+      if (effectivePriority === "critical") return false;
+      return true;
+    }).sort((a, b) => {
+      const priorityDiff = MEMORY_PRIORITY_VALUES[a.effectivePriority] - MEMORY_PRIORITY_VALUES[b.effectivePriority];
+      if (priorityDiff !== 0) return priorityDiff;
+      if (strategy === "lru") {
+        return a.entry.lastAccessedAt - b.entry.lastAccessedAt;
+      } else {
+        return b.entry.sizeBytes - a.entry.sizeBytes;
+      }
+    });
+  }
+  /**
+   * Store a value in working memory
+   *
+   * @param key - Unique key for the entry
+   * @param description - Short description for the index (max 150 chars)
+   * @param value - The data to store
+   * @param options - Optional scope, priority, and pinned settings
+   */
+  async store(key, description, value, options) {
+    const input = {
+      key,
+      description,
+      value,
+      scope: options?.scope ?? "session",
+      priority: options?.priority,
+      pinned: options?.pinned
+    };
+    const entry = createMemoryEntry(input, this.config);
+    const currentSize = await this.storage.getTotalSize();
+    const existing = await this.storage.get(key);
+    const existingSize = existing?.sizeBytes ?? 0;
+    const newTotalSize = currentSize - existingSize + entry.sizeBytes;
+    const limit = this.getLimit();
+    if (newTotalSize > limit) {
+      throw new Error(`Memory limit exceeded: ${newTotalSize} bytes > ${limit} bytes`);
+    }
+    const utilization = newTotalSize / limit * 100;
+    if (utilization > this.config.softLimitPercent) {
+      this.emit("limit_warning", { utilizationPercent: utilization });
+    }
+    await this.storage.set(key, entry);
+    this.emit("stored", { key, description, scope: entry.scope });
+    await this.enforceEntryCountLimit();
+  }
+  /**
+   * Enforce the maxIndexEntries limit by evicting excess entries
+   * Only evicts if entry count exceeds the configured limit
+   */
+  async enforceEntryCountLimit() {
+    const maxEntries = this.getMaxIndexEntries();
+    if (!maxEntries) return;
+    const entries = await this.storage.getAll();
+    const excessCount = entries.length - maxEntries;
+    if (excessCount > 0) {
+      const evictedKeys = await this.evict(excessCount, "lru");
+      if (evictedKeys.length > 0) ;
+    }
+  }
+  /**
+   * Get the configured max index entries limit
+   */
+  getMaxIndexEntries() {
+    return this.config.maxIndexEntries;
+  }
+  /**
+   * Store a value scoped to specific tasks
+   * Convenience method for task-aware memory
+   */
+  async storeForTasks(key, description, value, taskIds, options) {
+    await this.store(key, description, value, {
+      scope: { type: "task", taskIds },
+      priority: options?.priority,
+      pinned: options?.pinned
+    });
+  }
+  /**
+   * Store a value scoped to the entire plan
+   * Convenience method for plan-scoped memory
+   */
+  async storeForPlan(key, description, value, options) {
+    await this.store(key, description, value, {
+      scope: { type: "plan" },
+      priority: options?.priority,
+      pinned: options?.pinned
+    });
+  }
+  /**
+   * Retrieve a value from working memory
+   *
+   * Note: Access stats update is not strictly atomic. Under very high concurrency,
+   * accessCount may be slightly inaccurate. This is acceptable for memory management
+   * purposes where exact counts are not critical.
+   */
+  async retrieve(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      return void 0;
+    }
+    const value = entry.value;
+    const freshEntry = await this.storage.get(key);
+    if (freshEntry) {
+      freshEntry.lastAccessedAt = Date.now();
+      freshEntry.accessCount += 1;
+      await this.storage.set(key, freshEntry);
+    }
+    this.emit("retrieved", { key });
+    return value;
+  }
+  /**
+   * Retrieve multiple values
+   */
+  async retrieveMany(keys) {
+    const result = {};
+    for (const key of keys) {
+      const value = await this.retrieve(key);
+      if (value !== void 0) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+  /**
+   * Delete a value from working memory
+   */
+  async delete(key) {
+    await this.storage.delete(key);
+    this.emit("deleted", { key });
+  }
+  /**
+   * Check if key exists
+   */
+  async has(key) {
+    return this.storage.has(key);
+  }
+  /**
+   * Promote an entry to persistent scope
+   * Works with both simple and task-aware scopes
+   */
+  async persist(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    const isPersistent = isSimpleScope(entry.scope) ? entry.scope === "persistent" : isTaskAwareScope(entry.scope) && entry.scope.type === "persistent";
+    if (!isPersistent) {
+      entry.scope = { type: "persistent" };
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Pin an entry (never evicted)
+   */
+  async pin(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (!entry.pinned) {
+      entry.pinned = true;
+      entry.basePriority = "critical";
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Unpin an entry
+   */
+  async unpin(key, newPriority = "normal") {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (entry.pinned) {
+      entry.pinned = false;
+      entry.basePriority = newPriority;
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Set the base priority of an entry
+   */
+  async setPriority(key, priority) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    entry.basePriority = priority;
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Update the scope of an entry without re-storing the value
+   */
+  async updateScope(key, scope) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    entry.scope = scope;
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Add task IDs to an existing task-scoped entry
+   * If entry is not task-scoped, converts it to task-scoped
+   */
+  async addTasksToScope(key, taskIds) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (isTaskAwareScope(entry.scope) && entry.scope.type === "task") {
+      const existingIds = new Set(entry.scope.taskIds);
+      for (const id of taskIds) {
+        existingIds.add(id);
+      }
+      entry.scope = { type: "task", taskIds: Array.from(existingIds) };
+    } else {
+      entry.scope = { type: "task", taskIds };
+    }
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Clear all entries of a specific scope
+   */
+  async clearScope(scope) {
+    await this.storage.clearScope(scope);
+  }
+  /**
+   * Clear all entries
+   */
+  async clear() {
+    await this.storage.clear();
+  }
+  /**
+   * Get memory index with computed effective priorities
+   * Respects maxIndexEntries limit for context display
+   */
+  async getIndex() {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const totalSizeBytes = await this.storage.getTotalSize();
+    const limitBytes = this.getLimit();
+    const totalEntryCount = entriesWithPriority.length;
+    const sortedEntries = [...entriesWithPriority].sort((a, b) => {
+      if (a.entry.pinned && !b.entry.pinned) return -1;
+      if (!a.entry.pinned && b.entry.pinned) return 1;
+      const priorityDiff = MEMORY_PRIORITY_VALUES[b.effectivePriority] - MEMORY_PRIORITY_VALUES[a.effectivePriority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
+    });
+    const maxEntries = this.config.maxIndexEntries;
+    const displayEntries = maxEntries ? sortedEntries.slice(0, maxEntries) : sortedEntries;
+    const omittedCount = sortedEntries.length - displayEntries.length;
+    const indexEntries = displayEntries.map(({ entry, effectivePriority }) => ({
+      key: entry.key,
+      description: entry.description,
+      size: formatSizeHuman(entry.sizeBytes),
+      scope: entry.scope,
+      effectivePriority,
+      pinned: entry.pinned
+    }));
+    return {
+      entries: indexEntries,
+      totalSizeBytes,
+      totalSizeHuman: formatSizeHuman(totalSizeBytes),
+      limitBytes,
+      limitHuman: formatSizeHuman(limitBytes),
+      utilizationPercent: totalSizeBytes / limitBytes * 100,
+      totalEntryCount,
+      omittedCount
+    };
+  }
+  /**
+   * Format index for context injection
+   */
+  async formatIndex() {
+    const index = await this.getIndex();
+    return formatMemoryIndex(index);
+  }
+  /**
+   * Evict entries using specified strategy
+   *
+   * Eviction order:
+   * 1. Never evict pinned entries
+   * 2. Evict low priority first, then normal, then high (never critical)
+   * 3. Within same priority, use strategy (LRU or largest size)
+   *
+   * @param count - Number of entries to evict
+   * @param strategy - Eviction strategy ('lru' or 'size')
+   * @returns Keys of evicted entries
+   */
+  async evict(count, strategy = "lru") {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const evictable = this.getEvictableEntries(entriesWithPriority, strategy);
+    const toEvict = evictable.slice(0, count);
+    const evictedKeys = [];
+    for (const { entry } of toEvict) {
+      await this.storage.delete(entry.key);
+      evictedKeys.push(entry.key);
+    }
+    if (evictedKeys.length > 0) {
+      this.emit("evicted", { keys: evictedKeys, reason: strategy });
+    }
+    return evictedKeys;
+  }
+  /**
+   * Evict entries using priority-aware LRU algorithm
+   * @deprecated Use evict(count, 'lru') instead
+   */
+  async evictLRU(count) {
+    return this.evict(count, "lru");
+  }
+  /**
+   * Evict largest entries first (priority-aware)
+   * @deprecated Use evict(count, 'size') instead
+   */
+  async evictBySize(count) {
+    return this.evict(count, "size");
+  }
+  /**
+   * Handle task completion - detect and notify about stale entries
+   *
+   * Call this when a task completes to:
+   * 1. Update priority context with new task state
+   * 2. Detect entries that became stale
+   * 3. Emit event to notify LLM about stale entries
+   *
+   * @param taskId - The completed task ID
+   * @param taskStates - Current task states map
+   * @returns Information about stale entries
+   */
+  async onTaskComplete(taskId, taskStates) {
+    this.priorityContext.taskStates = taskStates;
+    const entries = await this.storage.getAll();
+    const staleEntries = detectStaleEntries(entries, taskId, taskStates);
+    if (staleEntries.length > 0) {
+      this.emit("stale_entries", { entries: staleEntries });
+    }
+    return staleEntries;
+  }
+  /**
+   * Evict entries for completed tasks
+   *
+   * Removes entries that were scoped only to completed tasks.
+   * Use after onTaskComplete() if you want automatic cleanup.
+   *
+   * @param taskStates - Current task states map
+   * @returns Keys of evicted entries
+   */
+  async evictCompletedTaskEntries(taskStates) {
+    const entries = await this.storage.getAll();
+    const evictedKeys = [];
+    for (const entry of entries) {
+      if (entry.pinned) continue;
+      if (!isTaskAwareScope(entry.scope) || entry.scope.type !== "task") continue;
+      const allTerminal = entry.scope.taskIds.every((taskId) => {
+        const status = taskStates.get(taskId);
+        return status ? isTerminalMemoryStatus(status) : false;
+      });
+      if (allTerminal) {
+        await this.storage.delete(entry.key);
+        evictedKeys.push(entry.key);
+      }
+    }
+    if (evictedKeys.length > 0) {
+      this.emit("evicted", { keys: evictedKeys, reason: "task_completed" });
+    }
+    return evictedKeys;
+  }
+  /**
+   * Get limited memory access for tools
+   *
+   * This provides a simplified interface for tools to interact with memory
+   * without exposing the full WorkingMemory API.
+   */
+  getAccess() {
+    return {
+      get: async (key) => this.retrieve(key),
+      set: async (key, description, value, options) => this.store(key, description, value, options),
+      delete: async (key) => this.delete(key),
+      has: async (key) => this.has(key),
+      list: async () => {
+        const index = await this.getIndex();
+        return index.entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          effectivePriority: e.effectivePriority,
+          pinned: e.pinned
+        }));
+      }
+    };
+  }
+  // ============================================================================
+  // HIERARCHICAL MEMORY HELPERS
+  // ============================================================================
+  /**
+   * Store raw data (low priority, first to be evicted)
+   *
+   * Use this for original/unprocessed data that should be summarized.
+   * Raw data is automatically evicted first when memory pressure is high.
+   *
+   * @param key - Key without tier prefix (prefix is added automatically)
+   * @param description - Brief description for the index
+   * @param value - The raw data to store
+   * @param options - Optional scope and task IDs
+   */
+  async storeRaw(key, description, value, options) {
+    const fullKey = addTierPrefix(key, "raw");
+    const scope = options?.taskIds ? { type: "task", taskIds: options.taskIds } : options?.scope ?? "session";
+    await this.store(fullKey, description, value, {
+      scope,
+      priority: TIER_PRIORITIES.raw
+    });
+  }
+  /**
+   * Store a summary derived from raw data (normal priority)
+   *
+   * Use this for processed/summarized data that extracts key information.
+   * Links back to source data for cleanup tracking.
+   *
+   * @param key - Key without tier prefix (prefix is added automatically)
+   * @param description - Brief description for the index
+   * @param value - The summary data
+   * @param derivedFrom - Key(s) this summary was derived from
+   * @param options - Optional scope and task IDs
+   */
+  async storeSummary(key, description, value, derivedFrom, options) {
+    const fullKey = addTierPrefix(key, "summary");
+    const sourceKeys = Array.isArray(derivedFrom) ? derivedFrom : [derivedFrom];
+    const scope = options?.taskIds ? { type: "task", taskIds: options.taskIds } : options?.scope ?? { type: "plan" };
+    await this.store(fullKey, description, value, {
+      scope,
+      priority: TIER_PRIORITIES.summary
+    });
+    for (const sourceKey of sourceKeys) {
+      try {
+        const sourceEntry = await this.storage.get(sourceKey);
+        if (sourceEntry) {
+          const metadata = sourceEntry.value?.metadata;
+          const existingDerivedTo = metadata?.derivedTo ?? [];
+          if (!existingDerivedTo.includes(fullKey)) {
+          }
+        }
+      } catch {
+      }
+    }
+  }
+  /**
+   * Store final findings (high priority, kept longest)
+   *
+   * Use this for conclusions, insights, or final results that should be preserved.
+   * These are the last to be evicted and typically span the entire plan.
+   *
+   * @param key - Key without tier prefix (prefix is added automatically)
+   * @param description - Brief description for the index
+   * @param value - The findings data
+   * @param derivedFrom - Optional key(s) these findings were derived from
+   * @param options - Optional scope, task IDs, and pinned flag
+   */
+  async storeFindings(key, description, value, _derivedFrom, options) {
+    const fullKey = addTierPrefix(key, "findings");
+    const scope = options?.scope ?? { type: "plan" };
+    await this.store(fullKey, description, value, {
+      scope,
+      priority: TIER_PRIORITIES.findings,
+      pinned: options?.pinned
+    });
+  }
+  /**
+   * Clean up raw data after summary/findings are created
+   *
+   * Call this after creating summaries to free up memory used by raw data.
+   * Only deletes entries in the 'raw' tier.
+   *
+   * @param derivedFromKeys - Keys to delete (typically from derivedFrom metadata)
+   * @returns Number of entries deleted
+   */
+  async cleanupRawData(derivedFromKeys) {
+    let deletedCount = 0;
+    for (const key of derivedFromKeys) {
+      const tier = getTierFromKey(key);
+      if (tier === "raw") {
+        const exists = await this.has(key);
+        if (exists) {
+          await this.delete(key);
+          deletedCount++;
+        }
+      }
+    }
+    return deletedCount;
+  }
+  /**
+   * Get all entries by tier
+   *
+   * @param tier - The tier to filter by
+   * @returns Array of entries in that tier
+   */
+  async getByTier(tier) {
+    const entries = await this.storage.getAll();
+    const prefix = TIER_KEY_PREFIXES[tier];
+    return entries.filter((e) => e.key.startsWith(prefix));
+  }
+  /**
+   * Promote an entry to a higher tier
+   *
+   * Changes the key prefix and updates priority.
+   * Use this when raw data becomes more valuable (e.g., frequently accessed).
+   *
+   * @param key - Current key (with tier prefix)
+   * @param toTier - Target tier to promote to
+   * @returns New key with updated prefix
+   */
+  async promote(key, toTier) {
+    const currentTier = getTierFromKey(key);
+    if (currentTier === toTier) {
+      return key;
+    }
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    const newKey = addTierPrefix(key, toTier);
+    const newPriority = TIER_PRIORITIES[toTier];
+    await this.store(newKey, entry.description, entry.value, {
+      scope: entry.scope,
+      priority: newPriority,
+      pinned: entry.pinned
+    });
+    await this.delete(key);
+    return newKey;
+  }
+  /**
+   * Get tier statistics
+   *
+   * @returns Count and size by tier
+   */
+  async getTierStats() {
+    const entries = await this.storage.getAll();
+    const stats = {
+      raw: { count: 0, sizeBytes: 0 },
+      summary: { count: 0, sizeBytes: 0 },
+      findings: { count: 0, sizeBytes: 0 }
+    };
+    for (const entry of entries) {
+      const tier = getTierFromKey(entry.key);
+      if (tier) {
+        stats[tier].count++;
+        stats[tier].sizeBytes += entry.sizeBytes;
+      }
+    }
+    return stats;
+  }
+  /**
+   * Get statistics about memory usage
+   */
+  async getStats() {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const totalSizeBytes = await this.storage.getTotalSize();
+    const limit = this.getLimit();
+    const byPriority = {
+      critical: 0,
+      high: 0,
+      normal: 0,
+      low: 0
+    };
+    let pinnedCount = 0;
+    for (const { entry, effectivePriority } of entriesWithPriority) {
+      byPriority[effectivePriority]++;
+      if (entry.pinned) pinnedCount++;
+    }
+    return {
+      totalEntries: entriesWithPriority.length,
+      totalSizeBytes,
+      utilizationPercent: totalSizeBytes / limit * 100,
+      byPriority,
+      pinnedCount
+    };
+  }
+  /**
+   * Get the configured memory limit
+   */
+  getLimit() {
+    return this.config.maxSizeBytes ?? 25 * 1024 * 1024;
+  }
+  /**
+   * Check if the WorkingMemory instance has been destroyed
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Destroy the WorkingMemory instance
+   * Removes all event listeners and clears internal state
+   */
+  destroy() {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
+    this.removeAllListeners();
+    this.priorityContext = {};
+  }
+  // ============================================================================
+  // Serialization (for session persistence)
+  // ============================================================================
+  /**
+   * Serialize all memory entries for persistence
+   *
+   * Returns a serializable representation of all memory entries
+   * that can be saved to storage and restored later.
+   *
+   * @returns Serialized memory state
+   */
+  async serialize() {
+    const entries = await this.storage.getAll();
+    const serializedEntries = entries.map((entry) => ({
+      key: entry.key,
+      description: entry.description,
+      value: entry.value,
+      scope: entry.scope,
+      sizeBytes: entry.sizeBytes,
+      basePriority: entry.basePriority,
+      pinned: entry.pinned
+      // Note: createdAt, lastAccessedAt, accessCount are not persisted
+      // They will be reset on restore (entries start fresh)
+    }));
+    return {
+      version: 1,
+      entries: serializedEntries
+    };
+  }
+  /**
+   * Restore memory entries from serialized state
+   *
+   * Clears existing memory and repopulates from the serialized state.
+   * Timestamps are reset to current time.
+   *
+   * @param state - Previously serialized memory state
+   */
+  async restore(state) {
+    if (state.version !== 1) {
+      throw new Error(`Unsupported memory serialization version: ${state.version}`);
+    }
+    await this.storage.clear();
+    const now = Date.now();
+    for (const entry of state.entries) {
+      const fullEntry = {
+        key: entry.key,
+        description: entry.description,
+        value: entry.value,
+        scope: entry.scope,
+        sizeBytes: entry.sizeBytes,
+        basePriority: entry.basePriority ?? "normal",
+        pinned: entry.pinned ?? false,
+        createdAt: now,
+        lastAccessedAt: now,
+        accessCount: 0
+      };
+      await this.storage.set(entry.key, fullEntry);
+    }
+  }
+};
 
-// src/capabilities/taskAgent/TaskAgent.ts
-init_Connector();
+// src/capabilities/taskAgent/ExternalDependencyHandler.ts
+init_BackoffStrategy();
+var ExternalDependencyHandler = class extends eventemitter3.EventEmitter {
+  activePolls = /* @__PURE__ */ new Map();
+  activeScheduled = /* @__PURE__ */ new Map();
+  cancelledPolls = /* @__PURE__ */ new Set();
+  // Track cancelled polls
+  tools;
+  constructor(tools = []) {
+    super();
+    this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
+  }
+  /**
+   * Start handling a task's external dependency
+   */
+  async startWaiting(task) {
+    if (!task.externalDependency) {
+      return;
+    }
+    const dep = task.externalDependency;
+    switch (dep.type) {
+      case "webhook":
+        break;
+      case "poll":
+        this.startPolling(task);
+        break;
+      case "scheduled":
+        this.scheduleTask(task);
+        break;
+    }
+  }
+  /**
+   * Stop waiting on a task's external dependency
+   */
+  stopWaiting(task) {
+    if (!task.externalDependency) {
+      return;
+    }
+    this.cancelledPolls.add(task.id);
+    const pollTimer = this.activePolls.get(task.id);
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      this.activePolls.delete(task.id);
+    }
+    const scheduleTimer = this.activeScheduled.get(task.id);
+    if (scheduleTimer) {
+      clearTimeout(scheduleTimer);
+      this.activeScheduled.delete(task.id);
+    }
+  }
+  /**
+   * Trigger a webhook
+   */
+  async triggerWebhook(webhookId, data) {
+    this.emit("webhook:received", { webhookId, data });
+  }
+  /**
+   * Complete a manual task
+   */
+  async completeManual(taskId, data) {
+    this.emit("manual:completed", { taskId, data });
+  }
+  /**
+   * Start polling for a task with exponential backoff
+   */
+  startPolling(task) {
+    const dep = task.externalDependency;
+    const pollConfig = dep.pollConfig;
+    const backoffConfig = {
+      strategy: "exponential",
+      initialDelayMs: pollConfig.intervalMs,
+      maxDelayMs: pollConfig.intervalMs * 4,
+      // Cap at 4x initial interval
+      jitter: true,
+      jitterFactor: 0.1
+      // ±10% jitter to prevent thundering herd
+    };
+    this.cancelledPolls.delete(task.id);
+    (async () => {
+      let attempts = 0;
+      while (attempts < pollConfig.maxAttempts) {
+        if (this.cancelledPolls.has(task.id)) {
+          this.cancelledPolls.delete(task.id);
+          return;
+        }
+        attempts++;
+        try {
+          const tool = this.tools.get(pollConfig.toolName);
+          if (!tool) {
+            console.error(`Poll tool ${pollConfig.toolName} not found`);
+            return;
+          }
+          const result = await tool.execute(pollConfig.toolArgs);
+          if (result) {
+            this.emit("poll:success", { taskId: task.id, data: result });
+            return;
+          }
+        } catch (error) {
+          console.error(`Poll error for task ${task.id}:`, error);
+        }
+        if (attempts >= pollConfig.maxAttempts) {
+          this.emit("poll:timeout", { taskId: task.id });
+          return;
+        }
+        const delay = calculateBackoff(attempts, backoffConfig);
+        await new Promise((resolve4) => {
+          const timer = setTimeout(resolve4, delay);
+          this.activePolls.set(task.id, timer);
+        });
+        if (this.cancelledPolls.has(task.id)) {
+          this.cancelledPolls.delete(task.id);
+          return;
+        }
+      }
+    })();
+  }
+  /**
+   * Schedule a task to trigger at a specific time
+   */
+  scheduleTask(task) {
+    const dep = task.externalDependency;
+    const scheduledAt = dep.scheduledAt;
+    const delay = scheduledAt - Date.now();
+    if (delay <= 0) {
+      this.emit("scheduled:triggered", { taskId: task.id });
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.emit("scheduled:triggered", { taskId: task.id });
+      this.activeScheduled.delete(task.id);
+    }, delay);
+    this.activeScheduled.set(task.id, timer);
+  }
+  /**
+   * Cleanup all active dependencies
+   */
+  cleanup() {
+    for (const taskId of this.activePolls.keys()) {
+      this.cancelledPolls.add(taskId);
+    }
+    for (const timer of this.activePolls.values()) {
+      clearTimeout(timer);
+    }
+    this.activePolls.clear();
+    for (const timer of this.activeScheduled.values()) {
+      clearTimeout(timer);
+    }
+    this.activeScheduled.clear();
+  }
+  /**
+   * Update available tools
+   */
+  updateTools(tools) {
+    this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
+  }
+};
+
+// src/capabilities/taskAgent/CheckpointManager.ts
+var DEFAULT_CHECKPOINT_STRATEGY = {
+  afterToolCalls: 1,
+  afterLLMCalls: 1,
+  intervalMs: 3e4,
+  // 30 seconds
+  beforeExternalWait: true,
+  mode: "async"
+};
+var CheckpointManager = class {
+  storage;
+  strategy;
+  toolCallsSinceCheckpoint = 0;
+  llmCallsSinceCheckpoint = 0;
+  intervalTimer;
+  pendingCheckpoints = /* @__PURE__ */ new Set();
+  currentState = null;
+  constructor(storage, strategy = DEFAULT_CHECKPOINT_STRATEGY) {
+    this.storage = storage;
+    this.strategy = strategy;
+    if (this.strategy.intervalMs) {
+      this.intervalTimer = setInterval(() => {
+        this.checkIntervalCheckpoint();
+      }, this.strategy.intervalMs);
+    }
+  }
+  /**
+   * Set the current agent state (for interval checkpointing)
+   */
+  setCurrentState(state) {
+    this.currentState = state;
+  }
+  /**
+   * Record a tool call (may trigger checkpoint)
+   */
+  async onToolCall(state) {
+    this.toolCallsSinceCheckpoint++;
+    if (this.strategy.afterToolCalls && this.toolCallsSinceCheckpoint >= this.strategy.afterToolCalls) {
+      await this.checkpoint(state, "tool_calls");
+    }
+  }
+  /**
+   * Record an LLM call (may trigger checkpoint)
+   */
+  async onLLMCall(state) {
+    this.llmCallsSinceCheckpoint++;
+    if (this.strategy.afterLLMCalls && this.llmCallsSinceCheckpoint >= this.strategy.afterLLMCalls) {
+      await this.checkpoint(state, "llm_calls");
+    }
+  }
+  /**
+   * Force a checkpoint
+   */
+  async checkpoint(state, reason) {
+    const checkpointPromise = this.doCheckpoint(state, reason);
+    if (this.strategy.mode === "sync") {
+      await checkpointPromise;
+    } else {
+      this.pendingCheckpoints.add(checkpointPromise);
+      checkpointPromise.finally(() => {
+        this.pendingCheckpoints.delete(checkpointPromise);
+      });
+    }
+  }
+  /**
+   * Perform the actual checkpoint
+   */
+  async doCheckpoint(state, _reason) {
+    try {
+      await this.storage.agent.save(state);
+      await this.storage.plan.savePlan(state.plan);
+      this.toolCallsSinceCheckpoint = 0;
+      this.llmCallsSinceCheckpoint = 0;
+    } catch (error) {
+      console.error(`Checkpoint failed (${_reason}):`, error);
+    }
+  }
+  /**
+   * Check if interval-based checkpoint is needed
+   */
+  checkIntervalCheckpoint() {
+    if (this.currentState) {
+      this.checkpoint(this.currentState, "interval");
+    }
+  }
+  /**
+   * Wait for all pending checkpoints to complete
+   */
+  async flush() {
+    await Promise.all(Array.from(this.pendingCheckpoints));
+  }
+  /**
+   * Cleanup resources
+   */
+  async cleanup() {
+    if (this.intervalTimer) {
+      clearInterval(this.intervalTimer);
+    }
+    await this.flush();
+  }
+};
 
 // src/domain/entities/Task.ts
 var TERMINAL_TASK_STATUSES = ["completed", "failed", "skipped", "cancelled"];
@@ -42188,10 +38330,10 @@ function detectDependencyCycle(tasks) {
   const visited = /* @__PURE__ */ new Set();
   const recStack = /* @__PURE__ */ new Set();
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
-  function dfs(taskId, path6) {
+  function dfs(taskId, path5) {
     if (recStack.has(taskId)) {
-      const cycleStart = path6.indexOf(taskId);
-      return [...path6.slice(cycleStart), taskId];
+      const cycleStart = path5.indexOf(taskId);
+      return [...path5.slice(cycleStart), taskId];
     }
     if (visited.has(taskId)) {
       return null;
@@ -42201,7 +38343,7 @@ function detectDependencyCycle(tasks) {
     const task = taskMap.get(taskId);
     if (task) {
       for (const depId of task.dependsOn) {
-        const cycle = dfs(depId, [...path6, taskId]);
+        const cycle = dfs(depId, [...path5, taskId]);
         if (cycle) {
           return cycle;
         }
@@ -42220,1982 +38362,6 @@ function detectDependencyCycle(tasks) {
   }
   return null;
 }
-
-// src/domain/entities/AgentState.ts
-function createAgentState(id, config, plan) {
-  const now = Date.now();
-  return {
-    id,
-    status: "idle",
-    config,
-    plan,
-    memoryId: `memory-${id}`,
-    conversationHistory: [],
-    createdAt: now,
-    lastActivityAt: now,
-    metrics: {
-      totalLLMCalls: 0,
-      totalToolCalls: 0,
-      totalTokensUsed: 0,
-      totalCost: 0
-    }
-  };
-}
-function updateAgentStatus(state, status) {
-  const now = Date.now();
-  const updated = {
-    ...state,
-    status,
-    lastActivityAt: now
-  };
-  if (status === "running" && !updated.startedAt) {
-    updated.startedAt = now;
-  }
-  if (status === "suspended" && !updated.suspendedAt) {
-    updated.suspendedAt = now;
-  }
-  if ((status === "completed" || status === "failed" || status === "cancelled") && !updated.completedAt) {
-    updated.completedAt = now;
-  }
-  return updated;
-}
-
-// src/core/context/plugins/PlanPlugin.ts
-var PlanPlugin = class extends BaseContextPlugin {
-  name = "plan";
-  priority = 1;
-  // Very low = keep (critical)
-  compactable = false;
-  // Never compact the plan
-  plan = null;
-  /**
-   * Set the current plan
-   */
-  setPlan(plan) {
-    this.plan = plan;
-  }
-  /**
-   * Get the current plan
-   */
-  getPlan() {
-    return this.plan;
-  }
-  /**
-   * Clear the plan
-   */
-  clearPlan() {
-    this.plan = null;
-  }
-  /**
-   * Update a task's status within the plan
-   */
-  updateTaskStatus(taskId, status) {
-    if (!this.plan) return;
-    const task = this.plan.tasks.find((t) => t.id === taskId || t.name === taskId);
-    if (task) {
-      task.status = status;
-    }
-  }
-  /**
-   * Get a task by ID or name
-   */
-  getTask(taskId) {
-    if (!this.plan) return void 0;
-    return this.plan.tasks.find((t) => t.id === taskId || t.name === taskId);
-  }
-  /**
-   * Check if all tasks are completed
-   */
-  isComplete() {
-    if (!this.plan) return true;
-    return this.plan.tasks.every((t) => t.status === "completed" || t.status === "skipped");
-  }
-  /**
-   * Get component for context
-   */
-  async getComponent() {
-    if (!this.plan) return null;
-    return {
-      name: this.name,
-      content: this.formatPlan(this.plan),
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        taskCount: this.plan.tasks.length,
-        completedCount: this.plan.tasks.filter((t) => t.status === "completed").length,
-        goal: this.plan.goal
-      }
-    };
-  }
-  /**
-   * Format plan for LLM context
-   */
-  formatPlan(plan) {
-    const lines = [
-      "## Current Plan",
-      "",
-      `**Goal**: ${plan.goal}`,
-      "",
-      "**Tasks**:"
-    ];
-    for (let i = 0; i < plan.tasks.length; i++) {
-      const task = plan.tasks[i];
-      if (!task) continue;
-      const status = task.status || "pending";
-      const statusEmoji = this.getStatusEmoji(status);
-      const deps = task.dependsOn && task.dependsOn.length > 0 ? ` (depends on: ${task.dependsOn.join(", ")})` : "";
-      lines.push(`${i + 1}. ${statusEmoji} [${status}] **${task.name}**: ${task.description}${deps}`);
-      if (task.validation?.completionCriteria) {
-        lines.push(`   - Completion: ${task.validation.completionCriteria}`);
-      }
-    }
-    return lines.join("\n");
-  }
-  /**
-   * Get emoji for task status
-   */
-  getStatusEmoji(status) {
-    switch (status) {
-      case "completed":
-        return "[x]";
-      case "in_progress":
-        return "[~]";
-      case "failed":
-        return "[!]";
-      case "skipped":
-        return "[-]";
-      case "blocked":
-        return "[#]";
-      case "pending":
-      default:
-        return "[ ]";
-    }
-  }
-  // Session persistence
-  getState() {
-    return { plan: this.plan };
-  }
-  restoreState(state) {
-    const s = state;
-    if (s?.plan) {
-      this.plan = s.plan;
-    }
-  }
-};
-
-// src/core/context/plugins/MemoryPlugin.ts
-var MemoryPlugin = class extends BaseContextPlugin {
-  name = "memory_index";
-  priority = 8;
-  // Higher = more likely to compact
-  compactable = true;
-  memory;
-  evictBatchSize;
-  /**
-   * Create a memory plugin
-   *
-   * @param memory - The WorkingMemory instance to wrap
-   * @param evictBatchSize - How many entries to evict per compaction round (default: 3)
-   */
-  constructor(memory, evictBatchSize = 3) {
-    super();
-    this.memory = memory;
-    this.evictBatchSize = evictBatchSize;
-  }
-  /**
-   * Get the underlying WorkingMemory
-   */
-  getMemory() {
-    return this.memory;
-  }
-  /**
-   * Get component for context
-   */
-  async getComponent() {
-    const index = await this.memory.formatIndex();
-    if (!index || index.trim().length === 0 || index.includes("Memory is empty.")) {
-      return null;
-    }
-    const stats = await this.memory.getStats();
-    return {
-      name: this.name,
-      content: index,
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        entryCount: stats.totalEntries,
-        totalSizeBytes: stats.totalSizeBytes,
-        utilizationPercent: stats.utilizationPercent
-      }
-    };
-  }
-  /**
-   * Compact by evicting least-important entries
-   */
-  async compact(_targetTokens, estimator) {
-    const beforeIndex = await this.memory.formatIndex();
-    const beforeTokens = estimator.estimateTokens(beforeIndex);
-    const evictedKeys = await this.memory.evict(this.evictBatchSize, "lru");
-    if (evictedKeys.length === 0) {
-      return 0;
-    }
-    const afterIndex = await this.memory.formatIndex();
-    const afterTokens = estimator.estimateTokens(afterIndex);
-    return Math.max(0, beforeTokens - afterTokens);
-  }
-  /**
-   * Clean up
-   */
-  destroy() {
-  }
-  // Memory state is managed by WorkingMemory, not this plugin
-  getState() {
-    return {};
-  }
-  restoreState(_state) {
-  }
-};
-
-// src/capabilities/taskAgent/ExternalDependencyHandler.ts
-init_BackoffStrategy();
-var ExternalDependencyHandler = class extends eventemitter3.EventEmitter {
-  activePolls = /* @__PURE__ */ new Map();
-  activeScheduled = /* @__PURE__ */ new Map();
-  cancelledPolls = /* @__PURE__ */ new Set();
-  // Track cancelled polls
-  tools;
-  constructor(tools = []) {
-    super();
-    this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
-  }
-  /**
-   * Start handling a task's external dependency
-   */
-  async startWaiting(task) {
-    if (!task.externalDependency) {
-      return;
-    }
-    const dep = task.externalDependency;
-    switch (dep.type) {
-      case "webhook":
-        break;
-      case "poll":
-        this.startPolling(task);
-        break;
-      case "scheduled":
-        this.scheduleTask(task);
-        break;
-    }
-  }
-  /**
-   * Stop waiting on a task's external dependency
-   */
-  stopWaiting(task) {
-    if (!task.externalDependency) {
-      return;
-    }
-    this.cancelledPolls.add(task.id);
-    const pollTimer = this.activePolls.get(task.id);
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      this.activePolls.delete(task.id);
-    }
-    const scheduleTimer = this.activeScheduled.get(task.id);
-    if (scheduleTimer) {
-      clearTimeout(scheduleTimer);
-      this.activeScheduled.delete(task.id);
-    }
-  }
-  /**
-   * Trigger a webhook
-   */
-  async triggerWebhook(webhookId, data) {
-    this.emit("webhook:received", { webhookId, data });
-  }
-  /**
-   * Complete a manual task
-   */
-  async completeManual(taskId, data) {
-    this.emit("manual:completed", { taskId, data });
-  }
-  /**
-   * Start polling for a task with exponential backoff
-   */
-  startPolling(task) {
-    const dep = task.externalDependency;
-    const pollConfig = dep.pollConfig;
-    const backoffConfig = {
-      strategy: "exponential",
-      initialDelayMs: pollConfig.intervalMs,
-      maxDelayMs: pollConfig.intervalMs * 4,
-      // Cap at 4x initial interval
-      jitter: true,
-      jitterFactor: 0.1
-      // ±10% jitter to prevent thundering herd
-    };
-    this.cancelledPolls.delete(task.id);
-    (async () => {
-      let attempts = 0;
-      while (attempts < pollConfig.maxAttempts) {
-        if (this.cancelledPolls.has(task.id)) {
-          this.cancelledPolls.delete(task.id);
-          return;
-        }
-        attempts++;
-        try {
-          const tool = this.tools.get(pollConfig.toolName);
-          if (!tool) {
-            console.error(`Poll tool ${pollConfig.toolName} not found`);
-            return;
-          }
-          const result = await tool.execute(pollConfig.toolArgs);
-          if (result) {
-            this.emit("poll:success", { taskId: task.id, data: result });
-            return;
-          }
-        } catch (error) {
-          console.error(`Poll error for task ${task.id}:`, error);
-        }
-        if (attempts >= pollConfig.maxAttempts) {
-          this.emit("poll:timeout", { taskId: task.id });
-          return;
-        }
-        const delay = calculateBackoff(attempts, backoffConfig);
-        await new Promise((resolve5) => {
-          const timer = setTimeout(resolve5, delay);
-          this.activePolls.set(task.id, timer);
-        });
-        if (this.cancelledPolls.has(task.id)) {
-          this.cancelledPolls.delete(task.id);
-          return;
-        }
-      }
-    })();
-  }
-  /**
-   * Schedule a task to trigger at a specific time
-   */
-  scheduleTask(task) {
-    const dep = task.externalDependency;
-    const scheduledAt = dep.scheduledAt;
-    const delay = scheduledAt - Date.now();
-    if (delay <= 0) {
-      this.emit("scheduled:triggered", { taskId: task.id });
-      return;
-    }
-    const timer = setTimeout(() => {
-      this.emit("scheduled:triggered", { taskId: task.id });
-      this.activeScheduled.delete(task.id);
-    }, delay);
-    this.activeScheduled.set(task.id, timer);
-  }
-  /**
-   * Cleanup all active dependencies
-   */
-  cleanup() {
-    for (const taskId of this.activePolls.keys()) {
-      this.cancelledPolls.add(taskId);
-    }
-    for (const timer of this.activePolls.values()) {
-      clearTimeout(timer);
-    }
-    this.activePolls.clear();
-    for (const timer of this.activeScheduled.values()) {
-      clearTimeout(timer);
-    }
-    this.activeScheduled.clear();
-  }
-  /**
-   * Update available tools
-   */
-  updateTools(tools) {
-    this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
-  }
-};
-
-// src/infrastructure/resilience/index.ts
-init_CircuitBreaker();
-init_CircuitBreaker();
-init_BackoffStrategy();
-init_BackoffStrategy();
-
-// src/infrastructure/resilience/RateLimiter.ts
-var RateLimitError = class _RateLimitError extends AIError {
-  constructor(retryAfterMs, message) {
-    super(message ?? `Rate limited. Retry after ${retryAfterMs}ms`, "RATE_LIMIT_ERROR", 429);
-    this.retryAfterMs = retryAfterMs;
-    this.name = "RateLimitError";
-    Object.setPrototypeOf(this, _RateLimitError.prototype);
-  }
-};
-var DEFAULT_RATE_LIMITER_CONFIG = {
-  maxRequests: 60,
-  windowMs: 6e4,
-  onLimit: "wait",
-  maxWaitMs: 6e4
-};
-var TokenBucketRateLimiter = class {
-  tokens;
-  lastRefill;
-  config;
-  waitQueue = [];
-  // Metrics
-  totalRequests = 0;
-  throttledRequests = 0;
-  totalWaitMs = 0;
-  constructor(config = {}) {
-    this.config = {
-      maxRequests: config.maxRequests ?? DEFAULT_RATE_LIMITER_CONFIG.maxRequests,
-      windowMs: config.windowMs ?? DEFAULT_RATE_LIMITER_CONFIG.windowMs,
-      onLimit: config.onLimit ?? DEFAULT_RATE_LIMITER_CONFIG.onLimit,
-      maxWaitMs: config.maxWaitMs ?? DEFAULT_RATE_LIMITER_CONFIG.maxWaitMs
-    };
-    this.tokens = this.config.maxRequests;
-    this.lastRefill = Date.now();
-  }
-  /**
-   * Acquire a token (request permission to make an LLM call)
-   * @returns Promise that resolves when token is acquired
-   * @throws RateLimitError if onLimit='throw' and no tokens available
-   */
-  async acquire() {
-    this.totalRequests++;
-    this.refill();
-    if (this.tokens > 0) {
-      this.tokens--;
-      return;
-    }
-    this.throttledRequests++;
-    const waitTime = this.getWaitTime();
-    if (this.config.onLimit === "throw") {
-      throw new RateLimitError(waitTime);
-    }
-    if (waitTime > this.config.maxWaitMs) {
-      throw new RateLimitError(
-        waitTime,
-        `Wait time ${waitTime}ms exceeds max ${this.config.maxWaitMs}ms`
-      );
-    }
-    const startWait = Date.now();
-    await this.waitForToken(waitTime);
-    this.totalWaitMs += Date.now() - startWait;
-  }
-  /**
-   * Try to acquire without waiting
-   * @returns true if acquired, false if rate limited
-   */
-  tryAcquire() {
-    this.totalRequests++;
-    this.refill();
-    if (this.tokens > 0) {
-      this.tokens--;
-      return true;
-    }
-    this.throttledRequests++;
-    return false;
-  }
-  /**
-   * Get current available tokens
-   */
-  getAvailableTokens() {
-    this.refill();
-    return this.tokens;
-  }
-  /**
-   * Get time until next token is available
-   */
-  getWaitTime() {
-    this.refill();
-    if (this.tokens > 0) return 0;
-    const elapsed = Date.now() - this.lastRefill;
-    return Math.max(0, this.config.windowMs - elapsed);
-  }
-  /**
-   * Get rate limiter metrics
-   */
-  getMetrics() {
-    return {
-      totalRequests: this.totalRequests,
-      throttledRequests: this.throttledRequests,
-      totalWaitMs: this.totalWaitMs,
-      avgWaitMs: this.throttledRequests > 0 ? this.totalWaitMs / this.throttledRequests : 0
-    };
-  }
-  /**
-   * Reset the rate limiter state
-   */
-  reset() {
-    this.tokens = this.config.maxRequests;
-    this.lastRefill = Date.now();
-    for (const waiter of this.waitQueue) {
-      if (waiter.timeout) {
-        clearTimeout(waiter.timeout);
-      }
-    }
-    this.waitQueue = [];
-  }
-  /**
-   * Reset metrics
-   */
-  resetMetrics() {
-    this.totalRequests = 0;
-    this.throttledRequests = 0;
-    this.totalWaitMs = 0;
-  }
-  /**
-   * Get the current configuration
-   */
-  getConfig() {
-    return { ...this.config };
-  }
-  /**
-   * Refill tokens if window has expired
-   */
-  refill() {
-    const now = Date.now();
-    const elapsed = now - this.lastRefill;
-    if (elapsed >= this.config.windowMs) {
-      this.tokens = this.config.maxRequests;
-      this.lastRefill = now;
-      this.processWaitQueue();
-    }
-  }
-  /**
-   * Wait for a token to become available
-   */
-  async waitForToken(waitTime) {
-    return new Promise((resolve5, reject) => {
-      const timeout = setTimeout(() => {
-        const index = this.waitQueue.findIndex((w) => w.timeout === timeout);
-        if (index !== -1) {
-          this.waitQueue.splice(index, 1);
-        }
-        this.refill();
-        if (this.tokens > 0) {
-          this.tokens--;
-          resolve5();
-        } else {
-          reject(new RateLimitError(this.getWaitTime(), "Token still unavailable after wait"));
-        }
-      }, waitTime);
-      this.waitQueue.push({ resolve: resolve5, reject, timeout });
-    });
-  }
-  /**
-   * Process waiting requests when tokens become available
-   */
-  processWaitQueue() {
-    while (this.waitQueue.length > 0 && this.tokens > 0) {
-      const waiter = this.waitQueue.shift();
-      if (waiter) {
-        if (waiter.timeout) {
-          clearTimeout(waiter.timeout);
-        }
-        this.tokens--;
-        waiter.resolve();
-      }
-    }
-  }
-};
-
-// src/utils/jsonExtractor.ts
-function extractJSON(text) {
-  if (!text || typeof text !== "string") {
-    return {
-      success: false,
-      error: "Input is empty or not a string"
-    };
-  }
-  const trimmedText = text.trim();
-  const codeBlockResult = extractFromCodeBlock(trimmedText);
-  if (codeBlockResult.success) {
-    return codeBlockResult;
-  }
-  const inlineResult = extractInlineJSON(trimmedText);
-  if (inlineResult.success) {
-    return inlineResult;
-  }
-  try {
-    const data = JSON.parse(trimmedText);
-    return {
-      success: true,
-      data,
-      rawJson: trimmedText,
-      method: "raw"
-    };
-  } catch (e) {
-    return {
-      success: false,
-      error: `Could not extract JSON from text: ${e instanceof Error ? e.message : String(e)}`
-    };
-  }
-}
-function extractFromCodeBlock(text) {
-  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/g;
-  let match;
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    const content = match[1];
-    if (content) {
-      const trimmed = content.trim();
-      try {
-        const data = JSON.parse(trimmed);
-        return {
-          success: true,
-          data,
-          rawJson: trimmed,
-          method: "code_block"
-        };
-      } catch {
-        continue;
-      }
-    }
-  }
-  return { success: false };
-}
-function extractInlineJSON(text) {
-  const objectMatch = findJSONObject(text);
-  if (objectMatch) {
-    try {
-      const data = JSON.parse(objectMatch);
-      return {
-        success: true,
-        data,
-        rawJson: objectMatch,
-        method: "inline"
-      };
-    } catch {
-    }
-  }
-  const arrayMatch = findJSONArray(text);
-  if (arrayMatch) {
-    try {
-      const data = JSON.parse(arrayMatch);
-      return {
-        success: true,
-        data,
-        rawJson: arrayMatch,
-        method: "inline"
-      };
-    } catch {
-    }
-  }
-  return { success: false };
-}
-function findJSONObject(text) {
-  const startIndex = text.indexOf("{");
-  if (startIndex === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = startIndex; i < text.length; i++) {
-    const char = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\" && inString) {
-      escaped = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "{") {
-      depth++;
-    } else if (char === "}") {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIndex, i + 1);
-      }
-    }
-  }
-  return null;
-}
-function findJSONArray(text) {
-  const startIndex = text.indexOf("[");
-  if (startIndex === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = startIndex; i < text.length; i++) {
-    const char = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\" && inString) {
-      escaped = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "[") {
-      depth++;
-    } else if (char === "]") {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIndex, i + 1);
-      }
-    }
-  }
-  return null;
-}
-function extractJSONField(text, field, defaultValue) {
-  const result = extractJSON(text);
-  if (result.success && result.data && field in result.data) {
-    return result.data[field];
-  }
-  return defaultValue;
-}
-function extractNumber(text, patterns = [
-  /(\d{1,3})%?\s*(?:complete|score|percent)/i,
-  /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
-  /(\d{1,3})\s*(?:out of|\/)\s*100/i
-], defaultValue = 0) {
-  const jsonResult = extractJSON(text);
-  if (jsonResult.success && jsonResult.data) {
-    const scoreFields = ["score", "completionScore", "completion_score", "rating", "percent", "value"];
-    for (const field of scoreFields) {
-      if (field in jsonResult.data && typeof jsonResult.data[field] === "number") {
-        return jsonResult.data[field];
-      }
-    }
-  }
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match && match[1]) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num)) {
-        return num;
-      }
-    }
-  }
-  return defaultValue;
-}
-
-// src/capabilities/taskAgent/PlanExecutor.ts
-var DEFAULT_TASK_TIMEOUT_MS = TASK_DEFAULTS.TIMEOUT_MS;
-var PlanExecutor = class extends eventemitter3.EventEmitter {
-  agent;
-  agentContext;
-  planPlugin;
-  // NOTE: IdempotencyCache is accessed via agentContext.cache (single source of truth)
-  externalHandler;
-  checkpointManager;
-  hooks;
-  config;
-  abortController;
-  rateLimiter;
-  _isDestroyed = false;
-  // Current execution metrics
-  currentMetrics = {
-    totalLLMCalls: 0,
-    totalToolCalls: 0,
-    totalTokensUsed: 0,
-    totalCost: 0
-  };
-  // Reference to current agent state (for checkpointing)
-  currentState = null;
-  constructor(agent, agentContext, planPlugin, externalHandler, checkpointManager, hooks, config) {
-    super();
-    this.agent = agent;
-    this.agentContext = agentContext;
-    this.planPlugin = planPlugin;
-    this.externalHandler = externalHandler;
-    this.checkpointManager = checkpointManager;
-    this.hooks = hooks;
-    this.config = config;
-    this.abortController = new AbortController();
-    if (config.rateLimiter) {
-      this.rateLimiter = new TokenBucketRateLimiter({
-        maxRequests: config.rateLimiter.maxRequestsPerMinute ?? 60,
-        windowMs: 6e4,
-        // 1 minute window
-        onLimit: config.rateLimiter.onLimit ?? "wait",
-        maxWaitMs: config.rateLimiter.maxWaitMs ?? 6e4
-      });
-    }
-  }
-  /**
-   * Get memory from AgentContext (single source of truth)
-   * May be null if memory feature is disabled
-   */
-  get memory() {
-    return this.agentContext.memory;
-  }
-  /**
-   * Get idempotency cache from AgentContext (single source of truth)
-   * May be null if memory feature is disabled
-   */
-  get idempotencyCache() {
-    return this.agentContext.cache;
-  }
-  /**
-   * Build a map of task states for memory priority calculation
-   */
-  buildTaskStatesMap(plan) {
-    const taskStates = /* @__PURE__ */ new Map();
-    for (const task of plan.tasks) {
-      const status = task.status;
-      if (["pending", "in_progress", "completed", "failed", "skipped", "cancelled"].includes(status)) {
-        taskStates.set(task.id, status);
-      } else {
-        taskStates.set(task.id, "pending");
-      }
-    }
-    return taskStates;
-  }
-  /**
-   * Notify memory about task completion and detect stale entries
-   * No-op if memory feature is disabled
-   */
-  async notifyMemoryOfTaskCompletion(plan, taskId) {
-    if (!this.memory) {
-      return;
-    }
-    const taskStates = this.buildTaskStatesMap(plan);
-    const staleEntries = await this.memory.onTaskComplete(taskId, taskStates);
-    if (staleEntries.length > 0) {
-      this.emit("memory:stale_entries", { entries: staleEntries, taskId });
-    }
-  }
-  /**
-   * Execute a plan
-   */
-  async execute(plan, state) {
-    this.currentState = state;
-    this.checkpointManager.setCurrentState(state);
-    this.currentMetrics = {
-      totalLLMCalls: 0,
-      totalToolCalls: 0,
-      totalTokensUsed: 0,
-      totalCost: 0
-    };
-    let iteration = 0;
-    while (iteration < this.config.maxIterations) {
-      iteration++;
-      if (this.isPlanComplete(plan)) {
-        break;
-      }
-      if (this.isPlanSuspended(plan)) {
-        return {
-          status: "suspended",
-          completedTasks: plan.tasks.filter((t) => t.status === "completed").length,
-          failedTasks: plan.tasks.filter((t) => t.status === "failed").length,
-          skippedTasks: plan.tasks.filter((t) => t.status === "skipped").length,
-          metrics: this.currentMetrics
-        };
-      }
-      const nextTasks = getNextExecutableTasks(plan);
-      if (nextTasks.length === 0) {
-        break;
-      }
-      await this.executeParallelTasks(plan, nextTasks);
-    }
-    const hasFailures = plan.tasks.some((t) => t.status === "failed");
-    const allComplete = plan.tasks.every(
-      (t) => ["completed", "skipped", "failed"].includes(t.status)
-    );
-    return {
-      status: hasFailures ? "failed" : allComplete ? "completed" : "suspended",
-      completedTasks: plan.tasks.filter((t) => t.status === "completed").length,
-      failedTasks: plan.tasks.filter((t) => t.status === "failed").length,
-      skippedTasks: plan.tasks.filter((t) => t.status === "skipped").length,
-      metrics: this.currentMetrics
-    };
-  }
-  /**
-   * Execute tasks in parallel with configurable failure handling
-   *
-   * Note on failure modes:
-   * - 'fail-fast' (default): Uses Promise.all - stops batch on first rejection (current behavior)
-   *   Individual task failures don't reject, they just set task.status = 'failed'
-   * - 'continue': Uses Promise.allSettled - all tasks run regardless of failures
-   * - 'fail-all': Uses Promise.allSettled, then throws ParallelTasksError if any failed
-   *
-   * @param plan - The plan being executed
-   * @param tasks - Tasks to execute in parallel
-   * @returns Result containing succeeded and failed tasks
-   */
-  async executeParallelTasks(plan, tasks) {
-    const failureMode = plan.concurrency?.failureMode ?? "fail-fast";
-    const succeeded = [];
-    const failed = [];
-    if (failureMode === "fail-fast") {
-      await Promise.all(tasks.map((task) => this.executeTask(plan, task)));
-      for (const task of tasks) {
-        if (task.status === "completed") {
-          succeeded.push(task);
-        } else if (task.status === "failed") {
-          const errorMsg = typeof task.result?.error === "string" ? task.result.error : "Task failed";
-          failed.push({
-            taskId: task.id,
-            taskName: task.name,
-            error: new Error(errorMsg)
-          });
-        }
-      }
-      return { succeeded, failed };
-    }
-    await Promise.allSettled(
-      tasks.map(async (task) => {
-        await this.executeTask(plan, task);
-      })
-    );
-    for (const task of tasks) {
-      if (task.status === "completed") {
-        succeeded.push(task);
-      } else if (task.status === "failed") {
-        const errorMsg = typeof task.result?.error === "string" ? task.result.error : "Task failed";
-        failed.push({
-          taskId: task.id,
-          taskName: task.name,
-          error: new Error(errorMsg)
-        });
-      }
-    }
-    if (failureMode === "fail-all" && failed.length > 0) {
-      throw new ParallelTasksError(failed);
-    }
-    return { succeeded, failed };
-  }
-  /**
-   * Check if task condition is met
-   * @returns true if condition is met or no condition exists
-   */
-  async checkCondition(task) {
-    if (!task.condition) {
-      return true;
-    }
-    const getter = this.memory ? (key) => this.memory.retrieve(key) : (_key) => Promise.resolve(void 0);
-    return evaluateCondition(task.condition, { get: getter });
-  }
-  /**
-   * Get the timeout for a task (per-task override or config default)
-   */
-  getTaskTimeout(task) {
-    const perTaskTimeout = task.metadata?.timeoutMs;
-    if (typeof perTaskTimeout === "number" && perTaskTimeout > 0) {
-      return perTaskTimeout;
-    }
-    return this.config.taskTimeout ?? DEFAULT_TASK_TIMEOUT_MS;
-  }
-  /**
-   * Execute a single task with timeout support
-   */
-  async executeTask(plan, task) {
-    if (task.condition) {
-      const conditionMet = await this.checkCondition(task);
-      if (!conditionMet) {
-        if (task.condition.onFalse === "skip") {
-          task.status = "skipped";
-          this.emit("task:skipped", { task, reason: "condition_not_met" });
-          return;
-        } else if (task.condition.onFalse === "fail") {
-          task.status = "failed";
-          task.result = { success: false, error: "Condition not met" };
-          this.emit("task:failed", { task, error: new Error("Condition not met") });
-          return;
-        }
-        return;
-      }
-    }
-    if (this.hooks?.beforeTask) {
-      const taskContext = {
-        taskId: task.id,
-        taskName: task.name,
-        attempt: task.attempts + 1
-      };
-      const hookResult = await this.hooks.beforeTask(task, taskContext);
-      if (hookResult === "skip") {
-        task.status = "skipped";
-        this.emit("task:skipped", { task, reason: "hook_skip" });
-        return;
-      }
-    }
-    const updatedTask = updateTaskStatus(task, "in_progress");
-    Object.assign(task, updatedTask);
-    this.emit("task:start", { task });
-    const timeoutMs = this.getTaskTimeout(task);
-    try {
-      await this.executeTaskWithTimeout(plan, task, timeoutMs);
-    } catch (error) {
-      if (error instanceof TaskTimeoutError) {
-        this.emit("task:timeout", { task, timeoutMs });
-      }
-      const err = error instanceof Error ? error : new Error(String(error));
-      let errorAction = "retry";
-      if (this.hooks?.onError) {
-        const errorContext = {
-          task,
-          error: err,
-          phase: "execution"
-        };
-        errorAction = await this.hooks.onError(err, errorContext);
-      }
-      if (errorAction === "skip") {
-        task.status = "skipped";
-        this.emit("task:skipped", { task, reason: "error_hook_skip" });
-        return;
-      } else if (errorAction === "fail") {
-        const failedTask = updateTaskStatus(task, "failed");
-        failedTask.result = {
-          success: false,
-          error: err.message
-        };
-        Object.assign(task, failedTask);
-        this.emit("task:failed", { task, error: err });
-        return;
-      }
-      if (task.attempts < task.maxAttempts) {
-        const retryTask = updateTaskStatus(task, "pending");
-        Object.assign(task, retryTask);
-      } else {
-        const failedTask = updateTaskStatus(task, "failed");
-        failedTask.result = {
-          success: false,
-          error: err.message
-        };
-        Object.assign(task, failedTask);
-        this.emit("task:failed", { task, error: err });
-      }
-    }
-  }
-  /**
-   * Execute task core logic with timeout
-   */
-  async executeTaskWithTimeout(plan, task, timeoutMs) {
-    return new Promise((resolve5, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new TaskTimeoutError(task.id, task.name, timeoutMs));
-      }, timeoutMs);
-      this.executeTaskCore(plan, task).then(() => {
-        clearTimeout(timeoutId);
-        resolve5();
-      }).catch((error) => {
-        clearTimeout(timeoutId);
-        reject(error);
-      });
-    });
-  }
-  /**
-   * Core task execution logic (called by executeTaskWithTimeout)
-   */
-  async executeTaskCore(plan, task) {
-    const taskPrompt = this.buildTaskPrompt(plan, task);
-    this.planPlugin.setPlan(plan);
-    this.agentContext.setCurrentInput(taskPrompt);
-    await this.agentContext.prepare();
-    this.agentContext.addMessageSync("user", taskPrompt);
-    this.emit("llm:call", { iteration: task.attempts });
-    let messages = [{ role: "user", content: taskPrompt }];
-    if (this.hooks?.beforeLLMCall) {
-      messages = await this.hooks.beforeLLMCall(messages, {
-        model: this.agent.model,
-        temperature: 0.7
-        // Default temperature
-      });
-    }
-    const raceProtection = task.execution?.raceProtection !== false;
-    if (task.condition && raceProtection) {
-      const stillMet = await this.checkCondition(task);
-      if (!stillMet) {
-        task.status = "skipped";
-        this.emit("task:skipped", { task, reason: "condition_changed" });
-        return;
-      }
-    }
-    if (this.rateLimiter) {
-      await this.rateLimiter.acquire();
-    }
-    const response = await this.agent.run(taskPrompt);
-    if (response.usage) {
-      this.currentMetrics.totalLLMCalls++;
-      this.currentMetrics.totalTokensUsed += response.usage.total_tokens || 0;
-      if (this.agent.model && response.usage.input_tokens && response.usage.output_tokens) {
-        const cost = calculateCost(this.agent.model, response.usage.input_tokens, response.usage.output_tokens);
-        if (cost !== null) {
-          this.currentMetrics.totalCost += cost;
-        }
-      }
-    }
-    const agentMetrics = this.agent.getMetrics();
-    if (agentMetrics) {
-      this.currentMetrics.totalToolCalls += agentMetrics.toolCallCount;
-    }
-    if (this.hooks?.afterLLMCall) {
-      await this.hooks.afterLLMCall(response);
-    }
-    if (this.currentState) {
-      await this.checkpointManager.onLLMCall(this.currentState);
-    }
-    await this.agentContext.addMessage("assistant", response.output_text || "");
-    const validationResult = await this.validateTaskCompletion(task, response.output_text || "");
-    task.metadata = task.metadata || {};
-    task.metadata.validationResult = validationResult;
-    if (validationResult.requiresUserApproval) {
-      this.emit("task:validation_uncertain", { task, validation: validationResult });
-      if (task.validation?.mode === "strict") {
-        return;
-      }
-    }
-    if (!validationResult.isComplete) {
-      if (task.validation?.mode === "strict") {
-        this.emit("task:validation_failed", { task, validation: validationResult });
-        throw new TaskValidationError(
-          task.id,
-          task.name,
-          `Completion score ${validationResult.completionScore}% below threshold. ${validationResult.explanation}`
-        );
-      } else {
-        this.emit("task:validation_failed", { task, validation: validationResult });
-      }
-    }
-    const completedTask = updateTaskStatus(task, "completed");
-    completedTask.result = {
-      success: true,
-      output: response.output_text,
-      validationScore: validationResult.completionScore,
-      validationExplanation: validationResult.explanation
-    };
-    Object.assign(task, completedTask);
-    this.emit("task:complete", { task, result: response });
-    await this.notifyMemoryOfTaskCompletion(plan, task.id);
-    if (this.hooks?.afterTask) {
-      await this.hooks.afterTask(task, {
-        success: true,
-        output: response.output_text
-      });
-    }
-    if (task.externalDependency) {
-      task.status = "waiting_external";
-      if (this.currentState) {
-        await this.checkpointManager.checkpoint(this.currentState, "before_external_wait");
-      }
-      await this.externalHandler.startWaiting(task);
-      this.emit("task:waiting_external", { task });
-    }
-  }
-  /**
-   * Build prompt for a specific task
-   */
-  buildTaskPrompt(plan, task) {
-    const prompt = [];
-    prompt.push(`## Current Task: ${task.name}`);
-    prompt.push("");
-    prompt.push(`**Description:** ${task.description}`);
-    if (task.expectedOutput) {
-      prompt.push(`**Expected Output:** ${task.expectedOutput}`);
-    }
-    if (task.dependsOn.length > 0) {
-      const deps = plan.tasks.filter((t) => task.dependsOn.includes(t.id)).map((t) => t.name);
-      prompt.push(`**Dependencies Completed:** ${deps.join(", ")}`);
-    }
-    prompt.push("");
-    prompt.push("Please complete this task using the available tools.");
-    return prompt.join("\n");
-  }
-  /**
-   * Validate task completion using LLM self-reflection or custom hook
-   *
-   * @param task - The task to validate
-   * @param output - The LLM response output
-   * @returns TaskValidationResult with completion score and details
-   */
-  async validateTaskCompletion(task, output) {
-    if (!task.validation || task.validation.skipReflection) {
-      return {
-        isComplete: true,
-        completionScore: 100,
-        explanation: "No validation configured, task marked complete",
-        requiresUserApproval: false
-      };
-    }
-    if (this.hooks?.validateTask && this.memory) {
-      const taskResult = { success: true, output };
-      const hookResult = await this.hooks.validateTask(task, taskResult, this.memory);
-      if (typeof hookResult === "boolean") {
-        return {
-          isComplete: hookResult,
-          completionScore: hookResult ? 100 : 0,
-          explanation: hookResult ? "Validated by custom hook" : "Rejected by custom hook",
-          requiresUserApproval: false
-        };
-      } else if (typeof hookResult === "string") {
-        return {
-          isComplete: false,
-          completionScore: 0,
-          explanation: hookResult,
-          requiresUserApproval: false
-        };
-      } else {
-        return hookResult;
-      }
-    }
-    if (task.validation.requiredMemoryKeys && task.validation.requiredMemoryKeys.length > 0) {
-      const missingKeys = [];
-      for (const key of task.validation.requiredMemoryKeys) {
-        const value = this.memory ? await this.memory.retrieve(key) : void 0;
-        if (value === void 0) {
-          missingKeys.push(key);
-        }
-      }
-      if (missingKeys.length > 0) {
-        return {
-          isComplete: false,
-          completionScore: 0,
-          explanation: `Required memory keys not found: ${missingKeys.join(", ")}`,
-          requiresUserApproval: false
-        };
-      }
-    }
-    if (!task.validation.completionCriteria || task.validation.completionCriteria.length === 0) {
-      return {
-        isComplete: true,
-        completionScore: 100,
-        explanation: "No completion criteria specified, task marked complete",
-        requiresUserApproval: false
-      };
-    }
-    const validationPrompt = this.buildValidationPrompt(task, output);
-    this.emit("llm:call", { iteration: task.attempts });
-    const validationResponse = await this.agent.run(validationPrompt);
-    if (validationResponse.usage) {
-      this.currentMetrics.totalLLMCalls++;
-      this.currentMetrics.totalTokensUsed += validationResponse.usage.total_tokens || 0;
-      if (this.agent.model && validationResponse.usage.input_tokens && validationResponse.usage.output_tokens) {
-        const cost = calculateCost(
-          this.agent.model,
-          validationResponse.usage.input_tokens,
-          validationResponse.usage.output_tokens
-        );
-        if (cost !== null) {
-          this.currentMetrics.totalCost += cost;
-        }
-      }
-    }
-    const validationAgentMetrics = this.agent.getMetrics();
-    if (validationAgentMetrics) {
-      this.currentMetrics.totalToolCalls += validationAgentMetrics.toolCallCount;
-    }
-    return this.parseValidationResponse(
-      task,
-      validationResponse.output_text || ""
-    );
-  }
-  /**
-   * Build prompt for LLM self-reflection validation
-   */
-  buildValidationPrompt(task, output) {
-    const criteria = task.validation?.completionCriteria || [];
-    const minScore = task.validation?.minCompletionScore ?? 80;
-    return `You are a task completion validator. Your job is to evaluate whether a task was completed successfully.
-
-## Task Information
-**Task Name:** ${task.name}
-**Task Description:** ${task.description}
-${task.expectedOutput ? `**Expected Output:** ${task.expectedOutput}` : ""}
-
-## Completion Criteria
-The task is considered complete if it meets these criteria:
-${criteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
-
-## Task Output
-The following was the output from executing the task:
----
-${output}
----
-
-## Your Evaluation
-Please evaluate the task completion and respond in the following JSON format:
-\`\`\`json
-{
-  "completionScore": <number 0-100>,
-  "isComplete": <true if score >= ${minScore}>,
-  "explanation": "<brief explanation of your evaluation>",
-  "criteriaResults": [
-    {
-      "criterion": "<criterion text>",
-      "met": <true/false>,
-      "evidence": "<brief evidence from output>"
-    }
-  ]
-}
-\`\`\`
-
-Be honest and thorough in your evaluation. A score of 100 means all criteria are fully met. A score below ${minScore} means the task needs more work.`;
-  }
-  /**
-   * Parse LLM validation response into TaskValidationResult
-   */
-  parseValidationResponse(task, responseText) {
-    const minScore = task.validation?.minCompletionScore ?? 80;
-    const requireApproval = task.validation?.requireUserApproval ?? "never";
-    const extractionResult = extractJSON(responseText);
-    if (extractionResult.success && extractionResult.data) {
-      const parsed = extractionResult.data;
-      const completionScore = typeof parsed.completionScore === "number" ? Math.max(0, Math.min(100, parsed.completionScore)) : 0;
-      const isComplete = completionScore >= minScore;
-      let requiresUserApproval = false;
-      let approvalReason;
-      if (requireApproval === "always") {
-        requiresUserApproval = true;
-        approvalReason = "User approval required for all task completions";
-      } else if (requireApproval === "uncertain") {
-        const uncertainThreshold = Math.max(minScore - 20, 50);
-        if (completionScore >= uncertainThreshold && completionScore < minScore) {
-          requiresUserApproval = true;
-          approvalReason = `Completion score (${completionScore}%) is uncertain - below threshold but potentially acceptable`;
-        }
-      }
-      return {
-        isComplete,
-        completionScore,
-        explanation: parsed.explanation || "No explanation provided",
-        criteriaResults: parsed.criteriaResults,
-        requiresUserApproval,
-        approvalReason
-      };
-    }
-    const score = extractNumber(responseText, [
-      /(\d{1,3})%?\s*(?:complete|score)/i,
-      /(?:score|completion|rating)[:\s]+(\d{1,3})/i
-    ], 50);
-    return {
-      isComplete: score >= minScore,
-      completionScore: score,
-      explanation: `Could not parse structured response. Estimated score: ${score}%`,
-      requiresUserApproval: requireApproval === "always" || requireApproval === "uncertain",
-      approvalReason: "Could not parse validation response accurately"
-    };
-  }
-  /**
-   * Check if plan is complete
-   */
-  isPlanComplete(plan) {
-    return plan.tasks.every((t) => ["completed", "skipped", "failed"].includes(t.status));
-  }
-  /**
-   * Check if plan is suspended (waiting on external)
-   */
-  isPlanSuspended(plan) {
-    return plan.tasks.some((t) => t.status === "waiting_external");
-  }
-  /**
-   * Cancel execution
-   */
-  cancel() {
-    this.abortController.abort();
-  }
-  /**
-   * Check if the PlanExecutor instance has been destroyed
-   */
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Cleanup resources (alias for destroy, kept for backward compatibility)
-   */
-  cleanup() {
-    this.destroy();
-  }
-  /**
-   * Destroy the PlanExecutor instance
-   * Removes all event listeners and clears internal state
-   */
-  destroy() {
-    if (this._isDestroyed) return;
-    this._isDestroyed = true;
-    this.abortController.abort();
-    this.removeAllListeners();
-  }
-  /**
-   * Get idempotency cache
-   * Returns null if memory feature is disabled
-   */
-  getIdempotencyCache() {
-    return this.idempotencyCache;
-  }
-  /**
-   * Get rate limiter metrics (if rate limiting is enabled)
-   */
-  getRateLimiterMetrics() {
-    if (!this.rateLimiter) {
-      return null;
-    }
-    return this.rateLimiter.getMetrics();
-  }
-  /**
-   * Reset rate limiter state (for testing or manual control)
-   */
-  resetRateLimiter() {
-    this.rateLimiter?.reset();
-  }
-};
-
-// src/capabilities/taskAgent/CheckpointManager.ts
-var DEFAULT_CHECKPOINT_STRATEGY = {
-  afterToolCalls: 1,
-  afterLLMCalls: 1,
-  intervalMs: 3e4,
-  // 30 seconds
-  beforeExternalWait: true,
-  mode: "async"
-};
-var CheckpointManager = class {
-  storage;
-  strategy;
-  toolCallsSinceCheckpoint = 0;
-  llmCallsSinceCheckpoint = 0;
-  intervalTimer;
-  pendingCheckpoints = /* @__PURE__ */ new Set();
-  currentState = null;
-  constructor(storage, strategy = DEFAULT_CHECKPOINT_STRATEGY) {
-    this.storage = storage;
-    this.strategy = strategy;
-    if (this.strategy.intervalMs) {
-      this.intervalTimer = setInterval(() => {
-        this.checkIntervalCheckpoint();
-      }, this.strategy.intervalMs);
-    }
-  }
-  /**
-   * Set the current agent state (for interval checkpointing)
-   */
-  setCurrentState(state) {
-    this.currentState = state;
-  }
-  /**
-   * Record a tool call (may trigger checkpoint)
-   */
-  async onToolCall(state) {
-    this.toolCallsSinceCheckpoint++;
-    if (this.strategy.afterToolCalls && this.toolCallsSinceCheckpoint >= this.strategy.afterToolCalls) {
-      await this.checkpoint(state, "tool_calls");
-    }
-  }
-  /**
-   * Record an LLM call (may trigger checkpoint)
-   */
-  async onLLMCall(state) {
-    this.llmCallsSinceCheckpoint++;
-    if (this.strategy.afterLLMCalls && this.llmCallsSinceCheckpoint >= this.strategy.afterLLMCalls) {
-      await this.checkpoint(state, "llm_calls");
-    }
-  }
-  /**
-   * Force a checkpoint
-   */
-  async checkpoint(state, reason) {
-    const checkpointPromise = this.doCheckpoint(state, reason);
-    if (this.strategy.mode === "sync") {
-      await checkpointPromise;
-    } else {
-      this.pendingCheckpoints.add(checkpointPromise);
-      checkpointPromise.finally(() => {
-        this.pendingCheckpoints.delete(checkpointPromise);
-      });
-    }
-  }
-  /**
-   * Perform the actual checkpoint
-   */
-  async doCheckpoint(state, _reason) {
-    try {
-      await this.storage.agent.save(state);
-      await this.storage.plan.savePlan(state.plan);
-      this.toolCallsSinceCheckpoint = 0;
-      this.llmCallsSinceCheckpoint = 0;
-    } catch (error) {
-      console.error(`Checkpoint failed (${_reason}):`, error);
-    }
-  }
-  /**
-   * Check if interval-based checkpoint is needed
-   */
-  checkIntervalCheckpoint() {
-    if (this.currentState) {
-      this.checkpoint(this.currentState, "interval");
-    }
-  }
-  /**
-   * Wait for all pending checkpoints to complete
-   */
-  async flush() {
-    await Promise.all(Array.from(this.pendingCheckpoints));
-  }
-  /**
-   * Cleanup resources
-   */
-  async cleanup() {
-    if (this.intervalTimer) {
-      clearInterval(this.intervalTimer);
-    }
-    await this.flush();
-  }
-};
-
-// src/capabilities/taskAgent/TaskAgent.ts
-var TaskAgent = class _TaskAgent extends BaseAgent {
-  id;
-  state;
-  agentStorage;
-  // NOTE: Memory is accessed via this._agentContext.memory (single source of truth)
-  // The 'memory' getter below provides convenient access
-  hooks;
-  executionPromise;
-  // Internal components
-  agent;
-  // Note: _agentContext is inherited from BaseAgent (single source of truth)
-  // Cache is accessed via this._agentContext.cache (single source of truth)
-  _planPlugin;
-  _memoryPlugin;
-  externalHandler;
-  planExecutor;
-  checkpointManager;
-  _allTools = [];
-  // ===== Static Factory =====
-  /**
-   * Create a new TaskAgent
-   */
-  static create(config) {
-    const connector = typeof config.connector === "string" ? exports.Connector.get(config.connector) : config.connector;
-    if (!connector) {
-      throw new Error(`Connector "${config.connector}" not found`);
-    }
-    const agentStorage = config.storage ?? createAgentStorage({});
-    const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
-    const id = `task-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const emptyPlan = createPlan({ goal: "", tasks: [] });
-    const agentStateConfig = {
-      connectorName: typeof config.connector === "string" ? config.connector : connector.name,
-      model: config.model,
-      temperature: config.temperature,
-      maxIterations: config.maxIterations,
-      toolNames: (config.tools ?? []).map((t) => t.definition.function.name)
-    };
-    const state = createAgentState(id, agentStateConfig, emptyPlan);
-    const taskAgentConfig = {
-      ...config,
-      // Pass memory config to AgentContext
-      context: {
-        ...typeof config.context === "object" && config.context !== null && !(config.context instanceof Object.getPrototypeOf(config.context)?.constructor) ? config.context : {},
-        memory: {
-          storage: agentStorage.memory,
-          ...memoryConfig
-        }
-      }
-    };
-    const taskAgent = new _TaskAgent(id, state, agentStorage, taskAgentConfig, config.hooks);
-    taskAgent.initializeComponents(taskAgentConfig);
-    return taskAgent;
-  }
-  /**
-   * Resume an existing agent from storage
-   */
-  static async resume(agentId, options) {
-    const state = await options.storage.agent.load(agentId);
-    if (!state) {
-      throw new Error(`Agent ${agentId} not found in storage`);
-    }
-    const stateToolNames = new Set(state.config.toolNames ?? []);
-    const currentToolNames = new Set(
-      (options.tools ?? []).map((t) => t.definition.function.name)
-    );
-    const missing = [...stateToolNames].filter((n) => !currentToolNames.has(n));
-    const added = [...currentToolNames].filter((n) => !stateToolNames.has(n));
-    if (missing.length > 0) {
-      console.warn(
-        `[TaskAgent.resume] Warning: Missing tools from saved state: ${missing.join(", ")}. Tasks requiring these tools may fail.`
-      );
-    }
-    if (added.length > 0) {
-      console.info(
-        `[TaskAgent.resume] Info: New tools not in saved state: ${added.join(", ")}`
-      );
-    }
-    const config = {
-      connector: state.config.connectorName,
-      model: state.config.model,
-      tools: options.tools ?? [],
-      temperature: state.config.temperature,
-      maxIterations: state.config.maxIterations,
-      storage: options.storage,
-      hooks: options.hooks,
-      session: options.session,
-      // Pass memory config to AgentContext (single source of truth)
-      context: {
-        memory: {
-          storage: options.storage.memory,
-          ...DEFAULT_MEMORY_CONFIG
-        }
-      }
-    };
-    const taskAgent = new _TaskAgent(agentId, state, options.storage, config, options.hooks);
-    taskAgent.initializeComponents(config);
-    return taskAgent;
-  }
-  // ===== Constructor =====
-  constructor(id, state, agentStorage, config, hooks) {
-    super(config, "TaskAgent");
-    this.id = id;
-    this.state = state;
-    this.agentStorage = agentStorage;
-    this.hooks = hooks;
-    const memory = this._agentContext.memory;
-    if (memory) {
-      memory.on("stored", (data) => this.emit("memory:stored", data));
-      memory.on("limit_warning", (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent }));
-    }
-    this.initializeSession(config.session);
-  }
-  // ===== Abstract Method Implementations =====
-  getAgentType() {
-    return "task-agent";
-  }
-  // ===== Component Initialization =====
-  /**
-   * Initialize internal components
-   */
-  initializeComponents(config) {
-    this._allTools = [...config.tools ?? []];
-    const enabledTools = this._agentContext.tools.getEnabled();
-    this.agent = Agent.create({
-      connector: config.connector,
-      model: config.model,
-      tools: enabledTools,
-      instructions: config.instructions,
-      temperature: config.temperature,
-      maxIterations: config.maxIterations ?? 10,
-      permissions: config.permissions,
-      context: this._agentContext
-      // Share inherited AgentContext
-    });
-    const modelInfo = getModelInfo(config.model);
-    const contextTokens = modelInfo?.features.input.tokens ?? CONTEXT_DEFAULTS.MAX_TOKENS;
-    this._agentContext.setMaxContextTokens(contextTokens);
-    if (config.instructions) {
-      this._agentContext.systemPrompt = config.instructions;
-    }
-    this._planPlugin = new PlanPlugin();
-    this._agentContext.registerPlugin(this._planPlugin);
-    if (this._agentContext.memory) {
-      this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
-      this._agentContext.registerPlugin(this._memoryPlugin);
-    }
-    this._planPlugin.setPlan(this.state.plan);
-    this.externalHandler = new ExternalDependencyHandler(this._allTools);
-    this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
-    this.planExecutor = new PlanExecutor(
-      this.agent,
-      this._agentContext,
-      this._planPlugin,
-      this.externalHandler,
-      this.checkpointManager,
-      this.hooks,
-      {
-        maxIterations: config.maxIterations ?? 100
-      }
-    );
-    this.setupPlanExecutorEvents();
-  }
-  /**
-   * Setup event forwarding from PlanExecutor.
-   * Cleanup is handled in destroy() via removeAllListeners().
-   */
-  setupPlanExecutorEvents() {
-    if (!this.planExecutor) return;
-    this.planExecutor.on("task:start", (data) => this.emit("task:start", data));
-    this.planExecutor.on("task:complete", (data) => {
-      this.emit("task:complete", { task: data.task, result: { success: true, output: data.result } });
-      if (this.hooks?.afterTask) {
-        this.hooks.afterTask(data.task, { success: true, output: data.result });
-      }
-    });
-    this.planExecutor.on("task:failed", (data) => this.emit("task:failed", data));
-    this.planExecutor.on("task:skipped", (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) }));
-    this.planExecutor.on("task:waiting_external", (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency }));
-    this.planExecutor.on("task:validation_failed", (data) => this.emit("task:validation_failed", data));
-    this.planExecutor.on("task:validation_uncertain", (data) => this.emit("task:validation_failed", data));
-  }
-  // ===== Public API =====
-  // ===== Unified Context Access =====
-  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
-  // The inherited getter returns the AgentContext which is always available after BaseAgent constructor
-  /**
-   * Check if context is available (components initialized).
-   * Always true since AgentContext is created by BaseAgent constructor.
-   */
-  hasContext() {
-    return true;
-  }
-  /**
-   * Start executing a plan
-   */
-  async start(planInput) {
-    const plan = createPlan(planInput);
-    this.state.plan = plan;
-    this.state = updateAgentStatus(this.state, "running");
-    if (this.hooks?.onStart) {
-      await this.hooks.onStart(this, plan);
-    }
-    this.executionPromise = this.executePlan().then(async (result) => {
-      if (this.hooks?.onComplete) {
-        await this.hooks.onComplete(result);
-      }
-      return result;
-    }).catch(async (error) => {
-      if (this.hooks?.onError) {
-        await this.hooks.onError(error, { error, phase: "execution" });
-      }
-      throw error;
-    });
-    await this.executionPromise.catch(() => {
-    });
-    return {
-      agentId: this.id,
-      planId: plan.id,
-      wait: async () => {
-        if (!this.executionPromise) {
-          throw new Error("No execution in progress");
-        }
-        return this.executionPromise;
-      },
-      status: () => this.state.status
-    };
-  }
-  /**
-   * Pause execution
-   */
-  async pause() {
-    this.state = updateAgentStatus(this.state, "suspended");
-    this.state.plan.status = "suspended";
-    this.emit("agent:suspended", { reason: "manual_pause" });
-  }
-  /**
-   * Resume execution after pause
-   * Note: Named resumeExecution to avoid conflict with BaseAgent if any
-   */
-  async resume() {
-    this.state = updateAgentStatus(this.state, "running");
-    this.state.plan.status = "running";
-    this.emit("agent:resumed", {});
-    await this.executePlan();
-  }
-  /**
-   * Cancel execution
-   */
-  async cancel() {
-    this.state = updateAgentStatus(this.state, "cancelled");
-    this.state.plan.status = "cancelled";
-  }
-  /**
-   * Trigger external dependency completion
-   */
-  async triggerExternal(webhookId, data) {
-    const plan = this.state.plan;
-    if (!plan) {
-      throw new Error("No plan running");
-    }
-    const task = plan.tasks.find((t) => t.externalDependency?.webhookId === webhookId);
-    if (!task || !task.externalDependency) {
-      throw new Error(`Task waiting on webhook ${webhookId} not found`);
-    }
-    task.externalDependency.state = "received";
-    task.externalDependency.receivedData = data;
-    task.externalDependency.receivedAt = Date.now();
-    await this.resume();
-  }
-  /**
-   * Manually complete a task
-   */
-  async completeTaskManually(taskId, result) {
-    const plan = this.state.plan;
-    if (!plan) {
-      throw new Error("No plan running");
-    }
-    const task = plan.tasks.find((t) => t.id === taskId);
-    if (!task || !task.externalDependency) {
-      throw new Error(`Task ${taskId} not found or not waiting on manual input`);
-    }
-    task.externalDependency.state = "received";
-    task.externalDependency.receivedData = result;
-    task.externalDependency.receivedAt = Date.now();
-  }
-  /**
-   * Update the plan with validation
-   *
-   * @param updates - The updates to apply to the plan
-   * @param options - Validation options
-   * @throws Error if validation fails
-   */
-  async updatePlan(updates, options) {
-    const plan = this.state.plan;
-    if (!plan) {
-      throw new Error("No plan running");
-    }
-    if (!plan.allowDynamicTasks && (updates.addTasks || updates.removeTasks)) {
-      throw new Error("Dynamic tasks are disabled for this plan");
-    }
-    const opts = {
-      allowRemoveActiveTasks: options?.allowRemoveActiveTasks ?? false,
-      validateCycles: options?.validateCycles ?? true
-    };
-    if (!opts.allowRemoveActiveTasks && updates.removeTasks && updates.removeTasks.length > 0) {
-      const activeTasks = plan.tasks.filter(
-        (t) => t.status === "in_progress" && updates.removeTasks.includes(t.id)
-      );
-      if (activeTasks.length > 0) {
-        const names = activeTasks.map((t) => t.name).join(", ");
-        throw new Error(`Cannot remove active tasks: ${names}. Set allowRemoveActiveTasks: true to override.`);
-      }
-    }
-    if (updates.addTasks) {
-      for (const taskInput of updates.addTasks) {
-        const task = createTask(taskInput);
-        plan.tasks.push(task);
-      }
-    }
-    if (updates.updateTasks) {
-      for (const update of updates.updateTasks) {
-        const task = plan.tasks.find((t) => t.id === update.id);
-        if (task) {
-          Object.assign(task, update);
-        }
-      }
-    }
-    if (updates.removeTasks) {
-      plan.tasks = plan.tasks.filter((t) => !updates.removeTasks.includes(t.id));
-    }
-    if (opts.validateCycles) {
-      const cycle = detectDependencyCycle(plan.tasks);
-      if (cycle) {
-        const cycleNames = cycle.map((taskId) => {
-          const task = plan.tasks.find((t) => t.id === taskId);
-          return task ? task.name : taskId;
-        });
-        throw new DependencyCycleError(cycleNames, plan.id);
-      }
-    }
-    plan.lastUpdatedAt = Date.now();
-    this.emit("plan:updated", { plan });
-  }
-  // ===== State Introspection =====
-  /**
-   * Get current agent state
-   */
-  getState() {
-    return this.state;
-  }
-  /**
-   * Get current plan
-   */
-  getPlan() {
-    if (!this.state.plan || !this.state.plan.goal) {
-      throw new Error("No plan started");
-    }
-    return this.state.plan;
-  }
-  /**
-   * Get working memory (from AgentContext - single source of truth)
-   * Returns null if memory feature is disabled
-   */
-  getMemory() {
-    return this._agentContext.memory;
-  }
-  /**
-   * Convenient getter for working memory (alias for _agentContext.memory)
-   * Returns null if memory feature is disabled
-   */
-  get memory() {
-    return this._agentContext.memory;
-  }
-  // ===== Plan Execution =====
-  /**
-   * Execute the plan (internal)
-   */
-  async executePlan() {
-    const plan = this.state.plan;
-    if (!this.planExecutor) {
-      throw new Error("Plan executor not initialized");
-    }
-    try {
-      const execResult = await this.planExecutor.execute(plan, this.state);
-      if (execResult.metrics) {
-        this.state.metrics.totalLLMCalls += execResult.metrics.totalLLMCalls;
-        this.state.metrics.totalToolCalls += execResult.metrics.totalToolCalls;
-        this.state.metrics.totalTokensUsed += execResult.metrics.totalTokensUsed;
-        this.state.metrics.totalCost += execResult.metrics.totalCost;
-      }
-      if (execResult.status === "completed") {
-        this.state = updateAgentStatus(this.state, "completed");
-        plan.status = "completed";
-      } else if (execResult.status === "failed") {
-        this.state = updateAgentStatus(this.state, "failed");
-        plan.status = "failed";
-      } else if (execResult.status === "suspended") {
-        this.state = updateAgentStatus(this.state, "suspended");
-        plan.status = "suspended";
-      }
-      await this.checkpointManager?.checkpoint(this.state, "execution_complete");
-      const result = {
-        status: execResult.status === "suspended" ? "completed" : execResult.status,
-        metrics: {
-          totalTasks: plan.tasks.length,
-          completedTasks: execResult.completedTasks,
-          failedTasks: execResult.failedTasks,
-          skippedTasks: execResult.skippedTasks
-        }
-      };
-      this.emit("agent:completed", { result });
-      return result;
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.state = updateAgentStatus(this.state, "failed");
-      plan.status = "failed";
-      try {
-        await this.checkpointManager?.checkpoint(this.state, "execution_failed");
-      } catch {
-      }
-      const result = {
-        status: "failed",
-        error: err.message,
-        metrics: {
-          totalTasks: plan.tasks.length,
-          completedTasks: plan.tasks.filter((t) => t.status === "completed").length,
-          failedTasks: plan.tasks.filter((t) => t.status === "failed").length,
-          skippedTasks: plan.tasks.filter((t) => t.status === "skipped").length
-        }
-      };
-      this.emit("agent:completed", { result });
-      throw err;
-    }
-  }
-  // ===== Cleanup =====
-  /**
-   * Cleanup resources
-   */
-  async destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._logger.debug("TaskAgent destroy started");
-    this._agentContext.memory?.removeAllListeners();
-    this.planExecutor?.removeAllListeners();
-    this.externalHandler?.cleanup();
-    await this.checkpointManager?.cleanup();
-    this.planExecutor?.destroy();
-    this.agent?.destroy();
-    await this.runCleanupCallbacks();
-    this.baseDestroy();
-    this._logger.debug("TaskAgent destroyed");
-  }
-};
 
 // src/capabilities/taskAgent/PlanningAgent.ts
 var PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to analyze goals and break them down into structured, executable task plans.
@@ -44547,919 +38713,344 @@ async function generateSimplePlan(goal, context) {
   });
 }
 
-// src/capabilities/researchAgent/ResearchAgent.ts
-var ResearchAgent = class _ResearchAgent extends TaskAgent {
-  sources = /* @__PURE__ */ new Map();
-  researchHooks;
-  defaultSearchOptions = { maxResults: 10 };
-  defaultFetchOptions = { maxSize: 1024 * 1024 };
-  // Note: autoSummarizeThreshold is configured but not yet used - planned for future enhancement
-  // ===== Static Factory =====
-  /**
-   * Create a new ResearchAgent
-   */
-  static create(config) {
-    const researchTools = config.includeResearchTools !== false ? createResearchTools(config.sources) : [];
-    const allTools = [...config.tools ?? [], ...researchTools];
-    const taskAgentConfig = {
-      ...config,
-      tools: allTools,
-      hooks: config.hooks,
-      // Force research task type for optimal context management
-      context: {
-        ...config.context ?? {},
-        taskType: "research"
-      }
-    };
-    const baseAgent = TaskAgent.create(taskAgentConfig);
-    const researchAgent = Object.setPrototypeOf(baseAgent, _ResearchAgent.prototype);
-    researchAgent.initializeResearch(config);
-    return researchAgent;
-  }
-  /**
-   * Initialize research-specific components
-   */
-  initializeResearch(config) {
-    this.sources = /* @__PURE__ */ new Map();
-    this.defaultSearchOptions = { maxResults: 10 };
-    this.defaultFetchOptions = { maxSize: 1024 * 1024 };
-    for (const source of config.sources) {
-      this.sources.set(source.name, source);
-    }
-    this.researchHooks = config.hooks;
-    this.defaultSearchOptions = config.defaultSearchOptions ?? { maxResults: 10 };
-    this.defaultFetchOptions = config.defaultFetchOptions ?? { maxSize: 1024 * 1024 };
-  }
-  // ===== Public API =====
-  /**
-   * Get all registered sources
-   */
-  getSources() {
-    return Array.from(this.sources.values());
-  }
-  /**
-   * Get a specific source by name
-   */
-  getSource(name) {
-    return this.sources.get(name);
-  }
-  /**
-   * Add a source at runtime
-   */
-  addSource(source) {
-    this.sources.set(source.name, source);
-  }
-  /**
-   * Remove a source
-   */
-  removeSource(name) {
-    return this.sources.delete(name);
-  }
-  /**
-   * Search across all sources (or specified sources)
-   */
-  async searchSources(query, options) {
-    const results = /* @__PURE__ */ new Map();
-    const targetSources = options?.sources ? options.sources.map((name) => this.sources.get(name)).filter(Boolean) : this.getSources();
-    const searchOptions = { ...this.defaultSearchOptions, ...options };
-    await Promise.all(
-      targetSources.map(async (source) => {
-        try {
-          const response = await source.search(query, searchOptions);
-          results.set(source.name, response);
-          if (this.researchHooks?.onSearchComplete) {
-            await this.researchHooks.onSearchComplete(source.name, query, response.results.length);
-          }
-        } catch (error) {
-          results.set(source.name, {
-            success: false,
-            query,
-            results: [],
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
-      })
-    );
-    return results;
-  }
-  /**
-   * Fetch content from a specific source
-   */
-  async fetchFromSource(sourceName, reference, options) {
-    const source = this.sources.get(sourceName);
-    if (!source) {
-      return {
-        success: false,
-        reference,
-        content: null,
-        error: `Source "${sourceName}" not found`
-      };
-    }
-    const fetchOptions = { ...this.defaultFetchOptions, ...options };
-    try {
-      const result = await source.fetch(reference, fetchOptions);
-      const autoSpillPlugin = this._agentContext.autoSpillPlugin;
-      if (result.success && result.sizeBytes && autoSpillPlugin && autoSpillPlugin.shouldSpill(`research_fetch_${sourceName}`, result.sizeBytes)) {
-        const spillKey = await autoSpillPlugin.onToolOutput(`research_fetch_${sourceName}`, result.content);
-        if (spillKey) {
-          result.spilledKey = spillKey;
-        }
-      }
-      if (this.researchHooks?.onContentFetched) {
-        await this.researchHooks.onContentFetched(sourceName, reference, result.sizeBytes ?? 0);
-      }
-      return result;
-    } catch (error) {
-      return {
-        success: false,
-        reference,
-        content: null,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-  /**
-   * Store a research finding in memory
-   * Requires memory feature to be enabled
-   */
-  async storeFinding(key, finding) {
-    const memory = this._agentContext.memory;
-    if (!memory) {
-      throw new Error("ResearchAgent.storeFinding requires memory feature to be enabled");
-    }
-    const fullKey = addTierPrefix(key, "findings");
-    await memory.storeFindings(
-      key,
-      `${finding.source}: ${finding.summary.slice(0, 100)}...`,
-      finding
-    );
-    if (this.researchHooks?.onFindingStored) {
-      await this.researchHooks.onFindingStored(fullKey, finding);
-    }
-  }
-  /**
-   * Get all stored findings
-   * Returns empty object if memory feature is disabled
-   */
-  async getFindings() {
-    const memory = this._agentContext.memory;
-    if (!memory) {
-      return {};
-    }
-    const entries = await memory.getByTier("findings");
-    const findings = {};
-    for (const entry of entries) {
-      findings[entry.key] = entry.value;
-    }
-    return findings;
-  }
-  /**
-   * Cleanup raw data that has been processed
-   * Call this after creating summaries/findings from raw content
-   */
-  async cleanupProcessedRaw(rawKeys) {
-    const autoSpillPlugin = this._agentContext.autoSpillPlugin;
-    if (!autoSpillPlugin) {
-      return 0;
-    }
-    for (const key of rawKeys) {
-      autoSpillPlugin.markConsumed(key, "manual-cleanup");
-    }
-    const deleted = await autoSpillPlugin.cleanup(rawKeys);
-    return deleted.length;
-  }
-  /**
-   * Execute a research plan
-   * This is a high-level orchestration method that can be used
-   * for structured research, or the LLM can drive research via tools
-   */
-  async executeResearchPlan(plan) {
-    const startTime = Date.now();
-    const metrics2 = {
-      searchDurationMs: 0,
-      processDurationMs: 0,
-      synthesizeDurationMs: 0,
-      totalDurationMs: 0
-    };
-    let queriesExecuted = 0;
-    let resultsFound = 0;
-    let resultsProcessed = 0;
-    try {
-      const searchStart = Date.now();
-      const allResults = [];
-      for (const querySpec of plan.queries) {
-        const searchResults = await this.searchSources(querySpec.query, {
-          maxResults: plan.maxResultsPerQuery,
-          sources: querySpec.sources ?? plan.sources
-        });
-        queriesExecuted++;
-        for (const [source, response] of searchResults) {
-          if (response.success) {
-            allResults.push({
-              source,
-              query: querySpec.query,
-              results: response.results
-            });
-            resultsFound += response.results.length;
-          }
-        }
-        if (this.researchHooks?.onProgress) {
-          await this.researchHooks.onProgress({
-            phase: "searching",
-            currentQuery: querySpec.query,
-            queriesCompleted: queriesExecuted,
-            totalQueries: plan.queries.length,
-            resultsProcessed: 0,
-            totalResults: resultsFound,
-            findingsGenerated: 0
-          });
-        }
-      }
-      metrics2.searchDurationMs = Date.now() - searchStart;
-      const processStart = Date.now();
-      for (const resultSet of allResults) {
-        for (const result of resultSet.results) {
-          const content = await this.fetchFromSource(resultSet.source, result.reference);
-          resultsProcessed++;
-          if (content.success) {
-            if (this._agentContext.memory) {
-              const rawKey = `${resultSet.source}_${result.id}`;
-              await this._agentContext.memory.storeRaw(
-                rawKey,
-                `Raw content from ${resultSet.source}: ${result.title}`,
-                content.content
-              );
-            }
-          }
-          if (this.researchHooks?.onProgress) {
-            await this.researchHooks.onProgress({
-              phase: "processing",
-              currentSource: resultSet.source,
-              queriesCompleted: queriesExecuted,
-              totalQueries: plan.queries.length,
-              resultsProcessed,
-              totalResults: resultsFound,
-              findingsGenerated: 0
-            });
-          }
-          if (plan.maxTotalFindings && resultsProcessed >= plan.maxTotalFindings) {
-            break;
-          }
-        }
-      }
-      metrics2.processDurationMs = Date.now() - processStart;
-      const findings = await this.getFindings();
-      const findingsCount = Object.keys(findings).length;
-      metrics2.totalDurationMs = Date.now() - startTime;
-      return {
-        success: true,
-        goal: plan.goal,
-        queriesExecuted,
-        resultsFound,
-        resultsProcessed,
-        findingsCount,
-        metrics: metrics2
-      };
-    } catch (error) {
-      metrics2.totalDurationMs = Date.now() - startTime;
-      return {
-        success: false,
-        goal: plan.goal,
-        queriesExecuted,
-        resultsFound,
-        resultsProcessed,
-        findingsCount: 0,
-        error: error instanceof Error ? error.message : String(error),
-        metrics: metrics2
-      };
-    }
-  }
-  /**
-   * Get auto-spill statistics
-   */
-  getAutoSpillStats() {
-    const autoSpillPlugin = this._agentContext.autoSpillPlugin;
-    if (!autoSpillPlugin) {
-      return { totalSpilled: 0, consumed: 0, unconsumed: 0, totalSizeBytes: 0 };
-    }
-    const entries = autoSpillPlugin.getEntries();
-    const consumed = entries.filter((e) => e.consumed);
-    const unconsumed = entries.filter((e) => !e.consumed);
-    return {
-      totalSpilled: entries.length,
-      consumed: consumed.length,
-      unconsumed: unconsumed.length,
-      totalSizeBytes: entries.reduce((sum, e) => sum + e.sizeBytes, 0)
-    };
-  }
-  // ===== Override cleanup =====
-  async destroy() {
-    this.sources.clear();
-    await super.destroy();
-  }
+// src/core/context/types.ts
+var DEFAULT_CONTEXT_CONFIG = {
+  maxContextTokens: 128e3,
+  compactionThreshold: 0.75,
+  hardLimit: 0.9,
+  responseReserve: 0.15,
+  estimator: "approximate",
+  autoCompact: true,
+  strategy: "proactive",
+  strategyOptions: {}
 };
-function createResearchTools(sources) {
-  const sourcesMap = /* @__PURE__ */ new Map();
-  for (const source of sources) {
-    sourcesMap.set(source.name, source);
+
+// src/core/context/utils/ContextUtils.ts
+function estimateComponentTokens(component, estimator) {
+  if (typeof component.content === "string") {
+    return estimator.estimateTokens(component.content);
   }
-  const sourceNames = sources.map((s) => s.name);
-  const sourceDescriptions = sources.map((s) => `- ${s.name} (${s.type}): ${s.description}`).join("\n");
-  return [
-    // research_search - Search across sources
-    {
-      definition: {
-        type: "function",
-        function: {
-          name: "research_search",
-          description: `Search for information across configured research sources.
-
-Available sources:
-${sourceDescriptions}
-
-Returns search results with references that can be fetched for full content.`,
-          parameters: {
-            type: "object",
-            properties: {
-              query: {
-                type: "string",
-                description: "Search query"
-              },
-              sources: {
-                type: "array",
-                items: { type: "string", enum: sourceNames },
-                description: "Specific sources to search (empty = all sources)"
-              },
-              maxResults: {
-                type: "number",
-                description: "Maximum results per source (default: 10)"
-              }
-            },
-            required: ["query"]
-          }
-        }
-      },
-      execute: async (args) => {
-        const query = args.query;
-        const requestedSources = args.sources;
-        const maxResults = args.maxResults ?? 10;
-        const targetSources = requestedSources && requestedSources.length > 0 ? requestedSources.map((name) => sourcesMap.get(name)).filter(Boolean) : sources;
-        const results = /* @__PURE__ */ new Map();
-        await Promise.all(
-          targetSources.map(async (source) => {
-            try {
-              const response = await source.search(query, { maxResults });
-              results.set(source.name, response);
-            } catch (error) {
-              results.set(source.name, {
-                success: false,
-                query,
-                results: [],
-                error: error instanceof Error ? error.message : String(error)
-              });
-            }
-          })
-        );
-        const formatted = {};
-        for (const [source, response] of results) {
-          formatted[source] = {
-            success: response.success,
-            count: response.results.length,
-            results: response.results.map((r) => ({
-              id: r.id,
-              title: r.title,
-              snippet: r.snippet,
-              reference: r.reference,
-              relevance: r.relevance
-            })),
-            error: response.error
-          };
-        }
-        return {
-          query,
-          sources: Object.keys(formatted),
-          results: formatted,
-          totalResults: Object.values(formatted).reduce((sum, r) => sum + r.count, 0)
-        };
-      },
-      idempotency: { safe: false },
-      output: { expectedSize: "medium" },
-      describeCall: (args) => `"${args.query}" in ${args.sources?.join(", ") || "all sources"}`
-    },
-    // research_fetch - Fetch full content
-    {
-      definition: {
-        type: "function",
-        function: {
-          name: "research_fetch",
-          description: `Fetch full content for a search result.
-
-Use the reference from research_search results.
-Large content will be auto-stored in memory (raw tier) - use memory_retrieve to access.`,
-          parameters: {
-            type: "object",
-            properties: {
-              source: {
-                type: "string",
-                enum: sourceNames,
-                description: "Source to fetch from"
-              },
-              reference: {
-                type: "string",
-                description: "Reference from search result (URL, path, ID, etc.)"
-              }
-            },
-            required: ["source", "reference"]
-          }
-        }
-      },
-      execute: async (args) => {
-        const sourceName = args.source;
-        const reference = args.reference;
-        const source = sourcesMap.get(sourceName);
-        if (!source) {
-          return {
-            success: false,
-            reference,
-            error: `Source "${sourceName}" not found`
-          };
-        }
-        try {
-          const result = await source.fetch(reference, { maxSize: 1024 * 1024 });
-          return {
-            success: result.success,
-            reference: result.reference,
-            contentType: result.contentType,
-            sizeBytes: result.sizeBytes,
-            content: result.success ? result.content : null,
-            error: result.error
-          };
-        } catch (error) {
-          return {
-            success: false,
-            reference,
-            error: error instanceof Error ? error.message : String(error)
-          };
-        }
-      },
-      idempotency: { safe: false },
-      output: { expectedSize: "large" },
-      describeCall: (args) => `${args.source}:${args.reference}`
-    },
-    // research_store_finding - Store a research finding (uses standard memory tools)
-    {
-      definition: {
-        type: "function",
-        function: {
-          name: "research_store_finding",
-          description: `Store a research finding in memory (findings tier, high priority).
-
-Use this to save important insights discovered during research.
-Findings are preserved during context compaction.
-
-Note: This is a convenience wrapper around memory_store with tier="findings".`,
-          parameters: {
-            type: "object",
-            properties: {
-              key: {
-                type: "string",
-                description: 'Unique key for this finding (e.g., "ai_employment_impact")'
-              },
-              source: {
-                type: "string",
-                description: "Source that provided this finding"
-              },
-              query: {
-                type: "string",
-                description: "Query that led to this finding"
-              },
-              summary: {
-                type: "string",
-                description: "Brief summary of the finding (1-2 sentences)"
-              },
-              details: {
-                type: "string",
-                description: "Additional details or supporting information"
-              },
-              references: {
-                type: "array",
-                items: { type: "string" },
-                description: "References used (URLs, file paths, etc.)"
-              },
-              confidence: {
-                type: "number",
-                description: "Confidence level 0-1 (optional)"
-              }
-            },
-            required: ["key", "source", "query", "summary", "references"]
-          }
-        }
-      },
-      execute: async (args, context) => {
-        if (!context?.memory) {
-          throw new ToolExecutionError("research_store_finding", "Requires memory context (use with TaskAgent or ResearchAgent)");
-        }
-        const finding = {
-          source: args.source,
-          query: args.query,
-          summary: args.summary,
-          details: args.details,
-          references: args.references,
-          confidence: args.confidence,
-          timestamp: Date.now()
-        };
-        const fullKey = addTierPrefix(args.key, "findings");
-        const description = `${finding.source}: ${finding.summary.slice(0, 100)}${finding.summary.length > 100 ? "..." : ""}`;
-        await context.memory.set(fullKey, description, finding, {
-          scope: { type: "plan" },
-          priority: "high"
-        });
-        return {
-          success: true,
-          key: fullKey,
-          finding
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" },
-      describeCall: (args) => args.key
-    },
-    // research_list_sources - List available sources
-    {
-      definition: {
-        type: "function",
-        function: {
-          name: "research_list_sources",
-          description: "List all available research sources and their capabilities.",
-          parameters: {
-            type: "object",
-            properties: {},
-            required: []
-          }
-        }
-      },
-      execute: async () => {
-        return {
-          count: sources.length,
-          sources: sources.map((s) => ({
-            name: s.name,
-            type: s.type,
-            description: s.description,
-            capabilities: s.getCapabilities?.() ?? {
-              canSearch: true,
-              canFetch: true,
-              hasRelevanceScores: false
-            }
-          }))
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" },
-      describeCall: () => "sources"
+  return estimator.estimateDataTokens(component.content);
+}
+function sortCompactableByPriority(components) {
+  return components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+}
+function findCompactorForComponent(component, compactors) {
+  return compactors.find((c) => c.canCompact(component));
+}
+async function executeCompactionLoop(options) {
+  const {
+    components,
+    tokensToFree,
+    compactors,
+    estimator,
+    calculateTargetSize,
+    maxRounds = 1,
+    logPrefix = ""
+  } = options;
+  const log = [];
+  let current = [...components];
+  let freedTokens = 0;
+  let round = 0;
+  const sortedComponents = sortCompactableByPriority(current);
+  while (freedTokens < tokensToFree && round < maxRounds) {
+    round++;
+    let roundFreed = 0;
+    for (const component of sortedComponents) {
+      if (freedTokens >= tokensToFree) break;
+      const compactor = findCompactorForComponent(component, compactors);
+      if (!compactor) continue;
+      const beforeSize = estimateComponentTokens(component, estimator);
+      const targetSize = calculateTargetSize(beforeSize, round);
+      if (targetSize >= beforeSize) continue;
+      const compacted = await compactor.compact(component, targetSize);
+      const index = current.findIndex((c) => c.name === component.name);
+      if (index !== -1) {
+        current[index] = compacted;
+      }
+      const afterSize = estimateComponentTokens(compacted, estimator);
+      const saved = beforeSize - afterSize;
+      freedTokens += saved;
+      roundFreed += saved;
+      const prefix = logPrefix ? `${logPrefix}: ` : "";
+      const roundInfo = maxRounds > 1 ? `Round ${round}: ` : "";
+      log.push(
+        `${prefix}${roundInfo}${compactor.name} compacted "${component.name}" by ${saved} tokens`
+      );
     }
-  ];
+    if (roundFreed === 0) break;
+  }
+  return { components: current, log, tokensFreed: freedTokens };
 }
 
-// src/capabilities/researchAgent/sources/WebSearchSource.ts
-var WebSearchSource = class {
-  name;
-  description;
-  type = "web";
-  searchProvider;
-  defaultCountry;
-  defaultLanguage;
-  constructor(config) {
-    this.name = config.name;
-    this.description = config.description ?? `Web search via ${config.name}`;
-    this.defaultCountry = config.defaultCountry;
-    this.defaultLanguage = config.defaultLanguage;
-    this.searchProvider = SearchProvider.create({
-      connector: config.searchConnector
+// src/core/context/strategies/BaseCompactionStrategy.ts
+var BaseCompactionStrategy = class {
+  metrics = {
+    compactionCount: 0,
+    totalTokensFreed: 0,
+    avgTokensFreedPerCompaction: 0
+  };
+  /**
+   * Get the maximum number of compaction rounds.
+   * Override in subclasses for multi-round strategies.
+   */
+  getMaxRounds() {
+    return 1;
+  }
+  /**
+   * Get the log prefix for compaction messages.
+   * Override to customize logging.
+   */
+  getLogPrefix() {
+    return this.name.charAt(0).toUpperCase() + this.name.slice(1);
+  }
+  /**
+   * Compact components to fit within budget.
+   * Uses the shared compaction loop with strategy-specific target calculation.
+   */
+  async compact(components, budget, compactors, estimator) {
+    const targetUsage = Math.floor(budget.total * this.getTargetUtilization());
+    const tokensToFree = budget.used - targetUsage;
+    const result = await executeCompactionLoop({
+      components,
+      tokensToFree,
+      compactors,
+      estimator,
+      calculateTargetSize: this.calculateTargetSize.bind(this),
+      maxRounds: this.getMaxRounds(),
+      logPrefix: this.getLogPrefix()
+    });
+    this.updateMetrics(result.tokensFreed);
+    return result;
+  }
+  /**
+   * Update internal metrics after compaction
+   */
+  updateMetrics(tokensFreed) {
+    this.metrics.compactionCount++;
+    this.metrics.totalTokensFreed += tokensFreed;
+    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
+  }
+  /**
+   * Get strategy metrics
+   */
+  getMetrics() {
+    return { ...this.metrics };
+  }
+  /**
+   * Reset metrics (useful for testing)
+   */
+  resetMetrics() {
+    this.metrics = {
+      compactionCount: 0,
+      totalTokensFreed: 0,
+      avgTokensFreedPerCompaction: 0
+    };
+  }
+};
+
+// src/core/context/strategies/ProactiveStrategy.ts
+var DEFAULT_OPTIONS = {
+  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
+  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
+  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS
+};
+var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "proactive";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
+  shouldCompact(budget, _config) {
+    return budget.status === "warning" || budget.status === "critical";
+  }
+  calculateTargetSize(beforeSize, round) {
+    const reductionFactor = this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
+    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1));
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getMaxRounds() {
+    return this.options.maxRounds;
+  }
+  getLogPrefix() {
+    return "Proactive";
+  }
+};
+
+// src/core/context/strategies/AggressiveStrategy.ts
+var DEFAULT_OPTIONS2 = {
+  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
+  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR
+};
+var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "aggressive";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS2, ...options };
+  }
+  shouldCompact(budget, _config) {
+    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
+    return utilizationRatio >= this.options.threshold;
+  }
+  calculateTargetSize(beforeSize, _round) {
+    return Math.floor(beforeSize * this.options.reductionFactor);
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getLogPrefix() {
+    return "Aggressive";
+  }
+};
+
+// src/core/context/strategies/LazyStrategy.ts
+var DEFAULT_OPTIONS3 = {
+  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR
+};
+var LazyCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "lazy";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS3, ...options };
+  }
+  shouldCompact(budget, _config) {
+    return budget.status === "critical";
+  }
+  calculateTargetSize(beforeSize, _round) {
+    return Math.floor(beforeSize * this.options.reductionFactor);
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getLogPrefix() {
+    return "Lazy";
+  }
+};
+
+// src/core/context/strategies/RollingWindowStrategy.ts
+var RollingWindowStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  name = "rolling-window";
+  shouldCompact(_budget, _config) {
+    return false;
+  }
+  async prepareComponents(components) {
+    return components.map((component) => {
+      if (Array.isArray(component.content)) {
+        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
+        if (component.content.length > maxMessages) {
+          return {
+            ...component,
+            content: component.content.slice(-maxMessages),
+            metadata: {
+              ...component.metadata,
+              windowed: true,
+              originalLength: component.content.length,
+              keptLength: maxMessages
+            }
+          };
+        }
+      }
+      return component;
     });
   }
-  async search(query, options) {
-    try {
-      const response = await this.searchProvider.search(query, {
-        numResults: options?.maxResults ?? 10,
-        language: this.defaultLanguage,
-        country: this.defaultCountry,
-        ...options?.sourceOptions
-      });
-      return {
-        success: response.success,
-        query: response.query,
-        results: response.results.map((r, index) => ({
-          id: `${this.name}_${index}_${Date.now()}`,
-          title: r.title,
-          snippet: r.snippet,
-          reference: r.url,
-          relevance: 1 - r.position / (response.results.length + 1),
-          // Convert position to relevance
-          metadata: { position: r.position }
-        })),
-        totalResults: response.count,
-        error: response.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        query,
-        results: [],
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+  async compact() {
+    return { components: [], log: [], tokensFreed: 0 };
   }
-  async fetch(reference, options) {
-    try {
-      const controller = new AbortController();
-      const timeout = options?.timeoutMs ?? 3e4;
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      const headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; ResearchAgent/1.0)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-      };
-      const response = await fetch(reference, {
-        headers,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        return {
-          success: false,
-          reference,
-          content: null,
-          error: `HTTP ${response.status}: ${response.statusText}`
-        };
-      }
-      const contentType = response.headers.get("content-type") ?? "text/html";
-      const buffer = await response.arrayBuffer();
-      const sizeBytes = buffer.byteLength;
-      if (options?.maxSize && sizeBytes > options.maxSize) {
-        return {
-          success: false,
-          reference,
-          content: null,
-          error: `Content too large: ${sizeBytes} bytes (max: ${options.maxSize})`,
-          sizeBytes
-        };
-      }
-      const decoder = new TextDecoder();
-      const content = decoder.decode(buffer);
-      return {
-        success: true,
-        reference,
-        content,
-        contentType,
-        sizeBytes,
-        metadata: {
-          statusCode: response.status,
-          headers: Object.fromEntries(response.headers.entries())
-        }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        reference,
-        content: null,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+};
+
+// src/core/context/strategies/AdaptiveStrategy.ts
+var AdaptiveStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+    this.currentStrategy = new ProactiveCompactionStrategy();
   }
-  async isAvailable() {
-    try {
-      const response = await this.search("test", { maxResults: 1 });
-      return response.success;
-    } catch {
-      return false;
-    }
+  name = "adaptive";
+  currentStrategy;
+  metrics = {
+    avgUtilization: 0,
+    compactionFrequency: 0,
+    lastCompactions: []
+  };
+  shouldCompact(budget, config) {
+    this.updateMetrics(budget);
+    this.maybeAdapt();
+    return this.currentStrategy.shouldCompact(budget, config);
   }
-  getCapabilities() {
+  async compact(components, budget, compactors, estimator) {
+    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
+    this.metrics.lastCompactions.push(Date.now());
+    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
+    if (this.metrics.lastCompactions.length > window) {
+      this.metrics.lastCompactions.shift();
+    }
     return {
-      canSearch: true,
-      canFetch: true,
-      hasRelevanceScores: true,
-      maxResultsPerSearch: 100,
-      contentTypes: ["text/html", "text/plain", "application/json"]
+      ...result,
+      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
+    };
+  }
+  updateMetrics(budget) {
+    const alpha = 0.1;
+    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
+  }
+  maybeAdapt() {
+    const now = Date.now();
+    if (this.metrics.lastCompactions.length >= 2) {
+      const firstCompaction = this.metrics.lastCompactions[0];
+      if (firstCompaction !== void 0) {
+        const timeSpan = now - firstCompaction;
+        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
+      }
+    }
+    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
+    if (this.metrics.compactionFrequency > threshold) {
+      if (this.currentStrategy.name !== "aggressive") {
+        this.currentStrategy = new AggressiveCompactionStrategy();
+      }
+    } else if (this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD && this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD) {
+      if (this.currentStrategy.name !== "lazy") {
+        this.currentStrategy = new LazyCompactionStrategy();
+      }
+    } else {
+      if (this.currentStrategy.name !== "proactive") {
+        this.currentStrategy = new ProactiveCompactionStrategy();
+      }
+    }
+  }
+  getMetrics() {
+    return {
+      ...this.metrics,
+      currentStrategy: this.currentStrategy.name
     };
   }
 };
-function createWebSearchSource(connectorName, options) {
-  return new WebSearchSource({
-    name: options?.name ?? `web-${connectorName}`,
-    description: options?.description ?? `Web search via ${connectorName}`,
-    searchConnector: connectorName,
-    ...options
-  });
-}
-var FileSearchSource = class {
-  name;
-  description;
-  type = "file";
-  basePath;
-  includePatterns;
-  excludePatterns;
-  maxFileSize;
-  searchMode;
-  constructor(config) {
-    this.name = config.name;
-    this.description = config.description ?? `File search in ${config.basePath}`;
-    this.basePath = path2__namespace.resolve(config.basePath);
-    this.includePatterns = config.includePatterns ?? ["**/*"];
-    this.excludePatterns = config.excludePatterns ?? ["**/node_modules/**", "**/.git/**"];
-    this.maxFileSize = config.maxFileSize ?? 1024 * 1024;
-    this.searchMode = config.searchMode ?? "both";
+
+// src/core/context/strategies/index.ts
+function createStrategy(name, options = {}) {
+  switch (name) {
+    case "proactive":
+      return new ProactiveCompactionStrategy(options);
+    case "aggressive":
+      return new AggressiveCompactionStrategy(options);
+    case "lazy":
+      return new LazyCompactionStrategy(options);
+    case "rolling-window":
+      return new RollingWindowStrategy(options);
+    case "adaptive":
+      return new AdaptiveStrategy(options);
+    default:
+      throw new Error(`Unknown context strategy: ${name}`);
   }
-  async search(query, options) {
-    try {
-      const results = [];
-      const maxResults = options?.maxResults ?? 20;
-      const files = await glob.glob(this.includePatterns, {
-        cwd: this.basePath,
-        ignore: this.excludePatterns,
-        nodir: true,
-        absolute: true
-      });
-      for (const filePath of files) {
-        if (results.length >= maxResults) break;
-        const relativePath = path2__namespace.relative(this.basePath, filePath);
-        const filename = path2__namespace.basename(filePath);
-        if (this.searchMode === "filename" || this.searchMode === "both") {
-          if (this.matchesQuery(filename, query)) {
-            results.push({
-              id: `file_${Buffer.from(relativePath).toString("base64").slice(0, 20)}`,
-              title: filename,
-              snippet: `File: ${relativePath}`,
-              reference: filePath,
-              relevance: this.calculateRelevance(filename, query),
-              metadata: { type: "filename_match", relativePath }
-            });
-            continue;
-          }
-        }
-        if (this.searchMode === "content" || this.searchMode === "both") {
-          try {
-            const stat6 = await fs15__namespace.stat(filePath);
-            if (stat6.size > this.maxFileSize) continue;
-            const content = await fs15__namespace.readFile(filePath, "utf-8");
-            const match = this.findContentMatch(content, query);
-            if (match) {
-              results.push({
-                id: `file_${Buffer.from(relativePath).toString("base64").slice(0, 20)}`,
-                title: filename,
-                snippet: match.snippet,
-                reference: filePath,
-                relevance: match.relevance,
-                metadata: {
-                  type: "content_match",
-                  relativePath,
-                  lineNumber: match.lineNumber
-                }
-              });
-            }
-          } catch {
-          }
-        }
-      }
-      results.sort((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0));
-      return {
-        success: true,
-        query,
-        results: results.slice(0, maxResults),
-        totalResults: results.length
-      };
-    } catch (error) {
-      return {
-        success: false,
-        query,
-        results: [],
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-  async fetch(reference, options) {
-    try {
-      const absolutePath = path2__namespace.resolve(reference);
-      if (!absolutePath.startsWith(this.basePath)) {
-        return {
-          success: false,
-          reference,
-          content: null,
-          error: "Path is outside allowed base directory"
-        };
-      }
-      const stat6 = await fs15__namespace.stat(absolutePath);
-      const maxSize = options?.maxSize ?? this.maxFileSize;
-      if (stat6.size > maxSize) {
-        return {
-          success: false,
-          reference,
-          content: null,
-          error: `File too large: ${stat6.size} bytes (max: ${maxSize})`,
-          sizeBytes: stat6.size
-        };
-      }
-      const content = await fs15__namespace.readFile(absolutePath, "utf-8");
-      const ext = path2__namespace.extname(absolutePath).toLowerCase();
-      return {
-        success: true,
-        reference,
-        content,
-        contentType: this.getContentType(ext),
-        sizeBytes: stat6.size,
-        metadata: {
-          filename: path2__namespace.basename(absolutePath),
-          extension: ext,
-          modifiedAt: stat6.mtime.toISOString()
-        }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        reference,
-        content: null,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-  async isAvailable() {
-    try {
-      await fs15__namespace.access(this.basePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  getCapabilities() {
-    return {
-      canSearch: true,
-      canFetch: true,
-      hasRelevanceScores: true,
-      maxResultsPerSearch: 1e3,
-      contentTypes: ["text/plain", "application/json", "text/markdown", "text/javascript"]
-    };
-  }
-  // ============================================================================
-  // Private helpers
-  // ============================================================================
-  matchesQuery(text, query) {
-    const lowerText = text.toLowerCase();
-    const lowerQuery = query.toLowerCase();
-    if (lowerText.includes(lowerQuery)) return true;
-    const queryWords = lowerQuery.split(/\s+/);
-    return queryWords.every((word) => lowerText.includes(word));
-  }
-  calculateRelevance(text, query) {
-    const lowerText = text.toLowerCase();
-    const lowerQuery = query.toLowerCase();
-    if (lowerText === lowerQuery) return 1;
-    if (lowerText.startsWith(lowerQuery)) return 0.9;
-    if (lowerText.includes(lowerQuery)) return 0.7;
-    const queryWords = lowerQuery.split(/\s+/);
-    const matchedWords = queryWords.filter((w) => lowerText.includes(w));
-    return matchedWords.length / queryWords.length * 0.6;
-  }
-  findContentMatch(content, query) {
-    const lines = content.split("\n");
-    const lowerQuery = query.toLowerCase();
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      const lowerLine = line.toLowerCase();
-      if (lowerLine.includes(lowerQuery)) {
-        const start = Math.max(0, i - 1);
-        const end = Math.min(lines.length, i + 2);
-        const context = lines.slice(start, end).join("\n");
-        return {
-          snippet: context.length > 200 ? context.slice(0, 200) + "..." : context,
-          relevance: 0.8,
-          lineNumber: i + 1
-        };
-      }
-    }
-    return null;
-  }
-  getContentType(ext) {
-    const types = {
-      ".txt": "text/plain",
-      ".md": "text/markdown",
-      ".json": "application/json",
-      ".js": "text/javascript",
-      ".ts": "text/typescript",
-      ".py": "text/x-python",
-      ".html": "text/html",
-      ".css": "text/css",
-      ".xml": "application/xml",
-      ".yaml": "text/yaml",
-      ".yml": "text/yaml"
-    };
-    return types[ext] ?? "text/plain";
-  }
-};
-function createFileSearchSource(basePath, options) {
-  return new FileSearchSource({
-    name: options?.name ?? `files-${path2__namespace.basename(basePath)}`,
-    basePath,
-    ...options
-  });
 }
 
 // src/infrastructure/context/compactors/TruncateCompactor.ts
@@ -45885,10 +39476,10 @@ function getDefaultBaseDirectory2() {
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path2.join(appData, "oneringai", "agents");
+      return path3.join(appData, "oneringai", "agents");
     }
   }
-  return path2.join(os.homedir(), ".oneringai", "agents");
+  return path3.join(os.homedir(), ".oneringai", "agents");
 }
 function sanitizeId(id) {
   return id.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -45905,8 +39496,8 @@ var FileContextStorage = class {
     const sanitizedAgentId = sanitizeId(config.agentId);
     const baseDir = config.baseDirectory ?? getDefaultBaseDirectory2();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.sessionsDirectory = path2.join(baseDir, sanitizedAgentId, "sessions");
-    this.indexPath = path2.join(this.sessionsDirectory, "_index.json");
+    this.sessionsDirectory = path3.join(baseDir, sanitizedAgentId, "sessions");
+    this.indexPath = path3.join(this.sessionsDirectory, "_index.json");
   }
   /**
    * Save context state to a session file
@@ -45932,11 +39523,11 @@ var FileContextStorage = class {
     const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs16.promises.writeFile(tempPath, data, "utf-8");
-      await fs16.promises.rename(tempPath, filePath);
+      await fs15.promises.writeFile(tempPath, data, "utf-8");
+      await fs15.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs16.promises.unlink(tempPath);
+        await fs15.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -45957,7 +39548,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs16.promises.unlink(filePath);
+      await fs15.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -45972,7 +39563,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs16.promises.access(filePath);
+      await fs15.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -46037,7 +39628,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
-    await fs16.promises.writeFile(filePath, data, "utf-8");
+    await fs15.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(stored);
   }
   /**
@@ -46058,13 +39649,13 @@ var FileContextStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs16.promises.readdir(this.sessionsDirectory);
+    const files = await fs15.promises.readdir(this.sessionsDirectory);
     const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
-        const filePath = path2.join(this.sessionsDirectory, file);
-        const data = await fs16.promises.readFile(filePath, "utf-8");
+        const filePath = path3.join(this.sessionsDirectory, file);
+        const data = await fs15.promises.readFile(filePath, "utf-8");
         const stored = JSON.parse(data);
         entries.push(this.storedToIndexEntry(stored));
       } catch {
@@ -46082,11 +39673,11 @@ var FileContextStorage = class {
   // Private Helpers
   // ==========================================================================
   getFilePath(sanitizedSessionId) {
-    return path2.join(this.sessionsDirectory, `${sanitizedSessionId}.json`);
+    return path3.join(this.sessionsDirectory, `${sanitizedSessionId}.json`);
   }
   async ensureDirectory() {
     try {
-      await fs16.promises.mkdir(this.sessionsDirectory, { recursive: true });
+      await fs15.promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -46096,7 +39687,7 @@ var FileContextStorage = class {
   async loadRaw(sanitizedSessionId) {
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      const data = await fs16.promises.readFile(filePath, "utf-8");
+      const data = await fs15.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -46114,7 +39705,7 @@ var FileContextStorage = class {
       return this.index;
     }
     try {
-      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs15.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -46135,7 +39726,7 @@ var FileContextStorage = class {
     await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs15.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(stored) {
     const index = await this.loadIndex();
@@ -46154,12 +39745,13 @@ var FileContextStorage = class {
     await this.saveIndex();
   }
   storedToIndexEntry(stored) {
+    const workingMemoryState = stored.state.pluginStates?.workingMemory;
     return {
       sessionId: stored.sessionId,
       createdAt: stored.createdAt,
       lastSavedAt: stored.lastSavedAt,
-      messageCount: stored.state.core?.history?.length ?? 0,
-      memoryEntryCount: stored.state.memory?.entries?.length ?? 0,
+      messageCount: stored.state.conversation?.length ?? 0,
+      memoryEntryCount: workingMemoryState?.entries?.length ?? 0,
       metadata: stored.metadata
     };
   }
@@ -46172,10 +39764,10 @@ function getDefaultBaseDirectory3() {
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path2.join(appData, "oneringai", "agents");
+      return path3.join(appData, "oneringai", "agents");
     }
   }
-  return path2.join(os.homedir(), ".oneringai", "agents");
+  return path3.join(os.homedir(), ".oneringai", "agents");
 }
 function sanitizeAgentId2(agentId) {
   return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -46188,15 +39780,15 @@ var FileAgentDefinitionStorage = class {
   constructor(config = {}) {
     this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory3();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.indexPath = path2.join(this.baseDirectory, "_agents_index.json");
+    this.indexPath = path3.join(this.baseDirectory, "_agents_index.json");
   }
   /**
    * Save an agent definition
    */
   async save(definition) {
     const sanitizedId = sanitizeAgentId2(definition.agentId);
-    const agentDir = path2.join(this.baseDirectory, sanitizedId);
-    const filePath = path2.join(agentDir, "definition.json");
+    const agentDir = path3.join(this.baseDirectory, sanitizedId);
+    const filePath = path3.join(agentDir, "definition.json");
     await this.ensureDirectory(agentDir);
     const now = (/* @__PURE__ */ new Date()).toISOString();
     if (!definition.createdAt) {
@@ -46208,11 +39800,11 @@ var FileAgentDefinitionStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs16.promises.writeFile(tempPath, data, "utf-8");
-      await fs16.promises.rename(tempPath, filePath);
+      await fs15.promises.writeFile(tempPath, data, "utf-8");
+      await fs15.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs16.promises.unlink(tempPath);
+        await fs15.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -46231,10 +39823,10 @@ var FileAgentDefinitionStorage = class {
    */
   async delete(agentId) {
     const sanitizedId = sanitizeAgentId2(agentId);
-    const agentDir = path2.join(this.baseDirectory, sanitizedId);
-    const filePath = path2.join(agentDir, "definition.json");
+    const agentDir = path3.join(this.baseDirectory, sanitizedId);
+    const filePath = path3.join(agentDir, "definition.json");
     try {
-      await fs16.promises.unlink(filePath);
+      await fs15.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -46247,9 +39839,9 @@ var FileAgentDefinitionStorage = class {
    */
   async exists(agentId) {
     const sanitizedId = sanitizeAgentId2(agentId);
-    const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
+    const filePath = path3.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      await fs16.promises.access(filePath);
+      await fs15.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -46311,13 +39903,13 @@ var FileAgentDefinitionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory(this.baseDirectory);
-    const entries = await fs16.promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const entries = await fs15.promises.readdir(this.baseDirectory, { withFileTypes: true });
     const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
     const indexEntries = [];
     for (const dir of agentDirs) {
       try {
-        const filePath = path2.join(this.baseDirectory, dir.name, "definition.json");
-        const data = await fs16.promises.readFile(filePath, "utf-8");
+        const filePath = path3.join(this.baseDirectory, dir.name, "definition.json");
+        const data = await fs15.promises.readFile(filePath, "utf-8");
         const definition = JSON.parse(data);
         indexEntries.push(this.definitionToIndexEntry(definition));
       } catch {
@@ -46335,7 +39927,7 @@ var FileAgentDefinitionStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs16.promises.mkdir(dir, { recursive: true });
+      await fs15.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -46343,9 +39935,9 @@ var FileAgentDefinitionStorage = class {
     }
   }
   async loadRaw(sanitizedId) {
-    const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
+    const filePath = path3.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      const data = await fs16.promises.readFile(filePath, "utf-8");
+      const data = await fs15.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -46363,7 +39955,7 @@ var FileAgentDefinitionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs15.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -46383,7 +39975,7 @@ var FileAgentDefinitionStorage = class {
     await this.ensureDirectory(this.baseDirectory);
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs15.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(definition) {
     const index = await this.loadIndex();
@@ -47438,8 +41030,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs15__namespace.mkdir(this.directory, { recursive: true });
-      await fs15__namespace.chmod(this.directory, 448);
+      await fs14__namespace.mkdir(this.directory, { recursive: true });
+      await fs14__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -47448,20 +41040,20 @@ var FileStorage = class {
    */
   getFilePath(key) {
     const hash = crypto2__namespace.createHash("sha256").update(key).digest("hex");
-    return path2__namespace.join(this.directory, `${hash}.token`);
+    return path3__namespace.join(this.directory, `${hash}.token`);
   }
   async storeToken(key, token) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs15__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs15__namespace.chmod(filePath, 384);
+    await fs14__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs14__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs15__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs14__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -47470,7 +41062,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs15__namespace.unlink(filePath);
+        await fs14__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -47479,7 +41071,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs15__namespace.unlink(filePath);
+      await fs14__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -47489,7 +41081,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs15__namespace.access(filePath);
+      await fs14__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -47500,7 +41092,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs15__namespace.readdir(this.directory);
+      const files = await fs14__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -47511,10 +41103,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs15__namespace.readdir(this.directory);
+      const files = await fs14__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs14__namespace.unlink(path3__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -47913,20 +41505,20 @@ var FileConnectorStorage = class {
       throw new Error("FileConnectorStorage requires a directory path");
     }
     this.directory = config.directory;
-    this.indexPath = path2__namespace.join(this.directory, "_index.json");
+    this.indexPath = path3__namespace.join(this.directory, "_index.json");
   }
   async save(name, stored) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs15__namespace.writeFile(filePath, json, "utf8");
-    await fs15__namespace.chmod(filePath, 384);
+    await fs14__namespace.writeFile(filePath, json, "utf8");
+    await fs14__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs15__namespace.readFile(filePath, "utf8");
+      const json = await fs14__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -47939,7 +41531,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs15__namespace.unlink(filePath);
+      await fs14__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -47953,7 +41545,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs15__namespace.access(filePath);
+      await fs14__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -47979,13 +41571,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs15__namespace.readdir(this.directory);
+      const files = await fs14__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs14__namespace.unlink(path3__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -47998,7 +41590,7 @@ var FileConnectorStorage = class {
    */
   getFilePath(name) {
     const hash = this.hashName(name);
-    return path2__namespace.join(this.directory, `${hash}.connector.json`);
+    return path3__namespace.join(this.directory, `${hash}.connector.json`);
   }
   /**
    * Hash connector name to prevent enumeration
@@ -48012,8 +41604,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs15__namespace.mkdir(this.directory, { recursive: true });
-      await fs15__namespace.chmod(this.directory, 448);
+      await fs14__namespace.mkdir(this.directory, { recursive: true });
+      await fs14__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -48024,7 +41616,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs15__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs14__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -48042,8 +41634,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs15__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs15__namespace.chmod(this.indexPath, 384);
+    await fs14__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs14__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -49876,6 +43468,191 @@ function getVendorLogoCdnUrl(vendorId, color) {
 // src/connectors/vendors/index.ts
 initVendorRegistry(allVendorTemplates);
 
+// src/infrastructure/resilience/index.ts
+init_CircuitBreaker();
+init_CircuitBreaker();
+init_BackoffStrategy();
+init_BackoffStrategy();
+
+// src/infrastructure/resilience/RateLimiter.ts
+var RateLimitError = class _RateLimitError extends AIError {
+  constructor(retryAfterMs, message) {
+    super(message ?? `Rate limited. Retry after ${retryAfterMs}ms`, "RATE_LIMIT_ERROR", 429);
+    this.retryAfterMs = retryAfterMs;
+    this.name = "RateLimitError";
+    Object.setPrototypeOf(this, _RateLimitError.prototype);
+  }
+};
+var DEFAULT_RATE_LIMITER_CONFIG = {
+  maxRequests: 60,
+  windowMs: 6e4,
+  onLimit: "wait",
+  maxWaitMs: 6e4
+};
+var TokenBucketRateLimiter = class {
+  tokens;
+  lastRefill;
+  config;
+  waitQueue = [];
+  // Metrics
+  totalRequests = 0;
+  throttledRequests = 0;
+  totalWaitMs = 0;
+  constructor(config = {}) {
+    this.config = {
+      maxRequests: config.maxRequests ?? DEFAULT_RATE_LIMITER_CONFIG.maxRequests,
+      windowMs: config.windowMs ?? DEFAULT_RATE_LIMITER_CONFIG.windowMs,
+      onLimit: config.onLimit ?? DEFAULT_RATE_LIMITER_CONFIG.onLimit,
+      maxWaitMs: config.maxWaitMs ?? DEFAULT_RATE_LIMITER_CONFIG.maxWaitMs
+    };
+    this.tokens = this.config.maxRequests;
+    this.lastRefill = Date.now();
+  }
+  /**
+   * Acquire a token (request permission to make an LLM call)
+   * @returns Promise that resolves when token is acquired
+   * @throws RateLimitError if onLimit='throw' and no tokens available
+   */
+  async acquire() {
+    this.totalRequests++;
+    this.refill();
+    if (this.tokens > 0) {
+      this.tokens--;
+      return;
+    }
+    this.throttledRequests++;
+    const waitTime = this.getWaitTime();
+    if (this.config.onLimit === "throw") {
+      throw new RateLimitError(waitTime);
+    }
+    if (waitTime > this.config.maxWaitMs) {
+      throw new RateLimitError(
+        waitTime,
+        `Wait time ${waitTime}ms exceeds max ${this.config.maxWaitMs}ms`
+      );
+    }
+    const startWait = Date.now();
+    await this.waitForToken(waitTime);
+    this.totalWaitMs += Date.now() - startWait;
+  }
+  /**
+   * Try to acquire without waiting
+   * @returns true if acquired, false if rate limited
+   */
+  tryAcquire() {
+    this.totalRequests++;
+    this.refill();
+    if (this.tokens > 0) {
+      this.tokens--;
+      return true;
+    }
+    this.throttledRequests++;
+    return false;
+  }
+  /**
+   * Get current available tokens
+   */
+  getAvailableTokens() {
+    this.refill();
+    return this.tokens;
+  }
+  /**
+   * Get time until next token is available
+   */
+  getWaitTime() {
+    this.refill();
+    if (this.tokens > 0) return 0;
+    const elapsed = Date.now() - this.lastRefill;
+    return Math.max(0, this.config.windowMs - elapsed);
+  }
+  /**
+   * Get rate limiter metrics
+   */
+  getMetrics() {
+    return {
+      totalRequests: this.totalRequests,
+      throttledRequests: this.throttledRequests,
+      totalWaitMs: this.totalWaitMs,
+      avgWaitMs: this.throttledRequests > 0 ? this.totalWaitMs / this.throttledRequests : 0
+    };
+  }
+  /**
+   * Reset the rate limiter state
+   */
+  reset() {
+    this.tokens = this.config.maxRequests;
+    this.lastRefill = Date.now();
+    for (const waiter of this.waitQueue) {
+      if (waiter.timeout) {
+        clearTimeout(waiter.timeout);
+      }
+    }
+    this.waitQueue = [];
+  }
+  /**
+   * Reset metrics
+   */
+  resetMetrics() {
+    this.totalRequests = 0;
+    this.throttledRequests = 0;
+    this.totalWaitMs = 0;
+  }
+  /**
+   * Get the current configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Refill tokens if window has expired
+   */
+  refill() {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    if (elapsed >= this.config.windowMs) {
+      this.tokens = this.config.maxRequests;
+      this.lastRefill = now;
+      this.processWaitQueue();
+    }
+  }
+  /**
+   * Wait for a token to become available
+   */
+  async waitForToken(waitTime) {
+    return new Promise((resolve4, reject) => {
+      const timeout = setTimeout(() => {
+        const index = this.waitQueue.findIndex((w) => w.timeout === timeout);
+        if (index !== -1) {
+          this.waitQueue.splice(index, 1);
+        }
+        this.refill();
+        if (this.tokens > 0) {
+          this.tokens--;
+          resolve4();
+        } else {
+          reject(new RateLimitError(this.getWaitTime(), "Token still unavailable after wait"));
+        }
+      }, waitTime);
+      this.waitQueue.push({ resolve: resolve4, reject, timeout });
+    });
+  }
+  /**
+   * Process waiting requests when tokens become available
+   */
+  processWaitQueue() {
+    while (this.waitQueue.length > 0 && this.tokens > 0) {
+      const waiter = this.waitQueue.shift();
+      if (waiter) {
+        if (waiter.timeout) {
+          clearTimeout(waiter.timeout);
+        }
+        this.tokens--;
+        waiter.resolve();
+      }
+    }
+  }
+};
+
 // src/infrastructure/observability/index.ts
 init_Logger();
 init_Metrics();
@@ -50016,8 +43793,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs16__namespace.existsSync(filePath)) {
-      fs16__namespace.unlinkSync(filePath);
+    if (fs15__namespace.existsSync(filePath)) {
+      fs15__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -50046,7 +43823,7 @@ async function readClipboardImage() {
   }
 }
 async function readClipboardImageMac() {
-  const tempFile = path2__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`pngpaste "${tempFile}"`);
@@ -50068,7 +43845,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs16__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs15__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -50081,18 +43858,18 @@ async function readClipboardImageMac() {
   }
 }
 async function readClipboardImageLinux() {
-  const tempFile = path2__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
+      if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
+      if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -50106,7 +43883,7 @@ async function readClipboardImageLinux() {
   }
 }
 async function readClipboardImageWindows() {
-  const tempFile = path2__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     const psScript = `
       Add-Type -AssemblyName System.Windows.Forms;
@@ -50119,7 +43896,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
+    if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -50132,7 +43909,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs16__namespace.readFileSync(filePath);
+    const imageBuffer = fs15__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -50191,6 +43968,186 @@ async function hasClipboardImage() {
   }
 }
 
+// src/utils/jsonExtractor.ts
+function extractJSON(text) {
+  if (!text || typeof text !== "string") {
+    return {
+      success: false,
+      error: "Input is empty or not a string"
+    };
+  }
+  const trimmedText = text.trim();
+  const codeBlockResult = extractFromCodeBlock(trimmedText);
+  if (codeBlockResult.success) {
+    return codeBlockResult;
+  }
+  const inlineResult = extractInlineJSON(trimmedText);
+  if (inlineResult.success) {
+    return inlineResult;
+  }
+  try {
+    const data = JSON.parse(trimmedText);
+    return {
+      success: true,
+      data,
+      rawJson: trimmedText,
+      method: "raw"
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: `Could not extract JSON from text: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+}
+function extractFromCodeBlock(text) {
+  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    const content = match[1];
+    if (content) {
+      const trimmed = content.trim();
+      try {
+        const data = JSON.parse(trimmed);
+        return {
+          success: true,
+          data,
+          rawJson: trimmed,
+          method: "code_block"
+        };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return { success: false };
+}
+function extractInlineJSON(text) {
+  const objectMatch = findJSONObject(text);
+  if (objectMatch) {
+    try {
+      const data = JSON.parse(objectMatch);
+      return {
+        success: true,
+        data,
+        rawJson: objectMatch,
+        method: "inline"
+      };
+    } catch {
+    }
+  }
+  const arrayMatch = findJSONArray(text);
+  if (arrayMatch) {
+    try {
+      const data = JSON.parse(arrayMatch);
+      return {
+        success: true,
+        data,
+        rawJson: arrayMatch,
+        method: "inline"
+      };
+    } catch {
+    }
+  }
+  return { success: false };
+}
+function findJSONObject(text) {
+  const startIndex = text.indexOf("{");
+  if (startIndex === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") {
+      depth++;
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function findJSONArray(text) {
+  const startIndex = text.indexOf("[");
+  if (startIndex === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "[") {
+      depth++;
+    } else if (char === "]") {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function extractJSONField(text, field, defaultValue) {
+  const result = extractJSON(text);
+  if (result.success && result.data && field in result.data) {
+    return result.data[field];
+  }
+  return defaultValue;
+}
+function extractNumber(text, patterns = [
+  /(\d{1,3})%?\s*(?:complete|score|percent)/i,
+  /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
+  /(\d{1,3})\s*(?:out of|\/)\s*100/i
+], defaultValue = 0) {
+  const jsonResult = extractJSON(text);
+  if (jsonResult.success && jsonResult.data) {
+    const scoreFields = ["score", "completionScore", "completion_score", "rating", "percent", "value"];
+    for (const field of scoreFields) {
+      if (field in jsonResult.data && typeof jsonResult.data[field] === "number") {
+        return jsonResult.data[field];
+      }
+    }
+  }
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num)) {
+        return num;
+      }
+    }
+  }
+  return defaultValue;
+}
+
 // src/tools/index.ts
 var tools_exports = {};
 __export(tools_exports, {
@@ -50218,14 +44175,14 @@ __export(tools_exports, {
   getToolRegistry: () => getToolRegistry,
   getToolsByCategory: () => getToolsByCategory,
   getToolsRequiringConnector: () => getToolsRequiringConnector,
-  glob: () => glob2,
+  glob: () => glob,
   grep: () => grep,
   isBlockedCommand: () => isBlockedCommand,
   isExcludedExtension: () => isExcludedExtension,
   jsonManipulator: () => jsonManipulator,
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
-  readFile: () => readFile5,
+  readFile: () => readFile4,
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
@@ -50291,15 +44248,15 @@ function validatePath(inputPath, config = {}) {
   const blockedDirs = config.blockedDirectories || DEFAULT_FILESYSTEM_CONFIG.blockedDirectories;
   let expandedPath = inputPath;
   if (inputPath.startsWith("~/")) {
-    expandedPath = path2.resolve(os.homedir(), inputPath.slice(2));
+    expandedPath = path3.resolve(os.homedir(), inputPath.slice(2));
   } else if (inputPath === "~") {
     expandedPath = os.homedir();
   }
   let resolvedPath;
-  if (path2.isAbsolute(expandedPath)) {
-    resolvedPath = path2.normalize(expandedPath);
+  if (path3.isAbsolute(expandedPath)) {
+    resolvedPath = path3.normalize(expandedPath);
   } else {
-    resolvedPath = path2.resolve(workingDir, expandedPath);
+    resolvedPath = path3.resolve(workingDir, expandedPath);
   }
   const pathSegments = resolvedPath.split("/").filter(Boolean);
   for (const blocked of blockedDirs) {
@@ -50312,7 +44269,7 @@ function validatePath(inputPath, config = {}) {
         };
       }
     } else {
-      const blockedPath = path2.isAbsolute(blocked) ? blocked : path2.resolve(workingDir, blocked);
+      const blockedPath = path3.isAbsolute(blocked) ? blocked : path3.resolve(workingDir, blocked);
       if (resolvedPath.startsWith(blockedPath + "/") || resolvedPath === blockedPath) {
         return {
           valid: false,
@@ -50325,7 +44282,7 @@ function validatePath(inputPath, config = {}) {
   if (allowedDirs.length > 0) {
     let isAllowed = false;
     for (const allowed of allowedDirs) {
-      const allowedPath = path2.isAbsolute(allowed) ? allowed : path2.resolve(workingDir, allowed);
+      const allowedPath = path3.isAbsolute(allowed) ? allowed : path3.resolve(workingDir, allowed);
       if (resolvedPath.startsWith(allowedPath + "/") || resolvedPath === allowedPath) {
         isAllowed = true;
         break;
@@ -50343,7 +44300,7 @@ function validatePath(inputPath, config = {}) {
 }
 function expandTilde(inputPath) {
   if (inputPath.startsWith("~/")) {
-    return path2.resolve(os.homedir(), inputPath.slice(2));
+    return path3.resolve(os.homedir(), inputPath.slice(2));
   } else if (inputPath === "~") {
     return os.homedir();
   }
@@ -50420,7 +44377,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs15.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -50428,7 +44385,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs15.stat(resolvedPath);
+        const stats = await fs14.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -50444,7 +44401,7 @@ EXAMPLES:
             size: stats.size
           };
         }
-        const content = await fs15.readFile(resolvedPath, "utf-8");
+        const content = await fs14.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -50485,7 +44442,7 @@ EXAMPLES:
     }
   };
 }
-var readFile5 = createReadFileTool();
+var readFile4 = createReadFileTool();
 function createWriteFileTool(config = {}) {
   const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
   return {
@@ -50549,13 +44506,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs16.existsSync(resolvedPath);
+      const fileExists = fs15.existsSync(resolvedPath);
       try {
-        const parentDir = path2.dirname(resolvedPath);
-        if (!fs16.existsSync(parentDir)) {
-          await fs15.mkdir(parentDir, { recursive: true });
+        const parentDir = path3.dirname(resolvedPath);
+        if (!fs15.existsSync(parentDir)) {
+          await fs14.mkdir(parentDir, { recursive: true });
         }
-        await fs15.writeFile(resolvedPath, content, "utf-8");
+        await fs14.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -50658,7 +44615,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs15.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -50666,7 +44623,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs15.readFile(resolvedPath, "utf-8");
+        const content = await fs14.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -50705,7 +44662,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs15.writeFile(resolvedPath, newContent, "utf-8");
+        await fs14.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -50761,11 +44718,11 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs15.readdir(dir, { withFileTypes: true });
+    const entries = await fs14.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
-      const fullPath = path2.join(dir, entry.name);
-      const relativePath = path2.relative(baseDir, fullPath);
+      const fullPath = path3.join(dir, entry.name);
+      const relativePath = path3.relative(baseDir, fullPath);
       if (entry.isDirectory()) {
         const isBlocked = config.blockedDirectories.some(
           (blocked) => entry.name === blocked || relativePath.includes(`/${blocked}/`) || relativePath.startsWith(`${blocked}/`)
@@ -50775,7 +44732,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs15.stat(fullPath);
+            const stats = await fs14.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -50843,8 +44800,8 @@ WHEN TO USE:
       return args.pattern;
     },
     execute: async (args) => {
-      const { pattern, path: path6 } = args;
-      const searchDir = path6 || mergedConfig.workingDirectory;
+      const { pattern, path: path5 } = args;
+      const searchDir = path5 || mergedConfig.workingDirectory;
       const validation = validatePath(searchDir, {
         ...mergedConfig,
         blockedDirectories: []
@@ -50857,7 +44814,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedDir)) {
+      if (!fs15.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -50882,7 +44839,7 @@ WHEN TO USE:
     }
   };
 }
-var glob2 = createGlobTool();
+var glob = createGlobTool();
 var FILE_TYPE_MAP = {
   ts: [".ts", ".tsx"],
   js: [".js", ".jsx", ".mjs", ".cjs"],
@@ -50912,9 +44869,9 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs15.readdir(dir, { withFileTypes: true });
+    const entries = await fs14.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const fullPath = path2.join(dir, entry.name);
+      const fullPath = path3.join(dir, entry.name);
       if (entry.isDirectory()) {
         const isBlocked = config.blockedDirectories.some(
           (blocked) => entry.name === blocked
@@ -50926,7 +44883,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
         if (fileType) {
           const extensions = FILE_TYPE_MAP[fileType.toLowerCase()];
           if (extensions) {
-            const ext = path2.extname(entry.name).toLowerCase();
+            const ext = path3.extname(entry.name).toLowerCase();
             if (!extensions.includes(ext)) continue;
           }
         }
@@ -50945,7 +44902,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs15.readFile(filePath, "utf-8");
+    const content = await fs14.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -51064,7 +45021,7 @@ WHEN TO USE:
     execute: async (args) => {
       const {
         pattern,
-        path: path6,
+        path: path5,
         glob: globPattern,
         type: fileType,
         output_mode = "files_with_matches",
@@ -51073,7 +45030,7 @@ WHEN TO USE:
         context_after = 0,
         limit
       } = args;
-      const searchPath = path6 || mergedConfig.workingDirectory;
+      const searchPath = path5 || mergedConfig.workingDirectory;
       const validation = validatePath(searchPath, {
         ...mergedConfig,
         blockedDirectories: []
@@ -51086,7 +45043,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs15.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -51102,7 +45059,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs15.stat(resolvedPath);
+        const stats = await fs14.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -51128,7 +45085,7 @@ WHEN TO USE:
           );
           if (matches.length > 0) {
             filesMatched++;
-            const relativePath = path2.relative(resolvedPath, file) || file;
+            const relativePath = path3.relative(resolvedPath, file) || file;
             for (const match of matches) {
               match.file = relativePath;
             }
@@ -51190,11 +45147,11 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs15.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs14.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
-      const fullPath = path2.join(dir, entry.name);
-      const relativePath = path2.relative(baseDir, fullPath);
+      const fullPath = path3.join(dir, entry.name);
+      const relativePath = path3.relative(baseDir, fullPath);
       if (entry.isDirectory() && config.blockedDirectories.includes(entry.name)) {
         continue;
       }
@@ -51208,7 +45165,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs15.stat(fullPath);
+        const stats = await fs14.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -51291,8 +45248,8 @@ EXAMPLES:
       return args.path;
     },
     execute: async (args) => {
-      const { path: path6, recursive = false, filter, max_depth = 3 } = args;
-      const validation = validatePath(path6, {
+      const { path: path5, recursive = false, filter, max_depth = 3 } = args;
+      const validation = validatePath(path5, {
         ...mergedConfig,
         blockedDirectories: []
         // Allow listing any valid directory
@@ -51304,18 +45261,18 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs15.existsSync(resolvedPath)) {
         return {
           success: false,
-          error: `Directory not found: ${path6}`
+          error: `Directory not found: ${path5}`
         };
       }
       try {
-        const stats = await fs15.stat(resolvedPath);
+        const stats = await fs14.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
-            error: `Path is not a directory: ${path6}. Use read_file to read file contents.`
+            error: `Path is not a directory: ${path5}. Use read_file to read file contents.`
           };
         }
         const entries = await listDir(
@@ -51493,7 +45450,7 @@ EXAMPLES:
         ...process.env,
         ...mergedConfig.env
       };
-      return new Promise((resolve5) => {
+      return new Promise((resolve4) => {
         const startTime = Date.now();
         const childProcess = child_process.spawn(command, [], {
           shell: mergedConfig.shell,
@@ -51516,7 +45473,7 @@ EXAMPLES:
               backgroundProcesses.delete(bgId);
             }, 3e5);
           });
-          resolve5({
+          resolve4({
             success: true,
             backgroundId: bgId,
             stdout: `Command started in background with ID: ${bgId}`
@@ -51560,7 +45517,7 @@ EXAMPLES:
             truncated = true;
           }
           if (killed) {
-            resolve5({
+            resolve4({
               success: false,
               stdout,
               stderr,
@@ -51571,7 +45528,7 @@ EXAMPLES:
               error: `Command timed out after ${effectiveTimeout}ms`
             });
           } else {
-            resolve5({
+            resolve4({
               success: code === 0,
               stdout,
               stderr,
@@ -51585,7 +45542,7 @@ EXAMPLES:
         });
         childProcess.on("error", (error) => {
           clearTimeout(timeoutId);
-          resolve5({
+          resolve4({
             success: false,
             error: `Failed to execute command: ${error.message}`,
             duration: Date.now() - startTime
@@ -51617,19 +45574,19 @@ function killBackgroundProcess(bgId) {
 var bash = createBashTool();
 
 // src/tools/json/pathUtils.ts
-function parsePath(path6) {
-  if (path6 === "" || path6 === "$") {
+function parsePath(path5) {
+  if (path5 === "" || path5 === "$") {
     return [];
   }
-  const keys = path6.split(".");
+  const keys = path5.split(".");
   const filtered = keys.filter((p) => p.length > 0);
   if (filtered.length !== keys.length) {
-    throw new Error(`Invalid path format: ${path6} (consecutive dots not allowed)`);
+    throw new Error(`Invalid path format: ${path5} (consecutive dots not allowed)`);
   }
   return filtered;
 }
-function getValueAtPath(obj, path6) {
-  const keys = parsePath(path6);
+function getValueAtPath(obj, path5) {
+  const keys = parsePath(path5);
   let current = obj;
   for (const key of keys) {
     if (current === null || current === void 0) {
@@ -51639,8 +45596,8 @@ function getValueAtPath(obj, path6) {
   }
   return current;
 }
-function setValueAtPath(obj, path6, value) {
-  const keys = parsePath(path6);
+function setValueAtPath(obj, path5, value) {
+  const keys = parsePath(path5);
   if (keys.length === 0) {
     throw new Error("Cannot set root object - path must not be empty");
   }
@@ -51669,8 +45626,8 @@ function setValueAtPath(obj, path6, value) {
   }
   return true;
 }
-function deleteAtPath(obj, path6) {
-  const keys = parsePath(path6);
+function deleteAtPath(obj, path5) {
+  const keys = parsePath(path5);
   if (keys.length === 0) {
     throw new Error("Cannot delete root object - path must not be empty");
   }
@@ -51700,9 +45657,9 @@ function deleteAtPath(obj, path6) {
   }
   return true;
 }
-function pathExists(obj, path6) {
+function pathExists(obj, path5) {
   try {
-    const value = getValueAtPath(obj, path6);
+    const value = getValueAtPath(obj, path5);
     return value !== void 0;
   } catch {
     return false;
@@ -53170,7 +47127,7 @@ var toolRegistry = [
     displayName: "Glob",
     category: "filesystem",
     description: "Fast file pattern matching tool that finds files by name patterns.",
-    tool: glob2,
+    tool: glob,
     safeByDefault: true
   },
   {
@@ -53197,7 +47154,7 @@ var toolRegistry = [
     displayName: "Read File",
     category: "filesystem",
     description: "Read content from a file on the local filesystem.",
-    tool: readFile5,
+    tool: readFile4,
     safeByDefault: true
   },
   {
@@ -53422,10 +47379,10 @@ var ToolRegistry = class {
 
 // src/tools/index.ts
 var developerTools = [
-  readFile5,
+  readFile4,
   writeFile4,
   editFile,
-  glob2,
+  glob,
   grep,
   listDirectory,
   bash
@@ -53609,1500 +47566,17 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
     this.agent = null;
   }
 };
-var ModeManager = class extends eventemitter3.EventEmitter {
-  state;
-  transitionHistory = [];
-  _isDestroyed = false;
-  constructor(initialMode = "interactive") {
-    super();
-    this.state = {
-      mode: initialMode,
-      enteredAt: /* @__PURE__ */ new Date(),
-      reason: "initial"
-    };
-  }
-  /**
-   * Returns true if destroy() has been called.
-   */
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Releases all resources held by this ModeManager.
-   * Removes all event listeners.
-   * Safe to call multiple times (idempotent).
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    this.transitionHistory = [];
-    this.removeAllListeners();
-  }
-  /**
-   * Get current mode
-   */
-  getMode() {
-    return this.state.mode;
-  }
-  /**
-   * Get full mode state
-   */
-  getState() {
-    return { ...this.state };
-  }
-  /**
-   * Check if a transition is allowed
-   */
-  canTransition(to) {
-    const from = this.state.mode;
-    const validTransitions = {
-      "interactive": ["planning", "executing"],
-      "planning": ["interactive", "executing"],
-      "executing": ["interactive", "planning"]
-    };
-    return validTransitions[from].includes(to);
-  }
-  /**
-   * Transition to a new mode
-   */
-  transition(to, reason) {
-    const from = this.state.mode;
-    if (!this.canTransition(to)) {
-      this.emit("mode:transition_blocked", { from, to, reason });
-      return false;
-    }
-    this.transitionHistory.push({ from, to, at: /* @__PURE__ */ new Date(), reason });
-    this.state = {
-      mode: to,
-      enteredAt: /* @__PURE__ */ new Date(),
-      reason,
-      // Clear mode-specific state on transition
-      pendingPlan: to === "planning" ? this.state.pendingPlan : void 0,
-      planApproved: to === "executing" ? true : void 0,
-      currentTaskIndex: to === "executing" ? 0 : void 0
-    };
-    this.emit("mode:changed", { from, to, reason });
-    return true;
-  }
-  /**
-   * Enter planning mode with a goal
-   */
-  enterPlanning(reason = "user_request") {
-    return this.transition("planning", reason);
-  }
-  /**
-   * Enter executing mode (plan must be approved)
-   */
-  enterExecuting(_plan, reason = "plan_approved") {
-    if (this.state.mode === "planning" && !this.state.planApproved) {
-      this.state.planApproved = true;
-    }
-    const success = this.transition("executing", reason);
-    if (success) {
-      this.state.currentTaskIndex = 0;
-    }
-    return success;
-  }
-  /**
-   * Return to interactive mode
-   */
-  returnToInteractive(reason = "completed") {
-    return this.transition("interactive", reason);
-  }
-  /**
-   * Set pending plan (in planning mode)
-   */
-  setPendingPlan(plan) {
-    this.state.pendingPlan = plan;
-    this.state.planApproved = false;
-  }
-  /**
-   * Get pending plan
-   */
-  getPendingPlan() {
-    return this.state.pendingPlan;
-  }
-  /**
-   * Approve the pending plan
-   */
-  approvePlan() {
-    if (this.state.mode !== "planning" || !this.state.pendingPlan) {
-      return false;
-    }
-    this.state.planApproved = true;
-    return true;
-  }
-  /**
-   * Check if plan is approved
-   */
-  isPlanApproved() {
-    return this.state.planApproved ?? false;
-  }
-  /**
-   * Update current task index (in executing mode)
-   */
-  setCurrentTaskIndex(index) {
-    if (this.state.mode === "executing") {
-      this.state.currentTaskIndex = index;
-    }
-  }
-  /**
-   * Get current task index
-   */
-  getCurrentTaskIndex() {
-    return this.state.currentTaskIndex ?? 0;
-  }
-  /**
-   * Pause execution
-   */
-  pauseExecution(reason) {
-    if (this.state.mode === "executing") {
-      this.state.pausedAt = /* @__PURE__ */ new Date();
-      this.state.pauseReason = reason;
-    }
-  }
-  /**
-   * Resume execution
-   */
-  resumeExecution() {
-    if (this.state.mode === "executing") {
-      this.state.pausedAt = void 0;
-      this.state.pauseReason = void 0;
-    }
-  }
-  /**
-   * Check if paused
-   */
-  isPaused() {
-    return this.state.pausedAt !== void 0;
-  }
-  /**
-   * Get pause reason
-   */
-  getPauseReason() {
-    return this.state.pauseReason;
-  }
-  /**
-   * Determine recommended mode based on intent analysis
-   */
-  recommendMode(intent, _currentPlan) {
-    const currentMode = this.state.mode;
-    switch (intent.type) {
-      case "complex":
-        if (currentMode === "interactive") {
-          return "planning";
-        }
-        break;
-      case "approval":
-        if (currentMode === "planning" && this.state.pendingPlan) {
-          return "executing";
-        }
-        break;
-      case "rejection":
-        if (currentMode === "planning") {
-          return "planning";
-        }
-        break;
-      case "plan_modify":
-        if (currentMode === "executing" || currentMode === "interactive") {
-          return "planning";
-        }
-        break;
-      case "interrupt":
-        return "interactive";
-      case "simple":
-      case "question":
-        if (currentMode === "executing") {
-          return null;
-        }
-        return "interactive";
-      case "status_query":
-        return null;
-      case "feedback":
-        return null;
-    }
-    return null;
-  }
-  /**
-   * Get transition history
-   */
-  getHistory() {
-    return [...this.transitionHistory];
-  }
-  /**
-   * Clear transition history
-   */
-  clearHistory() {
-    this.transitionHistory = [];
-  }
-  /**
-   * Get time spent in current mode
-   */
-  getTimeInCurrentMode() {
-    return Date.now() - this.state.enteredAt.getTime();
-  }
-  /**
-   * Serialize state for session persistence
-   */
-  serialize() {
-    return {
-      mode: this.state.mode,
-      enteredAt: this.state.enteredAt.toISOString(),
-      reason: this.state.reason,
-      pendingPlan: this.state.pendingPlan,
-      planApproved: this.state.planApproved,
-      currentTaskIndex: this.state.currentTaskIndex
-    };
-  }
-  /**
-   * Restore state from serialized data
-   */
-  restore(data) {
-    this.state = {
-      mode: data.mode,
-      enteredAt: new Date(data.enteredAt),
-      reason: data.reason,
-      pendingPlan: data.pendingPlan,
-      planApproved: data.planApproved,
-      currentTaskIndex: data.currentTaskIndex
-    };
-  }
-};
-
-// src/capabilities/universalAgent/metaTools.ts
-var startPlanningTool = {
-  definition: {
-    type: "function",
-    function: {
-      name: "_start_planning",
-      description: `Call this when the user's request is complex and requires a multi-step plan.
-Use for tasks that:
-- Require 3 or more distinct steps
-- Need multiple tools to be called in sequence
-- Have dependencies between actions
-- Would benefit from user review before execution
-
-Do NOT use for:
-- Simple questions
-- Single tool calls
-- Quick calculations
-- Direct information retrieval`,
-      parameters: {
-        type: "object",
-        properties: {
-          goal: {
-            type: "string",
-            description: "The high-level goal to achieve"
-          },
-          reasoning: {
-            type: "string",
-            description: "Brief explanation of why planning is needed"
-          }
-        },
-        required: ["goal", "reasoning"]
-      }
-    }
-  },
-  execute: async (args) => {
-    return { status: "planning_started", goal: args.goal };
-  }
-};
-var modifyPlanTool = {
-  definition: {
-    type: "function",
-    function: {
-      name: "_modify_plan",
-      description: `Call this when the user wants to change the current plan.
-Actions:
-- add_task: Add a new task to the plan
-- remove_task: Remove a task from the plan
-- skip_task: Mark a task to be skipped
-- update_task: Modify task description or dependencies
-- reorder: Change task order`,
-      parameters: {
-        type: "object",
-        properties: {
-          action: {
-            type: "string",
-            enum: ["add_task", "remove_task", "skip_task", "update_task", "reorder"],
-            description: "The type of modification"
-          },
-          taskName: {
-            type: "string",
-            description: "Name of the task (for remove/skip/update/reorder)"
-          },
-          details: {
-            type: "string",
-            description: "Details of the modification (new task description, updates, etc.)"
-          },
-          insertAfter: {
-            type: "string",
-            description: "For add_task/reorder: insert after this task name"
-          }
-        },
-        required: ["action", "details"]
-      }
-    }
-  },
-  execute: async (args) => {
-    return { status: "plan_modified", action: args.action };
-  }
-};
-var reportProgressTool = {
-  definition: {
-    type: "function",
-    function: {
-      name: "_report_progress",
-      description: "Call this when the user asks about current progress, status, or what has been done.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: []
-      }
-    }
-  },
-  execute: async () => {
-    return { status: "progress_reported", progress: null };
-  }
-};
-var requestApprovalTool = {
-  definition: {
-    type: "function",
-    function: {
-      name: "_request_approval",
-      description: "Call this when you need user approval to proceed. Use after creating a plan or before destructive operations.",
-      parameters: {
-        type: "object",
-        properties: {
-          message: {
-            type: "string",
-            description: "Optional message to show the user"
-          }
-        },
-        required: []
-      }
-    }
-  },
-  execute: async (args) => {
-    return { status: "approval_requested", message: args?.message };
-  }
-};
-function getMetaTools() {
-  return [
-    startPlanningTool,
-    modifyPlanTool,
-    reportProgressTool,
-    requestApprovalTool
-  ];
-}
-function isMetaTool(toolName) {
-  return toolName.startsWith("_");
-}
-var META_TOOL_NAMES = {
-  START_PLANNING: "_start_planning",
-  MODIFY_PLAN: "_modify_plan",
-  REPORT_PROGRESS: "_report_progress",
-  REQUEST_APPROVAL: "_request_approval"
-};
-
-// src/capabilities/universalAgent/UniversalAgent.ts
-var UniversalAgent = class _UniversalAgent extends BaseAgent {
-  // Core components
-  agent;
-  // Interactive agent (with meta-tools)
-  executionAgent;
-  // Execution agent (without meta-tools) - created on demand
-  modeManager;
-  planningAgent;
-  // Plugins for inherited AgentContext (from BaseAgent)
-  // Note: _agentContext is inherited from BaseAgent (single source of truth)
-  _planPlugin;
-  _memoryPlugin;
-  // Execution state
-  currentPlan = null;
-  executionHistory = [];
-  // ============================================================================
-  // Static Factory
-  // ============================================================================
-  /**
-   * Create a new UniversalAgent
-   */
-  static create(config) {
-    return new _UniversalAgent(config);
-  }
-  /**
-   * Resume an agent from a saved session
-   */
-  static async resume(sessionId, config) {
-    const agent = new _UniversalAgent({
-      ...config,
-      session: {
-        ...config.session,
-        id: sessionId
-      }
-    });
-    await agent.ensureSessionLoaded();
-    const pendingPlan = agent.modeManager.getPendingPlan();
-    if (pendingPlan) {
-      agent.currentPlan = pendingPlan;
-    }
-    return agent;
-  }
-  // ============================================================================
-  // Constructor
-  // ============================================================================
-  constructor(config) {
-    super(config, "UniversalAgent");
-    const metaTools = getMetaTools();
-    for (const tool of metaTools) {
-      this._agentContext.tools.register(tool, { namespace: "_meta" });
-    }
-    this._agentContext.systemPrompt = this.buildInstructions(config.instructions);
-    const allTools = this._agentContext.tools.getEnabled();
-    this.agent = Agent.create({
-      connector: config.connector,
-      model: config.model,
-      tools: allTools,
-      instructions: this.buildInstructions(config.instructions),
-      temperature: config.temperature,
-      maxIterations: config.maxIterations ?? 20,
-      permissions: config.permissions,
-      context: this._agentContext
-      // Share inherited AgentContext
-    });
-    this.modeManager = new ModeManager("interactive");
-    this.modeManager.on("mode:changed", (data) => {
-      this.emit("mode:changed", data);
-    });
-    const planningEnabled = config.planning?.enabled !== false;
-    if (planningEnabled) {
-      this.planningAgent = PlanningAgent.create({
-        connector: config.connector,
-        model: config.planning?.model ?? config.model,
-        availableTools: this._agentContext.tools.getEnabled().filter((t) => !isMetaTool(t.definition.function.name))
-      });
-    }
-    this.executionAgent = this.createExecutionAgent();
-    this._planPlugin = new PlanPlugin();
-    this._agentContext.registerPlugin(this._planPlugin);
-    if (this._agentContext.memory) {
-      this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
-      this._agentContext.registerPlugin(this._memoryPlugin);
-    }
-    this.initializeSession(config.session);
-  }
-  // ============================================================================
-  // Abstract Method Implementations
-  // ============================================================================
-  getAgentType() {
-    return "universal-agent";
-  }
-  // ============================================================================
-  // Session State Overrides (Agent-Level State)
-  // ============================================================================
-  /**
-   * Override to include ModeManager state in agentState field.
-   * ModeManager is agent-level state, not a context plugin.
-   */
-  async getContextState() {
-    const state = await super.getContextState();
-    state.agentState = state.agentState || {};
-    state.agentState.modeManager = this.modeManager.serialize();
-    return state;
-  }
-  /**
-   * Override to restore ModeManager state from agentState field.
-   */
-  async restoreContextState(state) {
-    await super.restoreContextState(state);
-    if (state.agentState?.modeManager) {
-      this.modeManager.restore(state.agentState.modeManager);
-    }
-  }
-  // ============================================================================
-  // Main API
-  // ============================================================================
-  /**
-   * Chat with the agent - the main entry point
-   */
-  async chat(input) {
-    if (this._isDestroyed) {
-      throw new Error("Agent has been destroyed");
-    }
-    const intent = await this.analyzeIntent(input);
-    let response;
-    switch (this.modeManager.getMode()) {
-      case "interactive":
-        response = await this.handleInteractive(input, intent);
-        break;
-      case "planning":
-        response = await this.handlePlanning(input, intent);
-        break;
-      case "executing":
-        response = await this.handleExecuting(input, intent);
-        break;
-      default:
-        throw new Error(`Unknown mode: ${this.modeManager.getMode()}`);
-    }
-    this.executionHistory.push({
-      input,
-      response,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    if (this._config.session?.autoSave && this.hasSession()) {
-      await this.saveSession().catch(() => {
-      });
-    }
-    return response;
-  }
-  /**
-   * Stream chat response
-   */
-  async *stream(input) {
-    if (this._isDestroyed) {
-      throw new Error("Agent has been destroyed");
-    }
-    const intent = await this.analyzeIntent(input);
-    const recommendedMode = this.modeManager.recommendMode(intent, this.currentPlan ?? void 0);
-    if (recommendedMode && recommendedMode !== this.modeManager.getMode()) {
-      const from = this.modeManager.getMode();
-      this.modeManager.transition(recommendedMode, intent.type);
-      yield { type: "mode:changed", from, to: recommendedMode, reason: intent.type };
-    }
-    const mode = this.modeManager.getMode();
-    if (mode === "interactive") {
-      yield* this.streamInteractive(input, intent);
-    } else if (mode === "planning") {
-      yield* this.streamPlanning(input, intent);
-    } else if (mode === "executing") {
-      yield* this.streamExecuting(intent);
-    }
-  }
-  // ============================================================================
-  // Mode Handlers
-  // ============================================================================
-  async handleInteractive(input, intent) {
-    const shouldPlan = this.shouldSwitchToPlanning(intent);
-    if (shouldPlan) {
-      await this.addToConversationHistory("user", input);
-      this.modeManager.enterPlanning("complex_task_detected");
-      return this.handlePlanning(input, intent);
-    }
-    const response = await this.agent.run(input);
-    const planningToolCall = response.output.find(
-      (item) => item.type === "tool_use" && item.name === META_TOOL_NAMES.START_PLANNING
-    );
-    if (planningToolCall) {
-      this.modeManager.enterPlanning("agent_requested");
-      const rawInput = planningToolCall.input;
-      const args = typeof rawInput === "string" ? JSON.parse(rawInput || "{}") : rawInput || {};
-      return this.createPlan(args.goal, args.reasoning);
-    }
-    const responseText = response.output_text ?? "";
-    return {
-      text: responseText,
-      mode: "interactive",
-      usage: response.usage ? {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-        totalTokens: response.usage.total_tokens
-      } : void 0
-    };
-  }
-  async handlePlanning(input, intent) {
-    if (intent.type === "approval" && this.modeManager.getPendingPlan()) {
-      return this.approvePlan(intent.feedback);
-    }
-    if (intent.type === "rejection") {
-      return this.handlePlanRejection(input, intent);
-    }
-    if (intent.type === "plan_modify" && intent.modification) {
-      return this.modifyPlan(intent.modification);
-    }
-    if (!this.modeManager.getPendingPlan()) {
-      return this.createPlan(input);
-    } else {
-      return this.refinePlan(input);
-    }
-  }
-  async handleExecuting(input, intent) {
-    if (intent.type === "interrupt") {
-      this.modeManager.pauseExecution("user_interrupt");
-      return {
-        text: "Execution paused. What would you like to do?",
-        mode: "executing",
-        taskProgress: this.getTaskProgress(),
-        needsUserAction: true,
-        userActionType: "provide_input"
-      };
-    }
-    if (intent.type === "status_query") {
-      return this.reportProgress();
-    }
-    if (intent.type === "plan_modify" && intent.modification) {
-      this.modeManager.pauseExecution("plan_modification");
-      const modifyResult = await this.modifyPlan(intent.modification);
-      this.modeManager.resumeExecution();
-      return modifyResult;
-    }
-    if (intent.type === "feedback") {
-      if (this._agentContext.memory) {
-        await this._agentContext.memory.store(
-          `user_feedback_${Date.now()}`,
-          "User feedback during execution",
-          input,
-          { scope: "persistent" }
-        );
-      }
-      return {
-        text: "Noted. I'll keep that in mind as I continue.",
-        mode: "executing",
-        taskProgress: this.getTaskProgress()
-      };
-    }
-    if (this.modeManager.isPaused()) {
-      this.modeManager.resumeExecution();
-      return this.continueExecution();
-    }
-    const response = await this.agent.run(input);
-    return {
-      text: response.output_text ?? "",
-      mode: "executing",
-      taskProgress: this.getTaskProgress()
-    };
-  }
-  // ============================================================================
-  // Streaming Handlers
-  // ============================================================================
-  async *streamInteractive(input, intent) {
-    if (this.shouldSwitchToPlanning(intent)) {
-      await this.addToConversationHistory("user", input);
-      const from = this.modeManager.getMode();
-      this.modeManager.enterPlanning("complex_task_detected");
-      yield { type: "mode:changed", from, to: "planning", reason: "complex_task_detected" };
-      yield* this.streamPlanning(input, intent);
-      return;
-    }
-    let fullText = "";
-    let planningToolArgs = null;
-    let currentToolName = "";
-    for await (const event of this.agent.stream(input)) {
-      if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
-        const delta = event.delta || "";
-        fullText += delta;
-        yield { type: "text:delta", delta };
-      } else if (event.type === "response.tool_execution.start" /* TOOL_EXECUTION_START */) {
-        currentToolName = event.tool_name || "unknown";
-        const args = event.arguments || null;
-        yield { type: "tool:start", name: currentToolName, args };
-        if (currentToolName === META_TOOL_NAMES.START_PLANNING && args) {
-          planningToolArgs = typeof args === "string" ? JSON.parse(args) : args;
-        }
-      } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
-        yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
-      }
-    }
-    if (planningToolArgs) {
-      this.modeManager.enterPlanning("agent_requested");
-      yield { type: "mode:changed", from: "interactive", to: "planning", reason: "agent_requested" };
-      const plan = await this.createPlanInternal(planningToolArgs.goal);
-      this.modeManager.setPendingPlan(plan);
-      this.currentPlan = plan;
-      this._planPlugin.setPlan(plan);
-      yield { type: "plan:created", plan };
-      if (this._config.planning?.requireApproval !== false) {
-        yield { type: "plan:awaiting_approval", plan };
-        yield { type: "needs:approval", plan };
-        const summary = this.formatPlanSummary(plan);
-        await this.addToConversationHistory("assistant", summary);
-        yield { type: "text:delta", delta: "\n\n" + summary };
-        yield { type: "text:done", text: fullText + "\n\n" + summary };
-      }
-      return;
-    }
-    yield { type: "text:done", text: fullText };
-  }
-  async *streamPlanning(input, intent) {
-    if (intent.type !== "approval") {
-      await this.addToConversationHistory("user", input);
-    }
-    if (intent.type === "approval" && this.modeManager.getPendingPlan()) {
-      const plan2 = this.modeManager.getPendingPlan();
-      this.modeManager.approvePlan();
-      yield { type: "plan:approved", plan: plan2 };
-      await this.addToConversationHistory("assistant", `Plan approved. Starting execution of ${plan2.tasks.length} tasks.`);
-      this.modeManager.enterExecuting(plan2, "plan_approved");
-      yield { type: "mode:changed", from: "planning", to: "executing", reason: "plan_approved" };
-      yield* this.streamExecution();
-      return;
-    }
-    yield { type: "plan:analyzing", goal: input };
-    const plan = await this.createPlanInternal(input);
-    this.modeManager.setPendingPlan(plan);
-    this.currentPlan = plan;
-    this._planPlugin.setPlan(plan);
-    yield { type: "plan:created", plan };
-    if (this._config.planning?.requireApproval !== false) {
-      yield { type: "plan:awaiting_approval", plan };
-      yield { type: "needs:approval", plan };
-      const summary = this.formatPlanSummary(plan);
-      await this.addToConversationHistory("assistant", summary);
-      yield { type: "text:delta", delta: summary };
-      yield { type: "text:done", text: summary };
-    }
-  }
-  async *streamExecuting(intent) {
-    if (intent.type === "status_query") {
-      const progress = this.getTaskProgress();
-      const text = this.formatProgress(progress);
-      yield { type: "text:delta", delta: text };
-      yield { type: "text:done", text };
-      return;
-    }
-    yield* this.streamExecution();
-  }
-  async *streamExecution() {
-    if (!this.currentPlan) {
-      yield { type: "error", error: "No plan to execute", recoverable: false };
-      return;
-    }
-    if (!this.executionAgent) {
-      this.executionAgent = this.createExecutionAgent();
-    }
-    const tasks = this.currentPlan.tasks;
-    let completedTasks = 0;
-    let failedTasks = 0;
-    for (let i = 0; i < tasks.length; i++) {
-      const task = tasks[i];
-      if (!task) continue;
-      if (this.modeManager.isPaused()) {
-        yield { type: "execution:paused", reason: this.modeManager.getPauseReason() || "unknown" };
-        return;
-      }
-      if (task.status === "completed" || task.status === "failed" || task.status === "skipped") {
-        if (task.status === "completed") completedTasks++;
-        if (task.status === "failed") failedTasks++;
-        continue;
-      }
-      task.status = "in_progress";
-      task.startedAt = Date.now();
-      task.attempts = (task.attempts || 0) + 1;
-      this.modeManager.setCurrentTaskIndex(i);
-      yield { type: "task:started", task };
-      try {
-        const prompt = this.buildTaskPromptWithContext(task, i);
-        let taskResultText = "";
-        for await (const event of this.executionAgent.stream(prompt)) {
-          if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
-            const delta = event.delta || "";
-            taskResultText += delta;
-            yield { type: "task:progress", task, status: delta };
-          } else if (event.type === "response.tool_execution.start" /* TOOL_EXECUTION_START */) {
-            yield { type: "tool:start", name: event.tool_name || "unknown", args: event.arguments || null };
-          } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
-            yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
-          }
-        }
-        task.status = "completed";
-        task.completedAt = Date.now();
-        task.result = { success: true, output: taskResultText };
-        completedTasks++;
-        await this.addToConversationHistory("assistant", `Completed task "${task.name}": ${taskResultText.substring(0, 200)}${taskResultText.length > 200 ? "..." : ""}`);
-        yield { type: "task:completed", task, result: taskResultText };
-      } catch (error) {
-        task.status = "failed";
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        task.result = { success: false, error: errorMsg };
-        failedTasks++;
-        await this.addToConversationHistory("assistant", `Task "${task.name}" failed: ${errorMsg}`);
-        yield { type: "task:failed", task, error: errorMsg };
-      }
-    }
-    const result = {
-      status: failedTasks === 0 ? "completed" : "failed",
-      completedTasks,
-      totalTasks: tasks.length,
-      failedTasks,
-      skippedTasks: tasks.filter((t) => t.status === "skipped").length
-    };
-    const finalResponse = this.generateExecutionSummary(tasks);
-    yield { type: "text:delta", delta: "\n" + finalResponse };
-    yield { type: "text:done", text: finalResponse };
-    await this.addToConversationHistory("assistant", finalResponse);
-    yield { type: "execution:done", result };
-    this.modeManager.returnToInteractive("execution_completed");
-    yield { type: "mode:changed", from: "executing", to: "interactive", reason: "execution_completed" };
-    this.emit("execution:completed", { result });
-  }
-  /**
-   * Generate a user-facing summary from task execution results.
-   * Returns the output of the last successful task, or a status summary if all failed.
-   */
-  generateExecutionSummary(tasks) {
-    const completedTasks = tasks.filter((t) => t.status === "completed" && t.result?.output);
-    if (completedTasks.length > 0) {
-      const lastTask = completedTasks[completedTasks.length - 1];
-      if (lastTask && lastTask.result?.output) {
-        const output = lastTask.result.output;
-        return typeof output === "string" ? output : JSON.stringify(output, null, 2);
-      }
-    }
-    const failedTasks = tasks.filter((t) => t.status === "failed");
-    if (failedTasks.length > 0) {
-      const errors = failedTasks.map((t) => `- ${t.name}: ${t.result?.error || "Unknown error"}`).join("\n");
-      return `Plan execution encountered errors:
-${errors}`;
-    }
-    return "Plan execution completed but no output was generated.";
-  }
-  // ============================================================================
-  // Planning Helpers
-  // ============================================================================
-  async createPlan(goal, _reasoning) {
-    const plan = await this.createPlanInternal(goal);
-    this.modeManager.setPendingPlan(plan);
-    this.currentPlan = plan;
-    this._planPlugin.setPlan(plan);
-    this.emit("plan:created", { plan });
-    const summary = this.formatPlanSummary(plan);
-    const requireApproval = this._config.planning?.requireApproval !== false;
-    return {
-      text: summary,
-      mode: "planning",
-      plan,
-      planStatus: requireApproval ? "pending_approval" : "approved",
-      needsUserAction: requireApproval,
-      userActionType: requireApproval ? "approve_plan" : void 0
-    };
-  }
-  async createPlanInternal(goal) {
-    if (this.planningAgent) {
-      const result = await this.planningAgent.generatePlan({ goal });
-      return createPlan({ goal, tasks: result.plan.tasks });
-    }
-    return createPlan({
-      goal,
-      tasks: [{ name: "execute", description: goal }]
-    });
-  }
-  async approvePlan(_feedback) {
-    const plan = this.modeManager.getPendingPlan();
-    if (!plan) {
-      return {
-        text: "No plan to approve.",
-        mode: this.modeManager.getMode()
-      };
-    }
-    this.modeManager.approvePlan();
-    this.modeManager.enterExecuting(plan, "user_approved");
-    this.currentPlan = plan;
-    this._planPlugin.setPlan(plan);
-    this.emit("plan:approved", { plan });
-    return this.continueExecution();
-  }
-  async handlePlanRejection(_input, intent) {
-    if (intent.feedback) {
-      return this.refinePlan(intent.feedback);
-    }
-    return {
-      text: "I understand you'd like to change the plan. What would you like me to modify?",
-      mode: "planning",
-      plan: this.modeManager.getPendingPlan(),
-      needsUserAction: true,
-      userActionType: "provide_input"
-    };
-  }
-  async refinePlan(feedback) {
-    const currentPlan = this.modeManager.getPendingPlan();
-    if (!currentPlan || !this.planningAgent) {
-      return this.createPlan(feedback);
-    }
-    const refined = await this.planningAgent.refinePlan(currentPlan, feedback);
-    this.modeManager.setPendingPlan(refined.plan);
-    this.currentPlan = refined.plan;
-    this._planPlugin.setPlan(refined.plan);
-    this.emit("plan:modified", { plan: refined.plan, changes: [] });
-    return {
-      text: this.formatPlanSummary(refined.plan),
-      mode: "planning",
-      plan: refined.plan,
-      planStatus: "pending_approval",
-      needsUserAction: true,
-      userActionType: "approve_plan"
-    };
-  }
-  async modifyPlan(modification) {
-    if (!modification || !this.currentPlan) {
-      return {
-        text: "No active plan to modify.",
-        mode: this.modeManager.getMode()
-      };
-    }
-    const changes = [];
-    switch (modification.action) {
-      case "add_task": {
-        const newTask = createTask({
-          name: `task_${this.currentPlan.tasks.length + 1}`,
-          description: modification.details ?? "New task"
-        });
-        this.currentPlan.tasks.push(newTask);
-        changes.push({ type: "task_added", taskId: newTask.id, taskName: newTask.name, details: modification.details });
-        break;
-      }
-      case "remove_task": {
-        const idx = this.currentPlan.tasks.findIndex((t) => t.name === modification.taskName);
-        if (idx >= 0) {
-          this.currentPlan.tasks.splice(idx, 1);
-          changes.push({ type: "task_removed", taskName: modification.taskName });
-        }
-        break;
-      }
-      case "skip_task": {
-        const task = this.currentPlan.tasks.find((t) => t.name === modification.taskName);
-        if (task) {
-          task.status = "skipped";
-          changes.push({ type: "task_updated", taskId: task.id, taskName: task.name, details: "Marked as skipped" });
-        }
-        break;
-      }
-      case "update_task": {
-        const task = this.currentPlan.tasks.find((t) => t.name === modification.taskName);
-        if (task && modification.details) {
-          task.description = modification.details;
-          changes.push({ type: "task_updated", taskId: task.id, taskName: task.name, details: modification.details });
-        }
-        break;
-      }
-    }
-    this.currentPlan.lastUpdatedAt = Date.now();
-    this.emit("plan:modified", { plan: this.currentPlan, changes });
-    return {
-      text: `Plan updated: ${changes.map((c) => c.details || c.type).join(", ")}`,
-      mode: this.modeManager.getMode(),
-      plan: this.currentPlan
-    };
-  }
-  // ============================================================================
-  // Execution Helpers
-  // ============================================================================
-  async continueExecution() {
-    if (!this.currentPlan) {
-      return {
-        text: "No plan to execute.",
-        mode: "interactive"
-      };
-    }
-    const tasks = this.currentPlan.tasks;
-    const pendingTasks = tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
-    if (pendingTasks.length === 0) {
-      this.modeManager.returnToInteractive("all_tasks_completed");
-      return {
-        text: "All tasks completed!",
-        mode: "interactive",
-        taskProgress: this.getTaskProgress()
-      };
-    }
-    const nextTask = pendingTasks[0];
-    if (!nextTask) {
-      throw new Error("No pending task found");
-    }
-    nextTask.status = "in_progress";
-    nextTask.startedAt = Date.now();
-    nextTask.attempts = (nextTask.attempts || 0) + 1;
-    this.emit("task:started", { task: nextTask });
-    try {
-      const prompt = this.buildTaskPrompt(nextTask);
-      const response = await this.agent.run(prompt);
-      nextTask.status = "completed";
-      nextTask.completedAt = Date.now();
-      nextTask.result = { success: true, output: response.output_text };
-      this.emit("task:completed", { task: nextTask, result: response.output_text });
-      const remaining = tasks.filter((t) => t.status === "pending");
-      if (remaining.length > 0) {
-        return {
-          text: `Completed: ${nextTask.name}
-
-Continuing to next task...`,
-          mode: "executing",
-          taskProgress: this.getTaskProgress()
-        };
-      } else {
-        this.modeManager.returnToInteractive("all_tasks_completed");
-        return {
-          text: `All tasks completed!
-
-Final task result:
-${response.output_text}`,
-          mode: "interactive",
-          taskProgress: this.getTaskProgress()
-        };
-      }
-    } catch (error) {
-      nextTask.status = "failed";
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      nextTask.result = { success: false, error: errorMsg };
-      this.emit("task:failed", { task: nextTask, error: errorMsg });
-      return {
-        text: `Task failed: ${errorMsg}`,
-        mode: "executing",
-        taskProgress: this.getTaskProgress()
-      };
-    }
-  }
-  reportProgress() {
-    const progress = this.getTaskProgress();
-    return {
-      text: this.formatProgress(progress),
-      mode: this.modeManager.getMode(),
-      taskProgress: progress
-    };
-  }
-  // ============================================================================
-  // Intent Analysis
-  // ============================================================================
-  async analyzeIntent(input) {
-    const lowerInput = input.toLowerCase().trim();
-    if (this.isApproval(lowerInput)) {
-      return { type: "approval", confidence: 0.9 };
-    }
-    if (this.isRejection(lowerInput)) {
-      return { type: "rejection", confidence: 0.9, feedback: input };
-    }
-    if (this.isStatusQuery(lowerInput)) {
-      return { type: "status_query", confidence: 0.9 };
-    }
-    if (this.isInterrupt(lowerInput)) {
-      return { type: "interrupt", confidence: 0.9 };
-    }
-    if (this.isPlanModification(lowerInput)) {
-      return {
-        type: "plan_modify",
-        confidence: 0.8,
-        modification: this.parsePlanModification(input)
-      };
-    }
-    const complexity = this.estimateComplexity(input);
-    if (complexity === "high" || complexity === "medium") {
-      return {
-        type: "complex",
-        confidence: 0.7,
-        complexity,
-        estimatedSteps: this.estimateSteps(input)
-      };
-    }
-    return { type: "simple", confidence: 0.8 };
-  }
-  isApproval(input) {
-    const approvalPatterns = [
-      /^(yes|yeah|yep|sure|ok|okay|go ahead|proceed|approve|looks good|lgtm|do it|start|execute|run it)$/i,
-      /^(that('s| is) (good|fine|great|perfect))$/i,
-      /^(please proceed|please continue|continue)$/i
-    ];
-    return approvalPatterns.some((p) => p.test(input));
-  }
-  isRejection(input) {
-    const rejectionPatterns = [
-      /^(no|nope|nah|stop|cancel|reject|don't|wait)$/i,
-      /^(that('s| is) (wrong|not right|incorrect))$/i,
-      /change|modify|different|instead/i
-    ];
-    return rejectionPatterns.some((p) => p.test(input));
-  }
-  isStatusQuery(input) {
-    const statusPatterns = [
-      /status|progress|where are (you|we)|what('s| is) (the )?(status|progress)/i,
-      /how('s| is) it going|what have you done|current state/i,
-      /which task|what task/i
-    ];
-    return statusPatterns.some((p) => p.test(input));
-  }
-  isInterrupt(input) {
-    const interruptPatterns = [
-      /^(stop|pause|wait|hold on|hold up)$/i,
-      /stop (what you're doing|execution|everything)/i
-    ];
-    return interruptPatterns.some((p) => p.test(input));
-  }
-  isPlanModification(input) {
-    const modPatterns = [
-      /add (a )?task|new task|also (do|add)|additionally/i,
-      /remove (the )?task|skip (the )?task|don't do/i,
-      /change (the )?order|reorder|do .* first|prioritize/i,
-      /update (the )?task|modify (the )?task/i
-    ];
-    return modPatterns.some((p) => p.test(input));
-  }
-  parsePlanModification(input) {
-    const lowerInput = input.toLowerCase();
-    if (/add|new|also|additionally/.test(lowerInput)) {
-      return { action: "add_task", details: input };
-    }
-    if (/remove|skip|don't/.test(lowerInput)) {
-      return { action: "skip_task", details: input };
-    }
-    if (/reorder|first|prioritize/.test(lowerInput)) {
-      return { action: "reorder", details: input };
-    }
-    return { action: "update_task", details: input };
-  }
-  /**
-   * Check if the input is a simple single-tool request that shouldn't trigger planning.
-   * These are common patterns like web searches, lookups, etc.
-   */
-  isSingleToolRequest(input) {
-    const lowerInput = input.toLowerCase();
-    const singleToolPatterns = [
-      // Web search patterns
-      /^(search|google|look\s*up|find)\s+(the\s+)?(web|internet|online)?\s*(for|about)?\s+/i,
-      /^(search|find|look\s*up)\s+/i,
-      /^what\s+(is|are|was|were)\s+/i,
-      /^who\s+(is|are|was|were)\s+/i,
-      /^where\s+(is|are|was|were)\s+/i,
-      /^when\s+(did|was|were|is)\s+/i,
-      /^how\s+(do|does|did|to|much|many)\s+/i,
-      // Web fetch patterns
-      /^(fetch|get|read|open|visit|go\s+to)\s+(the\s+)?(url|page|website|site|link)/i,
-      /^(fetch|get|scrape)\s+https?:\/\//i,
-      // Simple calculations/lookups
-      /^(calculate|compute|what\s+is)\s+\d/i,
-      /^(tell\s+me|show\s+me|give\s+me)\s+(about|the)/i,
-      // Summary requests (still single action)
-      /^(summarize|summary\s+of)\s+/i
-    ];
-    if (singleToolPatterns.some((p) => p.test(lowerInput))) {
-      return true;
-    }
-    const presentationSuffixes = /\s+and\s+(show|display|give|tell|present|list|summarize|provide)\s+(me\s+)?(the\s+)?(results?|summary|findings?|answer|info|information)/i;
-    if (presentationSuffixes.test(lowerInput)) {
-      return true;
-    }
-    return false;
-  }
-  estimateComplexity(input) {
-    if (this.isSingleToolRequest(input)) {
-      return "low";
-    }
-    const words = input.split(/\s+/).length;
-    const lowerInput = input.toLowerCase();
-    const actionVerbs = [
-      "search",
-      "find",
-      "create",
-      "build",
-      "write",
-      "send",
-      "email",
-      "delete",
-      "update",
-      "fetch",
-      "scrape",
-      "download",
-      "upload",
-      "install",
-      "deploy",
-      "configure",
-      "setup",
-      "migrate",
-      "refactor",
-      "analyze",
-      "compare",
-      "merge",
-      "split",
-      "convert",
-      "transform"
-    ];
-    const foundVerbs = actionVerbs.filter((v) => new RegExp(`\\b${v}\\b`, "i").test(lowerInput));
-    const hasMultipleDistinctActions = foundVerbs.length >= 2;
-    const hasComplexKeywords = /\b(build|create|implement|design|develop|setup|configure|migrate|refactor|deploy|integrate)\b/i.test(lowerInput);
-    const hasSequentialKeywords = /\b(then|after\s+that|next|finally|first\s+.+\s+then|step\s+\d)\b/i.test(lowerInput);
-    if (words > 50 || hasMultipleDistinctActions && hasSequentialKeywords) {
-      return "high";
-    }
-    if (hasMultipleDistinctActions || hasComplexKeywords && words > 15) {
-      return "medium";
-    }
-    return "low";
-  }
-  estimateSteps(input) {
-    const andCount = (input.match(/\band\b/gi) || []).length;
-    const thenCount = (input.match(/\bthen\b/gi) || []).length;
-    return Math.max(2, andCount + thenCount + 1);
-  }
-  shouldSwitchToPlanning(intent) {
-    if (this._config.planning?.enabled !== false && this._config.planning?.autoDetect !== false) {
-      return intent.type === "complex" && (intent.complexity === "high" || intent.complexity === "medium");
-    }
-    return false;
-  }
-  // ============================================================================
-  // Execution Agent (without meta-tools)
-  // ============================================================================
-  /**
-   * Create a separate agent for task execution that doesn't have meta-tools.
-   * This prevents the agent from calling _start_planning during task execution.
-   * Shares AgentContext with parent UniversalAgent for history/memory continuity.
-   */
-  createExecutionAgent() {
-    const userTools = this._agentContext.tools.getEnabled().filter((t) => !isMetaTool(t.definition.function.name));
-    return Agent.create({
-      connector: this._config.connector,
-      model: this._config.model,
-      tools: userTools,
-      instructions: this.buildExecutionInstructions(),
-      temperature: this._config.temperature,
-      maxIterations: this._config.maxIterations ?? 20,
-      permissions: this._config.permissions,
-      context: this._agentContext
-      // Share context with execution agent for history/memory continuity
-    });
-  }
-  /**
-   * Build instructions for the execution agent (task-focused)
-   * Uses user's custom instructions if provided, otherwise falls back to default
-   */
-  buildExecutionInstructions() {
-    if (this._config.instructions && this._config.instructions.trim()) {
-      return this._config.instructions;
-    }
-    return `You are an AI assistant executing specific tasks. Focus on completing the assigned task using the available tools.
-
-Guidelines:
-- Execute the task described in the prompt
-- Use the appropriate tools to accomplish the task
-- Report results clearly and concisely
-- If you encounter errors, explain what went wrong`;
-  }
-  // ============================================================================
-  // Conversation History & Context (via AgentContext)
-  // ============================================================================
-  /**
-   * Add a message to conversation history (via AgentContext)
-   */
-  async addToConversationHistory(role, content) {
-    await this._agentContext.addMessage(role, content);
-  }
-  // ============================================================================
-  // Helpers
-  // ============================================================================
-  buildInstructions(userInstructions) {
-    const baseInstructions = `You are a versatile AI assistant that can handle both simple requests and complex multi-step tasks.
-
-For simple requests:
-- Answer questions directly
-- Use tools when needed for immediate results
-
-For complex requests:
-- Use the _start_planning tool to create a structured plan
-- Wait for user approval before executing
-
-You have access to meta-tools:
-- _start_planning: Call when a task needs multiple steps
-- _modify_plan: Call when user wants to change the plan
-- _report_progress: Call when user asks about status
-- _request_approval: Call when you need user confirmation
-
-Always be helpful, clear, and ask for clarification when needed.`;
-    return userInstructions ? `${baseInstructions}
-
-Additional instructions:
-${userInstructions}` : baseInstructions;
-  }
-  buildTaskPrompt(task) {
-    let prompt = `Execute the following task:
-
-Task: ${task.name}
-Description: ${task.description}`;
-    if (task.expectedOutput) {
-      prompt += `
-Expected Output: ${task.expectedOutput}`;
-    }
-    return prompt;
-  }
-  /**
-   * Build task prompt with full context (plan goal, completed tasks, etc.)
-   */
-  buildTaskPromptWithContext(task, taskIndex) {
-    const parts = [];
-    if (this.currentPlan) {
-      parts.push(`## Overall Goal
-${this.currentPlan.goal}
-`);
-      const completedTasks = this.currentPlan.tasks.slice(0, taskIndex).filter((t) => t.status === "completed");
-      if (completedTasks.length > 0) {
-        parts.push(`## Previously Completed Tasks`);
-        for (const completed of completedTasks) {
-          const output = completed.result?.output ? typeof completed.result.output === "string" ? completed.result.output.substring(0, 300) : JSON.stringify(completed.result.output).substring(0, 300) : "No output recorded";
-          parts.push(`- **${completed.name}**: ${completed.description}
-  Result: ${output}`);
-        }
-        parts.push("");
-      }
-    }
-    parts.push(`## Current Task (${taskIndex + 1}/${this.currentPlan?.tasks.length || 1})`);
-    parts.push(`**Name**: ${task.name}`);
-    parts.push(`**Description**: ${task.description}`);
-    if (task.expectedOutput) {
-      parts.push(`**Expected Output**: ${task.expectedOutput}`);
-    }
-    parts.push("");
-    parts.push("Execute this task now using the available tools. Be thorough and report results clearly.");
-    return parts.join("\n");
-  }
-  formatPlanSummary(plan) {
-    let summary = `I've created a plan to: ${plan.goal}
-
-`;
-    summary += `Tasks (${plan.tasks.length}):
-`;
-    plan.tasks.forEach((task, i) => {
-      const deps = task.dependsOn?.length ? ` (depends on: ${task.dependsOn.join(", ")})` : "";
-      summary += `${i + 1}. ${task.name}: ${task.description}${deps}
-`;
-    });
-    summary += "\nWould you like me to proceed with this plan?";
-    return summary;
-  }
-  formatProgress(progress) {
-    let text = `Progress: ${progress.completed}/${progress.total} tasks completed`;
-    if (progress.failed > 0) {
-      text += ` (${progress.failed} failed)`;
-    }
-    if (progress.skipped > 0) {
-      text += ` (${progress.skipped} skipped)`;
-    }
-    if (progress.current) {
-      text += `
-
-Currently working on: ${progress.current.name}`;
-    }
-    return text;
-  }
-  getTaskProgress() {
-    if (!this.currentPlan) {
-      return { completed: 0, total: 0, failed: 0, skipped: 0 };
-    }
-    const tasks = this.currentPlan.tasks;
-    const currentIdx = this.modeManager.getCurrentTaskIndex();
-    return {
-      completed: tasks.filter((t) => t.status === "completed").length,
-      total: tasks.length,
-      current: tasks[currentIdx],
-      failed: tasks.filter((t) => t.status === "failed").length,
-      skipped: tasks.filter((t) => t.status === "skipped").length
-    };
-  }
-  // ============================================================================
-  // Public Getters
-  // ============================================================================
-  getMode() {
-    return this.modeManager.getMode();
-  }
-  getPlan() {
-    return this.currentPlan;
-  }
-  getProgress() {
-    if (this.modeManager.getMode() !== "executing" || !this.currentPlan) {
-      return null;
-    }
-    return this.getTaskProgress();
-  }
-  /**
-   * Access to tool manager (alias for `tools` getter from BaseAgent)
-   * @deprecated Use `tools` instead for consistency with other agents
-   */
-  get toolManager() {
-    return this._agentContext.tools;
-  }
-  // ============================================================================
-  // Unified Context Access
-  // ============================================================================
-  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
-  // The inherited getter returns the AgentContext which is always available after BaseAgent constructor
-  /**
-   * Check if context is available (always true since AgentContext is created by BaseAgent)
-   */
-  hasContext() {
-    return true;
-  }
-  // ============================================================================
-  // Runtime Configuration
-  // ============================================================================
-  setAutoApproval(value) {
-    if (this._config.planning) {
-      this._config.planning.requireApproval = !value;
-    }
-  }
-  setPlanningEnabled(value) {
-    if (this._config.planning) {
-      this._config.planning.enabled = value;
-    }
-  }
-  // ============================================================================
-  // Control
-  // ============================================================================
-  _isPaused = false;
-  pause() {
-    this._isPaused = true;
-    if (this.modeManager.getMode() === "executing") {
-      this.modeManager.pauseExecution("user_request");
-    }
-  }
-  resume() {
-    this._isPaused = false;
-    if (this.modeManager.isPaused()) {
-      this.modeManager.resumeExecution();
-    }
-  }
-  cancel() {
-    if (this.currentPlan) {
-      this.currentPlan.status = "cancelled";
-    }
-    this.modeManager.returnToInteractive("cancelled");
-  }
-  isRunning() {
-    return this.modeManager.getMode() === "executing" && !this.isPaused();
-  }
-  isPaused() {
-    return this._isPaused || this.modeManager.isPaused();
-  }
-  // ============================================================================
-  // Cleanup
-  // ============================================================================
-  destroy() {
-    if (this._isDestroyed) return;
-    this._logger.debug("UniversalAgent destroy started");
-    for (const callback of this._cleanupCallbacks) {
-      try {
-        callback();
-      } catch (error) {
-        this._logger.error({ error: error.message }, "Cleanup callback error");
-      }
-    }
-    this._cleanupCallbacks = [];
-    this.modeManager.removeAllListeners();
-    this.agent.destroy();
-    if (this.executionAgent) {
-      this.executionAgent.destroy();
-    }
-    this.modeManager.destroy();
-    this.baseDestroy();
-    this._logger.debug("UniversalAgent destroyed");
-  }
-};
 
 exports.AGENT_DEFINITION_FORMAT_VERSION = AGENT_DEFINITION_FORMAT_VERSION;
 exports.AIError = AIError;
 exports.APPROVAL_STATE_VERSION = APPROVAL_STATE_VERSION;
-exports.AUTO_SPILL_INSTRUCTIONS = AUTO_SPILL_INSTRUCTIONS;
 exports.AdaptiveStrategy = AdaptiveStrategy;
 exports.Agent = Agent;
-exports.AgentContext = AgentContext;
+exports.AgentContextNextGen = AgentContextNextGen;
 exports.AggressiveCompactionStrategy = AggressiveCompactionStrategy;
 exports.ApproximateTokenEstimator = ApproximateTokenEstimator;
-exports.AutoSpillPlugin = AutoSpillPlugin;
 exports.BaseMediaProvider = BaseMediaProvider;
+exports.BasePluginNextGen = BasePluginNextGen;
 exports.BaseProvider = BaseProvider;
 exports.BaseTextProvider = BaseTextProvider;
 exports.BraveProvider = BraveProvider;
@@ -55116,11 +47590,11 @@ exports.ContextGuardian = ContextGuardian;
 exports.ContextOverflowError = ContextOverflowError;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
+exports.DEFAULT_CONFIG = DEFAULT_CONFIG2;
 exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;
 exports.DEFAULT_FEATURES = DEFAULT_FEATURES;
 exports.DEFAULT_FILESYSTEM_CONFIG = DEFAULT_FILESYSTEM_CONFIG;
 exports.DEFAULT_HISTORY_MANAGER_CONFIG = DEFAULT_HISTORY_MANAGER_CONFIG;
-exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
 exports.DEFAULT_MEMORY_CONFIG = DEFAULT_MEMORY_CONFIG;
 exports.DEFAULT_PERMISSION_CONFIG = DEFAULT_PERMISSION_CONFIG;
 exports.DEFAULT_RATE_LIMITER_CONFIG = DEFAULT_RATE_LIMITER_CONFIG;
@@ -55133,16 +47607,12 @@ exports.FileAgentDefinitionStorage = FileAgentDefinitionStorage;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileContextStorage = FileContextStorage;
 exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
-exports.FileSearchSource = FileSearchSource;
 exports.FileStorage = FileStorage;
 exports.HookManager = HookManager;
 exports.IMAGE_MODELS = IMAGE_MODELS;
 exports.IMAGE_MODEL_REGISTRY = IMAGE_MODEL_REGISTRY;
-exports.INTROSPECTION_INSTRUCTIONS = INTROSPECTION_INSTRUCTIONS;
-exports.IN_CONTEXT_MEMORY_INSTRUCTIONS = IN_CONTEXT_MEMORY_INSTRUCTIONS;
-exports.IdempotencyCache = IdempotencyCache;
 exports.ImageGeneration = ImageGeneration;
-exports.InContextMemoryPlugin = InContextMemoryPlugin;
+exports.InContextMemoryPluginNextGen = InContextMemoryPluginNextGen;
 exports.InMemoryAgentStateStorage = InMemoryAgentStateStorage;
 exports.InMemoryHistoryStorage = InMemoryHistoryStorage;
 exports.InMemoryPlanStorage = InMemoryPlanStorage;
@@ -55160,18 +47630,14 @@ exports.MCPResourceError = MCPResourceError;
 exports.MCPTimeoutError = MCPTimeoutError;
 exports.MCPToolError = MCPToolError;
 exports.MEMORY_PRIORITY_VALUES = MEMORY_PRIORITY_VALUES;
-exports.META_TOOL_NAMES = META_TOOL_NAMES;
 exports.MODEL_REGISTRY = MODEL_REGISTRY;
 exports.MemoryConnectorStorage = MemoryConnectorStorage;
 exports.MemoryEvictionCompactor = MemoryEvictionCompactor;
 exports.MessageBuilder = MessageBuilder;
 exports.MessageRole = MessageRole;
-exports.ModeManager = ModeManager;
 exports.ModelNotSupportedError = ModelNotSupportedError;
-exports.PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = PERSISTENT_INSTRUCTIONS_INSTRUCTIONS;
 exports.ParallelTasksError = ParallelTasksError;
-exports.PersistentInstructionsPlugin = PersistentInstructionsPlugin;
-exports.PlanExecutor = PlanExecutor;
+exports.PersistentInstructionsPluginNextGen = PersistentInstructionsPluginNextGen;
 exports.PlanningAgent = PlanningAgent;
 exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
 exports.ProviderAuthError = ProviderAuthError;
@@ -55183,12 +47649,12 @@ exports.ProviderNotFoundError = ProviderNotFoundError;
 exports.ProviderRateLimitError = ProviderRateLimitError;
 exports.RapidAPIProvider = RapidAPIProvider;
 exports.RateLimitError = RateLimitError;
-exports.ResearchAgent = ResearchAgent;
 exports.RollingWindowStrategy = RollingWindowStrategy;
 exports.SERVICE_DEFINITIONS = SERVICE_DEFINITIONS;
 exports.SERVICE_INFO = SERVICE_INFO;
 exports.SERVICE_URL_PATTERNS = SERVICE_URL_PATTERNS;
 exports.SIMPLE_ICONS_CDN = SIMPLE_ICONS_CDN;
+exports.STRATEGY_THRESHOLDS = STRATEGY_THRESHOLDS;
 exports.STT_MODELS = STT_MODELS;
 exports.STT_MODEL_REGISTRY = STT_MODEL_REGISTRY;
 exports.ScrapeProvider = ScrapeProvider;
@@ -55201,11 +47667,8 @@ exports.StreamHelpers = StreamHelpers;
 exports.StreamState = StreamState;
 exports.SummarizeCompactor = SummarizeCompactor;
 exports.TERMINAL_TASK_STATUSES = TERMINAL_TASK_STATUSES;
-exports.TOOL_OUTPUT_TRACKING_INSTRUCTIONS = TOOL_OUTPUT_TRACKING_INSTRUCTIONS;
-exports.TOOL_RESULT_EVICTION_INSTRUCTIONS = TOOL_RESULT_EVICTION_INSTRUCTIONS;
 exports.TTS_MODELS = TTS_MODELS;
 exports.TTS_MODEL_REGISTRY = TTS_MODEL_REGISTRY;
-exports.TaskAgent = TaskAgent;
 exports.TaskTimeoutError = TaskTimeoutError;
 exports.TaskValidationError = TaskValidationError;
 exports.TavilyProvider = TavilyProvider;
@@ -55215,22 +47678,18 @@ exports.ToolCallState = ToolCallState;
 exports.ToolExecutionError = ToolExecutionError;
 exports.ToolManager = ToolManager;
 exports.ToolNotFoundError = ToolNotFoundError;
-exports.ToolOutputPlugin = ToolOutputPlugin;
 exports.ToolPermissionManager = ToolPermissionManager;
 exports.ToolRegistry = ToolRegistry;
-exports.ToolResultEvictionPlugin = ToolResultEvictionPlugin;
 exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
-exports.UniversalAgent = UniversalAgent;
 exports.VENDORS = VENDORS;
 exports.VENDOR_ICON_MAP = VENDOR_ICON_MAP;
 exports.VIDEO_MODELS = VIDEO_MODELS;
 exports.VIDEO_MODEL_REGISTRY = VIDEO_MODEL_REGISTRY;
 exports.Vendor = Vendor;
 exports.VideoGeneration = VideoGeneration;
-exports.WORKING_MEMORY_INSTRUCTIONS = WORKING_MEMORY_INSTRUCTIONS;
-exports.WebSearchSource = WebSearchSource;
 exports.WorkingMemory = WorkingMemory;
+exports.WorkingMemoryPluginNextGen = WorkingMemoryPluginNextGen;
 exports.addJitter = addJitter;
 exports.allVendorTemplates = allVendorTemplates;
 exports.assertNotDestroyed = assertNotDestroyed;
@@ -55240,7 +47699,6 @@ exports.backoffWait = backoffWait;
 exports.bash = bash;
 exports.buildAuthConfig = buildAuthConfig;
 exports.buildEndpointWithQuery = buildEndpointWithQuery;
-exports.buildFeatureInstructions = buildFeatureInstructions;
 exports.buildQueryString = buildQueryString;
 exports.calculateBackoff = calculateBackoff;
 exports.calculateCost = calculateCost;
@@ -55250,39 +47708,28 @@ exports.calculateSTTCost = calculateSTTCost;
 exports.calculateTTSCost = calculateTTSCost;
 exports.calculateVideoCost = calculateVideoCost;
 exports.canTaskExecute = canTaskExecute;
-exports.contextCompactDefinition = contextCompactDefinition;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createBashTool = createBashTool;
 exports.createConnectorFromTemplate = createConnectorFromTemplate;
-exports.createContextCompactTool = createContextCompactTool;
-exports.createContextTools = createContextTools;
 exports.createEditFileTool = createEditFileTool;
 exports.createEstimator = createEstimator;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
 exports.createFileContextStorage = createFileContextStorage;
-exports.createFileSearchSource = createFileSearchSource;
 exports.createGlobTool = createGlobTool;
 exports.createGrepTool = createGrepTool;
 exports.createImageProvider = createImageProvider;
-exports.createInContextMemory = createInContextMemory;
-exports.createInContextMemoryTools = createInContextMemoryTools;
 exports.createListDirectoryTool = createListDirectoryTool;
-exports.createMemoryTools = createMemoryTools;
 exports.createMessageWithImages = createMessageWithImages;
 exports.createMetricsCollector = createMetricsCollector;
-exports.createPersistentInstructions = createPersistentInstructions;
-exports.createPersistentInstructionsTools = createPersistentInstructionsTools;
 exports.createPlan = createPlan;
 exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
-exports.createResearchTools = createResearchTools;
 exports.createStrategy = createStrategy;
 exports.createTask = createTask;
 exports.createTextMessage = createTextMessage;
 exports.createVideoProvider = createVideoProvider;
-exports.createWebSearchSource = createWebSearchSource;
 exports.createWriteFileTool = createWriteFileTool;
 exports.defaultDescribeCall = defaultDescribeCall;
 exports.detectDependencyCycle = detectDependencyCycle;
@@ -55304,22 +47751,17 @@ exports.getActiveModels = getActiveModels;
 exports.getActiveSTTModels = getActiveSTTModels;
 exports.getActiveTTSModels = getActiveTTSModels;
 exports.getActiveVideoModels = getActiveVideoModels;
-exports.getAgentContextTools = getAgentContextTools;
 exports.getAllBuiltInTools = getAllBuiltInTools;
-exports.getAllInstructions = getAllInstructions;
 exports.getAllServiceIds = getAllServiceIds;
 exports.getAllVendorLogos = getAllVendorLogos;
 exports.getAllVendorTemplates = getAllVendorTemplates;
 exports.getBackgroundOutput = getBackgroundOutput;
-exports.getBasicIntrospectionTools = getBasicIntrospectionTools;
 exports.getConnectorTools = getConnectorTools;
 exports.getCredentialsSetupURL = getCredentialsSetupURL;
 exports.getDocsURL = getDocsURL;
 exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
-exports.getMemoryTools = getMemoryTools;
-exports.getMetaTools = getMetaTools;
 exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
 exports.getNextExecutableTasks = getNextExecutableTasks;
@@ -55351,7 +47793,7 @@ exports.getVideoModelInfo = getVideoModelInfo;
 exports.getVideoModelsByVendor = getVideoModelsByVendor;
 exports.getVideoModelsWithAudio = getVideoModelsWithAudio;
 exports.getVideoModelsWithFeature = getVideoModelsWithFeature;
-exports.glob = glob2;
+exports.glob = glob;
 exports.globalErrorHandler = globalErrorHandler;
 exports.grep = grep;
 exports.hasClipboardImage = hasClipboardImage;
@@ -55360,7 +47802,6 @@ exports.isBlockedCommand = isBlockedCommand;
 exports.isErrorEvent = isErrorEvent;
 exports.isExcludedExtension = isExcludedExtension;
 exports.isKnownService = isKnownService;
-exports.isMetaTool = isMetaTool;
 exports.isOutputTextDelta = isOutputTextDelta;
 exports.isResponseComplete = isResponseComplete;
 exports.isSimpleScope = isSimpleScope;
@@ -55382,7 +47823,7 @@ exports.listVendorsByAuthType = listVendorsByAuthType;
 exports.listVendorsByCategory = listVendorsByCategory;
 exports.listVendorsWithLogos = listVendorsWithLogos;
 exports.readClipboardImage = readClipboardImage;
-exports.readFile = readFile5;
+exports.readFile = readFile4;
 exports.registerScrapeProvider = registerScrapeProvider;
 exports.resolveConnector = resolveConnector;
 exports.resolveDependencies = resolveDependencies;
@@ -55390,8 +47831,7 @@ exports.retryWithBackoff = retryWithBackoff;
 exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
 exports.setMetricsCollector = setMetricsCollector;
-exports.setupInContextMemory = setupInContextMemory;
-exports.setupPersistentInstructions = setupPersistentInstructions;
+exports.simpleTokenEstimator = simpleTokenEstimator;
 exports.toConnectorOptions = toConnectorOptions;
 exports.toolRegistry = toolRegistry;
 exports.tools = tools_exports;

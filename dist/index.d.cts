@@ -1,9 +1,931 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorAuth, g as ConnectorConfigResult } from './ImageModel-B-uH3JEz.cjs';
 export { m as APIKeyConnectorAuth, D as AspectRatio, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, j as ImageGeneration, k as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, l as SimpleGenerateOptions, h as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-B-uH3JEz.cjs';
-import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, e as ITextProvider, C as ContextSessionMetadata, S as SerializedAgentContextState, F as FunctionToolDefinition, f as InputItem, L as LLMResponse, g as StreamEvent, h as AgentContextFeatures, H as HookConfig, i as HistoryMode, j as AgentEvents, k as IDisposable, l as AgentResponse, E as ExecutionContext, m as ExecutionMetrics, n as AuditEntry, o as CircuitState, p as CircuitBreakerMetrics, q as IContextComponent, r as IMCPClient, M as MCPServerConfig, s as MCPConfiguration, t as MCPClientConnectionState, u as MCPServerCapabilities, v as MCPTool, w as MCPToolResult, x as MCPResource, y as MCPResourceContent, z as MCPPrompt, B as MCPPromptResult, D as MCPClientState, G as IMemoryStorage, J as MemoryEntry, K as MemoryScope, N as BaseContextPlugin, W as WorkingMemory, O as ITokenEstimator, P as StaleEntryInfo, Q as IdempotencyCache, R as WorkingMemoryConfig, U as AutoSpillConfig, V as IContextStrategy, X as ContextBudget, Y as ContextManagerConfig, Z as IContextCompactor, _ as TokenContentType, $ as IPersistentInstructionsStorage, a0 as StoredContextSession, a1 as ContextStorageListOptions, a2 as ContextSessionSummary, a3 as TokenUsage, a4 as ToolCall, a5 as StreamEventType, a6 as CircuitBreaker, a7 as TextGenerateOptions, a8 as ModelCapabilities, a9 as ToolPermissionConfig, aa as MessageRole, ab as InContextMemoryConfig, ac as InContextMemoryPlugin, ad as PersistentInstructionsConfig, ae as PersistentInstructionsPlugin } from './index-CSQIcg8O.cjs';
-export { aS as APPROVAL_STATE_VERSION, c4 as AfterToolContext, ag as AgentContextEvents, ai as AgentContextHistoryMessage, ah as AgentContextMetrics, bY as AgentEventName, b$ as AgenticLoopEventName, b_ as AgenticLoopEvents, aL as ApprovalCacheEntry, aP as ApprovalDecision, c7 as ApprovalResult, c5 as ApproveToolContext, ao as AutoSpillPlugin, c3 as BeforeToolContext, bA as BuiltInTool, aW as CONTEXT_SESSION_FORMAT_VERSION, a_ as CacheStats, cc as CircuitBreakerConfig, cd as CircuitBreakerEvents, cb as CircuitOpenError, bu as CompactionItem, bm as Content, bl as ContentType, aw as ContextGuardian, ax as ContextGuardianConfig, aU as DEFAULT_ALLOWLIST, ce as DEFAULT_CIRCUIT_BREAKER_CONFIG, b1 as DEFAULT_CONTEXT_CONFIG, af as DEFAULT_FEATURES, a$ as DEFAULT_IDEMPOTENCY_CONFIG, b9 as DEFAULT_MEMORY_CONFIG, aT as DEFAULT_PERMISSION_CONFIG, aV as DefaultAllowlistedTool, az as DegradationResult, bP as ErrorEvent, av as EvictionResult, aY as EvictionStrategy, bZ as ExecutionConfig, ay as GuardianValidation, ch as HTTPTransportConfig, c1 as Hook, bX as HookManager, c0 as HookName, c9 as IAsyncDisposable, c8 as IToolExecutor, aZ as IdempotencyCacheConfig, cj as InContextEntry, ck as InContextPriority, bo as InputImageContent, bn as InputTextContent, bN as IterationCompleteEvent, bD as JSONSchema, am as MCPServerReference, cf as MCPTransportType, bi as MEMORY_PRIORITY_VALUES, b2 as MemoryEntryInput, b3 as MemoryIndex, b4 as MemoryIndexEntry, b5 as MemoryPriority, bs as Message, c2 as ModifyingHook, bt as OutputItem, bp as OutputTextContent, bG as OutputTextDeltaEvent, bH as OutputTextDoneEvent, aQ as PermissionCheckContext, aO as PermissionCheckResult, aR as PermissionManagerEvent, aI as PermissionScope, ak as PrepareOptions, b0 as PreparedContext, al as PreparedResult, bv as ReasoningItem, bO as ResponseCompleteEvent, bE as ResponseCreatedEvent, bF as ResponseInProgressEvent, aJ as RiskLevel, aN as SerializedApprovalEntry, aM as SerializedApprovalState, cl as SerializedInContextMemoryState, cm as SerializedPersistentInstructionsState, aG as SerializedToolState, b7 as SimpleScope, as as SpilledEntry, cg as StdioTransportConfig, b6 as TaskAwareScope, b8 as TaskStatusForMemory, bj as TaskToolContext, bz as Tool, bJ as ToolCallArgumentsDeltaEvent, bK as ToolCallArgumentsDoneEvent, aj as ToolCallRecord, bI as ToolCallStartEvent, bw as ToolCallState, aB as ToolCondition, bj as ToolContext, bC as ToolExecutionContext, bM as ToolExecutionDoneEvent, bL as ToolExecutionStartEvent, aH as ToolManagerEvent, aF as ToolManagerStats, aE as ToolMetadata, c6 as ToolModification, aA as ToolOptions, ar as ToolOutput, an as ToolOutputPlugin, aq as ToolOutputPluginConfig, aK as ToolPermissionConfig, aD as ToolRegistration, bB as ToolResult, br as ToolResultContent, at as ToolResultEvictionConfig, ap as ToolResultEvictionPlugin, aC as ToolSelectionContext, bq as ToolUseContent, au as TrackedResult, ci as TransportConfig, bk as WorkingMemoryAccess, aX as WorkingMemoryEvents, ca as assertNotDestroyed, bh as calculateEntrySize, bx as defaultDescribeCall, bb as forPlan, ba as forTasks, by as getToolCallDescription, bW as isErrorEvent, bR as isOutputTextDelta, bV as isResponseComplete, be as isSimpleScope, bQ as isStreamEvent, bf as isTaskAwareScope, bg as isTerminalMemoryStatus, bT as isToolCallArgumentsDelta, bU as isToolCallArgumentsDone, bS as isToolCallStart, bc as scopeEquals, bd as scopeMatches } from './index-CSQIcg8O.cjs';
+import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-2HrUdTtE.cjs';
+export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-2HrUdTtE.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.cjs';
+
+/**
+ * Tool executor interface
+ */
+
+interface IToolExecutor {
+    /**
+     * Execute a tool function
+     * @param toolName - Name of the tool to execute
+     * @param args - Parsed arguments object
+     * @returns Tool execution result
+     */
+    execute(toolName: string, args: any): Promise<any>;
+    /**
+     * Check if tool is available
+     */
+    hasToolFunction(toolName: string): boolean;
+    /**
+     * Get tool definition
+     */
+    getToolDefinition(toolName: string): Tool | undefined;
+    /**
+     * Register a new tool
+     */
+    registerTool(tool: ToolFunction): void;
+    /**
+     * Unregister a tool
+     */
+    unregisterTool(toolName: string): void;
+    /**
+     * List all registered tools
+     */
+    listTools(): string[];
+}
+
+/**
+ * Interface for objects that manage resources and need explicit cleanup.
+ *
+ * Implementing classes should release all resources (event listeners, timers,
+ * connections, etc.) when destroy() is called. After destruction, the instance
+ * should not be used.
+ */
+interface IDisposable {
+    /**
+     * Releases all resources held by this instance.
+     *
+     * After calling destroy():
+     * - All event listeners should be removed
+     * - All timers/intervals should be cleared
+     * - All internal state should be cleaned up
+     * - The instance should not be reused
+     *
+     * Multiple calls to destroy() should be safe (idempotent).
+     */
+    destroy(): void;
+    /**
+     * Returns true if destroy() has been called.
+     * Methods should check this before performing operations.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Async version of IDisposable for resources requiring async cleanup.
+ */
+interface IAsyncDisposable {
+    /**
+     * Asynchronously releases all resources held by this instance.
+     */
+    destroy(): Promise<void>;
+    /**
+     * Returns true if destroy() has been called.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Helper to check if an object is destroyed and throw if so.
+ * @param obj - The disposable object to check
+ * @param operation - Name of the operation being attempted
+ */
+declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
+
+/**
+ * Generic Circuit Breaker implementation
+ *
+ * Prevents cascading failures by failing fast when a system is down.
+ * Works for any async operation (LLM calls, tool execution, etc.)
+ */
+
+/**
+ * Circuit breaker states
+ */
+type CircuitState = 'closed' | 'open' | 'half-open';
+/**
+ * Circuit breaker configuration
+ */
+interface CircuitBreakerConfig {
+    /** Number of failures before opening circuit */
+    failureThreshold: number;
+    /** Number of successes to close from half-open */
+    successThreshold: number;
+    /** Time to wait in open state before trying half-open (ms) */
+    resetTimeoutMs: number;
+    /** Time window for counting failures (ms) */
+    windowMs: number;
+    /** Classify errors - return true if error should count as failure */
+    isRetryable?: (error: Error) => boolean;
+}
+/**
+ * Circuit breaker metrics
+ */
+interface CircuitBreakerMetrics {
+    name: string;
+    state: CircuitState;
+    totalRequests: number;
+    successCount: number;
+    failureCount: number;
+    rejectedCount: number;
+    recentFailures: number;
+    consecutiveSuccesses: number;
+    lastFailureTime?: number;
+    lastSuccessTime?: number;
+    lastStateChange: number;
+    nextRetryTime?: number;
+    failureRate: number;
+    successRate: number;
+}
+/**
+ * Circuit breaker events
+ */
+interface CircuitBreakerEvents {
+    opened: {
+        name: string;
+        failureCount: number;
+        lastError: string;
+        nextRetryTime: number;
+    };
+    'half-open': {
+        name: string;
+        timestamp: number;
+    };
+    closed: {
+        name: string;
+        successCount: number;
+        timestamp: number;
+    };
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig;
+/**
+ * Circuit breaker error - thrown when circuit is open
+ */
+declare class CircuitOpenError extends Error {
+    readonly breakerName: string;
+    readonly nextRetryTime: number;
+    readonly failureCount: number;
+    readonly lastError: string;
+    constructor(breakerName: string, nextRetryTime: number, failureCount: number, lastError: string);
+}
+/**
+ * Generic circuit breaker for any async operation
+ */
+declare class CircuitBreaker<T = any> extends EventEmitter<CircuitBreakerEvents> {
+    readonly name: string;
+    private state;
+    private config;
+    private failures;
+    private lastError;
+    private consecutiveSuccesses;
+    private openedAt?;
+    private lastStateChange;
+    private totalRequests;
+    private successCount;
+    private failureCount;
+    private rejectedCount;
+    private lastFailureTime?;
+    private lastSuccessTime?;
+    constructor(name: string, config?: Partial<CircuitBreakerConfig>);
+    /**
+     * Execute function with circuit breaker protection
+     */
+    execute(fn: () => Promise<T>): Promise<T>;
+    /**
+     * Record successful execution
+     */
+    private recordSuccess;
+    /**
+     * Record failed execution
+     */
+    private recordFailure;
+    /**
+     * Transition to new state
+     */
+    private transitionTo;
+    /**
+     * Remove failures outside the time window
+     */
+    private pruneOldFailures;
+    /**
+     * Get current state
+     */
+    getState(): CircuitState;
+    /**
+     * Get current metrics
+     */
+    getMetrics(): CircuitBreakerMetrics;
+    /**
+     * Manually reset circuit breaker (force close)
+     */
+    reset(): void;
+    /**
+     * Check if circuit is allowing requests
+     */
+    isOpen(): boolean;
+    /**
+     * Get configuration
+     */
+    getConfig(): CircuitBreakerConfig;
+}
+
+interface ToolOptions {
+    /** Whether the tool is enabled. Default: true */
+    enabled?: boolean;
+    /** Namespace for grouping related tools. Default: 'default' */
+    namespace?: string;
+    /** Priority for selection ordering. Higher = preferred. Default: 0 */
+    priority?: number;
+    /** Conditions for auto-enable/disable */
+    conditions?: ToolCondition[];
+    /** Permission configuration override. If not set, uses tool's config or defaults. */
+    permission?: ToolPermissionConfig$1;
+}
+interface ToolCondition {
+    type: 'mode' | 'context' | 'custom';
+    predicate: (context: ToolSelectionContext) => boolean;
+}
+interface ToolSelectionContext {
+    /** Current user input or task description */
+    input?: string;
+    /** Current agent mode (for UniversalAgent) */
+    mode?: string;
+    /** Current task name (for TaskAgent) */
+    currentTask?: string;
+    /** Recently used tools (to avoid repetition) */
+    recentTools?: string[];
+    /** Token budget for tool definitions */
+    tokenBudget?: number;
+    /** Custom context data */
+    custom?: Record<string, unknown>;
+}
+interface ToolRegistration {
+    tool: ToolFunction;
+    enabled: boolean;
+    namespace: string;
+    priority: number;
+    conditions: ToolCondition[];
+    metadata: ToolMetadata;
+    /** Effective permission config (merged from tool.permission and options.permission) */
+    permission?: ToolPermissionConfig$1;
+    /** Circuit breaker configuration for this tool (uses shared CircuitBreakerConfig from resilience) */
+    circuitBreakerConfig?: Partial<CircuitBreakerConfig>;
+}
+interface ToolMetadata {
+    registeredAt: Date;
+    usageCount: number;
+    lastUsed?: Date;
+    totalExecutionMs: number;
+    avgExecutionMs: number;
+    successCount: number;
+    failureCount: number;
+}
+interface ToolManagerStats {
+    totalTools: number;
+    enabledTools: number;
+    disabledTools: number;
+    namespaces: string[];
+    toolsByNamespace: Record<string, number>;
+    mostUsed: Array<{
+        name: string;
+        count: number;
+    }>;
+    totalExecutions: number;
+}
+interface SerializedToolState {
+    enabled: Record<string, boolean>;
+    namespaces: Record<string, string>;
+    priorities: Record<string, number>;
+    /** Permission configs by tool name */
+    permissions?: Record<string, ToolPermissionConfig$1>;
+}
+type ToolManagerEvent = 'tool:registered' | 'tool:unregistered' | 'tool:enabled' | 'tool:disabled' | 'tool:executed' | 'namespace:enabled' | 'namespace:disabled';
+declare class ToolManager extends EventEmitter implements IToolExecutor, IDisposable {
+    private registry;
+    private namespaceIndex;
+    private circuitBreakers;
+    private toolLogger;
+    private _isDestroyed;
+    /** Optional tool context for execution (set by agent before runs) */
+    private _toolContext;
+    constructor();
+    /**
+     * Returns true if destroy() has been called.
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Releases all resources held by this ToolManager.
+     * Cleans up circuit breaker listeners and removes all event listeners.
+     * Safe to call multiple times (idempotent).
+     */
+    destroy(): void;
+    /**
+     * Set tool context for execution (called by agent before runs)
+     */
+    setToolContext(context: ToolContext | undefined): void;
+    /**
+     * Get current tool context
+     */
+    getToolContext(): ToolContext | undefined;
+    /**
+     * Register a tool with optional configuration
+     */
+    register(tool: ToolFunction, options?: ToolOptions): void;
+    /**
+     * Register multiple tools at once
+     */
+    registerMany(tools: ToolFunction[], options?: Omit<ToolOptions, 'conditions'>): void;
+    /**
+     * Unregister a tool by name
+     */
+    unregister(name: string): boolean;
+    /**
+     * Clear all tools and their circuit breakers.
+     * Does NOT remove event listeners from this ToolManager (use destroy() for full cleanup).
+     */
+    clear(): void;
+    /**
+     * Enable a tool by name
+     */
+    enable(name: string): boolean;
+    /**
+     * Disable a tool by name (keeps it registered but inactive)
+     */
+    disable(name: string): boolean;
+    /**
+     * Toggle a tool's enabled state
+     */
+    toggle(name: string): boolean;
+    /**
+     * Check if a tool is enabled
+     */
+    isEnabled(name: string): boolean;
+    /**
+     * Set enabled state for multiple tools
+     */
+    setEnabled(names: string[], enabled: boolean): void;
+    /**
+     * Set the namespace for a tool
+     */
+    setNamespace(toolName: string, namespace: string): boolean;
+    /**
+     * Enable all tools in a namespace
+     */
+    enableNamespace(namespace: string): void;
+    /**
+     * Disable all tools in a namespace
+     */
+    disableNamespace(namespace: string): void;
+    /**
+     * Get all namespace names
+     */
+    getNamespaces(): string[];
+    /**
+     * Create a namespace with tools
+     */
+    createNamespace(namespace: string, tools: ToolFunction[], options?: Omit<ToolOptions, 'namespace'>): void;
+    /**
+     * Set priority for a tool
+     */
+    setPriority(name: string, priority: number): boolean;
+    /**
+     * Get priority for a tool
+     */
+    getPriority(name: string): number | undefined;
+    /**
+     * Get permission config for a tool
+     */
+    getPermission(name: string): ToolPermissionConfig$1 | undefined;
+    /**
+     * Set permission config for a tool
+     */
+    setPermission(name: string, permission: ToolPermissionConfig$1): boolean;
+    /**
+     * Get a tool by name
+     */
+    get(name: string): ToolFunction | undefined;
+    /**
+     * Check if a tool exists
+     */
+    has(name: string): boolean;
+    /**
+     * Get all enabled tools (sorted by priority)
+     */
+    getEnabled(): ToolFunction[];
+    /**
+     * Get all tools (enabled and disabled)
+     */
+    getAll(): ToolFunction[];
+    /**
+     * Get tools by namespace
+     */
+    getByNamespace(namespace: string): ToolFunction[];
+    /**
+     * Get tool registration info
+     */
+    getRegistration(name: string): ToolRegistration | undefined;
+    /**
+     * List all tool names
+     */
+    list(): string[];
+    /**
+     * List enabled tool names
+     */
+    listEnabled(): string[];
+    /**
+     * Get count of registered tools
+     */
+    get size(): number;
+    /**
+     * Select tools based on context (uses conditions and smart filtering)
+     */
+    selectForContext(context: ToolSelectionContext): ToolFunction[];
+    /**
+     * Select tools by matching capability description
+     */
+    selectByCapability(description: string): ToolFunction[];
+    /**
+     * Filter tools to fit within a token budget
+     */
+    selectWithinBudget(budget: number): ToolFunction[];
+    /**
+     * Record tool execution (called by agent/loop)
+     */
+    recordExecution(name: string, executionMs: number, success: boolean): void;
+    /**
+     * Summarize tool result for logging (handles various result types)
+     */
+    private summarizeResult;
+    /**
+     * Get comprehensive statistics
+     */
+    getStats(): ToolManagerStats;
+    /**
+     * Execute a tool function with circuit breaker protection
+     * Implements IToolExecutor interface
+     *
+     * Simple execution - no caching, no parent context.
+     * Context must be set via setToolContext() before calling.
+     */
+    execute(toolName: string, args: any): Promise<any>;
+    /**
+     * Check if tool is available (IToolExecutor interface)
+     */
+    hasToolFunction(toolName: string): boolean;
+    /**
+     * Get tool definition (IToolExecutor interface)
+     */
+    getToolDefinition(toolName: string): Tool | undefined;
+    /**
+     * Register a tool (IToolExecutor interface - delegates to register())
+     */
+    registerTool(tool: ToolFunction): void;
+    /**
+     * Unregister a tool (IToolExecutor interface - delegates to unregister())
+     */
+    unregisterTool(toolName: string): void;
+    /**
+     * List all registered tool names (IToolExecutor interface - delegates to list())
+     */
+    listTools(): string[];
+    /**
+     * Get or create circuit breaker for a tool
+     */
+    private getOrCreateCircuitBreaker;
+    /**
+     * Get circuit breaker states for all tools
+     */
+    getCircuitBreakerStates(): Map<string, CircuitState>;
+    /**
+     * Get circuit breaker metrics for a specific tool
+     */
+    getToolCircuitBreakerMetrics(toolName: string): CircuitBreakerMetrics | undefined;
+    /**
+     * Manually reset a tool's circuit breaker
+     */
+    resetToolCircuitBreaker(toolName: string): void;
+    /**
+     * Configure circuit breaker for a tool
+     */
+    setCircuitBreakerConfig(toolName: string, config: CircuitBreakerConfig): boolean;
+    /**
+     * Get serializable state (for session persistence)
+     */
+    getState(): SerializedToolState;
+    /**
+     * Load state (restores enabled/disabled, namespaces, priorities, permissions)
+     * Note: Tools must be re-registered separately (they contain functions)
+     */
+    loadState(state: SerializedToolState): void;
+    private getToolName;
+    private getSortedByPriority;
+    private addToNamespace;
+    private removeFromNamespace;
+    private moveToNamespace;
+    private filterByTokenBudget;
+    private estimateToolTokens;
+}
+
+/**
+ * Tool Permission Types
+ *
+ * Defines permission scopes, risk levels, and approval state for tool execution control.
+ *
+ * Works with ALL agent types:
+ * - Agent (basic)
+ * - TaskAgent (task-based)
+ * - UniversalAgent (mode-fluid)
+ */
+
+/**
+ * Permission scope defines when approval is required for a tool
+ *
+ * - `once` - Require approval for each tool call (most restrictive)
+ * - `session` - Approve once, valid for entire session
+ * - `always` - Auto-approve (allowlisted, no prompts)
+ * - `never` - Always blocked (blocklisted, tool cannot execute)
+ */
+type PermissionScope = 'once' | 'session' | 'always' | 'never';
+/**
+ * Risk level classification for tools
+ *
+ * Used to help users understand the potential impact of approving a tool.
+ * Can be used by UI to show different approval dialogs.
+ */
+type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+/**
+ * Permission configuration for a tool
+ *
+ * Can be set on the tool definition or overridden at registration time.
+ */
+interface ToolPermissionConfig {
+    /**
+     * When approval is required.
+     * @default 'once'
+     */
+    scope?: PermissionScope;
+    /**
+     * Risk classification for the tool.
+     * @default 'low'
+     */
+    riskLevel?: RiskLevel;
+    /**
+     * Custom message shown in approval UI.
+     * Should explain what the tool does and any potential risks.
+     */
+    approvalMessage?: string;
+    /**
+     * Argument names that should be highlighted in approval UI.
+     * E.g., ['path', 'url'] for file/network operations.
+     */
+    sensitiveArgs?: string[];
+    /**
+     * Optional expiration time for session approvals (milliseconds).
+     * If set, session approvals expire after this duration.
+     */
+    sessionTTLMs?: number;
+}
+/**
+ * Context passed to approval callbacks/hooks
+ */
+interface PermissionCheckContext {
+    /** The tool call being checked */
+    toolCall: ToolCall;
+    /** Parsed arguments (for display/inspection) */
+    parsedArgs: Record<string, unknown>;
+    /** The tool's permission config */
+    config: ToolPermissionConfig;
+    /** Current execution context ID */
+    executionId: string;
+    /** Current iteration (if in agentic loop) */
+    iteration: number;
+    /** Agent type (for context-specific handling) */
+    agentType: 'agent' | 'task-agent' | 'universal-agent';
+    /** Optional task name (for TaskAgent/UniversalAgent) */
+    taskName?: string;
+}
+/**
+ * Entry in the approval cache representing an approved tool
+ */
+interface ApprovalCacheEntry {
+    /** Name of the approved tool */
+    toolName: string;
+    /** The scope that was approved */
+    scope: PermissionScope;
+    /** When the approval was granted */
+    approvedAt: Date;
+    /** Optional identifier of who approved (for audit) */
+    approvedBy?: string;
+    /** When this approval expires (for session/TTL approvals) */
+    expiresAt?: Date;
+    /** Arguments hash if approval was for specific arguments */
+    argsHash?: string;
+}
+/**
+ * Serialized approval state for session persistence
+ */
+interface SerializedApprovalState {
+    /** Version for future migrations */
+    version: number;
+    /** Map of tool name to approval entry */
+    approvals: Record<string, SerializedApprovalEntry>;
+    /** Tools that are always blocked (persisted blocklist) */
+    blocklist: string[];
+    /** Tools that are always allowed (persisted allowlist) */
+    allowlist: string[];
+}
+/**
+ * Serialized version of ApprovalCacheEntry (with ISO date strings)
+ */
+interface SerializedApprovalEntry {
+    toolName: string;
+    scope: PermissionScope;
+    approvedAt: string;
+    approvedBy?: string;
+    expiresAt?: string;
+    argsHash?: string;
+}
+/**
+ * Result of checking if a tool needs approval
+ */
+interface PermissionCheckResult {
+    /** Whether the tool can execute without prompting */
+    allowed: boolean;
+    /** Whether approval is needed (user should be prompted) */
+    needsApproval: boolean;
+    /** Whether the tool is blocked (cannot execute at all) */
+    blocked: boolean;
+    /** Reason for the decision */
+    reason: string;
+    /** The tool's permission config (for UI display) */
+    config?: ToolPermissionConfig;
+}
+/**
+ * Result from approval UI/hook
+ */
+interface ApprovalDecision {
+    /** Whether the tool was approved */
+    approved: boolean;
+    /** Scope of the approval (may differ from requested) */
+    scope?: PermissionScope;
+    /** Reason for denial (if not approved) */
+    reason?: string;
+    /** Optional identifier of who approved */
+    approvedBy?: string;
+    /** Whether to remember this decision for future calls */
+    remember?: boolean;
+}
+/**
+ * Permission configuration for any agent type.
+ *
+ * Used in:
+ * - Agent.create({ permissions: {...} })
+ * - TaskAgent.create({ permissions: {...} })
+ * - UniversalAgent.create({ permissions: {...} })
+ */
+interface AgentPermissionsConfig {
+    /**
+     * Default permission scope for tools without explicit config.
+     * @default 'once'
+     */
+    defaultScope?: PermissionScope;
+    /**
+     * Default risk level for tools without explicit config.
+     * @default 'low'
+     */
+    defaultRiskLevel?: RiskLevel;
+    /**
+     * Tools that are always allowed (never prompt).
+     * Array of tool names.
+     */
+    allowlist?: string[];
+    /**
+     * Tools that are always blocked (cannot execute).
+     * Array of tool names.
+     */
+    blocklist?: string[];
+    /**
+     * Per-tool permission overrides.
+     * Keys are tool names, values are permission configs.
+     */
+    tools?: Record<string, ToolPermissionConfig>;
+    /**
+     * Callback invoked when a tool needs approval.
+     * Return an ApprovalDecision to approve/deny.
+     *
+     * If not provided, the existing `approve:tool` hook system is used.
+     * This callback runs BEFORE hooks, providing a first-pass check.
+     */
+    onApprovalRequired?: (context: PermissionCheckContext) => Promise<ApprovalDecision>;
+    /**
+     * Whether to inherit permission state from parent session.
+     * Only applies when resuming from a session.
+     * @default true
+     */
+    inheritFromSession?: boolean;
+}
+/**
+ * Events emitted by ToolPermissionManager
+ */
+type PermissionManagerEvent = 'tool:approved' | 'tool:denied' | 'tool:blocked' | 'tool:revoked' | 'allowlist:added' | 'allowlist:removed' | 'blocklist:added' | 'blocklist:removed' | 'session:cleared';
+/**
+ * Current version of serialized approval state
+ */
+declare const APPROVAL_STATE_VERSION = 1;
+/**
+ * Default permission config applied when no config is specified
+ */
+declare const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig, 'scope' | 'riskLevel'>>;
+/**
+ * Default allowlist - tools that never require user confirmation.
+ *
+ * These tools are safe to execute without user approval:
+ * - Read-only operations (filesystem reads, searches)
+ * - Internal state management (memory tools)
+ * - Introspection tools (context stats)
+ * - In-context memory tools
+ * - Persistent instructions tools
+ * - Meta-tools for agent coordination
+ *
+ * All other tools (write operations, shell commands, external requests)
+ * require explicit user approval by default.
+ */
+declare const DEFAULT_ALLOWLIST: readonly string[];
+/**
+ * Type for default allowlisted tools
+ */
+type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number];
+
+/**
+ * ToolPermissionManager - Core class for managing tool permissions
+ *
+ * Features:
+ * - Approval caching (once, session, always, never scopes)
+ * - Allowlist/blocklist management
+ * - Session state persistence
+ * - Event emission for audit trails
+ *
+ * Works with ALL agent types:
+ * - Agent (basic)
+ * - TaskAgent (task-based)
+ * - UniversalAgent (mode-fluid)
+ */
+
+declare class ToolPermissionManager extends EventEmitter {
+    private approvalCache;
+    private allowlist;
+    private blocklist;
+    private toolConfigs;
+    private defaultScope;
+    private defaultRiskLevel;
+    private onApprovalRequired?;
+    constructor(config?: AgentPermissionsConfig);
+    /**
+     * Check if a tool needs approval before execution
+     *
+     * @param toolName - Name of the tool
+     * @param _args - Optional arguments (for args-specific approval, reserved for future use)
+     * @returns PermissionCheckResult with allowed/needsApproval/blocked status
+     */
+    checkPermission(toolName: string, _args?: Record<string, unknown>): PermissionCheckResult;
+    /**
+     * Check if a tool call needs approval (uses ToolCall object)
+     */
+    needsApproval(toolCall: ToolCall): boolean;
+    /**
+     * Check if a tool is blocked
+     */
+    isBlocked(toolName: string): boolean;
+    /**
+     * Check if a tool is approved (either allowlisted or session-approved)
+     */
+    isApproved(toolName: string): boolean;
+    /**
+     * Approve a tool (record approval)
+     *
+     * @param toolName - Name of the tool
+     * @param decision - Approval decision with scope
+     */
+    approve(toolName: string, decision?: Partial<ApprovalDecision>): void;
+    /**
+     * Approve a tool for the entire session
+     */
+    approveForSession(toolName: string, approvedBy?: string): void;
+    /**
+     * Revoke a tool's approval
+     */
+    revoke(toolName: string): void;
+    /**
+     * Deny a tool execution (for audit trail)
+     */
+    deny(toolName: string, reason: string): void;
+    /**
+     * Check if a tool has been approved for the current session
+     */
+    isApprovedForSession(toolName: string): boolean;
+    /**
+     * Add a tool to the allowlist (always allowed)
+     */
+    allowlistAdd(toolName: string): void;
+    /**
+     * Remove a tool from the allowlist
+     */
+    allowlistRemove(toolName: string): void;
+    /**
+     * Check if a tool is in the allowlist
+     */
+    isAllowlisted(toolName: string): boolean;
+    /**
+     * Get all allowlisted tools
+     */
+    getAllowlist(): string[];
+    /**
+     * Add a tool to the blocklist (always blocked)
+     */
+    blocklistAdd(toolName: string): void;
+    /**
+     * Remove a tool from the blocklist
+     */
+    blocklistRemove(toolName: string): void;
+    /**
+     * Check if a tool is in the blocklist
+     */
+    isBlocklisted(toolName: string): boolean;
+    /**
+     * Get all blocklisted tools
+     */
+    getBlocklist(): string[];
+    /**
+     * Set permission config for a specific tool
+     */
+    setToolConfig(toolName: string, config: ToolPermissionConfig): void;
+    /**
+     * Get permission config for a specific tool
+     */
+    getToolConfig(toolName: string): ToolPermissionConfig | undefined;
+    /**
+     * Get effective config (tool-specific or defaults)
+     */
+    getEffectiveConfig(toolName: string): ToolPermissionConfig;
+    /**
+     * Request approval for a tool call
+     *
+     * If an onApprovalRequired callback is set, it will be called.
+     * Otherwise, this auto-approves for backward compatibility.
+     *
+     * NOTE: If you want to require explicit approval, you MUST either:
+     * 1. Set onApprovalRequired callback in AgentPermissionsConfig
+     * 2. Register an 'approve:tool' hook in the Agent
+     * 3. Add tools to the blocklist if they should never run
+     *
+     * This auto-approval behavior preserves backward compatibility with
+     * existing code that doesn't use the permission system.
+     */
+    requestApproval(context: PermissionCheckContext): Promise<ApprovalDecision>;
+    /**
+     * Get all tools that have session approvals
+     */
+    getApprovedTools(): string[];
+    /**
+     * Get the approval entry for a tool
+     */
+    getApprovalEntry(toolName: string): ApprovalCacheEntry | undefined;
+    /**
+     * Clear all session approvals
+     */
+    clearSession(): void;
+    /**
+     * Serialize approval state for persistence
+     */
+    getState(): SerializedApprovalState;
+    /**
+     * Load approval state from persistence
+     */
+    loadState(state: SerializedApprovalState): void;
+    /**
+     * Get defaults
+     */
+    getDefaults(): {
+        scope: PermissionScope;
+        riskLevel: RiskLevel;
+    };
+    /**
+     * Set defaults
+     */
+    setDefaults(defaults: {
+        scope?: PermissionScope;
+        riskLevel?: RiskLevel;
+    }): void;
+    /**
+     * Get summary statistics
+     */
+    getStats(): {
+        approvedCount: number;
+        allowlistedCount: number;
+        blocklistedCount: number;
+        configuredCount: number;
+    };
+    /**
+     * Reset to initial state
+     */
+    reset(): void;
+}
 
 /**
  * Structured logging infrastructure
@@ -122,6 +1044,883 @@ declare class FrameworkLogger {
  * Global logger singleton
  */
 declare const logger: FrameworkLogger;
+
+/**
+ * IContextStorage - Storage interface for AgentContext persistence
+ *
+ * Provides persistence operations for AgentContext sessions.
+ * Implementations can use filesystem, database, cloud storage, etc.
+ *
+ * This follows Clean Architecture - the interface is in domain layer,
+ * implementations are in infrastructure layer.
+ */
+
+/**
+ * Serialized context state for persistence.
+ * This is the canonical definition - core layer re-exports this type.
+ */
+interface SerializedContextState {
+    /** Conversation history */
+    conversation: InputItem[];
+    /** Plugin states (keyed by plugin name) */
+    pluginStates: Record<string, unknown>;
+    /** System prompt */
+    systemPrompt?: string;
+    /** Metadata */
+    metadata: {
+        savedAt: number;
+        agentId?: string;
+        model: string;
+    };
+    /** Agent-specific state (for TaskAgent, UniversalAgent, etc.) */
+    agentState?: Record<string, unknown>;
+}
+/**
+ * Session summary for listing (lightweight, no full state)
+ */
+interface ContextSessionSummary {
+    /** Session identifier */
+    sessionId: string;
+    /** When the session was created */
+    createdAt: Date;
+    /** When the session was last saved */
+    lastSavedAt: Date;
+    /** Number of messages in history */
+    messageCount: number;
+    /** Number of memory entries */
+    memoryEntryCount: number;
+    /** Optional metadata */
+    metadata?: ContextSessionMetadata;
+}
+/**
+ * Session metadata (stored with session)
+ */
+interface ContextSessionMetadata {
+    /** Human-readable title */
+    title?: string;
+    /** Auto-generated or user-provided description */
+    description?: string;
+    /** Tags for filtering */
+    tags?: string[];
+    /** Custom key-value data */
+    [key: string]: unknown;
+}
+/**
+ * Full session state wrapper (includes metadata)
+ */
+interface StoredContextSession {
+    /** Format version for migration support */
+    version: number;
+    /** Session identifier */
+    sessionId: string;
+    /** When the session was created */
+    createdAt: string;
+    /** When the session was last saved */
+    lastSavedAt: string;
+    /** The serialized AgentContext state */
+    state: SerializedContextState;
+    /** Session metadata */
+    metadata: ContextSessionMetadata;
+}
+/**
+ * Current format version for stored sessions
+ */
+declare const CONTEXT_SESSION_FORMAT_VERSION = 1;
+/**
+ * Storage interface for AgentContext persistence
+ *
+ * Implementations:
+ * - FileContextStorage: File-based storage at ~/.oneringai/agents/<agentId>/sessions/
+ * - (Future) RedisContextStorage, PostgresContextStorage, S3ContextStorage, etc.
+ */
+interface IContextStorage {
+    /**
+     * Save context state to a session
+     *
+     * @param sessionId - Unique session identifier
+     * @param state - Serialized AgentContext state
+     * @param metadata - Optional session metadata
+     */
+    save(sessionId: string, state: SerializedContextState, metadata?: ContextSessionMetadata): Promise<void>;
+    /**
+     * Load context state from a session
+     *
+     * @param sessionId - Session identifier to load
+     * @returns The stored session, or null if not found
+     */
+    load(sessionId: string): Promise<StoredContextSession | null>;
+    /**
+     * Delete a session
+     *
+     * @param sessionId - Session identifier to delete
+     */
+    delete(sessionId: string): Promise<void>;
+    /**
+     * Check if a session exists
+     *
+     * @param sessionId - Session identifier to check
+     */
+    exists(sessionId: string): Promise<boolean>;
+    /**
+     * List all sessions (summaries only, not full state)
+     *
+     * @param options - Optional filtering and pagination
+     * @returns Array of session summaries, sorted by lastSavedAt descending
+     */
+    list(options?: ContextStorageListOptions): Promise<ContextSessionSummary[]>;
+    /**
+     * Update session metadata without loading full state
+     *
+     * @param sessionId - Session identifier
+     * @param metadata - Metadata to merge (existing keys preserved unless overwritten)
+     */
+    updateMetadata?(sessionId: string, metadata: Partial<ContextSessionMetadata>): Promise<void>;
+    /**
+     * Get the storage path/location (for display/debugging)
+     */
+    getPath(): string;
+}
+/**
+ * Options for listing sessions
+ */
+interface ContextStorageListOptions {
+    /** Filter by tags (any match) */
+    tags?: string[];
+    /** Filter by creation date range */
+    createdAfter?: Date;
+    createdBefore?: Date;
+    /** Filter by last saved date range */
+    savedAfter?: Date;
+    savedBefore?: Date;
+    /** Maximum number of results */
+    limit?: number;
+    /** Offset for pagination */
+    offset?: number;
+}
+
+/**
+ * AgentContextNextGen - Type Definitions
+ *
+ * Clean, minimal type definitions for the next-generation context manager.
+ */
+
+/**
+ * Token estimator interface - used for conversation and input estimation
+ * Plugins handle their own token estimation internally.
+ */
+interface ITokenEstimator$1 {
+    /** Estimate tokens for a string */
+    estimateTokens(text: string): number;
+    /** Estimate tokens for arbitrary data (will be JSON stringified) */
+    estimateDataTokens(data: unknown): number;
+}
+/**
+ * Next-generation context plugin interface.
+ *
+ * Plugins provide:
+ * 1. Instructions (how to use the plugin) - added to system message, NEVER compacted
+ * 2. Content (actual plugin data) - added to system message, may be compacted
+ * 3. Tools (optional) - registered with ToolManager
+ *
+ * Each plugin is responsible for:
+ * - Tracking its own token size
+ * - Providing its full contents for inspection
+ * - Compacting itself when requested
+ */
+interface IContextPluginNextGen {
+    /** Unique plugin name */
+    readonly name: string;
+    /**
+     * Get instructions explaining how to use this plugin.
+     * These are added to the system message and NEVER compacted.
+     * Return null if no instructions needed.
+     */
+    getInstructions(): string | null;
+    /**
+     * Get the formatted content to include in the system message.
+     * For example: InContextMemory returns formatted KVPs, WorkingMemory returns formatted index.
+     * Return null if no content to add (e.g., empty memory).
+     */
+    getContent(): Promise<string | null>;
+    /**
+     * Get the full raw contents of this plugin for inspection.
+     * Used by library clients to inspect plugin state.
+     * Returns the actual data structure, not formatted string.
+     */
+    getContents(): unknown;
+    /**
+     * Get current token size of this plugin's content.
+     * Each plugin is responsible for tracking its own size.
+     * This should return the token count for getContent() output.
+     */
+    getTokenSize(): number;
+    /**
+     * Get token size of instructions (cached, rarely changes).
+     */
+    getInstructionsTokenSize(): number;
+    /**
+     * Whether this plugin's content can be compacted when context is tight.
+     */
+    isCompactable(): boolean;
+    /**
+     * Compact the plugin's content to free up tokens.
+     * Only called if isCompactable() returns true.
+     *
+     * @param targetTokensToFree - Approximate tokens we'd like to free
+     * @returns Actual tokens freed
+     */
+    compact(targetTokensToFree: number): Promise<number>;
+    /**
+     * Get tools provided by this plugin.
+     * Tools are automatically registered with ToolManager.
+     */
+    getTools(): ToolFunction[];
+    /**
+     * Cleanup resources when context is destroyed.
+     */
+    destroy(): void;
+    /**
+     * Get serializable state for session persistence.
+     */
+    getState(): unknown;
+    /**
+     * Restore state from saved session.
+     */
+    restoreState(state: unknown): void;
+}
+/**
+ * Strategy names - determine when compaction triggers
+ */
+type CompactionStrategyName = 'proactive' | 'balanced' | 'lazy';
+/**
+ * Strategy thresholds (percentage of context used before compaction triggers)
+ */
+declare const STRATEGY_THRESHOLDS$1: Record<CompactionStrategyName, number>;
+/**
+ * Token budget breakdown - clear and simple
+ */
+interface ContextBudget$1 {
+    /** Maximum context tokens for the model */
+    maxTokens: number;
+    /** Tokens reserved for LLM response */
+    responseReserve: number;
+    /** Tokens used by system message (prompt + instructions + plugin content) */
+    systemMessageTokens: number;
+    /** Tokens used by tool definitions (NEVER compacted) */
+    toolsTokens: number;
+    /** Tokens used by conversation history */
+    conversationTokens: number;
+    /** Tokens used by current input (user message or tool results) */
+    currentInputTokens: number;
+    /** Total tokens used */
+    totalUsed: number;
+    /** Available tokens (maxTokens - responseReserve - totalUsed) */
+    available: number;
+    /** Usage percentage (totalUsed / (maxTokens - responseReserve)) */
+    utilizationPercent: number;
+    /** Breakdown by component for debugging */
+    breakdown: {
+        systemPrompt: number;
+        persistentInstructions: number;
+        pluginInstructions: number;
+        pluginContents: Record<string, number>;
+        tools: number;
+        conversation: number;
+        currentInput: number;
+    };
+}
+/**
+ * Result of prepare() - ready for LLM call
+ */
+interface PreparedContext {
+    /** Final input items array for LLM */
+    input: InputItem[];
+    /** Token budget breakdown */
+    budget: ContextBudget$1;
+    /** Whether compaction was performed */
+    compacted: boolean;
+    /** Log of compaction actions taken */
+    compactionLog: string[];
+}
+/**
+ * Result of handling oversized current input
+ */
+interface OversizedInputResult {
+    /** Whether the input was accepted (possibly truncated) */
+    accepted: boolean;
+    /** Processed content (truncated if needed) */
+    content: string;
+    /** Error message if rejected */
+    error?: string;
+    /** Warning message if truncated */
+    warning?: string;
+    /** Original size in bytes */
+    originalSize: number;
+    /** Final size in bytes */
+    finalSize: number;
+}
+/**
+ * Feature flags for enabling/disabling plugins
+ */
+interface ContextFeatures {
+    /** Enable WorkingMemory plugin (default: true) */
+    workingMemory?: boolean;
+    /** Enable InContextMemory plugin (default: false) */
+    inContextMemory?: boolean;
+    /** Enable PersistentInstructions plugin (default: false) */
+    persistentInstructions?: boolean;
+}
+/**
+ * Default feature configuration
+ */
+declare const DEFAULT_FEATURES: Required<ContextFeatures>;
+/**
+ * Plugin configurations for auto-initialization.
+ * When features are enabled, plugins are created with these configs.
+ * The config shapes match each plugin's constructor parameter.
+ */
+interface PluginConfigs {
+    /**
+     * Working memory plugin config (used when features.workingMemory=true).
+     * See WorkingMemoryPluginConfig for full options.
+     */
+    workingMemory?: Record<string, unknown>;
+    /**
+     * In-context memory plugin config (used when features.inContextMemory=true).
+     * See InContextMemoryConfig for full options.
+     */
+    inContextMemory?: Record<string, unknown>;
+    /**
+     * Persistent instructions plugin config (used when features.persistentInstructions=true).
+     * Note: agentId is auto-filled from context config if not provided.
+     * See PersistentInstructionsConfig for full options.
+     */
+    persistentInstructions?: Record<string, unknown>;
+}
+/**
+ * AgentContextNextGen configuration
+ */
+interface AgentContextNextGenConfig {
+    /** Model name (used for context window lookup) */
+    model: string;
+    /** Maximum context tokens (auto-detected from model if not provided) */
+    maxContextTokens?: number;
+    /** Tokens to reserve for response (default: 4096) */
+    responseReserve?: number;
+    /** System prompt provided by user */
+    systemPrompt?: string;
+    /** Compaction strategy (default: 'balanced') */
+    strategy?: CompactionStrategyName;
+    /** Feature flags */
+    features?: ContextFeatures;
+    /** Agent ID (required for PersistentInstructions) */
+    agentId?: string;
+    /** Initial tools to register */
+    tools?: ToolFunction[];
+    /** Storage for session persistence */
+    storage?: IContextStorage;
+    /** Plugin-specific configurations (used with features flags) */
+    plugins?: PluginConfigs;
+}
+/**
+ * Default configuration values
+ */
+declare const DEFAULT_CONFIG: {
+    responseReserve: number;
+    strategy: CompactionStrategyName;
+};
+
+/**
+ * Events emitted by AgentContextNextGen
+ */
+interface ContextEvents {
+    /** Emitted when context is prepared */
+    'context:prepared': {
+        budget: ContextBudget$1;
+        compacted: boolean;
+    };
+    /** Emitted when compaction is performed */
+    'context:compacted': {
+        tokensFreed: number;
+        log: string[];
+    };
+    /** Emitted when budget reaches warning threshold (>70%) */
+    'budget:warning': {
+        budget: ContextBudget$1;
+    };
+    /** Emitted when budget reaches critical threshold (>90%) */
+    'budget:critical': {
+        budget: ContextBudget$1;
+    };
+    /** Emitted when current input is too large */
+    'input:oversized': {
+        result: OversizedInputResult;
+    };
+    /** Emitted when a message is added */
+    'message:added': {
+        role: string;
+        index: number;
+    };
+    /** Emitted when conversation is cleared */
+    'conversation:cleared': {
+        reason?: string;
+    };
+}
+
+/**
+ * Memory storage interface for working memory persistence.
+ *
+ * Implement this interface to provide custom persistence:
+ * - Redis for distributed agents
+ * - Database for durability
+ * - File system for simple persistence
+ *
+ * Default implementation: InMemoryStorage (no persistence)
+ */
+
+interface IMemoryStorage {
+    /**
+     * Get entry by key
+     */
+    get(key: string): Promise<MemoryEntry | undefined>;
+    /**
+     * Set/update entry
+     */
+    set(key: string, entry: MemoryEntry): Promise<void>;
+    /**
+     * Delete entry
+     */
+    delete(key: string): Promise<void>;
+    /**
+     * Check if key exists
+     */
+    has(key: string): Promise<boolean>;
+    /**
+     * Get all entries
+     */
+    getAll(): Promise<MemoryEntry[]>;
+    /**
+     * Get entries by scope
+     */
+    getByScope(scope: MemoryScope): Promise<MemoryEntry[]>;
+    /**
+     * Clear all entries with given scope
+     */
+    clearScope(scope: MemoryScope): Promise<void>;
+    /**
+     * Clear everything
+     */
+    clear(): Promise<void>;
+    /**
+     * Get total size in bytes
+     */
+    getTotalSize(): Promise<number>;
+}
+
+/**
+ * WorkingMemoryPluginNextGen - Working memory plugin for NextGen context
+ *
+ * Provides external storage with an INDEX shown in context.
+ * LLM sees descriptions but must use memory_retrieve() to get full values.
+ *
+ * Features:
+ * - Hierarchical tiers: raw → summary → findings
+ * - Priority-based eviction
+ * - Task-aware scoping (optional)
+ * - Automatic tier-based priorities
+ */
+
+interface SerializedWorkingMemoryState {
+    version: number;
+    entries: Array<{
+        key: string;
+        description: string;
+        value: unknown;
+        scope: MemoryScope;
+        sizeBytes: number;
+        basePriority?: MemoryPriority;
+        pinned?: boolean;
+    }>;
+}
+type EvictionStrategy$1 = 'lru' | 'size';
+interface WorkingMemoryPluginConfig {
+    /** Memory configuration */
+    config?: WorkingMemoryConfig;
+    /** Storage backend (default: InMemoryStorage) */
+    storage?: IMemoryStorage;
+    /** Priority calculator (default: staticPriorityCalculator) */
+    priorityCalculator?: PriorityCalculator;
+}
+declare class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
+    readonly name = "working_memory";
+    private storage;
+    private config;
+    private priorityCalculator;
+    private priorityContext;
+    private estimator;
+    private _destroyed;
+    private _tokenCache;
+    private _instructionsTokenCache;
+    constructor(pluginConfig?: WorkingMemoryPluginConfig);
+    getInstructions(): string;
+    getContent(): Promise<string | null>;
+    getContents(): unknown;
+    getTokenSize(): number;
+    getInstructionsTokenSize(): number;
+    isCompactable(): boolean;
+    compact(_targetTokensToFree: number): Promise<number>;
+    getTools(): ToolFunction[];
+    destroy(): void;
+    getState(): SerializedWorkingMemoryState;
+    getStateAsync(): Promise<SerializedWorkingMemoryState>;
+    restoreState(state: unknown): void;
+    /**
+     * Store a value in memory
+     */
+    store(key: string, description: string, value: unknown, options?: {
+        scope?: MemoryScope;
+        priority?: MemoryPriority;
+        tier?: MemoryTier;
+        pinned?: boolean;
+    }): Promise<{
+        key: string;
+        sizeBytes: number;
+    }>;
+    /**
+     * Retrieve a value from memory
+     */
+    retrieve(key: string): Promise<unknown | undefined>;
+    /**
+     * Delete a key from memory
+     */
+    delete(key: string): Promise<boolean>;
+    /**
+     * Query memory entries
+     */
+    query(options?: {
+        pattern?: string;
+        tier?: MemoryTier;
+        includeValues?: boolean;
+        includeStats?: boolean;
+    }): Promise<{
+        entries: Array<{
+            key: string;
+            description: string;
+            tier?: MemoryTier;
+            value?: unknown;
+        }>;
+        stats?: {
+            count: number;
+            totalBytes: number;
+        };
+    }>;
+    /**
+     * Format memory index for context
+     */
+    formatIndex(): Promise<string>;
+    /**
+     * Evict entries to free space
+     */
+    evict(count: number, strategy?: EvictionStrategy$1): Promise<string[]>;
+    /**
+     * Cleanup raw tier entries
+     */
+    cleanupRaw(): Promise<{
+        deleted: number;
+        keys: string[];
+    }>;
+    private computePriority;
+    /**
+     * Build a MemoryIndex from raw entries
+     */
+    private buildMemoryIndex;
+    private ensureCapacity;
+    private assertNotDestroyed;
+    private createMemoryStoreTool;
+    private createMemoryRetrieveTool;
+    private createMemoryDeleteTool;
+    private createMemoryQueryTool;
+    private createMemoryCleanupRawTool;
+}
+
+/**
+ * Next-generation context manager for AI agents.
+ *
+ * Usage:
+ * ```typescript
+ * const ctx = AgentContextNextGen.create({
+ *   model: 'gpt-4',
+ *   systemPrompt: 'You are a helpful assistant.',
+ *   features: { workingMemory: true },
+ * });
+ *
+ * // Add user message
+ * ctx.addUserMessage('Hello!');
+ *
+ * // Prepare for LLM call (handles compaction if needed)
+ * const { input, budget } = await ctx.prepare();
+ *
+ * // Call LLM with input...
+ *
+ * // Add assistant response
+ * ctx.addAssistantResponse(response.output);
+ * ```
+ */
+declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
+    /** Configuration */
+    private readonly _config;
+    /** Maximum context tokens for the model */
+    private readonly _maxContextTokens;
+    /** Compaction strategy threshold */
+    private readonly _strategyThreshold;
+    /** System prompt (user-provided) */
+    private _systemPrompt;
+    /** Conversation history (excludes current input) */
+    private _conversation;
+    /** Current input (pending, will be added to conversation after LLM response) */
+    private _currentInput;
+    /** Registered plugins */
+    private readonly _plugins;
+    /** Tool manager */
+    private readonly _tools;
+    /** Token estimator for conversation/input */
+    private readonly _estimator;
+    /** Session ID (if loaded/saved) */
+    private _sessionId;
+    /** Agent ID */
+    private readonly _agentId;
+    /** Storage backend */
+    private readonly _storage?;
+    /** Destroyed flag */
+    private _destroyed;
+    /**
+     * Create a new AgentContextNextGen instance.
+     */
+    static create(config: AgentContextNextGenConfig): AgentContextNextGen;
+    private constructor();
+    /**
+     * Initialize plugins based on feature flags.
+     * Called automatically in constructor.
+     */
+    private initializePlugins;
+    /** Get the tool manager */
+    get tools(): ToolManager;
+    /** Get the model name */
+    get model(): string;
+    /** Get the agent ID */
+    get agentId(): string;
+    /** Get/set system prompt */
+    get systemPrompt(): string | undefined;
+    set systemPrompt(value: string | undefined);
+    /** Get feature configuration */
+    get features(): Required<ContextFeatures>;
+    /** Check if destroyed */
+    get isDestroyed(): boolean;
+    /** Get current session ID */
+    get sessionId(): string | null;
+    /** Get storage (null if not configured) */
+    get storage(): IContextStorage | null;
+    /** Get max context tokens */
+    get maxContextTokens(): number;
+    /** Get response reserve tokens */
+    get responseReserve(): number;
+    /** Get current tools token usage (useful for debugging) */
+    get toolsTokens(): number;
+    /**
+     * Get working memory plugin (if registered).
+     * This is a compatibility accessor for code expecting ctx.memory
+     */
+    get memory(): WorkingMemoryPluginNextGen | null;
+    /**
+     * Get the last message (most recent user message or tool results).
+     * Used for compatibility with old code that expected a single item.
+     */
+    getLastUserMessage(): InputItem | null;
+    /**
+     * Set current input (user message).
+     * Adds a user message to the conversation and sets it as the current input for prepare().
+     */
+    setCurrentInput(content: string | Content[]): void;
+    /**
+     * Add multiple input items to conversation (legacy compatibility).
+     */
+    addInputItems(items: InputItem[]): void;
+    /**
+     * Legacy alias for prepare() - returns prepared context.
+     */
+    prepareConversation(): Promise<PreparedContext>;
+    /**
+     * Add a message (legacy compatibility).
+     * For user messages, use addUserMessage instead.
+     * For assistant messages, use addAssistantResponse instead.
+     */
+    addMessage(role: 'user' | 'assistant', content: string | Content[]): string;
+    /**
+     * Register a plugin.
+     * Plugin's tools are automatically registered with ToolManager.
+     */
+    registerPlugin(plugin: IContextPluginNextGen): void;
+    /**
+     * Get a plugin by name.
+     */
+    getPlugin<T extends IContextPluginNextGen>(name: string): T | null;
+    /**
+     * Check if a plugin is registered.
+     */
+    hasPlugin(name: string): boolean;
+    /**
+     * Get all registered plugins.
+     */
+    getPlugins(): IContextPluginNextGen[];
+    /**
+     * Add a user message.
+     * Returns the message ID.
+     */
+    addUserMessage(content: string | Content[]): string;
+    /**
+     * Add assistant response (from LLM output).
+     * Also moves current input to conversation history.
+     * Returns the message ID.
+     */
+    addAssistantResponse(output: OutputItem[]): string;
+    /**
+     * Add tool results.
+     * Returns the message ID.
+     */
+    addToolResults(results: ToolResult[]): string;
+    /**
+     * Get conversation history (read-only).
+     */
+    getConversation(): ReadonlyArray<InputItem>;
+    /**
+     * Get current input (read-only).
+     */
+    getCurrentInput(): ReadonlyArray<InputItem>;
+    /**
+     * Get conversation length.
+     */
+    getConversationLength(): number;
+    /**
+     * Clear conversation history.
+     */
+    clearConversation(reason?: string): void;
+    /**
+     * Prepare context for LLM call.
+     *
+     * This method:
+     * 1. Calculates tool definition tokens (never compacted)
+     * 2. Builds the system message from all components
+     * 3. Calculates token budget
+     * 4. Handles oversized current input if needed
+     * 5. Runs compaction if needed
+     * 6. Returns final InputItem[] ready for LLM
+     *
+     * IMPORTANT: Call this ONCE right before each LLM call!
+     */
+    prepare(): Promise<PreparedContext>;
+    /**
+     * Build the system message containing all context components.
+     */
+    private buildSystemMessage;
+    /**
+     * Format plugin name for display (e.g., 'working_memory' -> 'Working Memory')
+     */
+    private formatPluginName;
+    /**
+     * Calculate tokens used by tool definitions.
+     * Tools are sent separately to the LLM and take up context space.
+     */
+    private calculateToolsTokens;
+    /**
+     * Calculate tokens for conversation history.
+     */
+    private calculateConversationTokens;
+    /**
+     * Calculate tokens for current input.
+     */
+    private calculateInputTokens;
+    /**
+     * Estimate tokens for a single InputItem.
+     */
+    private estimateItemTokens;
+    /**
+     * Run compaction to free up tokens.
+     * Returns total tokens freed.
+     */
+    private runCompaction;
+    /**
+     * Compact conversation history.
+     * Removes oldest messages while preserving tool pairs.
+     */
+    private compactConversation;
+    /**
+     * Find tool_use/tool_result pairs in conversation.
+     * Returns Map<tool_use_id, array of message indices>.
+     */
+    private findToolPairs;
+    /**
+     * Handle oversized current input.
+     */
+    private handleOversizedInput;
+    /**
+     * Emergency truncation of tool results to fit in context.
+     */
+    private emergencyToolResultsTruncation;
+    /**
+     * Check if content appears to be binary (base64, etc.)
+     */
+    private isBinaryContent;
+    /**
+     * Save context state to storage.
+     *
+     * @param sessionId - Optional session ID (uses current or generates new)
+     * @param metadata - Optional additional metadata to merge
+     * @param stateOverride - Optional state override (for agent-level state injection)
+     */
+    save(sessionId?: string, metadata?: Record<string, unknown>, stateOverride?: SerializedContextState): Promise<void>;
+    /**
+     * Load context state from storage.
+     */
+    load(sessionId: string): Promise<boolean>;
+    /**
+     * Load raw state from storage without restoring.
+     * Used by BaseAgent for custom state restoration.
+     */
+    loadRaw(sessionId: string): Promise<{
+        state: SerializedContextState;
+        stored: StoredContextSession;
+    } | null>;
+    /**
+     * Check if session exists in storage.
+     */
+    sessionExists(sessionId: string): Promise<boolean>;
+    /**
+     * Delete a session from storage.
+     */
+    deleteSession(sessionId?: string): Promise<void>;
+    /**
+     * Get serialized state for persistence.
+     * Used by BaseAgent to inject agent-level state.
+     */
+    getState(): SerializedContextState;
+    /**
+     * Restore state from serialized form.
+     * Used by BaseAgent for custom state restoration.
+     */
+    restoreState(state: SerializedContextState): void;
+    /**
+     * Generate unique ID.
+     */
+    private generateId;
+    /**
+     * Assert context is not destroyed.
+     */
+    private assertNotDestroyed;
+    /**
+     * Destroy context and release resources.
+     */
+    destroy(): void;
+}
 
 /**
  * Session configuration using AgentContext persistence
@@ -273,12 +2072,12 @@ interface BaseAgentConfig {
     /** Lifecycle hooks for customization */
     lifecycleHooks?: AgentLifecycleHooks;
     /**
-     * Optional AgentContext configuration.
-     * If provided as AgentContext instance, it will be used directly.
-     * If provided as config object, a new AgentContext will be created.
-     * If not provided, a default AgentContext will be created.
+     * Optional AgentContextNextGen configuration.
+     * If provided as AgentContextNextGen instance, it will be used directly.
+     * If provided as config object, a new AgentContextNextGen will be created.
+     * If not provided, a default AgentContextNextGen will be created.
      */
-    context?: AgentContext | AgentContextConfig;
+    context?: AgentContextNextGen | AgentContextNextGenConfig;
 }
 /**
  * Base events emitted by all agent types.
@@ -326,7 +2125,7 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     readonly connector: Connector;
     readonly model: string;
     protected _config: TConfig;
-    protected _agentContext: AgentContext;
+    protected _agentContext: AgentContextNextGen;
     protected _permissionManager: ToolPermissionManager;
     protected _isDestroyed: boolean;
     protected _cleanupCallbacks: Array<() => void | Promise<void>>;
@@ -346,11 +2145,11 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      */
     protected resolveConnector(ref: string | Connector): Connector;
     /**
-     * Initialize AgentContext (single source of truth for tools and sessions).
-     * If AgentContext is provided, use it directly.
+     * Initialize AgentContextNextGen (single source of truth for tools and sessions).
+     * If AgentContextNextGen is provided, use it directly.
      * Otherwise, create a new one with the provided configuration.
      */
-    protected initializeAgentContext(config: TConfig): AgentContext;
+    protected initializeAgentContext(config: TConfig): AgentContextNextGen;
     /**
      * Initialize permission manager
      */
@@ -405,22 +2204,22 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      * Get context state for session persistence.
      * Override in subclasses to include agent-specific state in agentState field.
      */
-    getContextState(): Promise<SerializedAgentContextState>;
+    getContextState(): Promise<SerializedContextState>;
     /**
      * Restore context from saved state.
      * Override in subclasses to restore agent-specific state from agentState field.
      */
-    restoreContextState(state: SerializedAgentContextState): Promise<void>;
+    restoreContextState(state: SerializedContextState): Promise<void>;
     /**
      * Advanced tool management. Returns ToolManager for fine-grained control.
-     * This is delegated to AgentContext.tools (single source of truth).
+     * This is delegated to AgentContextNextGen.tools (single source of truth).
      */
     get tools(): ToolManager;
     /**
-     * Get the AgentContext (unified context management).
-     * This is the primary way to access tools, memory, cache, permissions, and history.
+     * Get the AgentContextNextGen (unified context management).
+     * This is the primary way to access tools, memory, and history.
      */
-    get context(): AgentContext;
+    get context(): AgentContextNextGen;
     /**
      * Permission management. Returns ToolPermissionManager for approval control.
      */
@@ -616,7 +2415,7 @@ interface StoredAgentDefinition {
     /** Instructions */
     instructions?: string;
     /** Feature configuration */
-    features?: AgentContextFeatures;
+    features?: ContextFeatures;
     /** Agent metadata */
     metadata?: AgentDefinitionMetadata;
     /** Agent-type-specific configuration */
@@ -742,15 +2541,14 @@ interface AgentConfig$1 extends BaseAgentConfig {
     vendorOptions?: Record<string, unknown>;
     /**
      * Optional unified context management.
-     * When provided (as AgentContext instance or config), Agent will:
+     * When provided (as AgentContextNextGen instance or config), Agent will:
      * - Track conversation history
-     * - Cache tool results (if enabled)
      * - Provide unified memory access
      * - Support session persistence via context
      *
-     * Pass an AgentContext instance or AgentContextConfig to enable.
+     * Pass an AgentContextNextGen instance or AgentContextNextGenConfig to enable.
      */
-    context?: AgentContext | AgentContextConfig;
+    context?: AgentContextNextGen | AgentContextNextGenConfig;
     /** Tool execution timeout in milliseconds. @default 30000 */
     toolTimeout?: number;
     hooks?: HookConfig;
@@ -984,111 +2782,884 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgentEvents> implements IDi
 }
 
 /**
- * AgentContextTools - Feature-aware tool factory for AgentContext
+ * BasePluginNextGen - Base class for context plugins
  *
- * @deprecated Since v0.3.0 - Tools are now auto-registered by AgentContext constructor.
- * All agent types (Agent, TaskAgent, UniversalAgent) automatically get feature-aware
- * tools based on enabled features. Manual registration is no longer needed.
- *
- * This file is kept for backwards compatibility only. If you were calling
- * getAgentContextTools() manually, you can safely remove that code.
- *
- * Consolidated tools (Phase 1):
- * - Always: context_stats (unified introspection)
- * - memory: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
- * - inContextMemory: context_set, context_delete, context_list
- * - persistentInstructions: instructions_set, instructions_append, instructions_get, instructions_clear
+ * Provides common functionality:
+ * - Token size tracking with caching
+ * - Default implementations for optional methods
+ * - Simple token estimation
  */
 
 /**
- * Get tools based on enabled features in AgentContext
- *
- * @deprecated Tools are now auto-registered by AgentContext constructor.
- * You no longer need to call this function manually. All agent types
- * automatically get the correct tools based on enabled features.
- *
- * @param context - The AgentContext to get tools for
- * @returns Array of tools based on enabled features
+ * Simple token estimator used by plugins.
+ * Uses character-based approximation (good enough for most cases).
  */
-declare function getAgentContextTools(context: AgentContext): ToolFunction[];
+declare const simpleTokenEstimator: ITokenEstimator$1;
 /**
- * Get only the basic introspection tools (always available)
+ * Base class for NextGen context plugins.
+ *
+ * Subclasses should:
+ * 1. Override `name` property
+ * 2. Implement `getInstructions()` and `getContent()`
+ * 3. Call `invalidateTokenCache()` when content changes
+ * 4. Optionally override other methods as needed
  */
-declare function getBasicIntrospectionTools(): ToolFunction[];
-/**
- * Get only memory-related tools (requires memory feature)
- */
-declare function getMemoryTools(): ToolFunction[];
+declare abstract class BasePluginNextGen implements IContextPluginNextGen {
+    abstract readonly name: string;
+    /** Cached token size for content */
+    private _contentTokenCache;
+    /** Cached token size for instructions */
+    private _instructionsTokenCache;
+    /** Token estimator */
+    protected estimator: ITokenEstimator$1;
+    abstract getInstructions(): string | null;
+    abstract getContent(): Promise<string | null>;
+    abstract getContents(): unknown;
+    /**
+     * Get current token size of content.
+     * Uses caching - call invalidateTokenCache() when content changes.
+     */
+    getTokenSize(): number;
+    /**
+     * Get token size of instructions (cached after first call).
+     */
+    getInstructionsTokenSize(): number;
+    /**
+     * Invalidate token cache - call when content changes.
+     */
+    protected invalidateTokenCache(): void;
+    /**
+     * Update token cache with new size.
+     * Call this after modifying content.
+     */
+    protected updateTokenCache(tokens: number): void;
+    /**
+     * Recalculate and cache token size from current content.
+     */
+    protected recalculateTokenCache(): Promise<number>;
+    /**
+     * Default: not compactable. Override if plugin supports compaction.
+     */
+    isCompactable(): boolean;
+    /**
+     * Default: no compaction. Override if plugin supports compaction.
+     */
+    compact(_targetTokensToFree: number): Promise<number>;
+    /**
+     * Default: no tools. Override to provide plugin-specific tools.
+     */
+    getTools(): ToolFunction[];
+    /**
+     * Default: no-op cleanup. Override if plugin has resources to release.
+     */
+    destroy(): void;
+    /**
+     * Default: return empty state. Override for persistence.
+     */
+    getState(): unknown;
+    /**
+     * Default: no-op restore. Override for persistence.
+     */
+    restoreState(_state: unknown): void;
+}
 
 /**
- * FeatureInstructions - Runtime usage instructions for enabled AgentContext features
+ * InContextMemoryPluginNextGen - In-context key-value storage for NextGen context
  *
- * These instructions are injected into the LLM context to provide guidance on
- * efficient, autonomous use of memory, context, and other features.
+ * Unlike WorkingMemory (external storage with index), InContextMemory stores
+ * data DIRECTLY in the LLM context. Values are immediately visible.
  *
- * Token budget (~1,700 tokens total when all features enabled):
- * - Introspection (always): ~300 tokens
- * - Working Memory: ~500 tokens
- * - In-Context Memory: ~350 tokens
- * - Persistent Instructions: ~300 tokens
- * - Tool Result Eviction: ~250 tokens
+ * Use for:
+ * - Current state/status that changes frequently
+ * - User preferences during a session
+ * - Small accumulated results
+ * - Counters, flags, control variables
+ *
+ * Do NOT use for:
+ * - Large data (use WorkingMemory)
+ * - Rarely accessed reference data
+ */
+
+type InContextPriority = 'low' | 'normal' | 'high' | 'critical';
+interface InContextEntry {
+    key: string;
+    description: string;
+    value: unknown;
+    updatedAt: number;
+    priority: InContextPriority;
+}
+interface InContextMemoryConfig {
+    /** Maximum number of entries (default: 20) */
+    maxEntries?: number;
+    /** Maximum total tokens for all entries (default: 4000) */
+    maxTotalTokens?: number;
+    /** Default priority for new entries (default: 'normal') */
+    defaultPriority?: InContextPriority;
+    /** Whether to show timestamps in output (default: false) */
+    showTimestamps?: boolean;
+}
+interface SerializedInContextMemoryState {
+    entries: InContextEntry[];
+}
+declare class InContextMemoryPluginNextGen implements IContextPluginNextGen {
+    readonly name = "in_context_memory";
+    private entries;
+    private config;
+    private estimator;
+    private _destroyed;
+    private _tokenCache;
+    private _instructionsTokenCache;
+    constructor(config?: InContextMemoryConfig);
+    getInstructions(): string;
+    getContent(): Promise<string | null>;
+    getContents(): Map<string, InContextEntry>;
+    getTokenSize(): number;
+    getInstructionsTokenSize(): number;
+    isCompactable(): boolean;
+    compact(targetTokensToFree: number): Promise<number>;
+    getTools(): ToolFunction[];
+    destroy(): void;
+    getState(): SerializedInContextMemoryState;
+    restoreState(state: unknown): void;
+    /**
+     * Store or update a key-value pair
+     */
+    set(key: string, description: string, value: unknown, priority?: InContextPriority): void;
+    /**
+     * Get a value by key
+     */
+    get(key: string): unknown | undefined;
+    /**
+     * Check if a key exists
+     */
+    has(key: string): boolean;
+    /**
+     * Delete an entry
+     */
+    delete(key: string): boolean;
+    /**
+     * List all entries with metadata
+     */
+    list(): Array<{
+        key: string;
+        description: string;
+        priority: InContextPriority;
+        updatedAt: number;
+    }>;
+    /**
+     * Clear all entries
+     */
+    clear(): void;
+    private formatEntries;
+    private formatEntry;
+    private enforceMaxEntries;
+    private assertNotDestroyed;
+    private createContextSetTool;
+    private createContextDeleteTool;
+    private createContextListTool;
+}
+
+/**
+ * IPersistentInstructionsStorage - Storage interface for persistent instructions
+ *
+ * Abstracted storage interface following Clean Architecture principles.
+ * Implementations can use file system, database, or any other storage backend.
+ */
+/**
+ * Storage interface for persistent agent instructions
+ *
+ * Implementations handle the actual storage mechanism while the plugin
+ * handles the business logic.
+ */
+interface IPersistentInstructionsStorage {
+    /**
+     * Load instructions from storage
+     *
+     * @returns The stored instructions content, or null if none exist
+     */
+    load(): Promise<string | null>;
+    /**
+     * Save instructions to storage
+     *
+     * @param content - The instructions content to save
+     */
+    save(content: string): Promise<void>;
+    /**
+     * Delete instructions from storage
+     */
+    delete(): Promise<void>;
+    /**
+     * Check if instructions exist in storage
+     *
+     * @returns true if instructions exist
+     */
+    exists(): Promise<boolean>;
+    /**
+     * Get the storage path (for display/debugging)
+     *
+     * @returns Human-readable path to the storage location
+     */
+    getPath(): string;
+}
+
+/**
+ * PersistentInstructionsPluginNextGen - Disk-persisted instructions for NextGen context
+ *
+ * Stores custom instructions that persist across sessions on disk.
+ * These are NEVER compacted - always included in context.
+ *
+ * Use cases:
+ * - Agent personality/behavior customization
+ * - User-specific preferences
+ * - Accumulated knowledge/rules
+ * - Custom tool usage guidelines
+ *
+ * Storage: ~/.oneringai/agents/<agentId>/custom_instructions.md
+ */
+
+interface PersistentInstructionsConfig {
+    /** Agent ID - used to determine storage path (REQUIRED) */
+    agentId: string;
+    /** Custom storage implementation (default: FilePersistentInstructionsStorage) */
+    storage?: IPersistentInstructionsStorage;
+    /** Maximum instructions length in characters (default: 50000) */
+    maxLength?: number;
+}
+interface SerializedPersistentInstructionsState {
+    content: string | null;
+    agentId: string;
+}
+declare class PersistentInstructionsPluginNextGen implements IContextPluginNextGen {
+    readonly name = "persistent_instructions";
+    private _content;
+    private _initialized;
+    private _destroyed;
+    private readonly storage;
+    private readonly maxLength;
+    private readonly agentId;
+    private readonly estimator;
+    private _tokenCache;
+    private _instructionsTokenCache;
+    constructor(config: PersistentInstructionsConfig);
+    getInstructions(): string;
+    getContent(): Promise<string | null>;
+    getContents(): string | null;
+    getTokenSize(): number;
+    getInstructionsTokenSize(): number;
+    isCompactable(): boolean;
+    compact(_targetTokensToFree: number): Promise<number>;
+    getTools(): ToolFunction[];
+    destroy(): void;
+    getState(): SerializedPersistentInstructionsState;
+    restoreState(state: unknown): void;
+    /**
+     * Initialize by loading from storage (called lazily)
+     */
+    initialize(): Promise<void>;
+    /**
+     * Set entire instructions content (replaces existing)
+     */
+    set(content: string): Promise<boolean>;
+    /**
+     * Append a section to existing instructions
+     */
+    append(section: string): Promise<boolean>;
+    /**
+     * Get current content
+     */
+    get(): Promise<string | null>;
+    /**
+     * Clear all instructions
+     */
+    clear(): Promise<void>;
+    /**
+     * Check if initialized
+     */
+    get isInitialized(): boolean;
+    private ensureInitialized;
+    private assertNotDestroyed;
+    private createInstructionsSetTool;
+    private createInstructionsAppendTool;
+    private createInstructionsGetTool;
+    private createInstructionsClearTool;
+}
+
+/**
+ * WorkingMemory class - manages indexed working memory for TaskAgent
+ *
+ * This is a GENERIC implementation that works across all agent types:
+ * - Basic Agent: Uses staticPriorityCalculator with simple scopes
+ * - TaskAgent: Uses taskAwarePriorityCalculator with task-aware scopes
+ * - UniversalAgent: Can switch calculators based on mode
+ *
+ * The PriorityCalculator strategy pattern allows different agents to have
+ * different eviction behaviors without changing the core WorkingMemory logic.
  */
 
 /**
- * Introspection instructions (always included)
- * ~300 tokens
+ * Serialized memory state for persistence
  */
-declare const INTROSPECTION_INSTRUCTIONS = "## Context Budget Management\n\n### Monitoring\nCheck budget with `context_stats()`:\n- `remaining_percent` > 50%: Comfortable\n- `remaining_percent` 20-50%: Consider cleanup\n- `remaining_percent` < 20%: Aggressive cleanup needed\n\n### When to Check\n- After storing large outputs\n- Before intensive multi-step operations\n- Periodically during long conversations\n\n### Response to Low Budget\n1. Summarize raw memory entries\n2. Delete consumed in-context entries\n3. Run `memory_cleanup_raw()` if applicable";
+interface SerializedMemory {
+    /** Memory format version */
+    version: number;
+    /** Serialized memory entries */
+    entries: SerializedMemoryEntry[];
+}
 /**
- * Working Memory instructions
- * ~500 tokens
+ * Serialized memory entry
  */
-declare const WORKING_MEMORY_INSTRUCTIONS = "## Working Memory Usage\n\n### Decision Matrix\n| Data Type | Storage | Why |\n|-----------|---------|-----|\n| Large outputs (>2KB) | memory_store | Keeps context lean |\n| Intermediate results | memory_store (tier: raw) | Can summarize later |\n| Final findings | memory_store (tier: findings) | Persists across cleanup |\n| Fast-changing state | context_set | Immediate visibility |\n| User preferences | instructions_append | Cross-session persistence |\n\n### Naming Conventions\n- `raw.<source>.<id>` - Raw data (e.g., `raw.web.page1`)\n- `summary.<topic>` - Summarized content\n- `findings.<category>` - Final insights\n- `data.<type>` - Reference data\n\n### Workflow\n1. Store raw data: `memory_store({ key: \"raw.web.page1\", value: \"...\", tier: \"raw\" })`\n2. Process and summarize\n3. Store summary: `memory_store({ key: \"summary.research\", value: \"...\", tier: \"summary\" })`\n4. Cleanup raw: `memory_cleanup_raw()` (removes tier=raw entries)\n5. Keep findings: `memory_store({ key: \"findings.conclusion\", value: \"...\", tier: \"findings\" })`\n\n### Query Patterns\n- List all: `memory_query()`\n- List by tier: `memory_query({ tier: \"findings\" })`\n- Search pattern: `memory_query({ pattern: \"raw.*\" })`\n- Retrieve values: `memory_query({ pattern: \"findings.*\", includeValues: true })`\n- With stats: `memory_query({ includeStats: true })`";
+interface SerializedMemoryEntry {
+    key: string;
+    description: string;
+    value: unknown;
+    scope: MemoryScope;
+    sizeBytes: number;
+    basePriority?: MemoryPriority;
+    pinned?: boolean;
+}
 /**
- * In-Context Memory instructions
- * ~350 tokens
+ * Eviction strategy type
  */
-declare const IN_CONTEXT_MEMORY_INSTRUCTIONS = "## In-Context Memory Usage\n\nValues stored here are **immediately visible** in your context - no retrieval needed.\n\n### When to Use\n- Current state/status that changes during execution\n- Flags, counters, progress indicators\n- Small accumulated results (<500 tokens each)\n\n### When NOT to Use\n- Large data (use Working Memory instead)\n- Rarely accessed reference data\n\n### Naming Conventions\n- `state.<name>` - Current state\n- `progress.<task>` - Progress tracking\n- `flags.<name>` - Boolean flags\n- `prefs.<name>` - Session preferences\n\n### Priority Levels\n- `low` - Evicted first when space needed\n- `normal` - Default\n- `high` - Evicted only if necessary\n- `critical` - Never auto-evicted\n\n### Best Practices\n- Keep values small (<500 tokens)\n- Delete entries when no longer needed: `context_delete({ key: \"state.temp\" })`\n- Use appropriate priority based on importance";
+type EvictionStrategy = 'lru' | 'size';
+interface WorkingMemoryEvents {
+    stored: {
+        key: string;
+        description: string;
+        scope: MemoryScope;
+    };
+    retrieved: {
+        key: string;
+    };
+    deleted: {
+        key: string;
+    };
+    evicted: {
+        keys: string[];
+        reason: 'lru' | 'size' | 'task_completed';
+    };
+    limit_warning: {
+        utilizationPercent: number;
+    };
+    stale_entries: {
+        entries: StaleEntryInfo[];
+    };
+}
 /**
- * Persistent Instructions instructions
- * ~300 tokens
- */
-declare const PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = "## Persistent Instructions Usage\n\nPersistent instructions survive across sessions. Use for stable user preferences and workflows.\n\n### When to Use\n- User preferences (coding style, communication preferences)\n- Project-specific guidelines\n- Workflow templates\n\n### When NOT to Use\n- Secrets or credentials (security risk)\n- Session-specific temporary data\n- Frequently changing information\n\n### Best Practices\n- Prefer `instructions_append` over `instructions_set` (preserves existing content)\n- Use markdown headers for organization\n- Keep concise - these consume context every session\n- Review periodically with `instructions_get`";
-/**
- * Tool Output Tracking instructions
- * ~200 tokens
- */
-declare const TOOL_OUTPUT_TRACKING_INSTRUCTIONS = "## Tool Output Tracking\n\nRecent tool outputs are tracked and available in context. This helps you reference previous results.\n\n### Automatic Behavior\n- Tool outputs are automatically tracked\n- Oldest outputs are evicted when space is needed\n- Large outputs may be truncated in context\n\n### Best Practices\n- Reference previous outputs by tool name\n- For large outputs, immediately extract and store key information in memory\n- Don't rely on tool outputs persisting - they are compacted aggressively";
-/**
- * Auto-Spill instructions
- * ~300 tokens
- */
-declare const AUTO_SPILL_INSTRUCTIONS = "## Auto-Spill (Large Output Management)\n\nLarge tool outputs (>10KB) are automatically stored in Working Memory's raw tier.\n\n### What You'll See\nWhen a tool returns large output, you'll see it listed in \"Auto-Spilled Data (Awaiting Processing)\":\n```\n- **raw.autospill_web_scrape_example_com_0**\n  - Description: web_scrape: example.com/page (45.2 KB)\n  - Status: \u23F3 Awaiting processing\n```\n\n### REQUIRED Workflow (CRITICAL)\nUse `autospill_process()` to handle these entries:\n```\nautospill_process({\n  key: \"raw.autospill_web_scrape_example_com_0\",\n  summary: \"Key findings: 1) Topic A discussed, 2) Topic B mentioned, 3) Conclusion C\"\n})\n```\n\nThis does THREE things:\n1. Retrieves the full data (you can add `retrieve_first: true` to see it)\n2. Stores your summary in findings tier\n3. **Marks entry as consumed** - it will no longer appear in context\n\n### Why This Matters\n**If you don't process entries**, they will keep appearing in your context repeatedly,\ncausing you to re-process the same data in an infinite loop.\n\n### Best Practice\nProcess auto-spilled entries AS SOON as you've extracted what you need from them.";
-/**
- * Tool Result Eviction instructions
- * ~250 tokens
- */
-declare const TOOL_RESULT_EVICTION_INSTRUCTIONS = "## Tool Result Eviction\n\nOld tool results are automatically moved to memory to save context space.\n\n### What Happens\n- Results older than 3 iterations are evicted to memory\n- Results are stored under `tool_result:<tool>:<id>` keys\n- Both tool_use and tool_result messages are removed together\n- This keeps your conversation history lean while preserving data\n\n### Retrieving Evicted Results\nIf you need a previously evicted result:\n```\nmemory_query({ pattern: \"tool_result:*\" })  // List evicted results\nmemory_retrieve({ key: \"tool_result:web_fetch:toolu_abc\" })  // Get full content\n```\n\n### Per-Tool Retention\nSome tools keep results longer in conversation:\n- `read_file`, `bash`, `grep`: 6-10 iterations (often referenced)\n- `web_fetch`, `web_search`: 3 iterations (can re-fetch if needed)\n\n### Best Practices\n- Extract and store key information promptly before eviction\n- Use `memory_store()` for findings you'll need later\n- Don't rely on tool results persisting in conversation";
-/**
- * Build feature instructions component based on enabled features
+ * WorkingMemory manages the agent's indexed working memory.
  *
- * @param features - Resolved feature configuration (all required)
- * @returns Context component with feature instructions, or null if nothing to include
- *
- * @example
- * ```typescript
- * const features = { memory: true, inContextMemory: true, history: true, permissions: true, persistentInstructions: false };
- * const component = buildFeatureInstructions(features);
- * if (component) {
- *   components.push(component);
- * }
- * ```
+ * Features:
+ * - Store/retrieve with descriptions for index
+ * - Scoped memory (simple or task-aware)
+ * - Priority-based eviction (respects pinned, priority, then LRU)
+ * - Pluggable priority calculation via PriorityCalculator strategy
+ * - Task completion detection and stale entry notification
+ * - Event emission for monitoring
  */
-declare function buildFeatureInstructions(features: Required<AgentContextFeatures>): IContextComponent | null;
+declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements IDisposable {
+    private storage;
+    private config;
+    private priorityCalculator;
+    private priorityContext;
+    private _isDestroyed;
+    /**
+     * Create a WorkingMemory instance
+     *
+     * @param storage - Storage backend for memory entries
+     * @param config - Memory configuration (limits, etc.)
+     * @param priorityCalculator - Strategy for computing effective priority (default: static)
+     */
+    constructor(storage: IMemoryStorage, config?: WorkingMemoryConfig, priorityCalculator?: PriorityCalculator);
+    /**
+     * Set the priority calculator (for switching strategies at runtime)
+     */
+    setPriorityCalculator(calculator: PriorityCalculator): void;
+    /**
+     * Update priority context (e.g., task states for TaskAgent)
+     */
+    setPriorityContext(context: PriorityContext): void;
+    /**
+     * Get the current priority context
+     */
+    getPriorityContext(): PriorityContext;
+    /**
+     * Compute effective priority for an entry using the current calculator
+     */
+    private computeEffectivePriority;
+    /**
+     * Get all entries with their computed effective priorities
+     * This is a performance optimization to avoid repeated getAll() + map() calls
+     */
+    private getEntriesWithPriority;
+    /**
+     * Get evictable entries sorted by eviction priority
+     * Filters out pinned and critical entries, sorts by priority then by strategy
+     */
+    private getEvictableEntries;
+    /**
+     * Store a value in working memory
+     *
+     * @param key - Unique key for the entry
+     * @param description - Short description for the index (max 150 chars)
+     * @param value - The data to store
+     * @param options - Optional scope, priority, and pinned settings
+     */
+    store(key: string, description: string, value: unknown, options?: {
+        scope?: MemoryScope;
+        priority?: MemoryPriority;
+        pinned?: boolean;
+    }): Promise<void>;
+    /**
+     * Enforce the maxIndexEntries limit by evicting excess entries
+     * Only evicts if entry count exceeds the configured limit
+     */
+    private enforceEntryCountLimit;
+    /**
+     * Get the configured max index entries limit
+     */
+    getMaxIndexEntries(): number | undefined;
+    /**
+     * Store a value scoped to specific tasks
+     * Convenience method for task-aware memory
+     */
+    storeForTasks(key: string, description: string, value: unknown, taskIds: string[], options?: {
+        priority?: MemoryPriority;
+        pinned?: boolean;
+    }): Promise<void>;
+    /**
+     * Store a value scoped to the entire plan
+     * Convenience method for plan-scoped memory
+     */
+    storeForPlan(key: string, description: string, value: unknown, options?: {
+        priority?: MemoryPriority;
+        pinned?: boolean;
+    }): Promise<void>;
+    /**
+     * Retrieve a value from working memory
+     *
+     * Note: Access stats update is not strictly atomic. Under very high concurrency,
+     * accessCount may be slightly inaccurate. This is acceptable for memory management
+     * purposes where exact counts are not critical.
+     */
+    retrieve(key: string): Promise<unknown>;
+    /**
+     * Retrieve multiple values
+     */
+    retrieveMany(keys: string[]): Promise<Record<string, unknown>>;
+    /**
+     * Delete a value from working memory
+     */
+    delete(key: string): Promise<void>;
+    /**
+     * Check if key exists
+     */
+    has(key: string): Promise<boolean>;
+    /**
+     * Promote an entry to persistent scope
+     * Works with both simple and task-aware scopes
+     */
+    persist(key: string): Promise<void>;
+    /**
+     * Pin an entry (never evicted)
+     */
+    pin(key: string): Promise<void>;
+    /**
+     * Unpin an entry
+     */
+    unpin(key: string, newPriority?: MemoryPriority): Promise<void>;
+    /**
+     * Set the base priority of an entry
+     */
+    setPriority(key: string, priority: MemoryPriority): Promise<void>;
+    /**
+     * Update the scope of an entry without re-storing the value
+     */
+    updateScope(key: string, scope: MemoryScope): Promise<void>;
+    /**
+     * Add task IDs to an existing task-scoped entry
+     * If entry is not task-scoped, converts it to task-scoped
+     */
+    addTasksToScope(key: string, taskIds: string[]): Promise<void>;
+    /**
+     * Clear all entries of a specific scope
+     */
+    clearScope(scope: MemoryScope): Promise<void>;
+    /**
+     * Clear all entries
+     */
+    clear(): Promise<void>;
+    /**
+     * Get memory index with computed effective priorities
+     * Respects maxIndexEntries limit for context display
+     */
+    getIndex(): Promise<MemoryIndex>;
+    /**
+     * Format index for context injection
+     */
+    formatIndex(): Promise<string>;
+    /**
+     * Evict entries using specified strategy
+     *
+     * Eviction order:
+     * 1. Never evict pinned entries
+     * 2. Evict low priority first, then normal, then high (never critical)
+     * 3. Within same priority, use strategy (LRU or largest size)
+     *
+     * @param count - Number of entries to evict
+     * @param strategy - Eviction strategy ('lru' or 'size')
+     * @returns Keys of evicted entries
+     */
+    evict(count: number, strategy?: EvictionStrategy): Promise<string[]>;
+    /**
+     * Evict entries using priority-aware LRU algorithm
+     * @deprecated Use evict(count, 'lru') instead
+     */
+    evictLRU(count: number): Promise<string[]>;
+    /**
+     * Evict largest entries first (priority-aware)
+     * @deprecated Use evict(count, 'size') instead
+     */
+    evictBySize(count: number): Promise<string[]>;
+    /**
+     * Handle task completion - detect and notify about stale entries
+     *
+     * Call this when a task completes to:
+     * 1. Update priority context with new task state
+     * 2. Detect entries that became stale
+     * 3. Emit event to notify LLM about stale entries
+     *
+     * @param taskId - The completed task ID
+     * @param taskStates - Current task states map
+     * @returns Information about stale entries
+     */
+    onTaskComplete(taskId: string, taskStates: Map<string, TaskStatusForMemory>): Promise<StaleEntryInfo[]>;
+    /**
+     * Evict entries for completed tasks
+     *
+     * Removes entries that were scoped only to completed tasks.
+     * Use after onTaskComplete() if you want automatic cleanup.
+     *
+     * @param taskStates - Current task states map
+     * @returns Keys of evicted entries
+     */
+    evictCompletedTaskEntries(taskStates: Map<string, TaskStatusForMemory>): Promise<string[]>;
+    /**
+     * Get limited memory access for tools
+     *
+     * This provides a simplified interface for tools to interact with memory
+     * without exposing the full WorkingMemory API.
+     */
+    getAccess(): WorkingMemoryAccess;
+    /**
+     * Store raw data (low priority, first to be evicted)
+     *
+     * Use this for original/unprocessed data that should be summarized.
+     * Raw data is automatically evicted first when memory pressure is high.
+     *
+     * @param key - Key without tier prefix (prefix is added automatically)
+     * @param description - Brief description for the index
+     * @param value - The raw data to store
+     * @param options - Optional scope and task IDs
+     */
+    storeRaw(key: string, description: string, value: unknown, options?: {
+        taskIds?: string[];
+        scope?: MemoryScope;
+    }): Promise<void>;
+    /**
+     * Store a summary derived from raw data (normal priority)
+     *
+     * Use this for processed/summarized data that extracts key information.
+     * Links back to source data for cleanup tracking.
+     *
+     * @param key - Key without tier prefix (prefix is added automatically)
+     * @param description - Brief description for the index
+     * @param value - The summary data
+     * @param derivedFrom - Key(s) this summary was derived from
+     * @param options - Optional scope and task IDs
+     */
+    storeSummary(key: string, description: string, value: unknown, derivedFrom: string | string[], options?: {
+        taskIds?: string[];
+        scope?: MemoryScope;
+    }): Promise<void>;
+    /**
+     * Store final findings (high priority, kept longest)
+     *
+     * Use this for conclusions, insights, or final results that should be preserved.
+     * These are the last to be evicted and typically span the entire plan.
+     *
+     * @param key - Key without tier prefix (prefix is added automatically)
+     * @param description - Brief description for the index
+     * @param value - The findings data
+     * @param derivedFrom - Optional key(s) these findings were derived from
+     * @param options - Optional scope, task IDs, and pinned flag
+     */
+    storeFindings(key: string, description: string, value: unknown, _derivedFrom?: string | string[], options?: {
+        taskIds?: string[];
+        scope?: MemoryScope;
+        pinned?: boolean;
+    }): Promise<void>;
+    /**
+     * Clean up raw data after summary/findings are created
+     *
+     * Call this after creating summaries to free up memory used by raw data.
+     * Only deletes entries in the 'raw' tier.
+     *
+     * @param derivedFromKeys - Keys to delete (typically from derivedFrom metadata)
+     * @returns Number of entries deleted
+     */
+    cleanupRawData(derivedFromKeys: string[]): Promise<number>;
+    /**
+     * Get all entries by tier
+     *
+     * @param tier - The tier to filter by
+     * @returns Array of entries in that tier
+     */
+    getByTier(tier: MemoryTier): Promise<MemoryEntry[]>;
+    /**
+     * Promote an entry to a higher tier
+     *
+     * Changes the key prefix and updates priority.
+     * Use this when raw data becomes more valuable (e.g., frequently accessed).
+     *
+     * @param key - Current key (with tier prefix)
+     * @param toTier - Target tier to promote to
+     * @returns New key with updated prefix
+     */
+    promote(key: string, toTier: MemoryTier): Promise<string>;
+    /**
+     * Get tier statistics
+     *
+     * @returns Count and size by tier
+     */
+    getTierStats(): Promise<Record<MemoryTier, {
+        count: number;
+        sizeBytes: number;
+    }>>;
+    /**
+     * Get statistics about memory usage
+     */
+    getStats(): Promise<{
+        totalEntries: number;
+        totalSizeBytes: number;
+        utilizationPercent: number;
+        byPriority: Record<MemoryPriority, number>;
+        pinnedCount: number;
+    }>;
+    /**
+     * Get the configured memory limit
+     */
+    getLimit(): number;
+    /**
+     * Check if the WorkingMemory instance has been destroyed
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Destroy the WorkingMemory instance
+     * Removes all event listeners and clears internal state
+     */
+    destroy(): void;
+    /**
+     * Serialize all memory entries for persistence
+     *
+     * Returns a serializable representation of all memory entries
+     * that can be saved to storage and restored later.
+     *
+     * @returns Serialized memory state
+     */
+    serialize(): Promise<SerializedMemory>;
+    /**
+     * Restore memory entries from serialized state
+     *
+     * Clears existing memory and repopulates from the serialized state.
+     * Timestamps are reset to current time.
+     *
+     * @param state - Previously serialized memory state
+     */
+    restore(state: SerializedMemory): Promise<void>;
+}
+
 /**
- * Get all instruction constants (for testing or direct access)
+ * Core types for context management system
  */
-declare function getAllInstructions(): Record<string, string>;
+/**
+ * Context component that can be compacted
+ */
+interface IContextComponent {
+    /** Unique name for this component */
+    name: string;
+    /** The actual content (string or structured data) */
+    content: string | unknown;
+    /** Priority for compaction (higher = compact first) */
+    priority: number;
+    /** Whether this component can be compacted */
+    compactable: boolean;
+    /** Additional metadata for compaction strategies */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Context budget information
+ */
+interface ContextBudget {
+    /** Total available tokens */
+    total: number;
+    /** Reserved tokens for response */
+    reserved: number;
+    /** Currently used tokens */
+    used: number;
+    /** Available tokens remaining */
+    available: number;
+    /** Utilization percentage (used / (total - reserved)) */
+    utilizationPercent: number;
+    /** Budget status */
+    status: 'ok' | 'warning' | 'critical';
+    /** Token breakdown by component */
+    breakdown: Record<string, number>;
+}
+/**
+ * Context manager configuration
+ */
+interface ContextManagerConfig {
+    /** Maximum context tokens for the model */
+    maxContextTokens: number;
+    /** Threshold to trigger compaction (0.0 - 1.0) */
+    compactionThreshold: number;
+    /** Hard limit - must compact before this (0.0 - 1.0) */
+    hardLimit: number;
+    /** Reserve space for response (0.0 - 1.0) */
+    responseReserve: number;
+    /** Token estimator to use */
+    estimator: 'approximate' | 'tiktoken' | ITokenEstimator;
+    /** Enable automatic compaction */
+    autoCompact: boolean;
+    /** Strategy to use */
+    strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy;
+    /** Strategy-specific options */
+    strategyOptions?: Record<string, unknown>;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig;
+/**
+ * Content type for more accurate token estimation
+ * Named differently from TokenContentType in Content.ts to avoid conflicts
+ */
+type TokenContentType = 'code' | 'prose' | 'mixed';
+/**
+ * Abstract interface for token estimation
+ */
+interface ITokenEstimator {
+    /**
+     * Estimate token count for text
+     *
+     * @param text - The text to estimate
+     * @param contentType - Type of content for more accurate estimation:
+     *   - 'code': Code is typically denser (~3 chars/token)
+     *   - 'prose': Natural language text (~4 chars/token)
+     *   - 'mixed': Mix of code and prose (~3.5 chars/token)
+     */
+    estimateTokens(text: string, contentType?: TokenContentType): number;
+    /**
+     * Estimate tokens for structured data
+     */
+    estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
+}
+/**
+ * Abstract interface for compaction strategies
+ */
+interface IContextCompactor {
+    /** Compactor name */
+    readonly name: string;
+    /** Priority order (lower = run first) */
+    readonly priority: number;
+    /**
+     * Check if this compactor can handle the component
+     */
+    canCompact(component: IContextComponent): boolean;
+    /**
+     * Compact the component to target size
+     */
+    compact(component: IContextComponent, targetTokens: number): Promise<IContextComponent>;
+    /**
+     * Estimate savings from compaction
+     */
+    estimateSavings(component: IContextComponent): number;
+}
+/**
+ * Context management strategy - defines the overall approach to managing context
+ */
+interface IContextStrategy {
+    /** Strategy name */
+    readonly name: string;
+    /**
+     * Decide if compaction is needed based on current budget
+     */
+    shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
+    /**
+     * Execute compaction using available compactors
+     */
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    /**
+     * Optional: Prepare components before budget calculation
+     * Use this for strategies that pre-process context (e.g., rolling window)
+     */
+    prepareComponents?(components: IContextComponent[]): Promise<IContextComponent[]>;
+    /**
+     * Optional: Post-process after compaction
+     * Use this for strategies that need cleanup or optimization
+     */
+    postProcess?(components: IContextComponent[], budget: ContextBudget): Promise<IContextComponent[]>;
+    /**
+     * Optional: Get strategy-specific metrics
+     */
+    getMetrics?(): Record<string, unknown>;
+}
+
+/**
+ * Strategy-specific thresholds (percentages of maxContextTokens).
+ * These adapt context management behavior to the chosen compaction strategy.
+ */
+declare const STRATEGY_THRESHOLDS: {
+    readonly proactive: {
+        readonly compactionTrigger: 0.75;
+        readonly compactionTarget: 0.65;
+        readonly smartCompactionTrigger: 0.7;
+        readonly maxToolResultsPercent: 0.3;
+        readonly protectedContextPercent: 0.1;
+    };
+    readonly aggressive: {
+        readonly compactionTrigger: 0.6;
+        readonly compactionTarget: 0.5;
+        readonly smartCompactionTrigger: 0.55;
+        readonly maxToolResultsPercent: 0.25;
+        readonly protectedContextPercent: 0.08;
+    };
+    readonly lazy: {
+        readonly compactionTrigger: 0.9;
+        readonly compactionTarget: 0.85;
+        readonly smartCompactionTrigger: 0.85;
+        readonly maxToolResultsPercent: 0.4;
+        readonly protectedContextPercent: 0.15;
+    };
+    readonly adaptive: {
+        readonly compactionTrigger: 0.75;
+        readonly compactionTarget: 0.65;
+        readonly smartCompactionTrigger: 0.7;
+        readonly maxToolResultsPercent: 0.3;
+        readonly protectedContextPercent: 0.1;
+    };
+    readonly 'rolling-window': {
+        readonly compactionTrigger: 0.85;
+        readonly compactionTarget: 0.75;
+        readonly smartCompactionTrigger: 0.8;
+        readonly maxToolResultsPercent: 0.35;
+        readonly protectedContextPercent: 0.12;
+    };
+};
+type StrategyName = keyof typeof STRATEGY_THRESHOLDS;
 
 /**
  * Provider Factory - creates the right provider from a Connector
@@ -1101,6 +3672,359 @@ declare function getAllInstructions(): Record<string, string>;
  * Create a text provider from a connector
  */
 declare function createProvider(connector: Connector): ITextProvider;
+
+/**
+ * MCP Configuration Types
+ *
+ * Defines configuration structures for MCP servers and global library configuration.
+ */
+/**
+ * Transport type for MCP communication
+ */
+type MCPTransportType = 'stdio' | 'http' | 'https';
+/**
+ * Stdio transport configuration
+ */
+interface StdioTransportConfig {
+    /** Command to execute (e.g., 'npx', 'node') */
+    command: string;
+    /** Command arguments */
+    args?: string[];
+    /** Environment variables */
+    env?: Record<string, string>;
+    /** Working directory for the process */
+    cwd?: string;
+}
+/**
+ * HTTP/HTTPS transport configuration (StreamableHTTP)
+ */
+interface HTTPTransportConfig {
+    /** HTTP(S) endpoint URL */
+    url: string;
+    /** Authentication token (supports ${ENV_VAR} interpolation) */
+    token?: string;
+    /** Additional HTTP headers */
+    headers?: Record<string, string>;
+    /** Request timeout in milliseconds */
+    timeoutMs?: number;
+    /** Session ID for reconnection */
+    sessionId?: string;
+    /** Reconnection options */
+    reconnection?: {
+        /** Max reconnection delay in ms (default: 30000) */
+        maxReconnectionDelay?: number;
+        /** Initial reconnection delay in ms (default: 1000) */
+        initialReconnectionDelay?: number;
+        /** Reconnection delay growth factor (default: 1.5) */
+        reconnectionDelayGrowFactor?: number;
+        /** Max retry attempts (default: 2) */
+        maxRetries?: number;
+    };
+}
+/**
+ * Transport configuration union type
+ */
+type TransportConfig = StdioTransportConfig | HTTPTransportConfig;
+/**
+ * MCP server configuration
+ */
+interface MCPServerConfig {
+    /** Unique identifier for the server */
+    name: string;
+    /** Human-readable display name */
+    displayName?: string;
+    /** Server description */
+    description?: string;
+    /** Transport type */
+    transport: MCPTransportType;
+    /** Transport-specific configuration */
+    transportConfig: TransportConfig;
+    /** Auto-connect on startup (default: false) */
+    autoConnect?: boolean;
+    /** Auto-reconnect on failure (default: true) */
+    autoReconnect?: boolean;
+    /** Reconnect interval in milliseconds (default: 5000) */
+    reconnectIntervalMs?: number;
+    /** Maximum reconnect attempts (default: 10) */
+    maxReconnectAttempts?: number;
+    /** Request timeout in milliseconds (default: 30000) */
+    requestTimeoutMs?: number;
+    /** Health check interval in milliseconds (default: 60000) */
+    healthCheckIntervalMs?: number;
+    /** Tool namespace prefix (default: 'mcp:{name}') */
+    toolNamespace?: string;
+    /** Permission configuration for tools from this server */
+    permissions?: {
+        /** Default permission scope */
+        defaultScope?: 'once' | 'session' | 'always' | 'never';
+        /** Default risk level */
+        defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
+    };
+    /**
+     * Map environment variable keys to connector names for runtime auth resolution.
+     * When connecting, the connector's token will be injected into the env var.
+     * Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' }
+     */
+    connectorBindings?: Record<string, string>;
+}
+/**
+ * MCP global configuration
+ */
+interface MCPConfiguration {
+    /** List of MCP servers */
+    servers: MCPServerConfig[];
+    /** Default settings for all servers */
+    defaults?: {
+        /** Default auto-connect (default: false) */
+        autoConnect?: boolean;
+        /** Default auto-reconnect (default: true) */
+        autoReconnect?: boolean;
+        /** Default reconnect interval in milliseconds (default: 5000) */
+        reconnectIntervalMs?: number;
+        /** Default maximum reconnect attempts (default: 10) */
+        maxReconnectAttempts?: number;
+        /** Default request timeout in milliseconds (default: 30000) */
+        requestTimeoutMs?: number;
+        /** Default health check interval in milliseconds (default: 60000) */
+        healthCheckIntervalMs?: number;
+    };
+}
+
+/**
+ * MCP Domain Types
+ *
+ * Core types for MCP tools, resources, and prompts.
+ * These are simplified wrappers around the SDK types.
+ */
+/**
+ * MCP Tool definition
+ */
+interface MCPTool {
+    /** Tool name */
+    name: string;
+    /** Tool description */
+    description?: string;
+    /** JSON Schema for tool input */
+    inputSchema: {
+        type: 'object';
+        properties?: Record<string, unknown>;
+        required?: string[];
+        [key: string]: unknown;
+    };
+}
+/**
+ * MCP Tool call result
+ */
+interface MCPToolResult {
+    /** Result content */
+    content: Array<{
+        type: 'text' | 'image' | 'resource';
+        text?: string;
+        data?: string;
+        mimeType?: string;
+        uri?: string;
+    }>;
+    /** Whether the tool call resulted in an error */
+    isError?: boolean;
+}
+/**
+ * MCP Resource definition
+ */
+interface MCPResource {
+    /** Resource URI */
+    uri: string;
+    /** Resource name */
+    name: string;
+    /** Resource description */
+    description?: string;
+    /** MIME type */
+    mimeType?: string;
+}
+/**
+ * MCP Resource content
+ */
+interface MCPResourceContent {
+    /** Resource URI */
+    uri: string;
+    /** MIME type */
+    mimeType?: string;
+    /** Text content */
+    text?: string;
+    /** Binary content (base64) */
+    blob?: string;
+}
+/**
+ * MCP Prompt definition
+ */
+interface MCPPrompt {
+    /** Prompt name */
+    name: string;
+    /** Prompt description */
+    description?: string;
+    /** Prompt arguments schema */
+    arguments?: Array<{
+        name: string;
+        description?: string;
+        required?: boolean;
+    }>;
+}
+/**
+ * MCP Prompt result
+ */
+interface MCPPromptResult {
+    /** Prompt description */
+    description?: string;
+    /** Prompt messages */
+    messages: Array<{
+        role: 'user' | 'assistant';
+        content: {
+            type: 'text' | 'image' | 'resource';
+            text?: string;
+            data?: string;
+            mimeType?: string;
+            uri?: string;
+        };
+    }>;
+}
+/**
+ * MCP Server capabilities
+ */
+interface MCPServerCapabilities {
+    /** Tools capability */
+    tools?: Record<string, unknown>;
+    /** Resources capability */
+    resources?: {
+        subscribe?: boolean;
+        listChanged?: boolean;
+    };
+    /** Prompts capability */
+    prompts?: {
+        listChanged?: boolean;
+    };
+    /** Logging capability */
+    logging?: Record<string, unknown>;
+}
+/**
+ * MCP Client state (for serialization)
+ */
+interface MCPClientState {
+    /** Server name */
+    name: string;
+    /** Connection state */
+    state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+    /** Server capabilities */
+    capabilities?: MCPServerCapabilities;
+    /** Subscribed resource URIs */
+    subscribedResources: string[];
+    /** Last connected timestamp */
+    lastConnectedAt?: number;
+    /** Connection attempt count */
+    connectionAttempts: number;
+}
+
+/**
+ * MCP Client Interface
+ *
+ * High-level interface for MCP client operations.
+ * This wraps the @modelcontextprotocol/sdk Client class.
+ */
+
+/**
+ * MCP Client connection states
+ */
+type MCPClientConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+/**
+ * MCP Client interface
+ */
+interface IMCPClient extends EventEmitter {
+    /** Server name */
+    readonly name: string;
+    /** Current connection state */
+    readonly state: MCPClientConnectionState;
+    /** Server capabilities (available after connection) */
+    readonly capabilities?: MCPServerCapabilities;
+    /** Currently available tools */
+    readonly tools: MCPTool[];
+    /**
+     * Connect to the MCP server
+     */
+    connect(): Promise<void>;
+    /**
+     * Disconnect from the MCP server
+     */
+    disconnect(): Promise<void>;
+    /**
+     * Reconnect to the MCP server
+     */
+    reconnect(): Promise<void>;
+    /**
+     * Check if connected
+     */
+    isConnected(): boolean;
+    /**
+     * Ping the server to check health
+     */
+    ping(): Promise<boolean>;
+    /**
+     * List available tools from the server
+     */
+    listTools(): Promise<MCPTool[]>;
+    /**
+     * Call a tool on the server
+     */
+    callTool(name: string, args: Record<string, unknown>): Promise<MCPToolResult>;
+    /**
+     * Register all tools with a ToolManager
+     */
+    registerTools(toolManager: ToolManager): void;
+    /**
+     * Register specific tools with a ToolManager (selective registration)
+     * @param toolManager - ToolManager to register with
+     * @param toolNames - Optional array of tool names to register (original MCP names, not namespaced).
+     *                    If not provided, registers all tools.
+     */
+    registerToolsSelective(toolManager: ToolManager, toolNames?: string[]): void;
+    /**
+     * Unregister all tools from a ToolManager
+     */
+    unregisterTools(toolManager: ToolManager): void;
+    /**
+     * List available resources from the server
+     */
+    listResources(): Promise<MCPResource[]>;
+    /**
+     * Read a resource from the server
+     */
+    readResource(uri: string): Promise<MCPResourceContent>;
+    /**
+     * Subscribe to resource updates
+     */
+    subscribeResource(uri: string): Promise<void>;
+    /**
+     * Unsubscribe from resource updates
+     */
+    unsubscribeResource(uri: string): Promise<void>;
+    /**
+     * List available prompts from the server
+     */
+    listPrompts(): Promise<MCPPrompt[]>;
+    /**
+     * Get a prompt from the server
+     */
+    getPrompt(name: string, args?: Record<string, unknown>): Promise<MCPPromptResult>;
+    /**
+     * Get current state for serialization
+     */
+    getState(): MCPClientState;
+    /**
+     * Load state from serialization
+     */
+    loadState(state: MCPClientState): void;
+    /**
+     * Destroy the client and clean up resources
+     */
+    destroy(): void;
+}
 
 /**
  * MCP Client Implementation
@@ -1893,7 +4817,7 @@ declare function createImageProvider(connector: Connector): IImageProvider;
 /**
  * Context information for error handling
  */
-interface ErrorContext$1 {
+interface ErrorContext {
     /** Type of agent */
     agentType: 'agent' | 'task-agent' | 'universal-agent';
     /** Optional agent identifier */
@@ -1914,7 +4838,7 @@ interface ErrorHandlerConfig {
     /** Include stack traces in logs. Default: true in development, false in production */
     includeStackTrace?: boolean;
     /** Custom error transformer */
-    transformError?: (error: Error, context: ErrorContext$1) => Error;
+    transformError?: (error: Error, context: ErrorContext) => Error;
     /** Error codes/messages that should be retried */
     retryablePatterns?: string[];
     /** Maximum retry attempts. Default: 3 */
@@ -1931,20 +4855,20 @@ interface ErrorHandlerEvents {
     /** Emitted when an error is handled */
     error: {
         error: Error;
-        context: ErrorContext$1;
+        context: ErrorContext;
         recoverable: boolean;
     };
     /** Emitted when retrying after an error */
     'error:retrying': {
         error: Error;
-        context: ErrorContext$1;
+        context: ErrorContext;
         attempt: number;
         delayMs: number;
     };
     /** Emitted when an error is fatal (no recovery possible) */
     'error:fatal': {
         error: Error;
-        context: ErrorContext$1;
+        context: ErrorContext;
     };
 }
 /**
@@ -1988,7 +4912,7 @@ declare class ErrorHandler extends EventEmitter<ErrorHandlerEvents> {
      * @param error - The error to handle
      * @param context - Context information about where/how the error occurred
      */
-    handle(error: Error, context: ErrorContext$1): void;
+    handle(error: Error, context: ErrorContext): void;
     /**
      * Execute a function with automatic retry on retryable errors.
      *
@@ -1997,7 +4921,7 @@ declare class ErrorHandler extends EventEmitter<ErrorHandlerEvents> {
      * @returns The result of the function
      * @throws The last error if all retries are exhausted
      */
-    executeWithRetry<T>(fn: () => Promise<T>, context: ErrorContext$1): Promise<T>;
+    executeWithRetry<T>(fn: () => Promise<T>, context: ErrorContext): Promise<T>;
     /**
      * Wrap a function with error handling (no retry).
      * Useful for wrapping methods that already have their own retry logic.
@@ -2006,7 +4930,7 @@ declare class ErrorHandler extends EventEmitter<ErrorHandlerEvents> {
      * @param contextFactory - Factory to create context from function arguments
      * @returns A wrapped function with error handling
      */
-    wrap<TArgs extends unknown[], TResult>(fn: (...args: TArgs) => Promise<TResult>, contextFactory: (...args: TArgs) => ErrorContext$1): (...args: TArgs) => Promise<TResult>;
+    wrap<TArgs extends unknown[], TResult>(fn: (...args: TArgs) => Promise<TResult>, contextFactory: (...args: TArgs) => ErrorContext): (...args: TArgs) => Promise<TResult>;
     /**
      * Check if an error is recoverable (can be retried or handled gracefully).
      */
@@ -2038,6 +4962,156 @@ declare class ErrorHandler extends EventEmitter<ErrorHandlerEvents> {
  * Can be used as a singleton for consistent error handling across the application.
  */
 declare const globalErrorHandler: ErrorHandler;
+
+/**
+ * ContextGuardian - Mandatory checkpoint for context validation before LLM calls
+ *
+ * This class provides the final safety net to ensure context never exceeds
+ * the model's limits. It validates the prepared input and applies graceful
+ * degradation if needed, ensuring the LLM call will succeed.
+ *
+ * Graceful Degradation Levels (applied in order):
+ * 1. Truncate tool results to maxToolResultTokens each
+ * 2. Remove oldest N unprotected tool pairs
+ * 3. Truncate system prompt to minSystemPromptTokens
+ * 4. Throw ContextOverflowError with detailed budget
+ *
+ * @example
+ * ```typescript
+ * const guardian = new ContextGuardian({ maxContextTokens: 128000 });
+ *
+ * // In AgentContext.prepare():
+ * const input = await this.buildLLMInput();
+ * const validation = guardian.validate(input, maxTokens);
+ *
+ * if (!validation.valid) {
+ *   const { input: safeInput, log } = guardian.applyGracefulDegradation(input, validation.targetTokens);
+ *   return { input: safeInput, ... };
+ * }
+ * ```
+ */
+
+/**
+ * Result of guardian validation
+ */
+interface GuardianValidation {
+    /** Whether the input fits within limits */
+    valid: boolean;
+    /** Actual token count of input */
+    actualTokens: number;
+    /** Target token limit (maxTokens - reserved) */
+    targetTokens: number;
+    /** How many tokens over the limit (0 if valid) */
+    overageTokens: number;
+    /** Token breakdown by message type */
+    breakdown: Record<string, number>;
+}
+/**
+ * Result of graceful degradation
+ */
+interface DegradationResult {
+    /** The potentially modified input */
+    input: InputItem[];
+    /** Log of actions taken */
+    log: string[];
+    /** Final token count after degradation */
+    finalTokens: number;
+    /** Tokens freed during degradation */
+    tokensFreed: number;
+    /** Whether degradation was successful (fits within limits) */
+    success: boolean;
+}
+/**
+ * Configuration for ContextGuardian
+ */
+interface ContextGuardianConfig {
+    /** Enable guardian validation (default: true) */
+    enabled?: boolean;
+    /** Maximum tool result size in tokens before truncation */
+    maxToolResultTokens?: number;
+    /** Minimum system prompt tokens to preserve */
+    minSystemPromptTokens?: number;
+    /** Number of recent messages to always protect from compaction */
+    protectedRecentMessages?: number;
+    /** Maximum context tokens (used for percentage-based protection calculations) */
+    maxContextTokens?: number;
+    /** Strategy name (affects protected message percentage) */
+    strategy?: StrategyName;
+}
+/**
+ * ContextGuardian - Ensures context never exceeds model limits
+ *
+ * The guardian acts as a LAST RESORT after smart compaction and strategy-based
+ * eviction have already been attempted. It uses strategy-aware thresholds
+ * to avoid overly aggressive data loss.
+ */
+declare class ContextGuardian {
+    private readonly _enabled;
+    private readonly _maxToolResultTokens;
+    private readonly _minSystemPromptTokens;
+    private readonly _configuredProtectedMessages;
+    private readonly _maxContextTokens;
+    private readonly _strategy;
+    private readonly _estimator;
+    constructor(estimator: ITokenEstimator, config?: ContextGuardianConfig);
+    /**
+     * Get effective protected message count, considering strategy and context size.
+     * Uses percentage-based calculation if maxContextTokens is available.
+     *
+     * NOTE: If an explicit value was configured (not using default), it's honored
+     * without applying minimum caps - this allows tests and special cases to work.
+     */
+    private get _protectedRecentMessages();
+    /**
+     * Check if guardian is enabled
+     */
+    get enabled(): boolean;
+    /**
+     * Validate that input fits within token limits
+     *
+     * @param input - The InputItem[] to validate
+     * @param maxTokens - Maximum allowed tokens (after reserving for response)
+     * @returns Validation result with actual counts and breakdown
+     */
+    validate(input: InputItem[], maxTokens: number): GuardianValidation;
+    /**
+     * Apply graceful degradation to reduce input size
+     *
+     * @param input - The InputItem[] to potentially modify
+     * @param targetTokens - Target token count to achieve
+     * @returns Degradation result with potentially modified input
+     */
+    applyGracefulDegradation(input: InputItem[], targetTokens: number): DegradationResult;
+    /**
+     * Emergency compact - more aggressive than graceful degradation
+     * Used when even graceful degradation fails
+     *
+     * @param input - The InputItem[] to compact
+     * @param targetTokens - Target token count
+     * @returns Compacted InputItem[] (may lose significant data)
+     */
+    emergencyCompact(input: InputItem[], targetTokens: number): InputItem[];
+    /**
+     * Estimate tokens for an InputItem
+     */
+    private estimateInputItemTokens;
+    /**
+     * Level 1: Truncate large tool results
+     */
+    private truncateToolResults;
+    /**
+     * Level 2: Remove oldest unprotected tool pairs
+     */
+    private removeOldestToolPairs;
+    /**
+     * Level 3: Truncate system prompt
+     */
+    private truncateSystemPrompt;
+    /**
+     * Truncate a message to target token count
+     */
+    private truncateMessage;
+}
 
 /**
  * Video generation provider interface
@@ -3037,6 +6111,73 @@ declare function resolveDependencies(taskInputs: TaskInput[], tasks: Task[]): vo
 declare function detectDependencyCycle(tasks: Task[]): string[] | null;
 
 /**
+ * ExternalDependencyHandler - handles external dependencies
+ */
+
+interface ExternalDependencyEvents {
+    'webhook:received': {
+        webhookId: string;
+        data: unknown;
+    };
+    'poll:success': {
+        taskId: string;
+        data: unknown;
+    };
+    'poll:timeout': {
+        taskId: string;
+    };
+    'scheduled:triggered': {
+        taskId: string;
+    };
+    'manual:completed': {
+        taskId: string;
+        data: unknown;
+    };
+}
+/**
+ * Handles external task dependencies
+ */
+declare class ExternalDependencyHandler extends EventEmitter<ExternalDependencyEvents> {
+    private activePolls;
+    private activeScheduled;
+    private cancelledPolls;
+    private tools;
+    constructor(tools?: ToolFunction[]);
+    /**
+     * Start handling a task's external dependency
+     */
+    startWaiting(task: Task): Promise<void>;
+    /**
+     * Stop waiting on a task's external dependency
+     */
+    stopWaiting(task: Task): void;
+    /**
+     * Trigger a webhook
+     */
+    triggerWebhook(webhookId: string, data: unknown): Promise<void>;
+    /**
+     * Complete a manual task
+     */
+    completeManual(taskId: string, data: unknown): Promise<void>;
+    /**
+     * Start polling for a task with exponential backoff
+     */
+    private startPolling;
+    /**
+     * Schedule a task to trigger at a specific time
+     */
+    private scheduleTask;
+    /**
+     * Cleanup all active dependencies
+     */
+    cleanup(): void;
+    /**
+     * Update available tools
+     */
+    updateTools(tools: ToolFunction[]): void;
+}
+
+/**
  * Agent state entities for TaskAgent
  *
  * Defines the full agent state needed for persistence and resume.
@@ -3236,190 +6377,6 @@ declare function createAgentStorage(options?: {
 }): IAgentStorage;
 
 /**
- * PlanPlugin - Provides plan context for TaskAgent and UniversalAgent
- *
- * The plan is a critical component that should never be compacted.
- * It contains the goal and task list that guides agent execution.
- */
-
-/**
- * Serialized plan state for session persistence
- */
-interface SerializedPlanPluginState {
-    plan: Plan | null;
-}
-/**
- * Plan plugin for context management
- *
- * Provides the execution plan as a context component.
- * Priority 1 (critical, never compacted).
- */
-declare class PlanPlugin extends BaseContextPlugin {
-    readonly name = "plan";
-    readonly priority = 1;
-    readonly compactable = false;
-    private plan;
-    /**
-     * Set the current plan
-     */
-    setPlan(plan: Plan): void;
-    /**
-     * Get the current plan
-     */
-    getPlan(): Plan | null;
-    /**
-     * Clear the plan
-     */
-    clearPlan(): void;
-    /**
-     * Update a task's status within the plan
-     */
-    updateTaskStatus(taskId: string, status: TaskStatus): void;
-    /**
-     * Get a task by ID or name
-     */
-    getTask(taskId: string): Task | undefined;
-    /**
-     * Check if all tasks are completed
-     */
-    isComplete(): boolean;
-    /**
-     * Get component for context
-     */
-    getComponent(): Promise<IContextComponent | null>;
-    /**
-     * Format plan for LLM context
-     */
-    private formatPlan;
-    /**
-     * Get emoji for task status
-     */
-    private getStatusEmoji;
-    getState(): SerializedPlanPluginState;
-    restoreState(state: unknown): void;
-}
-
-/**
- * MemoryPlugin - Provides working memory index for TaskAgent and UniversalAgent
- *
- * The memory index shows the LLM what data is stored in working memory.
- * This is compactable - when space is needed, entries can be evicted.
- */
-
-/**
- * Serialized memory plugin state
- * Note: The actual memory content is stored by WorkingMemory itself,
- * this plugin just holds a reference.
- */
-interface SerializedMemoryPluginState {
-}
-/**
- * Memory plugin for context management
- *
- * Provides the working memory index as a context component.
- * When compaction is needed, it evicts least-important entries.
- */
-declare class MemoryPlugin extends BaseContextPlugin {
-    readonly name = "memory_index";
-    readonly priority = 8;
-    readonly compactable = true;
-    private memory;
-    private evictBatchSize;
-    /**
-     * Create a memory plugin
-     *
-     * @param memory - The WorkingMemory instance to wrap
-     * @param evictBatchSize - How many entries to evict per compaction round (default: 3)
-     */
-    constructor(memory: WorkingMemory, evictBatchSize?: number);
-    /**
-     * Get the underlying WorkingMemory
-     */
-    getMemory(): WorkingMemory;
-    /**
-     * Get component for context
-     */
-    getComponent(): Promise<IContextComponent | null>;
-    /**
-     * Compact by evicting least-important entries
-     */
-    compact(_targetTokens: number, estimator: ITokenEstimator): Promise<number>;
-    /**
-     * Clean up
-     */
-    destroy(): void;
-    getState(): SerializedMemoryPluginState;
-    restoreState(_state: unknown): void;
-}
-
-/**
- * ExternalDependencyHandler - handles external dependencies
- */
-
-interface ExternalDependencyEvents {
-    'webhook:received': {
-        webhookId: string;
-        data: unknown;
-    };
-    'poll:success': {
-        taskId: string;
-        data: unknown;
-    };
-    'poll:timeout': {
-        taskId: string;
-    };
-    'scheduled:triggered': {
-        taskId: string;
-    };
-    'manual:completed': {
-        taskId: string;
-        data: unknown;
-    };
-}
-/**
- * Handles external task dependencies
- */
-declare class ExternalDependencyHandler extends EventEmitter<ExternalDependencyEvents> {
-    private activePolls;
-    private activeScheduled;
-    private cancelledPolls;
-    private tools;
-    constructor(tools?: ToolFunction[]);
-    /**
-     * Start handling a task's external dependency
-     */
-    startWaiting(task: Task): Promise<void>;
-    /**
-     * Stop waiting on a task's external dependency
-     */
-    stopWaiting(task: Task): void;
-    /**
-     * Trigger a webhook
-     */
-    triggerWebhook(webhookId: string, data: unknown): Promise<void>;
-    /**
-     * Complete a manual task
-     */
-    completeManual(taskId: string, data: unknown): Promise<void>;
-    /**
-     * Start polling for a task with exponential backoff
-     */
-    private startPolling;
-    /**
-     * Schedule a task to trigger at a specific time
-     */
-    private scheduleTask;
-    /**
-     * Cleanup all active dependencies
-     */
-    cleanup(): void;
-    /**
-     * Update available tools
-     */
-    updateTools(tools: ToolFunction[]): void;
-}
-
-/**
  * CheckpointManager - manages agent state checkpointing
  */
 
@@ -3481,607 +6438,6 @@ declare class CheckpointManager {
      */
     cleanup(): Promise<void>;
 }
-
-/**
- * PlanExecutor - executes plans with LLM integration
- *
- * Uses unified AgentContext for context management.
- */
-
-interface PlanExecutorConfig {
-    maxIterations: number;
-    taskTimeout?: number;
-    /** Rate limiting configuration for LLM calls */
-    rateLimiter?: {
-        /** Max requests per minute (default: 60) */
-        maxRequestsPerMinute?: number;
-        /** What to do when rate limited: 'wait' or 'throw' (default: 'wait') */
-        onLimit?: 'wait' | 'throw';
-        /** Max wait time in ms (for 'wait' mode, default: 60000) */
-        maxWaitMs?: number;
-    };
-}
-interface PlanExecutorEvents {
-    'task:start': {
-        task: Task;
-    };
-    'task:complete': {
-        task: Task;
-        result: any;
-    };
-    'task:failed': {
-        task: Task;
-        error: Error;
-    };
-    'task:skipped': {
-        task: Task;
-        reason: string;
-    };
-    'task:timeout': {
-        task: Task;
-        timeoutMs: number;
-    };
-    'task:validation_failed': {
-        task: Task;
-        validation: TaskValidationResult;
-    };
-    'task:validation_uncertain': {
-        task: Task;
-        validation: TaskValidationResult;
-    };
-    'task:waiting_external': {
-        task: Task;
-    };
-    'memory:stale_entries': {
-        entries: StaleEntryInfo[];
-        taskId: string;
-    };
-    'llm:call': {
-        iteration: number;
-    };
-    'tool:call': {
-        toolName: string;
-        args: any;
-    };
-    'tool:result': {
-        toolName: string;
-        result: any;
-    };
-}
-interface PlanExecutionResult {
-    status: 'completed' | 'failed' | 'suspended';
-    completedTasks: number;
-    failedTasks: number;
-    skippedTasks: number;
-    error?: Error;
-    metrics: {
-        totalLLMCalls: number;
-        totalToolCalls: number;
-        totalTokensUsed: number;
-        totalCost: number;
-    };
-}
-/**
- * Executes a plan using LLM and tools
- *
- * NOTE: Memory and cache are accessed via agentContext (single source of truth)
- */
-declare class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements IDisposable {
-    private agent;
-    private agentContext;
-    private planPlugin;
-    private externalHandler;
-    private checkpointManager;
-    private hooks;
-    private config;
-    private abortController;
-    private rateLimiter?;
-    private _isDestroyed;
-    private currentMetrics;
-    private currentState;
-    constructor(agent: Agent, agentContext: AgentContext, planPlugin: PlanPlugin, externalHandler: ExternalDependencyHandler, checkpointManager: CheckpointManager, hooks: TaskAgentHooks | undefined, config: PlanExecutorConfig);
-    /**
-     * Get memory from AgentContext (single source of truth)
-     * May be null if memory feature is disabled
-     */
-    private get memory();
-    /**
-     * Get idempotency cache from AgentContext (single source of truth)
-     * May be null if memory feature is disabled
-     */
-    private get idempotencyCache();
-    /**
-     * Build a map of task states for memory priority calculation
-     */
-    private buildTaskStatesMap;
-    /**
-     * Notify memory about task completion and detect stale entries
-     * No-op if memory feature is disabled
-     */
-    private notifyMemoryOfTaskCompletion;
-    /**
-     * Execute a plan
-     */
-    execute(plan: Plan, state: AgentState): Promise<PlanExecutionResult>;
-    /**
-     * Execute tasks in parallel with configurable failure handling
-     *
-     * Note on failure modes:
-     * - 'fail-fast' (default): Uses Promise.all - stops batch on first rejection (current behavior)
-     *   Individual task failures don't reject, they just set task.status = 'failed'
-     * - 'continue': Uses Promise.allSettled - all tasks run regardless of failures
-     * - 'fail-all': Uses Promise.allSettled, then throws ParallelTasksError if any failed
-     *
-     * @param plan - The plan being executed
-     * @param tasks - Tasks to execute in parallel
-     * @returns Result containing succeeded and failed tasks
-     */
-    private executeParallelTasks;
-    /**
-     * Check if task condition is met
-     * @returns true if condition is met or no condition exists
-     */
-    private checkCondition;
-    /**
-     * Get the timeout for a task (per-task override or config default)
-     */
-    private getTaskTimeout;
-    /**
-     * Execute a single task with timeout support
-     */
-    private executeTask;
-    /**
-     * Execute task core logic with timeout
-     */
-    private executeTaskWithTimeout;
-    /**
-     * Core task execution logic (called by executeTaskWithTimeout)
-     */
-    private executeTaskCore;
-    /**
-     * Build prompt for a specific task
-     */
-    private buildTaskPrompt;
-    /**
-     * Validate task completion using LLM self-reflection or custom hook
-     *
-     * @param task - The task to validate
-     * @param output - The LLM response output
-     * @returns TaskValidationResult with completion score and details
-     */
-    private validateTaskCompletion;
-    /**
-     * Build prompt for LLM self-reflection validation
-     */
-    private buildValidationPrompt;
-    /**
-     * Parse LLM validation response into TaskValidationResult
-     */
-    private parseValidationResponse;
-    /**
-     * Check if plan is complete
-     */
-    private isPlanComplete;
-    /**
-     * Check if plan is suspended (waiting on external)
-     */
-    private isPlanSuspended;
-    /**
-     * Cancel execution
-     */
-    cancel(): void;
-    /**
-     * Check if the PlanExecutor instance has been destroyed
-     */
-    get isDestroyed(): boolean;
-    /**
-     * Cleanup resources (alias for destroy, kept for backward compatibility)
-     */
-    cleanup(): void;
-    /**
-     * Destroy the PlanExecutor instance
-     * Removes all event listeners and clears internal state
-     */
-    destroy(): void;
-    /**
-     * Get idempotency cache
-     * Returns null if memory feature is disabled
-     */
-    getIdempotencyCache(): IdempotencyCache | null;
-    /**
-     * Get rate limiter metrics (if rate limiting is enabled)
-     */
-    getRateLimiterMetrics(): {
-        totalRequests: number;
-        throttledRequests: number;
-        totalWaitMs: number;
-        avgWaitMs: number;
-    } | null;
-    /**
-     * Reset rate limiter state (for testing or manual control)
-     */
-    resetRateLimiter(): void;
-}
-
-/**
- * TaskAgent - autonomous task-based agent
- *
- * Extends BaseAgent to inherit:
- * - Connector resolution
- * - Tool manager initialization
- * - Permission manager initialization
- * - Session management
- * - Lifecycle/cleanup
- *
- * Uses AgentContext with PlanPlugin and MemoryPlugin for unified
- * context management across all agent types.
- */
-
-/**
- * TaskAgent hooks for customization
- */
-interface TaskAgentHooks {
-    /** Before agent starts executing */
-    onStart?: (agent: TaskAgent, plan: Plan) => Promise<void>;
-    /** Before each task starts */
-    beforeTask?: (task: Task, context: TaskContext) => Promise<void | 'skip'>;
-    /** After each task completes */
-    afterTask?: (task: Task, result: TaskResult) => Promise<void>;
-    /**
-     * Validate task completion with custom logic.
-     * Called after task execution to verify the task achieved its goal.
-     *
-     * Return values:
-     * - `TaskValidationResult`: Full validation result with score and details
-     * - `true`: Task is complete
-     * - `false`: Task failed validation (will use default error message)
-     * - `string`: Task failed validation with custom reason
-     *
-     * If not provided, the default LLM self-reflection validation is used
-     * (when task.validation is configured).
-     */
-    validateTask?: (task: Task, result: TaskResult, memory: WorkingMemory) => Promise<TaskValidationResult | boolean | string>;
-    /** Before each LLM call */
-    beforeLLMCall?: (messages: any[], options: any) => Promise<any[]>;
-    /** After each LLM response */
-    afterLLMCall?: (response: any) => Promise<void>;
-    /** Before each tool execution */
-    beforeTool?: (tool: ToolFunction, args: unknown) => Promise<unknown>;
-    /** After tool execution */
-    afterTool?: (tool: ToolFunction, args: unknown, result: unknown) => Promise<unknown>;
-    /** On any error */
-    onError?: (error: Error, context: ErrorContext) => Promise<'retry' | 'fail' | 'skip'>;
-    /** On agent completion */
-    onComplete?: (result: PlanResult) => Promise<void>;
-}
-/**
- * Task execution context
- */
-interface TaskContext {
-    taskId: string;
-    taskName: string;
-    attempt: number;
-}
-/**
- * Task result
- */
-interface TaskResult {
-    success: boolean;
-    output?: unknown;
-    error?: string;
-}
-/**
- * Error context
- */
-interface ErrorContext {
-    task?: Task;
-    error: Error;
-    phase: 'tool' | 'llm' | 'execution';
-}
-/**
- * Plan result
- */
-interface PlanResult {
-    status: 'completed' | 'failed' | 'cancelled';
-    output?: unknown;
-    error?: string;
-    metrics: {
-        totalTasks: number;
-        completedTasks: number;
-        failedTasks: number;
-        skippedTasks: number;
-    };
-}
-/**
- * Agent handle returned from start()
- */
-interface AgentHandle {
-    agentId: string;
-    planId: string;
-    /** Wait for completion */
-    wait(): Promise<PlanResult>;
-    /** Get current status */
-    status(): AgentStatus;
-}
-/**
- * Plan updates specification
- */
-interface PlanUpdates {
-    addTasks?: TaskInput[];
-    updateTasks?: Array<{
-        id: string;
-    } & Partial<Task>>;
-    removeTasks?: string[];
-}
-/**
- * Options for plan update validation
- */
-interface PlanUpdateOptions {
-    /**
-     * Allow removing tasks that are currently in_progress.
-     * @default false
-     */
-    allowRemoveActiveTasks?: boolean;
-    /**
-     * Validate that no dependency cycles exist after the update.
-     * @default true
-     */
-    validateCycles?: boolean;
-}
-/**
- * Session configuration for TaskAgent - extends BaseSessionConfig
- */
-interface TaskAgentSessionConfig extends BaseSessionConfig {
-}
-/**
- * TaskAgent configuration - extends BaseAgentConfig
- */
-interface TaskAgentConfig extends BaseAgentConfig {
-    /** System instructions for the agent */
-    instructions?: string;
-    /** Temperature for generation */
-    temperature?: number;
-    /** Maximum iterations for tool calling loop */
-    maxIterations?: number;
-    /** Storage for persistence (agent state, checkpoints) */
-    storage?: IAgentStorage;
-    /** Memory configuration */
-    memoryConfig?: WorkingMemoryConfig;
-    /** Hooks for customization */
-    hooks?: TaskAgentHooks;
-    /** Session configuration - extends base type */
-    session?: TaskAgentSessionConfig;
-    /** Permission configuration for tool execution approval */
-    permissions?: AgentPermissionsConfig;
-}
-/**
- * TaskAgent events - extends BaseAgentEvents
- */
-interface TaskAgentEvents {
-    'task:start': {
-        task: Task;
-    };
-    'task:complete': {
-        task: Task;
-        result: TaskResult;
-    };
-    'task:failed': {
-        task: Task;
-        error: Error;
-    };
-    'task:validation_failed': {
-        task: Task;
-        validation: TaskValidationResult;
-    };
-    'task:waiting': {
-        task: Task;
-        dependency: any;
-    };
-    'plan:updated': {
-        plan: Plan;
-    };
-    'agent:suspended': {
-        reason: string;
-    };
-    'agent:resumed': Record<string, never>;
-    'agent:completed': {
-        result: PlanResult;
-    };
-    'memory:stored': {
-        key: string;
-        description: string;
-    };
-    'memory:limit_warning': {
-        utilization: number;
-    };
-    'session:saved': {
-        sessionId: string;
-    };
-    'session:loaded': {
-        sessionId: string;
-    };
-    destroyed: void;
-}
-/**
- * TaskAgent - autonomous task-based agent.
- *
- * Extends BaseAgent to inherit connector resolution, tool management,
- * permission management, session management, and lifecycle.
- *
- * Features:
- * - Plan-driven execution
- * - Working memory with indexed access
- * - External dependency handling (webhooks, polling, manual)
- * - Suspend/resume capability
- * - State persistence for long-running agents
- */
-declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
-    readonly id: string;
-    protected state: AgentState;
-    protected agentStorage: IAgentStorage;
-    protected hooks?: TaskAgentHooks;
-    protected executionPromise?: Promise<PlanResult>;
-    protected agent?: Agent;
-    protected _planPlugin?: PlanPlugin;
-    protected _memoryPlugin?: MemoryPlugin;
-    protected externalHandler?: ExternalDependencyHandler;
-    protected planExecutor?: PlanExecutor;
-    protected checkpointManager?: CheckpointManager;
-    protected _allTools: ToolFunction[];
-    /**
-     * Create a new TaskAgent
-     */
-    static create(config: TaskAgentConfig): TaskAgent;
-    /**
-     * Resume an existing agent from storage
-     */
-    static resume(agentId: string, options: {
-        storage: IAgentStorage;
-        tools?: ToolFunction[];
-        hooks?: TaskAgentHooks;
-        session?: {
-            storage: IContextStorage;
-        };
-    }): Promise<TaskAgent>;
-    protected constructor(id: string, state: AgentState, agentStorage: IAgentStorage, config: TaskAgentConfig, hooks?: TaskAgentHooks);
-    protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    /**
-     * Initialize internal components
-     */
-    private initializeComponents;
-    /**
-     * Setup event forwarding from PlanExecutor.
-     * Cleanup is handled in destroy() via removeAllListeners().
-     */
-    private setupPlanExecutorEvents;
-    /**
-     * Check if context is available (components initialized).
-     * Always true since AgentContext is created by BaseAgent constructor.
-     */
-    hasContext(): boolean;
-    /**
-     * Start executing a plan
-     */
-    start(planInput: PlanInput): Promise<AgentHandle>;
-    /**
-     * Pause execution
-     */
-    pause(): Promise<void>;
-    /**
-     * Resume execution after pause
-     * Note: Named resumeExecution to avoid conflict with BaseAgent if any
-     */
-    resume(): Promise<void>;
-    /**
-     * Cancel execution
-     */
-    cancel(): Promise<void>;
-    /**
-     * Trigger external dependency completion
-     */
-    triggerExternal(webhookId: string, data: unknown): Promise<void>;
-    /**
-     * Manually complete a task
-     */
-    completeTaskManually(taskId: string, result: unknown): Promise<void>;
-    /**
-     * Update the plan with validation
-     *
-     * @param updates - The updates to apply to the plan
-     * @param options - Validation options
-     * @throws Error if validation fails
-     */
-    updatePlan(updates: PlanUpdates, options?: PlanUpdateOptions): Promise<void>;
-    /**
-     * Get current agent state
-     */
-    getState(): AgentState;
-    /**
-     * Get current plan
-     */
-    getPlan(): Plan;
-    /**
-     * Get working memory (from AgentContext - single source of truth)
-     * Returns null if memory feature is disabled
-     */
-    getMemory(): WorkingMemory | null;
-    /**
-     * Convenient getter for working memory (alias for _agentContext.memory)
-     * Returns null if memory feature is disabled
-     */
-    get memory(): WorkingMemory | null;
-    /**
-     * Execute the plan (internal)
-     */
-    protected executePlan(): Promise<PlanResult>;
-    /**
-     * Cleanup resources
-     */
-    destroy(): Promise<void>;
-}
-
-/**
- * Memory tools - built-in tools for memory manipulation
- *
- * These tools provide LLM access to the WorkingMemory system,
- * including support for hierarchical memory tiers (raw → summary → findings).
- */
-
-/**
- * Create all memory tools (convenience function for backward compatibility)
- *
- * Consolidated tools (Phase 1):
- * - memory_store: Store data in working memory
- * - memory_retrieve: Retrieve single entry by key
- * - memory_delete: Delete entry by key
- * - memory_query: Query/list/batch retrieve (merged memory_list + memory_retrieve_batch)
- * - memory_cleanup_raw: Clean up raw tier data
- * - autospill_process: Process auto-spilled entries (CRITICAL for breaking loops)
- */
-declare function createMemoryTools(): ToolFunction[];
-
-/**
- * Context inspection and management tools for TaskAgent
- *
- * Consolidated tools:
- * - context_stats: Unified context introspection with configurable sections
- * - context_compact: Trigger smart LLM-powered context compaction (Phase 4)
- *
- * Legacy tools preserved for backward compatibility but not actively registered:
- * - context_inspect → context_stats({ sections: ["budget"] })
- * - context_breakdown → context_stats({ sections: ["breakdown"] })
- * - cache_stats → context_stats({ sections: ["cache"] })
- * - memory_stats → context_stats({ sections: ["memory"] })
- */
-
-/**
- * Tool definition for context_compact (smart LLM-powered compaction)
- */
-declare const contextCompactDefinition: FunctionToolDefinition;
-/**
- * Create context_compact tool (smart LLM-powered compaction)
- *
- * This tool allows agents to proactively trigger context compaction when:
- * - Context is getting full
- * - Starting a new phase and want to consolidate
- * - Many old tool results are no longer needed
- *
- * Requires SmartCompactor to be configured on AgentContext.
- */
-declare function createContextCompactTool(): ToolFunction;
-/**
- * Create all context inspection and management tools
- *
- * Tools:
- * - context_stats: Unified context introspection with configurable sections
- * - context_compact: Smart LLM-powered context compaction (Phase 4)
- *
- * Note: For feature-aware tool registration, AgentContext._registerFeatureTools()
- * now registers these tools directly based on enabled features.
- *
- * @param includeCompact - Include context_compact tool (default: true)
- */
-declare function createContextTools(includeCompact?: boolean): ToolFunction[];
 
 /**
  * PlanningAgent - AI-driven plan generation
@@ -4404,229 +6760,6 @@ interface ResearchProgress {
     totalResults: number;
     findingsGenerated: number;
 }
-
-/**
- * ResearchAgent - Generic research agent supporting any data sources
- *
- * Extends TaskAgent with research-specific capabilities:
- * - Multiple configurable sources (web, vector, file, API, etc.)
- * - Automatic memory management (spill large outputs, cleanup raw data)
- * - Research-specific tools for source interaction
- * - Built-in research protocol with search → process → synthesize phases
- *
- * Design principles:
- * - DRY: Reuses TaskAgent, AgentContext, WorkingMemory
- * - Generic: Works with any IResearchSource implementation
- * - LLM-driven: Agent decides how to use sources, not hardcoded flow
- */
-
-/**
- * Research-specific hooks
- */
-interface ResearchAgentHooks extends TaskAgentHooks {
-    /** Called when a source search completes */
-    onSearchComplete?: (source: string, query: string, resultCount: number) => Promise<void>;
-    /** Called when content is fetched */
-    onContentFetched?: (source: string, reference: string, sizeBytes: number) => Promise<void>;
-    /** Called when a finding is stored */
-    onFindingStored?: (key: string, finding: ResearchFinding) => Promise<void>;
-    /** Called on research progress updates */
-    onProgress?: (progress: ResearchProgress) => Promise<void>;
-}
-/**
- * ResearchAgent configuration
- */
-interface ResearchAgentConfig extends Omit<TaskAgentConfig, 'hooks'> {
-    /** Research sources to use */
-    sources: IResearchSource[];
-    /** Default search options for all sources */
-    defaultSearchOptions?: SearchOptions;
-    /** Default fetch options for all sources */
-    defaultFetchOptions?: FetchOptions;
-    /** Auto-spill configuration */
-    autoSpill?: AutoSpillConfig;
-    /** Research-specific hooks */
-    hooks?: ResearchAgentHooks;
-    /** Auto-summarize fetched content above this size (bytes). Default: 20KB */
-    autoSummarizeThreshold?: number;
-    /** Include research-specific tools. Default: true */
-    includeResearchTools?: boolean;
-}
-/**
- * ResearchAgent - extends TaskAgent with research capabilities
- */
-declare class ResearchAgent extends TaskAgent {
-    private sources;
-    private researchHooks?;
-    private defaultSearchOptions;
-    private defaultFetchOptions;
-    /**
-     * Create a new ResearchAgent
-     */
-    static create(config: ResearchAgentConfig): ResearchAgent;
-    /**
-     * Initialize research-specific components
-     */
-    private initializeResearch;
-    /**
-     * Get all registered sources
-     */
-    getSources(): IResearchSource[];
-    /**
-     * Get a specific source by name
-     */
-    getSource(name: string): IResearchSource | undefined;
-    /**
-     * Add a source at runtime
-     */
-    addSource(source: IResearchSource): void;
-    /**
-     * Remove a source
-     */
-    removeSource(name: string): boolean;
-    /**
-     * Search across all sources (or specified sources)
-     */
-    searchSources(query: string, options?: SearchOptions & {
-        sources?: string[];
-    }): Promise<Map<string, Awaited<ReturnType<IResearchSource['search']>>>>;
-    /**
-     * Fetch content from a specific source
-     */
-    fetchFromSource(sourceName: string, reference: string, options?: FetchOptions): Promise<ReturnType<IResearchSource['fetch']>>;
-    /**
-     * Store a research finding in memory
-     * Requires memory feature to be enabled
-     */
-    storeFinding(key: string, finding: ResearchFinding): Promise<void>;
-    /**
-     * Get all stored findings
-     * Returns empty object if memory feature is disabled
-     */
-    getFindings(): Promise<Record<string, ResearchFinding>>;
-    /**
-     * Cleanup raw data that has been processed
-     * Call this after creating summaries/findings from raw content
-     */
-    cleanupProcessedRaw(rawKeys: string[]): Promise<number>;
-    /**
-     * Execute a research plan
-     * This is a high-level orchestration method that can be used
-     * for structured research, or the LLM can drive research via tools
-     */
-    executeResearchPlan(plan: ResearchPlan): Promise<ResearchResult>;
-    /**
-     * Get auto-spill statistics
-     */
-    getAutoSpillStats(): {
-        totalSpilled: number;
-        consumed: number;
-        unconsumed: number;
-        totalSizeBytes: number;
-    };
-    destroy(): Promise<void>;
-}
-/**
- * Create research-specific tools for source interaction
- * These tools use closure over the sources and config rather than accessing agent from context
- */
-declare function createResearchTools(sources: IResearchSource[]): ToolFunction[];
-
-/**
- * WebSearchSource - Web search research source using SearchProvider
- *
- * Bridges the existing SearchProvider/webFetch infrastructure to IResearchSource.
- */
-
-/**
- * Web search source configuration
- */
-interface WebSearchSourceConfig {
-    /** Source name (e.g., 'web-serper', 'web-brave') */
-    name: string;
-    /** Description */
-    description?: string;
-    /** Connector name or instance for search */
-    searchConnector: string | Connector;
-    /** Optional: Connector for fetching (if different from search) */
-    fetchConnector?: string | Connector;
-    /** Default country code */
-    defaultCountry?: string;
-    /** Default language */
-    defaultLanguage?: string;
-}
-/**
- * WebSearchSource - Uses SearchProvider for web search
- */
-declare class WebSearchSource implements IResearchSource {
-    readonly name: string;
-    readonly description: string;
-    readonly type: "web";
-    private searchProvider;
-    private defaultCountry?;
-    private defaultLanguage?;
-    constructor(config: WebSearchSourceConfig);
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
-    fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
-    isAvailable(): Promise<boolean>;
-    getCapabilities(): SourceCapabilities;
-}
-/**
- * Create a web search source from a connector name
- */
-declare function createWebSearchSource(connectorName: string, options?: Partial<WebSearchSourceConfig>): WebSearchSource;
-
-/**
- * FileSearchSource - File system research source
- *
- * Enables research across local or remote file systems using glob patterns and grep.
- */
-
-/**
- * File search source configuration
- */
-interface FileSearchSourceConfig {
-    /** Source name */
-    name: string;
-    /** Description */
-    description?: string;
-    /** Base directory for searches */
-    basePath: string;
-    /** File patterns to include (glob) */
-    includePatterns?: string[];
-    /** File patterns to exclude (glob) */
-    excludePatterns?: string[];
-    /** Maximum file size to read (bytes) */
-    maxFileSize?: number;
-    /** Search mode: 'filename' (match filenames), 'content' (grep-like), 'both' */
-    searchMode?: 'filename' | 'content' | 'both';
-}
-/**
- * FileSearchSource - Search and read files
- */
-declare class FileSearchSource implements IResearchSource {
-    readonly name: string;
-    readonly description: string;
-    readonly type: "file";
-    private basePath;
-    private includePatterns;
-    private excludePatterns;
-    private maxFileSize;
-    private searchMode;
-    constructor(config: FileSearchSourceConfig);
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
-    fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
-    isAvailable(): Promise<boolean>;
-    getCapabilities(): SourceCapabilities;
-    private matchesQuery;
-    private calculateRelevance;
-    private findContentMatch;
-    private getContentType;
-}
-/**
- * Create a file search source
- */
-declare function createFileSearchSource(basePath: string, options?: Partial<FileSearchSourceConfig>): FileSearchSource;
 
 /**
  * Result of a compaction operation
@@ -5321,7 +7454,7 @@ declare class FileContextStorage implements IContextStorage {
     /**
      * Save context state to a session file
      */
-    save(sessionId: string, state: SerializedAgentContextState, metadata?: ContextSessionMetadata): Promise<void>;
+    save(sessionId: string, state: SerializedContextState, metadata?: ContextSessionMetadata): Promise<void>;
     /**
      * Load context state from a session file
      */
@@ -6424,7 +8557,7 @@ interface GenericAPIToolOptions {
     /** User ID for multi-user OAuth */
     userId?: string;
     /** Permission config for the tool */
-    permission?: ToolPermissionConfig;
+    permission?: ToolPermissionConfig$1;
 }
 /**
  * Arguments for the generic API call tool
@@ -8536,7 +10669,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-03T17:11:23.548Z
+ * Generated at: 2026-02-03T20:17:42.423Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -8820,699 +10953,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-type AgentMode = 'interactive' | 'planning' | 'executing';
-interface UniversalAgentSessionConfig$1 {
-    /** Storage backend for sessions */
-    storage: IContextStorage;
-    /** Resume existing session by ID */
-    id?: string;
-    /** Auto-save session after each interaction */
-    autoSave?: boolean;
-    /** Auto-save interval in milliseconds */
-    autoSaveIntervalMs?: number;
-}
-interface UniversalAgentPlanningConfig$1 {
-    /** Enable planning mode. Default: true */
-    enabled?: boolean;
-    /** Model to use for planning (can be different from execution model) */
-    model?: string;
-    /** Auto-detect complex tasks and switch to planning mode. Default: true */
-    autoDetect?: boolean;
-    /** Require user approval before executing plan. Default: true */
-    requireApproval?: boolean;
-    /** Maximum tasks before requiring approval (if requireApproval is false). Default: 3 */
-    maxTasksBeforeApproval?: number;
-}
-interface UniversalAgentConfig$1 {
-    connector: string | Connector;
-    model: string;
-    name?: string;
-    tools?: ToolFunction[];
-    instructions?: string;
-    temperature?: number;
-    maxIterations?: number;
-    planning?: UniversalAgentPlanningConfig$1;
-    session?: UniversalAgentSessionConfig$1;
-    memoryConfig?: WorkingMemoryConfig;
-    toolManager?: ToolManager;
-    /** Permission configuration for tool execution approval. */
-    permissions?: AgentPermissionsConfig;
-    /** AgentContext configuration (optional overrides) */
-    context?: Partial<AgentContextConfig>;
-}
-interface TaskProgress {
-    completed: number;
-    total: number;
-    current?: Task;
-    failed: number;
-    skipped: number;
-}
-interface UniversalResponse {
-    /** Human-readable response text */
-    text: string;
-    /** Current mode after this response */
-    mode: AgentMode;
-    /** Plan (if created or modified) */
-    plan?: Plan;
-    /** Plan status */
-    planStatus?: 'pending_approval' | 'approved' | 'executing' | 'completed' | 'failed';
-    /** Task progress (if executing) */
-    taskProgress?: TaskProgress;
-    /** Tool calls made during this interaction */
-    toolCalls?: ToolCallResult[];
-    /** Token usage */
-    usage?: {
-        inputTokens: number;
-        outputTokens: number;
-        totalTokens: number;
-    };
-    /** Whether user action is needed */
-    needsUserAction?: boolean;
-    /** What action is needed */
-    userActionType?: 'approve_plan' | 'provide_input' | 'clarify';
-}
-interface ToolCallResult {
-    name: string;
-    args: unknown;
-    result: unknown;
-    error?: string;
-    durationMs: number;
-}
-type UniversalEvent = {
-    type: 'text:delta';
-    delta: string;
-} | {
-    type: 'text:done';
-    text: string;
-} | {
-    type: 'mode:changed';
-    from: AgentMode;
-    to: AgentMode;
-    reason: string;
-} | {
-    type: 'plan:analyzing';
-    goal: string;
-} | {
-    type: 'plan:created';
-    plan: Plan;
-} | {
-    type: 'plan:modified';
-    plan: Plan;
-    changes: PlanChange[];
-} | {
-    type: 'plan:awaiting_approval';
-    plan: Plan;
-} | {
-    type: 'plan:approved';
-    plan: Plan;
-} | {
-    type: 'plan:rejected';
-    plan: Plan;
-    reason?: string;
-} | {
-    type: 'task:started';
-    task: Task;
-} | {
-    type: 'task:progress';
-    task: Task;
-    status: string;
-} | {
-    type: 'task:completed';
-    task: Task;
-    result: unknown;
-} | {
-    type: 'task:failed';
-    task: Task;
-    error: string;
-} | {
-    type: 'task:skipped';
-    task: Task;
-    reason: string;
-} | {
-    type: 'execution:done';
-    result: ExecutionResult;
-} | {
-    type: 'execution:paused';
-    reason: string;
-} | {
-    type: 'execution:resumed';
-} | {
-    type: 'tool:start';
-    name: string;
-    args: unknown;
-} | {
-    type: 'tool:complete';
-    name: string;
-    result: unknown;
-    durationMs: number;
-} | {
-    type: 'tool:error';
-    name: string;
-    error: string;
-} | {
-    type: 'needs:approval';
-    plan: Plan;
-} | {
-    type: 'needs:input';
-    prompt: string;
-} | {
-    type: 'needs:clarification';
-    question: string;
-    options?: string[];
-} | {
-    type: 'error';
-    error: string;
-    recoverable: boolean;
-};
-interface PlanChange {
-    type: 'task_added' | 'task_removed' | 'task_updated' | 'task_reordered';
-    taskId?: string;
-    taskName?: string;
-    details?: string;
-}
-interface ExecutionResult {
-    status: 'completed' | 'failed' | 'cancelled' | 'paused';
-    completedTasks: number;
-    totalTasks: number;
-    failedTasks: number;
-    skippedTasks: number;
-    error?: string;
-}
-interface IntentAnalysis {
-    /** Detected intent type */
-    type: 'simple' | 'complex' | 'plan_modify' | 'status_query' | 'approval' | 'rejection' | 'feedback' | 'interrupt' | 'question';
-    /** Confidence score (0-1) */
-    confidence: number;
-    /** For complex tasks */
-    complexity?: 'low' | 'medium' | 'high';
-    estimatedSteps?: number;
-    /** For plan modifications */
-    modification?: {
-        action: 'add_task' | 'remove_task' | 'skip_task' | 'reorder' | 'update_task';
-        taskName?: string;
-        details?: string;
-    };
-    /** For approvals/rejections */
-    feedback?: string;
-    /** Raw reasoning from analysis */
-    reasoning?: string;
-}
-interface ModeState {
-    mode: AgentMode;
-    enteredAt: Date;
-    reason: string;
-    pendingPlan?: Plan;
-    planApproved?: boolean;
-    currentTaskIndex?: number;
-    pausedAt?: Date;
-    pauseReason?: string;
-}
-
-/**
- * Session configuration for UniversalAgent - extends BaseSessionConfig
- */
-interface UniversalAgentSessionConfig extends BaseSessionConfig {
-}
-/**
- * Planning configuration
- */
-interface UniversalAgentPlanningConfig {
-    /** Whether planning is enabled (default: true) */
-    enabled?: boolean;
-    /** Whether to auto-detect complex tasks (default: true) */
-    autoDetect?: boolean;
-    /** Model to use for planning (defaults to agent model) */
-    model?: string;
-    /** Whether approval is required (default: true) */
-    requireApproval?: boolean;
-}
-/**
- * UniversalAgent configuration - extends BaseAgentConfig
- */
-interface UniversalAgentConfig extends BaseAgentConfig {
-    /** System instructions for the agent */
-    instructions?: string;
-    /** Temperature for generation */
-    temperature?: number;
-    /** Maximum iterations for tool calling loop */
-    maxIterations?: number;
-    /** Planning configuration */
-    planning?: UniversalAgentPlanningConfig;
-    /** Memory configuration */
-    memoryConfig?: WorkingMemoryConfig;
-    /** Session configuration - extends base type */
-    session?: UniversalAgentSessionConfig;
-    /** Permission configuration for tool execution approval */
-    permissions?: AgentPermissionsConfig;
-    /** AgentContext configuration (optional) */
-    context?: Partial<AgentContextConfig>;
-}
-interface UniversalAgentEvents {
-    'mode:changed': {
-        from: AgentMode;
-        to: AgentMode;
-        reason: string;
-    };
-    'plan:created': {
-        plan: Plan;
-    };
-    'plan:modified': {
-        plan: Plan;
-        changes: PlanChange[];
-    };
-    'plan:approved': {
-        plan: Plan;
-    };
-    'task:started': {
-        task: Task;
-    };
-    'task:completed': {
-        task: Task;
-        result: unknown;
-    };
-    'task:failed': {
-        task: Task;
-        error: string;
-    };
-    'execution:completed': {
-        result: ExecutionResult;
-    };
-    'error': {
-        error: Error;
-        recoverable: boolean;
-    };
-    'session:saved': {
-        sessionId: string;
-    };
-    'session:loaded': {
-        sessionId: string;
-    };
-    destroyed: void;
-}
-declare class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAgentEvents> {
-    private agent;
-    private executionAgent?;
-    private modeManager;
-    private planningAgent?;
-    private _planPlugin;
-    private _memoryPlugin?;
-    private currentPlan;
-    private executionHistory;
-    /**
-     * Create a new UniversalAgent
-     */
-    static create(config: UniversalAgentConfig): UniversalAgent;
-    /**
-     * Resume an agent from a saved session
-     */
-    static resume(sessionId: string, config: Omit<UniversalAgentConfig, 'session'> & {
-        session: {
-            storage: IContextStorage;
-        };
-    }): Promise<UniversalAgent>;
-    private constructor();
-    protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    /**
-     * Override to include ModeManager state in agentState field.
-     * ModeManager is agent-level state, not a context plugin.
-     */
-    getContextState(): Promise<SerializedAgentContextState>;
-    /**
-     * Override to restore ModeManager state from agentState field.
-     */
-    restoreContextState(state: SerializedAgentContextState): Promise<void>;
-    /**
-     * Chat with the agent - the main entry point
-     */
-    chat(input: string): Promise<UniversalResponse>;
-    /**
-     * Stream chat response
-     */
-    stream(input: string): AsyncIterableIterator<UniversalEvent>;
-    private handleInteractive;
-    private handlePlanning;
-    private handleExecuting;
-    private streamInteractive;
-    private streamPlanning;
-    private streamExecuting;
-    private streamExecution;
-    /**
-     * Generate a user-facing summary from task execution results.
-     * Returns the output of the last successful task, or a status summary if all failed.
-     */
-    private generateExecutionSummary;
-    private createPlan;
-    private createPlanInternal;
-    private approvePlan;
-    private handlePlanRejection;
-    private refinePlan;
-    private modifyPlan;
-    private continueExecution;
-    private reportProgress;
-    private analyzeIntent;
-    private isApproval;
-    private isRejection;
-    private isStatusQuery;
-    private isInterrupt;
-    private isPlanModification;
-    private parsePlanModification;
-    /**
-     * Check if the input is a simple single-tool request that shouldn't trigger planning.
-     * These are common patterns like web searches, lookups, etc.
-     */
-    private isSingleToolRequest;
-    private estimateComplexity;
-    private estimateSteps;
-    private shouldSwitchToPlanning;
-    /**
-     * Create a separate agent for task execution that doesn't have meta-tools.
-     * This prevents the agent from calling _start_planning during task execution.
-     * Shares AgentContext with parent UniversalAgent for history/memory continuity.
-     */
-    private createExecutionAgent;
-    /**
-     * Build instructions for the execution agent (task-focused)
-     * Uses user's custom instructions if provided, otherwise falls back to default
-     */
-    private buildExecutionInstructions;
-    /**
-     * Add a message to conversation history (via AgentContext)
-     */
-    private addToConversationHistory;
-    private buildInstructions;
-    private buildTaskPrompt;
-    /**
-     * Build task prompt with full context (plan goal, completed tasks, etc.)
-     */
-    private buildTaskPromptWithContext;
-    private formatPlanSummary;
-    private formatProgress;
-    private getTaskProgress;
-    getMode(): AgentMode;
-    getPlan(): Plan | null;
-    getProgress(): TaskProgress | null;
-    /**
-     * Access to tool manager (alias for `tools` getter from BaseAgent)
-     * @deprecated Use `tools` instead for consistency with other agents
-     */
-    get toolManager(): ToolManager;
-    /**
-     * Check if context is available (always true since AgentContext is created by BaseAgent)
-     */
-    hasContext(): boolean;
-    setAutoApproval(value: boolean): void;
-    setPlanningEnabled(value: boolean): void;
-    private _isPaused;
-    pause(): void;
-    resume(): void;
-    cancel(): void;
-    isRunning(): boolean;
-    isPaused(): boolean;
-    destroy(): void;
-}
-
-/**
- * ModeManager - Manages agent mode transitions
- *
- * Handles the state machine for UniversalAgent modes:
- * - interactive: Direct conversation, immediate tool execution
- * - planning: Creating and refining plans
- * - executing: Running through a plan
- *
- * Implements IDisposable for proper lifecycle management.
- */
-
-interface ModeManagerEvents {
-    'mode:changed': {
-        from: AgentMode;
-        to: AgentMode;
-        reason: string;
-    };
-    'mode:transition_blocked': {
-        from: AgentMode;
-        to: AgentMode;
-        reason: string;
-    };
-}
-declare class ModeManager extends EventEmitter implements IDisposable {
-    private state;
-    private transitionHistory;
-    private _isDestroyed;
-    constructor(initialMode?: AgentMode);
-    /**
-     * Returns true if destroy() has been called.
-     */
-    get isDestroyed(): boolean;
-    /**
-     * Releases all resources held by this ModeManager.
-     * Removes all event listeners.
-     * Safe to call multiple times (idempotent).
-     */
-    destroy(): void;
-    /**
-     * Get current mode
-     */
-    getMode(): AgentMode;
-    /**
-     * Get full mode state
-     */
-    getState(): ModeState;
-    /**
-     * Check if a transition is allowed
-     */
-    canTransition(to: AgentMode): boolean;
-    /**
-     * Transition to a new mode
-     */
-    transition(to: AgentMode, reason: string): boolean;
-    /**
-     * Enter planning mode with a goal
-     */
-    enterPlanning(reason?: string): boolean;
-    /**
-     * Enter executing mode (plan must be approved)
-     */
-    enterExecuting(_plan: Plan, reason?: string): boolean;
-    /**
-     * Return to interactive mode
-     */
-    returnToInteractive(reason?: string): boolean;
-    /**
-     * Set pending plan (in planning mode)
-     */
-    setPendingPlan(plan: Plan): void;
-    /**
-     * Get pending plan
-     */
-    getPendingPlan(): Plan | undefined;
-    /**
-     * Approve the pending plan
-     */
-    approvePlan(): boolean;
-    /**
-     * Check if plan is approved
-     */
-    isPlanApproved(): boolean;
-    /**
-     * Update current task index (in executing mode)
-     */
-    setCurrentTaskIndex(index: number): void;
-    /**
-     * Get current task index
-     */
-    getCurrentTaskIndex(): number;
-    /**
-     * Pause execution
-     */
-    pauseExecution(reason: string): void;
-    /**
-     * Resume execution
-     */
-    resumeExecution(): void;
-    /**
-     * Check if paused
-     */
-    isPaused(): boolean;
-    /**
-     * Get pause reason
-     */
-    getPauseReason(): string | undefined;
-    /**
-     * Determine recommended mode based on intent analysis
-     */
-    recommendMode(intent: IntentAnalysis, _currentPlan?: Plan): AgentMode | null;
-    /**
-     * Get transition history
-     */
-    getHistory(): Array<{
-        from: AgentMode;
-        to: AgentMode;
-        at: Date;
-        reason: string;
-    }>;
-    /**
-     * Clear transition history
-     */
-    clearHistory(): void;
-    /**
-     * Get time spent in current mode
-     */
-    getTimeInCurrentMode(): number;
-    /**
-     * Serialize state for session persistence
-     */
-    serialize(): {
-        mode: AgentMode;
-        enteredAt: string;
-        reason: string;
-        pendingPlan?: Plan;
-        planApproved?: boolean;
-        currentTaskIndex?: number;
-    };
-    /**
-     * Restore state from serialized data
-     */
-    restore(data: ReturnType<ModeManager['serialize']>): void;
-}
-
-/**
- * Meta-tools for UniversalAgent
- *
- * These tools are used internally by the agent to signal mode transitions
- * and perform meta-operations like planning and progress reporting.
- */
-
-/**
- * Get all meta-tools
- */
-declare function getMetaTools(): ToolFunction[];
-/**
- * Check if a tool name is a meta-tool
- */
-declare function isMetaTool(toolName: string): boolean;
-/**
- * Meta-tool names
- */
-declare const META_TOOL_NAMES: {
-    readonly START_PLANNING: "_start_planning";
-    readonly MODIFY_PLAN: "_modify_plan";
-    readonly REPORT_PROGRESS: "_report_progress";
-    readonly REQUEST_APPROVAL: "_request_approval";
-};
-
-/**
- * InContextMemory Tools - Tools for LLM to manipulate in-context memory
- *
- * Consolidated tools (Phase 1):
- * - context_set: Store/update key-value pairs
- * - context_delete: Remove entries
- * - context_list: List all entries with metadata
- *
- * Note: context_get was removed since InContextMemory values are already
- * visible directly in the context - no retrieval tool needed.
- */
-
-/**
- * Create all in-context memory tools
- *
- * @returns Array of tool functions
- */
-declare function createInContextMemoryTools(): ToolFunction[];
-/**
- * Create an InContextMemory plugin with its tools
- *
- * @param config - Optional configuration
- * @returns Object containing the plugin and its tools
- *
- * @example
- * ```typescript
- * const { plugin, tools } = createInContextMemory({ maxEntries: 15 });
- * ctx.registerPlugin(plugin);
- * for (const tool of tools) {
- *   ctx.tools.register(tool);
- * }
- * ```
- */
-declare function createInContextMemory(config?: InContextMemoryConfig): {
-    plugin: InContextMemoryPlugin;
-    tools: ToolFunction[];
-};
-/**
- * Set up InContextMemory on an AgentContext
- *
- * Registers both the plugin and its tools on the context.
- *
- * @param agentContext - The AgentContext to set up
- * @param config - Optional configuration
- * @returns The created plugin (for direct access)
- *
- * @example
- * ```typescript
- * const ctx = AgentContext.create({ model: 'gpt-4' });
- * const plugin = setupInContextMemory(ctx, { maxEntries: 10 });
- *
- * // Plugin is accessible through ctx.inContextMemory
- * plugin.set('state', 'Current processing state', { step: 1 });
- * ```
- */
-declare function setupInContextMemory(agentContext: AgentContext, config?: InContextMemoryConfig): InContextMemoryPlugin;
-
-/**
- * PersistentInstructions Tools - Tools for LLM to manipulate persistent instructions
- *
- * These tools allow the LLM to manage custom instructions that persist
- * across sessions and are stored on disk.
- *
- * Tools:
- * - instructions_set: Replace all instructions
- * - instructions_append: Add a section
- * - instructions_get: Read current instructions
- * - instructions_clear: Remove all (requires confirm: true)
- */
-
-/**
- * Create all persistent instructions tools
- *
- * @returns Array of tool functions
- */
-declare function createPersistentInstructionsTools(): ToolFunction[];
-/**
- * Create a PersistentInstructionsPlugin with its tools
- *
- * @param config - Configuration (agentId is required)
- * @returns Object containing the plugin and its tools
- *
- * @example
- * ```typescript
- * const { plugin, tools } = createPersistentInstructions({ agentId: 'my-agent' });
- * ctx.registerPlugin(plugin);
- * for (const tool of tools) {
- *   ctx.tools.register(tool);
- * }
- * ```
- */
-declare function createPersistentInstructions(config: PersistentInstructionsConfig): {
-    plugin: PersistentInstructionsPlugin;
-    tools: ToolFunction[];
-};
-/**
- * Set up PersistentInstructions on an AgentContext
- *
- * Registers both the plugin and its tools on the context.
- *
- * @param agentContext - The AgentContext to set up
- * @param config - Configuration (agentId is required)
- * @returns The created plugin (for direct access)
- *
- * @example
- * ```typescript
- * const ctx = AgentContext.create({ model: 'gpt-4' });
- * const plugin = setupPersistentInstructions(ctx, { agentId: 'my-agent' });
- *
- * // Instructions are loaded automatically on first context prepare
- * // Plugin is accessible through ctx.persistentInstructions
- * ```
- */
-declare function setupPersistentInstructions(agentContext: AgentContext, config: PersistentInstructionsConfig): PersistentInstructionsPlugin;
-
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, AUTO_SPILL_INSTRUCTIONS, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, AgentContextConfig, AgentContextFeatures, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, AutoSpillConfig, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, ContextSessionMetadata, ContextSessionSummary, ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileSearchSource, type FileSearchSourceConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStorage, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, IMCPClient, IMemoryStorage, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, InContextMemoryConfig, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, MCPClientConnectionState, MCPClientState, MCPConfiguration, MCPConnectionError, MCPError, MCPPrompt, MCPPromptResult, MCPProtocolError, MCPRegistry, MCPResource, MCPResourceContent, MCPResourceError, MCPServerCapabilities, MCPServerConfig, MCPTimeoutError, MCPTool, MCPToolError, MCPToolResult, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsConfig, PersistentInstructionsPlugin, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, ResearchAgent, type ResearchAgentConfig, type ResearchAgentHooks, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, SerializedAgentContextState, type SerializedHistoryState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, StoredContextSession, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TOOL_OUTPUT_TRACKING_INSTRUCTIONS, TOOL_RESULT_EVICTION_INSTRUCTIONS, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskTimeoutError, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, ToolCall, type ToolCategory, ToolExecutionError, ToolFunction, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, type ToolRegistryEntry, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, type WebSearchSourceConfig, type WordTimestamp, WorkingMemory, WorkingMemoryConfig, type WriteFileResult, addJitter, allVendorTemplates, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, contextCompactDefinition, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createContextCompactTool, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getBasicIntrospectionTools, getConnectorTools, getCredentialsSetupURL, getDocsURL, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AggressiveCompactionStrategy, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionStrategyName, Connector, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, ConsoleMetrics, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, ContextGuardian, type ContextGuardianConfig, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, type DefaultAllowlistedTool, type DegradationResult, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type GuardianValidation, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STRATEGY_THRESHOLDS$1 as STRATEGY_THRESHOLDS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isKnownService, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

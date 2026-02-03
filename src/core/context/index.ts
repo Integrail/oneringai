@@ -7,16 +7,17 @@
  * For most users, import `AgentContext` from the main package:
  *   import { AgentContext } from '@oneringai/agents';
  *
- * AgentContext is the "swiss army knife" facade that composes:
- * - ToolManager (tool registration, execution, circuit breakers)
- * - WorkingMemory (key-value store with eviction)
- * - IdempotencyCache (tool result caching)
- * - ToolPermissionManager (approval workflow)
- * - Built-in history tracking
+ * AgentContext (via AgentContextNextGen) is the unified context manager that handles:
+ * - Conversation history
+ * - Tool management
+ * - Plugins (WorkingMemory, InContextMemory, PersistentInstructions)
+ * - Token budget management
+ * - Compaction strategies
  *
- * For Advanced Usage:
- * - ContextManager: Strategy-based context preparation (used internally by TaskAgent)
- * - Plugins: Extend context with custom components
+ * This module exports:
+ * - Types for context strategies
+ * - SmartCompactor for LLM-powered compaction
+ * - ContextGuardian for hard limit enforcement
  *
  * @example
  * ```typescript
@@ -25,43 +26,12 @@
  *
  * const ctx = AgentContext.create({ model: 'gpt-4', tools: [myTool] });
  * ctx.addMessage('user', 'Hello');
- * await ctx.executeTool('my_tool', { arg: 'value' });
- *
- * // Advanced: Custom context strategies (for specialized agents)
- * import { ContextManager } from '@oneringai/agents/context';
+ * const prepared = await ctx.prepare('New message');
  * ```
  */
 
 // Types
 export * from './types.js';
-
-// ============================================================================
-// Plugins - Extend context with custom components
-// ============================================================================
-
-export {
-  // Base class
-  BaseContextPlugin,
-  // Built-in plugins
-  PlanPlugin,
-  MemoryPlugin,
-  ToolOutputPlugin,
-  AutoSpillPlugin,
-} from './plugins/index.js';
-
-// Type exports
-export type {
-  IContextPlugin,
-  SerializedPlanPluginState,
-  SerializedMemoryPluginState,
-  ToolOutput,
-  SerializedToolOutputState,
-  ToolOutputPluginConfig,
-  SpilledEntry,
-  AutoSpillConfig,
-  SerializedAutoSpillState,
-  AutoSpillEvents,
-} from './plugins/index.js';
 
 // ============================================================================
 // SmartCompactor - LLM-powered intelligent context compaction
@@ -75,3 +45,13 @@ export type {
   SpilledData,
 } from './SmartCompactor.js';
 
+// ============================================================================
+// ContextGuardian - Hard limit enforcement (mandatory safety)
+// ============================================================================
+
+export { ContextGuardian } from './ContextGuardian.js';
+export type {
+  ContextGuardianConfig,
+  GuardianValidation,
+  DegradationResult,
+} from './ContextGuardian.js';

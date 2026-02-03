@@ -26,8 +26,8 @@ import { TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { PermissionCheckContext } from './permissions/types.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
-import { AgentContext } from './AgentContext.js';
-import type { AgentContextConfig } from './AgentContext.js';
+import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
+import type { AgentContextNextGenConfig, ContextFeatures } from './context-nextgen/types.js';
 import type {
   IAgentDefinitionStorage,
   StoredAgentDefinition,
@@ -57,15 +57,14 @@ export interface AgentConfig extends BaseAgentConfig {
 
   /**
    * Optional unified context management.
-   * When provided (as AgentContext instance or config), Agent will:
+   * When provided (as AgentContextNextGen instance or config), Agent will:
    * - Track conversation history
-   * - Cache tool results (if enabled)
    * - Provide unified memory access
    * - Support session persistence via context
    *
-   * Pass an AgentContext instance or AgentContextConfig to enable.
+   * Pass an AgentContextNextGen instance or AgentContextNextGenConfig to enable.
    */
-  context?: AgentContext | AgentContextConfig;
+  context?: AgentContextNextGen | AgentContextNextGenConfig;
 
   /** Tool execution timeout in milliseconds. @default 30000 */
   toolTimeout?: number;
@@ -197,16 +196,20 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     }
 
     // Build config from definition
+    const contextConfig: AgentContextNextGenConfig = {
+      model: definition.connector.model,
+      agentId: definition.agentId,
+      systemPrompt: definition.systemPrompt ?? definition.instructions,
+    };
+    if (definition.features) {
+      contextConfig.features = definition.features as ContextFeatures;
+    }
+
     const config: AgentConfig = {
       connector: definition.connector.name,
       model: definition.connector.model,
       instructions: definition.systemPrompt,
-      context: {
-        agentId: definition.agentId,
-        systemPrompt: definition.systemPrompt,
-        instructions: definition.instructions,
-        features: definition.features,
-      },
+      context: contextConfig,
       ...definition.typeConfig,
       ...overrides,
     };
@@ -540,9 +543,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         const iterationStartTime = Date.now();
 
         // Prepare context (handles compaction)
-        const prepared = await this._agentContext.prepareConversation({
-          instructionOverride: this._config.instructions,
-        });
+        // Note: instructions are set in systemPrompt during context creation
+        const prepared = await this._agentContext.prepare();
 
         // Generate LLM response
         const response = await this.generateWithHooks(prepared.input, iteration, executionId);
@@ -576,9 +578,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
         // Emit iteration complete
         this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
-
-        // Auto-cleanup consumed spills at end of iteration
-        await this._agentContext.autoSpillPlugin?.onIteration();
 
         iteration++;
       }
@@ -700,9 +699,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         }
 
         // Prepare context (handles compaction)
-        const prepared = await this._agentContext.prepareConversation({
-          instructionOverride: this._config.instructions,
-        });
+        // Note: instructions are set in systemPrompt during context creation
+        const prepared = await this._agentContext.prepare();
 
         // Stream LLM response and accumulate state (per-iteration state)
         const iterationStreamState = new StreamState(executionId, this.model);
@@ -818,9 +816,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         // Build and add assistant message to context
         this._addStreamingAssistantMessage(iterationStreamState, toolCalls);
         this._agentContext.addToolResults(toolResults);
-
-        // Auto-cleanup consumed spills at end of iteration
-        await this._agentContext.autoSpillPlugin?.onIteration();
 
         yield {
           type: StreamEventType.ITERATION_COMPLETE,
@@ -1282,37 +1277,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Apply result modifications
       if (afterTool.modified) {
         toolResult = { ...toolResult, ...afterTool.modified };
-      }
-
-      // AutoSpill & ToolOutput Plugin Integration
-      // CRITICAL: AutoSpill MUST run BEFORE ToolOutputPlugin.addOutput()
-      // so that large outputs are replaced with pointers before being tracked
-      if (toolResult.content) {
-        let finalContent = toolResult.content;
-
-        // Auto-spill large outputs to memory FIRST (if enabled)
-        const autoSpillPlugin = this._agentContext.autoSpillPlugin;
-        if (autoSpillPlugin) {
-          const outputStr = typeof finalContent === 'string'
-            ? finalContent
-            : JSON.stringify(finalContent);
-          const outputSize = Buffer.byteLength(outputStr, 'utf8');
-
-          if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
-            const spillKey = await autoSpillPlugin.onToolOutput(
-              toolCall.function.name,
-              finalContent
-            );
-            if (spillKey) {
-              (toolResult as ToolResult & { spilledKey?: string }).spilledKey = spillKey;
-              finalContent = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
-              toolResult.content = finalContent;
-            }
-          }
-        }
-
-        // THEN track in tool output plugin (gets spill pointer if applicable)
-        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, finalContent);
       }
 
       // Update metrics

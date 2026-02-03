@@ -8,7 +8,7 @@
  * implementations are in infrastructure layer.
  */
 
-import type { AgentContextFeatures } from '../../core/AgentContext.js';
+import type { ContextFeatures } from '../../core/context-nextgen/types.js';
 
 /**
  * Agent type identifier
@@ -52,7 +52,7 @@ export interface StoredAgentDefinition {
   instructions?: string;
 
   /** Feature configuration */
-  features?: AgentContextFeatures;
+  features?: ContextFeatures;
 
   /** Agent metadata */
   metadata?: AgentDefinitionMetadata;

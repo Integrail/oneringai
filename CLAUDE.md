@@ -36,84 +36,120 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [myTool
 const response = await agent.run('Hello!');
 ```
 
-### AgentContext (`src/core/AgentContext.ts`)
-**"Swiss Army Knife"** - unified facade composing ToolManager, WorkingMemory, IdempotencyCache, ToolPermissionManager. Always created by BaseAgent.
+### AgentContextNextGen (`src/core/context-nextgen/AgentContextNextGen.ts`)
+
+**Clean, Plugin-First Context Manager** - modern replacement for legacy AgentContext. Uses a simple, composable plugin architecture.
 
 ```typescript
-await ctx.addMessage('user', 'Hello');     // Async with auto-compaction for large content
-ctx.addMessageSync('user', 'Hi');          // Sync for small messages (no capacity check)
-await ctx.addToolResult(output, metadata); // Helper for tool outputs
-await ctx.ensureCapacity(tokens);          // Manual capacity check
-const result = await ctx.executeTool('tool_name', args);
-const prepared = await ctx.prepare(); // Assembles context, handles compaction
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  systemPrompt: 'You are a helpful assistant.',
+  features: { workingMemory: true, inContextMemory: true },
+});
+
+// Add user message
+ctx.addUserMessage('Hello!');
+
+// Prepare for LLM call (handles compaction if needed)
+const { input, budget } = await ctx.prepare();
+
+// Call LLM with input...
+
+// Add assistant response
+ctx.addAssistantResponse(response.output);
 ```
 
-#### AgentContext Feature Configuration (NEW)
+#### Context Structure
 
-Features can be individually enabled/disabled. When disabled, associated tools are not registered:
+```
+[Developer Message - All glued together]
+  # System Prompt
+  # Persistent Instructions (if plugin enabled)
+  # Plugin Instructions (for enabled plugins)
+  # In-Context Memory (if plugin enabled)
+  # Working Memory Index (if plugin enabled)
+
+[Conversation History]
+  ... messages including tool_use/tool_result pairs ...
+
+[Current Input]
+  User message OR tool results (newest, never compacted)
+```
+
+#### Feature Configuration
+
+Features enable/disable plugins. When disabled, associated tools are not registered:
 
 ```typescript
-interface AgentContextFeatures {
-  memory?: boolean;                 // WorkingMemory + IdempotencyCache (default: true)
-  inContextMemory?: boolean;        // InContextMemoryPlugin (default: false, opt-in)
-  persistentInstructions?: boolean; // PersistentInstructionsPlugin (default: false, opt-in)
-  history?: boolean;                // Conversation tracking (default: true)
-  permissions?: boolean;            // ToolPermissionManager (default: true)
-  toolOutputTracking?: boolean;     // ToolOutputPlugin - track recent tool outputs (default: true)
-  autoSpill?: boolean;              // AutoSpillPlugin - auto-spill large outputs to memory (default: true)
+interface ContextFeatures {
+  workingMemory?: boolean;        // WorkingMemoryPluginNextGen (default: true)
+  inContextMemory?: boolean;      // InContextMemoryPluginNextGen (default: false)
+  persistentInstructions?: boolean; // PersistentInstructionsPluginNextGen (default: false)
 }
 
-export const DEFAULT_FEATURES = {
-  memory: true, inContextMemory: false, persistentInstructions: false,
-  history: true, permissions: true,
-  toolOutputTracking: true, autoSpill: true  // NEW - both default ON
+export const DEFAULT_FEATURES: Required<ContextFeatures> = {
+  workingMemory: true,
+  inContextMemory: false,
+  persistentInstructions: false,
 };
 ```
 
 **Usage:**
 ```typescript
 // Minimal stateless agent
-const ctx = AgentContext.create({ features: { memory: false, history: false } });
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { workingMemory: false },
+});
 
 // Full-featured agent
-const ctx = AgentContext.create({ features: { memory: true, inContextMemory: true } });
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { workingMemory: true, inContextMemory: true, persistentInstructions: true },
+  agentId: 'my-assistant',  // Required for persistentInstructions
+});
 
 // Via Agent.create
 const agent = Agent.create({
   connector: 'openai', model: 'gpt-4',
-  context: { features: { memory: false } },  // Inline config
+  context: { features: { workingMemory: true, inContextMemory: true } },
 });
 ```
 
-**Feature-aware APIs:**
+**Key APIs:**
 ```typescript
-ctx.isFeatureEnabled('memory');        // Check if feature is on
-ctx.requireMemory();                   // Throws if memory disabled
-ctx.requireCache();                    // Throws if memory disabled
-ctx.requirePermissions();              // Throws if permissions disabled
-ctx.memory;                            // WorkingMemory | null
-ctx.cache;                             // IdempotencyCache | null
-ctx.permissions;                       // ToolPermissionManager | null
-ctx.persistentInstructions;            // PersistentInstructionsPlugin | null
-ctx.toolOutputPlugin;                  // ToolOutputPlugin | null (NEW)
-ctx.autoSpillPlugin;                   // AutoSpillPlugin | null (NEW)
-ctx.agentId;                           // string (auto-generated or from config)
+ctx.tools;                         // ToolManager instance
+ctx.memory;                        // WorkingMemoryPluginNextGen | null
+ctx.features;                      // Required<ContextFeatures>
+ctx.agentId;                       // string
+ctx.sessionId;                     // string | null (if saved/loaded)
+ctx.systemPrompt;                  // string | undefined
+
+// Plugin management
+ctx.registerPlugin(plugin);        // Add custom plugin
+ctx.getPlugin<T>('name');          // Get plugin by name
+ctx.hasPlugin('name');             // Check if plugin registered
+
+// Conversation management
+ctx.addUserMessage(content);       // Add user message
+ctx.addAssistantResponse(output);  // Add assistant response
+ctx.addToolResults(results);       // Add tool results
+ctx.getConversation();             // Get conversation history
+ctx.clearConversation(reason?);    // Clear conversation
+
+// Context preparation
+const { input, budget, compacted } = await ctx.prepare();  // Prepare for LLM call
+
+// Session persistence
+await ctx.save(sessionId?, metadata?);  // Save to storage
+await ctx.load(sessionId);              // Load from storage
 ```
 
-**Feature Validation:**
-- `autoSpill` requires `memory` to be enabled (throws error if invalid)
-- `inContextMemory` without `memory` logs a warning (allowed but limited)
-
-**Tool Auto-Registration (Consolidated):**
-- AgentContext automatically registers feature-aware tools during construction
-- All agent types (Agent, TaskAgent, UniversalAgent) get consistent tools automatically
-- Consolidated tools registered based on features (12 tools total):
-  - Always: `context_stats` (unified introspection - budget, breakdown, memory stats, cache stats)
-  - memory=true (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw`
-  - inContextMemory=true: `context_set`, `context_delete`, `context_list`
-  - persistentInstructions=true: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
-- Feature instructions are automatically injected into context providing usage guidance
-- Disabled features = no associated tools registered = cleaner LLM experience
+**Plugin-Based Architecture:**
+- Each plugin manages its own token tracking
+- Plugins provide: instructions, content, tools
+- Compaction happens ONCE, right before LLM call
+- Tool pairs (tool_use + tool_result) always removed together
 
 ### ToolManager (`src/core/ToolManager.ts`)
 Unified tool management + execution. Implements `IToolExecutor`, `IDisposable`. Per-tool circuit breakers.
@@ -131,14 +167,17 @@ const Vendor = { OpenAI, Anthropic, Google, GoogleVertex, Groq, Together, Grok, 
 
 ## Agent Types
 
-| Type | Purpose | File |
-|------|---------|------|
-| **Agent** | Basic agentic loop | `src/core/Agent.ts` |
-| **TaskAgent** | Task-based with plans, memory, checkpoints | `src/capabilities/taskAgent/TaskAgent.ts` |
-| **UniversalAgent** | Interactive + planning + executing modes | `src/capabilities/universalAgent/UniversalAgent.ts` |
-| **ResearchAgent** | Generic research with pluggable sources | `src/capabilities/researchAgent/ResearchAgent.ts` |
+| Type | Purpose | Status |
+|------|---------|--------|
+| **Agent** | Main agent with agentic loop | ✅ Active |
+| **TaskAgent** | Task-based with plans, memory | ⚠️ **DEPRECATED** |
+| **UniversalAgent** | Interactive + planning modes | ⚠️ **DEPRECATED** |
+| **ResearchAgent** | Research with pluggable sources | ⚠️ **DEPRECATED** |
 
-All extend **BaseAgent** and share unified tool management (`agent.tools === agent.context.tools`).
+> ⚠️ **Migration Notice:** `TaskAgent`, `UniversalAgent`, and `ResearchAgent` are deprecated.
+> Use `Agent` with `AgentContextNextGen` plugins (`WorkingMemoryPluginNextGen`, etc.) instead.
+
+**Agent** (`src/core/Agent.ts`) is the recommended agent type. It extends **BaseAgent** and uses `AgentContextNextGen` for context management.
 
 ### Direct LLM Access (NEW)
 
@@ -167,33 +206,35 @@ src/
 ├── index.ts                    # Main exports (~300 items)
 ├── core/                       # Core architecture
 │   ├── Agent.ts, BaseAgent.ts  # Agent classes
-│   ├── AgentContext.ts         # Unified context facade
+│   ├── context-nextgen/        # NextGen context management (PRIMARY)
+│   │   ├── AgentContextNextGen.ts  # Main context manager
+│   │   ├── types.ts            # Type definitions
+│   │   ├── BasePluginNextGen.ts    # Base plugin class
+│   │   └── plugins/            # WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen,
+│   │                           # PersistentInstructionsPluginNextGen
+│   ├── context/                # Strategies and SmartCompactor (plugins removed)
+│   │   ├── strategies/         # Proactive, Balanced, Lazy compaction strategies
+│   │   └── SmartCompactor.ts   # LLM-powered intelligent compaction
 │   ├── ToolManager.ts          # Tool management + execution
-│   ├── IdempotencyCache.ts     # Tool result caching
 │   ├── Connector.ts            # Auth registry
 │   ├── Vendor.ts               # Vendor enum
 │   ├── constants.ts            # All default values
-│   ├── SessionManager.ts       # Session persistence
 │   ├── TextToSpeech.ts, SpeechToText.ts
 │   ├── createProvider.ts, createAudioProvider.ts, createImageProvider.ts, createVideoProvider.ts
-│   ├── context/                # Context management
-│   │   ├── types.ts            # Context types (IContextStrategy, ContextBudget, etc.)
-│   │   ├── strategies/         # Proactive, Aggressive, Lazy, RollingWindow, Adaptive
-│   │   └── plugins/            # MemoryPlugin, PlanPlugin, ToolOutputPlugin, AutoSpillPlugin, InContextMemoryPlugin
-│   ├── history/                # History interfaces (IHistoryManager)
 │   ├── permissions/            # ToolPermissionManager
 │   └── mcp/                    # MCPClient, MCPRegistry
 ├── domain/
 │   ├── entities/               # Model.ts (23 LLMs), TTSModel, STTModel, ImageModel, VideoModel
 │   │                           # Tool.ts, Message.ts, Memory.ts, Task.ts, Services.ts (35+)
-│   ├── interfaces/             # ITextProvider, IAudioProvider, IToolExecutor, IDisposable, etc.
+│   ├── interfaces/             # ITextProvider, IAudioProvider, IToolExecutor, IDisposable,
+│   │                           # IContextStorage, IAgentDefinitionStorage
 │   ├── types/                  # SharedTypes.ts
 │   └── errors/                 # AIErrors.ts, MCPError.ts
 ├── capabilities/
 │   ├── agents/                 # ExecutionContext.ts, HookManager.ts, EventTypes.ts
-│   ├── taskAgent/              # TaskAgent, WorkingMemory, PlanExecutor, memoryTools
-│   ├── universalAgent/         # UniversalAgent, ModeManager, metaTools
-│   ├── researchAgent/          # ResearchAgent, IResearchSource, WebSearchSource, FileSearchSource
+│   ├── taskAgent/              # ⚠️ DEPRECATED - exports only
+│   ├── universalAgent/         # ⚠️ DEPRECATED - exports only
+│   ├── researchAgent/          # ⚠️ DEPRECATED - exports only
 │   ├── search/                 # SearchProvider (Serper, Brave, Tavily, RapidAPI)
 │   ├── scrape/                 # ScrapeProvider (ZenRows)
 │   ├── images/                 # ImageGeneration
@@ -201,10 +242,9 @@ src/
 ├── infrastructure/
 │   ├── providers/              # OpenAI, Anthropic, Google, Generic
 │   │   └── base/               # BaseProvider, BaseTextProvider, BaseMediaProvider
-│   ├── context/compactors/     # Truncate, Summarize, MemoryEviction
 │   ├── resilience/             # CircuitBreaker, BackoffStrategy, RateLimiter
 │   ├── observability/          # Logger, Metrics
-│   └── storage/                # InMemory, File session/history storage
+│   └── storage/                # FileContextStorage, InMemoryStorage
 ├── tools/
 │   ├── filesystem/             # readFile, writeFile, editFile, glob, grep, listDirectory
 │   ├── shell/                  # bash
@@ -222,11 +262,17 @@ src/
 
 ### IDisposable Pattern
 Classes with resources implement `destroy(): void` and `isDestroyed: boolean`.
-- ToolManager, AgentContext, IdempotencyCache, ModeManager, WorkingMemory
+- ToolManager, AgentContextNextGen, plugins (WorkingMemoryPluginNextGen, etc.)
+
+### Plugin-First Architecture
+- AgentContextNextGen uses composable plugins for all features
+- Each plugin manages its own token tracking and state
+- Plugins provide: instructions, content, tools
+- Register custom plugins via `ctx.registerPlugin(plugin)`
 
 ### Composition Over Inheritance
-- AgentContext composes ToolManager, WorkingMemory, IdempotencyCache, ToolPermissionManager
-- Agents extend BaseAgent (creates AgentContext in constructor)
+- Agents extend BaseAgent (creates AgentContextNextGen in constructor)
+- Plugins implement `IContextPluginNextGen` interface
 
 ### Registry Pattern
 - `Connector.create()` / `Connector.get()` - static auth registry
@@ -284,112 +330,98 @@ const info = getModelInfo('gpt-5.2');
 const cost = calculateCost('gpt-5.2-thinking', inputTokens, outputTokens);
 ```
 
-## ResearchAgent (NEW)
+## ResearchAgent
 
-Generic research agent supporting any data sources (web, vector, file, API, etc.):
+> ⚠️ **DEPRECATED**: `ResearchAgent` is deprecated as of v0.2.0.
+> Use `Agent` with `WorkingMemoryPluginNextGen` and research tools instead.
 
+**Migration:**
 ```typescript
-import { ResearchAgent, createWebSearchSource, createFileSearchSource } from '@oneringai/agents';
-
-// Create sources (implements IResearchSource)
-const webSource = createWebSearchSource('serper-main');
-const fileSource = createFileSearchSource('./docs');
-
-// Create research agent
+// OLD (deprecated):
 const agent = ResearchAgent.create({
   connector: 'openai',
   model: 'gpt-4-turbo',
   sources: [webSource, fileSource],
 });
 
-// Built-in research tools: research_search, research_fetch, research_store_finding, research_list_sources
-```
-
-### IResearchSource Interface
-
-```typescript
-interface IResearchSource {
-  name: string;
-  description: string;
-  type: 'web' | 'vector' | 'file' | 'api' | 'database' | 'custom';
-  search(query: string, options?: SearchOptions): Promise<SearchResponse>;
-  fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
-}
-```
-
-### AutoSpillPlugin
-
-Automatically spills large tool outputs to memory. **Now enabled by default** via AgentContext feature flag:
-
-```typescript
-// Default behavior (autoSpill: true) - auto-enabled when memory is also enabled
-const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
-// Large tool outputs are automatically spilled to memory's raw tier
-
-// Access the plugin
-agent.context.autoSpillPlugin?.getEntries();
-agent.context.autoSpillPlugin?.markConsumed(key, reason);
-
-// Custom configuration
+// NEW (recommended):
 const agent = Agent.create({
-  connector: 'openai', model: 'gpt-4',
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webSearchTool, fileSearchTool],  // Use search tools directly
   context: {
-    autoSpill: {
-      sizeThreshold: 10 * 1024,  // 10KB (default)
-      toolPatterns: [/^web_/, /^research_/, /^read_file/],  // Tools to monitor
-    },
+    features: { workingMemory: true },
   },
 });
 ```
 
-**Note:** AutoSpill requires `memory` feature to be enabled. Attempting to enable autoSpill without memory throws an error.
+## NextGen Plugins
 
-### ToolOutputPlugin
+### WorkingMemoryPluginNextGen
 
-Tracks recent tool outputs in context for LLM visibility. **Enabled by default** via AgentContext feature flag:
+Tiered memory storage (raw/summary/findings) with automatic eviction:
 
 ```typescript
-// Default behavior (toolOutputTracking: true)
-const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+// Access via context
+const memory = ctx.memory;  // WorkingMemoryPluginNextGen | null
 
-// Access the plugin
-const outputs = agent.context.toolOutputPlugin?.getOutputs();
+// Store data
+await memory.store('key', 'description', value, 'high');
 
-// Custom configuration
-const agent = Agent.create({
-  connector: 'openai', model: 'gpt-4',
-  context: {
-    toolOutputTracking: {
-      maxOutputs: 10,           // Max outputs to track
-      maxOutputSize: 5000,      // Truncate large outputs
-      includeInContext: true,   // Include in prepared context
-    },
-  },
+// Retrieve data
+const value = await memory.retrieve('key');
+
+// Query entries
+const entries = await memory.list({ tier: 'findings' });
+```
+
+**Tools provided:**
+- `memory_store` - Store key-value pair
+- `memory_retrieve` - Retrieve value by key
+- `memory_delete` - Delete entry
+- `memory_list` - List all entries
+
+### InContextMemoryPluginNextGen
+
+Key-value storage that appears **directly in context** (no retrieval needed):
+
+```typescript
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { inContextMemory: true },
 });
+
+const plugin = ctx.getPlugin<InContextMemoryPluginNextGen>('in_context_memory');
+plugin.set('state', 'Current state', { step: 1 }, 'high');
 ```
 
-### memory_query Tool
+**Tools provided:**
+- `context_set` - Store/update entry
+- `context_delete` - Remove entry
+- `context_list` - List all entries
 
-Unified query tool for listing, searching, and retrieving memory entries:
+### PersistentInstructionsPluginNextGen
+
+Agent instructions that persist to disk across sessions:
 
 ```typescript
-// List all keys
-await memory_query();
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { persistentInstructions: true },
+  agentId: 'my-assistant',
+});
 
-// Pattern matching (list keys only)
-await memory_query({ pattern: 'findings.*' });
-
-// Retrieve values
-await memory_query({ pattern: 'findings.*', includeValues: true });
-
-// By tier with metadata
-await memory_query({ tier: 'findings', includeMetadata: true });
-
-// Include memory stats
-await memory_query({ includeStats: true });
+const plugin = ctx.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions');
+await plugin.set('Always be helpful.');
 ```
 
-## InContextMemory (NEW)
+**Tools provided:**
+- `instructions_set` - Replace instructions
+- `instructions_append` - Add to instructions
+- `instructions_get` - Read instructions
+- `instructions_clear` - Clear instructions
+
+## InContextMemory
 
 In-context memory for frequently-accessed state stored **directly in context** (not just an index).
 
@@ -397,19 +429,22 @@ In-context memory for frequently-accessed state stored **directly in context** (
 - **WorkingMemory**: Stores data externally, provides an **index** in context, requires `memory_retrieve()` for values
 - **InContextMemory**: Stores data **directly in context**, LLM sees full values immediately
 
-### Setup
+### Setup (NextGen)
 
 ```typescript
-import { AgentContext, setupInContextMemory, createInContextMemory } from '@oneringai/agents';
+import { AgentContextNextGen } from '@oneringai/agents';
 
-// Option 1: Quick setup with helper
-const ctx = AgentContext.create({ model: 'gpt-4' });
-const plugin = setupInContextMemory(ctx, { maxEntries: 15 });
+// Enable via features
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { inContextMemory: true },
+  plugins: {
+    inContextMemory: { maxEntries: 20, maxTotalTokens: 4000 },
+  },
+});
 
-// Option 2: Manual setup
-const { plugin, tools } = createInContextMemory({ maxEntries: 20 });
-ctx.registerPlugin(plugin);
-for (const tool of tools) ctx.tools.register(tool);
+// Access the plugin
+const plugin = ctx.getPlugin<InContextMemoryPluginNextGen>('in_context_memory');
 ```
 
 ### Configuration
@@ -431,8 +466,6 @@ interface InContextMemoryConfig {
 | `context_set` | Store/update key-value pair |
 | `context_delete` | Remove entry to free space |
 | `context_list` | List all entries with metadata |
-
-Note: `context_get` was removed since InContextMemory values are already visible directly in context - no retrieval tool needed.
 
 ### Priority-Based Eviction
 
@@ -458,48 +491,57 @@ plugin.clear();             // Remove all
 
 **Do NOT use for:** Large data (use WorkingMemory), rarely accessed reference data.
 
-## Context Stats Tool
+## Context Budget
 
-Consolidated introspection tool that provides context budget, breakdown, memory stats, and cache stats:
+The `prepare()` method returns detailed token budget information:
 
 ```typescript
-// Budget summary (default)
-await context_stats();
+const { input, budget, compacted } = await ctx.prepare();
 
-// Detailed token breakdown by component
-await context_stats({ sections: ['breakdown'] });
-
-// Memory statistics (entries by tier)
-await context_stats({ sections: ['memory'] });
-
-// Cache statistics (hits, misses)
-await context_stats({ sections: ['cache'] });
-
-// Everything
-await context_stats({ sections: ['all'] });
+console.log(budget.totalUsed);           // Total tokens used
+console.log(budget.available);           // Remaining tokens
+console.log(budget.utilizationPercent);  // Usage percentage
+console.log(budget.breakdown);           // Detailed breakdown
 ```
 
-This tool is always available and gracefully handles disabled features (returns "feature_disabled" for memory/cache sections when those features are off).
+**Budget Breakdown:**
+```typescript
+interface ContextBudget {
+  maxTokens: number;          // Model's context window
+  responseReserve: number;    // Reserved for response
+  systemMessageTokens: number; // System message size
+  toolsTokens: number;        // Tool definitions
+  conversationTokens: number; // Conversation history
+  currentInputTokens: number; // Current user input
+  totalUsed: number;          // Sum of above
+  available: number;          // Remaining capacity
+  utilizationPercent: number; // Usage percentage
+  breakdown: {                // Detailed breakdown
+    systemPrompt: number;
+    persistentInstructions: number;
+    pluginInstructions: number;
+    pluginContents: Record<string, number>;
+    tools: number;
+    conversation: number;
+    currentInput: number;
+  };
+}
+```
 
-## Feature Instructions
+## Plugin Instructions
 
-Runtime usage instructions are automatically injected into context based on enabled features:
+Each plugin provides usage instructions that are automatically injected into the system message:
 
-- **Always included**: Introspection instructions (~300 tokens)
-- **memory=true**: Working Memory workflow, naming conventions, query patterns (~500 tokens)
+- **workingMemory=true**: Working Memory workflow, naming conventions (~500 tokens)
 - **inContextMemory=true**: In-context memory best practices (~350 tokens)
 - **persistentInstructions=true**: Persistent instructions usage (~300 tokens)
-- **toolOutputTracking=true**: Tool output tracking best practices (~200 tokens)
-- **autoSpill=true**: Auto-spill workflow for large outputs (~250 tokens)
 
-Total overhead: ~1,900 tokens when all features enabled (~1.5% of 128K context).
-
-Access instructions programmatically:
+Access plugin instructions programmatically:
 ```typescript
-import { buildFeatureInstructions, getAllInstructions } from '@oneringai/agents';
-
-const component = buildFeatureInstructions(features);
-const allInstructions = getAllInstructions();
+for (const plugin of ctx.getPlugins()) {
+  const instructions = plugin.getInstructions();
+  console.log(`${plugin.name}: ${plugin.getInstructionsTokenSize()} tokens`);
+}
 ```
 
 ## MCP Integration
@@ -512,48 +554,46 @@ client.registerTools(agent.tools);
 
 Supports: stdio (local), HTTP/HTTPS (remote) transports.
 
-## Session Persistence (NEW)
+## Session Persistence
 
-AgentContext now supports full session persistence with `save()` and `load()` methods. This stores and restores:
+AgentContextNextGen supports full session persistence with `save()` and `load()` methods. This stores and restores:
 - Complete conversation history
-- All WorkingMemory entries (not just index)
-- Tool enable/disable state
-- Permission approvals
-- Plugin states (InContextMemory, etc.)
+- All plugin states (WorkingMemory entries, InContextMemory entries, etc.)
+- System prompt
 
 ### Setup
 
 ```typescript
-import { AgentContext, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
 
 // Create storage for the agent
 const storage = createFileContextStorage('my-agent');
 // Stores sessions at: ~/.oneringai/agents/my-agent/sessions/<sessionId>.json
 
 // Create context with storage
-const ctx = AgentContext.create({
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
-  features: { memory: true, history: true },
+  features: { workingMemory: true },
   storage,
 });
 
 // Add state
-ctx.addMessageSync('user', 'Hello');
-await ctx.memory!.store('preference', 'User preference', { theme: 'dark' });
+ctx.addUserMessage('Hello');
+await ctx.memory?.store('preference', 'User preference', { theme: 'dark' });
 
 // Save session
 await ctx.save('session-001', { title: 'My Session', tags: ['test'] });
 
 // Later: Create new context and load
-const ctx2 = AgentContext.create({ model: 'gpt-4', storage });
+const ctx2 = AgentContextNextGen.create({ model: 'gpt-4', storage });
 await ctx2.load('session-001');
-// ctx2 now has full history and memory entries restored
+// ctx2 now has full conversation and plugin states restored
 ```
 
 ### Key APIs
 
 ```typescript
-// AgentContext persistence methods
+// AgentContextNextGen persistence methods
 ctx.sessionId;                              // Current session ID (null if none)
 ctx.storage;                                // Storage backend (null if not configured)
 await ctx.save(sessionId?, metadata?);      // Save state to storage
@@ -567,37 +607,14 @@ storage.load(sessionId);                    // Load session
 storage.delete(sessionId);                  // Delete session
 storage.exists(sessionId);                  // Check existence
 storage.list(options?);                     // List sessions
-storage.updateMetadata(sessionId, metadata);// Update metadata only
-```
-
-### Agent Definition Persistence
-
-For storing agent configurations (model, system prompt, features) separately from sessions:
-
-```typescript
-import { Agent, createFileAgentDefinitionStorage } from '@oneringai/agents';
-
-const defStorage = createFileAgentDefinitionStorage();
-// Stores at: ~/.oneringai/agents/<agentId>/definition.json
-
-// Save agent definition
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: { agentId: 'my-assistant' }
-});
-await agent.saveDefinition(defStorage, { description: 'My helpful assistant' });
-
-// Later: Recreate agent from definition
-const restored = await Agent.fromStorage('my-assistant', defStorage);
 ```
 
 ### Storage Paths
 
 ```
 ~/.oneringai/agents/<agentId>/
-├── definition.json              # Agent configuration (from saveDefinition)
-├── custom_instructions.md       # Persistent instructions (PersistentInstructionsPlugin)
+├── definition.json              # Agent configuration (if using Agent.saveDefinition)
+├── custom_instructions.md       # Persistent instructions (if PersistentInstructionsPluginNextGen enabled)
 └── sessions/
     ├── _index.json              # Session index for fast listing
     ├── session-001.json         # Session state
@@ -696,4 +713,4 @@ const myTool: ToolFunction = {
 
 ---
 
-**Version**: 0.2.0 | **Last Updated**: 2026-01-31 | **Architecture**: Connector-First (v2)
+**Version**: 0.3.0 | **Last Updated**: 2026-02-03 | **Architecture**: Connector-First + NextGen Context

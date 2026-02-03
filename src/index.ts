@@ -30,48 +30,41 @@
 export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
-// AgentContext - Unified "Swiss Army Knife" for context management
-export { AgentContext, DEFAULT_FEATURES } from './core/index.js';
-export type {
-  AgentContextConfig,
-  AgentContextFeatures,
-  AgentContextEvents,
-  AgentContextMetrics,
-  HistoryMessage as AgentContextHistoryMessage,
-  ToolCallRecord,
-  SerializedAgentContextState,
-  DirectCallOptions,
-  PrepareOptions,
-  PreparedResult,
-  MCPServerReference,
-} from './core/index.js';
-
-// Feature-aware tool factory
-export { getAgentContextTools, getBasicIntrospectionTools, getMemoryTools } from './core/index.js';
-
-// Feature Instructions (runtime usage instructions for enabled features)
+// AgentContextNextGen - Clean, Simple Context Management
 export {
-  buildFeatureInstructions,
-  INTROSPECTION_INSTRUCTIONS,
-  WORKING_MEMORY_INSTRUCTIONS,
-  IN_CONTEXT_MEMORY_INSTRUCTIONS,
-  PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
-  TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
-  AUTO_SPILL_INSTRUCTIONS,
-  TOOL_RESULT_EVICTION_INSTRUCTIONS,
-  getAllInstructions,
+  AgentContextNextGen,
+  DEFAULT_FEATURES,
+  DEFAULT_CONFIG,
+  STRATEGY_THRESHOLDS,
+  BasePluginNextGen,
+  simpleTokenEstimator,
+  WorkingMemoryPluginNextGen,
+  InContextMemoryPluginNextGen,
+  PersistentInstructionsPluginNextGen,
 } from './core/index.js';
-
-// Context Plugins
-export { ToolOutputPlugin, AutoSpillPlugin, ToolResultEvictionPlugin } from './core/index.js';
 export type {
-  ToolOutputPluginConfig,
-  ToolOutput,
-  AutoSpillConfig,
-  SpilledEntry,
-  ToolResultEvictionConfig,
-  TrackedResult,
-  EvictionResult,
+  AgentContextNextGenConfig,
+  ContextFeatures,
+  ContextEvents,
+  SerializedContextState,
+  DirectCallOptions,
+  IContextPluginNextGen,
+  ITokenEstimator,
+  ContextBudget,
+  PreparedContext,
+  OversizedInputResult,
+  CompactionStrategyName,
+  PluginConfigs,
+  // IContextStorage exported from domain/interfaces below
+  WorkingMemoryPluginConfig,
+  SerializedWorkingMemoryState,
+  EvictionStrategy as NextGenEvictionStrategy,
+  InContextMemoryConfig,
+  InContextEntry,
+  InContextPriority,
+  SerializedInContextMemoryState,
+  PersistentInstructionsConfig,
+  SerializedPersistentInstructionsState,
 } from './core/index.js';
 
 // Context Guardian (mandatory hard limit enforcement)
@@ -198,58 +191,26 @@ export type {
   ErrorHandlerEvents,
 } from './core/index.js';
 
-// ============ Task-Based Agents ============
+// ============ TaskAgent Utilities (TaskAgent class removed) ============
 export {
-  TaskAgent,
   WorkingMemory,
-  IdempotencyCache,
   ExternalDependencyHandler,
-  PlanExecutor,
   CheckpointManager,
-  createMemoryTools,
-  createContextTools,
-  createContextCompactTool,
-  contextCompactDefinition,
   PlanningAgent,
   generateSimplePlan,
+  DEFAULT_CHECKPOINT_STRATEGY,
 } from './capabilities/taskAgent/index.js';
 export type {
-  TaskAgentConfig,
-  TaskAgentSessionConfig,
-  TaskAgentHooks,
-  AgentHandle,
-  PlanResult,
-  PlanUpdates,
-  PlanUpdateOptions,
-  TaskContext,
-  TaskResult,
-  ErrorContext as TaskAgentErrorContext,
   WorkingMemoryEvents,
   EvictionStrategy,
-  IdempotencyCacheConfig,
-  CacheStats,
   ExternalDependencyEvents,
-  PlanExecutorConfig,
-  PlanExecutorEvents,
-  PlanExecutionResult,
   CheckpointStrategy,
   PlanningAgentConfig,
   GeneratedPlan,
 } from './capabilities/taskAgent/index.js';
-export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
 
-// ============ ResearchAgent (Generic Research Capabilities) ============
-export {
-  ResearchAgent,
-  createResearchTools,
-  WebSearchSource,
-  createWebSearchSource,
-  FileSearchSource,
-  createFileSearchSource,
-} from './capabilities/researchAgent/index.js';
+// ============ Research Types (ResearchAgent class removed) ============
 export type {
-  ResearchAgentConfig,
-  ResearchAgentHooks,
   IResearchSource,
   SourceResult,
   SearchResponse as ResearchSearchResponse,
@@ -262,18 +223,14 @@ export type {
   ResearchQuery,
   ResearchResult,
   ResearchProgress,
-  WebSearchSourceConfig,
-  FileSearchSourceConfig,
 } from './capabilities/researchAgent/index.js';
 
-// ============ Context Management (Universal) ============
+// ============ Context Management (Legacy types for strategy compatibility) ============
 // Note: ContextManager class deleted - AgentContext is THE ONLY context manager
+// ContextBudget, PreparedContext, ITokenEstimator exported above from NextGen
 export type {
   IContextComponent,
-  ContextBudget,
-  PreparedContext,
   ContextManagerConfig,
-  ITokenEstimator,
   IContextCompactor,
   IContextStrategy,
   TokenContentType,
@@ -856,28 +813,6 @@ export { ToolRegistry, type ConnectorToolEntry } from './tools/index.js';
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';
 
-// ============ UniversalAgent (NEW) ============
-export { UniversalAgent, ModeManager } from './capabilities/universalAgent/index.js';
-export type { UniversalAgentEvents, ModeManagerEvents } from './capabilities/universalAgent/index.js';
-export {
-  getMetaTools,
-  isMetaTool,
-  META_TOOL_NAMES,
-} from './capabilities/universalAgent/index.js';
-export type {
-  UniversalAgentConfig,
-  UniversalAgentSessionConfig,
-  UniversalAgentPlanningConfig,
-  UniversalResponse,
-  UniversalEvent,
-  AgentMode,
-  TaskProgress,
-  IntentAnalysis,
-  PlanChange,
-  ExecutionResult,
-  ToolCallResult as UniversalToolCallResult,
-  ModeState,
-} from './capabilities/universalAgent/index.js';
 
 // ============ MCP (Model Context Protocol) ============
 export { MCPClient, MCPRegistry } from './core/mcp/index.js';
@@ -907,32 +842,6 @@ export {
   MCPToolError,
   MCPResourceError,
 } from './core/mcp/index.js';
-
-// ============ InContextMemory (Live Context Storage) ============
-export {
-  InContextMemoryPlugin,
-  createInContextMemoryTools,
-  createInContextMemory,
-  setupInContextMemory,
-} from './core/context/plugins/index.js';
-export type {
-  InContextEntry,
-  InContextPriority,
-  InContextMemoryConfig,
-  SerializedInContextMemoryState,
-} from './core/context/plugins/index.js';
-
-// ============ PersistentInstructions (Disk-Persisted Custom Instructions) ============
-export {
-  PersistentInstructionsPlugin,
-  createPersistentInstructionsTools,
-  createPersistentInstructions,
-  setupPersistentInstructions,
-} from './core/context/plugins/index.js';
-export type {
-  PersistentInstructionsConfig,
-  SerializedPersistentInstructionsState,
-} from './core/context/plugins/index.js';
 
 // PersistentInstructions Storage
 export { FilePersistentInstructionsStorage } from './infrastructure/storage/index.js';

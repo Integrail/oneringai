@@ -15,11 +15,12 @@
 - 🖼️ **Image Generation** - DALL-E 3, gpt-image-1, Google Imagen 4 with editing and variations
 - 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
 - 🔍 **Web Search** - Connector-based search with Serper, Brave, Tavily, and RapidAPI providers
-- 🤖 **Universal Agent** - Unified agent combining chat, planning, and execution in one interface
+- 🔌 **NextGen Context** - Clean, plugin-based context management with `AgentContextNextGen`
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
-- 💾 **Session Persistence** - Save and resume conversations for all agent types
-- 🤖 **Task Agents** - Autonomous agents with working memory, context management, and state persistence
-- 🔬 **Research Agent** - NEW: Generic research agent with pluggable sources (web, vector, file, API)
+- 💾 **Session Persistence** - Save and resume conversations with full state restoration
+- 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
+- 🤖 **Task Agents** - ⚠️ *Deprecated* - Use `Agent` with `WorkingMemoryPluginNextGen`
+- 🔬 **Research Agent** - ⚠️ *Deprecated* - Use `Agent` with search tools
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 📌 **InContextMemory** - NEW: Live key-value storage directly in LLM context for instant access
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
@@ -295,7 +296,10 @@ await agent.run('Scrape https://example.com and summarize');
 
 ## Key Features
 
-### 1. Universal Agent (NEW)
+### 1. Universal Agent
+
+> ⚠️ **DEPRECATED**: `UniversalAgent` is deprecated as of v0.3.0.
+> Use `Agent` with `AgentContextNextGen` plugins instead. See [Migration Guide](#migration-from-deprecated-agents).
 
 Combines interactive chat, planning, and task execution in one powerful agent:
 
@@ -372,52 +376,52 @@ agent.addTool(newTool);        // Still works!
 agent.removeTool('old_tool');  // Still works!
 ```
 
-### 3. Session Persistence (NEW)
+### 3. Session Persistence
 
-Save and resume full context state including conversation history and memory:
+Save and resume full context state including conversation history and plugin states:
 
 ```typescript
-import { AgentContext, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
 
 // Create storage for the agent
 const storage = createFileContextStorage('my-assistant');
 
 // Create context with storage
-const ctx = AgentContext.create({
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
-  features: { memory: true, history: true },
+  features: { workingMemory: true },
   storage,
 });
 
 // Build up state
-await ctx.addMessage('user', 'Remember: my favorite color is blue');
-await ctx.addMessage('assistant', 'I\'ll remember that your favorite color is blue.');
-await ctx.memory!.store('user_color', 'User favorite color', 'blue');
+ctx.addUserMessage('Remember: my favorite color is blue');
+await ctx.memory?.store('user_color', 'User favorite color', 'blue');
 
 // Save session with metadata
 await ctx.save('session-001', { title: 'User Preferences' });
 
 // Later... load session
-const ctx2 = AgentContext.create({ model: 'gpt-4', storage });
+const ctx2 = AgentContextNextGen.create({ model: 'gpt-4', storage });
 const loaded = await ctx2.load('session-001');
 
 if (loaded) {
-  // Full state restored: history, memory entries, tool state, etc.
-  const color = await ctx2.memory!.retrieve('user_color');
+  // Full state restored: conversation, plugin states, etc.
+  const color = await ctx2.memory?.retrieve('user_color');
   console.log(color); // 'blue'
 }
 ```
 
 **What's Persisted:**
 - Complete conversation history
-- All WorkingMemory entries (full values, not just index)
-- Tool enable/disable state
-- Permission approvals
-- Plugin states (InContextMemory, etc.)
+- All plugin states (WorkingMemory entries, InContextMemory, etc.)
+- System prompt
 
 **Storage Location:** `~/.oneringai/agents/<agentId>/sessions/<sessionId>.json`
 
 ### 4. Task Agents
+
+> ⚠️ **DEPRECATED**: `TaskAgent` is deprecated as of v0.3.0.
+> Use `Agent` with `WorkingMemoryPluginNextGen` instead. See [Migration Guide](#migration-from-deprecated-agents).
 
 Autonomous agents for complex workflows:
 
@@ -448,7 +452,10 @@ await agent.start({
 - 🔄 **Tool Idempotency** - Prevent duplicate side effects
 - 🔬 **Task Types** - Optimized prompts and priorities for research, coding, and analysis
 
-### 5. Research Agent (NEW)
+### 5. Research Agent
+
+> ⚠️ **DEPRECATED**: `ResearchAgent` is deprecated as of v0.3.0.
+> Use `Agent` with search tools and `WorkingMemoryPluginNextGen` instead.
 
 A specialized agent for multi-source research with pluggable data sources:
 
@@ -504,135 +511,116 @@ const vectorSource: IResearchSource = {
 
 ### 6. Context Management
 
-**AgentContext** is the unified "swiss army knife" for managing agent state. It provides a simple, coordinated API for all context-related operations:
+**AgentContextNextGen** is the modern, plugin-based context manager. It provides clean separation of concerns with composable plugins:
 
 ```typescript
-import { Agent, AgentContext } from '@oneringai/agents';
+import { Agent, AgentContextNextGen } from '@oneringai/agents';
 
-// Option 1: Use AgentContext directly (standalone)
-const ctx = AgentContext.create({
+// Option 1: Use AgentContextNextGen directly (standalone)
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
   systemPrompt: 'You are a helpful assistant.',
-  tools: [weatherTool, searchTool],
+  features: { workingMemory: true, inContextMemory: true },
 });
 
-await ctx.addMessage('user', 'What is the weather in Paris?');  // async with auto-compaction
-await ctx.executeTool('get_weather', { location: 'Paris' });
-const prepared = await ctx.prepare(); // Ready for LLM call
+ctx.addUserMessage('What is the weather in Paris?');
+const { input, budget } = await ctx.prepare(); // Ready for LLM call
 
-// Option 2: Enable context tracking in Agent
+// Option 2: Via Agent.create
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: { // Enables AgentContext-based tracking
-    strategy: 'adaptive', // proactive, aggressive, lazy, rolling-window, adaptive
-    autoCompact: true,
+  context: {
+    strategy: 'balanced', // proactive, balanced, lazy
+    features: { workingMemory: true },
   },
 });
 
-// Agent auto-tracks messages, tool calls, and manages context
+// Agent uses AgentContextNextGen internally
 await agent.run('Check the weather');
-const metrics = await agent.context?.getMetrics();
 ```
 
-#### Feature Configuration (NEW)
+#### Feature Configuration
 
-Enable/disable AgentContext features independently. Disabled features = no associated tools registered:
+Enable/disable features independently. Disabled features = no associated tools registered:
 
 ```typescript
-// Minimal stateless agent (no memory, no history)
+// Minimal stateless agent (no memory)
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false, history: false }
+    features: { workingMemory: false }
   }
 });
 
-// Full-featured research agent
+// Full-featured agent with all plugins
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: true, inContextMemory: true, history: true }
+    features: {
+      workingMemory: true,
+      inContextMemory: true,
+      persistentInstructions: true
+    },
+    agentId: 'my-assistant',  // Required for persistentInstructions
   }
 });
-
-// Check feature status
-console.log(agent.context.isFeatureEnabled('memory')); // false
-console.log(agent.context.memory);                     // null (disabled)
 ```
 
 **Available Features:**
-| Feature | Default | Components | Associated Tools |
-|---------|---------|------------|------------------|
-| `memory` | `true` | WorkingMemory + IdempotencyCache | `memory_*` |
-| `inContextMemory` | `false` | InContextMemoryPlugin | `context_set/delete/list` |
-| `persistentInstructions` | `false` | PersistentInstructionsPlugin | `instructions_set/get/append/clear` |
-| `history` | `true` | Conversation tracking | (affects context preparation) |
-| `permissions` | `true` | ToolPermissionManager | (affects tool execution) |
-| `toolOutputTracking` | `true` | ToolOutputPlugin | (tracks recent tool outputs in context) |
-| `autoSpill` | `true` | AutoSpillPlugin | (auto-spills large outputs to memory) |
-| `toolResultEviction` | `true` | ToolResultEvictionPlugin | (evicts old tool results to memory) |
+| Feature | Default | Plugin | Associated Tools |
+|---------|---------|--------|------------------|
+| `workingMemory` | `true` | WorkingMemoryPluginNextGen | `memory_store/retrieve/delete/list` |
+| `inContextMemory` | `false` | InContextMemoryPluginNextGen | `context_set/delete/list` |
+| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | `instructions_set/get/append/clear` |
 
-**Note:** `autoSpill` and `toolResultEviction` both require `memory` to be enabled. These features are particularly useful for research and data-heavy workflows where tool outputs can be large.
-
-**AgentContext composes:**
+**AgentContextNextGen architecture:**
+- **Plugin-first design** - All features are composable plugins
 - **ToolManager** - Tool registration, execution, circuit breakers
-- **WorkingMemory** - Key-value store with eviction
-- **IdempotencyCache** - Tool result caching
-- **ToolPermissionManager** - Approval workflows
-- **Built-in history** - Conversation tracking
+- **Single system message** - All context components combined
+- **Smart compaction** - Happens once, right before LLM call
 
-**Five compaction strategies** for different use cases:
-- **proactive** (default) - Balanced, compact at 75%
-- **aggressive** - Early compaction at 60%, for long conversations
-- **lazy** - Minimal compaction at 90%, for short tasks
-- **rolling-window** - Fixed message window, zero overhead
-- **adaptive** - Self-optimizing based on usage patterns
+**Three compaction strategies:**
+- **proactive** - Compact at 70% usage
+- **balanced** (default) - Compact at 80% usage
+- **lazy** - Compact at 90% usage
 
-**Auto-Compaction Guard (NEW):** Context overflow is prevented proactively:
+**Context preparation:**
 ```typescript
-// addMessage() is now async and checks capacity for large content
-await ctx.addMessage('tool', largeWebFetchResult);  // Auto-compacts if needed
+const { input, budget, compacted, compactionLog } = await ctx.prepare();
 
-// Sync version for small messages (no capacity check)
-ctx.addMessageSync('user', 'Hello');
-
-// Helper for tool results with metadata
-await ctx.addToolResult(output, { tool: 'web_fetch' });
-
-// Manual capacity check
-const canFit = await ctx.ensureCapacity(estimatedTokens);
+console.log(budget.totalUsed);           // Total tokens used
+console.log(budget.available);           // Remaining tokens
+console.log(budget.utilizationPercent);  // Usage percentage
 ```
 
-**Three compactors** for content reduction:
-- **TruncateCompactor** - Simple truncation for tool outputs
-- **SummarizeCompactor** - LLM-based intelligent summarization (preserves key facts)
-- **MemoryEvictionCompactor** - Priority-based memory eviction
-
-**Task type detection** automatically optimizes context for:
-- **research** - Preserves tool outputs, summarizes conversation early
-- **coding** - Preserves code context, truncates verbose outputs
-- **analysis** - Balanced data and reasoning preservation
-
-### 7. InContextMemory (NEW)
+### 7. InContextMemory
 
 Store key-value pairs **directly in context** for instant LLM access without retrieval calls:
 
 ```typescript
-import { AgentContext, setupInContextMemory } from '@oneringai/agents';
+import { AgentContextNextGen } from '@oneringai/agents';
 
-const ctx = AgentContext.create({ model: 'gpt-4' });
-const inContextMemory = setupInContextMemory(ctx, { maxEntries: 20 });
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { inContextMemory: true },
+  plugins: {
+    inContextMemory: { maxEntries: 20 },
+  },
+});
+
+// Access the plugin
+const plugin = ctx.getPlugin('in_context_memory');
 
 // Store data - immediately visible to LLM
-inContextMemory.set('current_state', 'Task processing state', { step: 2, status: 'active' });
-inContextMemory.set('user_prefs', 'User preferences', { verbose: true }, 'high');
+plugin.set('current_state', 'Task processing state', { step: 2, status: 'active' });
+plugin.set('user_prefs', 'User preferences', { verbose: true }, 'high');
 
-// LLM can use context_set/context_get/context_delete/context_list tools
+// LLM can use context_set/context_delete/context_list tools
 // Or access directly via plugin API
-const state = inContextMemory.get('current_state');  // { step: 2, status: 'active' }
+const state = plugin.get('current_state');  // { step: 2, status: 'active' }
 ```
 
 **Key Difference from WorkingMemory:**
@@ -641,7 +629,7 @@ const state = inContextMemory.get('current_state');  // { step: 2, status: 'acti
 
 **Use cases:** Session state, user preferences, counters, flags, small accumulated results.
 
-### 8. Persistent Instructions (NEW)
+### 8. Persistent Instructions
 
 Store agent-level custom instructions that persist across sessions on disk:
 
@@ -651,8 +639,8 @@ import { Agent } from '@oneringai/agents';
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  agentId: 'my-assistant',  // Used for storage path
   context: {
+    agentId: 'my-assistant',  // Required for storage path
     features: {
       persistentInstructions: true,
     },
@@ -677,49 +665,74 @@ const agent = Agent.create({
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
 
-### 9. Tool Result Eviction (NEW)
+### 9. Migration from Deprecated Agents
 
-Automatically evict old tool results from conversation context to working memory, freeing space while preserving retrievability:
+If you're using the deprecated agent types, here's how to migrate:
+
+#### From TaskAgent
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+// OLD (deprecated):
+const agent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTools],
+});
+await agent.start({ goal: '...', tasks: [...] });
 
-// Enabled by default when memory is enabled
+// NEW (recommended):
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  // toolResultEviction is true by default
+  tools: [myTools],
+  context: {
+    features: { workingMemory: true },
+  },
+});
+// Use agent.run() with appropriate prompts for task management
+```
+
+#### From UniversalAgent
+
+```typescript
+// OLD (deprecated):
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  planning: { enabled: true },
 });
 
-// Custom configuration
+// NEW (recommended):
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    toolResultEviction: {
-      maxFullResults: 5,        // Keep last 5 tool pairs in conversation
-      maxAgeIterations: 3,      // Evict after 3 iterations
-      minSizeToEvict: 1024,     // Only evict results >1KB
-      maxTotalSizeBytes: 100 * 1024,  // 100KB total threshold
-      toolRetention: {          // Per-tool retention overrides
-        read_file: 10,          // Keep file content longer
-        web_fetch: 3,           // Short retention for web content
-      },
-    },
+    features: { workingMemory: true, inContextMemory: true },
+  },
+});
+// Use agent.run() with planning prompts
+```
+
+#### From ResearchAgent
+
+```typescript
+// OLD (deprecated):
+const agent = ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource, fileSource],
+});
+
+// NEW (recommended):
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webSearchTool, fileSearchTool],  // Use tools directly
+  context: {
+    features: { workingMemory: true },
   },
 });
 ```
-
-**Key Features:**
-- 🔄 **Automatic Eviction** - Old/large tool results moved to memory automatically
-- 📊 **Size-Based Triggers** - Evicts when total tracked size exceeds threshold
-- ⏱️ **Age-Based Triggers** - Evicts results older than N iterations
-- 🎯 **Per-Tool Retention** - Configure different retention for different tools
-- 🔗 **Pair Removal** - Removes both tool_use AND tool_result messages together
-- 📁 **Memory Storage** - Evicted results stored in WorkingMemory's raw tier
-- 🔍 **Retrievable** - Agent can retrieve evicted results via `memory_retrieve`
-
-**Evicted results are stored as:** `tool_result.{toolName}.{toolUseId}` (in the `raw.` tier, so full key is `raw.tool_result.{toolName}.{toolUseId}`)
 
 ### 10. Direct LLM Access
 

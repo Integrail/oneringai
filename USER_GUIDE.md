@@ -15,18 +15,18 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
 6. [Session Persistence](#session-persistence)
-7. [Universal Agent](#universal-agent)
-8. [Task Agents](#task-agents) **ENHANCED**
+7. [Universal Agent](#universal-agent) **DEPRECATED**
+8. [Task Agents](#task-agents) **DEPRECATED**
    - Task Priorities
    - Fulfillment Criteria
    - PlanExecutor Internals
    - Advanced Configuration
-9. [Research Agent](#research-agent) **NEW**
+9. [Research Agent](#research-agent) **DEPRECATED**
    - Pluggable Research Sources
    - Auto-Spill for Large Outputs
    - Memory Batch Retrieval
    - Custom Source Implementation
-10. [Context Management](#context-management) **ENHANCED**
+10. [Context Management](#context-management) **NEXTGEN**
     - Strategy Deep Dive (Proactive, Aggressive, Lazy, Rolling Window, Adaptive)
     - Custom Strategies
     - Token Estimation
@@ -956,6 +956,29 @@ const taskAgents = await defStorage.list({ agentType: 'task-agent' });
 
 ## Universal Agent
 
+> ⚠️ **DEPRECATED**: `UniversalAgent` is deprecated as of v0.3.0.
+> Use `Agent` with `AgentContextNextGen` plugins instead.
+>
+> **Migration:**
+> ```typescript
+> // OLD (deprecated):
+> const agent = UniversalAgent.create({
+>   connector: 'openai',
+>   model: 'gpt-4',
+>   planning: { enabled: true },
+> });
+>
+> // NEW (recommended):
+> const agent = Agent.create({
+>   connector: 'openai',
+>   model: 'gpt-4',
+>   context: {
+>     features: { workingMemory: true, inContextMemory: true },
+>   },
+> });
+> // Use agent.run() with planning prompts
+> ```
+
 A **unified agent** that combines interactive chat, planning, and task execution in one powerful interface.
 
 ### Overview
@@ -1414,6 +1437,31 @@ agent.toolManager.enable('risky_tool');
 ---
 
 ## Task Agents
+
+> ⚠️ **DEPRECATED**: `TaskAgent` is deprecated as of v0.3.0.
+> Use `Agent` with `WorkingMemoryPluginNextGen` instead.
+>
+> **Migration:**
+> ```typescript
+> // OLD (deprecated):
+> const agent = TaskAgent.create({
+>   connector: 'openai',
+>   model: 'gpt-4',
+>   tools: [myTools],
+> });
+> await agent.start({ goal: '...', tasks: [...] });
+>
+> // NEW (recommended):
+> const agent = Agent.create({
+>   connector: 'openai',
+>   model: 'gpt-4',
+>   tools: [myTools],
+>   context: {
+>     features: { workingMemory: true },
+>   },
+> });
+> // Use agent.run() with appropriate prompts for task management
+> ```
 
 TaskAgents are **autonomous agents** that execute complex, multi-step plans with full control over execution order, priorities, and fulfillment criteria. They represent the most powerful way to build sophisticated AI workflows.
 
@@ -3097,6 +3145,29 @@ agent.on('agent:completed', async ({ result, metrics: planMetrics }) => {
 
 ## Research Agent
 
+> ⚠️ **DEPRECATED**: `ResearchAgent` is deprecated as of v0.3.0.
+> Use `Agent` with search tools and `WorkingMemoryPluginNextGen` instead.
+>
+> **Migration:**
+> ```typescript
+> // OLD (deprecated):
+> const agent = ResearchAgent.create({
+>   connector: 'openai',
+>   model: 'gpt-4',
+>   sources: [webSource, fileSource],
+> });
+>
+> // NEW (recommended):
+> const agent = Agent.create({
+>   connector: 'openai',
+>   model: 'gpt-4',
+>   tools: [webSearchTool, fileSearchTool],  // Use search tools directly
+>   context: {
+>     features: { workingMemory: true },
+>   },
+> });
+> ```
+
 The **ResearchAgent** is a specialized agent for conducting multi-source research with pluggable data sources. It extends TaskAgent with research-specific capabilities including automatic large output handling, hierarchical memory tiers, and batch retrieval.
 
 ### Core Capabilities
@@ -3581,89 +3652,98 @@ console.log(`Entries: ${stats.entryCount}`);
 
 ## Context Management
 
-The library includes a **powerful, universal context management system** that automatically handles the complexity of managing LLM context windows across all agent types. This section covers everything from basic automatic management to advanced custom strategies.
+The library includes a **powerful, universal context management system** that automatically handles the complexity of managing LLM context windows. As of v0.3.0, `AgentContextNextGen` is the primary context manager with a clean, plugin-based architecture.
 
-### AgentContext - The Unified API (NEW)
+### AgentContextNextGen - The Modern API
 
-**AgentContext** is the "swiss army knife" for agent state management. It provides a single, unified facade that composes all context-related managers:
+**AgentContextNextGen** is the modern, plugin-first context manager. It provides clean separation of concerns with composable plugins:
 
 ```typescript
-import { AgentContext } from '@oneringai/agents';
+import { AgentContextNextGen } from '@oneringai/agents';
 
 // Create a context instance
-const ctx = AgentContext.create({
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
   systemPrompt: 'You are a helpful assistant.',
-  tools: [weatherTool, searchTool],
-  memory: {
-    maxSizeBytes: 1024 * 1024, // 1MB
+  features: {
+    workingMemory: true,      // WorkingMemoryPluginNextGen
+    inContextMemory: true,    // InContextMemoryPluginNextGen
+    persistentInstructions: false,
   },
-  cache: {
-    enabled: true,
-    ttlMs: 3600000, // 1 hour
-  },
-  strategy: 'adaptive', // Compaction strategy
+  strategy: 'balanced', // 'proactive' | 'balanced' | 'lazy'
 });
 
-// Add messages (async with auto-compaction for large content)
-await ctx.addMessage('user', 'What is the weather in Paris?');
-await ctx.addMessage('assistant', 'Let me check that for you.');
+// Add user message
+ctx.addUserMessage('What is the weather in Paris?');
 
-// Or use sync version for small messages (no capacity checking)
-ctx.addMessageSync('user', 'Quick question');
+// Prepare context for LLM call (handles compaction if needed)
+const { input, budget, compacted } = await ctx.prepare();
 
-// Add tool results with automatic capacity management
-await ctx.addToolResult(largeWebFetchResult, { tool: 'web_fetch' });
+// After LLM call, add response
+ctx.addAssistantResponse(response.output);
 
-// Execute tools (with automatic caching)
-const result = await ctx.executeTool('get_weather', { location: 'Paris' });
+// Add tool results
+ctx.addToolResults([{ tool_use_id: '...', content: '...' }]);
 
-// Access composed managers directly
-ctx.tools.disable('risky_tool');         // ToolManager
-await ctx.memory.set('key', 'desc', val); // WorkingMemory
-ctx.permissions.allowlistAdd('safe_tool'); // ToolPermissionManager
-const stats = ctx.cache.getStats();       // IdempotencyCache
+// Access plugins
+const memory = ctx.memory;  // WorkingMemoryPluginNextGen | null
+await memory?.store('key', 'description', value);
 
-// Prepare context for LLM call
-const prepared = await ctx.prepare();
-console.log(`Tokens: ${prepared.budget.used}/${prepared.budget.total}`);
-console.log(`Status: ${prepared.budget.status}`); // 'ok', 'warning', 'critical'
+// Access tools
+ctx.tools.disable('risky_tool');
 
-// Get comprehensive metrics
-const metrics = await ctx.getMetrics();
-console.log(metrics.historyMessageCount);
-console.log(metrics.memoryStats.utilizationPercent);
-console.log(metrics.cacheStats.hits);
+// Budget information
+console.log(`Tokens: ${budget.totalUsed}/${budget.maxTokens}`);
+console.log(`Utilization: ${budget.utilizationPercent}%`);
+console.log(`Available: ${budget.available}`);
 ```
 
-#### AgentContext Components
+### Context Structure
 
-AgentContext composes these existing managers (DRY - no duplication!):
+AgentContextNextGen organizes context into clear sections:
+
+```
+[Developer Message - All glued together]
+  # System Prompt
+  # Persistent Instructions (if plugin enabled)
+  # Plugin Instructions (for enabled plugins)
+  # In-Context Memory (if plugin enabled)
+  # Working Memory Index (if plugin enabled)
+
+[Conversation History]
+  ... messages including tool_use/tool_result pairs ...
+
+[Current Input]
+  User message OR tool results (newest, never compacted)
+```
+
+#### AgentContextNextGen Components
+
+AgentContextNextGen uses a plugin architecture with these core components:
 
 | Component | Access | Purpose |
 |-----------|--------|---------|
 | **ToolManager** | `ctx.tools` | Tool registration, execution, circuit breakers |
-| **WorkingMemory** | `ctx.memory` | Key-value store with scopes, priority, eviction |
-| **IdempotencyCache** | `ctx.cache` | Tool result caching to prevent duplicates |
-| **ToolPermissionManager** | `ctx.permissions` | Approval workflows, allowlists, blocklists |
-| **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (InputItem[]) |
+| **WorkingMemoryPluginNextGen** | `ctx.getPlugin('working-memory')` | Tiered memory (raw/summary/findings) |
+| **InContextMemoryPluginNextGen** | `ctx.getPlugin('in-context-memory')` | Live key-value storage in context |
+| **PersistentInstructionsPluginNextGen** | `ctx.getPlugin('persistent-instructions')` | Disk-persisted agent instructions |
+| **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (Message[]) |
 
-#### Using AgentContext with Agent
+#### Using AgentContextNextGen with Agent
 
-**AgentContext is always available** - BaseAgent creates it in the constructor, making it the single source of truth for ToolManager:
+**AgentContextNextGen is always available** - BaseAgent creates it in the constructor, making it the single source of truth for ToolManager:
 
 ```typescript
-import { Agent, AgentContext } from '@oneringai/agents';
+import { Agent, AgentContextNextGen } from '@oneringai/agents';
 
-// AgentContext is auto-created with default config
+// AgentContextNextGen is auto-created with default config
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [weatherTool],
   context: {
-    strategy: 'adaptive',
-    autoCompact: true,
-    memory: { maxSizeBytes: 2 * 1024 * 1024 },
+    strategy: 'balanced',       // NextGen strategies: 'proactive' (70%), 'balanced' (80%), 'lazy' (90%)
+    features: { workingMemory: true },
   },
 });
 
@@ -3683,98 +3763,86 @@ await agent.run('What is the weather?');
 
 // Access the context (never null)
 const ctx = agent.context;
-const conversation = ctx.getConversation(); // InputItem[] - the new API
-const metrics = await ctx.getMetrics();
-console.log(`Messages: ${metrics.historyMessageCount}`);
+const conversation = ctx.getConversation(); // Message[] - NextGen API
+const { budget } = await ctx.prepare();
+console.log(`Used: ${budget.used}/${budget.total} tokens`);
 
-// Option 2: Pass existing AgentContext instance
-const sharedContext = AgentContext.create({ model: 'gpt-4' });
+// Option 2: Pass existing AgentContextNextGen instance
+const sharedContext = AgentContextNextGen.create({ model: 'gpt-4' });
 const agent1 = Agent.create({ connector: 'openai', model: 'gpt-4', context: sharedContext });
 const agent2 = Agent.create({ connector: 'anthropic', model: 'claude', context: sharedContext });
 // Both agents share the same context state and ToolManager!
 ```
 
-#### AgentContext Configuration
+#### AgentContextNextGen Configuration
 
 ```typescript
-interface AgentContextConfig {
+interface AgentContextNextGenConfig {
   /** Model name (used for token limits) */
   model?: string;
 
   /** Max context tokens (overrides model default) */
   maxContextTokens?: number;
 
+  /** Response token reserve in tokens (default: 4096) */
+  responseReserve?: number;
+
   /** System prompt */
   systemPrompt?: string;
 
-  /** Instructions */
-  instructions?: string;
+  /** Agent ID (used for persistent storage paths) */
+  agentId?: string;
 
   /** Tools to register */
   tools?: ToolFunction[];
 
-  /** Tool permissions configuration */
-  permissions?: AgentPermissionsConfig;
-
-  /** Feature flags for enabling/disabling components */
-  features?: AgentContextFeatures;
-
-  /** Memory configuration */
-  memory?: {
-    storage?: IMemoryStorage;  // Custom backend
-    maxSizeBytes?: number;     // Default: 1MB
-    softLimitPercent?: number; // Default: 80%
-  };
-
-  /** Cache configuration */
-  cache?: {
-    enabled?: boolean;  // Default: true
-    ttlMs?: number;     // Default: 3600000 (1 hour)
-  };
-
-  /** History configuration */
-  history?: {
-    maxMessages?: number;    // Default: 100
-    preserveRecent?: number; // Default: 20
-  };
+  /** Feature flags for enabling/disabling plugins */
+  features?: ContextFeatures;
 
   /** Compaction strategy */
-  strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive';
+  strategy?: CompactionStrategyName;  // 'proactive' (70%) | 'balanced' (80%) | 'lazy' (90%)
 
-  /** Response token reserve (0.0 - 1.0). Default: 0.15 */
-  responseReserve?: number;
+  /** Token estimator (default: simpleTokenEstimator) */
+  tokenEstimator?: ITokenEstimator;
 
-  /** Enable auto-compaction. Default: true */
-  autoCompact?: boolean;
+  /** Context storage for session persistence */
+  storage?: IContextStorage;
+
+  /** Plugin configurations */
+  plugins?: PluginConfigs;
+}
+
+interface ContextFeatures {
+  /** Enable WorkingMemoryPluginNextGen (default: true) */
+  workingMemory?: boolean;
+
+  /** Enable InContextMemoryPluginNextGen (default: false) */
+  inContextMemory?: boolean;
+
+  /** Enable PersistentInstructionsPluginNextGen (default: false) */
+  persistentInstructions?: boolean;
 }
 ```
 
-#### Feature Configuration (NEW)
+#### Feature Configuration
 
-AgentContext features can be independently enabled or disabled. When a feature is disabled, its associated tools are **not registered**, giving the LLM a cleaner tool set:
+AgentContextNextGen features enable plugins independently. When a feature is disabled, its associated tools are **not registered**, giving the LLM a cleaner tool set:
 
 ```typescript
-import { AgentContext, DEFAULT_FEATURES } from '@oneringai/agents';
+import { AgentContextNextGen, DEFAULT_FEATURES } from '@oneringai/agents';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
-// { memory: true, inContextMemory: false, persistentInstructions: false, history: true, permissions: true, toolOutputTracking: true, autoSpill: true, toolResultEviction: true }
+// { workingMemory: true, inContextMemory: false, persistentInstructions: false }
 ```
 
 **Available Features:**
 
-| Feature | Default | Description | When Disabled |
-|---------|---------|-------------|---------------|
-| `memory` | `true` | WorkingMemory + IdempotencyCache for persistent data storage and tool result caching | `memory_*` tools not registered; `ctx.memory` and `ctx.cache` return `null` |
-| `inContextMemory` | `false` | InContextMemoryPlugin for live key-value storage directly in context | `context_set/delete/list` tools not registered; `ctx.inContextMemory` returns `null` |
-| `persistentInstructions` | `false` | PersistentInstructionsPlugin for agent-level instructions persisted to disk | `instructions_*` tools not registered; `ctx.persistentInstructions` returns `null` |
-| `history` | `true` | Conversation history tracking | `addMessage()` and `addMessageSync()` become no-ops, history not included in prepared context |
-| `permissions` | `true` | ToolPermissionManager for approval workflows | All tools auto-approved; `ctx.permissions` returns `null` |
-| `toolOutputTracking` | `true` | ToolOutputPlugin tracks recent tool outputs in context for reference | Tool outputs not tracked in context; `ctx.toolOutputPlugin` returns `null` |
-| `autoSpill` | `true` | AutoSpillPlugin auto-spills large tool outputs to WorkingMemory | Large outputs remain in context (may cause overflow); `ctx.autoSpillPlugin` returns `null` |
-| `toolResultEviction` | `true` | ToolResultEvictionPlugin evicts old tool results to WorkingMemory | Old results remain in conversation (may cause overflow); `ctx.toolResultEvictionPlugin` returns `null` |
-
-**Note:** `autoSpill` and `toolResultEviction` both require `memory` to be enabled. If you disable `memory`, you must also disable both `autoSpill` and `toolResultEviction`.
+| Feature | Default | Plugin | When Disabled |
+|---------|---------|--------|---------------|
+| `workingMemory` | `true` | WorkingMemoryPluginNextGen - tiered memory (raw/summary/findings) | `memory_*` tools not registered; `ctx.memory` returns `null` |
+| `inContextMemory` | `false` | InContextMemoryPluginNextGen - live key-value storage directly in context | `context_set/delete/list` tools not registered |
+| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk | `instructions_*` tools not registered |
 
 **Usage Examples:**
 
@@ -4127,43 +4195,57 @@ await ctx.restoreState(savedState);
 // Works with both v1 (HistoryMessage[]) and v2 (InputItem[]) formats
 ```
 
-#### Plugin System
+#### Plugin System (NextGen)
 
-Extend AgentContext with custom plugins:
+Extend AgentContextNextGen with custom plugins:
 
 ```typescript
-import { IContextPlugin, BaseContextPlugin, AgentContext } from '@oneringai/agents';
+import { IContextPluginNextGen, BasePluginNextGen, AgentContextNextGen } from '@oneringai/agents';
 
-// Create a custom plugin
-class MyPlugin extends BaseContextPlugin {
+// Create a custom plugin by extending BasePluginNextGen
+class MyPlugin extends BasePluginNextGen {
   readonly name = 'my-plugin';
-  readonly priority = 5; // Lower = kept longer during compaction
 
   private data: string[] = [];
 
-  async getComponent() {
-    return {
-      name: 'my-plugin',
-      content: this.data.join('\n'),
-      priority: this.priority,
-      compactable: true,
-    };
+  // Return content to be included in context
+  getContent(): string {
+    if (this.data.length === 0) return '';
+    return `## My Plugin Data\n${this.data.join('\n')}`;
+  }
+
+  // Return estimated token count
+  getTokens(): number {
+    return this.estimateTokens(this.getContent());
   }
 
   addData(item: string) {
     this.data.push(item);
   }
 
-  // Optional: Custom compaction
-  async compact(targetTokens: number, estimator: ITokenEstimator): Promise<number> {
-    const before = this.data.length;
-    this.data = this.data.slice(-5); // Keep last 5
-    return before - this.data.length;
+  // Compact: reduce content to fit within targetTokens
+  async compact(targetTokens: number): Promise<number> {
+    const before = this.getTokens();
+    // Keep only recent data to fit target
+    while (this.getTokens() > targetTokens && this.data.length > 1) {
+      this.data.shift();
+    }
+    return before - this.getTokens();
+  }
+
+  // Serialize state for persistence
+  serialize(): Record<string, unknown> {
+    return { data: this.data };
+  }
+
+  // Deserialize state
+  deserialize(state: Record<string, unknown>): void {
+    this.data = (state.data as string[]) || [];
   }
 }
 
 // Use the plugin
-const ctx = AgentContext.create({ model: 'gpt-4' });
+const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 const plugin = new MyPlugin();
 ctx.registerPlugin(plugin);
 plugin.addData('Custom data');
@@ -4171,129 +4253,106 @@ plugin.addData('Custom data');
 
 #### Events
 
-Monitor AgentContext activity:
+Monitor AgentContextNextGen activity:
 
 ```typescript
-const ctx = AgentContext.create({ model: 'gpt-4' });
+const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
-// History events
+// Message events
 ctx.on('message:added', ({ message }) => {
   console.log(`New ${message.role} message`);
 });
 
-ctx.on('history:compacted', ({ removedCount }) => {
-  console.log(`Removed ${removedCount} old messages`);
-});
-
-// Tool events
-ctx.on('tool:executed', ({ record }) => {
-  console.log(`${record.name}: ${record.durationMs}ms, cached: ${record.cached}`);
-});
-
-ctx.on('tool:cached', ({ name, args }) => {
-  console.log(`Cache hit for ${name}`);
+// Compaction events
+ctx.on('compacted', ({ tokensFreed }) => {
+  console.log(`Freed ${tokensFreed} tokens`);
 });
 
 // Budget events
 ctx.on('budget:warning', ({ budget }) => {
-  console.log(`Context at ${budget.utilizationPercent}%`);
+  console.log(`Context at ${Math.round(budget.used / budget.total * 100)}%`);
 });
 
-ctx.on('budget:critical', ({ budget }) => {
-  console.log(`Critical: ${budget.utilizationPercent}% used!`);
-});
-
-// Compaction events
-ctx.on('compacted', ({ log, tokensFreed }) => {
-  console.log(`Freed ${tokensFreed} tokens`);
-  log.forEach(entry => console.log(`  - ${entry}`));
+// Context prepared event
+ctx.on('prepared', ({ budget }) => {
+  console.log(`Context prepared: ${budget.used}/${budget.total} tokens`);
 });
 ```
 
-#### Accessing Context in TaskAgent and UniversalAgent
+#### Accessing Context in Agent
 
-TaskAgent and UniversalAgent use **AgentContext** directly with plugins for extended functionality:
+> ⚠️ **Note:** `TaskAgent` and `UniversalAgent` are deprecated. Use `Agent` with NextGen plugins instead.
+
+Agent uses **AgentContextNextGen** with plugins for extended functionality:
 
 ```typescript
-import { TaskAgent, UniversalAgent } from '@oneringai/agents';
+import { Agent, AgentContextNextGen, WorkingMemoryPluginNextGen } from '@oneringai/agents';
 
-// TaskAgent context access - uses AgentContext with PlanPlugin and MemoryPlugin
-const taskAgent = TaskAgent.create({
+// Create Agent with NextGen context
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
+  context: {
+    features: { workingMemory: true, inContextMemory: true },
+  },
 });
 
-// Access AgentContext directly
-await taskAgent.context.addMessage('user', 'Hello');  // async with auto-compaction
-taskAgent.context.addMessageSync('user', 'Quick');    // sync for small messages
-const history = taskAgent.context.getHistory();
-const prepared = await taskAgent.context.prepare();
-const metrics = await taskAgent.context.getMetrics();
+// Access AgentContextNextGen directly
+agent.context.addUserMessage('Hello');
+const { input, budget } = await agent.context.prepare();
+agent.context.addAssistantResponse(response);
 
-// Access WorkingMemory (managed separately in TaskAgent)
-await taskAgent.memory.set('key', 'description', value);
+// Get conversation
+const conversation = agent.context.getConversation();  // Message[]
+
+// Access WorkingMemory via plugin
+const memoryPlugin = agent.context.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+await memoryPlugin.store('key', 'description', value);
 
 // Access tools via context
-taskAgent.context.tools.disable('tool_name');
-
-// UniversalAgent context access - also uses AgentContext
-const uniAgent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-});
-
-await uniAgent.context.addMessage('system', 'New instruction');
-const uniMetrics = await uniAgent.context.getMetrics();
-const mode = uniAgent.getMode();
+agent.context.tools.disable('tool_name');
 ```
 
-**AgentContext API (used by TaskAgent and UniversalAgent):**
+**AgentContextNextGen API:**
 ```typescript
-// AgentContext provides unified context management:
-await ctx.addMessage(role, content);     // Async - adds with auto-compaction for large content
-ctx.addMessageSync(role, content);       // Sync - no capacity check (for small messages)
-await ctx.addToolResult(result, meta);   // Helper for tool outputs
-await ctx.ensureCapacity(tokens);        // Manual capacity check
-ctx.getHistory();                        // Get conversation history
-ctx.prepare();                           // Prepare context for LLM call
-ctx.getMetrics();                        // Get usage metrics
-ctx.executeTool(name, args);             // Execute tool with caching
-ctx.registerPlugin(plugin);              // Register context plugin
-ctx.setCurrentInput(input);              // Set current task input
+// AgentContextNextGen provides clean context management:
+ctx.addUserMessage(content);              // Set current user input
+ctx.addAssistantResponse(response);       // Add response to conversation
+await ctx.prepare();                      // Prepare context for LLM call, returns { input, budget }
+ctx.getConversation();                    // Get conversation history
+ctx.registerPlugin(plugin);               // Register context plugin
+ctx.getPlugin(name);                      // Get registered plugin by name
+await ctx.compact(targetTokens);          // Manual compaction
+await ctx.save(sessionId);                // Save session (if storage configured)
+await ctx.load(sessionId);                // Load session (if storage configured)
 
-// Access composed managers:
-ctx.tools;                               // ToolManager
-ctx.memory;                              // WorkingMemory (if configured)
-ctx.cache;                               // IdempotencyCache
-ctx.permissions;                         // ToolPermissionManager
+// Access ToolManager:
+ctx.tools;                                // ToolManager instance
 ```
 
-**Plugin System:**
+**NextGen Plugin System:**
 
-TaskAgent and UniversalAgent use plugins to extend AgentContext:
+Use NextGen plugins to extend AgentContextNextGen:
 
 ```typescript
-import { PlanPlugin, MemoryPlugin, BaseContextPlugin } from '@oneringai/agents';
+import { BasePluginNextGen, WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen } from '@oneringai/agents';
 
-// Built-in plugins:
-// - PlanPlugin: Adds execution plan to context
-// - MemoryPlugin: Adds working memory index to context
-// - ToolOutputPlugin: Tracks recent tool outputs
+// Built-in NextGen plugins:
+// - WorkingMemoryPluginNextGen: Tiered memory (raw/summary/findings)
+// - InContextMemoryPluginNextGen: Live key-value storage in context
+// - PersistentInstructionsPluginNextGen: Disk-persisted instructions
 
 // Custom plugin example:
-class MyPlugin extends BaseContextPlugin {
+class MyPlugin extends BasePluginNextGen {
   readonly name = 'my-plugin';
-  readonly priority = 5;
-  readonly compactable = true;
 
-  async getComponent() {
-    return {
-      name: 'my-plugin',
-      content: 'Custom context content',
-      priority: 5,
-      compactable: true,
-    };
+  getContent(): string {
+    return 'Custom context content';
+  }
+
+  getTokens(): number {
+    return this.estimateTokens(this.getContent());
   }
 }
 
@@ -4314,50 +4373,52 @@ The context management system handles all of this automatically.
 
 ### Basic Context Management
 
-Context management is **automatic** for TaskAgents:
+Context management is **automatic** with AgentContextNextGen:
 
 ```typescript
-import { TaskAgent } from '@oneringai/agents';
+import { Agent } from '@oneringai/agents';
 
-const agent = TaskAgent.create({
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
-  // Context management happens automatically!
+  context: {
+    strategy: 'balanced',  // Compact at 80% utilization
+    features: { workingMemory: true },
+  },
 });
 
-// Agent will automatically:
-// 1. Track context usage across all components
-// 2. Compact when approaching limits (using the chosen strategy)
+// AgentContextNextGen will automatically:
+// 1. Track context usage across all plugins
+// 2. Compact when approaching limits (at prepare() time)
 // 3. Evict low-priority memory entries when needed
-// 4. Truncate long tool outputs
-// 5. Summarize older conversation history
-// 6. Emit events for monitoring
+// 4. Call plugin compact() methods in priority order
+// 5. Emit events for monitoring
 ```
 
 ### Architecture Overview
 
-The context management system is built around **AgentContext** - the unified facade that manages all context-related operations:
+The context management system is built around **AgentContextNextGen** - the clean, plugin-first context manager:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   AgentContext                       │
-│  - Orchestrates preparation and compaction          │
-│  - Manages strategy selection and switching         │
-│  - Unified facade for tools, memory, history        │
+│               AgentContextNextGen                    │
+│  - Plugin-first architecture                        │
+│  - Clean message flow (addUserMessage → prepare)    │
+│  - Single compaction point (right before LLM call)  │
 └─────────────────┬───────────────────────────────────┘
                   │
     ┌─────────────┼─────────────┐
     │             │             │
     ▼             ▼             ▼
 ┌─────────┐ ┌──────────┐ ┌───────────────┐
-│ Strategy│ │Compactors│ │ Components    │
-│ (when)  │ │ (how)    │ │ (what)        │
+│ Strategy│ │ Plugins  │ │ Context       │
+│ (when)  │ │ (what)   │ │ Structure     │
 └─────────┘ └──────────┘ └───────────────┘
 
-Strategy: Decides WHEN to compact (proactive, aggressive, lazy, etc.)
-Compactors: Decides HOW to compact (truncate, summarize, evict)
-Components: System prompt, instructions, memory, history, input
+Strategy: Decides WHEN to compact (proactive 70%, balanced 80%, lazy 90%)
+Plugins: WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen, etc.
+Context: Developer Message → Conversation History → Current Input
 ```
 
 ### Task Types and Priority Profiles
@@ -4470,60 +4531,47 @@ Task types also influence which compaction strategy is used on components:
 
 ### Manual Context Management
 
-For advanced use cases, use **AgentContext** with plugins:
+For advanced use cases, use **AgentContextNextGen** with plugins:
 
 ```typescript
 import {
-  AgentContext,
-  PlanPlugin,
-  MemoryPlugin,
-  ApproximateTokenEstimator,
-  TruncateCompactor,
-  SummarizeCompactor,
-  MemoryEvictionCompactor,
+  AgentContextNextGen,
+  WorkingMemoryPluginNextGen,
+  InContextMemoryPluginNextGen,
+  simpleTokenEstimator,
 } from '@oneringai/agents';
 
-// Create AgentContext with configuration
-const ctx = AgentContext.create({
+// Create AgentContextNextGen with configuration
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
   systemPrompt: 'Your system instructions',
   maxContextTokens: 128000,    // Model's context window
-  responseReserve: 0.15,       // Reserve 15% for response tokens
-  autoCompact: true,           // Automatically compact when needed
-  strategy: 'proactive',       // Compaction strategy
-  history: {
-    maxMessages: 50,           // Max messages before compaction
-    preserveRecent: 10,        // Always preserve recent messages
+  responseReserve: 4096,       // Reserve tokens for response
+  strategy: 'balanced',        // Compaction strategy: 'proactive' (70%), 'balanced' (80%), 'lazy' (90%)
+  features: {
+    workingMemory: true,       // Enable WorkingMemoryPluginNextGen
+    inContextMemory: true,     // Enable InContextMemoryPluginNextGen
   },
 });
 
-// Add plugins for extended functionality
-const planPlugin = new PlanPlugin();
-const memoryPlugin = new MemoryPlugin(workingMemory);
+// Plugins are auto-registered when features are enabled
+// Access them via getPlugin():
+const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+const inContextPlugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
 
-ctx.registerPlugin(planPlugin);
-ctx.registerPlugin(memoryPlugin);
-
-// Set the current task input
-ctx.setCurrentInput('Current task description');
-
-// Update plan through plugin
-planPlugin.setPlan(yourPlan);
+// Add user message (sets _currentInput)
+ctx.addUserMessage('Current task description');
 
 // Prepare context before each LLM call
-const prepared = await ctx.prepare();
-console.log(`Context: ${prepared.budget.used}/${prepared.budget.total} tokens`);
-console.log(`Utilization: ${(prepared.budget.used / prepared.budget.total * 100).toFixed(1)}%`);
+const { input, budget } = await ctx.prepare();
+console.log(`Context: ${budget.used}/${budget.total} tokens`);
+console.log(`Utilization: ${(budget.used / budget.total * 100).toFixed(1)}%`);
 
-// Add messages to history (async with auto-compaction for large content)
-await ctx.addMessage('user', 'Hello');
-await ctx.addMessage('assistant', 'Hi there!');
-
-// Or use sync for small messages (no capacity check)
-ctx.addMessageSync('user', 'Quick question');
+// After LLM response, add it to conversation
+ctx.addAssistantResponse(llmResponse);
 
 // Get conversation history
-const history = ctx.getHistory();
+const conversation = ctx.getConversation();  // Message[]
 ```
 
 ### Compactors Deep Dive
@@ -4736,19 +4784,23 @@ const hooks = {
 
 The library provides **five built-in strategies**, each optimized for different use cases. Understanding how each works internally helps you choose the right one.
 
-#### Strategy Comparison Table
+#### Strategy Comparison Table (NextGen)
 
-| Strategy | Compact Threshold | Target Utilization | Best For | Overhead |
-|----------|-------------------|-------------------|----------|----------|
-| **Proactive** | 75% | 65% | General purpose | Medium |
-| **Aggressive** | 60% | 45% | Long conversations | Higher |
-| **Lazy** | 90% | 85% | Short tasks, high-context models | Low |
-| **Rolling Window** | Never | N/A (fixed messages) | Real-time, streaming | Minimal |
-| **Adaptive** | Dynamic | Dynamic | Production, varied workloads | Medium |
+AgentContextNextGen uses simplified strategies with clear thresholds:
+
+| Strategy | Compact Threshold | Best For | Description |
+|----------|-------------------|----------|-------------|
+| **proactive** | 70% | Conservative compaction | Compact early to maintain headroom |
+| **balanced** | 80% | General purpose (default) | Balance context preservation vs headroom |
+| **lazy** | 90% | Short tasks, large contexts | Preserve maximum context, compact only when needed |
+
+> **Note:** The old strategies (`aggressive`, `rolling-window`, `adaptive`) are deprecated. Use the NextGen strategies above.
 
 ---
 
-#### 1. Proactive Strategy (Default)
+> ⚠️ **Legacy Strategies Note:** The detailed strategy sections below describe the old `AgentContext` strategies. AgentContextNextGen uses simplified strategies: `proactive` (70%), `balanced` (80%), and `lazy` (90%). The old strategies are maintained for backward compatibility but the NextGen strategies are recommended for new code.
+
+#### 1. Proactive Strategy (Legacy)
 
 **When to use:** General-purpose agents, balanced workloads, most common scenarios.
 
@@ -5285,86 +5337,92 @@ agent.setLifecycleHooks(hooks);
 #### 1. Choose the Right Strategy
 
 ```typescript
-// Short tasks, plenty of context → Lazy
-const shortTask = TaskAgent.create({
-  contextConfig: { strategy: 'lazy' },
+import { Agent } from '@oneringai/agents';
+
+// Short tasks, plenty of context → Lazy (90% threshold)
+const shortTask = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { strategy: 'lazy' },
 });
 
-// Long conversations → Aggressive
-const chatBot = TaskAgent.create({
-  contextConfig: { strategy: 'aggressive' },
+// Long conversations → Proactive (70% threshold)
+const chatBot = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { strategy: 'proactive' },
 });
 
-// Production with varied load → Adaptive
-const productionAgent = TaskAgent.create({
-  contextConfig: { strategy: 'adaptive' },
-});
-
-// Real-time streaming → Rolling Window
-const streamingAgent = TaskAgent.create({
-  contextConfig: {
-    strategy: 'rolling-window',
-    strategyOptions: { maxMessages: 50 },
-  },
+// General purpose → Balanced (80% threshold, default)
+const productionAgent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { strategy: 'balanced' },
 });
 ```
 
 #### 2. Monitor in Production
 
 ```typescript
-// Set up comprehensive monitoring
-contextManager.on('compacted', async ({ tokensFreed, newUsage }) => {
+// Set up monitoring with AgentContextNextGen events
+const ctx = agent.context;
+
+ctx.on('compacted', async ({ tokensFreed }) => {
   await metrics.gauge('context.tokens_freed', tokensFreed);
-  await metrics.gauge('context.usage', newUsage);
 });
 
-contextManager.on('strategy_switched', async ({ from, to, reason }) => {
-  await metrics.increment('context.strategy_switch', { from, to });
-  await alerts.info(`Context strategy: ${from} → ${to} (${reason})`);
+ctx.on('prepared', async ({ budget }) => {
+  await metrics.gauge('context.usage', budget.used);
+  await metrics.gauge('context.total', budget.total);
 });
 
-contextManager.on('budget_critical', async ({ budget }) => {
-  await alerts.warn(`Context critical: ${budget.utilizationPercent}%`);
+ctx.on('budget:warning', async ({ budget }) => {
+  const utilization = Math.round(budget.used / budget.total * 100);
+  await alerts.warn(`Context warning: ${utilization}%`);
 });
 ```
 
-#### 3. Use Content-Type Hints
+#### 3. Use WorkingMemory Tiers
 
 ```typescript
-// When storing code in memory, hint the estimator
-const codeTokens = estimator.estimateTokens(sourceCode, 'code');
+// Store data in appropriate tiers based on importance
+const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
 
-// Store with accurate size tracking
-await memory.set('source.code', 'Source code', sourceCode, {
-  metadata: { contentType: 'code', estimatedTokens: codeTokens },
-});
+// Raw tier: Large, unprocessed data (evicted first)
+await memoryPlugin.storeRaw('search.results', 'Raw search results', largeResults);
+
+// Summary tier: Condensed information
+await memoryPlugin.storeSummary('search.summary', 'Search summary', summaryData);
+
+// Findings tier: Key insights (evicted last)
+await memoryPlugin.storeFindings('search.findings', 'Key findings', findings);
 ```
 
 #### 4. Plan for Compaction
 
 ```typescript
-// Structure data for efficient compaction
-// BAD: Single large object
-await memory.set('all.data', 'All data', hugeObject, { priority: 'normal' });
+// Structure data for efficient compaction using tiers
+const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
 
-// GOOD: Split by importance
-await memory.set('data.critical', 'Critical data', criticalPart, {
-  priority: 'critical',
-  pinned: true,
-});
-await memory.set('data.important', 'Important data', importantPart, {
-  priority: 'high',
-});
-await memory.set('data.cache', 'Cached data', cachePart, {
-  priority: 'low',  // Evicted first
-});
+// BAD: Single large object in findings (won't be evicted easily)
+await memoryPlugin.storeFindings('all.data', 'All data', hugeObject);
+
+// GOOD: Split by importance using tiers
+// Raw tier: Evicted first during compaction
+await memoryPlugin.storeRaw('data.raw', 'Raw data', rawData);
+
+// Summary tier: Evicted second
+await memoryPlugin.storeSummary('data.summary', 'Summarized data', summaryData);
+
+// Findings tier: Evicted last (most important)
+await memoryPlugin.storeFindings('data.findings', 'Key findings', findings);
 ```
 
 ---
 
-## InContextMemory
+## InContextMemory (NextGen Plugin)
 
-**InContextMemory** is a new context plugin that stores key-value pairs **directly in the LLM context** (not just an index like WorkingMemory). This is ideal for small, frequently-updated state that the LLM needs instant access to without retrieval calls.
+**InContextMemoryPluginNextGen** is a context plugin that stores key-value pairs **directly in the LLM context** (not just an index like WorkingMemory). This is ideal for small, frequently-updated state that the LLM needs instant access to without retrieval calls.
 
 ### Key Difference from WorkingMemory
 
@@ -5379,28 +5437,30 @@ await memory.set('data.cache', 'Cached data', cachePart, {
 ### Quick Setup
 
 ```typescript
-import { AgentContext, setupInContextMemory } from '@oneringai/agents';
+import { AgentContextNextGen, InContextMemoryPluginNextGen } from '@oneringai/agents';
 
-const ctx = AgentContext.create({ model: 'gpt-4' });
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { inContextMemory: true },  // Enables InContextMemoryPluginNextGen
+});
 
-// Quick setup - registers plugin and all 4 tools automatically
-const plugin = setupInContextMemory(ctx, { maxEntries: 15 });
-
-// Plugin is now accessible via ctx.inContextMemory
+// Plugin is automatically registered when feature is enabled
+// Access it via the plugin registry
+const plugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
 plugin.set('state', 'Current processing state', { step: 1, status: 'active' });
 ```
 
 ### Manual Setup
 
-For more control, you can set up the plugin and tools manually:
+For more control, you can set up the plugin manually:
 
 ```typescript
-import { AgentContext, createInContextMemory } from '@oneringai/agents';
+import { AgentContextNextGen, InContextMemoryPluginNextGen } from '@oneringai/agents';
 
-const ctx = AgentContext.create({ model: 'gpt-4' });
+const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
-// Create plugin and tools
-const { plugin, tools } = createInContextMemory({
+// Create and configure plugin
+const plugin = new InContextMemoryPluginNextGen({
   maxEntries: 20,
   maxTotalTokens: 4000,
   defaultPriority: 'normal',
@@ -5408,13 +5468,8 @@ const { plugin, tools } = createInContextMemory({
   headerText: '## Live Context',
 });
 
-// Register plugin with context manager
+// Register plugin with context
 ctx.registerPlugin(plugin);
-
-// Register tools with tool manager
-for (const tool of tools) {
-  ctx.tools.register(tool);
-}
 ```
 
 ### Configuration Options
@@ -5592,29 +5647,30 @@ The LLM can read this section directly without making any tool calls.
 
 ### Session Persistence
 
-InContextMemory supports full state serialization for session persistence:
+InContextMemoryPluginNextGen supports full state serialization for session persistence:
 
 ```typescript
 // Save state
-const state = plugin.getState();
+const state = plugin.serialize();
 // state = { entries: [...], config: {...} }
 
 // Later, restore state
-const newPlugin = new InContextMemoryPlugin();
-newPlugin.restoreState(state);
+const newPlugin = new InContextMemoryPluginNextGen();
+newPlugin.deserialize(state);
 ```
 
-When using with `AgentContext`, the state is automatically included:
+When using with `AgentContextNextGen`, the state is automatically included:
 
 ```typescript
-// AgentContext automatically serializes plugin state
-const ctxState = await ctx.getState();
-// ctxState.pluginStates['in_context_memory'] contains the InContextMemory state
+// AgentContextNextGen automatically serializes plugin state
+const ctxState = await ctx.serialize();
 
 // Restore entire context (including InContextMemory)
-const newCtx = AgentContext.create({ model: 'gpt-4' });
-setupInContextMemory(newCtx);  // Register plugin first
-await newCtx.restoreState(ctxState);  // Then restore
+const newCtx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { inContextMemory: true },
+});
+await newCtx.deserialize(ctxState);  // Plugins are restored automatically
 ```
 
 ### Use Cases
@@ -5676,11 +5732,13 @@ plugin.set('temp', 'Temporary', value, 'low');
 Use both systems for their strengths:
 
 ```typescript
-// Large data goes to WorkingMemory (index-based)
-await ctx.memory.set('search_results', 'Web search results', largeResults);
+// Large data goes to WorkingMemoryPluginNextGen (index-based)
+const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+await memoryPlugin.store('search_results', 'Web search results', largeResults);
 
-// Small, frequently-accessed state goes to InContextMemory (full values)
-plugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
+// Small, frequently-accessed state goes to InContextMemoryPluginNextGen (full values)
+const inContextPlugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
+inContextPlugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
 
 // LLM sees:
 // - Memory Index: "search_results: Web search results" (needs memory_retrieve)
@@ -5689,9 +5747,9 @@ plugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
 
 ---
 
-## Persistent Instructions
+## Persistent Instructions (NextGen Plugin)
 
-**Persistent Instructions** is a context plugin that stores agent-level custom instructions on disk. Unlike InContextMemory (volatile key-value pairs), persistent instructions survive process restarts and are automatically loaded when the agent starts.
+**PersistentInstructionsPluginNextGen** is a context plugin that stores agent-level custom instructions on disk. Unlike InContextMemory (volatile key-value pairs), persistent instructions survive process restarts and are automatically loaded when the agent starts.
 
 ### Key Difference from InContextMemory
 
@@ -5712,15 +5770,15 @@ import { Agent } from '@oneringai/agents';
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  agentId: 'my-assistant',  // Used for storage path
   context: {
+    agentId: 'my-assistant',  // Used for storage path
     features: {
-      persistentInstructions: true,
+      persistentInstructions: true,  // Enables PersistentInstructionsPluginNextGen
     },
   },
 });
 
-// Plugin is accessible via agent.context.persistentInstructions
+// Plugin is accessible via ctx.getPlugin('persistent-instructions')
 // Instructions are automatically loaded from disk on first context prepare
 ```
 
@@ -5729,15 +5787,18 @@ const agent = Agent.create({
 For more control, you can set up the plugin manually:
 
 ```typescript
-import { AgentContext, setupPersistentInstructions } from '@oneringai/agents';
+import { AgentContextNextGen, PersistentInstructionsPluginNextGen } from '@oneringai/agents';
 
-const ctx = AgentContext.create({ model: 'gpt-4' });
+const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
-// Setup with custom options
-const plugin = setupPersistentInstructions(ctx, {
+// Create and configure plugin
+const plugin = new PersistentInstructionsPluginNextGen({
   agentId: 'my-assistant',
   maxLength: 100000,  // Characters, default is 50000
 });
+
+// Register with context
+ctx.registerPlugin(plugin);
 
 // Set instructions programmatically
 await plugin.set('Always respond in a friendly tone.\n\nPrefer bullet points for lists.');
@@ -5893,15 +5954,15 @@ Always be friendly and helpful.
 
 ### Session Persistence
 
-Persistent instructions support state serialization, but since they're stored on disk, the primary persistence mechanism is the file itself:
+PersistentInstructionsPluginNextGen supports state serialization, but since instructions are stored on disk, the primary persistence mechanism is the file itself:
 
 ```typescript
-// State includes current content and dirty flag
-const state = plugin.getState();
-// state = { content: "...", dirty: false, agentId: "my-assistant" }
+// State includes current content
+const state = plugin.serialize();
+// state = { content: "...", agentId: "my-assistant" }
 
 // Restore state (useful for in-memory state sync)
-plugin.restoreState(state);
+plugin.deserialize(state);
 ```
 
 ### Use Cases
@@ -5919,12 +5980,12 @@ plugin.restoreState(state);
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  agentId: 'learning-assistant',
   systemPrompt: `You are a learning assistant. When the user expresses preferences or
 gives feedback about your responses, use instructions_append to remember them for
 future sessions. Review your custom instructions at the start of each conversation.`,
   context: {
-    features: { persistentInstructions: true },
+    agentId: 'learning-assistant',  // Used for persistent storage path
+    features: { persistentInstructions: true },  // Enables PersistentInstructionsPluginNextGen
   },
 });
 

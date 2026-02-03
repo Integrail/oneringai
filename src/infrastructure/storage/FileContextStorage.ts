@@ -22,9 +22,9 @@ import type {
   ContextSessionSummary,
   ContextSessionMetadata,
   ContextStorageListOptions,
+  SerializedContextState,
 } from '../../domain/interfaces/IContextStorage.js';
 import { CONTEXT_SESSION_FORMAT_VERSION } from '../../domain/interfaces/IContextStorage.js';
-import type { SerializedAgentContextState } from '../../core/AgentContext.js';
 
 /**
  * Configuration for FileContextStorage
@@ -124,7 +124,7 @@ export class FileContextStorage implements IContextStorage {
    */
   async save(
     sessionId: string,
-    state: SerializedAgentContextState,
+    state: SerializedContextState,
     metadata?: ContextSessionMetadata
   ): Promise<void> {
     await this.ensureDirectory();
@@ -445,12 +445,19 @@ export class FileContextStorage implements IContextStorage {
   }
 
   private storedToIndexEntry(stored: StoredContextSession): SessionIndexEntry {
+    // NextGen state structure:
+    // - conversation: InputItem[] (the history)
+    // - pluginStates.workingMemory: { entries: [...] }
+    const workingMemoryState = stored.state.pluginStates?.workingMemory as
+      | { entries?: unknown[] }
+      | undefined;
+
     return {
       sessionId: stored.sessionId,
       createdAt: stored.createdAt,
       lastSavedAt: stored.lastSavedAt,
-      messageCount: stored.state.core?.history?.length ?? 0,
-      memoryEntryCount: stored.state.memory?.entries?.length ?? 0,
+      messageCount: stored.state.conversation?.length ?? 0,
+      memoryEntryCount: workingMemoryState?.entries?.length ?? 0,
       metadata: stored.metadata,
     };
   }

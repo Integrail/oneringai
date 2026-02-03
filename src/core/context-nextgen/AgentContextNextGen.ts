@@ -44,10 +44,23 @@ import type {
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
-  IContextStorage,
   SerializedContextState,
   ContextEvents,
+  PluginConfigs,
 } from './types.js';
+import type { IContextStorage, StoredContextSession } from '../../domain/interfaces/IContextStorage.js';
+
+// Plugin imports for auto-initialization
+import {
+  WorkingMemoryPluginNextGen,
+  InContextMemoryPluginNextGen,
+  PersistentInstructionsPluginNextGen,
+} from './plugins/index.js';
+import type {
+  WorkingMemoryPluginConfig,
+  InContextMemoryConfig,
+  PersistentInstructionsConfig,
+} from './plugins/index.js';
 
 import {
   STRATEGY_THRESHOLDS,
@@ -88,7 +101,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -179,8 +192,43 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       }
     }
 
-    // Plugins are registered separately via registerPlugin()
-    // This keeps the constructor simple and allows for flexible plugin setup
+    // Auto-initialize plugins based on features config
+    this.initializePlugins(config.plugins);
+  }
+
+  /**
+   * Initialize plugins based on feature flags.
+   * Called automatically in constructor.
+   */
+  private initializePlugins(pluginConfigs?: PluginConfigs): void {
+    const features = this._config.features;
+    const configs = pluginConfigs ?? {};
+
+    // 1. Working Memory (default: enabled)
+    if (features.workingMemory) {
+      this.registerPlugin(new WorkingMemoryPluginNextGen(
+        configs.workingMemory as WorkingMemoryPluginConfig | undefined
+      ));
+    }
+
+    // 2. In-Context Memory (default: disabled)
+    if (features.inContextMemory) {
+      this.registerPlugin(new InContextMemoryPluginNextGen(
+        configs.inContextMemory as InContextMemoryConfig | undefined
+      ));
+    }
+
+    // 3. Persistent Instructions (default: disabled, requires agentId)
+    if (features.persistentInstructions) {
+      if (!this._agentId) {
+        throw new Error('persistentInstructions feature requires agentId to be set');
+      }
+      const piConfig = configs.persistentInstructions as Partial<PersistentInstructionsConfig> | undefined;
+      this.registerPlugin(new PersistentInstructionsPluginNextGen({
+        agentId: this._agentId,
+        ...piConfig,
+      }));
+    }
   }
 
   // ============================================================================
@@ -226,6 +274,11 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     return this._sessionId;
   }
 
+  /** Get storage (null if not configured) */
+  get storage(): IContextStorage | null {
+    return this._storage ?? null;
+  }
+
   /** Get max context tokens */
   get maxContextTokens(): number {
     return this._maxContextTokens;
@@ -239,6 +292,88 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Get current tools token usage (useful for debugging) */
   get toolsTokens(): number {
     return this.calculateToolsTokens();
+  }
+
+  // ============================================================================
+  // Compatibility / Migration Helpers
+  // ============================================================================
+
+  /**
+   * Get working memory plugin (if registered).
+   * This is a compatibility accessor for code expecting ctx.memory
+   */
+  get memory(): import('./plugins/WorkingMemoryPluginNextGen.js').WorkingMemoryPluginNextGen | null {
+    const plugin = this._plugins.get('working_memory');
+    return plugin as import('./plugins/WorkingMemoryPluginNextGen.js').WorkingMemoryPluginNextGen | null;
+  }
+
+  /**
+   * Get the last message (most recent user message or tool results).
+   * Used for compatibility with old code that expected a single item.
+   */
+  getLastUserMessage(): InputItem | null {
+    if (this._conversation.length === 0) return null;
+    const last = this._conversation[this._conversation.length - 1];
+    if (!last) return null;
+    // Return if it's user message (check for role property and USER role)
+    if ('role' in last && last.role === MessageRole.USER) return last;
+    return null;
+  }
+
+  /**
+   * Set current input (user message).
+   * Adds a user message to the conversation and sets it as the current input for prepare().
+   */
+  setCurrentInput(content: string | Content[]): void {
+    this.assertNotDestroyed();
+    // Clear existing current input array
+    this._currentInput = [];
+    // Add user message to both conversation and current input
+    this.addUserMessage(content);
+    // The last message added is the current input
+    const lastMsg = this._conversation[this._conversation.length - 1];
+    if (lastMsg) {
+      this._currentInput.push(lastMsg);
+    }
+  }
+
+  /**
+   * Add multiple input items to conversation (legacy compatibility).
+   */
+  addInputItems(items: InputItem[]): void {
+    this.assertNotDestroyed();
+    for (const item of items) {
+      this._conversation.push(item);
+    }
+  }
+
+  /**
+   * Legacy alias for prepare() - returns prepared context.
+   */
+  async prepareConversation(): Promise<PreparedContext> {
+    return this.prepare();
+  }
+
+  /**
+   * Add a message (legacy compatibility).
+   * For user messages, use addUserMessage instead.
+   * For assistant messages, use addAssistantResponse instead.
+   */
+  addMessage(role: 'user' | 'assistant', content: string | Content[]): string {
+    this.assertNotDestroyed();
+    if (role === 'user') {
+      return this.addUserMessage(content);
+    }
+    // For assistant, we need to convert to OutputItem format
+    const outputItem: OutputItem = {
+      type: 'message' as const,
+      role: MessageRole.ASSISTANT,
+      content: [{
+        type: ContentType.OUTPUT_TEXT,
+        text: typeof content === 'string' ? content : JSON.stringify(content),
+      }],
+    };
+    return this.addAssistantResponse([outputItem]);
   }
 
   // ============================================================================
@@ -1051,8 +1186,16 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /**
    * Save context state to storage.
+   *
+   * @param sessionId - Optional session ID (uses current or generates new)
+   * @param metadata - Optional additional metadata to merge
+   * @param stateOverride - Optional state override (for agent-level state injection)
    */
-  async save(sessionId?: string): Promise<void> {
+  async save(
+    sessionId?: string,
+    metadata?: Record<string, unknown>,
+    stateOverride?: SerializedContextState
+  ): Promise<void> {
     this.assertNotDestroyed();
 
     if (!this._storage) {
@@ -1061,21 +1204,13 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     const targetSessionId = sessionId ?? this._sessionId ?? this.generateId();
 
-    const pluginStates: Record<string, unknown> = {};
-    for (const [name, plugin] of this._plugins) {
-      pluginStates[name] = plugin.getState();
-    }
+    // Use provided state override or build from current state
+    const state: SerializedContextState = stateOverride ?? this.getState();
 
-    const state: SerializedContextState = {
-      conversation: this._conversation,
-      pluginStates,
-      systemPrompt: this._systemPrompt,
-      metadata: {
-        savedAt: Date.now(),
-        agentId: this._agentId,
-        model: this._config.model,
-      },
-    };
+    // Merge additional metadata if provided
+    if (metadata) {
+      state.metadata = { ...state.metadata, ...metadata };
+    }
 
     await this._storage.save(targetSessionId, state);
     this._sessionId = targetSessionId;
@@ -1091,10 +1226,13 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       throw new Error('No storage configured');
     }
 
-    const state = await this._storage.load(sessionId);
-    if (!state) {
+    const stored = await this._storage.load(sessionId);
+    if (!stored) {
       return false;
     }
+
+    // Extract state from StoredContextSession wrapper
+    const state = stored.state;
 
     // Restore conversation
     this._conversation = state.conversation;
@@ -1110,6 +1248,102 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     this._sessionId = sessionId;
     return true;
+  }
+
+  /**
+   * Load raw state from storage without restoring.
+   * Used by BaseAgent for custom state restoration.
+   */
+  async loadRaw(sessionId: string): Promise<{ state: SerializedContextState; stored: StoredContextSession } | null> {
+    this.assertNotDestroyed();
+
+    if (!this._storage) {
+      throw new Error('No storage configured');
+    }
+
+    const stored = await this._storage.load(sessionId);
+    if (!stored) {
+      return null;
+    }
+
+    this._sessionId = sessionId;
+    return { state: stored.state, stored };
+  }
+
+  /**
+   * Check if session exists in storage.
+   */
+  async sessionExists(sessionId: string): Promise<boolean> {
+    if (!this._storage) {
+      return false;
+    }
+    return this._storage.exists(sessionId);
+  }
+
+  /**
+   * Delete a session from storage.
+   */
+  async deleteSession(sessionId?: string): Promise<void> {
+    if (!this._storage) {
+      throw new Error('No storage configured');
+    }
+
+    const targetSessionId = sessionId ?? this._sessionId;
+    if (!targetSessionId) {
+      throw new Error('No session ID provided or loaded');
+    }
+
+    await this._storage.delete(targetSessionId);
+
+    // Clear session ID if deleting current session
+    if (targetSessionId === this._sessionId) {
+      this._sessionId = null;
+    }
+  }
+
+  /**
+   * Get serialized state for persistence.
+   * Used by BaseAgent to inject agent-level state.
+   */
+  getState(): SerializedContextState {
+    this.assertNotDestroyed();
+
+    const pluginStates: Record<string, unknown> = {};
+    for (const [name, plugin] of this._plugins) {
+      pluginStates[name] = plugin.getState();
+    }
+
+    return {
+      conversation: this._conversation,
+      pluginStates,
+      systemPrompt: this._systemPrompt,
+      metadata: {
+        savedAt: Date.now(),
+        agentId: this._agentId,
+        model: this._config.model,
+      },
+    };
+  }
+
+  /**
+   * Restore state from serialized form.
+   * Used by BaseAgent for custom state restoration.
+   */
+  restoreState(state: SerializedContextState): void {
+    this.assertNotDestroyed();
+
+    this._conversation = state.conversation ?? [];
+    this._systemPrompt = state.systemPrompt;
+
+    // Restore plugin states (guard against null/undefined)
+    if (state.pluginStates) {
+      for (const [name, pluginState] of Object.entries(state.pluginStates)) {
+        const plugin = this._plugins.get(name);
+        if (plugin) {
+          plugin.restoreState(pluginState);
+        }
+      }
+    }
   }
 
   // ============================================================================

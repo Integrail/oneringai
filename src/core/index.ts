@@ -30,45 +30,42 @@ export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 
 // ============================================================================
-// AgentContext - Unified "Swiss Army Knife" for all context management
+// AgentContextNextGen - Clean, Simple Context Management
 // ============================================================================
-export { AgentContext, DEFAULT_FEATURES } from './AgentContext.js';
-export type {
-  AgentContextConfig,
-  AgentContextFeatures,
-  AgentContextEvents,
-  AgentContextMetrics,
-  HistoryMessage,
-  ToolCallRecord,
-  SerializedAgentContextState,
-  PrepareOptions,
-  PreparedResult,
-  MCPServerReference,
-} from './AgentContext.js';
-
-// Feature-aware tool factory
-export { getAgentContextTools, getBasicIntrospectionTools, getMemoryTools } from './AgentContextTools.js';
-
-// Feature Instructions (runtime usage instructions for enabled features)
 export {
-  buildFeatureInstructions,
-  INTROSPECTION_INSTRUCTIONS,
-  WORKING_MEMORY_INSTRUCTIONS,
-  IN_CONTEXT_MEMORY_INSTRUCTIONS,
-  PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
-  TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
-  AUTO_SPILL_INSTRUCTIONS,
-  TOOL_RESULT_EVICTION_INSTRUCTIONS,
-  getAllInstructions,
-} from './context/FeatureInstructions.js';
-
-// Context Plugins
-export { ToolOutputPlugin } from './context/plugins/ToolOutputPlugin.js';
-export type { ToolOutputPluginConfig, ToolOutput } from './context/plugins/ToolOutputPlugin.js';
-export { AutoSpillPlugin } from './context/plugins/AutoSpillPlugin.js';
-export type { AutoSpillConfig, SpilledEntry } from './context/plugins/AutoSpillPlugin.js';
-export { ToolResultEvictionPlugin } from './context/plugins/ToolResultEvictionPlugin.js';
-export type { ToolResultEvictionConfig, TrackedResult, EvictionResult } from './context/plugins/ToolResultEvictionPlugin.js';
+  AgentContextNextGen,
+  DEFAULT_FEATURES,
+  DEFAULT_CONFIG,
+  STRATEGY_THRESHOLDS,
+  BasePluginNextGen,
+  simpleTokenEstimator,
+  WorkingMemoryPluginNextGen,
+  InContextMemoryPluginNextGen,
+  PersistentInstructionsPluginNextGen,
+} from './context-nextgen/index.js';
+export type {
+  IContextPluginNextGen,
+  ITokenEstimator,
+  AgentContextNextGenConfig,
+  ContextFeatures,
+  ContextBudget,
+  PreparedContext,
+  OversizedInputResult,
+  CompactionStrategyName,
+  IContextStorage,
+  SerializedContextState,
+  ContextEvents,
+  PluginConfigs,
+  WorkingMemoryPluginConfig,
+  SerializedWorkingMemoryState,
+  EvictionStrategy,
+  InContextMemoryConfig,
+  InContextEntry,
+  InContextPriority,
+  SerializedInContextMemoryState,
+  PersistentInstructionsConfig,
+  SerializedPersistentInstructionsState,
+} from './context-nextgen/index.js';
 
 // SmartCompactor - LLM-powered intelligent context compaction (Phase 4)
 export { SmartCompactor, createSmartCompactor } from './context/SmartCompactor.js';
@@ -78,10 +75,6 @@ export type {
   CompactionSummary,
   SpilledData,
 } from './context/SmartCompactor.js';
-
-// IdempotencyCache - Tool result caching (moved from taskAgent to core)
-export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
-export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
 
 // Lifecycle hooks and direct call types (from BaseAgent)
 export type {
@@ -111,8 +104,7 @@ export {
   TOOL_RESULT_EVICTION_DEFAULTS,
   DEFAULT_TOOL_RETENTION,
   GUARDIAN_DEFAULTS,
-  // Strategy-dependent thresholds (NEW)
-  STRATEGY_THRESHOLDS,
+  // Note: STRATEGY_THRESHOLDS is exported from context-nextgen/index.js above
   SAFETY_CAPS,
   TOOL_RETENTION_MULTIPLIERS,
 } from './constants.js';

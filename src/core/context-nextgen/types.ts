@@ -6,6 +6,7 @@
 
 import type { InputItem } from '../../domain/entities/Message.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { IContextStorage as IContextStorageFromDomain } from '../../domain/interfaces/IContextStorage.js';
 
 // ============================================================================
 // Token Estimation
@@ -253,6 +254,36 @@ export const DEFAULT_FEATURES: Required<ContextFeatures> = {
   persistentInstructions: false,
 };
 
+// ============================================================================
+// Plugin Configurations (for auto-initialization)
+// ============================================================================
+
+/**
+ * Plugin configurations for auto-initialization.
+ * When features are enabled, plugins are created with these configs.
+ * The config shapes match each plugin's constructor parameter.
+ */
+export interface PluginConfigs {
+  /**
+   * Working memory plugin config (used when features.workingMemory=true).
+   * See WorkingMemoryPluginConfig for full options.
+   */
+  workingMemory?: Record<string, unknown>;
+
+  /**
+   * In-context memory plugin config (used when features.inContextMemory=true).
+   * See InContextMemoryConfig for full options.
+   */
+  inContextMemory?: Record<string, unknown>;
+
+  /**
+   * Persistent instructions plugin config (used when features.persistentInstructions=true).
+   * Note: agentId is auto-filled from context config if not provided.
+   * See PersistentInstructionsConfig for full options.
+   */
+  persistentInstructions?: Record<string, unknown>;
+}
+
 /**
  * AgentContextNextGen configuration
  */
@@ -282,7 +313,10 @@ export interface AgentContextNextGenConfig {
   tools?: ToolFunction[];
 
   /** Storage for session persistence */
-  storage?: IContextStorage;
+  storage?: IContextStorageFromDomain;
+
+  /** Plugin-specific configurations (used with features flags) */
+  plugins?: PluginConfigs;
 }
 
 /**
@@ -294,32 +328,19 @@ export const DEFAULT_CONFIG = {
 };
 
 // ============================================================================
-// Storage Interface
+// Storage Interface (re-exported from domain for convenience)
 // ============================================================================
 
 /**
- * Storage interface for session persistence
+ * Re-export storage types from domain layer.
+ * Domain is the single source of truth for these interfaces.
  */
-export interface IContextStorage {
-  save(sessionId: string, state: SerializedContextState): Promise<void>;
-  load(sessionId: string): Promise<SerializedContextState | null>;
-  delete(sessionId: string): Promise<void>;
-  exists(sessionId: string): Promise<boolean>;
-}
-
-/**
- * Serialized context state for persistence
- */
-export interface SerializedContextState {
-  conversation: InputItem[];
-  pluginStates: Record<string, unknown>;
-  systemPrompt?: string;
-  metadata: {
-    savedAt: number;
-    agentId?: string;
-    model: string;
-  };
-}
+export type {
+  IContextStorage,
+  SerializedContextState,
+  StoredContextSession,
+  ContextSessionMetadata,
+} from '../../domain/interfaces/IContextStorage.js';
 
 // ============================================================================
 // Events

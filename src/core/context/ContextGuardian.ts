@@ -6,11 +6,10 @@
  * degradation if needed, ensuring the LLM call will succeed.
  *
  * Graceful Degradation Levels (applied in order):
- * 1. Remove ToolOutputPlugin entries (if present)
- * 2. Truncate tool results to maxToolResultTokens each
- * 3. Remove oldest N unprotected tool pairs
- * 4. Truncate system prompt to minSystemPromptTokens
- * 5. Throw ContextOverflowError with detailed budget
+ * 1. Truncate tool results to maxToolResultTokens each
+ * 2. Remove oldest N unprotected tool pairs
+ * 3. Truncate system prompt to minSystemPromptTokens
+ * 4. Throw ContextOverflowError with detailed budget
  *
  * @example
  * ```typescript

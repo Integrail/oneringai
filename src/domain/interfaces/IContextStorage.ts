@@ -8,7 +8,29 @@
  * implementations are in infrastructure layer.
  */
 
-import type { SerializedAgentContextState } from '../../core/AgentContext.js';
+import type { InputItem } from '../entities/Message.js';
+
+/**
+ * Serialized context state for persistence.
+ * This is the canonical definition - core layer re-exports this type.
+ */
+export interface SerializedContextState {
+  /** Conversation history */
+  conversation: InputItem[];
+  /** Plugin states (keyed by plugin name) */
+  pluginStates: Record<string, unknown>;
+  /** System prompt */
+  systemPrompt?: string;
+  /** Metadata */
+  metadata: {
+    savedAt: number;
+    agentId?: string;
+    model: string;
+  };
+  /** Agent-specific state (for TaskAgent, UniversalAgent, etc.) */
+  agentState?: Record<string, unknown>;
+}
+
 
 /**
  * Session summary for listing (lightweight, no full state)
@@ -67,7 +89,7 @@ export interface StoredContextSession {
   lastSavedAt: string; // ISO string
 
   /** The serialized AgentContext state */
-  state: SerializedAgentContextState;
+  state: SerializedContextState;
 
   /** Session metadata */
   metadata: ContextSessionMetadata;
@@ -95,7 +117,7 @@ export interface IContextStorage {
    */
   save(
     sessionId: string,
-    state: SerializedAgentContextState,
+    state: SerializedContextState,
     metadata?: ContextSessionMetadata
   ): Promise<void>;
 

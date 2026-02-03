@@ -8,8 +8,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { BaseAgent, BaseAgentConfig, BaseAgentEvents } from '@/core/BaseAgent.js';
 import { Connector, Vendor } from '@/core/index.js';
 import type { ToolFunction } from '@/domain/entities/Tool.js';
-import type { IContextStorage, StoredContextSession, ContextSessionSummary, ContextSessionMetadata } from '@/domain/interfaces/IContextStorage.js';
-import type { SerializedAgentContextState } from '@/core/AgentContext.js';
+import type { IContextStorage, StoredContextSession, ContextSessionSummary, ContextSessionMetadata, SerializedContextState } from '@/domain/interfaces/IContextStorage.js';
 
 /**
  * Create a mock IContextStorage for testing
@@ -19,7 +18,7 @@ function createMockStorage(): IContextStorage & { sessions: Map<string, StoredCo
 
   return {
     sessions,
-    async save(sessionId: string, state: SerializedAgentContextState, metadata?: ContextSessionMetadata): Promise<void> {
+    async save(sessionId: string, state: SerializedContextState, metadata?: ContextSessionMetadata): Promise<void> {
       const now = new Date().toISOString();
       const existing = sessions.get(sessionId);
       sessions.set(sessionId, {
@@ -41,12 +40,13 @@ function createMockStorage(): IContextStorage & { sessions: Map<string, StoredCo
       return sessions.has(sessionId);
     },
     async list(): Promise<ContextSessionSummary[]> {
+      // NextGen state structure: conversation at root, memory in pluginStates.workingMemory
       return Array.from(sessions.values()).map(s => ({
         sessionId: s.sessionId,
         createdAt: new Date(s.createdAt),
         lastSavedAt: new Date(s.lastSavedAt),
-        messageCount: s.state.core?.history?.length ?? 0,
-        memoryEntryCount: s.state.memory?.entries?.length ?? 0,
+        messageCount: s.state.conversation?.length ?? 0,
+        memoryEntryCount: (s.state.pluginStates?.workingMemory as { entries?: unknown[] } | undefined)?.entries?.length ?? 0,
         metadata: s.metadata,
       }));
     },
@@ -152,10 +152,9 @@ describe('BaseAgent', () => {
       });
 
       expect(agent.tools).toBeDefined();
-      // AgentContext auto-registers feature-aware tools (introspection + memory tools)
-      // so even with no user tools, there are auto-registered tools
-      expect(agent.tools.list().length).toBeGreaterThan(0);
-      expect(agent.tools.has('context_stats')).toBe(true);
+      // AgentContextNextGen doesn't auto-register tools by default
+      // but tools can be added via plugins
+      expect(agent.tools).toBeDefined();
       agent.destroy();
     });
 
@@ -235,7 +234,7 @@ describe('BaseAgent', () => {
       const saved = await storage.load(sessionId);
       expect(saved).toBeDefined();
       expect(saved!.state).toBeDefined();
-      expect(saved!.state.core).toBeDefined();
+      expect(saved!.state.conversation).toBeDefined();
       agent.destroy();
     });
 
@@ -261,11 +260,20 @@ describe('BaseAgent', () => {
       await agent1.ensureLoaded();
       const sessionId = 'test-session-resume';
 
-      // Add a message to history so we can verify it persists
-      await agent1.context.addMessage('user', 'Hello from agent1');
+      // In NextGen, addUserMessage stores in currentInput, not conversation
+      // Messages move to conversation when addAssistantResponse is called
+      // So we simulate a full turn: user message + assistant response
+      agent1.context.addMessage('user', 'Hello from agent1');
+      // Simulate assistant response to move user message to conversation
+      agent1.context.addAssistantResponse([{
+        type: 'message',
+        role: 'assistant' as const,
+        content: [{ type: 'output_text' as const, text: 'Hello!' }],
+      }]);
+
       await agent1.saveSession(sessionId);
-      const history1 = agent1.context.getHistory();
-      expect(history1.length).toBe(1);
+      const history1 = agent1.context.getConversation();
+      expect(history1.length).toBe(2); // user + assistant
       agent1.destroy();
 
       // Resume with second agent
@@ -278,10 +286,10 @@ describe('BaseAgent', () => {
 
       expect(agent2.getSessionId()).toBe(sessionId);
       // History should be restored
-      // getHistory() now returns InputItem[] where content is Content[]
-      const history2 = agent2.context.getHistory();
-      expect(history2.length).toBe(1);
+      const history2 = agent2.context.getConversation();
+      expect(history2.length).toBe(2);
       expect(history2[0].role).toBe('user');
+      expect(history2[1].role).toBe('assistant');
       agent2.destroy();
     });
   });
@@ -592,7 +600,7 @@ describe('BaseAgent', () => {
       await agent.runDirect('Hello');
 
       // Check that history is NOT affected
-      const history = agent.context.getHistory();
+      const history = agent.context.getConversation();
       expect(history).toHaveLength(0);
 
       agent.destroy();

@@ -1,7 +1,7 @@
 /**
  * ToolManager - Unified tool management and execution for agents
  *
- * Provides advanced tool management capabilities:
+ * Provides tool management capabilities:
  * - Enable/disable tools at runtime without removing them
  * - Namespace grouping for organizing related tools
  * - Priority-based selection
@@ -11,7 +11,11 @@
  * - Implements IToolExecutor for use with Agent
  * - Implements IDisposable for proper lifecycle management
  *
- * This is the single source of truth for tool management (replaces ToolRegistry).
+ * This is a SIMPLE tool executor. It does NOT:
+ * - Cache results (no idempotency cache)
+ * - Access parent context (clean separation of concerns)
+ *
+ * Context (memory, agentId, etc.) is provided via setToolContext() before execution.
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -129,13 +133,6 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   /** Optional tool context for execution (set by agent before runs) */
   private _toolContext: ToolContext | undefined;
 
-  /**
-   * Parent AgentContext reference for auto-building ToolContext
-   * This ensures tools always have access to agentContext, memory, cache, etc.
-   * even when execute() is called directly (e.g., by Agent)
-   */
-  private _parentContext: import('./AgentContext.js').AgentContext | null = null;
-
   constructor() {
     super();
     // Initialize default namespace
@@ -188,48 +185,6 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
    */
   getToolContext(): ToolContext | undefined {
     return this._toolContext;
-  }
-
-  /**
-   * Set parent AgentContext for automatic context building
-   * Called by AgentContext after construction to enable auto-context in execute()
-   *
-   * This is the KEY to making tools work correctly:
-   * - When Agent calls ToolManager.execute() directly, we auto-build context
-   * - When AgentContext.executeTool() is used, it sets explicit _toolContext
-   *
-   * @param context - The parent AgentContext that owns this ToolManager
-   */
-  setParentContext(context: import('./AgentContext.js').AgentContext | null): void {
-    this._parentContext = context;
-  }
-
-  /**
-   * Get current parent context
-   */
-  getParentContext(): import('./AgentContext.js').AgentContext | null {
-    return this._parentContext;
-  }
-
-  /**
-   * Build ToolContext from parent AgentContext
-   * Used when execute() is called directly without explicit context
-   * @private
-   */
-  private _buildContextFromParent(): ToolContext | undefined {
-    if (!this._parentContext) {
-      return undefined;
-    }
-
-    const ctx = this._parentContext;
-    return {
-      agentId: ctx.agentId,
-      memory: ctx.memory?.getAccess(),
-      agentContext: ctx,
-      idempotencyCache: ctx.cache ?? undefined,
-      inContextMemory: ctx.inContextMemory ?? undefined,
-      persistentInstructions: ctx.persistentInstructions ?? undefined,
-    };
   }
 
   // ==========================================================================
@@ -757,6 +712,9 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   /**
    * Execute a tool function with circuit breaker protection
    * Implements IToolExecutor interface
+   *
+   * Simple execution - no caching, no parent context.
+   * Context must be set via setToolContext() before calling.
    */
   async execute(toolName: string, args: any): Promise<any> {
     const registration = this.registry.get(toolName);
@@ -777,36 +735,13 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     const startTime = Date.now();
     metrics.increment('tool.executed', 1, { tool: toolName });
 
-    // Resolve tool context: use explicit context if set, otherwise auto-build from parent
-    // This ensures tools always have access to agentContext, memory, cache, etc.
-    const effectiveContext = this._toolContext ?? this._buildContextFromParent();
-
-    // Check cache before execution (if available and enabled)
-    const cache = this._parentContext?.cache;
-    const cacheEnabled = this._parentContext?.isCacheEnabled() ?? false;
-    if (cache && cacheEnabled) {
-      const cached = await cache.get(registration.tool, args);
-      if (cached !== undefined) {
-        this.toolLogger.debug({ toolName }, 'Tool cache hit');
-        metrics.increment('tool.cache_hit', 1, { tool: toolName });
-        // Still record execution for stats (instant duration)
-        this.recordExecution(toolName, 0, true);
-        return cached;
-      }
-    }
-
     try {
       // Execute with circuit breaker protection
       const result = await breaker.execute(async () => {
-        return await registration.tool.execute(args, effectiveContext);
+        return await registration.tool.execute(args, this._toolContext);
       });
 
       const duration = Date.now() - startTime;
-
-      // Store in cache after successful execution (if available and enabled)
-      if (cache && cacheEnabled) {
-        await cache.set(registration.tool, args, result);
-      }
 
       // Update metadata
       this.recordExecution(toolName, duration, true);
