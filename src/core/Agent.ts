@@ -26,6 +26,7 @@ import { TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { PermissionCheckContext } from './permissions/types.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
+import { AGENT_DEFAULTS } from './constants.js';
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
 import type { AgentContextNextGenConfig, ContextFeatures } from './context-nextgen/types.js';
 import type {
@@ -346,7 +347,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     return {
       executionId,
       startTime,
-      maxIterations: this._config.maxIterations || 10,
+      maxIterations: this._config.maxIterations || AGENT_DEFAULTS.MAX_ITERATIONS,
     };
   }
 
@@ -587,7 +588,35 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
       // Check if we exited normally or hit max iterations
       if (iteration >= maxIterations && !finalResponse) {
-        throw new Error(`Max iterations (${maxIterations}) reached without completion`);
+        // Do a final LLM call WITHOUT tools to let the agent wrap up gracefully
+        this._logger.info({ maxIterations }, 'Max iterations reached, generating wrap-up response');
+
+        // Add a user message prompting the wrap-up
+        this._agentContext.addUserMessage(AGENT_DEFAULTS.MAX_ITERATIONS_MESSAGE);
+
+        // Prepare context and generate final response WITHOUT tools
+        const prepared = await this._agentContext.prepare();
+        const wrapUpResponse = await this._provider.generate({
+          model: this.model,
+          input: prepared.input,
+          instructions: this._config.instructions,
+          tools: [], // No tools - force text-only response
+          temperature: this._config.temperature,
+          vendorOptions: this._config.vendorOptions,
+        });
+
+        // Add the wrap-up response to context
+        this._agentContext.addAssistantResponse(wrapUpResponse.output);
+
+        // Emit event for max iterations reached
+        this.emit('execution:maxIterations', {
+          executionId,
+          iteration,
+          maxIterations,
+          timestamp: new Date(),
+        });
+
+        finalResponse = wrapUpResponse;
       }
 
       await this._finalizeExecution(executionId, startTime, finalResponse!, 'run');
@@ -762,14 +791,27 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           try {
             parsedArgs = JSON.parse(toolCall.function.arguments);
           } catch (error) {
+            const errorMessage = `Invalid tool arguments JSON: ${(error as Error).message}`;
+            // CRITICAL: Add a ToolResult for the failed parse to ensure TOOL_USE has a matching TOOL_RESULT
+            // Without this, subsequent API calls fail with "No tool output found for function call"
+            const failedResult: ToolResult = {
+              tool_use_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              tool_args: {},
+              content: { success: false, error: errorMessage },
+              state: ToolCallState.FAILED,
+              error: errorMessage,
+            };
+            toolResults.push(failedResult);
+
             yield {
               type: StreamEventType.TOOL_EXECUTION_DONE,
               response_id: executionId,
               tool_call_id: toolCall.id,
               tool_name: toolCall.function.name,
-              result: null,
+              result: failedResult.content,
               execution_time_ms: 0,
-              error: `Invalid tool arguments JSON: ${(error as Error).message}`,
+              error: errorMessage,
             };
             continue;
           }
@@ -840,16 +882,58 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         toolCallsMap.clear();
       }
 
-      // If loop ended due to max iterations, emit final completion
+      // If loop ended due to max iterations, generate wrap-up response
       if (iteration >= maxIterations) {
+        this._logger.info({ maxIterations }, 'Max iterations reached, streaming wrap-up response');
+
+        // Add a user message prompting the wrap-up
+        this._agentContext.addUserMessage(AGENT_DEFAULTS.MAX_ITERATIONS_MESSAGE);
+
+        // Prepare context and stream final response WITHOUT tools
+        const prepared = await this._agentContext.prepare();
+        const wrapUpStreamState = new StreamState(executionId, this.model);
+
+        // Stream the wrap-up response
+        for await (const event of this._provider.streamGenerate({
+          model: this.model,
+          input: prepared.input,
+          instructions: this._config.instructions,
+          tools: [], // No tools - force text-only response
+          temperature: this._config.temperature,
+          vendorOptions: this._config.vendorOptions,
+        })) {
+          // Update stream state
+          if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
+            wrapUpStreamState.accumulateTextDelta(event.item_id, event.delta);
+          } else if (event.type === StreamEventType.RESPONSE_COMPLETE) {
+            wrapUpStreamState.updateUsage(event.usage);
+            continue; // Don't yield provider's RESPONSE_COMPLETE
+          }
+          yield event;
+        }
+
+        // Add wrap-up response to context
+        this._addStreamingAssistantMessage(wrapUpStreamState, []);
+        globalStreamState.accumulateUsage(wrapUpStreamState.usage);
+
+        // Emit event for max iterations reached
+        this.emit('execution:maxIterations', {
+          executionId,
+          iteration,
+          maxIterations,
+          timestamp: new Date(),
+        });
+
         yield {
           type: StreamEventType.RESPONSE_COMPLETE,
           response_id: executionId,
-          status: 'incomplete',
+          status: 'completed', // Now completed with wrap-up message
           usage: globalStreamState.usage,
-          iterations: iteration,
+          iterations: iteration + 1, // Include wrap-up iteration
           duration_ms: Date.now() - startTime,
         };
+
+        wrapUpStreamState.clear();
       }
 
       // Finalize execution

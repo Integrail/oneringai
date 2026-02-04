@@ -44,7 +44,7 @@ export interface Plan {
  * Dynamic UI element types for agent-provided UI
  */
 export interface DynamicUIElement {
-  type: 'text' | 'heading' | 'input' | 'button' | 'select' | 'progress' | 'alert' | 'code' | 'divider' | 'spacer' | 'image' | 'list' | 'table' | 'link' | 'badge' | 'card';
+  type: 'text' | 'heading' | 'input' | 'button' | 'select' | 'progress' | 'alert' | 'code' | 'divider' | 'spacer' | 'image' | 'list' | 'table' | 'link' | 'badge' | 'card' | 'browser';
   id?: string;
   label?: string;
   value?: unknown;
@@ -83,6 +83,13 @@ export interface DynamicUIElement {
   tableRows?: string[][];
   // Card
   children?: DynamicUIElement[];
+  // Browser
+  instanceId?: string;
+  showUrlBar?: boolean;
+  showNavButtons?: boolean;
+  currentUrl?: string;
+  pageTitle?: string;
+  isLoading?: boolean;
 }
 
 /**
@@ -123,7 +130,60 @@ export type StreamChunk =
   | { type: 'ui:show_sidebar'; tab?: 'look_inside' | 'dynamic_ui' }
   | { type: 'ui:hide_sidebar' }
   | { type: 'ui:set_dynamic_content'; content: DynamicUIContent }
-  | { type: 'ui:clear_dynamic_content' };
+  | { type: 'ui:clear_dynamic_content' }
+  // Browser automation events (for Dynamic UI)
+  | { type: 'browser:show'; instanceId: string }
+  | { type: 'browser:hide' }
+  | { type: 'browser:state-update'; state: BrowserStateInfo }
+  // Proactive overlay detection (popup/modal appeared)
+  | { type: 'overlay_detected'; overlay: DetectedOverlay; hint: string };
+
+/**
+ * Browser state info for IPC
+ */
+export interface BrowserStateInfo {
+  url: string;
+  title: string;
+  isLoading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  error?: string;
+  hasOverlay?: boolean;
+  overlay?: DetectedOverlay;
+}
+
+/**
+ * Detected overlay/popup information
+ */
+export interface DetectedOverlay {
+  type: 'modal' | 'popup' | 'cookie_consent' | 'notification' | 'unknown';
+  selector: string;
+  title?: string;
+  text?: string;
+  buttons: string[];
+  position?: { x: number; y: number; width: number; height: number };
+}
+
+/**
+ * Browser instance info for IPC
+ */
+export interface BrowserInstanceInfo {
+  instanceId: string;
+  currentUrl: string;
+  currentTitle: string;
+  isAttached: boolean;
+  createdAt: number;
+}
+
+/**
+ * Rectangle bounds for browser view positioning
+ */
+export interface BrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 // Types for the exposed API
 export interface HoseaAPI {
@@ -217,11 +277,14 @@ export interface HoseaAPI {
       name: string;
       displayName: string;
       category: string;
+      categoryDisplayName: string;
       description: string;
       safeByDefault: boolean;
       requiresConnector: boolean;
       connectorServiceTypes?: string[];
+      source: 'oneringai' | 'hosea' | 'custom';
     }>>;
+    categories: () => Promise<Array<{ id: string; displayName: string; count: number }>>;
   };
 
   // Config
@@ -256,6 +319,7 @@ export interface HoseaAPI {
       agentType: 'basic';
       instructions: string;
       temperature: number;
+      maxIterations: number;
       contextStrategy: string;
       maxContextTokens: number;
       responseReserve: number;
@@ -268,9 +332,11 @@ export interface HoseaAPI {
       maxInContextEntries: number;
       maxInContextTokens: number;
       persistentInstructionsEnabled: boolean;
+      // @deprecated - not used in NextGen context
       historyEnabled: boolean;
       maxHistoryMessages: number;
       preserveRecent: number;
+      // @deprecated - not used in NextGen context
       cacheEnabled: boolean;
       cacheTtlMs: number;
       cacheMaxEntries: number;
@@ -290,6 +356,7 @@ export interface HoseaAPI {
       agentType: 'basic';
       instructions: string;
       temperature: number;
+      maxIterations: number;
       contextStrategy: string;
       maxContextTokens: number;
       responseReserve: number;
@@ -302,9 +369,11 @@ export interface HoseaAPI {
       maxInContextEntries: number;
       maxInContextTokens: number;
       persistentInstructionsEnabled: boolean;
+      // @deprecated - not used in NextGen context
       historyEnabled: boolean;
       maxHistoryMessages: number;
       preserveRecent: number;
+      // @deprecated - not used in NextGen context
       cacheEnabled: boolean;
       cacheTtlMs: number;
       cacheMaxEntries: number;
@@ -961,6 +1030,64 @@ export interface HoseaAPI {
       error?: string;
     }>;
   };
+
+  // Browser Automation
+  browser: {
+    /** Create a browser instance for an agent instance */
+    create: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    /** Destroy a browser instance */
+    destroy: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    /** Navigate to a URL */
+    navigate: (instanceId: string, url: string, options?: {
+      waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
+      timeout?: number;
+    }) => Promise<{
+      success: boolean;
+      url: string;
+      title: string;
+      loadTime: number;
+      error?: string;
+    }>;
+    /** Get current browser state */
+    getState: (instanceId: string) => Promise<{
+      success: boolean;
+      url: string;
+      title: string;
+      isLoading: boolean;
+      canGoBack: boolean;
+      canGoForward: boolean;
+      viewport: { width: number; height: number };
+      error?: string;
+    }>;
+    /** Navigate back */
+    goBack: (instanceId: string) => Promise<{ success: boolean; url: string; title: string; error?: string }>;
+    /** Navigate forward */
+    goForward: (instanceId: string) => Promise<{ success: boolean; url: string; title: string; error?: string }>;
+    /** Reload the page */
+    reload: (instanceId: string) => Promise<{ success: boolean; url: string; title: string; error?: string }>;
+    /** Attach browser view to window for display */
+    attach: (instanceId: string, bounds: BrowserBounds) => Promise<{ success: boolean; error?: string }>;
+    /** Detach browser view from window */
+    detach: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    /** Update browser view bounds */
+    updateBounds: (instanceId: string, bounds: BrowserBounds) => Promise<{ success: boolean; error?: string }>;
+    /** Get browser instance info */
+    getInstanceInfo: (instanceId: string) => Promise<BrowserInstanceInfo | null>;
+    /** List all browser instances */
+    listInstances: () => Promise<BrowserInstanceInfo[]>;
+    /** Check if browser instance exists */
+    hasBrowser: (instanceId: string) => Promise<boolean>;
+    /** Listen for browser state changes */
+    onStateChange: (callback: (instanceId: string, state: BrowserStateInfo) => void) => void;
+    /** Listen for browser navigation */
+    onNavigate: (callback: (instanceId: string, url: string) => void) => void;
+    /** Listen for browser loading status */
+    onLoading: (callback: (instanceId: string, isLoading: boolean) => void) => void;
+    /** Listen for browser errors */
+    onError: (callback: (instanceId: string, error: { errorCode: number; errorDescription: string; url: string }) => void) => void;
+    /** Remove all browser listeners */
+    removeListeners: () => void;
+  };
 }
 
 // Expose to renderer
@@ -1034,6 +1161,7 @@ const api: HoseaAPI = {
     list: () => ipcRenderer.invoke('tool:list'),
     toggle: (toolName, enabled) => ipcRenderer.invoke('tool:toggle', toolName, enabled),
     registry: () => ipcRenderer.invoke('tool:registry'),
+    categories: () => ipcRenderer.invoke('tool:categories'),
   },
 
   config: {
@@ -1131,6 +1259,44 @@ const api: HoseaAPI = {
 
   dialog: {
     showOpenDialog: (options) => ipcRenderer.invoke('dialog:show-open-dialog', options),
+  },
+
+  browser: {
+    create: (instanceId) => ipcRenderer.invoke('browser:create', instanceId),
+    destroy: (instanceId) => ipcRenderer.invoke('browser:destroy', instanceId),
+    navigate: (instanceId, url, options) => ipcRenderer.invoke('browser:navigate', instanceId, url, options),
+    getState: (instanceId) => ipcRenderer.invoke('browser:get-state', instanceId),
+    goBack: (instanceId) => ipcRenderer.invoke('browser:go-back', instanceId),
+    goForward: (instanceId) => ipcRenderer.invoke('browser:go-forward', instanceId),
+    reload: (instanceId) => ipcRenderer.invoke('browser:reload', instanceId),
+    attach: (instanceId, bounds) => ipcRenderer.invoke('browser:attach', instanceId, bounds),
+    detach: (instanceId) => ipcRenderer.invoke('browser:detach', instanceId),
+    updateBounds: (instanceId, bounds) => ipcRenderer.invoke('browser:update-bounds', instanceId, bounds),
+    getInstanceInfo: (instanceId) => ipcRenderer.invoke('browser:get-instance-info', instanceId),
+    listInstances: () => ipcRenderer.invoke('browser:list-instances'),
+    hasBrowser: (instanceId) => ipcRenderer.invoke('browser:has-browser', instanceId),
+    onStateChange: (callback) => {
+      ipcRenderer.removeAllListeners('browser:state-change');
+      ipcRenderer.on('browser:state-change', (_event, instanceId, state) => callback(instanceId, state));
+    },
+    onNavigate: (callback) => {
+      ipcRenderer.removeAllListeners('browser:navigate');
+      ipcRenderer.on('browser:navigate', (_event, instanceId, url) => callback(instanceId, url));
+    },
+    onLoading: (callback) => {
+      ipcRenderer.removeAllListeners('browser:loading');
+      ipcRenderer.on('browser:loading', (_event, instanceId, isLoading) => callback(instanceId, isLoading));
+    },
+    onError: (callback) => {
+      ipcRenderer.removeAllListeners('browser:error');
+      ipcRenderer.on('browser:error', (_event, instanceId, error) => callback(instanceId, error));
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('browser:state-change');
+      ipcRenderer.removeAllListeners('browser:navigate');
+      ipcRenderer.removeAllListeners('browser:loading');
+      ipcRenderer.removeAllListeners('browser:error');
+    },
   },
 };
 

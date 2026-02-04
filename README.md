@@ -17,6 +17,7 @@
 - 🔍 **Web Search** - Connector-based search with Serper, Brave, Tavily, and RapidAPI providers
 - 🔌 **NextGen Context** - Clean, plugin-based context management with `AgentContextNextGen`
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
+- 🔌 **Tool Execution Plugins** - NEW: Pluggable pipeline for logging, analytics, UI updates, custom behavior
 - 💾 **Session Persistence** - Save and resume conversations with full state restoration
 - 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
 - 🤖 **Task Agents** - ⚠️ *Deprecated* - Use `Agent` with `WorkingMemoryPluginNextGen`
@@ -376,7 +377,87 @@ agent.addTool(newTool);        // Still works!
 agent.removeTool('old_tool');  // Still works!
 ```
 
-### 3. Session Persistence
+### 3. Tool Execution Plugins (NEW)
+
+Extend tool execution with custom behavior through a pluggable pipeline architecture. Add logging, analytics, UI updates, permission prompts, or any custom logic:
+
+```typescript
+import { Agent, LoggingPlugin, type IToolExecutionPlugin } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool],
+});
+
+// Add built-in logging plugin
+agent.tools.executionPipeline.use(new LoggingPlugin());
+
+// Create a custom plugin
+const analyticsPlugin: IToolExecutionPlugin = {
+  name: 'analytics',
+  priority: 100,
+
+  async beforeExecute(ctx) {
+    console.log(`Starting ${ctx.toolName}`);
+  },
+
+  async afterExecute(ctx, result) {
+    const duration = Date.now() - ctx.startTime;
+    trackToolUsage(ctx.toolName, duration);
+    return result; // Must return result (can transform it)
+  },
+
+  async onError(ctx, error) {
+    reportError(ctx.toolName, error);
+    return undefined; // Let error propagate (or return value to recover)
+  },
+};
+
+agent.tools.executionPipeline.use(analyticsPlugin);
+```
+
+**Plugin Lifecycle:**
+1. `beforeExecute` - Modify args, abort execution, or pass through
+2. Tool execution
+3. `afterExecute` - Transform results (runs in reverse priority order)
+4. `onError` - Handle/recover from errors
+
+**Plugin Context (`PluginExecutionContext`):**
+```typescript
+interface PluginExecutionContext {
+  toolName: string;           // Name of the tool being executed
+  args: unknown;              // Original arguments (read-only)
+  mutableArgs: unknown;       // Modifiable arguments
+  metadata: Map<string, unknown>; // Share data between plugins
+  startTime: number;          // Execution start timestamp
+  tool: ToolFunction;         // The tool being executed
+  executionId: string;        // Unique ID for this execution
+}
+```
+
+**Built-in Plugins:**
+- `LoggingPlugin` - Logs tool execution with timing and result summaries
+
+**Pipeline Management:**
+```typescript
+// Add plugin
+agent.tools.executionPipeline.use(myPlugin);
+
+// Remove plugin
+agent.tools.executionPipeline.remove('plugin-name');
+
+// Check if registered
+agent.tools.executionPipeline.has('plugin-name');
+
+// Get plugin
+const plugin = agent.tools.executionPipeline.get('plugin-name');
+
+// List all plugins
+const plugins = agent.tools.executionPipeline.list();
+```
+
+### 4. Session Persistence
 
 Save and resume full context state including conversation history and plugin states:
 

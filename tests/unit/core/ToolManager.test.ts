@@ -423,6 +423,160 @@ describe('ToolManager', () => {
     });
   });
 
+  describe('executionPipeline', () => {
+    it('should expose the execution pipeline', () => {
+      expect(toolManager.executionPipeline).toBeDefined();
+      expect(typeof toolManager.executionPipeline.use).toBe('function');
+      expect(typeof toolManager.executionPipeline.remove).toBe('function');
+      expect(typeof toolManager.executionPipeline.has).toBe('function');
+      expect(typeof toolManager.executionPipeline.get).toBe('function');
+      expect(typeof toolManager.executionPipeline.list).toBe('function');
+    });
+
+    it('should have ResultNormalizerPlugin registered by default', () => {
+      expect(toolManager.executionPipeline.has('result-normalizer')).toBe(true);
+      const plugin = toolManager.executionPipeline.get('result-normalizer');
+      expect(plugin).toBeDefined();
+      expect(plugin?.priority).toBe(0); // Runs last in afterExecute
+    });
+
+    it('should normalize undefined results to error objects', async () => {
+      // Create a tool that returns undefined
+      const undefinedTool: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'undefined_tool',
+            description: 'Returns undefined',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        execute: vi.fn(async () => undefined),
+      };
+
+      toolManager.register(undefinedTool);
+      const result = await toolManager.execute('undefined_tool', {});
+
+      // ResultNormalizerPlugin should convert undefined to error object
+      expect(result).toEqual({
+        success: false,
+        error: "Tool 'undefined_tool' returned no result",
+      });
+    });
+
+    it('should normalize null results to error objects', async () => {
+      // Create a tool that returns null
+      const nullTool: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'null_tool',
+            description: 'Returns null',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        execute: vi.fn(async () => null),
+      };
+
+      toolManager.register(nullTool);
+      const result = await toolManager.execute('null_tool', {});
+
+      // ResultNormalizerPlugin should convert null to error object
+      expect(result).toEqual({
+        success: false,
+        error: "Tool 'null_tool' returned no result",
+      });
+    });
+
+    it('should allow registering plugins', () => {
+      const plugin = {
+        name: 'test-plugin',
+        priority: 100,
+      };
+
+      toolManager.executionPipeline.use(plugin);
+      expect(toolManager.executionPipeline.has('test-plugin')).toBe(true);
+    });
+
+    it('should run tool execution through plugin pipeline', async () => {
+      const beforeExecuteCalled = vi.fn();
+      const afterExecuteCalled = vi.fn();
+
+      const plugin = {
+        name: 'tracking-plugin',
+        beforeExecute: async () => {
+          beforeExecuteCalled();
+        },
+        afterExecute: async (_: unknown, result: unknown) => {
+          afterExecuteCalled();
+          return result;
+        },
+      };
+
+      toolManager.executionPipeline.use(plugin);
+      toolManager.register(testTool1);
+
+      await toolManager.execute('test_tool_1', { input: 'test' });
+
+      expect(beforeExecuteCalled).toHaveBeenCalled();
+      expect(afterExecuteCalled).toHaveBeenCalled();
+    });
+
+    it('should allow plugins to modify tool args', async () => {
+      const plugin = {
+        name: 'arg-modifier',
+        beforeExecute: async () => {
+          return { modifiedArgs: { modified: true } };
+        },
+      };
+
+      toolManager.executionPipeline.use(plugin);
+      toolManager.register(testTool1);
+
+      await toolManager.execute('test_tool_1', { original: true });
+
+      // ToolManager wraps tool.execute() to pass context as second arg
+      // Context is undefined when not set via setToolContext()
+      expect(testTool1.execute).toHaveBeenCalledWith(
+        { modified: true },
+        undefined
+      );
+    });
+
+    it('should allow plugins to abort execution', async () => {
+      const plugin = {
+        name: 'aborter',
+        beforeExecute: async () => {
+          return { abort: true, result: { aborted: true } };
+        },
+      };
+
+      toolManager.executionPipeline.use(plugin);
+      toolManager.register(testTool1);
+
+      const result = await toolManager.execute('test_tool_1', {});
+
+      expect(result).toEqual({ aborted: true });
+      expect(testTool1.execute).not.toHaveBeenCalled();
+    });
+
+    it('should allow plugins to transform results', async () => {
+      const plugin = {
+        name: 'transformer',
+        afterExecute: async (_: unknown, result: unknown) => {
+          return { ...(result as object), transformed: true };
+        },
+      };
+
+      toolManager.executionPipeline.use(plugin);
+      toolManager.register(testTool1);
+
+      const result = await toolManager.execute('test_tool_1', {});
+
+      expect(result).toEqual({ result: 'tool1', transformed: true });
+    });
+  });
+
   describe('destroy', () => {
     it('should mark as destroyed', () => {
       expect(toolManager.isDestroyed).toBe(false);

@@ -15691,18 +15691,260 @@ var ContextOverflowError = class _ContextOverflowError extends AIError {
 // src/core/ToolManager.ts
 init_Logger();
 init_Metrics();
+
+// src/core/tool-execution/ToolExecutionPipeline.ts
+var DEFAULT_PRIORITY = 100;
+var executionCounter = 0;
+function generateExecutionId(useRandomUUID) {
+  if (useRandomUUID && typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `exec_${Date.now()}_${++executionCounter}`;
+}
+function deepClone(value) {
+  if (value === null || value === void 0) {
+    return value;
+  }
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(value);
+    } catch {
+    }
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+var ToolExecutionPipeline = class {
+  plugins = /* @__PURE__ */ new Map();
+  sortedPlugins = [];
+  useRandomUUID;
+  constructor(options = {}) {
+    this.useRandomUUID = options.useRandomUUID ?? true;
+  }
+  /**
+   * Register a plugin with the pipeline.
+   *
+   * If a plugin with the same name is already registered, it will be
+   * unregistered first (calling its onUnregister hook) and replaced.
+   *
+   * @param plugin - Plugin to register
+   * @returns this for chaining
+   */
+  use(plugin) {
+    if (this.plugins.has(plugin.name)) {
+      this.remove(plugin.name);
+    }
+    this.plugins.set(plugin.name, plugin);
+    this.rebuildSortedList();
+    plugin.onRegister?.(this);
+    return this;
+  }
+  /**
+   * Remove a plugin by name.
+   *
+   * @param pluginName - Name of the plugin to remove
+   * @returns true if the plugin was found and removed, false otherwise
+   */
+  remove(pluginName) {
+    const plugin = this.plugins.get(pluginName);
+    if (!plugin) {
+      return false;
+    }
+    plugin.onUnregister?.();
+    this.plugins.delete(pluginName);
+    this.rebuildSortedList();
+    return true;
+  }
+  /**
+   * Check if a plugin is registered.
+   *
+   * @param pluginName - Name of the plugin to check
+   */
+  has(pluginName) {
+    return this.plugins.has(pluginName);
+  }
+  /**
+   * Get a registered plugin by name.
+   *
+   * @param pluginName - Name of the plugin to get
+   */
+  get(pluginName) {
+    return this.plugins.get(pluginName);
+  }
+  /**
+   * List all registered plugins, sorted by priority.
+   */
+  list() {
+    return [...this.sortedPlugins];
+  }
+  /**
+   * Execute a tool through the plugin pipeline.
+   *
+   * Execution phases:
+   * 1. beforeExecute hooks (in priority order, lowest first)
+   * 2. Tool execution (if not aborted)
+   * 3. afterExecute hooks (in reverse priority order for proper unwinding)
+   * 4. onError hooks if any phase fails
+   *
+   * @param tool - Tool function to execute
+   * @param args - Arguments for the tool
+   * @returns Result from tool execution (possibly transformed by plugins)
+   */
+  async execute(tool, args) {
+    const ctx = {
+      toolName: tool.definition.function.name,
+      args,
+      mutableArgs: deepClone(args),
+      metadata: /* @__PURE__ */ new Map(),
+      startTime: Date.now(),
+      tool,
+      executionId: generateExecutionId(this.useRandomUUID)
+    };
+    try {
+      for (const plugin of this.sortedPlugins) {
+        if (plugin.beforeExecute) {
+          const hookResult = await plugin.beforeExecute(ctx);
+          if (hookResult && "abort" in hookResult && hookResult.abort) {
+            return hookResult.result;
+          }
+          if (hookResult && "modifiedArgs" in hookResult) {
+            ctx.mutableArgs = hookResult.modifiedArgs;
+          }
+        }
+      }
+      let result = await tool.execute(ctx.mutableArgs);
+      const reversedPlugins = [...this.sortedPlugins].reverse();
+      for (const plugin of reversedPlugins) {
+        if (plugin.afterExecute) {
+          result = await plugin.afterExecute(ctx, result);
+        }
+      }
+      return result;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      for (const plugin of this.sortedPlugins) {
+        if (plugin.onError) {
+          try {
+            const recovered = await plugin.onError(ctx, err);
+            if (recovered !== void 0) {
+              return recovered;
+            }
+          } catch {
+          }
+        }
+      }
+      throw error;
+    }
+  }
+  /**
+   * Rebuild the sorted plugin list after registration changes.
+   */
+  rebuildSortedList() {
+    this.sortedPlugins = [...this.plugins.values()].sort(
+      (a, b) => (a.priority ?? DEFAULT_PRIORITY) - (b.priority ?? DEFAULT_PRIORITY)
+    );
+  }
+};
+
+// src/core/tool-execution/plugins/ResultNormalizerPlugin.ts
+var ResultNormalizerPlugin = class {
+  name = "result-normalizer";
+  priority = 0;
+  // Run LAST in afterExecute (reverse order)
+  options;
+  constructor(options = {}) {
+    this.options = {
+      wrapPrimitives: options.wrapPrimitives ?? false,
+      addSuccessField: options.addSuccessField ?? false
+    };
+  }
+  /**
+   * Normalize result after all other plugins have processed it.
+   * Converts undefined/null to error objects, optionally wraps primitives.
+   */
+  async afterExecute(ctx, result) {
+    return this.normalize(result, ctx.toolName);
+  }
+  /**
+   * Convert exceptions to error result objects (recovery).
+   * This allows the tool call to return a valid result instead of throwing.
+   */
+  async onError(ctx, error) {
+    return {
+      success: false,
+      error: error.message,
+      errorType: error.name,
+      toolName: ctx.toolName
+    };
+  }
+  /**
+   * Normalize a result to ensure it's valid and serializable.
+   */
+  normalize(result, toolName) {
+    if (result === void 0 || result === null) {
+      return {
+        success: false,
+        error: `Tool '${toolName}' returned no result`
+      };
+    }
+    if (typeof result === "object" && "success" in result) {
+      return result;
+    }
+    if (typeof result !== "object") {
+      if (this.options.wrapPrimitives) {
+        return { success: true, result };
+      }
+      return result;
+    }
+    if (this.options.addSuccessField) {
+      return { success: true, ...result };
+    }
+    return result;
+  }
+};
+
+// src/core/ToolManager.ts
 var ToolManager = class extends eventemitter3.EventEmitter {
   registry = /* @__PURE__ */ new Map();
   namespaceIndex = /* @__PURE__ */ new Map();
   circuitBreakers = /* @__PURE__ */ new Map();
   toolLogger;
   _isDestroyed = false;
+  pipeline;
   /** Optional tool context for execution (set by agent before runs) */
   _toolContext;
   constructor() {
     super();
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
     this.toolLogger = exports.logger.child({ component: "ToolManager" });
+    this.pipeline = new ToolExecutionPipeline();
+    this.pipeline.use(new ResultNormalizerPlugin());
+  }
+  /**
+   * Access the execution pipeline for plugin management.
+   *
+   * Use this to register plugins that intercept and extend tool execution.
+   *
+   * @example
+   * ```typescript
+   * // Add logging plugin
+   * toolManager.executionPipeline.use(new LoggingPlugin());
+   *
+   * // Add custom plugin
+   * toolManager.executionPipeline.use({
+   *   name: 'my-plugin',
+   *   async afterExecute(ctx, result) {
+   *     console.log(`${ctx.toolName} returned:`, result);
+   *     return result;
+   *   },
+   * });
+   * ```
+   */
+  get executionPipeline() {
+    return this.pipeline;
   }
   /**
    * Returns true if destroy() has been called.
@@ -16153,8 +16395,14 @@ var ToolManager = class extends eventemitter3.EventEmitter {
   // Execution (IToolExecutor implementation)
   // ==========================================================================
   /**
-   * Execute a tool function with circuit breaker protection
-   * Implements IToolExecutor interface
+   * Execute a tool function with circuit breaker protection and plugin pipeline.
+   * Implements IToolExecutor interface.
+   *
+   * Execution flow:
+   * 1. Validate tool exists and is enabled
+   * 2. Check circuit breaker state
+   * 3. Run through plugin pipeline (beforeExecute -> execute -> afterExecute)
+   * 4. Update metrics and circuit breaker state
    *
    * Simple execution - no caching, no parent context.
    * Context must be set via setToolContext() before calling.
@@ -16173,7 +16421,13 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     exports.metrics.increment("tool.executed", 1, { tool: toolName });
     try {
       const result = await breaker.execute(async () => {
-        return await registration.tool.execute(args, this._toolContext);
+        const toolWithContext = {
+          ...registration.tool,
+          execute: async (pipelineArgs) => {
+            return await registration.tool.execute(pipelineArgs, this._toolContext);
+          }
+        };
+        return await this.pipeline.execute(toolWithContext, args);
       });
       const duration = Date.now() - startTime;
       this.recordExecution(toolName, duration, true);
@@ -19973,11 +20227,12 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
     } else if (budget.utilizationPercent >= 70) {
       this.emit("budget:warning", { budget });
     }
-    const input = [
+    let input = [
       systemMessage,
       ...this._conversation,
       ...this._currentInput
     ];
+    input = this.sanitizeToolPairs(input);
     this.emit("context:prepared", { budget, compacted });
     return {
       input,
@@ -20260,6 +20515,74 @@ ${content}`);
       }
     }
     return pairs;
+  }
+  /**
+   * Sanitize tool pairs in the input array.
+   * Removes orphan TOOL_USE (no matching TOOL_RESULT) and
+   * orphan TOOL_RESULT (no matching TOOL_USE).
+   *
+   * This is CRITICAL - LLM APIs require matching pairs.
+   */
+  sanitizeToolPairs(items) {
+    const toolUseIds = /* @__PURE__ */ new Set();
+    const toolResultIds = /* @__PURE__ */ new Set();
+    for (const item of items) {
+      if (item.type !== "message") continue;
+      const msg = item;
+      for (const c of msg.content) {
+        if (c.type === "tool_use" /* TOOL_USE */) {
+          toolUseIds.add(c.id);
+        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+          toolResultIds.add(c.tool_use_id);
+        }
+      }
+    }
+    const orphanToolUseIds = /* @__PURE__ */ new Set();
+    const orphanToolResultIds = /* @__PURE__ */ new Set();
+    for (const id of toolUseIds) {
+      if (!toolResultIds.has(id)) {
+        orphanToolUseIds.add(id);
+      }
+    }
+    for (const id of toolResultIds) {
+      if (!toolUseIds.has(id)) {
+        orphanToolResultIds.add(id);
+      }
+    }
+    if (orphanToolUseIds.size === 0 && orphanToolResultIds.size === 0) {
+      return items;
+    }
+    const result = [];
+    for (const item of items) {
+      if (item.type !== "message") {
+        result.push(item);
+        continue;
+      }
+      const msg = item;
+      const filteredContent = [];
+      for (const c of msg.content) {
+        if (c.type === "tool_use" /* TOOL_USE */) {
+          const id = c.id;
+          if (!orphanToolUseIds.has(id)) {
+            filteredContent.push(c);
+          }
+        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+          const id = c.tool_use_id;
+          if (!orphanToolResultIds.has(id)) {
+            filteredContent.push(c);
+          }
+        } else {
+          filteredContent.push(c);
+        }
+      }
+      if (filteredContent.length > 0) {
+        result.push({
+          ...msg,
+          content: filteredContent
+        });
+      }
+    }
+    return result;
   }
   // ============================================================================
   // Oversized Input Handling
@@ -24650,6 +24973,126 @@ function assertNotDestroyed(obj, operation) {
 
 // src/core/Agent.ts
 init_Metrics();
+
+// src/core/constants.ts
+var PROACTIVE_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.65,
+  /** Base reduction factor for round 1 */
+  BASE_REDUCTION_FACTOR: 0.5,
+  /** Reduction step per round (more aggressive each round) */
+  REDUCTION_STEP: 0.15,
+  /** Maximum compaction rounds */
+  MAX_ROUNDS: 3
+};
+var AGGRESSIVE_STRATEGY_DEFAULTS = {
+  /** Threshold to trigger compaction */
+  THRESHOLD: 0.6,
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.5,
+  /** Reduction factor (keep 30% of original) */
+  REDUCTION_FACTOR: 0.3
+};
+var LAZY_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.85,
+  /** Reduction factor (keep 70% of original) */
+  REDUCTION_FACTOR: 0.7
+};
+var ADAPTIVE_STRATEGY_DEFAULTS = {
+  /** Number of compactions to learn from */
+  LEARNING_WINDOW: 10,
+  /** Compactions per minute threshold to switch to aggressive */
+  SWITCH_THRESHOLD: 5,
+  /** Low utilization threshold to switch to lazy */
+  LOW_UTILIZATION_THRESHOLD: 70,
+  /** Low frequency threshold to switch to lazy */
+  LOW_FREQUENCY_THRESHOLD: 0.5
+};
+var ROLLING_WINDOW_DEFAULTS = {
+  /** Default maximum messages to keep */
+  MAX_MESSAGES: 20
+};
+var AGENT_DEFAULTS = {
+  /** Default maximum iterations for agentic loop */
+  MAX_ITERATIONS: 50,
+  /** Default temperature for LLM calls */
+  DEFAULT_TEMPERATURE: 0.7,
+  /** Message injected when max iterations is reached */
+  MAX_ITERATIONS_MESSAGE: `You have reached the maximum iteration limit for this execution. Please:
+1. Summarize what you have accomplished so far
+2. Explain what remains to be done (if anything)
+3. Ask the user if they would like you to continue
+
+Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`
+};
+var STRATEGY_THRESHOLDS2 = {
+  proactive: {
+    // Most balanced - good for general use
+    compactionTrigger: 0.75,
+    // Start compaction at 75%
+    compactionTarget: 0.65,
+    // Reduce to 65%
+    smartCompactionTrigger: 0.7,
+    // Trigger smart compaction at 70%
+    maxToolResultsPercent: 0.3,
+    // Tool results can use up to 30% of context
+    protectedContextPercent: 0.1
+    // Protect at least 10% of context (recent messages)
+  },
+  aggressive: {
+    // Memory-constrained - compact early and often
+    compactionTrigger: 0.6,
+    compactionTarget: 0.5,
+    smartCompactionTrigger: 0.55,
+    maxToolResultsPercent: 0.25,
+    protectedContextPercent: 0.08
+  },
+  lazy: {
+    // Preserve context - only compact when critical
+    compactionTrigger: 0.9,
+    compactionTarget: 0.85,
+    smartCompactionTrigger: 0.85,
+    maxToolResultsPercent: 0.4,
+    // Allow more tool results
+    protectedContextPercent: 0.15
+    // Protect more recent context
+  },
+  adaptive: {
+    // Starts with proactive, adjusts based on performance
+    compactionTrigger: 0.75,
+    compactionTarget: 0.65,
+    smartCompactionTrigger: 0.7,
+    maxToolResultsPercent: 0.3,
+    protectedContextPercent: 0.1
+  },
+  "rolling-window": {
+    // Fixed window, similar to lazy but with message count focus
+    compactionTrigger: 0.85,
+    compactionTarget: 0.75,
+    smartCompactionTrigger: 0.8,
+    maxToolResultsPercent: 0.35,
+    protectedContextPercent: 0.12
+  }
+};
+var SAFETY_CAPS = {
+  /** Always keep at least this many messages */
+  MIN_PROTECTED_MESSAGES: 10
+};
+var GUARDIAN_DEFAULTS = {
+  /** Enable guardian validation (can be disabled for testing) */
+  ENABLED: true,
+  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
+  MAX_TOOL_RESULT_TOKENS: 2e3,
+  /** Minimum system prompt tokens to preserve during emergency compaction */
+  MIN_SYSTEM_PROMPT_TOKENS: 3e3,
+  /** Number of most recent messages to always protect (increased from 4) */
+  PROTECTED_RECENT_MESSAGES: 20,
+  /** Truncation suffix for oversized content */
+  TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
+};
+
+// src/core/Agent.ts
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
   hookManager;
@@ -24815,7 +25258,7 @@ var Agent = class _Agent extends BaseAgent {
     return {
       executionId,
       startTime,
-      maxIterations: this._config.maxIterations || 10
+      maxIterations: this._config.maxIterations || AGENT_DEFAULTS.MAX_ITERATIONS
     };
   }
   /**
@@ -24966,7 +25409,26 @@ var Agent = class _Agent extends BaseAgent {
         iteration++;
       }
       if (iteration >= maxIterations && !finalResponse) {
-        throw new Error(`Max iterations (${maxIterations}) reached without completion`);
+        this._logger.info({ maxIterations }, "Max iterations reached, generating wrap-up response");
+        this._agentContext.addUserMessage(AGENT_DEFAULTS.MAX_ITERATIONS_MESSAGE);
+        const prepared = await this._agentContext.prepare();
+        const wrapUpResponse = await this._provider.generate({
+          model: this.model,
+          input: prepared.input,
+          instructions: this._config.instructions,
+          tools: [],
+          // No tools - force text-only response
+          temperature: this._config.temperature,
+          vendorOptions: this._config.vendorOptions
+        });
+        this._agentContext.addAssistantResponse(wrapUpResponse.output);
+        this.emit("execution:maxIterations", {
+          executionId,
+          iteration,
+          maxIterations,
+          timestamp: /* @__PURE__ */ new Date()
+        });
+        finalResponse = wrapUpResponse;
       }
       await this._finalizeExecution(executionId, startTime, finalResponse, "run");
       return finalResponse;
@@ -25090,14 +25552,24 @@ var Agent = class _Agent extends BaseAgent {
           try {
             parsedArgs = JSON.parse(toolCall.function.arguments);
           } catch (error) {
+            const errorMessage = `Invalid tool arguments JSON: ${error.message}`;
+            const failedResult = {
+              tool_use_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              tool_args: {},
+              content: { success: false, error: errorMessage },
+              state: "failed" /* FAILED */,
+              error: errorMessage
+            };
+            toolResults.push(failedResult);
             yield {
               type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
               response_id: executionId,
               tool_call_id: toolCall.id,
               tool_name: toolCall.function.name,
-              result: null,
+              result: failedResult.content,
               execution_time_ms: 0,
-              error: `Invalid tool arguments JSON: ${error.message}`
+              error: errorMessage
             };
             continue;
           }
@@ -25158,14 +25630,46 @@ var Agent = class _Agent extends BaseAgent {
         toolCallsMap.clear();
       }
       if (iteration >= maxIterations) {
+        this._logger.info({ maxIterations }, "Max iterations reached, streaming wrap-up response");
+        this._agentContext.addUserMessage(AGENT_DEFAULTS.MAX_ITERATIONS_MESSAGE);
+        const prepared = await this._agentContext.prepare();
+        const wrapUpStreamState = new StreamState(executionId, this.model);
+        for await (const event of this._provider.streamGenerate({
+          model: this.model,
+          input: prepared.input,
+          instructions: this._config.instructions,
+          tools: [],
+          // No tools - force text-only response
+          temperature: this._config.temperature,
+          vendorOptions: this._config.vendorOptions
+        })) {
+          if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
+            wrapUpStreamState.accumulateTextDelta(event.item_id, event.delta);
+          } else if (event.type === "response.complete" /* RESPONSE_COMPLETE */) {
+            wrapUpStreamState.updateUsage(event.usage);
+            continue;
+          }
+          yield event;
+        }
+        this._addStreamingAssistantMessage(wrapUpStreamState, []);
+        globalStreamState.accumulateUsage(wrapUpStreamState.usage);
+        this.emit("execution:maxIterations", {
+          executionId,
+          iteration,
+          maxIterations,
+          timestamp: /* @__PURE__ */ new Date()
+        });
         yield {
           type: "response.complete" /* RESPONSE_COMPLETE */,
           response_id: executionId,
-          status: "incomplete",
+          status: "completed",
+          // Now completed with wrap-up message
           usage: globalStreamState.usage,
-          iterations: iteration,
+          iterations: iteration + 1,
+          // Include wrap-up iteration
           duration_ms: Date.now() - startTime
         };
+        wrapUpStreamState.clear();
       }
       const placeholderResponse = this._buildPlaceholderResponse(executionId, startTime, globalStreamState);
       await this._finalizeExecution(executionId, startTime, placeholderResponse, "stream");
@@ -25763,111 +26267,6 @@ var Agent = class _Agent extends BaseAgent {
     });
     this._logger.debug("Agent destroyed");
   }
-};
-
-// src/core/constants.ts
-var PROACTIVE_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.65,
-  /** Base reduction factor for round 1 */
-  BASE_REDUCTION_FACTOR: 0.5,
-  /** Reduction step per round (more aggressive each round) */
-  REDUCTION_STEP: 0.15,
-  /** Maximum compaction rounds */
-  MAX_ROUNDS: 3
-};
-var AGGRESSIVE_STRATEGY_DEFAULTS = {
-  /** Threshold to trigger compaction */
-  THRESHOLD: 0.6,
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.5,
-  /** Reduction factor (keep 30% of original) */
-  REDUCTION_FACTOR: 0.3
-};
-var LAZY_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.85,
-  /** Reduction factor (keep 70% of original) */
-  REDUCTION_FACTOR: 0.7
-};
-var ADAPTIVE_STRATEGY_DEFAULTS = {
-  /** Number of compactions to learn from */
-  LEARNING_WINDOW: 10,
-  /** Compactions per minute threshold to switch to aggressive */
-  SWITCH_THRESHOLD: 5,
-  /** Low utilization threshold to switch to lazy */
-  LOW_UTILIZATION_THRESHOLD: 70,
-  /** Low frequency threshold to switch to lazy */
-  LOW_FREQUENCY_THRESHOLD: 0.5
-};
-var ROLLING_WINDOW_DEFAULTS = {
-  /** Default maximum messages to keep */
-  MAX_MESSAGES: 20
-};
-var STRATEGY_THRESHOLDS2 = {
-  proactive: {
-    // Most balanced - good for general use
-    compactionTrigger: 0.75,
-    // Start compaction at 75%
-    compactionTarget: 0.65,
-    // Reduce to 65%
-    smartCompactionTrigger: 0.7,
-    // Trigger smart compaction at 70%
-    maxToolResultsPercent: 0.3,
-    // Tool results can use up to 30% of context
-    protectedContextPercent: 0.1
-    // Protect at least 10% of context (recent messages)
-  },
-  aggressive: {
-    // Memory-constrained - compact early and often
-    compactionTrigger: 0.6,
-    compactionTarget: 0.5,
-    smartCompactionTrigger: 0.55,
-    maxToolResultsPercent: 0.25,
-    protectedContextPercent: 0.08
-  },
-  lazy: {
-    // Preserve context - only compact when critical
-    compactionTrigger: 0.9,
-    compactionTarget: 0.85,
-    smartCompactionTrigger: 0.85,
-    maxToolResultsPercent: 0.4,
-    // Allow more tool results
-    protectedContextPercent: 0.15
-    // Protect more recent context
-  },
-  adaptive: {
-    // Starts with proactive, adjusts based on performance
-    compactionTrigger: 0.75,
-    compactionTarget: 0.65,
-    smartCompactionTrigger: 0.7,
-    maxToolResultsPercent: 0.3,
-    protectedContextPercent: 0.1
-  },
-  "rolling-window": {
-    // Fixed window, similar to lazy but with message count focus
-    compactionTrigger: 0.85,
-    compactionTarget: 0.75,
-    smartCompactionTrigger: 0.8,
-    maxToolResultsPercent: 0.35,
-    protectedContextPercent: 0.12
-  }
-};
-var SAFETY_CAPS = {
-  /** Always keep at least this many messages */
-  MIN_PROTECTED_MESSAGES: 10
-};
-var GUARDIAN_DEFAULTS = {
-  /** Enable guardian validation (can be disabled for testing) */
-  ENABLED: true,
-  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
-  MAX_TOOL_RESULT_TOKENS: 2e3,
-  /** Minimum system prompt tokens to preserve during emergency compaction */
-  MIN_SYSTEM_PROMPT_TOKENS: 3e3,
-  /** Number of most recent messages to always protect (increased from 4) */
-  PROTECTED_RECENT_MESSAGES: 20,
-  /** Truncation suffix for oversized content */
-  TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
 };
 
 // src/core/context/SmartCompactor.ts
@@ -33723,6 +34122,115 @@ function extractGrokConfig(connector) {
     maxRetries: options.maxRetries
   };
 }
+
+// src/core/tool-execution/plugins/LoggingPlugin.ts
+init_Logger();
+var LoggingPlugin = class {
+  name = "logging";
+  priority = 5;
+  // Run very early to capture full execution
+  logger;
+  level;
+  errorLevel;
+  logArgs;
+  logResult;
+  maxLogLength;
+  constructor(options = {}) {
+    const baseLogger = options.logger ?? exports.logger;
+    this.logger = baseLogger.child({ component: options.component ?? "ToolExecution" });
+    this.level = options.level ?? "debug";
+    this.errorLevel = options.errorLevel ?? "error";
+    this.logArgs = options.logArgs ?? true;
+    this.logResult = options.logResult ?? true;
+    this.maxLogLength = options.maxLogLength ?? 200;
+  }
+  async beforeExecute(ctx) {
+    const logData = {
+      executionId: ctx.executionId,
+      tool: ctx.toolName
+    };
+    if (this.logArgs) {
+      logData.args = this.summarize(ctx.args);
+    }
+    this.log(this.level, logData, `Tool ${ctx.toolName} starting`);
+  }
+  async afterExecute(ctx, result) {
+    const duration = Date.now() - ctx.startTime;
+    const logData = {
+      executionId: ctx.executionId,
+      tool: ctx.toolName,
+      durationMs: duration
+    };
+    if (this.logResult) {
+      logData.result = this.summarize(result);
+    }
+    this.log(this.level, logData, `Tool ${ctx.toolName} completed in ${duration}ms`);
+    return result;
+  }
+  async onError(ctx, error) {
+    const duration = Date.now() - ctx.startTime;
+    const logData = {
+      executionId: ctx.executionId,
+      tool: ctx.toolName,
+      durationMs: duration,
+      error: error.message,
+      errorName: error.name
+    };
+    this.log(this.errorLevel, logData, `Tool ${ctx.toolName} failed after ${duration}ms: ${error.message}`);
+    return void 0;
+  }
+  /**
+   * Log a message at the specified level.
+   */
+  log(level, data, message) {
+    switch (level) {
+      case "trace":
+        this.logger.trace(data, message);
+        break;
+      case "debug":
+        this.logger.debug(data, message);
+        break;
+      case "info":
+        this.logger.info(data, message);
+        break;
+      case "warn":
+        this.logger.warn(data, message);
+        break;
+      case "error":
+        this.logger.error(data, message);
+        break;
+    }
+  }
+  /**
+   * Summarize a value for logging, truncating if necessary.
+   */
+  summarize(value) {
+    if (value === null || value === void 0) {
+      return value;
+    }
+    if (typeof value === "string") {
+      return value.length > this.maxLogLength ? value.slice(0, this.maxLogLength) + "..." : value;
+    }
+    if (typeof value !== "object") {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return { type: "array", length: value.length };
+    }
+    const obj = value;
+    if ("success" in obj) {
+      const summary = { success: obj.success };
+      if ("error" in obj) summary.error = obj.error;
+      if ("count" in obj) summary.count = obj.count;
+      if ("results" in obj && Array.isArray(obj.results)) {
+        summary.resultCount = obj.results.length;
+      }
+      return summary;
+    }
+    const keys = Object.keys(obj);
+    return { type: "object", keys: keys.slice(0, 5), keyCount: keys.length };
+  }
+};
 
 // src/core/ErrorHandler.ts
 init_Logger();
@@ -47668,6 +48176,7 @@ exports.InvalidConfigError = InvalidConfigError;
 exports.InvalidToolArgumentsError = InvalidToolArgumentsError;
 exports.LLM_MODELS = LLM_MODELS;
 exports.LazyCompactionStrategy = LazyCompactionStrategy;
+exports.LoggingPlugin = LoggingPlugin;
 exports.MCPClient = MCPClient;
 exports.MCPConnectionError = MCPConnectionError;
 exports.MCPError = MCPError;
@@ -47723,6 +48232,7 @@ exports.TextToSpeech = TextToSpeech;
 exports.TokenBucketRateLimiter = TokenBucketRateLimiter;
 exports.ToolCallState = ToolCallState;
 exports.ToolExecutionError = ToolExecutionError;
+exports.ToolExecutionPipeline = ToolExecutionPipeline;
 exports.ToolManager = ToolManager;
 exports.ToolNotFoundError = ToolNotFoundError;
 exports.ToolPermissionManager = ToolPermissionManager;

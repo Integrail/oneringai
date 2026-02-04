@@ -7489,6 +7489,374 @@ const result = await agent.tools.execute('get_weather', { location: 'Paris' });
 
 ---
 
+## Tool Execution Plugins
+
+The Tool Execution Plugin System provides a pluggable architecture for extending tool execution with custom behavior. This enables applications to add logging, analytics, UI updates, permission prompts, caching, or any custom logic to the tool execution lifecycle.
+
+### Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     ToolManager (existing)                       │
+│  - Tool registration                                             │
+│  - Tool lookup                                                   │
+│  - Circuit breaker per tool                                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ uses
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   ToolExecutionPipeline                          │
+│  - Orchestrates plugin chain                                     │
+│  - Manages execution lifecycle                                   │
+│  - Provides execution context                                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          │                   │                   │
+          ▼                   ▼                   ▼
+    ┌───────────┐       ┌───────────┐       ┌───────────┐
+    │  Plugin 1 │       │  Plugin 2 │       │  Plugin N │
+    │ (Logging) │       │(Analytics)│       │ (Custom)  │
+    └───────────┘       └───────────┘       └───────────┘
+```
+
+### Basic Usage
+
+```typescript
+import { Agent, LoggingPlugin, type IToolExecutionPlugin } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool],
+});
+
+// Add the built-in logging plugin
+agent.tools.executionPipeline.use(new LoggingPlugin());
+
+// Now all tool executions will be logged with timing info
+const response = await agent.run('What is the weather in Paris?');
+```
+
+### Plugin Interface
+
+Every plugin must implement the `IToolExecutionPlugin` interface:
+
+```typescript
+interface IToolExecutionPlugin {
+  /** Unique plugin name */
+  readonly name: string;
+
+  /** Priority (lower = runs earlier in beforeExecute, later in afterExecute). Default: 100 */
+  readonly priority?: number;
+
+  /**
+   * Called before tool execution.
+   * Can modify args, abort execution, or pass through.
+   */
+  beforeExecute?(ctx: PluginExecutionContext): Promise<BeforeExecuteResult>;
+
+  /**
+   * Called after successful tool execution.
+   * Can modify the result before returning to caller.
+   * Note: Runs in REVERSE priority order for proper unwinding.
+   */
+  afterExecute?(ctx: PluginExecutionContext, result: unknown): Promise<unknown>;
+
+  /**
+   * Called when tool execution fails.
+   * Can recover (return a value), re-throw, or transform the error.
+   */
+  onError?(ctx: PluginExecutionContext, error: Error): Promise<unknown>;
+
+  /** Called when plugin is registered (optional setup) */
+  onRegister?(pipeline: IToolExecutionPipeline): void;
+
+  /** Called when plugin is unregistered (optional cleanup) */
+  onUnregister?(): void;
+}
+```
+
+### Execution Context
+
+The `PluginExecutionContext` provides all information about the current tool execution:
+
+```typescript
+interface PluginExecutionContext {
+  /** Name of the tool being executed */
+  toolName: string;
+
+  /** Original arguments (read-only) */
+  readonly args: unknown;
+
+  /** Mutable arguments - modify this to change tool input */
+  mutableArgs: unknown;
+
+  /** Metadata map for passing data between plugins */
+  metadata: Map<string, unknown>;
+
+  /** Timestamp when execution started */
+  startTime: number;
+
+  /** The tool function being executed */
+  tool: ToolFunction;
+
+  /** Unique ID for this execution (for tracing) */
+  executionId: string;
+}
+```
+
+### BeforeExecute Results
+
+The `beforeExecute` hook can return different values to control execution:
+
+```typescript
+type BeforeExecuteResult =
+  | void                           // Continue with original args
+  | undefined                      // Continue with original args
+  | { abort: true; result: unknown } // Abort and return this result
+  | { modifiedArgs: unknown };      // Continue with modified args
+```
+
+### Creating Custom Plugins
+
+#### Analytics Plugin Example
+
+```typescript
+const analyticsPlugin: IToolExecutionPlugin = {
+  name: 'analytics',
+  priority: 50, // Run early
+
+  async beforeExecute(ctx) {
+    // Record start time in metadata
+    ctx.metadata.set('analytics:start', Date.now());
+    console.log(`[Analytics] Starting ${ctx.toolName}`);
+  },
+
+  async afterExecute(ctx, result) {
+    const startTime = ctx.metadata.get('analytics:start') as number;
+    const duration = Date.now() - startTime;
+
+    // Track metrics
+    trackToolUsage({
+      tool: ctx.toolName,
+      duration,
+      executionId: ctx.executionId,
+      success: true,
+    });
+
+    return result; // Must return the result
+  },
+
+  async onError(ctx, error) {
+    const startTime = ctx.metadata.get('analytics:start') as number;
+    const duration = Date.now() - startTime;
+
+    trackToolUsage({
+      tool: ctx.toolName,
+      duration,
+      executionId: ctx.executionId,
+      success: false,
+      error: error.message,
+    });
+
+    return undefined; // Let error propagate
+  },
+};
+
+agent.tools.executionPipeline.use(analyticsPlugin);
+```
+
+#### Caching Plugin Example
+
+```typescript
+const cachePlugin: IToolExecutionPlugin = {
+  name: 'cache',
+  priority: 10, // Run very early to short-circuit
+
+  private cache = new Map<string, { result: unknown; expiry: number }>();
+
+  async beforeExecute(ctx) {
+    const key = `${ctx.toolName}:${JSON.stringify(ctx.args)}`;
+    const cached = this.cache.get(key);
+
+    if (cached && cached.expiry > Date.now()) {
+      console.log(`[Cache] HIT for ${ctx.toolName}`);
+      return { abort: true, result: cached.result };
+    }
+
+    ctx.metadata.set('cache:key', key);
+    return undefined; // Continue with execution
+  },
+
+  async afterExecute(ctx, result) {
+    const key = ctx.metadata.get('cache:key') as string;
+    if (key) {
+      this.cache.set(key, {
+        result,
+        expiry: Date.now() + 60000, // 1 minute TTL
+      });
+      console.log(`[Cache] Stored result for ${ctx.toolName}`);
+    }
+    return result;
+  },
+};
+```
+
+#### Args Transformation Plugin Example
+
+```typescript
+const sanitizePlugin: IToolExecutionPlugin = {
+  name: 'sanitize-args',
+  priority: 20,
+
+  async beforeExecute(ctx) {
+    // Sanitize string arguments
+    const args = ctx.mutableArgs as Record<string, unknown>;
+    for (const [key, value] of Object.entries(args)) {
+      if (typeof value === 'string') {
+        args[key] = value.trim().slice(0, 1000); // Trim and limit length
+      }
+    }
+    return { modifiedArgs: args };
+  },
+};
+```
+
+### Pipeline Management
+
+```typescript
+// Add a plugin
+agent.tools.executionPipeline.use(myPlugin);
+
+// Remove a plugin by name
+agent.tools.executionPipeline.remove('my-plugin');
+
+// Check if a plugin is registered
+if (agent.tools.executionPipeline.has('logging')) {
+  console.log('Logging is enabled');
+}
+
+// Get a specific plugin
+const loggingPlugin = agent.tools.executionPipeline.get('logging');
+
+// List all registered plugins
+const plugins = agent.tools.executionPipeline.list();
+console.log('Registered plugins:', plugins.map(p => p.name));
+```
+
+### Plugin Priority
+
+Plugins are sorted by priority (lower number = higher priority):
+
+- **beforeExecute**: Runs in priority order (lower first)
+- **afterExecute**: Runs in REVERSE priority order (higher first)
+- **onError**: Runs in priority order (lower first)
+
+This ensures proper "unwinding" behavior, similar to middleware stacks.
+
+```typescript
+// Example priority ordering:
+const earlyPlugin: IToolExecutionPlugin = { name: 'early', priority: 10 };
+const defaultPlugin: IToolExecutionPlugin = { name: 'default' }; // priority: 100
+const latePlugin: IToolExecutionPlugin = { name: 'late', priority: 200 };
+
+// beforeExecute order: early → default → late
+// afterExecute order: late → default → early
+```
+
+### Built-in Plugins
+
+#### LoggingPlugin
+
+Logs all tool executions with timing and result information:
+
+```typescript
+import { LoggingPlugin } from '@oneringai/agents';
+
+// Use with default settings (info level)
+agent.tools.executionPipeline.use(new LoggingPlugin());
+
+// Configure log level
+agent.tools.executionPipeline.use(new LoggingPlugin({
+  level: 'debug', // 'debug' | 'info' | 'warn' | 'error'
+}));
+```
+
+Output example:
+```
+[Tool] get_weather starting with args: {"location":"Paris"}
+[Tool] get_weather completed in 234ms
+[Tool] get_weather result: {"temp":72,"conditions":"sunny"}
+```
+
+### Use Cases
+
+1. **Logging & Observability**: Track all tool executions for debugging
+2. **Analytics**: Measure tool usage, latency, and success rates
+3. **Permission Prompts**: Ask for user approval before dangerous tools
+4. **Caching**: Cache expensive tool results
+5. **Rate Limiting**: Limit tool calls per minute
+6. **UI Updates**: Emit events for frontend updates (like browser tool views)
+7. **Audit Logging**: Record all tool executions for compliance
+8. **Mocking**: Replace tools with mocks for testing
+9. **Retry Logic**: Automatically retry failed tool calls
+10. **Transformation**: Sanitize inputs or transform outputs
+
+### Integration with Hosea
+
+The Hosea desktop app uses the plugin system to emit Dynamic UI content when browser tools execute:
+
+```typescript
+// apps/hosea/src/main/plugins/HoseaUIPlugin.ts
+import type { IToolExecutionPlugin, PluginExecutionContext } from '@oneringai/agents';
+
+export class HoseaUIPlugin implements IToolExecutionPlugin {
+  readonly name = 'hosea-ui';
+  readonly priority = 200; // Run late
+
+  constructor(private options: {
+    emitDynamicUI: (instanceId: string, content: DynamicUIContent) => void;
+    getInstanceId: () => string;
+  }) {}
+
+  async beforeExecute(ctx: PluginExecutionContext) {
+    if (this.isBrowserTool(ctx.toolName)) {
+      ctx.metadata.set('instanceId', this.options.getInstanceId());
+    }
+  }
+
+  async afterExecute(ctx: PluginExecutionContext, result: unknown) {
+    if (this.isBrowserTool(ctx.toolName)) {
+      const instanceId = ctx.metadata.get('instanceId') as string;
+      const typedResult = result as { success?: boolean; url?: string };
+
+      if (typedResult?.success) {
+        this.options.emitDynamicUI(instanceId, {
+          type: 'display',
+          title: 'Browser',
+          elements: [{ type: 'browser', instanceId, currentUrl: typedResult.url }],
+        });
+      }
+    }
+    return result;
+  }
+
+  private isBrowserTool(name: string): boolean {
+    return ['browser_navigate', 'browser_reload'].includes(name);
+  }
+}
+
+// Register with agent
+agent.tools.executionPipeline.use(new HoseaUIPlugin({
+  emitDynamicUI: (id, content) => mainWindow?.send('dynamic-ui', id, content),
+  getInstanceId: () => currentInstanceId,
+}));
+```
+
+---
+
 ## MCP (Model Context Protocol)
 
 The Model Context Protocol (MCP) is an open standard that enables seamless integration between AI applications and external data sources and tools. The library provides a complete MCP client implementation with support for both local (stdio) and remote (HTTP/HTTPS) servers.

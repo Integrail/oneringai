@@ -21,10 +21,8 @@ import {
   VideoGeneration,
   getModelsByVendor,
   getModelInfo,
-  getToolByName,
   FileContextStorage,
   FileAgentDefinitionStorage,
-  ToolRegistry,
   logger,
   defaultDescribeCall,
   getImageModelInfo,
@@ -59,8 +57,6 @@ import {
   type IContextStorage,
   type IAgentDefinitionStorage,
   type StoredAgentDefinition,
-  type ToolRegistryEntry,
-  type ConnectorToolEntry,
   type ILLMDescription,
   type LogLevel,
   type IImageModelDescription,
@@ -71,6 +67,14 @@ import {
   type CompactionStrategyName,
   type AgentContextNextGenConfig,
 } from '@oneringai/agents';
+import type { BrowserService } from './BrowserService.js';
+import {
+  UnifiedToolCatalog,
+  OneRingToolProvider,
+  BrowserToolProvider,
+  type UnifiedToolEntry,
+} from './tools/index.js';
+import { HoseaUIPlugin, type DynamicUIContent } from './plugins/index.js';
 
 interface StoredConnectorConfig {
   name: string;
@@ -126,6 +130,8 @@ export interface StoredAgentConfig {
   agentType: 'basic'; // Only 'basic' supported in NextGen
   instructions: string;
   temperature: number;
+  // Execution settings
+  maxIterations: number;
   // Context settings (NextGen strategies only)
   contextStrategy: NextGenStrategy;
   maxContextTokens: number;
@@ -142,14 +148,6 @@ export interface StoredAgentConfig {
   maxInContextTokens: number;
   // Persistent instructions
   persistentInstructionsEnabled: boolean;
-  // History settings (Note: managed by conversation in NextGen)
-  historyEnabled: boolean;
-  maxHistoryMessages: number;
-  preserveRecent: number;
-  // Cache settings (Note: may not be in NextGen)
-  cacheEnabled: boolean;
-  cacheTtlMs: number;
-  cacheMaxEntries: number;
   // Tool permissions
   permissionsEnabled: boolean;
   // Selected tools
@@ -161,6 +159,20 @@ export interface StoredAgentConfig {
   updatedAt: number;
   lastUsedAt?: number;
   isActive: boolean;
+
+  // DEPRECATED - kept for backward compatibility with old stored configs
+  /** @deprecated Not used in NextGen */
+  historyEnabled?: boolean;
+  /** @deprecated Not used in NextGen */
+  maxHistoryMessages?: number;
+  /** @deprecated Not used in NextGen */
+  preserveRecent?: number;
+  /** @deprecated Not used in NextGen - use ToolManager cache instead */
+  cacheEnabled?: boolean;
+  /** @deprecated Not used in NextGen */
+  cacheTtlMs?: number;
+  /** @deprecated Not used in NextGen */
+  cacheMaxEntries?: number;
 }
 
 /**
@@ -367,7 +379,9 @@ export type StreamChunk =
   // Execution events
   | { type: 'execution:done'; result: { status: string; completedTasks: number; totalTasks: number; failedTasks: number; skippedTasks: number } }
   | { type: 'execution:paused'; reason: string }
-  | { type: 'needs:approval'; plan: Plan };
+  | { type: 'needs:approval'; plan: Plan }
+  // Dynamic UI events (from tool execution plugins)
+  | { type: 'ui:set_dynamic_content'; content: DynamicUIContent };
 
 /**
  * HOSEA UI Capabilities System Prompt
@@ -497,6 +511,13 @@ export class AgentService {
   private mcpServers: Map<string, StoredMCPServerConfig> = new Map();
   // Multi-tab agent instances (instanceId -> AgentInstance)
   private instances: Map<string, AgentInstance> = new Map();
+  // Browser service reference (set by main process)
+  private browserService: BrowserService | null = null;
+  // Unified tool catalog (combines oneringai + hosea tools)
+  private toolCatalog: UnifiedToolCatalog;
+  private browserToolProvider: BrowserToolProvider;
+  // Stream emitter for sending chunks to renderer (set by main process)
+  private streamEmitter: ((instanceId: string, chunk: StreamChunk) => void) | null = null;
 
   // ============ Conversion Helpers ============
 
@@ -575,6 +596,7 @@ export class AgentService {
       agentType,
       instructions: definition.instructions ?? '',
       temperature: (typeConfig.temperature as number) ?? 0.7,
+      maxIterations: (typeConfig.maxIterations as number) ?? 50,
       contextStrategy,
       maxContextTokens: (typeConfig.maxContextTokens as number) ?? 128000,
       responseReserve: (typeConfig.responseReserve as number) ?? 4096,
@@ -587,13 +609,6 @@ export class AgentService {
       maxInContextEntries: (typeConfig.maxInContextEntries as number) ?? 20,
       maxInContextTokens: (typeConfig.maxInContextTokens as number) ?? 4000,
       persistentInstructionsEnabled: features.persistentInstructions ?? false,
-      // History and permissions are Hosea-specific (not in NextGen), stored in typeConfig
-      historyEnabled: (typeConfig.historyEnabled as boolean) ?? true,
-      maxHistoryMessages: (typeConfig.maxHistoryMessages as number) ?? 100,
-      preserveRecent: (typeConfig.preserveRecent as number) ?? 10,
-      cacheEnabled: (typeConfig.cacheEnabled as boolean) ?? true,
-      cacheTtlMs: (typeConfig.cacheTtlMs as number) ?? 300000,
-      cacheMaxEntries: (typeConfig.cacheMaxEntries as number) ?? 1000,
       permissionsEnabled: (typeConfig.permissionsEnabled as boolean) ?? true,
       tools: (typeConfig.tools as string[]) ?? [],
       createdAt: new Date(definition.createdAt).getTime(),
@@ -615,6 +630,17 @@ export class AgentService {
     this.agentDefinitionStorage = new FileAgentDefinitionStorage({
       baseDirectory: this.dataDir,
     });
+
+    // Initialize UnifiedToolCatalog with providers
+    this.toolCatalog = new UnifiedToolCatalog();
+
+    // Register OneRing tools (from @oneringai/agents library)
+    const oneRingProvider = new OneRingToolProvider();
+    this.toolCatalog.registerProvider(oneRingProvider);
+
+    // Register Browser tools provider (tools will be available once BrowserService is set)
+    this.browserToolProvider = new BrowserToolProvider();
+    this.toolCatalog.registerProvider(this.browserToolProvider);
   }
 
   /**
@@ -2086,16 +2112,13 @@ export class AgentService {
         baseDirectory: join(this.dataDir, '..'),
       });
 
-      // Resolve tool names to actual ToolFunction objects
-      const tools: ToolFunction[] = [];
-      for (const toolName of agentConfig.tools) {
-        const toolEntry = getToolByName(toolName);
-        if (toolEntry) {
-          tools.push(toolEntry.tool);
-        } else {
-          console.warn(`Tool "${toolName}" not found in registry`);
-        }
-      }
+      // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
+      // Use agent config ID as instance ID for single-agent mode
+      const toolCreationContext = { instanceId: agentConfig.id };
+      const tools = this.toolCatalog.resolveToolsForAgent(
+        agentConfig.tools,
+        toolCreationContext
+      );
 
       // Combine user instructions with UI capabilities prompt (user instructions first)
       const fullInstructions = (agentConfig.instructions || '') + '\n\n' + HOSEA_UI_CAPABILITIES_PROMPT;
@@ -2109,6 +2132,7 @@ export class AgentService {
         tools,
         instructions: fullInstructions,
         temperature: agentConfig.temperature,
+        maxIterations: agentConfig.maxIterations ?? 50,
         // NextGen context configuration
         context: {
           model: agentConfig.model,
@@ -2185,6 +2209,7 @@ export class AgentService {
       agentType: 'basic' as const,
       instructions: 'You are a helpful AI assistant. Use the rich formatting capabilities available to you (charts, diagrams, tables, code highlighting) to provide clear and visually informative responses when appropriate.',
       temperature: 0.7,
+      maxIterations: 50,
       contextStrategy: 'proactive' as NextGenStrategy,
       maxContextTokens: 128000,
       responseReserve: 4096,
@@ -2197,12 +2222,6 @@ export class AgentService {
       maxInContextEntries: 20,
       maxInContextTokens: 4000,
       persistentInstructionsEnabled: false,
-      historyEnabled: true,
-      maxHistoryMessages: 100,
-      preserveRecent: 10,
-      cacheEnabled: true,
-      cacheTtlMs: 300000,
-      cacheMaxEntries: 1000,
       permissionsEnabled: true,
       tools: [],
     };
@@ -2336,25 +2355,33 @@ export class AgentService {
     name: string;
     displayName: string;
     category: string;
+    categoryDisplayName: string;
     description: string;
     safeByDefault: boolean;
     requiresConnector: boolean;
     connectorServiceTypes?: string[];
-    connectorName?: string;
-    serviceType?: string;
+    source: 'oneringai' | 'hosea' | 'custom';
   }[] {
-    const allTools = ToolRegistry.getAllTools();
-    return allTools.map((entry: ToolRegistryEntry | ConnectorToolEntry) => ({
+    // Use UnifiedToolCatalog which combines oneringai + hosea tools
+    const allTools = this.toolCatalog.getAllTools();
+    return allTools.map((entry: UnifiedToolEntry) => ({
       name: entry.name,
       displayName: entry.displayName,
       category: entry.category,
+      categoryDisplayName: entry.categoryDisplayName,
       description: entry.description,
       safeByDefault: entry.safeByDefault,
       requiresConnector: entry.requiresConnector || false,
       connectorServiceTypes: entry.connectorServiceTypes,
-      connectorName: (entry as ConnectorToolEntry).connectorName,
-      serviceType: (entry as ConnectorToolEntry).serviceType,
+      source: entry.source,
     }));
+  }
+
+  /**
+   * Get tool categories with display names and counts
+   */
+  getToolCategories(): { id: string; displayName: string; count: number }[] {
+    return this.toolCatalog.getCategories();
   }
 
   toggleTool(toolName: string, enabled: boolean): { success: boolean } {
@@ -2429,6 +2456,33 @@ export class AgentService {
     this.instances.clear();
   }
 
+  /**
+   * Set the BrowserService reference for browser automation tools
+   */
+  setBrowserService(browserService: BrowserService): void {
+    this.browserService = browserService;
+    // Update the browser tool provider so tools can be created
+    this.browserToolProvider.setBrowserService(browserService);
+    console.log('[AgentService] BrowserService connected');
+  }
+
+  /**
+   * Get the BrowserService reference
+   */
+  getBrowserService(): BrowserService | null {
+    return this.browserService;
+  }
+
+  /**
+   * Set the stream emitter for sending chunks to renderer.
+   * This enables the HoseaUIPlugin to emit Dynamic UI content for browser tools.
+   * Must be called after mainWindow is created.
+   */
+  setStreamEmitter(emitter: (instanceId: string, chunk: StreamChunk) => void): void {
+    this.streamEmitter = emitter;
+    console.log('[AgentService] StreamEmitter connected - HoseaUIPlugin enabled for new instances');
+  }
+
   // ============ Multi-Tab Instance Management ============
 
   /**
@@ -2474,14 +2528,14 @@ export class AgentService {
         baseDirectory: join(this.dataDir, '..'),
       });
 
-      // Resolve tool names to actual ToolFunction objects
-      const tools: ToolFunction[] = [];
-      for (const toolName of agentConfig.tools) {
-        const toolEntry = getToolByName(toolName);
-        if (toolEntry) {
-          tools.push(toolEntry.tool);
-        }
-      }
+      // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
+      // This handles both oneringai tools AND hosea-specific tools (like browser automation)
+      const toolCreationContext = { instanceId };
+      const tools = this.toolCatalog.resolveToolsForAgent(
+        agentConfig.tools,
+        toolCreationContext
+      );
+      logger.debug(`[createInstance] Resolved ${tools.length} tools from catalog for ${agentConfig.tools.length} configured tool names`);
 
       // Connect MCP servers and register their tools if configured
       if (agentConfig.mcpServers && agentConfig.mcpServers.length > 0) {
@@ -2557,6 +2611,31 @@ export class AgentService {
         }
       }
 
+      // NOTE: Browser tools are now resolved through UnifiedToolCatalog when selected
+      // No need for separate registration - they're part of agentConfig.tools
+
+      // Register HoseaUIPlugin for browser tool UI integration
+      // This plugin emits Dynamic UI content when browser tools execute
+      if (this.streamEmitter) {
+        const streamEmitter = this.streamEmitter;
+        agent.tools.executionPipeline.use(
+          new HoseaUIPlugin({
+            emitDynamicUI: (instId: string, content: DynamicUIContent) => {
+              // Send Dynamic UI content to renderer via the stream emitter
+              console.log(`[HoseaUIPlugin.emitDynamicUI] Sending to renderer for ${instId}`);
+              streamEmitter(instId, {
+                type: 'ui:set_dynamic_content',
+                content,
+              });
+            },
+            getInstanceId: () => instanceId,
+          })
+        );
+        logger.info(`[createInstance] HoseaUIPlugin registered for instance ${instanceId}`);
+      } else {
+        logger.warn(`[createInstance] streamEmitter not set - HoseaUIPlugin NOT registered for ${instanceId}`);
+      }
+
       // Store the instance
       const agentInstance: AgentInstance = {
         instanceId,
@@ -2594,6 +2673,12 @@ export class AgentService {
       // Cancel any ongoing operations
       if ('cancel' in instance.agent && typeof instance.agent.cancel === 'function') {
         instance.agent.cancel();
+      }
+
+      // Destroy associated browser instance if exists
+      if (this.browserService && this.browserService.hasBrowser(instanceId)) {
+        await this.browserService.destroyBrowser(instanceId);
+        logger.debug(`[destroyInstance] Destroyed browser for instance ${instanceId}`);
       }
 
       // Destroy the agent

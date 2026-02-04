@@ -676,11 +676,15 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     }
 
     // Step 9: Build final input array
-    const input: InputItem[] = [
+    let input: InputItem[] = [
       systemMessage,
       ...this._conversation,
       ...this._currentInput,
     ];
+
+    // Step 10: CRITICAL - Sanitize tool pairs before LLM call
+    // Ensures every TOOL_USE has matching TOOL_RESULT and vice versa
+    input = this.sanitizeToolPairs(input);
 
     this.emit('context:prepared', { budget, compacted });
 
@@ -1051,6 +1055,91 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     }
 
     return pairs;
+  }
+
+  /**
+   * Sanitize tool pairs in the input array.
+   * Removes orphan TOOL_USE (no matching TOOL_RESULT) and
+   * orphan TOOL_RESULT (no matching TOOL_USE).
+   *
+   * This is CRITICAL - LLM APIs require matching pairs.
+   */
+  private sanitizeToolPairs(items: InputItem[]): InputItem[] {
+    // Collect all TOOL_USE IDs and TOOL_RESULT tool_use_ids
+    const toolUseIds = new Set<string>();
+    const toolResultIds = new Set<string>();
+
+    for (const item of items) {
+      if (item.type !== 'message') continue;
+      const msg = item as Message;
+      for (const c of msg.content) {
+        if (c.type === ContentType.TOOL_USE) {
+          toolUseIds.add((c as any).id);
+        } else if (c.type === ContentType.TOOL_RESULT) {
+          toolResultIds.add((c as any).tool_use_id);
+        }
+      }
+    }
+
+    // Find orphans: TOOL_USE without TOOL_RESULT, TOOL_RESULT without TOOL_USE
+    const orphanToolUseIds = new Set<string>();
+    const orphanToolResultIds = new Set<string>();
+
+    for (const id of toolUseIds) {
+      if (!toolResultIds.has(id)) {
+        orphanToolUseIds.add(id);
+      }
+    }
+
+    for (const id of toolResultIds) {
+      if (!toolUseIds.has(id)) {
+        orphanToolResultIds.add(id);
+      }
+    }
+
+    // If no orphans, return as-is
+    if (orphanToolUseIds.size === 0 && orphanToolResultIds.size === 0) {
+      return items;
+    }
+
+    // Remove orphan content from messages
+    const result: InputItem[] = [];
+
+    for (const item of items) {
+      if (item.type !== 'message') {
+        result.push(item);
+        continue;
+      }
+
+      const msg = item as Message;
+      const filteredContent: Content[] = [];
+
+      for (const c of msg.content) {
+        if (c.type === ContentType.TOOL_USE) {
+          const id = (c as any).id;
+          if (!orphanToolUseIds.has(id)) {
+            filteredContent.push(c);
+          }
+        } else if (c.type === ContentType.TOOL_RESULT) {
+          const id = (c as any).tool_use_id;
+          if (!orphanToolResultIds.has(id)) {
+            filteredContent.push(c);
+          }
+        } else {
+          filteredContent.push(c);
+        }
+      }
+
+      // Only include message if it has content left
+      if (filteredContent.length > 0) {
+        result.push({
+          ...msg,
+          content: filteredContent,
+        } as Message);
+      }
+    }
+
+    return result;
   }
 
   // ============================================================================

@@ -115,6 +115,8 @@ interface AgentFormData {
   agentType: AgentType; // Always 'basic' in NextGen
   instructions: string;
   temperature: number;
+  // Execution settings
+  maxIterations: number;
   // Context settings
   contextStrategy: string; // 'proactive' | 'balanced' | 'lazy'
   maxContextTokens: number;
@@ -131,14 +133,6 @@ interface AgentFormData {
   maxInContextTokens: number;
   // Persistent instructions
   persistentInstructionsEnabled: boolean;
-  // History settings
-  historyEnabled: boolean;
-  maxHistoryMessages: number;
-  preserveRecent: number;
-  // Cache settings
-  cacheEnabled: boolean;
-  cacheTtlMs: number;
-  cacheMaxEntries: number;
   // Tool permissions
   permissionsEnabled: boolean;
   // Selected tools
@@ -154,6 +148,8 @@ const defaultFormData: AgentFormData = {
   agentType: 'basic', // Only 'basic' supported in NextGen
   instructions: '',
   temperature: 0.7,
+  // Execution settings
+  maxIterations: 50, // Default from AGENT_DEFAULTS.MAX_ITERATIONS
   // Context settings
   contextStrategy: 'balanced', // NextGen default
   maxContextTokens: 128000,
@@ -170,14 +166,6 @@ const defaultFormData: AgentFormData = {
   maxInContextTokens: 4000,
   // Persistent instructions
   persistentInstructionsEnabled: false,
-  // History settings
-  historyEnabled: true,
-  maxHistoryMessages: 100,
-  preserveRecent: 10,
-  // Cache settings
-  cacheEnabled: true,
-  cacheTtlMs: 300000, // 5 minutes
-  cacheMaxEntries: 1000,
   // Tool permissions
   permissionsEnabled: true,
   // Tools
@@ -234,6 +222,7 @@ export function AgentEditorPage(): React.ReactElement {
               agentType: existingAgent.agentType,
               instructions: existingAgent.instructions,
               temperature: existingAgent.temperature,
+              maxIterations: existingAgent.maxIterations ?? 50,
               contextStrategy: existingAgent.contextStrategy,
               maxContextTokens: existingAgent.maxContextTokens,
               responseReserve: existingAgent.responseReserve,
@@ -246,13 +235,7 @@ export function AgentEditorPage(): React.ReactElement {
               maxInContextEntries: existingAgent.maxInContextEntries,
               maxInContextTokens: existingAgent.maxInContextTokens,
               persistentInstructionsEnabled: existingAgent.persistentInstructionsEnabled ?? false,
-              historyEnabled: existingAgent.historyEnabled,
-              maxHistoryMessages: existingAgent.maxHistoryMessages,
-              preserveRecent: existingAgent.preserveRecent,
-              cacheEnabled: existingAgent.cacheEnabled,
-              cacheTtlMs: existingAgent.cacheTtlMs,
-              cacheMaxEntries: existingAgent.cacheMaxEntries,
-              permissionsEnabled: existingAgent.permissionsEnabled,
+              permissionsEnabled: existingAgent.permissionsEnabled ?? true,
               tools: existingAgent.tools,
               mcpServers: existingAgent.mcpServers || [],
             });
@@ -727,7 +710,7 @@ export function AgentEditorPage(): React.ReactElement {
                   </Form.Group>
                 </Col>
 
-                <Col md={6}>
+                <Col md={3}>
                   <Form.Group>
                     <Form.Label>
                       Temperature: {formData.temperature.toFixed(1)}
@@ -746,6 +729,33 @@ export function AgentEditorPage(): React.ReactElement {
                     />
                     <Form.Text className="text-muted">
                       Lower = more focused, Higher = more creative
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+
+                <Col md={3}>
+                  <Form.Group>
+                    <Form.Label>
+                      Max Iterations
+                      <InfoTooltip
+                        id="max-iterations-info"
+                        content="Maximum tool-calling iterations per run. Agent will summarize and ask to continue if limit is reached."
+                      />
+                    </Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={5}
+                      max={200}
+                      value={formData.maxIterations}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          maxIterations: parseInt(e.target.value) || 50,
+                        })
+                      }
+                    />
+                    <Form.Text className="text-muted">
+                      Default: 50 iterations
                     </Form.Text>
                   </Form.Group>
                 </Col>
@@ -1548,140 +1558,6 @@ export function AgentEditorPage(): React.ReactElement {
               </Card>
             )}
 
-            {/* History Settings */}
-            {formData.historyEnabled && (
-              <Card className="mb-4">
-                <Card.Header>
-                  <strong>History Settings</strong>
-                </Card.Header>
-                <Card.Body>
-                  <Row className="g-3">
-                    <Col md={6}>
-                      <Form.Group>
-                        <Form.Label>
-                          Max Messages
-                          <InfoTooltip
-                            id="max-messages-info"
-                            content="Maximum number of messages to keep in history"
-                          />
-                        </Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={10}
-                          max={1000}
-                          value={formData.maxHistoryMessages}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              maxHistoryMessages: parseInt(e.target.value) || 100,
-                            })
-                          }
-                        />
-                      </Form.Group>
-                    </Col>
-
-                    <Col md={6}>
-                      <Form.Group>
-                        <Form.Label>
-                          Preserve Recent
-                          <InfoTooltip
-                            id="preserve-recent-info"
-                            content="Number of recent messages to always keep during compaction"
-                          />
-                        </Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={2}
-                          max={50}
-                          value={formData.preserveRecent}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              preserveRecent: parseInt(e.target.value) || 10,
-                            })
-                          }
-                        />
-                      </Form.Group>
-                    </Col>
-                  </Row>
-                </Card.Body>
-              </Card>
-            )}
-
-            {/* Cache Settings */}
-            <Card className="mb-4">
-              <Card.Header>
-                <div className="d-flex align-items-center">
-                  <Form.Check
-                    type="switch"
-                    id="cache-enabled"
-                    className="me-2"
-                    checked={formData.cacheEnabled}
-                    onChange={(e) =>
-                      setFormData({ ...formData, cacheEnabled: e.target.checked })
-                    }
-                  />
-                  <strong>Idempotency Cache</strong>
-                  <InfoTooltip
-                    id="cache-info"
-                    content="Caches tool results to avoid redundant executions"
-                  />
-                </div>
-              </Card.Header>
-              {formData.cacheEnabled && (
-                <Card.Body>
-                  <Row className="g-3">
-                    <Col md={6}>
-                      <Form.Group>
-                        <Form.Label>
-                          TTL (seconds)
-                          <InfoTooltip
-                            id="ttl-info"
-                            content="How long cached results remain valid"
-                          />
-                        </Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={30}
-                          max={3600}
-                          value={Math.round(formData.cacheTtlMs / 1000)}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              cacheTtlMs: (parseInt(e.target.value) || 300) * 1000,
-                            })
-                          }
-                        />
-                      </Form.Group>
-                    </Col>
-
-                    <Col md={6}>
-                      <Form.Group>
-                        <Form.Label>
-                          Max Entries
-                          <InfoTooltip
-                            id="cache-max-entries-info"
-                            content="Maximum number of cached results"
-                          />
-                        </Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={100}
-                          max={10000}
-                          value={formData.cacheMaxEntries}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              cacheMaxEntries: parseInt(e.target.value) || 1000,
-                            })
-                          }
-                        />
-                      </Form.Group>
-                    </Col>
-                  </Row>
-                </Card.Body>
-              )}
-            </Card>
           </>
         )}
       </div>

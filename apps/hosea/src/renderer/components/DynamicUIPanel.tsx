@@ -1,12 +1,13 @@
 /**
  * DynamicUIPanel - Renders dynamic UI content from agent tool results
- * Supports forms, displays, tables, progress indicators, and custom elements
+ * Supports forms, displays, tables, progress indicators, browser views, and custom elements
  */
 
 import React, { useCallback } from 'react';
 import { Alert, Button, Form, ProgressBar, Spinner } from 'react-bootstrap';
 import { Layout, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 import type { DynamicUIContent, DynamicUIElement } from '../../preload/index';
+import { BrowserViewHost } from './BrowserViewHost';
 
 interface DynamicUIPanelProps {
   content: DynamicUIContent | null;
@@ -94,9 +95,34 @@ function DynamicUIElementRenderer({ element, onAction }: ElementRendererProps): 
       return <BadgeElement element={element} />;
     case 'card':
       return <CardElement element={element} onAction={onAction} />;
+    case 'browser':
+      return <BrowserElement element={element} />;
     default:
       return null;
   }
+}
+
+// Browser element component - embeds a live browser view
+function BrowserElement({ element }: { element: DynamicUIElement }): React.ReactElement | null {
+  if (!element.instanceId) {
+    return (
+      <div className="dynamic-ui__browser-error">
+        <AlertCircle size={16} />
+        <span>Browser element requires an instanceId</span>
+      </div>
+    );
+  }
+
+  return (
+    <BrowserViewHost
+      instanceId={element.instanceId}
+      showUrlBar={element.showUrlBar !== false}
+      showNavButtons={element.showNavButtons !== false}
+      currentUrl={element.currentUrl}
+      pageTitle={element.pageTitle}
+      isLoading={element.isLoading}
+    />
+  );
 }
 
 // Individual element components

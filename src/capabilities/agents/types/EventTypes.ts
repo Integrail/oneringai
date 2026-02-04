@@ -54,6 +54,13 @@ export interface ExecutionCancelledEvent {
   timestamp: Date;
 }
 
+export interface ExecutionMaxIterationsEvent {
+  executionId: string;
+  iteration: number;
+  maxIterations: number;
+  timestamp: Date;
+}
+
 export interface IterationStartEvent {
   executionId: string;
   iteration: number;
@@ -167,6 +174,7 @@ export interface AgenticLoopEvents {
   'execution:paused': ExecutionPausedEvent;
   'execution:resumed': ExecutionResumedEvent;
   'execution:cancelled': ExecutionCancelledEvent;
+  'execution:maxIterations': ExecutionMaxIterationsEvent;
 
   'iteration:start': IterationStartEvent;
   'iteration:complete': IterationCompleteEvent;

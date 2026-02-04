@@ -141,6 +141,23 @@ export type {
 // Note: CircuitBreakerConfig, CircuitState are re-exported from ToolManager but
 // canonically exported from infrastructure/resilience/index.js
 
+// Tool Execution Plugin System
+export {
+  ToolExecutionPipeline,
+  LoggingPlugin,
+  ResultNormalizerPlugin,
+} from './tool-execution/index.js';
+export type {
+  PluginExecutionContext,
+  BeforeExecuteResult,
+  IToolExecutionPlugin,
+  IToolExecutionPipeline,
+  ToolExecutionPipelineOptions,
+  LoggingPluginOptions,
+  ResultNormalizerPluginOptions,
+  NormalizedErrorResult,
+} from './tool-execution/index.js';
+
 // Tool permission management
 export { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 export type {

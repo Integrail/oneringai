@@ -9,6 +9,7 @@
   flex-direction: column;
   height: 100%;
   background-color: var(--color-white);
+  overflow: hidden; /* CRITICAL: Contain scroll to prevent page-level scrolling */
 }
 
 .chat__messages {
@@ -1488,6 +1489,9 @@
 .sidebar-panel__content {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Allow content to shrink in flex context */
 }
 
 /* ============================================
@@ -1528,8 +1532,11 @@
 .dynamic-ui-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
+  min-height: 0; /* Allow shrinking in flex context */
   padding: var(--spacing-3);
+  overflow: hidden; /* Prevent scrolling - let content fill */
 }
 
 .dynamic-ui-panel--empty {
@@ -1576,6 +1583,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3);
+  flex: 1;
+  min-height: 0; /* Allow shrinking */
 }
 
 /* Dynamic UI Elements */
@@ -1818,4 +1827,152 @@ h4.dynamic-ui__heading {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
+}
+
+/* Browser View Host */
+.browser-view-host {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background-color: var(--color-white);
+  flex: 1;
+  height: 100%;
+  min-height: 0; /* Allow shrinking in flex context */
+}
+
+.browser-view-host__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background-color: var(--color-gray-50);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.browser-view-host__nav-buttons {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.browser-view-host__nav-buttons .btn {
+  padding: var(--spacing-1) var(--spacing-2);
+}
+
+.browser-view-host__url-form {
+  flex: 1;
+}
+
+.browser-view-host__url-input-wrapper {
+  display: flex;
+  align-items: center;
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  padding: 0 var(--spacing-2);
+}
+
+.browser-view-host__url-icon {
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+}
+
+.browser-view-host__url-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-1) var(--spacing-2);
+}
+
+.browser-view-host__url-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.browser-view-host__loading-spinner {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.browser-view-host__title {
+  padding: var(--spacing-1) var(--spacing-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  background-color: var(--color-gray-50);
+  border-bottom: 1px solid var(--color-gray-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browser-view-host__error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background-color: var(--color-danger-light, #fee2e2);
+  color: var(--color-danger, #dc2626);
+  font-size: var(--font-size-sm);
+}
+
+.browser-view-host__overlay-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background-color: var(--color-warning-light, #fef3c7);
+  color: var(--color-warning-dark, #b45309);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--color-warning, #f59e0b);
+}
+
+.browser-view-host__overlay-notice strong {
+  text-transform: capitalize;
+}
+
+.browser-view-host__overlay-buttons {
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.browser-view-host__container {
+  position: relative;
+  flex: 1;
+  min-height: 300px; /* Minimum reasonable height */
+  background-color: var(--color-gray-100);
+}
+
+.browser-view-host__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-3);
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
+}
+
+.dynamic-ui__browser-error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  background-color: var(--color-warning-light, #fef3c7);
+  color: var(--color-warning-dark, #b45309);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+/* Spinning animation for reload button */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
 }

@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { AgentService } from './AgentService.js';
+import { BrowserService } from './BrowserService.js';
+import type { Rectangle } from './browser/types.js';
 
 /**
  * Get the data directory for HOSEA
@@ -28,6 +30,7 @@ const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'develo
 
 let mainWindow: BrowserWindow | null = null;
 let agentService: AgentService | null = null;
+let browserService: BrowserService | null = null;
 
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
@@ -67,11 +70,60 @@ async function createWindow(): Promise<void> {
   });
 }
 
+/**
+ * Wrap an async IPC handler with error protection
+ */
+function safeHandler<T>(
+  handler: (...args: unknown[]) => Promise<T>,
+  defaultValue: T
+): (...args: unknown[]) => Promise<T> {
+  return async (...args: unknown[]) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      console.error('[HOSEA] IPC handler error:', error);
+      return defaultValue;
+    }
+  };
+}
+
 async function setupIPC(): Promise<void> {
   // Initialize agent service with proper data directory
   const dataDir = getDataDir();
   console.log('HOSEA data directory:', dataDir);
   agentService = await AgentService.create(dataDir, isDev);
+
+  // Initialize browser service (pass null window for now, set later when window is created)
+  browserService = new BrowserService(null);
+
+  // Connect AgentService to BrowserService for tool registration
+  agentService.setBrowserService(browserService);
+
+  // Set up stream emitter for HoseaUIPlugin to emit Dynamic UI content
+  // This is called when browser tools execute and need to show the browser view
+  agentService.setStreamEmitter((instanceId, chunk) => {
+    mainWindow?.webContents.send('agent:stream-chunk', instanceId, chunk);
+  });
+
+  // ============ Proactive Overlay Detection ============
+  // When the browser detects a popup/modal/overlay, proactively notify the agent
+  // so it can decide how to handle it (dismiss, interact, etc.)
+  browserService.on('browser:overlay-detected', (instanceId: string, overlayData: unknown) => {
+    console.log(`[HOSEA] Overlay detected for ${instanceId}:`, overlayData);
+
+    // Send as a special stream chunk that the agent will see
+    mainWindow?.webContents.send('agent:stream-chunk', instanceId, {
+      type: 'overlay_detected',
+      overlay: overlayData,
+      hint: 'An overlay/popup appeared on the page. You can use browser_dismiss_overlay to close it, or browser_click to interact with specific buttons.',
+    });
+
+    // Also send a browser state update so UI knows about the overlay
+    mainWindow?.webContents.send('browser:state-change', instanceId, {
+      hasOverlay: true,
+      overlay: overlayData,
+    });
+  });
 
   // Agent operations
   ipcMain.handle('agent:initialize', async (_event, connectorName: string, model: string) => {
@@ -84,12 +136,18 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('agent:stream', async (_event, message: string) => {
     // For streaming, we send chunks via the main window
-    const stream = agentService!.stream(message);
-    for await (const chunk of stream) {
-      mainWindow?.webContents.send('agent:stream-chunk', chunk);
+    try {
+      const stream = agentService!.stream(message);
+      for await (const chunk of stream) {
+        mainWindow?.webContents.send('agent:stream-chunk', chunk);
+      }
+      mainWindow?.webContents.send('agent:stream-end');
+      return { success: true };
+    } catch (error) {
+      console.error('[HOSEA] Stream error:', error);
+      mainWindow?.webContents.send('agent:stream-end');
+      return { success: false, error: String(error) };
     }
-    mainWindow?.webContents.send('agent:stream-end');
-    return { success: true };
   });
 
   ipcMain.handle('agent:cancel', async () => {
@@ -119,12 +177,24 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('agent:stream-instance', async (_event, instanceId: string, message: string) => {
     // For streaming, we send chunks via the main window with instanceId
-    const stream = agentService!.streamInstance(instanceId, message);
-    for await (const chunk of stream) {
-      mainWindow?.webContents.send('agent:stream-chunk', instanceId, chunk);
+    try {
+      const stream = agentService!.streamInstance(instanceId, message);
+      for await (const chunk of stream) {
+        mainWindow?.webContents.send('agent:stream-chunk', instanceId, chunk);
+      }
+      mainWindow?.webContents.send('agent:stream-end', instanceId);
+      return { success: true };
+    } catch (error) {
+      console.error('[HOSEA] Stream instance error:', error);
+      // Send error chunk BEFORE stream-end so UI knows what happened
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      mainWindow?.webContents.send('agent:stream-chunk', instanceId, {
+        type: 'error',
+        content: errorMessage,
+      });
+      mainWindow?.webContents.send('agent:stream-end', instanceId);
+      return { success: false, error: errorMessage };
     }
-    mainWindow?.webContents.send('agent:stream-end', instanceId);
-    return { success: true };
   });
 
   ipcMain.handle('agent:cancel-instance', async (_event, instanceId: string) => {
@@ -193,6 +263,10 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('tool:registry', async () => {
     return agentService!.getAvailableTools();
+  });
+
+  ipcMain.handle('tool:categories', async () => {
+    return agentService!.getToolCategories();
   });
 
   // Agent configuration operations
@@ -489,6 +563,104 @@ async function setupIPC(): Promise<void> {
     }
     return dialog.showOpenDialog(mainWindow, options);
   });
+
+  // ============ Browser Automation IPC Handlers ============
+
+  ipcMain.handle('browser:create', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, error: 'Browser service not initialized' };
+    }
+    return browserService.createBrowser(instanceId);
+  });
+
+  ipcMain.handle('browser:destroy', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, error: 'Browser service not initialized' };
+    }
+    return browserService.destroyBrowser(instanceId);
+  });
+
+  ipcMain.handle('browser:navigate', async (_event, instanceId: string, url: string, options?: { waitUntil?: string; timeout?: number }) => {
+    if (!browserService) {
+      return { success: false, url: '', title: '', loadTime: 0, error: 'Browser service not initialized' };
+    }
+    // Cast waitUntil to the correct union type
+    const navigateOptions = options ? {
+      ...options,
+      waitUntil: options.waitUntil as 'load' | 'domcontentloaded' | 'networkidle' | undefined,
+    } : undefined;
+    return browserService.navigate(instanceId, url, navigateOptions);
+  });
+
+  ipcMain.handle('browser:get-state', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, url: '', title: '', isLoading: false, canGoBack: false, canGoForward: false, viewport: { width: 0, height: 0 }, error: 'Browser service not initialized' };
+    }
+    return browserService.getState(instanceId);
+  });
+
+  ipcMain.handle('browser:go-back', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, url: '', title: '', error: 'Browser service not initialized' };
+    }
+    return browserService.goBack(instanceId);
+  });
+
+  ipcMain.handle('browser:go-forward', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, url: '', title: '', error: 'Browser service not initialized' };
+    }
+    return browserService.goForward(instanceId);
+  });
+
+  ipcMain.handle('browser:reload', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, url: '', title: '', error: 'Browser service not initialized' };
+    }
+    return browserService.reload(instanceId);
+  });
+
+  ipcMain.handle('browser:attach', async (_event, instanceId: string, bounds: Rectangle) => {
+    if (!browserService) {
+      return { success: false, error: 'Browser service not initialized' };
+    }
+    return browserService.attachToWindow(instanceId, bounds);
+  });
+
+  ipcMain.handle('browser:detach', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return { success: false, error: 'Browser service not initialized' };
+    }
+    return browserService.detachFromWindow(instanceId);
+  });
+
+  ipcMain.handle('browser:update-bounds', async (_event, instanceId: string, bounds: Rectangle) => {
+    if (!browserService) {
+      return { success: false, error: 'Browser service not initialized' };
+    }
+    return browserService.updateBounds(instanceId, bounds);
+  });
+
+  ipcMain.handle('browser:get-instance-info', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return null;
+    }
+    return browserService.getInstanceInfo(instanceId);
+  });
+
+  ipcMain.handle('browser:list-instances', async () => {
+    if (!browserService) {
+      return [];
+    }
+    return browserService.getAllInstances();
+  });
+
+  ipcMain.handle('browser:has-browser', async (_event, instanceId: string) => {
+    if (!browserService) {
+      return false;
+    }
+    return browserService.hasBrowser(instanceId);
+  });
 }
 
 // App lifecycle
@@ -496,10 +668,19 @@ app.whenReady().then(async () => {
   await setupIPC();
   await createWindow();
 
+  // Set main window reference on browser service after window is created
+  if (browserService && mainWindow) {
+    browserService.setMainWindow(mainWindow);
+  }
+
   app.on('activate', async () => {
     // macOS: re-create window when dock icon is clicked
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
+      // Update browser service with new window
+      if (browserService && mainWindow) {
+        browserService.setMainWindow(mainWindow);
+      }
     }
   });
 });
@@ -511,16 +692,44 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   // Cleanup
+  if (browserService) {
+    await browserService.destroyAll();
+  }
   agentService?.destroy();
 });
 
-// Handle uncaught errors
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+// ============ Global Error Handlers ============
+// These prevent the app from crashing due to unhandled errors in IPC handlers or tools
+
+process.on('uncaughtException', (error, origin) => {
+  console.error('[HOSEA] Uncaught exception:', error);
+  console.error('[HOSEA] Origin:', origin);
+  // Don't crash - log and continue unless it's truly fatal
+  // Send error to renderer if possible
+  try {
+    mainWindow?.webContents.send('error:uncaught', {
+      type: 'uncaughtException',
+      message: error.message,
+      stack: error.stack,
+    });
+  } catch {
+    // Ignore - window may not exist
+  }
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection:', reason);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[HOSEA] Unhandled rejection:', reason);
+  // Don't crash - log and continue
+  // Send error to renderer if possible
+  try {
+    mainWindow?.webContents.send('error:uncaught', {
+      type: 'unhandledRejection',
+      message: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+  } catch {
+    // Ignore - window may not exist
+  }
 });

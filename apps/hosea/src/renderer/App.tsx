@@ -2,8 +2,8 @@
  * HOSEA Main App Component
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { Spinner } from 'react-bootstrap';
+import React, { useState, useCallback, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import { Spinner, Alert, Button } from 'react-bootstrap';
 import { Sidebar } from './components/layout';
 import {
   ChatPage,
@@ -36,6 +36,92 @@ const DEFAULT_MODELS: Record<string, string> = {
   mistral: 'mistral-large-latest',
   deepseek: 'deepseek-chat',
 };
+
+// ============ Error Boundary ============
+// Catches React render errors and prevents app from going completely blank
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
+}
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    console.error('[ErrorBoundary] Caught error:', error);
+    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
+    this.setState({ errorInfo });
+  }
+
+  handleReload = (): void => {
+    window.location.reload();
+  };
+
+  handleDismiss = (): void => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div className="app-error-boundary" style={{
+          padding: '40px',
+          maxWidth: '800px',
+          margin: '0 auto',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+        }}>
+          <Alert variant="danger">
+            <Alert.Heading>Something went wrong</Alert.Heading>
+            <p>
+              HOSEA encountered an unexpected error. This is usually caused by a
+              temporary issue with the AI service or network connection.
+            </p>
+            <hr />
+            <div className="d-flex gap-2">
+              <Button variant="primary" onClick={this.handleReload}>
+                Reload App
+              </Button>
+              <Button variant="outline-secondary" onClick={this.handleDismiss}>
+                Try to Continue
+              </Button>
+            </div>
+            {this.state.error && (
+              <details className="mt-3" style={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                <summary style={{ cursor: 'pointer' }}>Technical Details</summary>
+                <pre style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  background: '#f8f9fa',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  marginTop: '10px'
+                }}>
+                  {this.state.error.toString()}
+                  {this.state.errorInfo?.componentStack}
+                </pre>
+              </details>
+            )}
+          </Alert>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function AppContent(): React.ReactElement {
   const navigation = useNavigationState();
@@ -187,5 +273,9 @@ function AppContent(): React.ReactElement {
 }
 
 export function App(): React.ReactElement {
-  return <AppContent />;
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
 }

@@ -148,10 +148,18 @@ export const SESSION_DEFAULTS = {
  */
 export const AGENT_DEFAULTS = {
   /** Default maximum iterations for agentic loop */
-  MAX_ITERATIONS: 10,
+  MAX_ITERATIONS: 50,
 
   /** Default temperature for LLM calls */
   DEFAULT_TEMPERATURE: 0.7,
+
+  /** Message injected when max iterations is reached */
+  MAX_ITERATIONS_MESSAGE: `You have reached the maximum iteration limit for this execution. Please:
+1. Summarize what you have accomplished so far
+2. Explain what remains to be done (if anything)
+3. Ask the user if they would like you to continue
+
+Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`,
 } as const;
 
 // ============ Circuit Breaker Defaults ============

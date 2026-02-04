@@ -28,6 +28,9 @@ import type { CircuitState, CircuitBreakerConfig } from '../infrastructure/resil
 import { ToolNotFoundError, ToolExecutionError } from '../domain/errors/AIErrors.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
+import { ToolExecutionPipeline } from './tool-execution/ToolExecutionPipeline.js';
+import { ResultNormalizerPlugin } from './tool-execution/plugins/ResultNormalizerPlugin.js';
+import type { IToolExecutionPipeline } from './tool-execution/types.js';
 
 // Re-export CircuitState for convenience
 export type { CircuitState, CircuitBreakerConfig } from '../infrastructure/resilience/CircuitBreaker.js';
@@ -129,6 +132,7 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   private circuitBreakers: Map<string, CircuitBreaker> = new Map();
   private toolLogger: FrameworkLogger;
   private _isDestroyed = false;
+  private pipeline: ToolExecutionPipeline;
 
   /** Optional tool context for execution (set by agent before runs) */
   private _toolContext: ToolContext | undefined;
@@ -138,6 +142,35 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     // Initialize default namespace
     this.namespaceIndex.set('default', new Set());
     this.toolLogger = logger.child({ component: 'ToolManager' });
+    // Initialize execution pipeline for plugin support
+    this.pipeline = new ToolExecutionPipeline();
+    // Register built-in result normalizer to guarantee valid tool results
+    // Runs LAST in afterExecute (priority 0) to catch undefined/null returns
+    this.pipeline.use(new ResultNormalizerPlugin());
+  }
+
+  /**
+   * Access the execution pipeline for plugin management.
+   *
+   * Use this to register plugins that intercept and extend tool execution.
+   *
+   * @example
+   * ```typescript
+   * // Add logging plugin
+   * toolManager.executionPipeline.use(new LoggingPlugin());
+   *
+   * // Add custom plugin
+   * toolManager.executionPipeline.use({
+   *   name: 'my-plugin',
+   *   async afterExecute(ctx, result) {
+   *     console.log(`${ctx.toolName} returned:`, result);
+   *     return result;
+   *   },
+   * });
+   * ```
+   */
+  get executionPipeline(): IToolExecutionPipeline {
+    return this.pipeline;
   }
 
   /**
@@ -710,8 +743,14 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   // ==========================================================================
 
   /**
-   * Execute a tool function with circuit breaker protection
-   * Implements IToolExecutor interface
+   * Execute a tool function with circuit breaker protection and plugin pipeline.
+   * Implements IToolExecutor interface.
+   *
+   * Execution flow:
+   * 1. Validate tool exists and is enabled
+   * 2. Check circuit breaker state
+   * 3. Run through plugin pipeline (beforeExecute -> execute -> afterExecute)
+   * 4. Update metrics and circuit breaker state
    *
    * Simple execution - no caching, no parent context.
    * Context must be set via setToolContext() before calling.
@@ -738,7 +777,17 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     try {
       // Execute with circuit breaker protection
       const result = await breaker.execute(async () => {
-        return await registration.tool.execute(args, this._toolContext);
+        // Create a wrapper tool that includes the tool context
+        // This allows the pipeline to execute the tool with proper context
+        const toolWithContext: ToolFunction = {
+          ...registration.tool,
+          execute: async (pipelineArgs: any) => {
+            return await registration.tool.execute(pipelineArgs, this._toolContext);
+          },
+        };
+
+        // Execute through the plugin pipeline
+        return await this.pipeline.execute(toolWithContext, args);
       });
 
       const duration = Date.now() - startTime;
