@@ -593,9 +593,28 @@ export abstract class BaseAgent<
   /**
    * Get enabled tool definitions (for passing to LLM).
    * This is a helper that extracts definitions from enabled tools.
+   *
+   * If a tool has a `descriptionFactory`, it's called to generate a dynamic description
+   * that reflects current state (e.g., available connectors). This ensures the LLM
+   * always sees up-to-date tool descriptions.
    */
   protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
-    return this._agentContext.tools.getEnabled().map((t) => t.definition);
+    return this._agentContext.tools.getEnabled().map((tool) => {
+      // If tool has a descriptionFactory, use it to generate dynamic description
+      if (tool.descriptionFactory) {
+        const dynamicDescription = tool.descriptionFactory();
+        // Return a modified copy with the dynamic description
+        return {
+          ...tool.definition,
+          function: {
+            ...tool.definition.function,
+            description: dynamicDescription,
+          },
+        };
+      }
+      // Otherwise, use the static definition as-is
+      return tool.definition;
+    });
   }
 
   // ===== Direct LLM Access (Bypasses AgentContext) =====

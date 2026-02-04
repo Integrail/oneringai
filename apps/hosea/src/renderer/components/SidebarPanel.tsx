@@ -1,0 +1,161 @@
+/**
+ * SidebarPanel - Tabbed sidebar panel with "Look Inside" and "Dynamic UI" tabs
+ * Supports resizing up to nearly full screen width
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Zap, Layout } from 'lucide-react';
+import { InternalsContent } from './InternalsContent';
+import { DynamicUIPanel } from './DynamicUIPanel';
+import type { DynamicUIContent } from '../../preload/index';
+import type { SidebarTab } from '../hooks/useTabContext';
+
+interface SidebarPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  width: number;
+  onWidthChange: (width: number) => void;
+  activeTab: SidebarTab;
+  onTabChange: (tab: SidebarTab) => void;
+  /** Optional instanceId for multi-tab support. If null, uses legacy single agent. */
+  instanceId?: string | null;
+  /** Dynamic UI content to render */
+  dynamicUIContent: DynamicUIContent | null;
+  /** Whether Dynamic UI has new content (for notification dot) */
+  hasDynamicUIUpdate?: boolean;
+  /** Callback when dynamic UI action is triggered */
+  onDynamicUIAction?: (action: string, elementId?: string, value?: unknown) => void;
+}
+
+const MIN_WIDTH = 280;
+const DEFAULT_WIDTH = 400;
+
+// Calculate max width dynamically (leave 200px for main content)
+const getMaxWidth = () => typeof window !== 'undefined' ? window.innerWidth - 200 : 1200;
+
+export function SidebarPanel({
+  isOpen,
+  onClose,
+  width,
+  onWidthChange,
+  activeTab,
+  onTabChange,
+  instanceId,
+  dynamicUIContent,
+  hasDynamicUIUpdate,
+  onDynamicUIAction,
+}: SidebarPanelProps): React.ReactElement | null {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const [maxWidth, setMaxWidth] = useState(getMaxWidth);
+
+  // Update max width on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const newMaxWidth = getMaxWidth();
+      setMaxWidth(newMaxWidth);
+      // Clamp current width if it exceeds new max
+      if (width > newMaxWidth) {
+        onWidthChange(newMaxWidth);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [width, onWidthChange]);
+
+  // Handle resize drag
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+
+      const newWidth = window.innerWidth - e.clientX;
+      const currentMaxWidth = getMaxWidth();
+      const clampedWidth = Math.min(currentMaxWidth, Math.max(MIN_WIDTH, newWidth));
+      onWidthChange(clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [onWidthChange]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      ref={panelRef}
+      className="sidebar-panel"
+      style={{ width: `${width}px` }}
+    >
+      {/* Resize handle */}
+      <div
+        className="sidebar-panel__resize-handle"
+        onMouseDown={handleMouseDown}
+      />
+
+      {/* Header with tabs */}
+      <div className="sidebar-panel__header">
+        <div className="sidebar-panel__tabs">
+          <button
+            className={`sidebar-panel__tab ${activeTab === 'look_inside' ? 'sidebar-panel__tab--active' : ''}`}
+            onClick={() => onTabChange('look_inside')}
+          >
+            <Zap size={14} />
+            <span>Look Inside</span>
+          </button>
+          <button
+            className={`sidebar-panel__tab ${activeTab === 'dynamic_ui' ? 'sidebar-panel__tab--active' : ''}`}
+            onClick={() => onTabChange('dynamic_ui')}
+          >
+            <Layout size={14} />
+            <span>Dynamic UI</span>
+            {hasDynamicUIUpdate && activeTab !== 'dynamic_ui' && (
+              <span className="sidebar-panel__notification-dot" />
+            )}
+          </button>
+        </div>
+        <button
+          className="sidebar-panel__close-btn"
+          onClick={onClose}
+          title="Close panel"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div className="sidebar-panel__content">
+        {activeTab === 'look_inside' ? (
+          <InternalsContent instanceId={instanceId} />
+        ) : (
+          <DynamicUIPanel
+            content={dynamicUIContent}
+            onAction={onDynamicUIAction}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export { DEFAULT_WIDTH as SIDEBAR_PANEL_DEFAULT_WIDTH };

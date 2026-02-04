@@ -26,6 +26,7 @@ describe('authenticatedFetch', () => {
     setGlobalDispatcher(mockAgent);
 
     // Register a test connector with API key auth
+    // Disable retries for predictable test behavior (connector.fetch() has retry logic)
     Connector.create({
       name: 'test_api',
       displayName: 'Test API',
@@ -34,6 +35,9 @@ describe('authenticatedFetch', () => {
       auth: {
         type: 'api_key',
         apiKey: 'test-token-123'
+      },
+      retry: {
+        maxRetries: 0  // Disable retries for tests
       }
     });
   });

@@ -24,85 +24,92 @@ interface ExecuteJSResult {
 }
 
 /**
- * Generate the tool description with current connectors
+ * Generate the tool description with current connectors.
+ * Called dynamically via descriptionFactory when tools are sent to LLM.
  */
 function generateDescription(): string {
   const connectors = Connector.listAll();
   const connectorList = connectors.length > 0
     ? connectors
-        .map(c => `   • "${c.name}": ${c.displayName}\n     ${c.config.description || 'No description'}\n     Base URL: ${c.baseURL}`)
+        .map(c => {
+          const authType = c.config.auth?.type || 'none';
+          return `   • "${c.name}": ${c.displayName}
+     ${c.config.description || 'No description'}
+     Base URL: ${c.baseURL}
+     Auth: ${authType}`;
+        })
         .join('\n\n')
-    : '   No connectors registered yet. Register connectors with Connector.create().';
+    : '   No connectors registered.';
 
-  return `Execute JavaScript code in a secure sandbox with connector integration.
+  return `Execute JavaScript code in a secure sandbox with authenticated API access.
 
-IMPORTANT: This tool runs JavaScript code in a sandboxed environment with authenticated access to external APIs via connectors.
+AVAILABLE APIS:
 
-AVAILABLE IN CONTEXT:
+1. authenticatedFetch(url, options, connectorName, userId?)
+   Makes authenticated API calls using the connector's configured auth scheme.
+   Auth headers are added automatically - DO NOT set Authorization header.
 
-1. INPUT/OUTPUT:
-   - input: any data passed to your code
-   - output: SET THIS variable to return your result
+   Parameters:
+     • url: Full URL or relative path (uses connector's baseURL)
+       - Full: "https://api.github.com/user/repos"
+       - Relative: "/user/repos" (appended to connector's baseURL)
+     • options: Standard fetch options { method, body, headers }
+     • connectorName: One of the registered connectors below
+     • userId: (optional) For multi-tenant apps with per-user tokens
 
-2. AUTHENTICATED FETCH:
-   - authenticatedFetch(url, options, connector, userId?)
-     • url: Full URL or path
-     • options: Standard fetch options { method: 'GET'|'POST'|..., body: ..., headers: ... }
-     • connector: Connector name (see below)
-     • userId: (optional) User identifier for multi-user apps
-     • Returns: Promise<Response>
+   Returns: Promise<Response>
+     • response.ok - true if status 200-299
+     • response.status - HTTP status code
+     • response.json() - parse JSON body
+     • response.text() - get text body
 
-   REGISTERED CONNECTORS:
+   Auth Schemes (handled automatically per connector):
+     • Bearer tokens (GitHub, Slack, Stripe)
+     • Bot tokens (Discord)
+     • Basic auth (Twilio, Zendesk)
+     • Custom headers (Shopify uses X-Shopify-Access-Token)
+
+2. connectors.list() - List available connector names
+3. connectors.get(name) - Get connector info { displayName, description, baseURL }
+4. fetch(url, options) - Standard fetch (no auth)
+
+INPUT/OUTPUT:
+   • input - data passed to your code via the "input" parameter
+   • output - SET THIS variable to return your result
+
+UTILITIES: console.log/error/warn, Buffer, JSON, Math, Date, Promise
+
+REGISTERED CONNECTORS:
 ${connectorList}
 
-3. STANDARD FETCH:
-   - fetch(url, options) - No authentication
-
-4. CONNECTOR REGISTRY:
-   - connectors.list() - List available connectors
-   - connectors.get(name) - Get connector details
-
-5. UTILITIES:
-   - console.log/error/warn
-   - Buffer, JSON, Math, Date
-   - setTimeout, setInterval, Promise
-
-CODE PATTERN:
-Always wrap your code in an async IIFE:
-
+EXAMPLE:
 (async () => {
-  // Your code here
+  const response = await authenticatedFetch(
+    '/user/repos',
+    { method: 'GET' },
+    'github'
+  );
 
-  // Single-user mode (default)
-  const response = await authenticatedFetch(url, options, 'github');
+  if (!response.ok) {
+    throw new Error(\`API error: \${response.status}\`);
+  }
 
-  // OR Multi-user mode (if your app has multiple users)
-  const response = await authenticatedFetch(url, options, 'github', userId);
+  const repos = await response.json();
+  console.log(\`Found \${repos.length} repositories\`);
 
-  const data = await response.json();
-  output = data;
+  output = repos;
 })();
 
-SECURITY:
-- 10 second timeout (configurable)
-- No file system access
-- No process/child_process
-- No require/import
-- Memory limited
-
-RETURNS:
-{
-  success: boolean,
-  result: any,
-  logs: string[],
-  error?: string,
-  executionTime: number
-}`;
+SECURITY: 10s timeout, no file system, no require/import.`;
 }
 
 /**
- * Create an execute_javascript tool with the current connector state
- * Use this factory when you need the tool to reflect currently registered connectors
+ * Create an execute_javascript tool.
+ *
+ * The tool uses `descriptionFactory` to generate a dynamic description that
+ * always reflects the currently registered connectors. This ensures the LLM
+ * sees up-to-date connector information even if connectors are registered
+ * after the tool is created.
  */
 export function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, ExecuteJSResult> {
   return {
@@ -110,7 +117,8 @@ export function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, Execu
       type: 'function',
       function: {
         name: 'execute_javascript',
-        description: generateDescription(),
+        // Static fallback description (used if descriptionFactory is not supported)
+        description: 'Execute JavaScript code in a secure sandbox with authenticated API access via connectors.',
         parameters: {
           type: 'object',
           properties: {
@@ -133,6 +141,10 @@ export function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, Execu
       blocking: true,
       timeout: 35000, // Tool timeout (slightly more than max code timeout)
     },
+
+    // Dynamic description - evaluated each time tool definitions are sent to LLM
+    // This ensures the connector list is always current
+    descriptionFactory: generateDescription,
 
     execute: async (args: ExecuteJSArgs): Promise<ExecuteJSResult> => {
       const logs: string[] = [];
@@ -165,9 +177,12 @@ export function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, Execu
 }
 
 /**
- * Default executeJavaScript tool
- * NOTE: The description is generated at module load time. If you register
- * connectors after importing this, use createExecuteJavaScriptTool() instead.
+ * Default executeJavaScript tool instance.
+ *
+ * This tool uses `descriptionFactory` to generate dynamic descriptions,
+ * so the connector list is always current when the tool is sent to the LLM.
+ * You can use either this default instance or create new ones with
+ * `createExecuteJavaScriptTool()` - both will have dynamic descriptions.
  */
 export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = createExecuteJavaScriptTool();
 

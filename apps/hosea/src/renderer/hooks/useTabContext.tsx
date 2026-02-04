@@ -7,7 +7,10 @@
 
 import React, { useState, useCallback, createContext, useContext, useEffect, useRef } from 'react';
 import type { ToolCallInfo } from '../components/ToolCallDisplay';
-import type { Plan, StreamChunk } from '../../preload/index';
+import type { Plan, StreamChunk, DynamicUIContent } from '../../preload/index';
+
+// Sidebar tab type
+export type SidebarTab = 'look_inside' | 'dynamic_ui';
 
 // ============ Types ============
 
@@ -38,6 +41,16 @@ export interface TabState {
     mode: string | null;
   };
   createdAt: number;
+  // Dynamic UI content for this tab
+  dynamicUIContent: DynamicUIContent | null;
+  hasDynamicUIUpdate: boolean;
+}
+
+// Sidebar state interface
+export interface SidebarState {
+  isOpen: boolean;
+  activeTab: SidebarTab;
+  width: number;
 }
 
 export interface TabContextValue {
@@ -56,6 +69,16 @@ export interface TabContextValue {
   sendMessage: (content: string) => Promise<void>;
   cancelStream: () => Promise<void>;
 
+  // Sidebar state and controls
+  sidebar: SidebarState;
+  setSidebarOpen: (isOpen: boolean) => void;
+  setSidebarTab: (tab: SidebarTab) => void;
+  setSidebarWidth: (width: number) => void;
+
+  // Dynamic UI
+  clearDynamicUIUpdate: () => void;
+  sendDynamicUIAction: (action: string, elementId?: string, value?: unknown) => void;
+
   // State helpers
   isMaxTabsReached: boolean;
   tabCount: number;
@@ -67,6 +90,7 @@ const TabContext = createContext<TabContextValue | null>(null);
 
 const MAX_TABS = 10;
 const MAX_TITLE_LENGTH = 30;
+const DEFAULT_SIDEBAR_WIDTH = 400;
 
 // ============ Provider ============
 
@@ -80,6 +104,13 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
   const [tabs, setTabs] = useState<Map<string, TabState>>(new Map());
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [tabOrder, setTabOrder] = useState<string[]>([]);
+
+  // Sidebar state
+  const [sidebar, setSidebar] = useState<SidebarState>({
+    isOpen: false,
+    activeTab: 'look_inside',
+    width: DEFAULT_SIDEBAR_WIDTH,
+  });
 
   // Track whether we've set up listeners
   const listenersSetup = useRef(false);
@@ -226,6 +257,31 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           updatedTab.isLoading = false;
           updatedTab.streamingContent = '';
         }
+        // UI control events
+        else if (chunk.type === 'ui:show_sidebar') {
+          setSidebar(prev => ({
+            ...prev,
+            isOpen: true,
+            activeTab: chunk.tab || prev.activeTab,
+          }));
+        }
+        else if (chunk.type === 'ui:hide_sidebar') {
+          setSidebar(prev => ({ ...prev, isOpen: false }));
+        }
+        else if (chunk.type === 'ui:set_dynamic_content') {
+          updatedTab.dynamicUIContent = chunk.content;
+          updatedTab.hasDynamicUIUpdate = true;
+          // Auto-open sidebar and switch to dynamic UI tab
+          setSidebar(prev => ({
+            ...prev,
+            isOpen: true,
+            activeTab: 'dynamic_ui',
+          }));
+        }
+        else if (chunk.type === 'ui:clear_dynamic_content') {
+          updatedTab.dynamicUIContent = null;
+          updatedTab.hasDynamicUIUpdate = false;
+        }
 
         newTabs.set(tab.instanceId, updatedTab);
         return newTabs;
@@ -306,6 +362,8 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           mode: null,
         },
         createdAt: Date.now(),
+        dynamicUIContent: null,
+        hasDynamicUIUpdate: false,
       };
 
       // Update status from instance
@@ -460,6 +518,52 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     }
   }, [defaultAgentConfigId, defaultAgentName, createTab, tabs.size]);
 
+  // Sidebar controls
+  const setSidebarOpen = useCallback((isOpen: boolean) => {
+    setSidebar(prev => ({ ...prev, isOpen }));
+  }, []);
+
+  const setSidebarTab = useCallback((activeTab: SidebarTab) => {
+    setSidebar(prev => ({ ...prev, activeTab }));
+    // Clear update indicator when switching to dynamic UI tab
+    if (activeTab === 'dynamic_ui' && activeTabId) {
+      setTabs(prevTabs => {
+        const tab = prevTabs.get(activeTabId);
+        if (tab && tab.hasDynamicUIUpdate) {
+          const newTabs = new Map(prevTabs);
+          newTabs.set(activeTabId, { ...tab, hasDynamicUIUpdate: false });
+          return newTabs;
+        }
+        return prevTabs;
+      });
+    }
+  }, [activeTabId]);
+
+  const setSidebarWidth = useCallback((width: number) => {
+    setSidebar(prev => ({ ...prev, width }));
+  }, []);
+
+  // Clear dynamic UI update indicator
+  const clearDynamicUIUpdate = useCallback(() => {
+    if (!activeTabId) return;
+    setTabs(prevTabs => {
+      const tab = prevTabs.get(activeTabId);
+      if (tab && tab.hasDynamicUIUpdate) {
+        const newTabs = new Map(prevTabs);
+        newTabs.set(activeTabId, { ...tab, hasDynamicUIUpdate: false });
+        return newTabs;
+      }
+      return prevTabs;
+    });
+  }, [activeTabId]);
+
+  // Send action back to agent for dynamic UI interactions
+  const sendDynamicUIAction = useCallback((action: string, elementId?: string, value?: unknown) => {
+    // Send as a special message that the agent can interpret
+    const actionMessage = JSON.stringify({ action, elementId, value });
+    sendMessage(`[UI Action] ${actionMessage}`);
+  }, [sendMessage]);
+
   const value: TabContextValue = {
     tabs,
     activeTabId,
@@ -471,6 +575,14 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     updateTabTitle,
     sendMessage,
     cancelStream,
+    // Sidebar
+    sidebar,
+    setSidebarOpen,
+    setSidebarTab,
+    setSidebarWidth,
+    // Dynamic UI
+    clearDynamicUIUpdate,
+    sendDynamicUIAction,
     isMaxTabsReached: tabs.size >= MAX_TABS,
     tabCount: tabs.size,
   };

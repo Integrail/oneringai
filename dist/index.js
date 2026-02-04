@@ -23584,9 +23584,25 @@ var BaseAgent = class extends EventEmitter {
   /**
    * Get enabled tool definitions (for passing to LLM).
    * This is a helper that extracts definitions from enabled tools.
+   *
+   * If a tool has a `descriptionFactory`, it's called to generate a dynamic description
+   * that reflects current state (e.g., available connectors). This ensures the LLM
+   * always sees up-to-date tool descriptions.
    */
   getEnabledToolDefinitions() {
-    return this._agentContext.tools.getEnabled().map((t) => t.definition);
+    return this._agentContext.tools.getEnabled().map((tool) => {
+      if (tool.descriptionFactory) {
+        const dynamicDescription = tool.descriptionFactory();
+        return {
+          ...tool.definition,
+          function: {
+            ...tool.definition.function,
+            description: dynamicDescription
+          }
+        };
+      }
+      return tool.definition;
+    });
   }
   // ===== Direct LLM Access (Bypasses AgentContext) =====
   /**
@@ -41122,20 +41138,12 @@ var FileStorage = class {
 init_Connector();
 async function authenticatedFetch(url2, options, authProvider, userId) {
   const connector = Connector.get(authProvider);
-  const token = await connector.getToken(userId);
-  const authOptions = {
-    ...options,
-    headers: {
-      ...options?.headers,
-      Authorization: `Bearer ${token}`
-    }
-  };
-  return fetch(url2, authOptions);
+  return connector.fetch(url2.toString(), options, userId);
 }
 function createAuthenticatedFetch(authProvider, userId) {
-  Connector.get(authProvider);
+  const connector = Connector.get(authProvider);
   return async (url2, options) => {
-    return authenticatedFetch(url2, options, authProvider, userId);
+    return connector.fetch(url2.toString(), options, userId);
   };
 }
 
@@ -46919,73 +46927,73 @@ async function tryAPI(connectorName, args, startTime, attemptedMethods) {
 init_Connector();
 function generateDescription() {
   const connectors = Connector.listAll();
-  const connectorList = connectors.length > 0 ? connectors.map((c) => `   \u2022 "${c.name}": ${c.displayName}
+  const connectorList = connectors.length > 0 ? connectors.map((c) => {
+    const authType = c.config.auth?.type || "none";
+    return `   \u2022 "${c.name}": ${c.displayName}
      ${c.config.description || "No description"}
-     Base URL: ${c.baseURL}`).join("\n\n") : "   No connectors registered yet. Register connectors with Connector.create().";
-  return `Execute JavaScript code in a secure sandbox with connector integration.
+     Base URL: ${c.baseURL}
+     Auth: ${authType}`;
+  }).join("\n\n") : "   No connectors registered.";
+  return `Execute JavaScript code in a secure sandbox with authenticated API access.
 
-IMPORTANT: This tool runs JavaScript code in a sandboxed environment with authenticated access to external APIs via connectors.
+AVAILABLE APIS:
 
-AVAILABLE IN CONTEXT:
+1. authenticatedFetch(url, options, connectorName, userId?)
+   Makes authenticated API calls using the connector's configured auth scheme.
+   Auth headers are added automatically - DO NOT set Authorization header.
 
-1. INPUT/OUTPUT:
-   - input: any data passed to your code
-   - output: SET THIS variable to return your result
+   Parameters:
+     \u2022 url: Full URL or relative path (uses connector's baseURL)
+       - Full: "https://api.github.com/user/repos"
+       - Relative: "/user/repos" (appended to connector's baseURL)
+     \u2022 options: Standard fetch options { method, body, headers }
+     \u2022 connectorName: One of the registered connectors below
+     \u2022 userId: (optional) For multi-tenant apps with per-user tokens
 
-2. AUTHENTICATED FETCH:
-   - authenticatedFetch(url, options, connector, userId?)
-     \u2022 url: Full URL or path
-     \u2022 options: Standard fetch options { method: 'GET'|'POST'|..., body: ..., headers: ... }
-     \u2022 connector: Connector name (see below)
-     \u2022 userId: (optional) User identifier for multi-user apps
-     \u2022 Returns: Promise<Response>
+   Returns: Promise<Response>
+     \u2022 response.ok - true if status 200-299
+     \u2022 response.status - HTTP status code
+     \u2022 response.json() - parse JSON body
+     \u2022 response.text() - get text body
 
-   REGISTERED CONNECTORS:
+   Auth Schemes (handled automatically per connector):
+     \u2022 Bearer tokens (GitHub, Slack, Stripe)
+     \u2022 Bot tokens (Discord)
+     \u2022 Basic auth (Twilio, Zendesk)
+     \u2022 Custom headers (Shopify uses X-Shopify-Access-Token)
+
+2. connectors.list() - List available connector names
+3. connectors.get(name) - Get connector info { displayName, description, baseURL }
+4. fetch(url, options) - Standard fetch (no auth)
+
+INPUT/OUTPUT:
+   \u2022 input - data passed to your code via the "input" parameter
+   \u2022 output - SET THIS variable to return your result
+
+UTILITIES: console.log/error/warn, Buffer, JSON, Math, Date, Promise
+
+REGISTERED CONNECTORS:
 ${connectorList}
 
-3. STANDARD FETCH:
-   - fetch(url, options) - No authentication
-
-4. CONNECTOR REGISTRY:
-   - connectors.list() - List available connectors
-   - connectors.get(name) - Get connector details
-
-5. UTILITIES:
-   - console.log/error/warn
-   - Buffer, JSON, Math, Date
-   - setTimeout, setInterval, Promise
-
-CODE PATTERN:
-Always wrap your code in an async IIFE:
-
+EXAMPLE:
 (async () => {
-  // Your code here
+  const response = await authenticatedFetch(
+    '/user/repos',
+    { method: 'GET' },
+    'github'
+  );
 
-  // Single-user mode (default)
-  const response = await authenticatedFetch(url, options, 'github');
+  if (!response.ok) {
+    throw new Error(\`API error: \${response.status}\`);
+  }
 
-  // OR Multi-user mode (if your app has multiple users)
-  const response = await authenticatedFetch(url, options, 'github', userId);
+  const repos = await response.json();
+  console.log(\`Found \${repos.length} repositories\`);
 
-  const data = await response.json();
-  output = data;
+  output = repos;
 })();
 
-SECURITY:
-- 10 second timeout (configurable)
-- No file system access
-- No process/child_process
-- No require/import
-- Memory limited
-
-RETURNS:
-{
-  success: boolean,
-  result: any,
-  logs: string[],
-  error?: string,
-  executionTime: number
-}`;
+SECURITY: 10s timeout, no file system, no require/import.`;
 }
 function createExecuteJavaScriptTool() {
   return {
@@ -46993,7 +47001,8 @@ function createExecuteJavaScriptTool() {
       type: "function",
       function: {
         name: "execute_javascript",
-        description: generateDescription(),
+        // Static fallback description (used if descriptionFactory is not supported)
+        description: "Execute JavaScript code in a secure sandbox with authenticated API access via connectors.",
         parameters: {
           type: "object",
           properties: {
@@ -47016,6 +47025,9 @@ function createExecuteJavaScriptTool() {
       timeout: 35e3
       // Tool timeout (slightly more than max code timeout)
     },
+    // Dynamic description - evaluated each time tool definitions are sent to LLM
+    // This ensures the connector list is always current
+    descriptionFactory: generateDescription,
     execute: async (args) => {
       const logs = [];
       const startTime = Date.now();
@@ -47112,7 +47124,7 @@ var toolRegistry = [
     exportName: "executeJavaScript",
     displayName: "Execute Javascript",
     category: "code",
-    description: 'JavaScript code to execute. MUST set the "output" variable. Wrap in async IIFE for async operations.',
+    description: "Execute JavaScript code in a secure sandbox with authenticated API access via connectors.",
     tool: executeJavaScript,
     safeByDefault: false
   },

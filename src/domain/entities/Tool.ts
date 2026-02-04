@@ -165,6 +165,25 @@ export interface ToolFunction<TArgs = any, TResult = any> {
   permission?: ToolPermissionConfig;
 
   /**
+   * Dynamic description generator for the tool.
+   * If provided, this function is called when tool definitions are serialized for the LLM,
+   * allowing the description to reflect current state (e.g., available connectors).
+   *
+   * The returned string replaces definition.function.description when sending to LLM.
+   * The static description in definition.function.description serves as a fallback.
+   *
+   * @returns The current tool description
+   *
+   * @example
+   * // Tool with dynamic connector list:
+   * descriptionFactory: () => {
+   *   const connectors = Connector.listAll();
+   *   return `Execute API calls. Available connectors: ${connectors.map(c => c.name).join(', ')}`;
+   * }
+   */
+  descriptionFactory?: () => string;
+
+  /**
    * Returns a human-readable description of a tool call.
    * Used for logging, UI display, and debugging.
    *

@@ -56,7 +56,7 @@ export function TabBar({ onNewTabClick, showInternals, onToggleInternals }: TabB
           type="button"
           className={`chat-tabs__action ${showInternals ? 'chat-tabs__action--active' : ''}`}
           onClick={onToggleInternals}
-          title={showInternals ? 'Hide internals panel' : 'Show internals panel (Look Inside)'}
+          title={showInternals ? 'Hide sidebar panel' : 'Show sidebar panel'}
         >
           {showInternals ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
         </button>

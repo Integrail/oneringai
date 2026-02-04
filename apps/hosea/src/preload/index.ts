@@ -41,6 +41,60 @@ export interface Plan {
 }
 
 /**
+ * Dynamic UI element types for agent-provided UI
+ */
+export interface DynamicUIElement {
+  type: 'text' | 'heading' | 'input' | 'button' | 'select' | 'progress' | 'alert' | 'code' | 'divider' | 'spacer' | 'image' | 'list' | 'table' | 'link' | 'badge' | 'card';
+  id?: string;
+  label?: string;
+  value?: unknown;
+  action?: string;
+  variant?: string;
+  // Text/Heading
+  level?: number;
+  // Input
+  inputType?: string;
+  placeholder?: string;
+  helpText?: string;
+  disabled?: boolean;
+  rows?: number;
+  // Select
+  options?: Array<{ value: string; label: string }>;
+  // Progress
+  max?: number;
+  animated?: boolean;
+  striped?: boolean;
+  // Button
+  size?: string;
+  loadingText?: string;
+  // Code
+  language?: string;
+  // Image
+  src?: string;
+  alt?: string;
+  // Link
+  href?: string;
+  external?: boolean;
+  // List
+  items?: string[];
+  ordered?: boolean;
+  // Table
+  headers?: string[];
+  tableRows?: string[][];
+  // Card
+  children?: DynamicUIElement[];
+}
+
+/**
+ * Dynamic UI content schema for rendering in the sidebar
+ */
+export interface DynamicUIContent {
+  type: 'form' | 'display' | 'chart' | 'table' | 'custom';
+  title?: string;
+  elements: DynamicUIElement[];
+}
+
+/**
  * Stream chunk types for IPC communication
  */
 export type StreamChunk =
@@ -64,7 +118,12 @@ export type StreamChunk =
   // Execution events
   | { type: 'execution:done'; result: { status: string; completedTasks: number; totalTasks: number; failedTasks: number; skippedTasks: number } }
   | { type: 'execution:paused'; reason: string }
-  | { type: 'needs:approval'; plan: Plan };
+  | { type: 'needs:approval'; plan: Plan }
+  // UI control events (for Dynamic UI)
+  | { type: 'ui:show_sidebar'; tab?: 'look_inside' | 'dynamic_ui' }
+  | { type: 'ui:hide_sidebar' }
+  | { type: 'ui:set_dynamic_content'; content: DynamicUIContent }
+  | { type: 'ui:clear_dynamic_content' };
 
 // Types for the exposed API
 export interface HoseaAPI {

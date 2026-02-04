@@ -1,7 +1,7 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorAuth, g as ConnectorConfigResult } from './ImageModel-B-uH3JEz.cjs';
 export { m as APIKeyConnectorAuth, D as AspectRatio, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, j as ImageGeneration, k as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, l as SimpleGenerateOptions, h as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-B-uH3JEz.cjs';
-import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-2HrUdTtE.cjs';
-export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-2HrUdTtE.cjs';
+import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-UVN2aRhl.cjs';
+export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-UVN2aRhl.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.cjs';
 
@@ -2265,6 +2265,10 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     /**
      * Get enabled tool definitions (for passing to LLM).
      * This is a helper that extracts definitions from enabled tools.
+     *
+     * If a tool has a `descriptionFactory`, it's called to generate a dynamic description
+     * that reflects current state (e.g., available connectors). This ensures the LLM
+     * always sees up-to-date tool descriptions.
      */
     protected getEnabledToolDefinitions(): FunctionToolDefinition[];
     /**
@@ -8878,17 +8882,27 @@ declare class FileStorage implements ITokenStorage {
 }
 
 /**
- * Authenticated Fetch - Drop-in replacement for fetch() with OAuth authentication
+ * Authenticated Fetch - Drop-in replacement for fetch() with connector-based authentication
+ *
+ * Supports all auth schemes configured on connectors:
+ * - Bearer tokens (OAuth, JWT)
+ * - Bot tokens (Discord)
+ * - Basic auth (Twilio, Zendesk)
+ * - Custom headers (e.g., X-Shopify-Access-Token)
  */
 /**
- * Fetch with automatic OAuth authentication
+ * Fetch with automatic authentication using connector's configured auth scheme
  *
  * Same API as standard fetch(), but with additional authProvider and optional userId parameters.
- * The OAuth token is automatically retrieved and injected into the Authorization header.
+ * Authentication is handled automatically based on the connector's configuration:
+ * - Bearer tokens (GitHub, Slack, Stripe)
+ * - Bot tokens (Discord)
+ * - Basic auth (Twilio, Zendesk)
+ * - Custom headers (e.g., X-Shopify-Access-Token)
  *
- * @param url - URL to fetch (string or URL object)
- * @param options - Standard fetch options
- * @param authProvider - Name of registered OAuth provider (e.g., 'microsoft', 'google')
+ * @param url - URL to fetch (string or URL object). Can be relative if connector has baseURL.
+ * @param options - Standard fetch options (DO NOT set Authorization header - it's added automatically)
+ * @param authProvider - Name of registered connector (e.g., 'github', 'slack')
  * @param userId - Optional user identifier for multi-user support (omit for single-user mode)
  * @returns Promise<Response> - Same as standard fetch
  *
@@ -8902,10 +8916,20 @@ declare class FileStorage implements ITokenStorage {
  * const data = await response.json();
  * ```
  *
+ * @example With relative URL (uses connector's baseURL):
+ * ```typescript
+ * const response = await authenticatedFetch(
+ *   '/user/repos',  // Resolves to https://api.github.com/user/repos
+ *   { method: 'GET' },
+ *   'github'
+ * );
+ * const repos = await response.json();
+ * ```
+ *
  * @example Multi-user mode:
  * ```typescript
  * const response = await authenticatedFetch(
- *   'https://api.github.com/user/repos',
+ *   '/user/repos',
  *   { method: 'GET' },
  *   'github',
  *   'user123'  // Get token for specific user
@@ -8915,13 +8939,14 @@ declare class FileStorage implements ITokenStorage {
  */
 declare function authenticatedFetch(url: string | URL, options: RequestInit | undefined, authProvider: string, userId?: string): Promise<Response>;
 /**
- * Create an authenticated fetch function bound to a specific provider and optionally a user
+ * Create an authenticated fetch function bound to a specific connector and optionally a user
  *
  * Useful for creating reusable fetch functions for a specific API and/or user.
+ * Uses connector's configured auth scheme (Bearer, Bot, Basic, custom headers).
  *
- * @param authProvider - Name of registered OAuth provider
+ * @param authProvider - Name of registered connector
  * @param userId - Optional user identifier to bind to (omit for single-user mode)
- * @returns Fetch function bound to that provider (and user)
+ * @returns Fetch function bound to that connector (and user)
  *
  * @example Single-user mode:
  * ```typescript
@@ -8932,30 +8957,24 @@ declare function authenticatedFetch(url: string | URL, options: RequestInit | un
  * const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
  * ```
  *
- * @example Multi-user mode (bound to specific user):
+ * @example With relative URLs:
  * ```typescript
- * // Create fetch function for Alice
- * const aliceFetch = createAuthenticatedFetch('github', 'user123');
- *
- * // All calls automatically use Alice's token
- * const repos = await aliceFetch('https://api.github.com/user/repos');
- * const issues = await aliceFetch('https://api.github.com/user/issues');
- *
- * // Create fetch function for Bob (separate tokens!)
- * const bobFetch = createAuthenticatedFetch('github', 'user456');
- * const bobRepos = await bobFetch('https://api.github.com/user/repos');
- * ```
- *
- * @example Multi-user mode (userId per-call):
- * ```typescript
- * // Create fetch function NOT bound to a user
  * const githubFetch = createAuthenticatedFetch('github');
  *
- * // Specify userId at call time
- * const aliceRepos = await githubFetch(
- *   'https://api.github.com/user/repos',
- *   { userId: 'user123' }  // Pass as custom option
- * );
+ * // Relative URLs resolved against connector's baseURL
+ * const repos = await githubFetch('/user/repos');
+ * const issues = await githubFetch('/user/issues');
+ * ```
+ *
+ * @example Multi-user mode:
+ * ```typescript
+ * // Create fetch functions for different users
+ * const aliceFetch = createAuthenticatedFetch('github', 'user123');
+ * const bobFetch = createAuthenticatedFetch('github', 'user456');
+ *
+ * // Each uses their own token
+ * const aliceRepos = await aliceFetch('/user/repos');
+ * const bobRepos = await bobFetch('/user/repos');
  * ```
  */
 declare function createAuthenticatedFetch(authProvider: string, userId?: string): (url: string | URL, options?: RequestInit) => Promise<Response>;
@@ -10673,14 +10692,21 @@ interface ExecuteJSResult {
     executionTime: number;
 }
 /**
- * Create an execute_javascript tool with the current connector state
- * Use this factory when you need the tool to reflect currently registered connectors
+ * Create an execute_javascript tool.
+ *
+ * The tool uses `descriptionFactory` to generate a dynamic description that
+ * always reflects the currently registered connectors. This ensures the LLM
+ * sees up-to-date connector information even if connectors are registered
+ * after the tool is created.
  */
 declare function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
 /**
- * Default executeJavaScript tool
- * NOTE: The description is generated at module load time. If you register
- * connectors after importing this, use createExecuteJavaScriptTool() instead.
+ * Default executeJavaScript tool instance.
+ *
+ * This tool uses `descriptionFactory` to generate dynamic descriptions,
+ * so the connector list is always current when the tool is sent to the LLM.
+ * You can use either this default instance or create new ones with
+ * `createExecuteJavaScriptTool()` - both will have dynamic descriptions.
  */
 declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
 
@@ -10688,7 +10714,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-04T11:07:36.836Z
+ * Generated at: 2026-02-04T11:42:56.989Z
  *
  * To regenerate: npm run generate:tools
  */

@@ -8,10 +8,10 @@ import { Alert, Button, Spinner } from 'react-bootstrap';
 import { Send, Square, Bot, User, Copy, Share, AlertCircle } from 'lucide-react';
 import { MarkdownRenderer } from '../components/markdown';
 import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
-import { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from '../components/InternalsPanel';
+import { SidebarPanel, SIDEBAR_PANEL_DEFAULT_WIDTH } from '../components/SidebarPanel';
 import { PlanDisplay } from '../components/plan';
 import { TabBar, NewTabModal } from '../components/tabs';
-import { TabProvider, useTabContext, type Message, type TabState } from '../hooks/useTabContext';
+import { TabProvider, useTabContext, type Message, type TabState, type SidebarTab } from '../hooks/useTabContext';
 import type { Plan } from '../../preload/index';
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -340,11 +340,20 @@ function EmptyTabsState({ onCreateTab }: { onCreateTab: () => void }): React.Rea
 // ============ Main Chat Page Content ============
 
 function ChatPageContent(): React.ReactElement {
-  const { tabs, activeTabId, getActiveTab, sendMessage, cancelStream, createTab, tabCount } = useTabContext();
-
-  // Internals panel state
-  const [showInternals, setShowInternals] = useState(false);
-  const [internalsWidth, setInternalsWidth] = useState(INTERNALS_PANEL_DEFAULT_WIDTH);
+  const {
+    tabs,
+    activeTabId,
+    getActiveTab,
+    sendMessage,
+    cancelStream,
+    createTab,
+    tabCount,
+    sidebar,
+    setSidebarOpen,
+    setSidebarTab,
+    setSidebarWidth,
+    sendDynamicUIAction,
+  } = useTabContext();
 
   // New tab modal
   const [showNewTabModal, setShowNewTabModal] = useState(false);
@@ -367,17 +376,29 @@ function ChatPageContent(): React.ReactElement {
     cancelStream();
   }, [cancelStream]);
 
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarOpen(!sidebar.isOpen);
+  }, [sidebar.isOpen, setSidebarOpen]);
+
+  const handleTabChange = useCallback((tab: SidebarTab) => {
+    setSidebarTab(tab);
+  }, [setSidebarTab]);
+
+  const handleDynamicUIAction = useCallback((action: string, elementId?: string, value?: unknown) => {
+    sendDynamicUIAction(action, elementId, value);
+  }, [sendDynamicUIAction]);
+
   return (
     <div className="chat-container">
       <div
         className="chat"
-        style={{ width: showInternals ? `calc(100% - ${internalsWidth}px)` : '100%' }}
+        style={{ width: sidebar.isOpen ? `calc(100% - ${sidebar.width}px)` : '100%' }}
       >
         {/* Tab Bar with toolbar actions */}
         <TabBar
           onNewTabClick={handleNewTabClick}
-          showInternals={showInternals}
-          onToggleInternals={() => setShowInternals(!showInternals)}
+          showInternals={sidebar.isOpen}
+          onToggleInternals={handleToggleSidebar}
         />
 
         {/* Chat content */}
@@ -394,13 +415,18 @@ function ChatPageContent(): React.ReactElement {
         ) : null}
       </div>
 
-      {/* Internals Panel - pass instanceId */}
-      <InternalsPanel
-        isOpen={showInternals}
-        onClose={() => setShowInternals(false)}
-        width={internalsWidth}
-        onWidthChange={setInternalsWidth}
+      {/* Sidebar Panel with tabs */}
+      <SidebarPanel
+        isOpen={sidebar.isOpen}
+        onClose={() => setSidebarOpen(false)}
+        width={sidebar.width}
+        onWidthChange={setSidebarWidth}
+        activeTab={sidebar.activeTab}
+        onTabChange={handleTabChange}
         instanceId={activeTab?.instanceId || null}
+        dynamicUIContent={activeTab?.dynamicUIContent || null}
+        hasDynamicUIUpdate={activeTab?.hasDynamicUIUpdate}
+        onDynamicUIAction={handleDynamicUIAction}
       />
 
       {/* New Tab Modal */}
