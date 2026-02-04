@@ -33,6 +33,21 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
   const [userHasScrolled, setUserHasScrolled] = useState(false);
   const lastMessageCount = useRef(tab.messages.length);
 
+  // Scroll to bottom of messages container (NOT using scrollIntoView which affects parents)
+  const scrollToBottom = useCallback((smooth = true) => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    if (smooth) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, []);
+
   // Check if user is near the bottom of the scroll container
   const isNearBottom = useCallback(() => {
     const container = messagesContainerRef.current;
@@ -63,16 +78,16 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
 
     // Always scroll to bottom when user sends a message
     if (isNewMessage && isUserMessage) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom(true);
       setUserHasScrolled(false);
       return;
     }
 
     // For new assistant messages or streaming, only scroll if user is near bottom
     if (!userHasScrolled || isNearBottom()) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom(true);
     }
-  }, [tab.messages, userHasScrolled, isNearBottom]);
+  }, [tab.messages, userHasScrolled, isNearBottom, scrollToBottom]);
 
   // Auto-resize textarea
   useEffect(() => {

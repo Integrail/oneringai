@@ -13,8 +13,11 @@
 }
 
 .chat__messages {
-  flex: 1;
+  flex: 1 1 0; /* Grow, shrink, and start from 0 basis */
+  min-height: 0; /* CRITICAL: Allow flex child to shrink below content size */
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain; /* CRITICAL: Prevent scroll chaining to parent */
   padding: var(--spacing-6) 0;
 }
 
@@ -243,6 +246,7 @@
 
 /* Chat Input */
 .chat__input {
+  flex-shrink: 0; /* Never shrink the input area */
   padding: var(--spacing-4) var(--spacing-6);
   background-color: var(--color-white);
   border-top: 1px solid var(--color-gray-100);
@@ -561,6 +565,12 @@
 .chat {
   position: relative;
   transition: width 0.2s ease;
+  /* CRITICAL: These must be here to maintain flex layout */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0; /* Allow flex child to shrink below content size */
+  overflow: hidden;
 }
 
 /* Internals toggle button */
