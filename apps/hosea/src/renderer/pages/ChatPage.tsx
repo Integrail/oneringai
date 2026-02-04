@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
-import { Send, Square, Bot, User, Copy, Share } from 'lucide-react';
+import { Alert, Button, Spinner } from 'react-bootstrap';
+import { Send, Square, Bot, User, Copy, Share, AlertCircle } from 'lucide-react';
 import { MarkdownRenderer } from '../components/markdown';
 import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
 import { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from '../components/InternalsPanel';
@@ -155,6 +155,14 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
         </div>
       </div>
       <div className="message__content">
+        {/* Error display */}
+        {message.error && (
+          <Alert variant="danger" className="message__error mb-2">
+            <AlertCircle size={16} className="me-2" />
+            <span>{message.error}</span>
+          </Alert>
+        )}
+
         {/* Tool calls section */}
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="message__tool-calls">
@@ -170,7 +178,7 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
             <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
           </div>
         ) : (
-          message.isStreaming && !message.toolCalls?.length && (
+          !message.error && message.isStreaming && !message.toolCalls?.length && (
             <div className="message__streaming-indicator">
               <Spinner animation="border" size="sm" />
               <span>Thinking...</span>

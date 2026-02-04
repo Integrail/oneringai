@@ -18,6 +18,7 @@ export interface Message {
   timestamp: number;
   isStreaming?: boolean;
   toolCalls?: ToolCallInfo[];
+  error?: string;
 }
 
 export interface TabState {
@@ -212,6 +213,18 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
               completedAt: Date.now(),
             };
           }
+        }
+        // Error events - display error to user
+        else if (chunk.type === 'error') {
+          const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
+          if (lastMsg?.isStreaming) {
+            updatedTab.messages = [
+              ...updatedTab.messages.slice(0, -1),
+              { ...lastMsg, error: chunk.content, isStreaming: false },
+            ];
+          }
+          updatedTab.isLoading = false;
+          updatedTab.streamingContent = '';
         }
 
         newTabs.set(tab.instanceId, updatedTab);

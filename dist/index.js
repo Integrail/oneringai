@@ -30844,8 +30844,11 @@ function applyServerDefaults(config, defaults) {
 }
 
 // src/infrastructure/mcp/adapters/MCPToolAdapter.ts
+function sanitizeToolName(name) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
 function createMCPToolAdapter(tool, client, namespace) {
-  const fullName = `${namespace}:${tool.name}`;
+  const fullName = sanitizeToolName(`${namespace}:${tool.name}`);
   return {
     definition: {
       type: "function",

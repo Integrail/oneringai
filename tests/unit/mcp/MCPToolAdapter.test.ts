@@ -31,11 +31,26 @@ describe('MCPToolAdapter', () => {
       const toolFn = createMCPToolAdapter(mockTool, mockClient as IMCPClient, 'mcp:test');
 
       expect(toolFn.definition.type).toBe('function');
-      expect(toolFn.definition.function.name).toBe('mcp:test:test_tool');
+      // Tool names are sanitized: colons replaced with underscores for OpenAI API compatibility
+      expect(toolFn.definition.function.name).toBe('mcp_test_test_tool');
       expect(toolFn.definition.function.description).toContain('test tool');
       expect(toolFn.definition.function.parameters).toEqual(mockTool.inputSchema);
       expect(toolFn.execute).toBeDefined();
       expect(toolFn.describeCall).toBeDefined();
+    });
+
+    it('should sanitize tool names for OpenAI API compatibility', () => {
+      // OpenAI API requires pattern: ^[a-zA-Z0-9_-]+$
+      const toolWithDots: MCPTool = {
+        name: 'my.tool.name',
+        description: 'A tool with dots',
+        inputSchema: { type: 'object', properties: {} },
+      };
+
+      const toolFn = createMCPToolAdapter(toolWithDots, mockClient as IMCPClient, 'server:namespace');
+
+      // Colons and dots should be replaced with underscores
+      expect(toolFn.definition.function.name).toBe('server_namespace_my_tool_name');
     });
 
     it('should execute tool via MCPClient', async () => {
@@ -142,8 +157,9 @@ describe('MCPToolAdapter', () => {
       const toolFns = createMCPToolAdapters(tools, mockClient as IMCPClient, 'mcp:test');
 
       expect(toolFns).toHaveLength(2);
-      expect(toolFns[0].definition.function.name).toBe('mcp:test:tool1');
-      expect(toolFns[1].definition.function.name).toBe('mcp:test:tool2');
+      // Tool names are sanitized for OpenAI API compatibility
+      expect(toolFns[0].definition.function.name).toBe('mcp_test_tool1');
+      expect(toolFns[1].definition.function.name).toBe('mcp_test_tool2');
     });
 
     it('should handle empty array', () => {

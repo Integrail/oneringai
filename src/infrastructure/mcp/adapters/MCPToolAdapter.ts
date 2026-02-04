@@ -10,6 +10,14 @@ import type { IMCPClient } from '../../../domain/interfaces/IMCPClient.js';
 import { MCPToolError } from '../../../domain/errors/MCPError.js';
 
 /**
+ * Sanitize tool name to match OpenAI API pattern: ^[a-zA-Z0-9_-]+$
+ * Replaces colons, dots, slashes, and any other invalid characters with underscores.
+ */
+function sanitizeToolName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+/**
  * Convert an MCP tool to a ToolFunction
  */
 export function createMCPToolAdapter(
@@ -17,7 +25,8 @@ export function createMCPToolAdapter(
   client: IMCPClient,
   namespace: string
 ): ToolFunction {
-  const fullName = `${namespace}:${tool.name}`;
+  // Sanitize the full name for API compatibility (OpenAI pattern: ^[a-zA-Z0-9_-]+$)
+  const fullName = sanitizeToolName(`${namespace}:${tool.name}`);
 
   return {
     definition: {
