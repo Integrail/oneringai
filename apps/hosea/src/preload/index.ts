@@ -1042,6 +1042,26 @@ export interface HoseaAPI {
     }>;
   };
 
+  // Auto-updater
+  updater: {
+    check: () => Promise<{ success: boolean; updateInfo?: unknown; error?: string }>;
+    download: () => Promise<{ success: boolean; error?: string }>;
+    install: () => void;
+    getVersion: () => Promise<string>;
+    onStatus: (callback: (status: {
+      status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+      version?: string;
+      releaseDate?: string;
+      releaseNotes?: string | null;
+      percent?: number;
+      bytesPerSecond?: number;
+      transferred?: number;
+      total?: number;
+      message?: string;
+    }) => void) => void;
+    removeStatusListener: () => void;
+  };
+
   // Browser Automation
   browser: {
     /** Create a browser instance for an agent instance */
@@ -1274,6 +1294,20 @@ const api: HoseaAPI = {
 
   dialog: {
     showOpenDialog: (options) => ipcRenderer.invoke('dialog:show-open-dialog', options),
+  },
+
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    getVersion: () => ipcRenderer.invoke('updater:get-version'),
+    onStatus: (callback) => {
+      ipcRenderer.removeAllListeners('updater:status');
+      ipcRenderer.on('updater:status', (_event, status) => callback(status));
+    },
+    removeStatusListener: () => {
+      ipcRenderer.removeAllListeners('updater:status');
+    },
   },
 
   browser: {

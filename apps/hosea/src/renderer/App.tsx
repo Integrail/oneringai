@@ -21,6 +21,7 @@ import {
   SettingsPage,
 } from './pages';
 import { SetupModal } from './components/modals/SetupModal';
+import { UpdateNotification } from './components/UpdateNotification';
 import {
   NavigationContext,
   useNavigationState,
@@ -289,6 +290,9 @@ function AppContent(): React.ReactElement {
           onHide={() => setShowSetup(false)}
           onComplete={handleSetupComplete}
         />
+
+        {/* Auto-update notification */}
+        <UpdateNotification />
       </TabProvider>
     </NavigationContext.Provider>
   );

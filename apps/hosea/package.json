@@ -26,6 +26,7 @@
   "dependencies": {
     "@everworker/oneringai": "file:../..",
     "electron-store": "^10.0.0",
+    "electron-updater": "^6.7.3",
     "katex": "^0.16.28",
     "lucide-react": "^0.563.0",
     "markmap-lib": "^0.18.12",
@@ -68,9 +69,15 @@
       "dist/**/*",
       "package.json"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "Integrail",
+      "repo": "oneringai"
+    },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools"
     },
     "win": {
       "target": "nsis",
@@ -78,7 +85,28 @@
     },
     "linux": {
       "target": "AppImage",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "category": "Development"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     }
   },
   "engines": {

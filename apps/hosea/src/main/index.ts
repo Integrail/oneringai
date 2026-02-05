@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { AgentService } from './AgentService.js';
 import { BrowserService } from './BrowserService.js';
+import { AutoUpdaterService } from './AutoUpdaterService.js';
 import type { Rectangle } from './browser/types.js';
 
 /**
@@ -31,6 +32,7 @@ const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'develo
 let mainWindow: BrowserWindow | null = null;
 let agentService: AgentService | null = null;
 let browserService: BrowserService | null = null;
+let autoUpdaterService: AutoUpdaterService | null = null;
 
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
@@ -666,6 +668,12 @@ async function setupIPC(): Promise<void> {
     }
     return browserService.hasBrowser(instanceId);
   });
+
+  // Initialize auto-updater (only in production)
+  if (!isDev) {
+    autoUpdaterService = new AutoUpdaterService();
+    autoUpdaterService.initialize();
+  }
 }
 
 // App lifecycle
@@ -676,6 +684,12 @@ app.whenReady().then(async () => {
   // Set main window reference on browser service after window is created
   if (browserService && mainWindow) {
     browserService.setMainWindow(mainWindow);
+  }
+
+  // Set main window on auto-updater and check for updates (5 second delay)
+  if (autoUpdaterService && mainWindow) {
+    autoUpdaterService.setMainWindow(mainWindow);
+    autoUpdaterService.checkOnStartup(5000);
   }
 
   app.on('activate', async () => {
