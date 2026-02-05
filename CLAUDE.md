@@ -167,17 +167,7 @@ const Vendor = { OpenAI, Anthropic, Google, GoogleVertex, Groq, Together, Grok, 
 
 ## Agent Types
 
-| Type | Purpose | Status |
-|------|---------|--------|
-| **Agent** | Main agent with agentic loop | ✅ Active |
-| **TaskAgent** | Task-based with plans, memory | ⚠️ **DEPRECATED** |
-| **UniversalAgent** | Interactive + planning modes | ⚠️ **DEPRECATED** |
-| **ResearchAgent** | Research with pluggable sources | ⚠️ **DEPRECATED** |
-
-> ⚠️ **Migration Notice:** `TaskAgent`, `UniversalAgent`, and `ResearchAgent` are deprecated.
-> Use `Agent` with `AgentContextNextGen` plugins (`WorkingMemoryPluginNextGen`, etc.) instead.
-
-**Agent** (`src/core/Agent.ts`) is the recommended agent type. It extends **BaseAgent** and uses `AgentContextNextGen` for context management.
+**Agent** (`src/core/Agent.ts`) is the main agent type. It extends **BaseAgent** and uses `AgentContextNextGen` for context management.
 
 ### Direct LLM Access (NEW)
 
@@ -232,9 +222,6 @@ src/
 │   └── errors/                 # AIErrors.ts, MCPError.ts
 ├── capabilities/
 │   ├── agents/                 # ExecutionContext.ts, HookManager.ts, EventTypes.ts
-│   ├── taskAgent/              # ⚠️ DEPRECATED - exports only
-│   ├── universalAgent/         # ⚠️ DEPRECATED - exports only
-│   ├── researchAgent/          # ⚠️ DEPRECATED - exports only
 │   ├── search/                 # SearchProvider (Serper, Brave, Tavily, RapidAPI)
 │   ├── scrape/                 # ScrapeProvider (ZenRows)
 │   ├── images/                 # ImageGeneration
@@ -328,31 +315,6 @@ type TaskAwareScope = { type: 'session' } | { type: 'plan' } | { type: 'persiste
 ```typescript
 const info = getModelInfo('gpt-5.2');
 const cost = calculateCost('gpt-5.2-thinking', inputTokens, outputTokens);
-```
-
-## ResearchAgent
-
-> ⚠️ **DEPRECATED**: `ResearchAgent` is deprecated as of v0.2.0.
-> Use `Agent` with `WorkingMemoryPluginNextGen` and research tools instead.
-
-**Migration:**
-```typescript
-// OLD (deprecated):
-const agent = ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4-turbo',
-  sources: [webSource, fileSource],
-});
-
-// NEW (recommended):
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [webSearchTool, fileSearchTool],  // Use search tools directly
-  context: {
-    features: { workingMemory: true },
-  },
-});
 ```
 
 ## NextGen Plugins
@@ -713,4 +675,4 @@ const myTool: ToolFunction = {
 
 ---
 
-**Version**: 0.3.0 | **Last Updated**: 2026-02-03 | **Architecture**: Connector-First + NextGen Context
+**Version**: 0.1.0 | **Last Updated**: 2026-02-05 | **Architecture**: Connector-First + NextGen Context

@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
-**Version:** 0.2.0
-**Last Updated:** 2026-02-03
+**Version:** 0.1.0
+**Last Updated:** 2026-02-05
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -15,55 +15,38 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
 6. [Session Persistence](#session-persistence)
-7. [Universal Agent](#universal-agent) **DEPRECATED**
-8. [Task Agents](#task-agents) **DEPRECATED**
-   - Task Priorities
-   - Fulfillment Criteria
-   - PlanExecutor Internals
-   - Advanced Configuration
-9. [Research Agent](#research-agent) **DEPRECATED**
-   - Pluggable Research Sources
-   - Auto-Spill for Large Outputs
-   - Memory Batch Retrieval
-   - Custom Source Implementation
-10. [Context Management](#context-management) **NEXTGEN**
-    - Strategy Deep Dive (Proactive, Aggressive, Lazy, Rolling Window, Adaptive)
-    - Custom Strategies
-    - Token Estimation
-    - Lifecycle Hooks
-11. [InContextMemory](#in-context-memory) **NEW**
-    - Setup and Configuration
-    - Priority-Based Eviction
-    - Tools (context_set, context_get, context_delete, context_list)
-    - Use Cases and Best Practices
-12. [Persistent Instructions](#persistent-instructions) **NEW**
-    - Setup and Configuration
-    - Tools (instructions_set, instructions_get, instructions_append, instructions_clear)
-    - Storage and Persistence
-    - Use Cases and Best Practices
-13. [Tool Result Eviction](#tool-result-eviction) **NEW**
-    - Automatic eviction of old tool results
-    - Configuration and tuning
-    - Per-tool retention settings
-    - Events and monitoring
-14. [Tools & Function Calling](#tools--function-calling)
-15. [Dynamic Tool Management](#dynamic-tool-management)
-16. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
-17. [Multimodal (Vision)](#multimodal-vision)
-18. [Audio (TTS/STT)](#audio-ttsstt)
-19. [Image Generation](#image-generation)
-20. [Video Generation](#video-generation)
-21. [Web Search](#web-search)
-22. [Streaming](#streaming)
-23. [External API Integration](#external-api-integration)
-24. [Vendor Templates](#vendor-templates) **NEW**
+7. [Context Management](#context-management)
+   - Strategy Deep Dive (Proactive, Balanced, Lazy)
+   - Token Estimation
+   - Lifecycle Hooks
+8. [InContextMemory](#in-context-memory)
+   - Setup and Configuration
+   - Priority-Based Eviction
+   - Tools (context_set, context_delete, context_list)
+   - Use Cases and Best Practices
+9. [Persistent Instructions](#persistent-instructions)
+   - Setup and Configuration
+   - Tools (instructions_set, instructions_get, instructions_append, instructions_clear)
+   - Storage and Persistence
+   - Use Cases and Best Practices
+10. [Tools & Function Calling](#tools--function-calling)
+11. [Dynamic Tool Management](#dynamic-tool-management)
+12. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
+13. [Multimodal (Vision)](#multimodal-vision)
+14. [Audio (TTS/STT)](#audio-ttsstt)
+15. [Image Generation](#image-generation)
+16. [Video Generation](#video-generation)
+17. [Web Search](#web-search)
+18. [Streaming](#streaming)
+19. [External API Integration](#external-api-integration)
+20. [Vendor Templates](#vendor-templates)
     - Quick Setup for 43+ Services
     - Authentication Methods
     - Complete Vendor Reference
-25. [OAuth for External APIs](#oauth-for-external-apis)
-26. [Model Registry](#model-registry)
-27. [Advanced Features](#advanced-features)
-28. [Production Deployment](#production-deployment)
+21. [OAuth for External APIs](#oauth-for-external-apis)
+22. [Model Registry](#model-registry)
+23. [Advanced Features](#advanced-features)
+24. [Production Deployment](#production-deployment)
 
 ---
 
@@ -407,373 +390,164 @@ agent.destroy();
 
 ## Session Persistence
 
-Save and resume agent conversations across restarts. Available for **all agent types** (Agent, TaskAgent, UniversalAgent).
+Save and resume agent conversations across restarts using `AgentContextNextGen` and `FileContextStorage`.
 
 ### Quick Start
 
 ```typescript
-import { Agent, FileSessionStorage } from '@oneringai/agents';
-
-// Create agent with session support
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-    autoSaveIntervalMs: 30000,  // Auto-save every 30s
-  },
-});
-
-await agent.run('Remember: my name is Alice');
-const sessionId = agent.getSessionId();
-console.log('Session ID:', sessionId);
-
-// Later... resume from session
-const resumed = await Agent.resume(sessionId, {
-  storage: new FileSessionStorage({ directory: './sessions' }),
-});
-
-await resumed.run('What is my name?');
-// Output: "Your name is Alice."
-```
-
-### Storage Backends
-
-#### In-Memory Storage (Testing)
-
-```typescript
-import { Agent, InMemorySessionStorage } from '@oneringai/agents';
-
-const storage = new InMemorySessionStorage();
-
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: { storage },
-});
-```
-
-**Use case:** Testing, development
-**Pros:** Fast, no file I/O
-**Cons:** Lost on restart
-
-#### File Storage (Production)
-
-```typescript
-import { Agent, FileSessionStorage } from '@oneringai/agents';
-
-const storage = new FileSessionStorage({
-  directory: './sessions',
-  // Optional: custom serialization
-  serialize: (session) => JSON.stringify(session, null, 2),
-  deserialize: (data) => JSON.parse(data),
-});
-
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: { storage },
-});
-```
-
-**Use case:** Production, persistence required
-**Pros:** Survives restarts, human-readable JSON
-**Cons:** File I/O overhead
-
-#### Custom Storage
-
-Implement `ISessionStorage` interface:
-
-```typescript
-import { ISessionStorage, Session, SessionSummary } from '@oneringai/agents';
-
-class DatabaseSessionStorage implements ISessionStorage {
-  async save(session: Session): Promise<void> {
-    // Save to database
-  }
-
-  async load(sessionId: string): Promise<Session | null> {
-    // Load from database
-  }
-
-  async delete(sessionId: string): Promise<void> {
-    // Delete from database
-  }
-
-  async exists(sessionId: string): Promise<boolean> {
-    // Check existence
-  }
-
-  async list(filter?: SessionFilter): Promise<SessionSummary[]> {
-    // List sessions with optional filtering
-  }
-}
-```
-
-### Session Management
-
-#### Manual Save/Load
-
-```typescript
-import { SessionManager, FileSessionStorage } from '@oneringai/agents';
-
-const sessionManager = new SessionManager({
-  storage: new FileSessionStorage({ directory: './sessions' }),
-});
-
-// Create session
-const session = sessionManager.create('agent', {
-  name: 'Customer Support Bot',
-  tags: ['support', 'production'],
-});
-
-// Modify session data
-session.customData = { userId: '123', context: 'billing' };
-
-// Save manually
-await sessionManager.save(session);
-
-// Load later
-const loaded = await sessionManager.load(session.id);
-```
-
-#### Auto-Save
-
-```typescript
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-    autoSaveIntervalMs: 30000,  // Save every 30 seconds
-  },
-});
-
-// Session auto-saved after each interaction
-await agent.run('Hello');
-// ... auto-save triggered
-
-await agent.run('How are you?');
-// ... auto-save triggered
-```
-
-#### List Sessions
-
-```typescript
-const sessionManager = new SessionManager({
-  storage: new FileSessionStorage({ directory: './sessions' }),
-});
-
-// List all sessions
-const all = await sessionManager.list();
-
-// Filter by agent type
-const agentSessions = await sessionManager.list({ agentType: 'agent' });
-
-// Filter by metadata
-const productionSessions = await sessionManager.list({
-  metadata: { tags: ['production'] },
-});
-
-for (const summary of productionSessions) {
-  console.log(`${summary.id}: ${summary.metadata.name}`);
-  console.log(`  Created: ${new Date(summary.createdAt)}`);
-  console.log(`  Messages: ${summary.metrics.totalMessages}`);
-}
-```
-
-### Session Structure
-
-```typescript
-interface Session {
-  id: string;
-  agentType: string;
-  createdAt: number;
-  lastAccessedAt: number;
-
-  // Metadata
-  metadata: {
-    name?: string;
-    description?: string;
-    tags?: string[];
-    [key: string]: unknown;
-  };
-
-  // Conversation history
-  history: {
-    messages: Array<{
-      role: 'user' | 'assistant';
-      content: any[];
-      timestamp: number;
-    }>;
-    totalMessages: number;
-  };
-
-  // Memory (for TaskAgent)
-  memory?: {
-    entries: Array<{
-      key: string;
-      value: unknown;
-      scope: string;
-      createdAt: number;
-    }>;
-  };
-
-  // Plan (for TaskAgent/UniversalAgent)
-  plan?: {
-    goal: string;
-    tasks: Task[];
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  };
-
-  // Metrics
-  metrics: {
-    totalMessages: number;
-    totalTokens: number;
-    totalCost: number;
-    toolCallCount: number;
-  };
-
-  // Custom data
-  customData?: Record<string, unknown>;
-}
-```
-
-### Best Practices
-
-#### 1. Use Meaningful Session IDs
-
-```typescript
-// Bad: random IDs
-const session1 = sessionManager.create('agent');
-
-// Good: descriptive IDs
-const session = sessionManager.create('agent', {
-  name: 'Support Chat - User 12345',
-  tags: ['support', 'user-12345'],
-});
-```
-
-#### 2. Clean Up Old Sessions
-
-```typescript
-const sessions = await sessionManager.list();
-const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-
-for (const session of sessions) {
-  if (session.lastAccessedAt < oneWeekAgo) {
-    await sessionManager.delete(session.id);
-    console.log(`Deleted old session: ${session.id}`);
-  }
-}
-```
-
-#### 3. Handle Resume Errors
-
-```typescript
-try {
-  const agent = await Agent.resume(sessionId, {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-  });
-  // Use resumed agent
-} catch (error) {
-  console.error('Failed to resume session:', error);
-  // Fall back to new session
-  const agent = Agent.create({
-    connector: 'openai',
-    model: 'gpt-4',
-  });
-}
-```
-
-#### 4. Use Custom Data for Context
-
-```typescript
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-  },
-});
-
-// Store custom context
-const session = await sessionManager.load(agent.getSessionId()!);
-if (session) {
-  session.customData = {
-    userId: '12345',
-    preferences: { language: 'en', theme: 'dark' },
-    context: { lastTopic: 'billing' },
-  };
-  await sessionManager.save(session);
-}
-```
-
-### Usage with TaskAgent
-
-```typescript
-import { TaskAgent, FileSessionStorage } from '@oneringai/agents';
-
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [weatherTool],
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-  },
-});
-
-await agent.start({
-  goal: 'Check weather for multiple cities',
-  tasks: [
-    { name: 'check_sf', description: 'Check SF weather' },
-    { name: 'check_ny', description: 'Check NY weather' },
-  ],
-});
-
-// Session includes plan, memory, and task execution state
-const sessionId = agent.getSessionId();
-
-// Resume after restart
-const resumed = await TaskAgent.resume(sessionId, {
-  storage: new FileSessionStorage({ directory: './sessions' }),
-});
-// Continues from where it left off
-```
-
-### AgentContext Session Persistence (NEW)
-
-A new, simpler approach to session persistence that stores **full context state** including all memory entries:
-
-```typescript
-import { AgentContext, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
 
 // Create storage for the agent
 const storage = createFileContextStorage('my-assistant');
 // Sessions stored at: ~/.oneringai/agents/my-assistant/sessions/
 
 // Create context with storage
-const ctx = AgentContext.create({
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
-  features: { memory: true, history: true, inContextMemory: true },
+  features: { workingMemory: true },
   storage,
 });
 
 // Build up state
-ctx.addMessageSync('user', 'My name is Alice and I prefer dark mode.');
-ctx.addMessageSync('assistant', 'Nice to meet you, Alice! I\'ll remember your preference.');
-await ctx.memory!.store('user_name', 'User name', 'Alice');
-await ctx.memory!.store('user_pref', 'User preferences', { theme: 'dark' });
-ctx.inContextMemory!.set('session_state', 'Current state', { step: 'greeting' });
+ctx.addUserMessage('Remember: my name is Alice');
+await ctx.memory?.store('user_name', 'User name', 'Alice');
+
+// Save session
+await ctx.save('session-001', { title: 'User Session' });
+
+// Later... load session
+const ctx2 = AgentContextNextGen.create({ model: 'gpt-4', storage });
+const loaded = await ctx2.load('session-001');
+
+if (loaded) {
+  // Full state restored
+  const name = await ctx2.memory?.retrieve('user_name');
+  console.log(name); // 'Alice'
+}
+```
+
+### Storage Backend: FileContextStorage
+
+```typescript
+import { FileContextStorage, createFileContextStorage } from '@oneringai/agents';
+
+// Simple: use helper function
+const storage = createFileContextStorage('my-agent');
+
+// Advanced: custom config
+const storage = new FileContextStorage({
+  agentId: 'my-agent',
+  baseDirectory: '/custom/path/agents',  // Override default ~/.oneringai/agents
+  prettyPrint: true,  // Human-readable JSON
+});
+```
+
+**Storage Location:** `~/.oneringai/agents/<agentId>/sessions/<sessionId>.json`
+
+### Custom Storage
+
+Implement `IContextStorage` interface:
+
+```typescript
+import type { IContextStorage, StoredContextSession } from '@oneringai/agents';
+
+class DatabaseContextStorage implements IContextStorage {
+  async save(sessionId: string, state: SerializedContextState, metadata?) { /* ... */ }
+  async load(sessionId: string): Promise<StoredContextSession | null> { /* ... */ }
+  async delete(sessionId: string) { /* ... */ }
+  async exists(sessionId: string) { /* ... */ }
+  async list(options?) { /* ... */ }
+  getPath() { return 'database://...'; }
+}
+```
+
+### Session Management APIs
+
+```typescript
+// Check if session exists
+const exists = await ctx.sessionExists('session-001');
+
+// Delete session
+await ctx.deleteSession('session-001');
+
+// Get current session ID
+console.log(ctx.sessionId);  // 'session-001' or null
+
+// List all sessions for this agent
+const sessions = await storage.list();
+for (const s of sessions) {
+  console.log(`${s.sessionId}: ${s.metadata?.title} (${s.messageCount} messages)`);
+}
+```
+
+### Using with Agent
+
+```typescript
+import { Agent, createFileContextStorage } from '@oneringai/agents';
+
+const storage = createFileContextStorage('my-agent');
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    agentId: 'my-agent',
+    features: { workingMemory: true },
+    storage,
+  },
+});
+
+// Run agent
+await agent.run('Remember: my favorite color is blue');
+
+// Save session
+await agent.context.save('session-001');
+
+// Later... load session
+await agent.context.load('session-001');
+await agent.run('What is my favorite color?');
+// Output: "Your favorite color is blue."
+```
+
+### What Gets Persisted
+
+| Component | Persisted? | Notes |
+|-----------|------------|-------|
+| Conversation history | ✅ | All messages with timestamps |
+| WorkingMemory entries | ✅ | Full values, not just index |
+| InContextMemory entries | ✅ | Via plugin state |
+| Tool enable/disable state | ✅ | Per-tool settings |
+| System prompt | ✅ | |
+
+
+### AgentContextNextGen Session Persistence
+
+The recommended approach to session persistence using `AgentContextNextGen`:
+
+```typescript
+import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
+
+// Create storage for the agent
+const storage = createFileContextStorage('my-assistant');
+// Sessions stored at: ~/.oneringai/agents/my-assistant/sessions/
+
+// Create context with storage
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { workingMemory: true, inContextMemory: true },
+  storage,
+});
+
+// Build up state
+ctx.addUserMessage('My name is Alice and I prefer dark mode.');
+ctx.addAssistantResponse({ output_text: 'Nice to meet you, Alice!' });
+await ctx.memory?.store('user_name', 'User name', 'Alice');
+await ctx.memory?.store('user_pref', 'User preferences', { theme: 'dark' });
 
 // Save session with metadata
 await ctx.save('session-001', {
   title: 'Alice Support Chat',
   tags: ['support', 'vip'],
-  description: 'User prefers dark mode'
 });
 
 console.log(ctx.sessionId);  // 'session-001'
@@ -783,9 +557,9 @@ console.log(ctx.sessionId);  // 'session-001'
 
 ```typescript
 // Create new context and load
-const ctx2 = AgentContext.create({
+const ctx2 = AgentContextNextGen.create({
   model: 'gpt-4',
-  features: { memory: true, history: true, inContextMemory: true },
+  features: { workingMemory: true, inContextMemory: true },
   storage,
 });
 
@@ -793,13 +567,13 @@ const loaded = await ctx2.load('session-001');
 
 if (loaded) {
   // Everything is restored:
-  const history = ctx2.getHistory();
-  console.log(history[0].content);  // 'My name is Alice and I prefer dark mode.'
+  const conversation = ctx2.getConversation();
+  console.log(conversation[0]);  // User message about Alice
 
-  const name = await ctx2.memory!.retrieve('user_name');
+  const name = await ctx2.memory?.retrieve('user_name');
   console.log(name);  // 'Alice'
 
-  const prefs = await ctx2.memory!.retrieve('user_pref');
+  const prefs = await ctx2.memory?.retrieve('user_pref');
   console.log(prefs);  // { theme: 'dark' }
 }
 ```
@@ -890,7 +664,7 @@ const agent = Agent.create({
   instructions: 'You are a helpful support assistant.',
   context: {
     agentId: 'support-bot',
-    features: { memory: true, persistentInstructions: true }
+    features: { workingMemory: true, persistentInstructions: true }
   }
 });
 
@@ -952,2707 +726,10 @@ const taskAgents = await defStorage.list({ agentType: 'task-agent' });
 └── _agents_index.json           # Agent definitions index
 ```
 
----
-
-## Universal Agent
-
-> ⚠️ **DEPRECATED**: `UniversalAgent` is deprecated as of v0.3.0.
-> Use `Agent` with `AgentContextNextGen` plugins instead.
->
-> **Migration:**
-> ```typescript
-> // OLD (deprecated):
-> const agent = UniversalAgent.create({
->   connector: 'openai',
->   model: 'gpt-4',
->   planning: { enabled: true },
-> });
->
-> // NEW (recommended):
-> const agent = Agent.create({
->   connector: 'openai',
->   model: 'gpt-4',
->   context: {
->     features: { workingMemory: true, inContextMemory: true },
->   },
-> });
-> // Use agent.run() with planning prompts
-> ```
-
-A **unified agent** that combines interactive chat, planning, and task execution in one powerful interface.
-
-### Overview
-
-UniversalAgent seamlessly transitions between three modes:
-- **Interactive** - Direct conversation, immediate tool execution
-- **Planning** - Creates multi-step plans for complex tasks
-- **Executing** - Runs tasks from plan, allows user intervention
-
-### Quick Start
-
-```typescript
-import { UniversalAgent, FileSessionStorage } from '@oneringai/agents';
-
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [weatherTool, emailTool],
-  planning: {
-    enabled: true,
-    autoDetect: true,        // LLM detects complex tasks
-    requireApproval: true,   // Ask before executing
-  },
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-  },
-});
-
-const response = await agent.chat('Check weather in Paris and email me');
-console.log(response.text);
-console.log('Mode:', response.mode);       // 'planning'
-console.log('Plan:', response.plan);        // Multi-step plan
-console.log('Status:', response.planStatus); // 'pending_approval'
-```
-
-### Modes
-
-#### Interactive Mode
-
-Direct conversation, single-turn or simple tasks:
-
-```typescript
-const response = await agent.chat('What is 2 + 2?');
-// Mode: 'interactive'
-// Text: "The answer is 4."
-```
-
-**Triggers:**
-- Simple questions
-- Single tool calls
-- Quick calculations
-- Direct information requests
-
-#### Planning Mode
-
-Creates multi-step plans for complex tasks:
-
-```typescript
-const response = await agent.chat(
-  'Research competitors, analyze pricing, and create a report'
-);
-// Mode: 'planning'
-// Plan: { tasks: [...], status: 'pending_approval' }
-```
-
-**Triggers:**
-- User explicitly requests planning
-- LLM detects task requires multiple steps
-- Task has dependencies
-- User says "let's plan this"
-
-**Plan Structure:**
-```typescript
-interface Plan {
-  id: string;
-  goal: string;
-  tasks: Task[];
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  createdAt: number;
-  lastUpdatedAt: number;
-}
-
-interface Task {
-  id: string;
-  name: string;
-  description: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
-  dependsOn?: string[];  // Task IDs
-  result?: {
-    success: boolean;
-    output?: unknown;
-    error?: string;
-  };
-}
-```
-
-#### Executing Mode
-
-Runs tasks from plan:
-
-```typescript
-// After plan approval
-const response = await agent.chat('yes, proceed');
-// Mode: 'executing'
-// Progress: { completed: 1, total: 3, current: {...} }
-```
-
-**Features:**
-- Step-by-step execution
-- Progress tracking
-- User intervention support
-- Dynamic plan modification
-- Pause/resume capability
-
-### Mode Transitions
-
-```
-interactive ←→ planning ←→ executing
-```
-
-Automatic transitions based on:
-1. **User input patterns**
-   - "yes" / "approved" → executing
-   - "no" / "cancel" → back to interactive
-   - "what's the status?" → report progress (stay in mode)
-
-2. **Task complexity**
-   - LLM detects complex task → planning
-   - Simple question during execution → handle inline (stay in executing)
-
-3. **Plan lifecycle**
-   - Plan completed → interactive
-   - Plan rejected → planning (to refine)
-
-4. **User control**
-   - User says "stop" / "cancel" → interactive
-   - User modifies plan → planning
-
-### Configuration
-
-#### Auto-Detection
-
-```typescript
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [tools...],
-  planning: {
-    enabled: true,
-    autoDetect: true,  // LLM decides when to plan
-  },
-});
-
-// Complex task → auto-enters planning mode
-await agent.chat('Build a website, deploy it, and setup monitoring');
-```
-
-#### Manual Planning
-
-```typescript
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [tools...],
-  planning: {
-    enabled: true,
-    autoDetect: false,  // User must explicitly request
-  },
-});
-
-// Stays in interactive unless user says "plan this"
-await agent.chat('Build a website');  // Interactive mode
-await agent.chat('Let\'s plan this: Build a website');  // Planning mode
-```
-
-#### Approval Settings
-
-```typescript
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  planning: {
-    requireApproval: true,  // Always ask before executing
-  },
-});
-
-// Change at runtime
-agent.setAutoApproval(false);  // Require approval
-agent.setAutoApproval(true);   // Auto-execute (dangerous!)
-```
-
-### Chat Response
-
-```typescript
-interface UniversalResponse {
-  text: string;              // Human-readable response
-  mode: AgentMode;           // Current mode
-  plan?: Plan;               // Plan (if created/modified)
-  planStatus?: string;       // 'pending_approval' | 'executing' | 'completed'
-  taskProgress?: {           // Progress (if executing)
-    completed: number;
-    total: number;
-    current?: Task;
-    failed: number;
-    skipped: number;
-  };
-  toolCalls?: ToolCallResult[];
-  usage?: {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  };
-  needsUserAction?: boolean;
-  userActionType?: 'approve_plan' | 'provide_input' | 'clarify';
-}
-```
-
-### Streaming
-
-```typescript
-for await (const event of agent.stream('Complex task here')) {
-  switch (event.type) {
-    case 'text:delta':
-      process.stdout.write(event.delta);
-      break;
-
-    case 'mode:changed':
-      console.log(`\nMode: ${event.from} → ${event.to}`);
-      break;
-
-    case 'plan:created':
-      console.log('\nPlan created:', event.plan);
-      break;
-
-    case 'plan:awaiting_approval':
-      console.log('\n[Approval required]');
-      break;
-
-    case 'task:started':
-      console.log(`\nStarting: ${event.task.name}`);
-      break;
-
-    case 'task:completed':
-      console.log(`✓ Completed: ${event.task.name}`);
-      break;
-
-    case 'execution:done':
-      console.log(`\nAll tasks completed!`);
-      break;
-  }
-}
-```
-
-### State Introspection
-
-```typescript
-// Current mode
-const mode = agent.getMode();  // 'interactive' | 'planning' | 'executing'
-
-// Current plan
-const plan = agent.getPlan();
-if (plan) {
-  console.log('Goal:', plan.goal);
-  console.log('Tasks:', plan.tasks.length);
-  console.log('Status:', plan.status);
-}
-
-// Execution progress
-const progress = agent.getProgress();
-if (progress) {
-  console.log(`Progress: ${progress.completed}/${progress.total}`);
-  if (progress.current) {
-    console.log('Current task:', progress.current.name);
-  }
-}
-
-// Tool management
-agent.toolManager.disable('risky_tool');
-agent.toolManager.enable('safe_tool');
-```
-
-### Plan Modification
-
-Users can modify plans during planning or execution:
-
-```typescript
-// Agent creates plan
-const response1 = await agent.chat('Do A, B, C');
-// Plan created with tasks A, B, C
-
-// User modifies
-const response2 = await agent.chat('Actually, skip B and add D after A');
-// Plan updated: A → D → C
-
-// LLM detects modification intent and uses internal meta-tool
-```
-
-**Supported modifications:**
-- Add task
-- Remove task
-- Skip task
-- Reorder tasks
-- Update task description
-
-### Pause and Resume
-
-```typescript
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-  },
-});
-
-// Start executing
-await agent.chat('Do tasks A, B, C');
-await agent.chat('yes, proceed');
-
-// Pause
-agent.pause();
-
-// Resume later (even after restart)
-const sessionId = agent.getSessionId();
-const resumed = await UniversalAgent.resume(sessionId, {
-  storage: new FileSessionStorage({ directory: './sessions' }),
-});
-
-resumed.resume();
-// Continues from where it left off
-```
-
-### Intent Analysis
-
-UniversalAgent analyzes user input to detect intent:
-
-```typescript
-// Approval intents
-'yes' | 'approved' | 'go ahead' | 'proceed' | 'do it'
-→ Approve plan and execute
-
-// Rejection intents
-'no' | 'cancel' | 'stop' | 'don\'t do that'
-→ Reject plan, return to interactive
-
-// Status queries
-'status?' | 'what\'s happening?' | 'progress?'
-→ Report current state
-
-// Modification intents
-'add task X' | 'skip task Y' | 'change task Z'
-→ Modify plan
-
-// Interrupts
-'stop' | 'pause' | 'wait'
-→ Pause execution
-```
-
-### Best Practices
-
-#### 1. Always Use Sessions
-
-```typescript
-// Good
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-  },
-});
-
-// Bad - loses state on restart
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  // No session config
-});
-```
-
-#### 2. Handle Approval Requests
-
-```typescript
-const response = await agent.chat(input);
-
-if (response.needsUserAction && response.userActionType === 'approve_plan') {
-  // Show plan to user
-  console.log('Plan:', response.plan);
-
-  // Get user input
-  const userApproval = await getUserInput('Approve? (yes/no): ');
-
-  // Send approval
-  await agent.chat(userApproval);
-}
-```
-
-#### 3. Monitor Progress
-
-```typescript
-for await (const event of agent.stream(input)) {
-  if (event.type === 'task:completed') {
-    logProgress(event.task);
-    notifyUser(`Completed: ${event.task.name}`);
-  }
-
-  if (event.type === 'task:failed') {
-    alertUser(`Failed: ${event.task.name} - ${event.error}`);
-    // Optionally pause or cancel
-  }
-}
-```
-
-#### 4. Use Planning for Complex Tasks
-
-```typescript
-// Simple - stay in interactive
-await agent.chat('What is 2+2?');
-
-// Complex - use planning
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  planning: {
-    enabled: true,
-    autoDetect: true,
-  },
-});
-
-await agent.chat('Research 10 companies, analyze financials, create report');
-// Auto-enters planning mode
-```
-
-#### 5. Disable Risky Tools During Execution
-
-```typescript
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [safeTool, riskyTool],
-});
-
-// Before executing
-agent.toolManager.disable('risky_tool');
-
-// Execute
-await agent.chat('yes, proceed');
-
-// Re-enable after
-agent.toolManager.enable('risky_tool');
-```
-
----
-
-## Task Agents
-
-> ⚠️ **DEPRECATED**: `TaskAgent` is deprecated as of v0.3.0.
-> Use `Agent` with `WorkingMemoryPluginNextGen` instead.
->
-> **Migration:**
-> ```typescript
-> // OLD (deprecated):
-> const agent = TaskAgent.create({
->   connector: 'openai',
->   model: 'gpt-4',
->   tools: [myTools],
-> });
-> await agent.start({ goal: '...', tasks: [...] });
->
-> // NEW (recommended):
-> const agent = Agent.create({
->   connector: 'openai',
->   model: 'gpt-4',
->   tools: [myTools],
->   context: {
->     features: { workingMemory: true },
->   },
-> });
-> // Use agent.run() with appropriate prompts for task management
-> ```
-
-TaskAgents are **autonomous agents** that execute complex, multi-step plans with full control over execution order, priorities, and fulfillment criteria. They represent the most powerful way to build sophisticated AI workflows.
-
-### Core Capabilities
-
-- **Working Memory** - Indexed key-value store with scopes and priorities
-- **Context Management** - Automatic handling via configurable strategies
-- **Task Priorities** - Control execution order with priority levels
-- **Fulfillment Criteria** - Define exactly when a task is considered complete
-- **External Dependencies** - Wait for webhooks, polling, manual input, schedules
-- **State Persistence** - Resume after crashes, restarts, or long waits
-- **Tool Idempotency** - Prevent duplicate side effects with caching
-- **Lifecycle Hooks** - Intercept and customize execution at every stage
-- **Dynamic Plans** - Modify plans during execution with safety validation
-
-### Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        TaskAgent                             │
-│  - Orchestrates plan execution                              │
-│  - Manages working memory                                   │
-│  - Handles context management                               │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-         ┌──────────────────┼──────────────────┐
-         │                  │                  │
-         ▼                  ▼                  ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│  PlanExecutor   │ │ WorkingMemory   │ │  AgentContext   │
-│  - Task queue   │ │ - Scoped store  │ │ - Token mgmt    │
-│  - Dependencies │ │ - Eviction      │ │ - Compaction    │
-│  - Priorities   │ │ - Persistence   │ │ - Strategies    │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-```
-
-### Basic Task Agent
-
-```typescript
-import { Connector, TaskAgent, Vendor } from '@oneringai/agents';
-
-// Setup
-Connector.create({
-  name: 'openai',
-  vendor: Vendor.OpenAI,
-  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
-});
-
-// Create TaskAgent
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [weatherTool, emailTool],
-});
-
-// Execute a plan
-const handle = await agent.start({
-  goal: 'Check weather and notify user',
-  tasks: [
-    {
-      name: 'fetch_weather',
-      description: 'Get current weather for San Francisco',
-    },
-    {
-      name: 'send_notification',
-      description: 'Email the user with weather info',
-      dependsOn: ['fetch_weather'], // Run after fetch_weather completes
-    },
-  ],
-});
-
-// Wait for completion
-const result = await handle.wait();
-console.log(`Status: ${result.status}`);
-console.log(`Completed ${result.metrics.completedTasks}/${result.metrics.totalTasks} tasks`);
-```
-
-### Complete Task Configuration
-
-Every task supports a rich set of configuration options:
-
-```typescript
-interface TaskConfig {
-  // Identity
-  id?: string;               // Auto-generated if not provided
-  name: string;              // Required: human-readable name
-  description: string;       // Required: what the task should accomplish
-
-  // Execution Control
-  dependsOn?: string[];      // Task IDs/names that must complete first
-  priority?: TaskPriority;   // 'low' | 'normal' | 'high' | 'critical'
-
-  // Fulfillment
-  fulfillmentCriteria?: FulfillmentCriteria;  // When is the task "done"?
-
-  // Conditions
-  condition?: TaskCondition; // Skip task based on memory values
-
-  // Parallelism
-  execution?: {
-    parallel?: boolean;      // Can run in parallel with others
-    exclusive?: boolean;     // Must run alone (no other parallel tasks)
-  };
-
-  // External Dependencies
-  externalDependency?: ExternalDependency;  // Webhook, poll, manual, scheduled
-
-  // Retry & Timeout
-  retryConfig?: {
-    maxRetries: number;      // Max retry attempts (default: 3)
-    retryDelayMs: number;    // Delay between retries (default: 1000)
-    backoffMultiplier?: number;  // Exponential backoff (default: 2)
-  };
-  timeoutMs?: number;        // Task timeout (default: 300000 = 5 min)
-
-  // Metadata
-  metadata?: Record<string, unknown>;  // Custom data for hooks/tracking
-}
-```
-
-### Task Dependencies
-
-#### Sequential Tasks
-
-```typescript
-await agent.start({
-  goal: 'Process order',
-  tasks: [
-    { name: 'validate', description: 'Validate order' },
-    { name: 'charge', description: 'Charge payment', dependsOn: ['validate'] },
-    { name: 'fulfill', description: 'Ship order', dependsOn: ['charge'] },
-    { name: 'notify', description: 'Send confirmation', dependsOn: ['fulfill'] },
-  ],
-});
-```
-
-#### Parallel Tasks
-
-```typescript
-await agent.start({
-  goal: 'Gather data',
-  concurrency: { maxParallelTasks: 3, strategy: 'fifo' },
-  tasks: [
-    { name: 'fetch_users', description: 'Get users', execution: { parallel: true } },
-    { name: 'fetch_orders', description: 'Get orders', execution: { parallel: true } },
-    { name: 'fetch_products', description: 'Get products', execution: { parallel: true } },
-    {
-      name: 'combine',
-      description: 'Combine all data',
-      dependsOn: ['fetch_users', 'fetch_orders', 'fetch_products'],
-    },
-  ],
-});
-```
-
-#### Conditional Tasks
-
-Tasks can be conditionally skipped based on memory values:
-
-```typescript
-await agent.start({
-  goal: 'Process with approval',
-  tasks: [
-    { name: 'check_amount', description: 'Check transaction amount' },
-    {
-      name: 'require_approval',
-      description: 'Get manager approval',
-      dependsOn: ['check_amount'],
-      condition: {
-        memoryKey: 'transaction.amount',
-        operator: 'greaterThan',
-        value: 10000,
-        onFalse: 'skip', // Skip if amount <= $10,000
-      },
-    },
-    {
-      name: 'process',
-      description: 'Process transaction',
-      dependsOn: ['require_approval'],
-    },
-  ],
-});
-```
-
-**Available Condition Operators:**
-
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `equals` | Exact match | `{ memoryKey: 'status', operator: 'equals', value: 'approved' }` |
-| `notEquals` | Not equal | `{ memoryKey: 'status', operator: 'notEquals', value: 'rejected' }` |
-| `greaterThan` | Greater than (numbers) | `{ memoryKey: 'amount', operator: 'greaterThan', value: 1000 }` |
-| `lessThan` | Less than (numbers) | `{ memoryKey: 'count', operator: 'lessThan', value: 5 }` |
-| `contains` | String/array contains | `{ memoryKey: 'tags', operator: 'contains', value: 'urgent' }` |
-| `exists` | Key exists in memory | `{ memoryKey: 'user.session', operator: 'exists' }` |
-| `notExists` | Key doesn't exist | `{ memoryKey: 'error', operator: 'notExists' }` |
-| `truthy` | Value is truthy | `{ memoryKey: 'isEnabled', operator: 'truthy' }` |
-| `falsy` | Value is falsy | `{ memoryKey: 'isDisabled', operator: 'falsy' }` |
-
-**Condition Actions (`onFalse`):**
-- `'skip'` - Skip the task, mark as `skipped` status
-- `'fail'` - Fail the task, may halt execution
-- `'wait'` - Wait and re-evaluate condition later
-
----
-
-### Task Priorities
-
-Priorities control the execution order when multiple tasks are ready to run. This is crucial for optimizing workflows and ensuring critical tasks complete first.
-
-#### Priority Levels
-
-```typescript
-type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
-
-// Priority values (higher = executed first)
-// critical: 4
-// high: 3
-// normal: 2 (default)
-// low: 1
-```
-
-#### Using Priorities
-
-```typescript
-await agent.start({
-  goal: 'Process customer requests',
-  tasks: [
-    // Critical: Security-related, always first
-    {
-      name: 'validate_auth',
-      description: 'Validate authentication token',
-      priority: 'critical',
-    },
-
-    // High: Customer-facing, important
-    {
-      name: 'fetch_customer',
-      description: 'Fetch customer data',
-      priority: 'high',
-      dependsOn: ['validate_auth'],
-    },
-
-    // Normal: Standard processing
-    {
-      name: 'update_analytics',
-      description: 'Update analytics dashboard',
-      priority: 'normal',  // Default
-      dependsOn: ['validate_auth'],
-    },
-
-    // Low: Can wait, background work
-    {
-      name: 'cleanup_temp',
-      description: 'Clean up temporary files',
-      priority: 'low',
-    },
-  ],
-});
-```
-
-#### Priority + Dependencies
-
-Priorities work **within** dependency constraints:
-
-```typescript
-await agent.start({
-  goal: 'Multi-stage pipeline',
-  tasks: [
-    // Stage 1: All can run, ordered by priority
-    { name: 'critical_check', priority: 'critical' },  // Runs 1st
-    { name: 'normal_fetch', priority: 'normal' },      // Runs 2nd
-    { name: 'low_log', priority: 'low' },              // Runs 3rd
-
-    // Stage 2: Only runs after Stage 1, then by priority
-    {
-      name: 'high_process',
-      priority: 'high',
-      dependsOn: ['critical_check', 'normal_fetch'],
-    },  // Runs 4th
-
-    {
-      name: 'low_archive',
-      priority: 'low',
-      dependsOn: ['critical_check'],
-    },  // Runs 5th (after critical_check, low priority)
-  ],
-});
-```
-
-#### Parallel Execution with Priorities
-
-When running parallel tasks, priority determines which tasks start first:
-
-```typescript
-await agent.start({
-  goal: 'Parallel data fetch',
-  concurrency: { maxParallelTasks: 2, strategy: 'priority' },  // Priority-based selection
-  tasks: [
-    { name: 'vip_users', priority: 'critical', execution: { parallel: true } },
-    { name: 'regular_users', priority: 'normal', execution: { parallel: true } },
-    { name: 'archived_users', priority: 'low', execution: { parallel: true } },
-  ],
-});
-
-// With maxParallelTasks: 2:
-// Round 1: vip_users (critical) + regular_users (normal)
-// Round 2: archived_users (low) after one completes
-```
-
-**Concurrency Strategies:**
-- `'priority'` - Higher priority tasks selected first
-- `'fifo'` - First-in-first-out (order defined)
-- `'lifo'` - Last-in-first-out
-
----
-
-### Fulfillment Criteria
-
-Fulfillment criteria define exactly when a task is considered "complete". This provides fine-grained control over task success validation.
-
-#### Default Behavior
-
-By default, a task is fulfilled when:
-1. The agent produces a non-error response
-2. No exception is thrown during execution
-
-#### Custom Fulfillment Criteria
-
-```typescript
-interface FulfillmentCriteria {
-  // What to check
-  type: 'memory' | 'tool_result' | 'output_contains' | 'custom';
-
-  // Memory-based fulfillment
-  memoryKey?: string;           // Key must exist in memory
-  memoryValue?: unknown;        // Key must have this value
-  memoryOperator?: ConditionOperator;  // Comparison operator
-
-  // Tool result-based fulfillment
-  toolName?: string;            // This tool must have been called
-  toolResultContains?: string;  // Tool result must contain this
-  toolResultPath?: string;      // JSON path in result to check
-  toolResultValue?: unknown;    // Expected value at path
-
-  // Output-based fulfillment
-  outputContains?: string[];    // Agent output must contain these strings
-
-  // Custom validation function
-  customValidator?: (context: TaskExecutionContext) => boolean | Promise<boolean>;
-
-  // Retry behavior
-  retryOnUnfulfilled?: boolean;  // Retry if criteria not met (default: true)
-  maxFulfillmentRetries?: number;  // Max retries for fulfillment (default: 3)
-}
-```
-
-#### Memory-Based Fulfillment
-
-Task completes only when specific data is stored in memory:
-
-```typescript
-{
-  name: 'fetch_user',
-  description: 'Fetch user profile from API',
-  fulfillmentCriteria: {
-    type: 'memory',
-    memoryKey: 'user.profile',  // Must store data at this key
-  },
-}
-
-// More specific: value must match
-{
-  name: 'verify_email',
-  description: 'Verify user email',
-  fulfillmentCriteria: {
-    type: 'memory',
-    memoryKey: 'email.verified',
-    memoryValue: true,
-  },
-}
-
-// With operator
-{
-  name: 'collect_responses',
-  description: 'Collect at least 5 survey responses',
-  fulfillmentCriteria: {
-    type: 'memory',
-    memoryKey: 'responses.count',
-    memoryOperator: 'greaterThan',
-    memoryValue: 4,  // > 4 means >= 5
-  },
-}
-```
-
-#### Tool Result-Based Fulfillment
-
-Task completes only when a specific tool is called with expected results:
-
-```typescript
-{
-  name: 'send_email',
-  description: 'Send confirmation email to user',
-  fulfillmentCriteria: {
-    type: 'tool_result',
-    toolName: 'send_email',
-    toolResultPath: 'status',
-    toolResultValue: 'sent',
-  },
-}
-
-// Check for specific content in result
-{
-  name: 'search_database',
-  description: 'Search for matching records',
-  fulfillmentCriteria: {
-    type: 'tool_result',
-    toolName: 'db_query',
-    toolResultContains: 'found',  // Result string contains "found"
-  },
-}
-```
-
-#### Output-Based Fulfillment
-
-Task completes only when the agent's response contains specific content:
-
-```typescript
-{
-  name: 'explain_result',
-  description: 'Explain the analysis results to the user',
-  fulfillmentCriteria: {
-    type: 'output_contains',
-    outputContains: ['summary', 'recommendation'],
-    // Agent must mention both "summary" and "recommendation"
-  },
-}
-```
-
-#### Custom Fulfillment Validator
-
-For complex validation logic, use a custom function:
-
-```typescript
-{
-  name: 'complex_validation',
-  description: 'Perform complex multi-step validation',
-  fulfillmentCriteria: {
-    type: 'custom',
-    customValidator: async (context) => {
-      // Access memory
-      const data = await context.memory.get('validation.data');
-      if (!data) return false;
-
-      // Check multiple conditions
-      const hasAllFields = data.name && data.email && data.phone;
-      const isValidEmail = data.email?.includes('@');
-      const hasConsent = data.consent === true;
-
-      // Log validation result
-      if (!hasAllFields || !isValidEmail || !hasConsent) {
-        console.log('Validation failed:', { hasAllFields, isValidEmail, hasConsent });
-        return false;
-      }
-
-      // Check tool was called
-      const toolCalls = context.getToolCalls();
-      const validationToolCalled = toolCalls.some(
-        tc => tc.name === 'validate_user' && tc.result?.valid === true
-      );
-
-      return validationToolCalled;
-    },
-    retryOnUnfulfilled: true,
-    maxFulfillmentRetries: 5,
-  },
-}
-```
-
-#### Combining Fulfillment with Retry
-
-```typescript
-import { TASK_DEFAULTS } from '@oneringai/agents';
-
-{
-  name: 'reliable_api_call',
-  description: 'Call external API with reliability guarantees',
-
-  // Retry configuration
-  retryConfig: {
-    maxRetries: TASK_DEFAULTS.MAX_RETRIES,  // 3
-    retryDelayMs: TASK_DEFAULTS.RETRY_DELAY_MS,  // 1000
-    backoffMultiplier: 2,  // Exponential backoff
-  },
-
-  // Fulfillment criteria
-  fulfillmentCriteria: {
-    type: 'memory',
-    memoryKey: 'api.response',
-    memoryOperator: 'exists',
-    retryOnUnfulfilled: true,
-    maxFulfillmentRetries: 3,  // Additional retries if criteria not met
-  },
-
-  // Timeout
-  timeoutMs: 30000,  // 30 second timeout per attempt
-}
-```
-
-#### Real-World Example: E-Commerce Order
-
-```typescript
-await agent.start({
-  goal: 'Process e-commerce order #12345',
-  tasks: [
-    {
-      name: 'validate_order',
-      description: 'Validate order details and inventory',
-      priority: 'critical',
-      fulfillmentCriteria: {
-        type: 'memory',
-        memoryKey: 'order.validated',
-        memoryValue: true,
-      },
-    },
-    {
-      name: 'charge_payment',
-      description: 'Charge customer payment method',
-      priority: 'critical',
-      dependsOn: ['validate_order'],
-      fulfillmentCriteria: {
-        type: 'tool_result',
-        toolName: 'stripe_charge',
-        toolResultPath: 'status',
-        toolResultValue: 'succeeded',
-      },
-      retryConfig: { maxRetries: 3, retryDelayMs: 2000 },
-    },
-    {
-      name: 'reserve_inventory',
-      description: 'Reserve items in warehouse',
-      priority: 'high',
-      dependsOn: ['charge_payment'],
-      fulfillmentCriteria: {
-        type: 'memory',
-        memoryKey: 'inventory.reserved',
-        memoryOperator: 'truthy',
-      },
-    },
-    {
-      name: 'create_shipment',
-      description: 'Create shipping label and schedule pickup',
-      priority: 'high',
-      dependsOn: ['reserve_inventory'],
-      fulfillmentCriteria: {
-        type: 'custom',
-        customValidator: async (ctx) => {
-          const shipment = await ctx.memory.get('shipment.details');
-          return shipment?.trackingNumber && shipment?.labelUrl;
-        },
-      },
-    },
-    {
-      name: 'send_confirmation',
-      description: 'Email order confirmation to customer',
-      priority: 'normal',
-      dependsOn: ['create_shipment'],
-      fulfillmentCriteria: {
-        type: 'tool_result',
-        toolName: 'send_email',
-        toolResultPath: 'delivered',
-        toolResultValue: true,
-      },
-    },
-    {
-      name: 'update_analytics',
-      description: 'Update sales analytics',
-      priority: 'low',
-      dependsOn: ['charge_payment'],
-      // No fulfillment criteria - default behavior
-    },
-  ],
-});
-```
-
----
-
-### Working Memory
-
-TaskAgents have indexed working memory that the agent can use to store and retrieve data:
-
-```typescript
-// The agent automatically has access to memory tools:
-// - memory_store(key, description, value, options?)
-// - memory_retrieve(key)
-// - memory_delete(key)
-// - memory_list()
-
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [apiTool],
-  memoryConfig: {
-    maxSizeBytes: 1024 * 1024, // 1MB limit
-    softLimitPercent: 80,       // Warn at 80%
-  },
-});
-
-await agent.start({
-  goal: 'Fetch and analyze user data',
-  tasks: [
-    {
-      name: 'fetch_user',
-      description: 'Fetch user profile from API and store in memory as "user.profile"',
-    },
-    {
-      name: 'analyze',
-      description: 'Retrieve "user.profile" from memory and analyze behavior patterns',
-      dependsOn: ['fetch_user'],
-    },
-  ],
-});
-
-// Agent will automatically:
-// 1. Call API in first task
-// 2. Store result: memory_store('user.profile', 'User profile data', profileData)
-// 3. Retrieve in second task: memory_retrieve('user.profile')
-// 4. Analyze the retrieved data
-```
-
-#### Memory Scopes
-
-Memory entries can have different lifecycle scopes:
-
-```typescript
-// Session-scoped memory (default - cleared when agent ends)
-memory_store({
-  key: 'temp.calculation',
-  description: 'Intermediate result',
-  value: 12345,
-  scope: 'session',
-});
-
-// Plan-scoped memory (kept for entire plan execution)
-memory_store({
-  key: 'plan.config',
-  description: 'Configuration for this plan',
-  value: { timeout: 30000 },
-  scope: 'plan',
-});
-
-// Persistent memory (never auto-cleaned)
-memory_store({
-  key: 'user.session',
-  description: 'Session token',
-  value: 'token-xyz',
-  scope: 'persistent',
-});
-
-// Task-scoped memory (auto-cleaned when specific tasks complete)
-memory_store({
-  key: 'task.intermediate',
-  description: 'Data needed only by specific tasks',
-  value: { step: 1 },
-  neededForTasks: ['task-id-1', 'task-id-2'], // Auto-cleaned when both complete
-});
-```
-
-#### Memory Priority & Pinning
-
-Control eviction behavior when memory is full:
-
-```typescript
-// Priority levels: 'low' | 'normal' | 'high' | 'critical'
-// Lower priority entries are evicted first
-memory_store({
-  key: 'cache.results',
-  description: 'Cached API results',
-  value: cachedData,
-  priority: 'low', // Evict first when memory is full
-});
-
-memory_store({
-  key: 'user.credentials',
-  description: 'Authentication credentials',
-  value: credentials,
-  priority: 'critical', // Never evicted (unless pinned=false)
-});
-
-// Pinned entries are NEVER evicted, regardless of priority
-memory_store({
-  key: 'system.config',
-  description: 'Critical system configuration',
-  value: config,
-  pinned: true, // Never evicted
-});
-```
-
-#### Programmatic Memory Access
-
-```typescript
-import { WorkingMemory, forTasks, forPlan } from '@oneringai/agents';
-
-// Create working memory instance
-const memory = new WorkingMemory(storage, config);
-
-// Store with full options
-await memory.set('user.profile', 'User profile data', userData, {
-  scope: { type: 'task', taskIds: ['fetch-user', 'process-user'] },
-  priority: 'high',
-  pinned: false,
-});
-
-// Factory functions for common patterns
-const taskEntry = forTasks('temp.data', 'Temporary data', value, ['task-1', 'task-2']);
-const planEntry = forPlan('plan.state', 'Plan state', planState, { priority: 'high' });
-
-// Retrieve data
-const profile = await memory.get('user.profile');
-
-// Update scope dynamically
-await memory.updateScope('temp.data', { type: 'plan' });
-await memory.addTasksToScope('temp.data', ['task-3']); // Add more tasks
-
-// Eviction control
-await memory.evict(5, 'lru');  // Evict 5 entries using LRU strategy
-await memory.evict(3, 'size'); // Evict 3 largest entries
-
-// Cleanup
-memory.destroy(); // Remove all listeners
-```
-
-#### Eviction Strategies
-
-When memory reaches capacity, entries are evicted based on:
-
-1. **Pinned status** - Pinned entries are never evicted
-2. **Priority** - Lower priority evicted first (`low` → `normal` → `high` → `critical`)
-3. **Strategy** - Either LRU (least recently used) or size-based (largest first)
-
-```typescript
-// LRU eviction (default) - evicts least recently accessed entries
-await memory.evict(5, 'lru');
-
-// Size-based eviction - evicts largest entries first
-await memory.evict(5, 'size');
-```
-
-#### Scope Utilities
-
-```typescript
-import {
-  scopeEquals,
-  scopeMatches,
-  isSimpleScope,
-  isTaskAwareScope,
-  isTerminalMemoryStatus,
-} from '@oneringai/agents';
-
-// Check if scopes are exactly equal
-scopeEquals('session', 'session'); // true
-scopeEquals(
-  { type: 'task', taskIds: ['a', 'b'] },
-  { type: 'task', taskIds: ['b', 'a'] }
-); // true (order-independent)
-
-// Check if entry scope matches a filter
-scopeMatches({ type: 'task', taskIds: ['a'] }, { type: 'task', taskIds: [] }); // true (type match)
-scopeMatches('persistent', 'persistent'); // true
-
-// Type guards
-isSimpleScope('session'); // true
-isTaskAwareScope({ type: 'task', taskIds: [] }); // true
-```
-
-### Hierarchical Memory (Research Pattern)
-
-For complex research tasks, use the **hierarchical memory pattern** to progressively refine data from raw inputs to final findings. This pattern is especially useful when doing web research, data analysis, or any task where you need to preserve key insights while allowing raw data to be evicted.
-
-#### Memory Tiers
-
-The library provides three memory tiers with automatic priority assignment:
-
-| Tier | Priority | Key Prefix | Purpose |
-|------|----------|------------|---------|
-| **raw** | `low` | `raw.` | Temporary raw data (full API responses, scraped pages) |
-| **summary** | `normal` | `summary.` | Condensed summaries derived from raw data |
-| **findings** | `high` | `findings.` | Final insights and conclusions |
-
-```typescript
-import { WorkingMemory, MemoryTier, TIER_PRIORITIES, getTierFromKey } from '@oneringai/agents';
-
-const memory = new WorkingMemory(storage, config);
-
-// Store raw data (low priority - evicted first)
-await memory.storeRaw(
-  'search.results',
-  'Google search results for AI trends',
-  { results: [...fullSearchResults] }
-);
-// Stored as: raw.search.results with priority: 'low'
-
-// Store summary derived from raw data
-await memory.storeSummary(
-  'search.summary',
-  'Key points from AI trends search',
-  ['Point 1: ...', 'Point 2: ...'],
-  'raw.search.results'  // Reference to source
-);
-// Stored as: summary.search.summary with priority: 'normal'
-
-// Store final findings (high priority - kept longest)
-await memory.storeFindings(
-  'ai.trends.2026',
-  'Final findings on AI trends for 2026',
-  { mainTrends: [...], conclusions: '...' },
-  ['summary.search.summary'],  // Derived from
-  { pinned: true }  // Optional: never evict
-);
-// Stored as: findings.ai.trends.2026 with priority: 'high'
-```
-
-#### Tier Utilities
-
-```typescript
-import {
-  getTierFromKey,
-  addTierPrefix,
-  stripTierPrefix,
-  TIER_PRIORITIES,
-} from '@oneringai/agents';
-
-// Get tier from a key
-getTierFromKey('raw.search.results');      // 'raw'
-getTierFromKey('summary.analysis');         // 'summary'
-getTierFromKey('findings.report');          // 'findings'
-getTierFromKey('user.profile');             // 'none' (no tier prefix)
-
-// Add tier prefix
-addTierPrefix('data', 'raw');              // 'raw.data'
-addTierPrefix('report', 'findings');        // 'findings.report'
-
-// Strip tier prefix
-stripTierPrefix('raw.search.results');      // 'search.results'
-stripTierPrefix('user.profile');            // 'user.profile' (unchanged)
-
-// Get priority for tier
-TIER_PRIORITIES.raw;       // 'low'
-TIER_PRIORITIES.summary;   // 'normal'
-TIER_PRIORITIES.findings;  // 'high'
-```
-
-#### Cleanup Raw Data
-
-After creating summaries or findings, clean up the raw data to free memory:
-
-```typescript
-// Automatic cleanup of raw data after summary is created
-await memory.cleanupRawData('summary.search.summary');
-// Deletes all raw.* entries that this summary was derived from
-
-// Or manually clean up a specific tier
-const rawEntries = await memory.getByTier('raw');
-for (const entry of rawEntries) {
-  await memory.delete(entry.key);
-}
-```
-
-#### Get Entries by Tier
-
-```typescript
-// Get all entries in a specific tier
-const rawEntries = await memory.getByTier('raw');
-const summaries = await memory.getByTier('summary');
-const findings = await memory.getByTier('findings');
-
-// Get tier statistics
-const stats = await memory.getTierStats();
-console.log(stats);
-// {
-//   raw: { count: 5, totalSize: 50000 },
-//   summary: { count: 3, totalSize: 5000 },
-//   findings: { count: 2, totalSize: 2000 },
-//   none: { count: 10, totalSize: 10000 }
-// }
-```
-
-#### Promote Entries Between Tiers
-
-```typescript
-// Promote an entry to a higher tier (changes key prefix and priority)
-await memory.promote('raw.important.data', 'findings');
-// Entry is now at: findings.important.data with priority: 'high'
-```
-
-#### Research Workflow Example
-
-Here's a complete research workflow using hierarchical memory:
-
-```typescript
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  taskType: 'research',  // Enables research-optimized prompts
-  tools: [webSearch, webScrape],
-});
-
-await agent.start({
-  goal: 'Research current AI agent frameworks and write a comparison report',
-  tasks: [
-    {
-      name: 'search_frameworks',
-      description: `
-        Search for AI agent frameworks.
-        For EACH search result, immediately store raw results:
-        memory_store({ key: "raw.search.frameworks", tier: "raw", ... })
-        Then create a summary:
-        memory_store({ key: "summary.frameworks.overview", tier: "summary", derivedFrom: ["raw.search.frameworks"], ... })
-      `,
-    },
-    {
-      name: 'analyze_results',
-      description: `
-        Retrieve summaries from memory with memory_list() and memory_retrieve().
-        Create final findings:
-        memory_store({ key: "findings.framework.comparison", tier: "findings", ... })
-      `,
-      dependsOn: ['search_frameworks'],
-    },
-    {
-      name: 'write_report',
-      description: `
-        Retrieve findings and write the final comparison report.
-        Findings are preserved even if context is compacted.
-      `,
-      dependsOn: ['analyze_results'],
-    },
-  ],
-});
-```
-
-### External Dependencies
-
-TaskAgents can wait for external events before continuing:
-
-#### Webhook
-
-```typescript
-const agent = TaskAgent.create({ connector: 'openai', model: 'gpt-4', tools: [] });
-
-const handle = await agent.start({
-  goal: 'Process with approval',
-  tasks: [
-    { name: 'request_approval', description: 'Send approval request email' },
-    {
-      name: 'wait_approval',
-      description: 'Wait for manager to approve',
-      dependsOn: ['request_approval'],
-      externalDependency: {
-        type: 'webhook',
-        webhookId: 'approval-123',
-        timeoutMs: 86400000, // 24 hours
-        state: 'waiting',
-      },
-    },
-    {
-      name: 'process',
-      description: 'Process after approval',
-      dependsOn: ['wait_approval'],
-    },
-  ],
-});
-
-// Agent will pause at wait_approval task
-
-// Later, when webhook is called:
-await agent.triggerExternal('approval-123', { approved: true, managerName: 'Alice' });
-
-// Agent resumes and completes remaining tasks
-```
-
-#### Polling
-
-Polling uses exponential backoff to reduce load on external services:
-
-```typescript
-{
-  name: 'wait_for_job',
-  description: 'Wait for batch job to complete',
-  externalDependency: {
-    type: 'poll',
-    pollConfig: {
-      toolName: 'check_job_status',
-      toolArgs: { jobId: 'job-456' },
-      intervalMs: 30000,  // Initial interval (30 seconds)
-      maxAttempts: 60,    // Max attempts before timeout
-    },
-    state: 'waiting',
-  },
-}
-```
-
-**Exponential Backoff Behavior:**
-- First poll at `intervalMs`
-- Subsequent polls increase delay with exponential backoff
-- Maximum delay capped at `4 × intervalMs` (e.g., 2 minutes for 30s interval)
-- Small jitter (±10%) added to prevent thundering herd
-- Polling can be cancelled mid-wait via `stopWaiting()`
-
-#### Manual Input
-
-```typescript
-{
-  name: 'manual_review',
-  description: 'Requires human review of document',
-  externalDependency: {
-    type: 'manual',
-    manualDescription: 'Please review document.pdf and approve or reject',
-    state: 'waiting',
-  },
-}
-
-// Later:
-await agent.completeTaskManually(taskId, {
-  approved: true,
-  comments: 'Looks good!',
-});
-```
-
-#### Scheduled
-
-```typescript
-{
-  name: 'send_reminder',
-  description: 'Send reminder at scheduled time',
-  externalDependency: {
-    type: 'scheduled',
-    scheduledTime: Date.now() + 3600000, // 1 hour from now
-    state: 'waiting',
-  },
-}
-```
-
-### Plan Updates
-
-Dynamically modify plans during execution with safety validations:
-
-```typescript
-import { PlanUpdateOptions } from '@oneringai/agents';
-
-// Update plan with validation options
-await agent.updatePlan({
-  addTasks: [
-    { name: 'new_task', description: 'Newly added task' },
-  ],
-  removeTasks: ['old_task'],
-  updateTasks: [
-    { id: 'existing_task', description: 'Updated description' },
-  ],
-}, {
-  allowRemoveActiveTasks: false,  // Default: false - throws if removing in_progress tasks
-  validateCycles: true,           // Default: true - throws if update creates dependency cycle
-});
-```
-
-**PlanUpdateOptions:**
-
-```typescript
-interface PlanUpdateOptions {
-  /** Allow removing in_progress tasks. Default: false */
-  allowRemoveActiveTasks?: boolean;
-
-  /** Validate no dependency cycles after update. Default: true */
-  validateCycles?: boolean;
-}
-```
-
-**Safety Features:**
-- **Active task protection** - Cannot remove tasks that are currently `in_progress` unless explicitly allowed
-- **Cycle detection** - Updates that would create dependency cycles are rejected
-- **Atomic updates** - Either all changes succeed or none are applied
-
-```typescript
-// This throws: "Cannot remove active tasks: processing_task"
-await agent.updatePlan({
-  removeTasks: ['processing_task'],  // Task is in_progress
-});
-
-// Explicitly allow it
-await agent.updatePlan({
-  removeTasks: ['processing_task'],
-}, {
-  allowRemoveActiveTasks: true,
-});
-```
-
-### Tool Idempotency
-
-Prevent duplicate side effects when tools are called multiple times:
-
-```typescript
-import { ToolFunction } from '@oneringai/agents';
-
-// Cacheable tool (results can be cached)
-const getWeatherTool: ToolFunction = {
-  definition: {
-    type: 'function',
-    function: {
-      name: 'get_weather',
-      description: 'Get current weather',
-      parameters: {
-        type: 'object',
-        properties: {
-          location: { type: 'string' },
-        },
-        required: ['location'],
-      },
-    },
-  },
-  execute: async (args) => {
-    return { temp: 72, location: args.location };
-  },
-  idempotency: {
-    cacheable: true, // Results can be cached based on arguments
-  },
-};
-
-// Non-cacheable tool with custom cache key
-const sendEmailTool: ToolFunction = {
-  definition: {
-    type: 'function',
-    function: {
-      name: 'send_email',
-      description: 'Send an email',
-      parameters: {
-        type: 'object',
-        properties: {
-          to: { type: 'string' },
-          subject: { type: 'string' },
-          body: { type: 'string' },
-        },
-        required: ['to', 'subject', 'body'],
-      },
-    },
-  },
-  execute: async (args) => {
-    // Send email
-    return { sent: true, messageId: 'msg-123' };
-  },
-  idempotency: {
-    cacheable: true,  // Enable caching
-    keyFn: (args) => `email:${args.to}:${args.subject}`, // Custom cache key
-    ttlMs: 3600000, // Cache for 1 hour
-  },
-};
-
-// If agent calls sendEmailTool twice with same args within 1 hour:
-// - First call: Email sent
-// - Second call: Returns cached result, no duplicate email
-```
-
-**Idempotency Options:**
-
-```typescript
-interface ToolIdempotency {
-  /** If true, tool results can be cached based on arguments. Default: false */
-  cacheable?: boolean;
-
-  /** @deprecated Use 'cacheable' instead. Will be removed in a future version. */
-  safe?: boolean;
-
-  /** Custom function to generate cache key from arguments */
-  keyFn?: (args: Record<string, unknown>) => string;
-
-  /** Time-to-live for cached results in milliseconds */
-  ttlMs?: number;
-}
-```
-
-> **Note:** The `safe` field is deprecated. Use `cacheable` instead. Both fields work, but `cacheable` takes precedence if both are specified.
-
-### Persistence & Resume
-
-TaskAgents can persist their state and resume after crashes:
-
-```typescript
-import { TaskAgent, createAgentStorage } from '@oneringai/agents';
-
-// Custom file-based storage
-class FileAgentStorage {
-  async save(agentId: string, state: any) {
-    await fs.writeFile(`./agents/${agentId}.json`, JSON.stringify(state));
-  }
-
-  async load(agentId: string) {
-    const data = await fs.readFile(`./agents/${agentId}.json`, 'utf-8');
-    return JSON.parse(data);
-  }
-}
-
-// Create agent with persistent storage
-const storage = new FileAgentStorage();
-
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [apiTool],
-  storage,
-});
-
-// Start long-running workflow
-const handle = await agent.start({
-  goal: 'Multi-day workflow',
-  tasks: [
-    { name: 'step1', description: 'First step' },
-    {
-      name: 'wait_approval',
-      description: 'Wait for approval',
-      externalDependency: { type: 'webhook', webhookId: 'approval-123', state: 'waiting' },
-    },
-    { name: 'step2', description: 'Second step', dependsOn: ['wait_approval'] },
-  ],
-});
-
-// Agent suspends at webhook...
-// App crashes or restarts...
-
-// Resume later
-const resumedAgent = await TaskAgent.resume(handle.agentId, {
-  storage,
-  tools: [apiTool], // Must provide tools again
-});
-
-// Trigger webhook
-await resumedAgent.triggerExternal('approval-123', { approved: true });
-
-// Agent continues from where it left off
-```
-
-**Tool Validation on Resume:**
-
-When resuming, TaskAgent validates that provided tools match the saved state:
-
-```typescript
-const resumed = await TaskAgent.resume(agentId, {
-  storage,
-  tools: [toolA, toolB], // Different from saved state
-});
-
-// Console warnings if tools don't match:
-// [TaskAgent.resume] Warning: Missing tools from saved state: tool_c, tool_d.
-//   Tasks requiring these tools may fail.
-// [TaskAgent.resume] Info: New tools not in saved state: tool_b
-```
-
-Resume succeeds even with mismatched tools, but warnings help identify potential issues.
-
-### Hooks
-
-Customize TaskAgent behavior with hooks:
-
-```typescript
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [myTool],
-
-  hooks: {
-    onStart: async (agent, plan) => {
-      console.log(`Starting plan: ${plan.goal}`);
-    },
-
-    beforeTask: async (task, context) => {
-      console.log(`Starting task: ${task.name}`);
-
-      // Can skip tasks
-      if (task.name === 'optional' && !process.env.ENABLE_OPTIONAL) {
-        return 'skip';
-      }
-    },
-
-    afterTask: async (task, result) => {
-      console.log(`Completed task: ${task.name}`);
-      // Log to external system
-      await auditLog.record({ task: task.name, result });
-    },
-
-    beforeTool: async (tool, args) => {
-      console.log(`Calling tool: ${tool.definition.function.name}`);
-      // Can modify args
-      return args;
-    },
-
-    afterTool: async (tool, args, result) => {
-      console.log(`Tool returned: ${JSON.stringify(result)}`);
-      // Can modify result
-      return result;
-    },
-
-    onError: async (error, context) => {
-      console.error(`Error in ${context.phase}:`, error);
-
-      // Retry logic
-      if (context.task?.attempts < 3) {
-        return 'retry';
-      }
-
-      return 'fail';
-    },
-
-    onComplete: async (result) => {
-      console.log(`Plan complete: ${result.status}`);
-      // Send notification
-      await notificationService.send('Plan completed!');
-    },
-  },
-});
-```
-
-### Events
-
-Monitor TaskAgent execution with events:
-
-```typescript
-const agent = TaskAgent.create({ connector: 'openai', model: 'gpt-4', tools: [] });
-
-// Task events
-agent.on('task:start', ({ task }) => {
-  console.log(`▶️ Starting: ${task.name}`);
-});
-
-agent.on('task:complete', ({ task, result }) => {
-  console.log(`✅ Completed: ${task.name}`);
-});
-
-agent.on('task:failed', ({ task, error }) => {
-  console.error(`❌ Failed: ${task.name} - ${error.message}`);
-});
-
-agent.on('task:waiting', ({ task, dependency }) => {
-  console.log(`⏸️ Waiting: ${task.name} on ${dependency.type}`);
-});
-
-// Plan events
-agent.on('plan:updated', ({ plan }) => {
-  console.log('Plan updated');
-});
-
-// Memory events
-agent.on('memory:stored', ({ key, description }) => {
-  console.log(`💾 Stored: ${key} - ${description}`);
-});
-
-agent.on('memory:limit_warning', ({ utilization }) => {
-  console.warn(`⚠️ Memory at ${utilization}%`);
-});
-
-// Agent events
-agent.on('agent:suspended', ({ reason }) => {
-  console.log(`⏸️ Suspended: ${reason}`);
-});
-
-agent.on('agent:resumed', () => {
-  console.log('▶️ Resumed');
-});
-
-agent.on('agent:completed', ({ result }) => {
-  console.log(`🎉 Complete: ${result.status}`);
-});
-```
-
-### PlanExecutor Internals
-
-Understanding how the PlanExecutor works helps you build more efficient workflows.
-
-#### Execution Loop
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                     PlanExecutor Loop                       │
-├────────────────────────────────────────────────────────────┤
-│  1. Check for ready tasks (dependencies met, not blocked)  │
-│  2. Sort by priority (critical → high → normal → low)      │
-│  3. Execute tasks (respect concurrency limits)             │
-│  4. Check fulfillment criteria                             │
-│  5. Update task status and dependencies                    │
-│  6. Handle failures (retry, skip, or fail plan)            │
-│  7. Clean up task-scoped memory entries                    │
-│  8. Repeat until all tasks complete or plan fails          │
-└────────────────────────────────────────────────────────────┘
-```
-
-#### Task State Machine
-
-```
-                    ┌──────────┐
-                    │ pending  │
-                    └────┬─────┘
-                         │
-           ┌─────────────┼─────────────┐
-           │             │             │
-           ▼             ▼             ▼
-    ┌──────────┐  ┌───────────┐  ┌──────────┐
-    │  waiting │  │in_progress│  │  skipped │
-    └────┬─────┘  └─────┬─────┘  └──────────┘
-         │              │
-         │   ┌──────────┼──────────┐
-         │   │          │          │
-         ▼   ▼          ▼          ▼
-    ┌──────────┐  ┌──────────┐  ┌──────────┐
-    │in_progress│  │completed │  │  failed  │
-    └──────────┘  └──────────┘  └──────────┘
-```
-
-#### Configuration Constants
-
-```typescript
-import {
-  TASK_DEFAULTS,
-  CONTEXT_DEFAULTS,
-  MEMORY_DEFAULTS,
-  HISTORY_DEFAULTS,
-} from '@oneringai/agents';
-
-// Task execution defaults
-console.log(TASK_DEFAULTS);
-// {
-//   TIMEOUT_MS: 300_000,      // 5 minutes per task
-//   MAX_RETRIES: 3,           // Retry failed tasks 3 times
-//   RETRY_DELAY_MS: 1_000,    // 1 second between retries
-//   MAX_CONSECUTIVE_ERRORS: 3, // Fail plan after 3 consecutive errors
-// }
-
-// Context management defaults
-console.log(CONTEXT_DEFAULTS);
-// {
-//   MAX_TOKENS: 128_000,      // Default context window
-//   RESPONSE_RESERVE: 0.15,   // Reserve 15% for response
-//   COMPACTION_THRESHOLD: 0.75, // Compact at 75%
-//   HARD_LIMIT: 0.90,         // Must compact before 90%
-// }
-
-// Memory defaults
-console.log(MEMORY_DEFAULTS);
-// {
-//   MAX_SIZE_BYTES: 1_048_576, // 1MB
-//   SOFT_LIMIT_PERCENT: 80,    // Warn at 80%
-// }
-
-// History defaults
-console.log(HISTORY_DEFAULTS);
-// {
-//   MAX_ENTRIES: 1000,        // Max conversation turns
-//   TRUNCATE_AT: 800,         // Truncate when exceeding
-// }
-```
-
-### Advanced Plan Configuration
-
-```typescript
-await agent.start({
-  // Plan identity
-  goal: 'Complete complex workflow',
-  metadata: {
-    requestId: 'req-12345',
-    userId: 'user-789',
-    environment: 'production',
-  },
-
-  // Execution control
-  concurrency: {
-    maxParallelTasks: 3,     // Run up to 3 tasks in parallel
-    strategy: 'priority',    // priority | fifo | lifo
-  },
-
-  // Error handling
-  errorHandling: {
-    maxConsecutiveErrors: 3,  // Fail plan after N consecutive errors
-    onTaskFailure: 'continue', // continue | skip_dependent | fail_plan
-    retryStrategy: 'exponential', // fixed | exponential | none
-  },
-
-  // Timeout configuration
-  timeoutConfig: {
-    planTimeoutMs: 3600000,   // 1 hour max for entire plan
-    taskTimeoutMs: 300000,    // 5 minutes per task (default)
-    idleTimeoutMs: 60000,     // Fail if idle for 1 minute
-  },
-
-  // Context management
-  contextConfig: {
-    strategy: 'adaptive',
-    maxContextTokens: 128000,
-    compactionThreshold: 0.75,
-  },
-
-  // Memory configuration
-  memoryConfig: {
-    maxSizeBytes: 2 * 1024 * 1024, // 2MB
-    softLimitPercent: 80,
-    evictionStrategy: 'lru',  // lru | size | priority
-  },
-
-  // Task definitions
-  tasks: [
-    // ... task configurations
-  ],
-});
-```
-
-### Debugging TaskAgents
-
-```typescript
-// Enable verbose logging
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [myTool],
-  debug: {
-    logLevel: 'verbose',      // silent | error | warn | info | verbose
-    logToolCalls: true,
-    logMemoryOps: true,
-    logContextBudget: true,
-  },
-});
-
-// Get detailed execution state
-const state = agent.getState();
-console.log('Plan status:', state.plan.status);
-console.log('Current task:', state.currentTask?.name);
-console.log('Completed tasks:', state.completedTasks.map(t => t.name));
-console.log('Failed tasks:', state.failedTasks.map(t => t.name));
-console.log('Memory entries:', state.memory.length);
-console.log('Context usage:', state.contextUsage);
-
-// Inspect task execution history
-const history = agent.getExecutionHistory();
-history.forEach(entry => {
-  console.log(`[${entry.timestamp}] ${entry.taskName}: ${entry.event}`);
-  if (entry.details) console.log('  Details:', entry.details);
-});
-
-// Force compaction for testing
-await agent.forceCompaction('Testing compaction behavior');
-
-// Get memory dump
-const memoryDump = await agent.dumpMemory();
-console.log('Memory contents:', JSON.stringify(memoryDump, null, 2));
-```
-
-### Best Practices for TaskAgents
-
-#### 1. Design Tasks with Clear Boundaries
-
-```typescript
-// BAD: Vague, multi-purpose task
-{
-  name: 'process_data',
-  description: 'Process all the data and do stuff with it',
-}
-
-// GOOD: Clear, single-responsibility tasks
-{
-  name: 'fetch_user_data',
-  description: 'Fetch user profile from /api/users/:id and store in memory as user.profile',
-  fulfillmentCriteria: { type: 'memory', memoryKey: 'user.profile' },
-}
-```
-
-#### 2. Use Priorities Strategically
-
-```typescript
-// Critical: Security, validation, must-not-fail
-// High: Customer-facing, time-sensitive
-// Normal: Standard business logic
-// Low: Analytics, cleanup, nice-to-have
-
-await agent.start({
-  tasks: [
-    { name: 'validate_auth', priority: 'critical' },  // Always first
-    { name: 'charge_card', priority: 'critical' },    // Money matters
-    { name: 'send_receipt', priority: 'high' },       // Customer expects it
-    { name: 'update_inventory', priority: 'normal' }, // Important but can wait
-    { name: 'log_analytics', priority: 'low' },       // Background work
-  ],
-});
-```
-
-#### 3. Set Appropriate Timeouts
-
-```typescript
-{
-  // API call: short timeout
-  name: 'fetch_api',
-  timeoutMs: 30000,  // 30 seconds
-
-  // LLM analysis: medium timeout
-  name: 'analyze_data',
-  timeoutMs: 120000,  // 2 minutes
-
-  // External process: long timeout
-  name: 'generate_report',
-  timeoutMs: 600000,  // 10 minutes
-}
-```
-
-#### 4. Use Memory Scopes Correctly
-
-```typescript
-// Task-scoped: Temporary data for specific tasks
-await memory.set('temp.calculation', 'Intermediate result', value, {
-  scope: { type: 'task', taskIds: ['calculate', 'validate'] },
-  priority: 'normal',
-});
-
-// Plan-scoped: Shared across all tasks in this plan
-await memory.set('plan.config', 'Plan configuration', config, {
-  scope: { type: 'plan' },
-  priority: 'high',
-});
-
-// Persistent: Survives plan completion (for multi-session state)
-await memory.set('user.preferences', 'User preferences', prefs, {
-  scope: { type: 'persistent' },
-  priority: 'critical',
-  pinned: true,
-});
-```
-
-#### 5. Handle External Dependencies Gracefully
-
-```typescript
-{
-  name: 'wait_for_payment',
-  externalDependency: {
-    type: 'webhook',
-    webhookId: `payment-${orderId}`,
-    timeoutMs: 86400000,  // 24 hours
-    state: 'waiting',
-  },
-  // Define what happens on timeout
-  onTimeout: 'skip',  // or 'fail' or 'retry'
-
-  // Alternative: fallback task
-  fallbackTask: 'send_payment_reminder',
-}
-```
-
-#### 6. Monitor in Production
-
-```typescript
-// Set up comprehensive monitoring
-agent.on('task:complete', async ({ task, result, duration }) => {
-  await metrics.histogram('task.duration', duration, { task: task.name });
-  await metrics.increment('task.completed', { task: task.name });
-});
-
-agent.on('task:failed', async ({ task, error, retryCount }) => {
-  await metrics.increment('task.failed', { task: task.name });
-  if (retryCount >= 3) {
-    await alerts.error(`Task ${task.name} failed after ${retryCount} retries`);
-  }
-});
-
-agent.on('memory:evicted', async ({ keys, reason }) => {
-  await metrics.increment('memory.eviction', { count: keys.length, reason });
-});
-
-agent.on('agent:completed', async ({ result, metrics: planMetrics }) => {
-  await monitoring.record({
-    planId: result.planId,
-    status: result.status,
-    duration: planMetrics.totalDuration,
-    tasksCompleted: planMetrics.completedTasks,
-    tasksFailed: planMetrics.failedTasks,
-    tokensUsed: planMetrics.totalTokens,
-  });
-});
-```
-
----
-
-## Research Agent
-
-> ⚠️ **DEPRECATED**: `ResearchAgent` is deprecated as of v0.3.0.
-> Use `Agent` with search tools and `WorkingMemoryPluginNextGen` instead.
->
-> **Migration:**
-> ```typescript
-> // OLD (deprecated):
-> const agent = ResearchAgent.create({
->   connector: 'openai',
->   model: 'gpt-4',
->   sources: [webSource, fileSource],
-> });
->
-> // NEW (recommended):
-> const agent = Agent.create({
->   connector: 'openai',
->   model: 'gpt-4',
->   tools: [webSearchTool, fileSearchTool],  // Use search tools directly
->   context: {
->     features: { workingMemory: true },
->   },
-> });
-> ```
-
-The **ResearchAgent** is a specialized agent for conducting multi-source research with pluggable data sources. It extends TaskAgent with research-specific capabilities including automatic large output handling, hierarchical memory tiers, and batch retrieval.
-
-### Core Capabilities
-
-- **Pluggable Sources** - Generic `IResearchSource` interface supports any data source
-- **Auto-Spill** - Large tool outputs automatically stored in memory with tracking
-- **Smart Cleanup** - Raw data evicted after summarization to free context
-- **Batch Retrieval** - Efficient `memory_retrieve_batch` for synthesis phase
-- **Tiered Memory** - Raw → Summary → Findings workflow with priority-based eviction
-- **25MB Default Memory** - Configurable for large research tasks with many sources
-
-### Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     ResearchAgent                           │
-│  - Extends TaskAgent                                        │
-│  - Research-specific tools                                  │
-│  - Source management                                        │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-         ┌──────────────────┼──────────────────┐
-         │                  │                  │
-         ▼                  ▼                  ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ IResearchSource │ │ AutoSpillPlugin │ │ WorkingMemory   │
-│ - Web search    │ │ - Track outputs │ │ - raw tier      │
-│ - File search   │ │ - Auto-spill    │ │ - summary tier  │
-│ - Vector DB     │ │ - Cleanup       │ │ - findings tier │
-│ - Custom APIs   │ │                 │ │                 │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-```
-
-### Basic Research Agent
-
-```typescript
-import {
-  Connector,
-  ResearchAgent,
-  createWebSearchSource,
-  Vendor,
-  Services,
-} from '@oneringai/agents';
-
-// Setup connectors
-Connector.create({
-  name: 'openai',
-  vendor: Vendor.OpenAI,
-  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
-});
-
-Connector.create({
-  name: 'serper',
-  serviceType: Services.Serper,
-  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
-  baseURL: 'https://google.serper.dev',
-});
-
-// Create web search source
-const webSource = createWebSearchSource('serper', {
-  name: 'web-serper',
-  defaultCountry: 'us',
-  defaultLanguage: 'en',
-});
-
-// Create research agent
-const agent = await ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [webSource],
-});
-
-// Execute research
-const result = await agent.research({
-  topic: 'AI developments in 2026',
-  queries: ['latest AI breakthroughs', 'AI regulation updates'],
-  maxResultsPerQuery: 10,
-});
-
-console.log(result.findings);
-
-// Clean up
-await agent.destroy();
-```
-
-### Pluggable Research Sources
-
-The `IResearchSource` interface enables any data source to be used for research:
-
-```typescript
-interface IResearchSource {
-  /** Unique source name */
-  readonly name: string;
-  /** Human-readable description */
-  readonly description: string;
-  /** Source type: 'web', 'knowledge', 'file', 'api' */
-  readonly type: 'web' | 'knowledge' | 'file' | 'api';
-
-  /** Search for relevant content */
-  search(query: string, options?: SearchOptions): Promise<SearchResponse>;
-
-  /** Fetch full content by reference (URL, ID, path) */
-  fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
-
-  /** Check if source is available */
-  isAvailable(): Promise<boolean>;
-
-  /** Get source capabilities */
-  getCapabilities(): SourceCapabilities;
-}
-```
-
-#### Built-in Sources
-
-**Web Search Source:**
-```typescript
-import { createWebSearchSource } from '@oneringai/agents';
-
-// Create from connector name
-const webSource = createWebSearchSource('serper-connector', {
-  name: 'web-search',
-  description: 'Web search via Serper',
-  defaultCountry: 'us',
-  defaultLanguage: 'en',
-});
-```
-
-**File Search Source:**
-```typescript
-import { createFileSearchSource } from '@oneringai/agents';
-
-// Search files in a directory
-const fileSource = createFileSearchSource('./docs', {
-  name: 'local-docs',
-  description: 'Local documentation files',
-  includePatterns: ['**/*.md', '**/*.txt'],
-  excludePatterns: ['node_modules/**'],
-  searchMode: 'content', // 'filename' | 'content' | 'both'
-});
-```
-
-#### Custom Sources
-
-Implement `IResearchSource` for any data source:
-
-```typescript
-import type { IResearchSource, SearchResponse, FetchedContent } from '@oneringai/agents';
-
-// Vector database source
-const vectorSource: IResearchSource = {
-  name: 'pinecone-kb',
-  description: 'Knowledge base via Pinecone',
-  type: 'knowledge',
-
-  async search(query, options) {
-    const results = await pinecone.query({
-      vector: await embed(query),
-      topK: options?.maxResults ?? 10,
-    });
-
-    return {
-      success: true,
-      query,
-      results: results.matches.map((m, i) => ({
-        id: m.id,
-        title: m.metadata?.title ?? m.id,
-        snippet: m.metadata?.snippet ?? '',
-        reference: m.id,
-        relevance: m.score,
-        metadata: m.metadata,
-      })),
-      totalResults: results.matches.length,
-    };
-  },
-
-  async fetch(reference, options) {
-    const doc = await pinecone.fetch([reference]);
-    return {
-      success: true,
-      reference,
-      content: doc.records[reference]?.metadata?.content ?? null,
-      contentType: 'text/plain',
-    };
-  },
-
-  async isAvailable() {
-    return true;
-  },
-
-  getCapabilities() {
-    return {
-      canSearch: true,
-      canFetch: true,
-      hasRelevanceScores: true,
-      maxResultsPerSearch: 100,
-      contentTypes: ['text/plain'],
-    };
-  },
-};
-
-// Use with ResearchAgent
-const agent = await ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [vectorSource],
-});
-```
-
-### Auto-Spill for Large Outputs
-
-The **AutoSpillPlugin** automatically stores large tool outputs in memory's raw tier, preventing context overflow while keeping data available for later retrieval.
-
-#### Configuration
-
-```typescript
-const agent = await ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [webSource],
-
-  // Auto-spill configuration
-  autoSpill: {
-    sizeThreshold: 10 * 1024,         // 10KB - outputs larger than this are spilled
-    tools: ['research_fetch'],         // Only spill these tools (optional)
-    toolPatterns: [/^web_/],           // Regex patterns for tool names (optional)
-    maxTrackedEntries: 100,            // Max entries to track
-    autoCleanupAfterIterations: 5,     // Auto-cleanup consumed entries
-    keyPrefix: 'autospill',            // Key prefix for spilled entries
-  },
-});
-```
-
-#### How It Works
-
-1. **Detection**: When a tool output exceeds `sizeThreshold`, it's automatically stored in memory's `raw` tier
-2. **Tracking**: The plugin tracks all spilled entries with metadata (source tool, size, timestamp)
-3. **Notification**: The agent is informed about spilled data via context plugins
-4. **Consumption**: When the agent summarizes raw data, it marks entries as "consumed"
-5. **Cleanup**: Consumed entries are automatically cleaned up, or manually via `cleanupConsumed()`
-
-```typescript
-// Access auto-spill plugin
-const autoSpill = agent.getAutoSpillPlugin();
-
-// Get spilled entries
-const entries = autoSpill.getEntries();
-const unconsumed = autoSpill.getUnconsumed();
-const consumed = autoSpill.getConsumed();
-
-// Manual cleanup
-await autoSpill.cleanupConsumed();
-await autoSpill.cleanup(['raw.autospill_web_fetch_123']);
-await autoSpill.cleanupAll();
-
-// Event listeners
-autoSpill.on('spilled', ({ key, tool, sizeBytes }) => {
-  console.log(`Spilled ${sizeBytes} bytes from ${tool} to ${key}`);
-});
-
-autoSpill.on('consumed', ({ key, summaryKey }) => {
-  console.log(`${key} was summarized into ${summaryKey}`);
-});
-
-autoSpill.on('cleaned', ({ keys, reason }) => {
-  console.log(`Cleaned ${keys.length} entries (${reason})`);
-});
-```
-
-### Memory Batch Retrieval
-
-The `memory_retrieve_batch` tool allows efficient retrieval of multiple memory entries in a single call, reducing token usage during synthesis.
-
-```typescript
-// In agent tools, memory_retrieve_batch is available automatically
-
-// Retrieve by pattern (glob-like)
-const findings = await agent.context.executeTool('memory_retrieve_batch', {
-  pattern: 'findings.*',
-});
-
-// Retrieve by specific keys
-const specific = await agent.context.executeTool('memory_retrieve_batch', {
-  keys: ['findings.search1', 'findings.search2', 'summary.overview'],
-});
-
-// Retrieve all from a tier
-const allRaw = await agent.context.executeTool('memory_retrieve_batch', {
-  tier: 'raw',
-});
-
-// Include metadata
-const withMeta = await agent.context.executeTool('memory_retrieve_batch', {
-  pattern: 'findings.*',
-  includeMetadata: true,
-});
-
-// Result format
-// {
-//   entries: { 'findings.topic1': {...}, 'findings.topic2': {...} },
-//   count: 2,
-//   metadata: { 'findings.topic1': { tier, priority, pinned, description } },
-//   filter: 'pattern:findings.*'
-// }
-```
-
-### Research-Specific Tools
-
-ResearchAgent adds these tools automatically:
-
-| Tool | Description |
-|------|-------------|
-| `research_search` | Search across all configured sources |
-| `research_fetch` | Fetch full content from a source |
-| `research_store_finding` | Store a research finding in memory |
-| `research_list_sources` | List available research sources |
-
-```typescript
-// These tools are available to the LLM during research
-
-// search across sources
-{
-  "name": "research_search",
-  "parameters": {
-    "query": "AI breakthroughs 2026",
-    "sources": ["web-serper"],    // Optional: specific sources
-    "maxResults": 10              // Optional: limit results
-  }
-}
-
-// fetch full content
-{
-  "name": "research_fetch",
-  "parameters": {
-    "source": "web-serper",
-    "reference": "https://example.com/article"
-  }
-}
-
-// store a finding
-{
-  "name": "research_store_finding",
-  "parameters": {
-    "key": "ai_breakthroughs",
-    "content": "Key findings about AI...",
-    "sources": ["https://example.com/article"],
-    "confidence": 0.9
-  }
-}
-```
-
-### Memory Size Configuration
-
-ResearchAgent uses 25MB default memory (configurable) to support large research tasks:
-
-```typescript
-const agent = await ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [webSource],
-
-  // Memory configuration
-  memory: {
-    maxSizeBytes: 50 * 1024 * 1024,  // 50MB for very large research
-    softLimitPercent: 80,             // Start eviction at 80%
-  },
-});
-```
-
-### Research Workflow Example
-
-Complete workflow for multi-query research:
-
-```typescript
-import {
-  Connector,
-  ResearchAgent,
-  createWebSearchSource,
-  Vendor,
-  Services,
-} from '@oneringai/agents';
-
-// Setup
-Connector.create({
-  name: 'openai',
-  vendor: Vendor.OpenAI,
-  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
-});
-
-Connector.create({
-  name: 'serper',
-  serviceType: Services.Serper,
-  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
-  baseURL: 'https://google.serper.dev',
-});
-
-// Create sources
-const webSource = createWebSearchSource('serper');
-
-// Create agent with research-optimized settings
-const agent = await ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [webSource],
-  taskType: 'research', // Optimizes memory priorities
-  autoSpill: {
-    sizeThreshold: 10 * 1024,
-  },
-  context: {
-    strategy: 'proactive',
-    autoCompact: true,
-  },
-});
-
-// Define research plan
-const researchPlan = {
-  topic: 'State of AI in Healthcare 2026',
-  queries: [
-    'AI diagnosis accuracy healthcare 2026',
-    'FDA approved AI medical devices 2026',
-    'AI drug discovery breakthroughs',
-    'healthcare AI ethics regulations',
-  ],
-  maxResultsPerQuery: 5,
-};
-
-// Execute research
-const result = await agent.research(researchPlan);
-
-// Access results
-console.log('=== Research Complete ===');
-console.log(`Topic: ${result.topic}`);
-console.log(`Queries processed: ${result.queriesProcessed}`);
-console.log(`Sources used: ${result.sourcesUsed.join(', ')}`);
-console.log('\n=== Findings ===');
-for (const finding of result.findings) {
-  console.log(`- ${finding.key}: ${finding.summary}`);
-}
-
-// Generate final report
-const report = await agent.run(`
-  Based on the research findings in memory, create a comprehensive report
-  about "${researchPlan.topic}".
-
-  Use memory_retrieve_batch with pattern "findings.*" to get all findings.
-  Structure the report with:
-  1. Executive Summary
-  2. Key Developments
-  3. Regulatory Landscape
-  4. Ethical Considerations
-  5. Future Outlook
-`);
-
-console.log('\n=== Final Report ===');
-console.log(report.output_text);
-
-// Cleanup
-await agent.destroy();
-```
-
-### Best Practices
-
-1. **Use Appropriate Sources** - Match source type to research needs (web for news, vector for knowledge bases)
-
-2. **Configure Auto-Spill Threshold** - Set based on your context window; 10KB is good for most models
-
-3. **Use Tiered Memory** - Store raw data in `raw` tier, summaries in `summary`, conclusions in `findings`
-
-4. **Batch Retrieval for Synthesis** - Use `memory_retrieve_batch` to get all findings before final synthesis
-
-5. **Clean Up After Summarization** - Mark raw entries as consumed after creating summaries
-
-6. **Monitor Memory Usage** - Check memory stats if research involves many queries
-
-```typescript
-// Check memory stats
-const stats = agent.getMemoryStats();
-console.log(`Memory: ${stats.usedBytes} / ${stats.maxBytes} bytes`);
-console.log(`Entries: ${stats.entryCount}`);
-```
-
----
 
 ## Context Management
 
-The library includes a **powerful, universal context management system** that automatically handles the complexity of managing LLM context windows. As of v0.3.0, `AgentContextNextGen` is the primary context manager with a clean, plugin-based architecture.
+The library includes a **powerful, universal context management system** that automatically handles the complexity of managing LLM context windows. `AgentContextNextGen` is the primary context manager with a clean, plugin-based architecture.
 
 ### AgentContextNextGen - The Modern API
 
@@ -3847,23 +924,21 @@ console.log(DEFAULT_FEATURES);
 **Usage Examples:**
 
 ```typescript
-// 1. Minimal stateless agent (no memory, no history tracking)
-const ctx = AgentContext.create({
+// 1. Minimal stateless agent (no working memory)
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
-  features: { memory: false, autoSpill: false, toolResultEviction: false, history: false },  // autoSpill and toolResultEviction require memory
+  features: { workingMemory: false },  // Disable working memory
 });
 
-console.log(ctx.memory);                      // null
-console.log(ctx.isFeatureEnabled('memory'));  // false
+console.log(ctx.memory);  // null
 
 // 2. Full-featured agent with all capabilities
-const ctx = AgentContext.create({
+const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
   features: {
-    memory: true,
-    inContextMemory: true,  // Opt-in
-    history: true,
-    permissions: true,
+    workingMemory: true,          // default: true
+    inContextMemory: true,        // default: false
+    persistentInstructions: true, // default: false
   },
 });
 
@@ -3872,16 +947,21 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false, autoSpill: false, toolResultEviction: false },  // autoSpill and toolResultEviction require memory
+    features: { workingMemory: false },  // Disable working memory
   },
 });
 
-// 4. Chat agent with history only
-const chatAgent = Agent.create({
+// 4. Agent with all features
+const fullAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false, autoSpill: false, toolResultEviction: false, history: true },  // autoSpill and toolResultEviction require memory
+    agentId: 'my-agent',
+    features: {
+      workingMemory: true,
+      inContextMemory: true,
+      persistentInstructions: true,
+    },
   },
 });
 ```
@@ -3890,9 +970,9 @@ const chatAgent = Agent.create({
 
 ```typescript
 // Check if a feature is enabled
-ctx.isFeatureEnabled('memory');      // boolean
-ctx.isFeatureEnabled('inContextMemory');
-ctx.isFeatureEnabled('history');
+ctx.features.workingMemory;           // boolean
+ctx.features.inContextMemory;         // boolean
+ctx.features.persistentInstructions;  // boolean
 ctx.isFeatureEnabled('permissions');
 
 // Get read-only feature configuration
@@ -3912,287 +992,112 @@ const perms = ctx.requirePermissions();     // ToolPermissionManager (throws if 
 
 **Tool Auto-Registration:**
 
-AgentContext automatically registers feature-aware tools during construction. All agent types (Agent, TaskAgent, UniversalAgent) get consistent tools based on enabled features:
+AgentContextNextGen automatically registers feature-aware tools based on enabled features:
 
 ```typescript
-import { AgentContext } from '@oneringai/agents';
+import { AgentContextNextGen } from '@oneringai/agents';
 
-// With memory enabled (default)
-const ctx = AgentContext.create({ model: 'gpt-4' });
+// With workingMemory enabled (default)
+const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 console.log(ctx.tools.has('memory_store'));     // true
-console.log(ctx.tools.has('context_stats'));    // true (always available)
 
-// With memory disabled - no memory tools registered
-const ctx2 = AgentContext.create({
+// With workingMemory disabled - no memory tools registered
+const ctx2 = AgentContextNextGen.create({
   model: 'gpt-4',
-  features: { memory: false, autoSpill: false, toolResultEviction: false },  // autoSpill and toolResultEviction require memory
+  features: { workingMemory: false },
 });
 console.log(ctx2.tools.has('memory_store'));    // false
-console.log(ctx2.tools.has('context_stats'));   // true (always available)
 ```
 
 **Tools registered by feature:**
-- **Always**: `context_stats` (unified introspection tool)
-- **memory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw`
+- **workingMemory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
 - **inContextMemory=true**: `context_set`, `context_delete`, `context_list`
 - **persistentInstructions=true**: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
-- **toolOutputTracking=true** (default): Tracks recent tool outputs in context (no additional tools)
-- **autoSpill=true** (default): Auto-spills large outputs to memory (no additional tools, requires memory enabled)
-- **toolResultEviction=true** (default): Automatically evicts old tool results to memory (no additional tools, requires memory enabled)
 
 **Backward Compatibility:**
 
-- All defaults match previous behavior (memory, history, permissions enabled)
-- Legacy `cache.enabled: false` still works (maps to `features.memory: false`)
+- Default features: `workingMemory: true`, `inContextMemory: false`, `persistentInstructions: false`
 - Code not using `features` config works unchanged
 
-#### Auto-Compaction Guard (NEW)
+#### Conversation Management
 
-AgentContext now includes **proactive context management** that prevents context overflow BEFORE it happens. Every time you add large content, the system checks if it would exceed the budget and triggers compaction automatically.
-
-**The Problem:**
-
-Previously, context could grow unbounded until `prepare()` was called:
-- `addMessage()` just pushed content without checking size
-- Large tool outputs (like `web_fetch` results) could cause overflow
-- Users had to manually call `compact()` or rely on `prepare()`
-
-**The Solution: `ensureCapacity()` and async `addMessage()`**
+AgentContextNextGen provides a simple API for managing conversation history:
 
 ```typescript
-import { AgentContext } from '@oneringai/agents';
+import { AgentContextNextGen } from '@oneringai/agents';
 
-const ctx = AgentContext.create({
-  maxContextTokens: 128000,
-  strategy: 'proactive', // 75% threshold
-});
+const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
-// Method 1: Explicit capacity check
-const estimatedTokens = ctx.estimateTokens(largeToolOutput);
-const hasRoom = await ctx.ensureCapacity(estimatedTokens);
-if (hasRoom) {
-  await ctx.addMessage('tool', largeToolOutput);
-} else {
-  // Handle overflow - truncate, summarize, or skip
-  console.log('Cannot fit content even after compaction');
-}
+// Add user message
+ctx.addUserMessage('Hello!');
 
-// Method 2: Automatic (recommended) - addMessage checks capacity for large content
-await ctx.addMessage('tool', largeWebFetchResult); // Auto-compacts if needed
+// Prepare for LLM call (handles compaction if needed)
+const { input, budget } = await ctx.prepare();
 
-// Method 3: For small messages, use sync version (no overhead)
-ctx.addMessageSync('user', 'Hello'); // No capacity check
+// ... call LLM with input ...
 
-// Method 4: Dedicated helper for tool results
-await ctx.addToolResult(toolOutput, { tool: 'web_fetch', url: '...' });
-```
+// Add assistant response
+ctx.addAssistantResponse(response.output);
 
-**How It Works:**
+// Add tool results
+ctx.addToolResults([
+  { call_id: 'call_123', output: JSON.stringify({ result: 'success' }) }
+]);
 
-1. `addMessage()` is now **async** and checks capacity for messages >1000 tokens
-2. If adding content would exceed the strategy threshold (e.g., 75% for proactive):
-   - `budget:warning` event is emitted
-   - `doCompaction()` is called automatically
-   - History, memory, and plugins are compacted by priority
-3. Content is then added after compaction makes room
-4. If compaction cannot make enough room, `budget:critical` is emitted but content is still added (best effort)
-
-**Event Flow for Large Tool Output:**
-
-```
-addMessage("tool", largeOutput)
-    ↓
-estimateTokens(largeOutput) → 15,000 tokens
-    ↓
-ensureCapacity(15000)
-    ↓
-calculateBudget() → current: 100,000 / 128,000 (78%)
-    ↓
-projectUtilization(+15000) → would be 115,000 / 128,000 (90%) - CRITICAL
-    ↓
-strategy.shouldCompact() → true
-    ↓
-emit('budget:warning')
-    ↓
-doCompaction() → compacts history, memory, plugins
-    ↓
-Re-check budget → now 70,000 / 128,000 (55%) - OK
-    ↓
-Add the message to history
-```
-
-**API Reference:**
-
-| Method | Description | Use Case |
-|--------|-------------|----------|
-| `await addMessage(role, content)` | Async, checks capacity for large messages | Large content (responses, tool outputs) |
-| `addMessageSync(role, content)` | Sync, no capacity check | Small messages (user inputs) |
-| `await addToolResult(result, metadata?)` | Helper for tool outputs | Any tool result |
-| `await ensureCapacity(tokens)` | Manual capacity check | Pre-flight validation |
-
-**Configuration:**
-
-The auto-compaction behavior is controlled by your compaction strategy:
-
-| Strategy | Threshold | When Compaction Triggers |
-|----------|-----------|-------------------------|
-| `proactive` | 75% | Before utilization reaches 75% |
-| `aggressive` | 60% | Before utilization reaches 60% |
-| `lazy` | 90% | Only when nearly full |
-| `rolling-window` | N messages | When message count exceeds window |
-| `adaptive` | Learns | Self-adjusts based on usage |
-
-**Events:**
-
-```typescript
-ctx.on('budget:warning', ({ budget }) => {
-  console.log(`Warning: ${budget.utilizationPercent}% used, compacting...`);
-});
-
-ctx.on('budget:critical', ({ budget }) => {
-  console.log(`Critical: Cannot make room, content added anyway`);
-});
-
-ctx.on('compacted', ({ log, tokensFreed }) => {
-  console.log(`Freed ${tokensFreed} tokens:`, log);
-});
-```
-
-#### Conversation API (InputItem-based) - NEW
-
-AgentContext now uses an **InputItem-based conversation model** that aligns with the OpenAI Responses API format. This replaces the deprecated `HistoryMessage[]` format.
-
-**New API vs Deprecated API:**
-
-| Operation | New API (v2) | Deprecated (v1) |
-|-----------|--------------|-----------------|
-| Get conversation | `ctx.getConversation()` | `ctx.getHistory()` |
-| Get length | `ctx.getConversationLength()` | `ctx.getMessageCount()` |
-| Clear | `ctx.clearConversation()` | `ctx.clearHistory()` |
-| Add message | `await ctx.addMessage()` | `ctx.addMessageSync()` |
-| Serialized format | `state.core.conversation` (InputItem[]) | `state.core.history` (HistoryMessage[]) |
-
-**InputItem Format:**
-
-```typescript
-import { InputItem, Message, MessageRole, ContentType } from '@oneringai/agents';
-
-// InputItem is the new format - either a Message or CompactionItem
-type InputItem = Message | CompactionItem;
-
-// Message structure (aligned with OpenAI Responses API)
-interface Message {
-  type: 'message';
-  id?: string;
-  role: MessageRole;  // 'user' | 'assistant' | 'developer'
-  content: Content[]; // Array of content blocks
-}
-
-// Content types
-interface TextContent {
-  type: 'input_text';
-  text: string;
-}
-
-interface ImageContent {
-  type: 'input_image';
-  image_url: string;
-  detail?: 'auto' | 'low' | 'high';
-}
-```
-
-**Working with the Conversation:**
-
-```typescript
-import { AgentContext, MessageRole, ContentType } from '@oneringai/agents';
-
-const ctx = AgentContext.create({ model: 'gpt-4' });
-
-// Add messages (recommended - async with capacity checking)
-await ctx.addMessage('user', 'Hello!');
-await ctx.addMessage('assistant', 'Hi! How can I help?');
-
-// Get full conversation as InputItem[]
+// Get conversation history
 const conversation = ctx.getConversation();
-console.log(conversation.length);  // 2
 
-// Iterate over conversation
-for (const item of conversation) {
-  if (item.type === 'message') {
-    console.log(`${item.role}: ${JSON.stringify(item.content)}`);
-  }
-}
-
-// Add multimodal content with addInputItems
-ctx.addInputItems([{
-  type: 'message',
-  role: MessageRole.USER,
-  content: [
-    { type: ContentType.INPUT_TEXT, text: 'What is this image?' },
-    { type: ContentType.INPUT_IMAGE, image_url: 'data:image/png;base64,...' }
-  ]
-}]);
+// Clear conversation
+ctx.clearConversation('Starting fresh');
 ```
 
-**State Serialization (v2 Format):**
+**Compaction:**
+
+Compaction happens automatically during `prepare()` when context utilization exceeds the strategy threshold:
+
+| Strategy | Threshold | Description |
+|----------|-----------|-------------|
+| `proactive` | 70% | Compact early to maintain headroom |
+| `balanced` | 80% | Balance context preservation vs headroom (default) |
+| `lazy` | 90% | Preserve maximum context |
+
+**Context Budget:**
 
 ```typescript
-// Get state - uses v2 format with InputItem[]
-const state = await ctx.getState();
+const { input, budget, compacted } = await ctx.prepare();
 
-// v2 format:
-{
-  version: 2,
-  core: {
-    conversation: InputItem[],     // NEW: Primary conversation format
-    messageMetadata: Record<...>,  // NEW: Message metadata
-    history: HistoryMessage[],     // DEPRECATED: Kept for backward compat
-    // ...
-  },
-  // ...
-}
-
-// Access conversation from state
-const conversation = state.core.conversation;  // InputItem[] - preferred
-const history = state.core.history;            // HistoryMessage[] - deprecated
+console.log(budget.utilizationPercent);  // Current usage %
+console.log(budget.available);           // Remaining tokens
+console.log(compacted);                  // true if compaction occurred
 ```
-
-**Migration from v1 to v2:**
-
-```typescript
-// OLD (deprecated)
-const history = ctx.getHistory();           // HistoryMessage[]
-const count = ctx.getMessageCount();
-ctx.clearHistory();
-ctx.addMessageSync('user', 'Hello');
-
-// NEW (recommended)
-const conversation = ctx.getConversation(); // InputItem[]
-const count = ctx.getConversationLength();
-ctx.clearConversation();
-await ctx.addMessage('user', 'Hello');      // async with capacity check
-```
-
-**Backward Compatibility:**
-
-- `state.core.history` is still populated for backward compatibility
-- `getHistory()`, `getMessageCount()`, `clearHistory()` still work but are deprecated
-- Existing saved sessions (v1 format) are automatically migrated to v2 on load
 
 #### Session Persistence
 
-AgentContext supports full state serialization with automatic version migration:
+AgentContextNextGen supports saving and loading sessions:
 
 ```typescript
-// Save state (uses v2 format with InputItem[])
-const state = await ctx.getState();
-// state.core.conversation: InputItem[] - primary format
-// state.core.history: HistoryMessage[] - backward compat
+import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
 
-// Restore state (auto-detects v1 or v2)
-const ctx = AgentContext.create({ model: 'gpt-4' });
-await ctx.restoreState(savedState);
-// Works with both v1 (HistoryMessage[]) and v2 (InputItem[]) formats
+// Create storage
+const storage = createFileContextStorage('my-agent');
+
+// Create context with storage
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { workingMemory: true },
+  storage,
+});
+
+// Add messages and data
+ctx.addUserMessage('Hello');
+
+// Save session
+await ctx.save('session-001', { title: 'My Session' });
+
+// Later: Load session
+const ctx2 = AgentContextNextGen.create({ model: 'gpt-4', storage });
+await ctx2.load('session-001');
+// ctx2 now has full conversation and plugin states restored
 ```
 
 #### Plugin System (NextGen)
@@ -4280,8 +1185,6 @@ ctx.on('prepared', ({ budget }) => {
 ```
 
 #### Accessing Context in Agent
-
-> ⚠️ **Note:** `TaskAgent` and `UniversalAgent` are deprecated. Use `Agent` with NextGen plugins instead.
 
 Agent uses **AgentContextNextGen** with plugins for extended functionality:
 
@@ -4421,114 +1324,6 @@ Plugins: WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen, etc.
 Context: Developer Message → Conversation History → Current Input
 ```
 
-### Task Types and Priority Profiles
-
-Different task types have different context management needs. The library automatically detects task types and applies optimized priority profiles.
-
-#### Supported Task Types
-
-| Task Type | Detection Keywords | Optimization |
-|-----------|-------------------|--------------|
-| **research** | "research", "search", "find information", "investigate" | Preserves tool outputs longer, summarizes conversation earlier |
-| **coding** | "implement", "code", "program", "develop", "build", "fix bug" | Preserves code context, truncates verbose tool outputs |
-| **analysis** | "analyze", "examine", "evaluate", "assess", "compare" | Balanced preservation of data and reasoning |
-| **general** | (default) | Standard balanced priorities |
-
-```typescript
-import { TaskAgent, getTaskType } from '@oneringai/agents';
-
-// Auto-detect task type from plan goal
-const taskType = getTaskType({
-  goal: 'Research AI frameworks and compare their features',
-  tasks: [{ name: 'search', description: 'Search for frameworks' }],
-});
-console.log(taskType); // 'research'
-
-// Explicit task type
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  taskType: 'research',  // Override auto-detection
-});
-```
-
-#### Priority Profiles
-
-Each task type has optimized priority profiles that control compaction order:
-
-```typescript
-import { PRIORITY_PROFILES } from '@oneringai/agents';
-
-// Research profile: preserve tool outputs (search results), compact conversation
-console.log(PRIORITY_PROFILES.research);
-// {
-//   conversation_history: 10,  // Compact first
-//   tool_outputs: 5,           // Preserve longer (contains research data)
-//   memory_index: 3,           // Preserve longest
-// }
-
-// Coding profile: preserve code context
-console.log(PRIORITY_PROFILES.coding);
-// {
-//   conversation_history: 8,
-//   tool_outputs: 10,          // Code output compacted first
-//   memory_index: 5,
-// }
-
-// Analysis profile: balanced
-console.log(PRIORITY_PROFILES.analysis);
-// {
-//   conversation_history: 7,
-//   tool_outputs: 8,
-//   memory_index: 5,
-// }
-
-// General profile (default)
-console.log(PRIORITY_PROFILES.general);
-// {
-//   conversation_history: 6,
-//   tool_outputs: 10,
-//   memory_index: 8,
-// }
-```
-
-**Lower priority number = kept longer during compaction.**
-
-#### Research System Prompt
-
-When `taskType: 'research'` is set, the agent receives specialized instructions:
-
-```typescript
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  taskType: 'research',
-});
-
-// Agent automatically receives research-optimized system prompt:
-// - Store findings immediately after each search
-// - Use hierarchical memory (raw → summary → findings)
-// - Preserve key data before context compaction
-// - Cross-reference sources before synthesizing
-```
-
-The research prompt guides the LLM to:
-1. **Store immediately** - Save key findings right after each search/scrape
-2. **Use tiers** - Store raw data at low priority, summaries at normal, findings at high
-3. **Preserve sources** - Always include source URLs in stored data
-4. **Synthesize carefully** - Cross-reference findings before writing reports
-
-#### Compaction Strategy by Task Type
-
-Task types also influence which compaction strategy is used on components:
-
-| Task Type | Conversation | Tool Outputs |
-|-----------|--------------|--------------|
-| **research** | `summarize` | `summarize` |
-| **coding** | `truncate` | `truncate` |
-| **analysis** | `summarize` | `truncate` |
-| **general** | `truncate` | `truncate` |
-
 ### Manual Context Management
 
 For advanced use cases, use **AgentContextNextGen** with plugins:
@@ -4632,25 +1427,18 @@ For **tool outputs** (search/scrape results):
 
 ```typescript
 // Example: Research task with summarization
-// AgentContext is the unified context manager - configure via Agent.create()
+// AgentContextNextGen is the unified context manager - configure via Agent.create()
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
     strategy: 'proactive',
-    maxContextTokens: 128000,
-    // Compactors are auto-configured based on strategy
-    // For custom compactors, provide them explicitly:
-    compactors: [
-      new SummarizeCompactor(estimator, { textProvider, fallbackToTruncate: true }),
-      new TruncateCompactor(estimator),
-      new MemoryEvictionCompactor(estimator),
-    ],
+    features: { workingMemory: true },
   },
 });
 
-// Access context management via agent.context (AgentContext instance)
-const budget = agent.context.getLastBudget();
+// Access context management via agent.context (AgentContextNextGen instance)
+const { budget } = await agent.context.prepare();
 ```
 
 #### MemoryEvictionCompactor
@@ -4707,7 +1495,7 @@ const agent = Agent.create({
   },
 });
 
-// AgentContext handles all context management internally
+// AgentContextNextGen handles all context management internally
 // No separate ContextManager needed
 ```
 
@@ -4723,7 +1511,7 @@ interface BeforeCompactionContext {
   /** Current context budget */
   currentBudget: ContextBudget;
 
-  /** Strategy being used ('proactive', 'aggressive', etc.) */
+  /** Strategy being used ('proactive', 'balanced', 'lazy') */
   strategy: string;
 
   /** Components about to be compacted */
@@ -4732,37 +1520,6 @@ interface BeforeCompactionContext {
   /** Estimated tokens that need to be freed */
   estimatedTokensToFree: number;
 }
-```
-
-#### Integration with TaskAgent
-
-TaskAgent automatically integrates with pre-compaction hooks:
-
-```typescript
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  taskType: 'research',
-  lifecycleHooks: {
-    beforeCompaction: async (context) => {
-      // Access working memory
-      const memory = agent.context.memory;
-
-      // Save important findings before compaction
-      for (const component of context.components) {
-        if (component.metadata?.strategy === 'summarize') {
-          // Extract and preserve key data
-          const summary = extractKeyPoints(component.content);
-          await memory.storeFindings(
-            'preserved.before.compaction',
-            'Key findings saved before compaction',
-            summary
-          );
-        }
-      }
-    },
-  },
-});
 ```
 
 #### Error Handling in Hooks
@@ -4794,288 +1551,45 @@ AgentContextNextGen uses simplified strategies with clear thresholds:
 | **balanced** | 80% | General purpose (default) | Balance context preservation vs headroom |
 | **lazy** | 90% | Short tasks, large contexts | Preserve maximum context, compact only when needed |
 
-> **Note:** The old strategies (`aggressive`, `rolling-window`, `adaptive`) are deprecated. Use the NextGen strategies above.
-
 ---
 
-> ⚠️ **Legacy Strategies Note:** The detailed strategy sections below describe the old `AgentContext` strategies. AgentContextNextGen uses simplified strategies: `proactive` (70%), `balanced` (80%), and `lazy` (90%). The old strategies are maintained for backward compatibility but the NextGen strategies are recommended for new code.
+### Strategy Details
 
-#### 1. Proactive Strategy (Legacy)
+#### Proactive Strategy (70% threshold)
 
-**When to use:** General-purpose agents, balanced workloads, most common scenarios.
-
-**How it works internally:**
-1. Monitors context utilization continuously
-2. Triggers compaction when utilization exceeds 75%
-3. Targets 65% utilization after compaction
-4. Uses incremental reduction (50% base + 15% per round)
-5. Maximum 3 compaction rounds per prepare cycle
+Best for long-running tasks that accumulate context. Compacts early to maintain headroom.
 
 ```typescript
-import { PROACTIVE_STRATEGY_DEFAULTS } from '@oneringai/agents';
-
-// Default configuration values
-console.log(PROACTIVE_STRATEGY_DEFAULTS);
-// {
-//   TARGET_UTILIZATION: 0.65,
-//   BASE_REDUCTION_FACTOR: 0.50,
-//   REDUCTION_STEP: 0.15,
-//   MAX_ROUNDS: 3,
-// }
-
-// Using proactive strategy via Agent.create()
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: {
-    strategy: 'proactive',
-    compactionThreshold: 0.75,  // Compact at 75% (default)
-  },
+  context: { strategy: 'proactive' },
 });
-
-// Proactive is predictable: you know compaction happens at 75%
-// Good balance between context preservation and headroom
 ```
 
-**Metrics tracked:**
-```typescript
-const metrics = agent.context.getStrategyMetrics();
-// {
-//   compactionCount: 5,
-//   totalTokensFreed: 45000,
-//   averageTokensFreed: 9000,
-//   lastCompactionTime: 1706540400000,
-// }
-```
+#### Balanced Strategy (80% threshold)
 
----
-
-#### 2. Aggressive Strategy
-
-**When to use:** Long-running agents, limited context models, conversations that grow rapidly.
-
-**How it works internally:**
-1. Triggers compaction earlier (60% threshold)
-2. Targets much lower utilization (45%)
-3. More aggressive reduction per round
-4. Keeps maximum headroom for new content
+Default strategy. Good balance between context preservation and compaction.
 
 ```typescript
-import { AGGRESSIVE_STRATEGY_DEFAULTS } from '@oneringai/agents';
-
-console.log(AGGRESSIVE_STRATEGY_DEFAULTS);
-// {
-//   TARGET_UTILIZATION: 0.45,
-//   THRESHOLD: 0.60,
-//   BASE_REDUCTION_FACTOR: 0.40,
-//   REDUCTION_STEP: 0.20,
-//   MAX_ROUNDS: 4,
-// }
-
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: {
-    strategy: 'aggressive',
-    strategyOptions: {
-      threshold: 0.55,  // Even earlier (optional override)
-      target: 0.40,     // Even lower target (optional override)
-    },
-  },
+  context: { strategy: 'balanced' },
 });
-
-// Best for:
-// - 24/7 support bots with long conversations
-// - Research agents that accumulate lots of data
-// - Models with smaller context windows (8K-32K)
 ```
 
-**Trade-offs:**
-- **Pro:** Maximum headroom, never hits limits
-- **Pro:** Predictable memory usage
-- **Con:** More frequent compaction = more LLM calls for summarization
-- **Con:** May lose more context earlier than necessary
+#### Lazy Strategy (90% threshold)
 
----
-
-#### 3. Lazy Strategy
-
-**When to use:** Short tasks, high-context models (128K+), when context preservation is critical.
-
-**How it works internally:**
-1. Delays compaction as long as possible (90% threshold)
-2. Only compacts when absolutely necessary
-3. Targets 85% utilization (minimal reduction)
-4. Preserves maximum context for complex reasoning
+Best for short tasks or when context preservation is critical. Compacts only when necessary.
 
 ```typescript
-import { LAZY_STRATEGY_DEFAULTS } from '@oneringai/agents';
-
-console.log(LAZY_STRATEGY_DEFAULTS);
-// {
-//   TARGET_UTILIZATION: 0.85,
-//   THRESHOLD: 0.90,
-//   BASE_REDUCTION_FACTOR: 0.10,
-//   REDUCTION_STEP: 0.05,
-//   MAX_ROUNDS: 2,
-// }
-
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4-turbo',
-  context: {
-    strategy: 'lazy',
-  },
+  context: { strategy: 'lazy' },
 });
-
-// Best for:
-// - Code analysis requiring full file context
-// - Complex reasoning tasks
-// - Models with 128K+ context (GPT-4 Turbo, Claude)
-// - Tasks that complete in < 20 turns
 ```
-
-**Trade-offs:**
-- **Pro:** Maximum context preservation
-- **Pro:** Minimal compaction overhead
-- **Con:** Risk of hitting hard limit if task runs long
-- **Con:** Sudden compaction can be disruptive
-
----
-
-#### 4. Rolling Window Strategy
-
-**When to use:** Real-time agents, streaming conversations, chat interfaces.
-
-**How it works internally:**
-1. **Never triggers compaction** (returns `shouldCompact: false`)
-2. Simply keeps the last N messages
-3. Old messages are dropped (not summarized)
-4. Zero compaction overhead
-
-```typescript
-import { ROLLING_WINDOW_DEFAULTS } from '@oneringai/agents';
-
-console.log(ROLLING_WINDOW_DEFAULTS);
-// {
-//   MAX_MESSAGES: 20,
-//   MAX_TOKENS_PER_COMPONENT: 10000,
-// }
-
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: {
-    strategy: 'rolling-window',
-    strategyOptions: {
-      maxMessages: 30,  // Keep last 30 messages
-      maxTokensPerComponent: 15000,  // Cap per component
-    },
-  },
-});
-
-// Best for:
-// - Customer service chatbots
-// - Real-time assistants
-// - When recent context matters most
-// - High-throughput scenarios
-```
-
-**Implementation detail:**
-```typescript
-// The strategy handles windowing in prepareComponents()
-async prepareComponents(components: IContextComponent[]): Promise<IContextComponent[]> {
-  return components.map((component) => {
-    if (Array.isArray(component.content)) {
-      const maxMessages = this.options.maxMessages ?? 20;
-      if (component.content.length > maxMessages) {
-        return {
-          ...component,
-          content: component.content.slice(-maxMessages),
-          metadata: {
-            ...component.metadata,
-            windowed: true,
-            originalLength: component.content.length,
-            keptLength: maxMessages,
-          },
-        };
-      }
-    }
-    return component;
-  });
-}
-```
-
-**Trade-offs:**
-- **Pro:** Zero compaction overhead
-- **Pro:** Predictable memory usage
-- **Pro:** Fastest performance
-- **Con:** No long-term memory (older context lost)
-- **Con:** Not suitable for tasks requiring full history
-
----
-
-#### 5. Adaptive Strategy
-
-**When to use:** Production systems, varied workloads, when you want automatic optimization.
-
-**How it works internally:**
-1. Monitors compaction frequency over time
-2. Automatically switches between strategies based on load:
-   - High compaction rate → switches to aggressive
-   - Low compaction rate → switches to lazy
-   - Moderate rate → stays proactive
-3. Learns optimal thresholds from usage patterns
-
-```typescript
-import { ADAPTIVE_STRATEGY_DEFAULTS } from '@oneringai/agents';
-
-console.log(ADAPTIVE_STRATEGY_DEFAULTS);
-// {
-//   LEARNING_WINDOW: 50,        // Track last 50 compactions
-//   SWITCH_THRESHOLD: 5,        // Switch if > 5 compactions/min
-//   HYSTERESIS_FACTOR: 0.2,     // Prevent rapid switching
-//   MIN_SAMPLES: 10,            // Min samples before switching
-// }
-
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: {
-    strategy: 'adaptive',
-    strategyOptions: {
-      learningWindow: 100,   // Learn from more history
-      switchThreshold: 3,    // Switch sooner
-    },
-  },
-});
-
-// Monitor automatic switching via metrics
-const metrics = agent.context.getStrategyMetrics();
-console.log(`Current strategy: ${metrics.currentStrategy}`);
-console.log(`Compaction count: ${metrics.compactionCount}`);
-```
-
-**Adaptive decision logic:**
-```typescript
-// Simplified internal logic
-decideStrategy(metrics: AdaptiveMetrics): StrategyName {
-  const compactionsPerMinute = metrics.recentCompactions / metrics.windowMinutes;
-
-  if (compactionsPerMinute > this.switchThreshold) {
-    return 'aggressive';  // Too many compactions, be more aggressive
-  } else if (compactionsPerMinute < this.switchThreshold / 3) {
-    return 'lazy';        // Few compactions, can be lazy
-  }
-  return 'proactive';     // Moderate load, stay balanced
-}
-```
-
-**Trade-offs:**
-- **Pro:** Self-optimizing for your workload
-- **Pro:** Handles varying load patterns
-- **Con:** Takes time to learn (min samples required)
-- **Con:** More complex behavior to debug
 
 ---
 
@@ -5167,34 +1681,31 @@ const agent = Agent.create({
 });
 ```
 
-### Runtime Strategy Switching
+### Choosing a Strategy
 
-Switch strategies dynamically based on task requirements via AgentContext:
+Select the appropriate strategy at creation based on your use case:
 
 ```typescript
-const agent = Agent.create({
+// For short conversations - preserve maximum context
+const shortTaskAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: {
-    strategy: 'proactive',
-  },
+  context: { strategy: 'lazy' },  // 90% threshold
 });
 
-// Phase 1: Quick exploration (use lazy)
-agent.context.setStrategy('lazy');
-await agent.run('Explore the codebase structure');
+// For general purpose - balanced approach (default)
+const generalAgent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { strategy: 'balanced' },  // 80% threshold
+});
 
-// Phase 2: Deep analysis (use proactive)
-agent.context.setStrategy('proactive');
-await agent.run('Analyze all error handling patterns');
-
-// Phase 3: Long-running task (use aggressive)
-agent.context.setStrategy('aggressive');
-await agent.run('Refactor all 50 API endpoints');
-
-// Phase 4: Production deployment (use adaptive)
-agent.context.setStrategy('adaptive');
-// Let it self-optimize for production traffic
+// For long-running tasks - compact early
+const longRunningAgent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { strategy: 'proactive' },  // 70% threshold
+});
 ```
 
 ### Token Estimation
@@ -5226,55 +1737,25 @@ const dataTokens = estimator.estimateDataTokens({ users: [...], config: {...} })
 ### Context Budget Monitoring
 
 ```typescript
-// Get current budget snapshot from AgentContext
-const budget = agent.context.getLastBudget();
-if (budget) {
-  console.log(`Total tokens: ${budget.total}`);
-  console.log(`Used tokens: ${budget.used}`);
-  console.log(`Available: ${budget.available}`);
-  console.log(`Utilization: ${budget.utilizationPercent.toFixed(1)}%`);
-  console.log(`Status: ${budget.status}`); // 'ok' | 'warning' | 'critical'
-  console.log(`Reserved for response: ${budget.reserved}`);
+// Get budget from prepare() call
+const { input, budget, compacted } = await agent.context.prepare();
+
+console.log(`Max tokens: ${budget.maxTokens}`);
+console.log(`Used tokens: ${budget.totalUsed}`);
+console.log(`Available: ${budget.available}`);
+console.log(`Utilization: ${budget.utilizationPercent.toFixed(1)}%`);
+
+// Check if compaction occurred
+if (compacted) {
+  console.log('Context was compacted to make room');
 }
 
-// Budget monitoring via lifecycle hooks
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  lifecycleHooks: {
-    beforeCompaction: async (ctx) => {
-      console.log(`Warning: Context at ${ctx.currentBudget.utilizationPercent}%`);
-    },
-  },
-});
-
-contextManager.on('budget_critical', ({ budget }) => {
-  console.error(`CRITICAL: Context at ${budget.utilizationPercent}% - compaction required`);
-});
-
-contextManager.on('compacting', ({ reason, strategy, currentUsage }) => {
-  console.log(`Compacting: ${reason}`);
-  console.log(`Strategy: ${strategy}`);
-  console.log(`Current usage: ${currentUsage} tokens`);
-});
-
-contextManager.on('compacted', ({ log, tokensFreed, newUsage, rounds }) => {
-  console.log(`Compaction complete in ${rounds} rounds`);
-  console.log(`Freed ${tokensFreed} tokens`);
-  console.log(`New usage: ${newUsage} tokens`);
-  log.forEach(entry => console.log(`  - ${entry}`));
-});
-
-// Strategy-specific metrics
-const metrics = contextManager.getStrategyMetrics();
-console.log('Strategy metrics:', metrics);
-// {
-//   compactionCount: 12,
-//   totalTokensFreed: 156000,
-//   averageTokensFreed: 13000,
-//   lastCompactionTime: 1706540400000,
-//   // Additional strategy-specific metrics...
-// }
+// Detailed breakdown
+console.log('Breakdown:');
+console.log(`  System prompt: ${budget.breakdown.systemPrompt} tokens`);
+console.log(`  Plugin instructions: ${budget.breakdown.pluginInstructions} tokens`);
+console.log(`  Conversation: ${budget.breakdown.conversation} tokens`);
+console.log(`  Current input: ${budget.breakdown.currentInput} tokens`);
 ```
 
 ### Agent Lifecycle Hooks for Context
@@ -5323,7 +1804,7 @@ const hooks: AgentLifecycleHooks = {
   onError: async (error, context) => {
     if (context.phase === 'context_preparation') {
       console.error('Context preparation failed:', error);
-      // Could fall back to aggressive strategy
+      // Could fall back to proactive strategy
     }
   },
 };
@@ -6353,14 +2834,14 @@ Both are enabled by default and work together automatically.
 
 ## Direct LLM Access
 
-All agent types (Agent, TaskAgent, UniversalAgent, ResearchAgent) inherit `runDirect()` and `streamDirect()` methods from BaseAgent. These methods bypass all context management for simple, stateless LLM calls.
+Agent inherits `runDirect()` and `streamDirect()` methods from BaseAgent. These methods bypass all context management for simple, stateless LLM calls.
 
 ### When to Use Direct Access
 
 | Use Case | Recommended Method |
 |----------|-------------------|
 | Conversational agent with history | `run()` / `chat()` |
-| Task with memory and tools | `run()` with AgentContext |
+| Task with memory and tools | `run()` with context features |
 | Quick one-off query | `runDirect()` |
 | Embedding-like simplicity | `runDirect()` |
 | Testing/debugging | `runDirect()` |
@@ -6375,8 +2856,8 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
 const response = await agent.runDirect('What is 2 + 2?');
 console.log(response.output_text);  // "4"
 
-// History is NOT affected
-console.log(agent.context.getHistory().length);  // 0
+// Conversation is NOT affected
+console.log(agent.context.getConversation().length);  // 0
 ```
 
 ### DirectCallOptions
@@ -6473,7 +2954,7 @@ for await (const event of agent.streamDirect('Explain quantum computing', {
 | Context preparation | ✅ Full preparation | ❌ None |
 | Agentic loop | ✅ Executes tools automatically | ❌ Single call only |
 | Compaction | ✅ Auto-compacts when needed | ❌ None |
-| Overhead | Full AgentContext | Minimal |
+| Overhead | Full context management | Minimal |
 
 ### Hybrid Workflows
 
@@ -6497,30 +2978,6 @@ const clarification = await agent.runDirect(
 
 // Back to run() for continued conversation
 await agent.run('Now tell me more about the first item');
-```
-
-### Works with All Agent Types
-
-```typescript
-// Agent
-const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
-await agent.runDirect('Quick question');
-
-// TaskAgent
-const taskAgent = TaskAgent.create({ connector: 'openai', model: 'gpt-4' });
-await taskAgent.runDirect('Quick question');
-
-// UniversalAgent
-const universalAgent = UniversalAgent.create({ connector: 'openai', model: 'gpt-4' });
-await universalAgent.runDirect('Quick question');
-
-// ResearchAgent
-const researchAgent = ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [webSource],
-});
-await researchAgent.runDirect('Quick question');
 ```
 
 ---
@@ -6637,7 +3094,7 @@ const myTool: ToolFunction = {
     },
   },
   execute: async (args, context) => {
-    // Context available for TaskAgent tools:
+    // Context available when workingMemory is enabled:
     if (context?.memory) {
       // Access working memory
       const data = await context.memory.retrieve('some_key');
@@ -6662,72 +3119,65 @@ const myTool: ToolFunction = {
 
 ### Built-in Tools
 
-#### Memory Tools (TaskAgent only)
+#### Memory Tools
+
+Available when `workingMemory` feature is enabled:
 
 ```typescript
-// These are automatically available to TaskAgent:
-
-// Store data
-memory_store({
-  key: 'user.profile',
-  description: 'User profile information',
-  value: { name: 'Alice', email: 'alice@example.com' },
-  scope: 'persistent',
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { features: { workingMemory: true } },
 });
 
-// Retrieve data
-const profile = memory_retrieve({ key: 'user.profile' });
+// The LLM can use these tools automatically:
+// - memory_store: Store key-value pair
+// - memory_retrieve: Retrieve value by key
+// - memory_delete: Delete entry
+// - memory_list: List all entries
 
-// Delete data
-memory_delete({ key: 'user.profile' });
-
-// List all keys
-const index = memory_list();
+// Programmatic access:
+const memory = agent.context.memory;
+await memory.store('user.profile', 'User profile', { name: 'Alice' }, 'high');
+const profile = await memory.retrieve('user.profile');
 ```
 
-> **Note:** Memory tools require TaskAgent context. If called outside TaskAgent (e.g., in a regular Agent), they throw `ToolExecutionError` with message "Memory tools require TaskAgent context".
+#### In-Context Memory Tools
 
-#### Context Inspection Tools (TaskAgent only)
+Available when `inContextMemory` feature is enabled:
 
 ```typescript
-// Check context budget
-const info = context_inspect();
-// {
-//   total_tokens: 128000,
-//   used_tokens: 45000,
-//   available_tokens: 63800,
-//   utilization_percent: 41.2,
-//   status: 'ok'
-// }
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { features: { inContextMemory: true } },
+});
 
-// Detailed breakdown
-const breakdown = context_breakdown();
-// {
-//   components: [
-//     { name: 'conversation_history', tokens: 38000, percent: 84.4 },
-//     { name: 'memory_index', tokens: 4500, percent: 10.0 },
-//     { name: 'system_prompt', tokens: 2000, percent: 4.4 },
-//   ]
-// }
+// The LLM can use these tools automatically:
+// - context_set: Store/update entry (appears directly in context)
+// - context_delete: Remove entry
+// - context_list: List all entries
+```
 
-// Cache statistics
-const stats = cache_stats();
-// {
-//   entries: 15,
-//   hits: 23,
-//   misses: 12,
-//   hit_rate: 0.657,
-//   effectiveness: 'high'
-// }
+#### Context Budget
 
-// Memory statistics
-const memory = memory_stats();
+Access context budget information via `prepare()`:
+
+```typescript
+const { input, budget } = await agent.context.prepare();
+
+console.log(budget);
 // {
-//   entry_count: 8,
-//   entries: [
-//     { key: 'user.profile', description: 'User profile' },
-//     { key: 'session.token', description: 'Auth token' },
-//   ]
+//   maxTokens: 128000,
+//   totalUsed: 45000,
+//   available: 63800,
+//   utilizationPercent: 35.2,
+//   breakdown: {
+//     systemPrompt: 500,
+//     pluginInstructions: 800,
+//     conversation: 38000,
+//     currentInput: 200,
+//   }
 // }
 ```
 
@@ -6957,10 +3407,9 @@ Control tools at runtime for all agent types. Enable, disable, organize, and sel
 
 ### Unified Tool Management Architecture
 
-**AgentContext is the single source of truth** for ToolManager. All agents access tools through a single ToolManager instance owned by AgentContext:
+**AgentContextNextGen is the single source of truth** for ToolManager. All agents access tools through a single ToolManager instance owned by the context:
 
 - `agent.tools === agent.context.tools` - Same ToolManager instance
-- `agent.hasContext()` always returns `true`
 - Tool changes via either API are immediately reflected in the other
 - No duplicate tool storage or sync issues
 
@@ -6995,7 +3444,7 @@ agent.tools.enable('database_tool');
 
 ### ToolManager API
 
-Every agent has a `tools` property that returns the ToolManager owned by AgentContext. Both `agent.tools` and `agent.context.tools` return the same instance:
+Every agent has a `tools` property that returns the ToolManager owned by the context. Both `agent.tools` and `agent.context.tools` return the same instance:
 
 ```typescript
 const agent = Agent.create({
@@ -7288,61 +3737,6 @@ class PluginManager {
     console.log(`Unloaded plugin: ${pluginName}`);
   }
 }
-```
-
-### Usage with TaskAgent
-
-TaskAgent inherits AgentContext from BaseAgent - same unified architecture:
-
-```typescript
-import { TaskAgent } from '@oneringai/agents';
-
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [tool1, tool2, tool3],
-});
-
-// UNIFIED: Same ToolManager instance as AgentContext
-console.log(agent.tools === agent.context.tools);  // true
-
-// Same ToolManager API - changes reflect across both paths
-agent.tools.disable('risky_tool');
-agent.context.tools.enable('risky_tool');  // Same effect
-
-await agent.start({
-  goal: 'Process data safely',
-  tasks: [
-    { name: 'read_data', description: 'Read from database' },
-    { name: 'process', description: 'Process the data' },
-  ],
-});
-```
-
-### Usage with UniversalAgent
-
-UniversalAgent also inherits AgentContext from BaseAgent:
-
-```typescript
-import { UniversalAgent } from '@oneringai/agents';
-
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [safeTools...],
-});
-
-// UNIFIED: Same ToolManager instance as AgentContext
-console.log(agent.tools === agent.context.tools);  // true
-
-// Disable tools during execution
-agent.on('mode:changed', ({ from, to }) => {
-  if (to === 'executing') {
-    agent.tools.disable('destructive_tool');
-  } else if (to === 'interactive') {
-    agent.tools.enable('destructive_tool');
-  }
-});
 ```
 
 ### Backward Compatibility
@@ -11135,17 +7529,11 @@ const response = await retryWithBackoff(
 #### 3. Monitor Context Usage
 
 ```typescript
-// For TaskAgent
-agent.on('memory:limit_warning', ({ utilization }) => {
-  console.warn(`Memory at ${utilization}%`);
-  // Alert operations team
-});
-
-// For manual context management
-contextManager.on('budget_critical', ({ budget }) => {
-  console.error(`Context critical: ${budget.utilizationPercent}%`);
-  // Take action
-});
+// Monitor context budget
+const { budget } = await agent.context.prepare();
+if (budget.utilizationPercent > 80) {
+  console.warn(`Context at ${budget.utilizationPercent}%`);
+}
 ```
 
 #### 4. Use Circuit Breakers
@@ -11186,28 +7574,16 @@ The library uses the **IDisposable pattern** for proper resource cleanup. All ma
 - `isDestroyed: boolean` - Check if already destroyed
 
 ```typescript
-// Basic agents - cascades to AgentContext → ToolManager → CircuitBreakers
+// Agent - cascades to AgentContextNextGen → ToolManager → CircuitBreakers
 const agent = Agent.create({ ... });
 agent.onCleanup(() => {
   console.log('Cleaning up...');
 });
 agent.destroy();  // Cleans up all child resources
 
-// Task agents
-const taskAgent = TaskAgent.create({ ... });
-await taskAgent.destroy();
-
-// Universal agents
-const uniAgent = UniversalAgent.create({ ... });
-uniAgent.destroy();  // Also cleans up ModeManager
-
 // Standalone ToolManager
 const toolManager = new ToolManager();
 toolManager.destroy();  // Cleans up circuit breakers and listeners
-
-// IdempotencyCache (clears cleanup interval timer)
-const cache = new IdempotencyCache({ enabled: true });
-cache.destroy();  // Important: prevents memory leak from interval
 
 // Check before use
 if (!toolManager.isDestroyed) {
@@ -11216,12 +7592,10 @@ if (!toolManager.isDestroyed) {
 ```
 
 **Classes implementing IDisposable:**
-- `Agent` / `TaskAgent` / `UniversalAgent`
-- `AgentContext`
+- `Agent`
+- `AgentContextNextGen`
 - `ToolManager`
-- `IdempotencyCache`
-- `ModeManager`
-- `WorkingMemory`
+- `WorkingMemoryPluginNextGen`
 
 ### Performance Tips
 
@@ -11231,7 +7605,6 @@ if (!toolManager.isDestroyed) {
    - GPT-4-turbo/Claude Opus for critical tasks
 
 2. **Leverage caching:**
-   - Tool idempotency for TaskAgents
    - Prompt caching (Anthropic/OpenAI)
 
 3. **Use streaming:**
@@ -11239,12 +7612,11 @@ if (!toolManager.isDestroyed) {
    - Lower perceived latency
 
 4. **Manage context:**
-   - Use aggressive strategy for long conversations
-   - Use rolling window for real-time agents
-   - Use adaptive strategy for production
+   - Use proactive strategy for short conversations
+   - Use balanced strategy (default) for general use
+   - Use lazy strategy for long conversations
 
 5. **Batch requests:**
-   - Use parallel tasks in TaskAgents
    - Batch API calls where possible
 
 ---
@@ -11262,13 +7634,8 @@ npm run example:streaming          # Streaming responses
 npm run example:vision             # Image analysis
 npm run example:tools              # Tool calling
 
-# Task Agent examples
-npm run example:task-agent         # Basic task agent
-npm run example:task-agent-demo    # Full demo with memory
-npm run example:planning-agent     # AI-driven planning
-
 # Context management
-npm run example:context-management # All strategies
+npm run example:context-management # Context strategies
 ```
 
 ### Quick Recipes
@@ -11330,39 +7697,27 @@ const agent = Agent.create({
 const response = await agent.run('What is our return policy?');
 ```
 
-#### Autonomous Research Agent
+#### Research Agent with Memory
 
 ```typescript
-const taskAgent = TaskAgent.create({
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [searchTool, scrapeWebTool, summarizeTool],
+  tools: [searchTool, scrapeWebTool],
+  context: {
+    features: { workingMemory: true },
+  },
 });
 
-await taskAgent.start({
-  goal: 'Research competitors and create a report',
-  tasks: [
-    {
-      name: 'identify_competitors',
-      description: 'Search for and identify top 5 competitors',
-    },
-    {
-      name: 'gather_data',
-      description: 'For each competitor, scrape their website and gather key information',
-      dependsOn: ['identify_competitors'],
-    },
-    {
-      name: 'analyze',
-      description: 'Analyze competitive advantages and weaknesses',
-      dependsOn: ['gather_data'],
-    },
-    {
-      name: 'create_report',
-      description: 'Create a comprehensive markdown report with findings',
-      dependsOn: ['analyze'],
-    },
-  ],
-});
+// Agent uses memory tools to store research findings
+const response = await agent.run(`
+  Research our top 5 competitors.
+  For each competitor:
+  1. Search for their information
+  2. Scrape their website
+  3. Store key findings in memory
+  4. Create a comprehensive report
+`);
 ```
 
 ---

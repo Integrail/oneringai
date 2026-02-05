@@ -92,12 +92,14 @@ interface StoredConnectorConfig {
 }
 
 /**
- * Map old strategies to current strategy.
- * Now all strategies map to 'default' since the registry only has one built-in strategy.
+ * Validate strategy exists in StrategyRegistry.
+ * Returns the strategy name if valid, or 'default' if not found.
  */
-function mapToCurrentStrategy(oldStrategy: string): string {
-  // All old strategies map to 'default'
-  return 'default';
+function validateStrategy(strategyName: string): { strategy: string; isValid: boolean } {
+  if (StrategyRegistry.has(strategyName)) {
+    return { strategy: strategyName, isValid: true };
+  }
+  return { strategy: 'default', isValid: false };
 }
 
 /**
@@ -568,8 +570,8 @@ export class AgentService {
     // Always convert to 'basic' type - all other agent types are deprecated in NextGen
     const agentType: StoredAgentConfig['agentType'] = 'basic';
 
-    // Map old strategies to NextGen strategies
-    const contextStrategy = mapToCurrentStrategy((typeConfig.contextStrategy as string) ?? 'proactive');
+    // Use stored strategy directly - validation happens at initialization time
+    const contextStrategy = (typeConfig.contextStrategy as string) ?? 'default';
 
     // Handle backward compatibility for feature names:
     // Old stored definitions use 'memory', new ones use 'workingMemory'
@@ -800,8 +802,11 @@ export class AgentService {
   /**
    * Migrate existing agents to NextGen format:
    * - Convert all agent types to 'basic'
-   * - Convert old strategies to new strategies (aggressive→proactive, rolling-window→lazy, adaptive→balanced)
+   * - Migrate legacy strategies not in StrategyRegistry (aggressive→proactive, rolling-window→lazy, adaptive→balanced)
    * - Rename memoryEnabled to workingMemoryEnabled (if needed)
+   *
+   * Note: Valid strategies from StrategyRegistry are preserved as-is. Only truly legacy
+   * strategies that don't exist in the registry are migrated.
    */
   private async migrateAgentsToNextGen(): Promise<void> {
     try {
@@ -816,13 +821,19 @@ export class AgentService {
           console.log(`NextGen migration: Converted agent "${config.name}" from "${config.agentType}" to "basic"`);
         }
 
-        // Convert old strategies to NextGen strategies
-        const oldStrategy = config.contextStrategy;
-        const newStrategy = mapToCurrentStrategy(oldStrategy);
-        if (oldStrategy !== newStrategy) {
-          updates.contextStrategy = newStrategy;
+        // Validate strategy exists in registry - only migrate if truly invalid
+        const { strategy: validatedStrategy, isValid } = validateStrategy(config.contextStrategy);
+        if (!isValid) {
+          // Map legacy strategies to reasonable NextGen equivalents
+          const legacyMapping: Record<string, string> = {
+            'aggressive': 'proactive',
+            'rolling-window': 'lazy',
+            'adaptive': 'balanced',
+          };
+          const mappedStrategy = legacyMapping[config.contextStrategy] ?? 'default';
+          updates.contextStrategy = mappedStrategy;
           needsSave = true;
-          console.log(`NextGen migration: Converted agent "${config.name}" strategy from "${oldStrategy}" to "${newStrategy}"`);
+          console.log(`NextGen migration: Converted agent "${config.name}" strategy from "${config.contextStrategy}" to "${mappedStrategy}" (original strategy not found in registry)`);
         }
 
         // Handle legacy memoryEnabled field if present (backwards compatibility)
@@ -2153,6 +2164,17 @@ export class AgentService {
       // Combine user instructions with UI capabilities prompt (user instructions first)
       const fullInstructions = (agentConfig.instructions || '') + '\n\n' + HOSEA_UI_CAPABILITIES_PROMPT;
 
+      // Validate strategy exists in registry
+      const { strategy: validStrategy, isValid: strategyIsValid } = validateStrategy(agentConfig.contextStrategy);
+      if (!strategyIsValid) {
+        const availableStrategies = StrategyRegistry.list().join(', ');
+        console.warn(
+          `Strategy "${agentConfig.contextStrategy}" not found in registry for agent "${agentConfig.name}". ` +
+          `Using "${validStrategy}" instead. Available strategies: ${availableStrategies}. ` +
+          `Please update the agent's strategy in settings.`
+        );
+      }
+
       // Create agent with NextGen context configuration
       // NOTE: NextGen simplifies context management - no history/permissions/cache options
       const config: AgentConfig = {
@@ -2169,7 +2191,7 @@ export class AgentService {
           agentId: agentConfig.id,
           maxContextTokens: agentConfig.maxContextTokens,
           responseReserve: agentConfig.responseReserve,
-          strategy: agentConfig.contextStrategy, // Already NextGen type from StoredAgentConfig
+          strategy: validStrategy, // Validated strategy from StrategyRegistry
           storage: this.sessionStorage,
           // Feature toggles (NextGen only has these 3)
           features: {

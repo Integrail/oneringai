@@ -45,6 +45,7 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "prepare": "",
+    "prepublishOnly": "npm run build && npm run typecheck && npm test",
     "example:agent": "tsx examples/basic-agent.ts",
     "example:text": "tsx examples/simple-text.ts",
     "example:conversation": "tsx examples/multi-turn-conversation.ts",
@@ -68,22 +69,48 @@
   },
   "keywords": [
     "ai",
+    "ai-agents",
     "llm",
     "agents",
     "openai",
     "anthropic",
     "claude",
     "gpt",
+    "gpt-4",
+    "gpt-5",
+    "gemini",
+    "google-ai",
+    "deepseek",
+    "groq",
+    "ollama",
     "image-generation",
+    "dall-e",
+    "text-to-speech",
+    "speech-to-text",
+    "video-generation",
+    "sora",
     "tool-calling",
+    "function-calling",
     "agentic",
-    "multi-vendor"
+    "multi-vendor",
+    "mcp",
+    "model-context-protocol",
+    "rag",
+    "chatbot",
+    "conversational-ai"
   ],
-  "author": "OneRing AI",
+  "author": {
+    "name": "Anton Antic",
+    "email": "anton@everworker.ai"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oneringai/agents"
+    "url": "git+https://github.com/Integrail/oneringai.git"
+  },
+  "homepage": "https://github.com/Integrail/oneringai#readme",
+  "bugs": {
+    "url": "https://github.com/Integrail/oneringai/issues"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
@@ -118,6 +145,10 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "optionalDependencies": {
     "puppeteer": "^24.34.0"

@@ -11,7 +11,7 @@ import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDispla
 import { SidebarPanel, SIDEBAR_PANEL_DEFAULT_WIDTH } from '../components/SidebarPanel';
 import { PlanDisplay } from '../components/plan';
 import { TabBar, NewTabModal } from '../components/tabs';
-import { TabProvider, useTabContext, type Message, type TabState, type SidebarTab } from '../hooks/useTabContext';
+import { useTabContext, type Message, type TabState, type SidebarTab } from '../hooks/useTabContext';
 import type { Plan } from '../../preload/index';
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -454,44 +454,9 @@ function ChatPageContent(): React.ReactElement {
   );
 }
 
-// ============ Main Export (with Provider) ============
+// ============ Main Export ============
+// TabProvider is now at the App root level, so ChatPage just uses the context directly
 
 export function ChatPage(): React.ReactElement {
-  const [defaultAgentConfig, setDefaultAgentConfig] = useState<{ id: string; name: string } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Load the active agent on mount
-  useEffect(() => {
-    const loadActiveAgent = async () => {
-      try {
-        const activeAgent = await window.hosea.agentConfig.getActive();
-        if (activeAgent) {
-          setDefaultAgentConfig({ id: activeAgent.id, name: activeAgent.name });
-        }
-      } catch (error) {
-        console.error('Failed to load active agent:', error);
-      }
-      setIsLoading(false);
-    };
-    loadActiveAgent();
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="chat-container">
-        <div className="chat d-flex align-items-center justify-content-center">
-          <Spinner animation="border" variant="primary" />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <TabProvider
-      defaultAgentConfigId={defaultAgentConfig?.id}
-      defaultAgentName={defaultAgentConfig?.name}
-    >
-      <ChatPageContent />
-    </TabProvider>
-  );
+  return <ChatPageContent />;
 }

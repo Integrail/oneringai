@@ -297,52 +297,49 @@ await agent.run('Scrape https://example.com and summarize');
 
 ## Key Features
 
-### 1. Universal Agent
+### 1. Agent with Plugins
 
-> ⚠️ **DEPRECATED**: `UniversalAgent` is deprecated as of v0.3.0.
-> Use `Agent` with `AgentContextNextGen` plugins instead. See [Migration Guide](#migration-from-deprecated-agents).
-
-Combines interactive chat, planning, and task execution in one powerful agent:
+The **Agent** class is the primary agent type, supporting all features through composable plugins:
 
 ```typescript
-import { UniversalAgent, FileSessionStorage } from '@oneringai/agents';
+import { Agent, createFileContextStorage } from '@oneringai/agents';
 
-const agent = UniversalAgent.create({
+// Create storage for session persistence
+const storage = createFileContextStorage('my-assistant');
+
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [weatherTool, emailTool],
-  planning: {
-    enabled: true,
-    autoDetect: true,        // Auto-detect complex tasks
-    requireApproval: true,   // Require approval before execution
-  },
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
+  context: {
+    features: {
+      workingMemory: true,      // Store/retrieve data across turns
+      inContextMemory: true,    // Key-value pairs directly in context
+      persistentInstructions: true,  // Agent instructions that persist to disk
+    },
+    agentId: 'my-assistant',
+    storage,
   },
 });
 
-// Chat - handles mode transitions automatically
-const response = await agent.chat('Check weather and email me the report');
-console.log(response.text);
-console.log('Mode:', response.mode);  // 'interactive' | 'planning' | 'executing'
+// Run the agent
+const response = await agent.run('Check weather and email me the report');
+console.log(response.output_text);
 
-// Get current state
-const mode = agent.getMode();
-const plan = agent.getPlan();
-const progress = agent.getProgress();
+// Save session for later
+await agent.context.save('session-001');
 ```
 
 **Features:**
-- 🔄 **Auto-mode switching** - Seamlessly transitions between interactive, planning, and executing
-- 🧠 **Complexity detection** - LLM detects when tasks need planning
-- ✏️ **Dynamic plans** - Users can modify plans mid-execution
-- 💾 **Session persistence** - Resume conversations across restarts
-- ⚙️ **Runtime configuration** - Change approval requirements on the fly
+- 🔧 **Plugin Architecture** - Enable/disable features via `context.features`
+- 💾 **Session Persistence** - Save/load full state with `ctx.save()` and `ctx.load()`
+- 📝 **Working Memory** - Store findings with automatic eviction
+- 📌 **InContextMemory** - Key-value pairs visible directly to LLM
+- 🔄 **Persistent Instructions** - Agent instructions that persist across sessions
 
 ### 2. Dynamic Tool Management (NEW)
 
-Control tools at runtime for all agent types. **AgentContext is the single source of truth** - `agent.tools` and `agent.context.tools` are the same ToolManager instance:
+Control tools at runtime. **AgentContextNextGen is the single source of truth** - `agent.tools` and `agent.context.tools` are the same ToolManager instance:
 
 ```typescript
 import { Agent } from '@oneringai/agents';
@@ -499,96 +496,65 @@ if (loaded) {
 
 **Storage Location:** `~/.oneringai/agents/<agentId>/sessions/<sessionId>.json`
 
-### 4. Task Agents
+### 5. Working Memory
 
-> ⚠️ **DEPRECATED**: `TaskAgent` is deprecated as of v0.3.0.
-> Use `Agent` with `WorkingMemoryPluginNextGen` instead. See [Migration Guide](#migration-from-deprecated-agents).
-
-Autonomous agents for complex workflows:
+Use the `WorkingMemoryPluginNextGen` for agents that need to store and retrieve data:
 
 ```typescript
-import { TaskAgent } from '@oneringai/agents';
+import { Agent } from '@oneringai/agents';
 
-const agent = TaskAgent.create({
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [weatherTool, emailTool],
+  context: {
+    features: { workingMemory: true },
+  },
 });
 
-await agent.start({
-  goal: 'Check weather and notify user',
-  tasks: [
-    { name: 'fetch_weather', description: 'Get weather for SF' },
-    { name: 'send_email', description: 'Email user', dependsOn: ['fetch_weather'] },
-  ],
-});
+// Agent now has memory_store, memory_retrieve, memory_delete, memory_list tools
+await agent.run('Check weather for SF and remember the result');
 ```
 
 **Features:**
-- 📝 **Working Memory** - Store and retrieve data with priority-based eviction, task-aware scoping, and pinning
-- 🏗️ **Hierarchical Memory** - Raw → Summary → Findings pattern for research tasks
-- 🧠 **Context Management** - Automatic handling of context limits with LLM summarization
-- ⏸️ **State Persistence** - Resume after crashes or long waits
-- 🔗 **External Dependencies** - Wait for webhooks, polling, manual input
-- 🔄 **Tool Idempotency** - Prevent duplicate side effects
-- 🔬 **Task Types** - Optimized prompts and priorities for research, coding, and analysis
+- 📝 **Working Memory** - Store and retrieve data with priority-based eviction
+- 🏗️ **Hierarchical Memory** - Raw → Summary → Findings tiers for research tasks
+- 🧠 **Context Management** - Automatic handling of context limits
+- 💾 **Session Persistence** - Save/load via `ctx.save()` and `ctx.load()`
 
-### 5. Research Agent
+### 6. Research with Search Tools
 
-> ⚠️ **DEPRECATED**: `ResearchAgent` is deprecated as of v0.3.0.
-> Use `Agent` with search tools and `WorkingMemoryPluginNextGen` instead.
-
-A specialized agent for multi-source research with pluggable data sources:
+Use `Agent` with search tools and `WorkingMemoryPluginNextGen` for research workflows:
 
 ```typescript
-import { ResearchAgent, createWebSearchSource, createFileSearchSource } from '@oneringai/agents';
+import { Agent, webSearch, SearchProvider, Connector, Services } from '@oneringai/agents';
 
-// Create research sources
-const webSource = createWebSearchSource('serper-main');
-const fileSource = createFileSearchSource('./docs');
+// Setup search connector
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
 
-// Create research agent
-// Note: autoSpill is now enabled by default in AgentContext
-const agent = await ResearchAgent.create({
+// Create agent with search and memory
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  sources: [webSource, fileSource],
-  // autoSpill config is optional - defaults are applied automatically
+  tools: [webSearch],
+  context: {
+    features: { workingMemory: true },
+  },
 });
 
-// Execute research
-const result = await agent.research({
-  topic: 'AI developments in 2026',
-  queries: ['latest AI breakthroughs', 'AI regulation updates'],
-  maxResultsPerQuery: 10,
-});
-
-console.log(result.findings); // Processed research findings
+// Agent can search and store findings in memory
+await agent.run('Research AI developments in 2026 and store key findings');
 ```
 
 **Features:**
-- 🔌 **Pluggable Sources** - Web search, vector databases, file systems, custom APIs
-- 📊 **Auto-Spill** - Large tool outputs automatically stored in memory with tracking
-- 🗑️ **Smart Cleanup** - Raw data evicted after summarization
-- 📦 **Batch Retrieval** - Efficient `memory_retrieve_batch` for synthesis
-- 🏗️ **Tiered Memory** - Raw → Summary → Findings workflow
-- 📈 **25MB Default Memory** - Configurable for large research tasks
-
-**Built-in Sources:**
-- `createWebSearchSource(connector)` - Web search via SearchProvider
-- `createFileSearchSource(path)` - File system search with glob/grep
-
-**Custom Sources:**
-```typescript
-// Implement IResearchSource for custom data sources
-const vectorSource: IResearchSource = {
-  name: 'vector-db',
-  type: 'knowledge',
-  async search(query, options) { /* ... */ },
-  async fetch(reference, options) { /* ... */ },
-  // ...
-};
-```
+- 🔍 **Web Search** - SearchProvider with Serper, Brave, Tavily, RapidAPI
+- 📝 **Working Memory** - Store findings with priority-based eviction
+- 🏗️ **Tiered Memory** - Raw → Summary → Findings pattern
 
 ### 6. Context Management
 
@@ -746,76 +712,7 @@ const agent = Agent.create({
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
 
-### 9. Migration from Deprecated Agents
-
-If you're using the deprecated agent types, here's how to migrate:
-
-#### From TaskAgent
-
-```typescript
-// OLD (deprecated):
-const agent = TaskAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [myTools],
-});
-await agent.start({ goal: '...', tasks: [...] });
-
-// NEW (recommended):
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [myTools],
-  context: {
-    features: { workingMemory: true },
-  },
-});
-// Use agent.run() with appropriate prompts for task management
-```
-
-#### From UniversalAgent
-
-```typescript
-// OLD (deprecated):
-const agent = UniversalAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  planning: { enabled: true },
-});
-
-// NEW (recommended):
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: {
-    features: { workingMemory: true, inContextMemory: true },
-  },
-});
-// Use agent.run() with planning prompts
-```
-
-#### From ResearchAgent
-
-```typescript
-// OLD (deprecated):
-const agent = ResearchAgent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  sources: [webSource, fileSource],
-});
-
-// NEW (recommended):
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [webSearchTool, fileSearchTool],  // Use tools directly
-  context: {
-    features: { workingMemory: true },
-  },
-});
-```
-
-### 10. Direct LLM Access
+### 9. Direct LLM Access
 
 Bypass all context management for simple, stateless LLM calls:
 
@@ -857,7 +754,7 @@ for await (const event of agent.streamDirect('Tell me a story')) {
 | Memory/Cache | ✅ | ❌ |
 | Context preparation | ✅ | ❌ |
 | Agentic loop (tool execution) | ✅ | ❌ |
-| Overhead | Full AgentContext | Minimal |
+| Overhead | Full context management | Minimal |
 
 **Use cases:** Quick one-off queries, embeddings-like simplicity, testing, hybrid workflows.
 
@@ -1323,8 +1220,8 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.2.0
-**Last Updated:** 2026-02-03
+**Version:** 0.1.0
+**Last Updated:** 2026-02-05
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
 

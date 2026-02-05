@@ -48,6 +48,23 @@ import {
   saveCookiesToDisk,
   loadCookiesFromDisk,
 } from './browser/persistence.js';
+import {
+  type Point,
+  getTypingDelay,
+  getWordBoundaryPause,
+  shouldInsertMicroPause,
+  getMicroPauseDuration,
+  shouldTypeBurst,
+  getTypingBurstDelays,
+  generateBezierPath,
+  getClickOffset,
+  getHoverDelay,
+  getReactionDelay,
+  getScrollAmount,
+  getScrollIncrements,
+  getScrollWheelDelay,
+  getHumanDelay,
+} from './browser/humanTiming.js';
 
 // Default timeouts
 const DEFAULT_NAVIGATION_TIMEOUT = 30000;
@@ -72,6 +89,9 @@ export class BrowserService extends EventEmitter {
 
   /** Stealth configuration for anti-bot bypass */
   private stealthConfig: StealthConfig;
+
+  /** Track last known mouse position per instance for human-like movement */
+  private mousePositions: Map<string, Point> = new Map();
 
   constructor(mainWindow: BrowserWindow | null = null, stealthConfig?: Partial<StealthConfig>) {
     super();
@@ -641,6 +661,7 @@ export class BrowserService extends EventEmitter {
       // Remove from maps
       this.browsers.delete(instanceId);
       this.instances.delete(instanceId);
+      this.mousePositions.delete(instanceId);
 
       console.log(`[BrowserService] Destroyed browser instance: ${instanceId}`);
       this.emit('browser:destroyed', instanceId);
@@ -1052,7 +1073,7 @@ export class BrowserService extends EventEmitter {
   // ============ Interaction Methods ============
 
   /**
-   * Click an element on the page
+   * Click an element on the page with human-like mouse movement
    */
   async click(instanceId: string, options: ClickOptions): Promise<ClickResult> {
     try {
@@ -1065,16 +1086,15 @@ export class BrowserService extends EventEmitter {
       const clickCount = options.clickCount ?? 1;
       const button = options.button ?? 'left';
       const waitForNavigation = options.waitForNavigation ?? false;
+      const humanLike = options.humanLike ?? true;
 
       const webContents = view.webContents;
 
-      // JavaScript to find and click element
-      const clickScript = `
+      // First, find element and get its position
+      const findScript = `
         (async function() {
           const selector = ${JSON.stringify(options.selector)};
           const timeout = ${timeout};
-          const clickCount = ${clickCount};
-          const button = ${JSON.stringify(button)};
 
           // Helper to find element by selector or text
           function findElement(sel) {
@@ -1107,17 +1127,142 @@ export class BrowserService extends EventEmitter {
           element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
           await new Promise(r => setTimeout(r, 100));
 
-          // Get element info
+          // Get element info and bounding box
           const rect = element.getBoundingClientRect();
           const tagName = element.tagName.toLowerCase();
           const text = (element.textContent || '').slice(0, 100).trim();
           const href = element.href || undefined;
 
-          // Calculate click position (center of element)
-          const x = rect.left + rect.width / 2;
-          const y = rect.top + rect.height / 2;
+          return {
+            success: true,
+            element: { tagName, text, href },
+            rect: {
+              x: rect.left,
+              y: rect.top,
+              width: rect.width,
+              height: rect.height,
+              centerX: rect.left + rect.width / 2,
+              centerY: rect.top + rect.height / 2
+            }
+          };
+        })()
+      `;
 
-          // Dispatch mouse events
+      const findResult = await this.safeExecuteJavaScript<{
+        success: boolean;
+        error?: string;
+        element?: { tagName: string; text: string; href?: string };
+        rect?: { x: number; y: number; width: number; height: number; centerX: number; centerY: number };
+      }>(webContents, findScript, timeout + 5000);
+
+      if (!findResult.success || !findResult.rect) {
+        return { success: false, element: { tagName: '', text: '' }, error: findResult.error };
+      }
+
+      const { rect } = findResult;
+
+      // Calculate click position (with offset for human-like behavior)
+      let clickX: number;
+      let clickY: number;
+
+      if (humanLike) {
+        const offset = getClickOffset(rect.width, rect.height);
+        clickX = rect.centerX + offset.x;
+        clickY = rect.centerY + offset.y;
+      } else {
+        clickX = rect.centerX;
+        clickY = rect.centerY;
+      }
+
+      // Set up navigation listener if needed
+      let navigationPromise: Promise<string> | null = null;
+      if (waitForNavigation) {
+        navigationPromise = new Promise<string>((resolve) => {
+          const onNavigate = (_event: unknown, url: string) => {
+            webContents.removeListener('did-navigate', onNavigate);
+            resolve(url);
+          };
+          webContents.on('did-navigate', onNavigate);
+          setTimeout(() => {
+            webContents.removeListener('did-navigate', onNavigate);
+            resolve('');
+          }, DEFAULT_NAVIGATION_TIMEOUT);
+        });
+      }
+
+      if (humanLike) {
+        // Get starting position (last known or random viewport location)
+        let startPos = this.mousePositions.get(instanceId);
+        if (!startPos) {
+          // Random starting position in viewport
+          const viewportScript = `({ width: window.innerWidth, height: window.innerHeight })`;
+          const viewport = await this.safeExecuteJavaScript<{ width: number; height: number }>(
+            webContents, viewportScript, 1000
+          );
+          startPos = {
+            x: Math.random() * (viewport?.width || 1000),
+            y: Math.random() * (viewport?.height || 700),
+          };
+        }
+
+        // Reaction delay before starting to move
+        await new Promise((r) => setTimeout(r, getReactionDelay()));
+
+        // Generate bezier path for mouse movement
+        const targetPos = { x: clickX, y: clickY };
+        const path = generateBezierPath(startPos, targetPos);
+
+        // Simulate mouse movement along the path
+        for (const step of path) {
+          // Check if browser still exists before each step
+          if (!this.browsers.has(instanceId) || webContents.isDestroyed()) {
+            return { success: false, element: { tagName: '', text: '' }, error: 'Browser was destroyed during operation' };
+          }
+
+          if (step.delay > 0) {
+            await new Promise((r) => setTimeout(r, step.delay));
+          }
+
+          // Dispatch mousemove event
+          const moveScript = `
+            (function() {
+              const event = new MouseEvent('mousemove', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: ${step.point.x},
+                clientY: ${step.point.y}
+              });
+              document.elementFromPoint(${step.point.x}, ${step.point.y})?.dispatchEvent(event);
+            })()
+          `;
+          await this.safeExecuteJavaScript(webContents, moveScript, 500);
+        }
+
+        // Hover delay before clicking
+        await new Promise((r) => setTimeout(r, getHoverDelay()));
+
+        // Update stored mouse position
+        this.mousePositions.set(instanceId, targetPos);
+      } else {
+        // Simple delay before clicking
+        const humanDelay = 50 + Math.random() * 150;
+        await new Promise((r) => setTimeout(r, humanDelay));
+      }
+
+      // Perform the click
+      const clickScript = `
+        (function() {
+          const x = ${clickX};
+          const y = ${clickY};
+          const button = ${JSON.stringify(button)};
+          const clickCount = ${clickCount};
+
+          const element = document.elementFromPoint(x, y);
+          if (!element) {
+            return { success: false, error: 'No element at click position' };
+          }
+
           const buttonNum = button === 'left' ? 0 : button === 'right' ? 2 : 1;
           const eventInit = {
             bubbles: true,
@@ -1128,6 +1273,10 @@ export class BrowserService extends EventEmitter {
             button: buttonNum,
             buttons: 1 << buttonNum
           };
+
+          // Dispatch mouseenter and mouseover first (for hover effects)
+          element.dispatchEvent(new MouseEvent('mouseenter', eventInit));
+          element.dispatchEvent(new MouseEvent('mouseover', eventInit));
 
           for (let i = 0; i < clickCount; i++) {
             element.dispatchEvent(new MouseEvent('mousedown', eventInit));
@@ -1140,44 +1289,16 @@ export class BrowserService extends EventEmitter {
             element.focus();
           }
 
-          return {
-            success: true,
-            element: { tagName, text, href },
-            position: { x, y }
-          };
+          return { success: true };
         })()
       `;
 
-      // Set up navigation listener if needed
-      let navigationPromise: Promise<string> | null = null;
-      if (waitForNavigation) {
-        navigationPromise = new Promise<string>((resolve) => {
-          const onNavigate = (_event: unknown, url: string) => {
-            webContents.removeListener('did-navigate', onNavigate);
-            resolve(url);
-          };
-          webContents.on('did-navigate', onNavigate);
-          // Timeout for navigation
-          setTimeout(() => {
-            webContents.removeListener('did-navigate', onNavigate);
-            resolve('');
-          }, DEFAULT_NAVIGATION_TIMEOUT);
-        });
-      }
+      const clickResult = await this.safeExecuteJavaScript<{ success: boolean; error?: string }>(
+        webContents, clickScript, 5000
+      );
 
-      // Add human-like delay before clicking
-      const humanDelay = 50 + Math.random() * 150; // 50-200ms
-      await new Promise((r) => setTimeout(r, humanDelay));
-
-      const result = await this.safeExecuteJavaScript<{
-        success: boolean;
-        error?: string;
-        element?: { tagName: string; text: string; href?: string };
-        position?: { x: number; y: number };
-      }>(webContents, clickScript, timeout + 5000);
-
-      if (!result.success) {
-        return { success: false, element: { tagName: '', text: '' }, error: result.error };
+      if (!clickResult.success) {
+        return { success: false, element: { tagName: '', text: '' }, error: clickResult.error };
       }
 
       // Wait for navigation if requested
@@ -1190,7 +1311,7 @@ export class BrowserService extends EventEmitter {
 
       return {
         success: true,
-        element: result.element || { tagName: '', text: '' },
+        element: findResult.element || { tagName: '', text: '' },
         navigated,
         newUrl,
       };
@@ -1200,7 +1321,7 @@ export class BrowserService extends EventEmitter {
   }
 
   /**
-   * Type text into an input element
+   * Type text into an input element with human-like timing patterns
    */
   async type(instanceId: string, options: TypeOptions): Promise<TypeResult> {
     try {
@@ -1212,6 +1333,8 @@ export class BrowserService extends EventEmitter {
       const clear = options.clear ?? true;
       const pressEnter = options.pressEnter ?? false;
       const delay = options.delay ?? 0;
+      // humanLike defaults to true when delay > 0, otherwise false (for speed)
+      const humanLike = options.humanLike ?? (delay > 0);
 
       const webContents = view.webContents;
 
@@ -1265,10 +1388,22 @@ export class BrowserService extends EventEmitter {
         await this.safeExecuteJavaScript(webContents, clearScript, 2000);
       }
 
-      // Type each character with human-like variance
+      // Type each character with human-like timing patterns
       const text = options.text;
+      const baseDelay = delay > 0 ? delay : 50; // Default 50ms for human-like mode
+      let inBurst = false;
+      let burstDelays: number[] = [];
+      let burstIndex = 0;
+
       for (let i = 0; i < text.length; i++) {
+        // Check if browser still exists before each character
+        if (!this.browsers.has(instanceId) || webContents.isDestroyed()) {
+          return { success: false, element: { tagName: '' }, error: 'Browser was destroyed during operation' };
+        }
+
         const char = text[i];
+        const prevChar = i > 0 ? text[i - 1] : null;
+
         const typeCharScript = `
           (function() {
             const el = document.querySelector(${JSON.stringify(options.selector)});
@@ -1293,18 +1428,55 @@ export class BrowserService extends EventEmitter {
         `;
         await this.safeExecuteJavaScript(webContents, typeCharScript, 2000);
 
-        // Add variance to keystroke timing for human-like behavior
-        const baseDelay = delay > 0 ? delay : 30; // Default 30ms between keystrokes
-        const variance = Math.random() * 40; // 0-40ms variance
+        // Calculate delay before next character
         if (i < text.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, baseDelay + variance));
+          let charDelay: number;
+
+          if (humanLike) {
+            // Check for micro-pause (rare distraction simulation)
+            if (shouldInsertMicroPause(0.02)) {
+              await new Promise((resolve) => setTimeout(resolve, getMicroPauseDuration()));
+            }
+
+            // Check if we're at a word boundary (space or after punctuation)
+            const isWordBoundary = char === ' ' || /[.,!?;:]/.test(char);
+            if (isWordBoundary) {
+              // Longer pause at word boundaries (thinking time)
+              charDelay = getWordBoundaryPause();
+              inBurst = false; // Reset burst mode at word boundaries
+            } else if (inBurst && burstIndex < burstDelays.length) {
+              // Continue typing in burst mode
+              charDelay = burstDelays[burstIndex++];
+              if (burstIndex >= burstDelays.length) {
+                inBurst = false;
+              }
+            } else if (!inBurst && shouldTypeBurst(0.12)) {
+              // Start a new burst (3-6 characters typed quickly)
+              const burstLength = 3 + Math.floor(Math.random() * 4);
+              burstDelays = getTypingBurstDelays(burstLength);
+              burstIndex = 0;
+              inBurst = true;
+              charDelay = burstDelays[burstIndex++];
+            } else {
+              // Normal character-by-character timing with Gaussian variance
+              charDelay = getTypingDelay(char, prevChar, baseDelay);
+            }
+          } else {
+            // Simple mode: just use base delay with minimal variance
+            charDelay = delay > 0 ? delay + Math.random() * 20 : 0;
+          }
+
+          if (charDelay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, charDelay));
+          }
         }
       }
 
       // Press Enter if requested
       if (pressEnter) {
-        // Small pause before pressing enter (human-like)
-        await new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 100));
+        // Pause before pressing enter (human-like thinking time)
+        const enterPause = humanLike ? getHumanDelay(150, 400) : 100 + Math.random() * 100;
+        await new Promise((resolve) => setTimeout(resolve, enterPause));
 
         const enterScript = `
           (function() {
@@ -1919,7 +2091,7 @@ export class BrowserService extends EventEmitter {
   }
 
   /**
-   * Scroll the page or an element
+   * Scroll the page or an element with human-like variance
    */
   async scroll(instanceId: string, options: ScrollOptions): Promise<ScrollResult> {
     try {
@@ -1929,92 +2101,203 @@ export class BrowserService extends EventEmitter {
       }
 
       const smooth = options.smooth ?? true;
+      const humanLike = options.humanLike ?? true;
       const webContents = view.webContents;
 
-      const scrollScript = `
-        (function() {
-          const direction = ${JSON.stringify(options.direction)};
-          const amount = ${JSON.stringify(options.amount)};
-          const selector = ${JSON.stringify(options.selector)};
-          const smooth = ${smooth};
+      // For 'top' and 'bottom', use simple scroll
+      if (options.direction === 'top' || options.direction === 'bottom') {
+        const scrollScript = `
+          (function() {
+            const direction = ${JSON.stringify(options.direction)};
+            const selector = ${JSON.stringify(options.selector)};
+            const smooth = ${smooth};
 
-          const target = selector ? document.querySelector(selector) : window;
-          if (!target && selector) {
-            return { success: false, error: 'Element not found: ' + selector };
-          }
+            const target = selector ? document.querySelector(selector) : window;
+            if (!target && selector) {
+              return { success: false, error: 'Element not found: ' + selector };
+            }
 
-          const behavior = smooth ? 'smooth' : 'instant';
-          const viewportHeight = window.innerHeight;
-          const viewportWidth = window.innerWidth;
-          const scrollAmount = amount || viewportHeight;
+            const behavior = smooth ? 'smooth' : 'instant';
 
-          const scrollable = selector ? target : document.documentElement;
-
-          switch (direction) {
-            case 'up':
-              if (selector) {
-                target.scrollBy({ top: -scrollAmount, behavior });
-              } else {
-                window.scrollBy({ top: -scrollAmount, behavior });
-              }
-              break;
-            case 'down':
-              if (selector) {
-                target.scrollBy({ top: scrollAmount, behavior });
-              } else {
-                window.scrollBy({ top: scrollAmount, behavior });
-              }
-              break;
-            case 'left':
-              if (selector) {
-                target.scrollBy({ left: -scrollAmount, behavior });
-              } else {
-                window.scrollBy({ left: -scrollAmount, behavior });
-              }
-              break;
-            case 'right':
-              if (selector) {
-                target.scrollBy({ left: scrollAmount, behavior });
-              } else {
-                window.scrollBy({ left: scrollAmount, behavior });
-              }
-              break;
-            case 'top':
+            if (direction === 'top') {
               if (selector) {
                 target.scrollTo({ top: 0, behavior });
               } else {
                 window.scrollTo({ top: 0, behavior });
               }
-              break;
-            case 'bottom':
+            } else {
               if (selector) {
                 target.scrollTo({ top: target.scrollHeight, behavior });
               } else {
                 window.scrollTo({ top: document.body.scrollHeight, behavior });
               }
-              break;
+            }
+
+            return new Promise(resolve => {
+              setTimeout(() => {
+                const x = selector ? target.scrollLeft : window.scrollX;
+                const y = selector ? target.scrollTop : window.scrollY;
+                resolve({
+                  success: true,
+                  scrollPosition: { x: Math.round(x), y: Math.round(y) }
+                });
+              }, smooth ? 300 : 50);
+            });
+          })()
+        `;
+
+        return await this.safeExecuteJavaScript<ScrollResult>(webContents, scrollScript, 10000);
+      }
+
+      // For directional scrolls (up/down/left/right), use human-like incremental scrolling
+      // First, get viewport dimensions and calculate scroll amount
+      const viewportScript = `({
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY
+      })`;
+      const viewportInfo = await this.safeExecuteJavaScript<{
+        viewportHeight: number;
+        viewportWidth: number;
+        scrollX: number;
+        scrollY: number;
+      }>(webContents, viewportScript, 2000);
+
+      if (!viewportInfo) {
+        return { success: false, scrollPosition: { x: 0, y: 0 }, error: 'Failed to get viewport info' };
+      }
+
+      // Calculate base scroll amount (default to viewport height/width)
+      let baseAmount = options.amount;
+      if (!baseAmount) {
+        baseAmount = (options.direction === 'left' || options.direction === 'right')
+          ? viewportInfo.viewportWidth
+          : viewportInfo.viewportHeight;
+      }
+
+      // Apply human-like variance to the total amount (+/- 5-15%)
+      const totalAmount = humanLike ? getScrollAmount(baseAmount) : baseAmount;
+
+      // Determine if this is a vertical or horizontal scroll
+      const isVertical = options.direction === 'up' || options.direction === 'down';
+      const isNegative = options.direction === 'up' || options.direction === 'left';
+
+      if (humanLike && totalAmount > 100) {
+        // Break into incremental wheel-like scrolls for more human-like behavior
+        const increments = getScrollIncrements(isNegative ? -totalAmount : totalAmount, 120);
+
+        for (let i = 0; i < increments.length; i++) {
+          // Check if browser still exists before each step
+          if (!this.browsers.has(instanceId) || webContents.isDestroyed()) {
+            return { success: false, scrollPosition: { x: 0, y: 0 }, error: 'Browser was destroyed during operation' };
           }
 
-          // Wait for scroll to complete
-          return new Promise(resolve => {
-            setTimeout(() => {
-              const x = selector ? target.scrollLeft : window.scrollX;
-              const y = selector ? target.scrollTop : window.scrollY;
-              resolve({
-                success: true,
-                scrollPosition: { x: Math.round(x), y: Math.round(y) }
+          const increment = increments[i];
+
+          // Dispatch wheel event (more realistic than scrollBy)
+          const wheelScript = `
+            (function() {
+              const selector = ${JSON.stringify(options.selector)};
+              const target = selector ? document.querySelector(selector) : document;
+              if (!target && selector) {
+                return { success: false, error: 'Element not found: ' + selector };
+              }
+
+              const deltaY = ${isVertical ? increment : 0};
+              const deltaX = ${!isVertical ? increment : 0};
+
+              const wheelEvent = new WheelEvent('wheel', {
+                deltaX: deltaX,
+                deltaY: deltaY,
+                deltaMode: 0, // DOM_DELTA_PIXEL
+                bubbles: true,
+                cancelable: true
               });
-            }, smooth ? 300 : 50);
-          });
+
+              target.dispatchEvent(wheelEvent);
+
+              // Also do actual scroll for browsers that don't respond to wheel events
+              if (selector) {
+                target.scrollBy({ top: deltaY, left: deltaX, behavior: 'auto' });
+              } else {
+                window.scrollBy({ top: deltaY, left: deltaX, behavior: 'auto' });
+              }
+
+              return { success: true };
+            })()
+          `;
+
+          await this.safeExecuteJavaScript(webContents, wheelScript, 2000);
+
+          // Add delay between wheel events (except for the last one)
+          if (i < increments.length - 1) {
+            await new Promise((r) => setTimeout(r, getScrollWheelDelay()));
+          }
+        }
+
+        // Small pause for scroll to settle
+        await new Promise((r) => setTimeout(r, 50 + Math.random() * 50));
+      } else {
+        // Simple scroll for small amounts or when humanLike is disabled
+        const scrollScript = `
+          (function() {
+            const direction = ${JSON.stringify(options.direction)};
+            const amount = ${totalAmount};
+            const selector = ${JSON.stringify(options.selector)};
+            const smooth = ${smooth};
+
+            const target = selector ? document.querySelector(selector) : window;
+            if (!target && selector) {
+              return { success: false, error: 'Element not found: ' + selector };
+            }
+
+            const behavior = smooth ? 'smooth' : 'instant';
+            const signedAmount = ${isNegative ? -1 : 1} * amount;
+
+            if (${isVertical}) {
+              if (selector) {
+                target.scrollBy({ top: signedAmount, behavior });
+              } else {
+                window.scrollBy({ top: signedAmount, behavior });
+              }
+            } else {
+              if (selector) {
+                target.scrollBy({ left: signedAmount, behavior });
+              } else {
+                window.scrollBy({ left: signedAmount, behavior });
+              }
+            }
+
+            return { success: true };
+          })()
+        `;
+
+        await this.safeExecuteJavaScript(webContents, scrollScript, 5000);
+
+        // Wait for smooth scroll to complete
+        if (smooth) {
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+
+      // Get final scroll position
+      const positionScript = `
+        (function() {
+          const selector = ${JSON.stringify(options.selector)};
+          const target = selector ? document.querySelector(selector) : null;
+          return {
+            success: true,
+            scrollPosition: {
+              x: Math.round(selector && target ? target.scrollLeft : window.scrollX),
+              y: Math.round(selector && target ? target.scrollTop : window.scrollY)
+            }
+          };
         })()
       `;
 
-      const result = await this.safeExecuteJavaScript<ScrollResult>(
-        webContents,
-        scrollScript,
-        10000 // 10 second timeout for scroll
-      );
-      return result;
+      const result = await this.safeExecuteJavaScript<ScrollResult>(webContents, positionScript, 2000);
+      return result || { success: true, scrollPosition: { x: 0, y: 0 } };
     } catch (error) {
       return { success: false, scrollPosition: { x: 0, y: 0 }, error: String(error) };
     }

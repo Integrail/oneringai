@@ -79,6 +79,8 @@ export interface ClickOptions {
   waitForNavigation?: boolean;
   /** Element wait timeout in ms (default: 5000) */
   timeout?: number;
+  /** Enable human-like mouse movement and click offset (default: true) */
+  humanLike?: boolean;
 }
 
 export interface ClickResult {
@@ -105,8 +107,10 @@ export interface TypeOptions {
   clear?: boolean;
   /** Press Enter after typing (default: false) */
   pressEnter?: boolean;
-  /** Delay between keystrokes in ms (default: 0) */
+  /** Delay between keystrokes in ms (default: 0 for fast, set >0 for human-like) */
   delay?: number;
+  /** Enable human-like typing patterns with variance and pauses (default: true when delay > 0) */
+  humanLike?: boolean;
 }
 
 export interface TypeResult {
@@ -172,6 +176,8 @@ export interface ScrollOptions {
   selector?: string;
   /** Smooth scrolling (default: true) */
   smooth?: boolean;
+  /** Enable human-like scroll variance and increments (default: true) */
+  humanLike?: boolean;
 }
 
 export interface ScrollResult {

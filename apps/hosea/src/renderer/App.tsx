@@ -25,6 +25,7 @@ import {
   NavigationContext,
   useNavigationState,
 } from './hooks/useNavigation';
+import { TabProvider } from './hooks/useTabContext';
 
 // Default models for each vendor
 const DEFAULT_MODELS: Record<string, string> = {
@@ -127,6 +128,7 @@ function AppContent(): React.ReactElement {
   const navigation = useNavigationState();
   const [showSetup, setShowSetup] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [defaultAgentConfig, setDefaultAgentConfig] = useState<{ id: string; name: string } | null>(null);
   const initStarted = React.useRef(false);
 
   // App initialization flow:
@@ -149,6 +151,8 @@ function AppContent(): React.ReactElement {
           if (!status.initialized) {
             await window.hosea.agentConfig.setActive(activeAgent.id);
           }
+          // Store the default agent config for TabProvider
+          setDefaultAgentConfig({ id: activeAgent.id, name: activeAgent.name });
           setIsInitializing(false);
           return;
         }
@@ -159,6 +163,8 @@ function AppContent(): React.ReactElement {
           // Activate the most recently used/updated agent
           const mostRecent = agents[0]; // Already sorted by updatedAt desc
           await window.hosea.agentConfig.setActive(mostRecent.id);
+          // Store the default agent config for TabProvider
+          setDefaultAgentConfig({ id: mostRecent.id, name: mostRecent.name });
           setIsInitializing(false);
           return;
         }
@@ -177,6 +183,12 @@ function AppContent(): React.ReactElement {
 
           if (!result.success) {
             console.error('Failed to create default agent:', result.error);
+          } else {
+            // Fetch the newly created agent to get its config
+            const newActiveAgent = await window.hosea.agentConfig.getActive();
+            if (newActiveAgent) {
+              setDefaultAgentConfig({ id: newActiveAgent.id, name: newActiveAgent.name });
+            }
           }
 
           setIsInitializing(false);
@@ -199,13 +211,18 @@ function AppContent(): React.ReactElement {
   const handleSetupComplete = useCallback(async () => {
     setShowSetup(false);
     // The setup modal now creates the agent, so we just need to refresh
-    const activeAgent = await window.hosea.agentConfig.getActive();
+    let activeAgent = await window.hosea.agentConfig.getActive();
     if (!activeAgent) {
       // Fallback: try to activate any available agent
       const agents = await window.hosea.agentConfig.list();
       if (agents.length > 0) {
         await window.hosea.agentConfig.setActive(agents[0].id);
+        activeAgent = agents[0];
       }
+    }
+    // Update the default agent config for TabProvider
+    if (activeAgent) {
+      setDefaultAgentConfig({ id: activeAgent.id, name: activeAgent.name });
     }
   }, []);
 
@@ -254,20 +271,25 @@ function AppContent(): React.ReactElement {
 
   return (
     <NavigationContext.Provider value={navigation}>
-      <div className="app-layout">
-        <Sidebar />
-        <main className="app-main">
-          {/* macOS drag region for window dragging */}
-          <div className="app-main__drag-region" />
-          {renderPage()}
-        </main>
-      </div>
+      <TabProvider
+        defaultAgentConfigId={defaultAgentConfig?.id}
+        defaultAgentName={defaultAgentConfig?.name}
+      >
+        <div className="app-layout">
+          <Sidebar />
+          <main className="app-main">
+            {/* macOS drag region for window dragging */}
+            <div className="app-main__drag-region" />
+            {renderPage()}
+          </main>
+        </div>
 
-      <SetupModal
-        show={showSetup}
-        onHide={() => setShowSetup(false)}
-        onComplete={handleSetupComplete}
-      />
+        <SetupModal
+          show={showSetup}
+          onHide={() => setShowSetup(false)}
+          onComplete={handleSetupComplete}
+        />
+      </TabProvider>
     </NavigationContext.Provider>
   );
 }
