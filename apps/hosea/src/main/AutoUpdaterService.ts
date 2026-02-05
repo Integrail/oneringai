@@ -1,5 +1,5 @@
 import { autoUpdater, UpdateInfo } from 'electron-updater';
-import { BrowserWindow, ipcMain, app } from 'electron';
+import { BrowserWindow, ipcMain, app, dialog } from 'electron';
 
 export interface UpdateStatus {
   status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -15,6 +15,7 @@ export interface UpdateStatus {
 
 export class AutoUpdaterService {
   private mainWindow: BrowserWindow | null = null;
+  private isManualCheck = false;
 
   constructor() {
     // Configure logging
@@ -38,6 +39,7 @@ export class AutoUpdaterService {
     });
 
     autoUpdater.on('update-available', (info: UpdateInfo) => {
+      this.isManualCheck = false; // Reset flag
       this.sendStatus({
         status: 'available',
         version: info.version,
@@ -48,6 +50,17 @@ export class AutoUpdaterService {
 
     autoUpdater.on('update-not-available', () => {
       this.sendStatus({ status: 'not-available' });
+
+      // Show dialog only for manual checks
+      if (this.isManualCheck) {
+        this.isManualCheck = false;
+        dialog.showMessageBox({
+          type: 'info',
+          title: 'No Updates Available',
+          message: 'You are running the latest version.',
+          detail: `Current version: ${app.getVersion()}`,
+        });
+      }
     });
 
     autoUpdater.on('download-progress', (progress) => {
@@ -107,6 +120,26 @@ export class AutoUpdaterService {
         console.log('Auto-update check failed:', err.message);
       });
     }, delayMs);
+  }
+
+  // Manual check for updates (from menu)
+  async checkForUpdates(): Promise<void> {
+    this.isManualCheck = true;
+
+    try {
+      this.sendStatus({ status: 'checking' });
+      await autoUpdater.checkForUpdates();
+      // Results are handled by event handlers (update-available, update-not-available)
+    } catch (error) {
+      this.isManualCheck = false;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      dialog.showMessageBox({
+        type: 'error',
+        title: 'Update Check Failed',
+        message: 'Could not check for updates.',
+        detail: errorMessage,
+      });
+    }
   }
 
   private sendStatus(status: UpdateStatus): void {

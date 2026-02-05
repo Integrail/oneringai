@@ -42,3 +42,6 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# Publish script (contains GitHub token)
+publish.sh

@@ -8,7 +8,8 @@ export default defineConfig({
   format: ['cjs'],
   outDir: 'dist',
   outExtension: () => ({ js: '.cjs' }),
-  clean: true,
+  // Don't use clean: true - it wipes dist/renderer/ built by vite
+  clean: false,
   splitting: false,
   sourcemap: true,
   external: ['electron'],

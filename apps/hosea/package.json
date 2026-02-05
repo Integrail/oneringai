@@ -2,6 +2,11 @@
   "name": "@everworker/hosea",
   "version": "0.1.0",
   "description": "HOSEA - Human-Oriented System for Engaging Agents - Desktop UI for OneRing AI",
+  "author": {
+    "name": "Everworker.ai",
+    "email": "anton@everworker.ai",
+    "url": "https://everworker.ai"
+  },
   "type": "module",
   "main": "dist/main/index.cjs",
   "scripts": {
@@ -105,6 +110,7 @@
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools"
     },
+    "copyright": "Copyright © 2026 Everworker.ai",
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"

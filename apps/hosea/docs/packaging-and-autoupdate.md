@@ -1,24 +1,29 @@
-# Package Hosea App for Mac and Windows Distribution
+# HOSEA Packaging and Auto-Update Architecture
 
 ## Overview
 
-Package the Hosea Electron app so users can install it via native installers on macOS (.dmg) and Windows (.exe).
+This document describes the packaging and auto-update architecture for HOSEA. All components described here have been **fully implemented**.
 
-**Current State:** electron-builder is already configured in `package.json`. The main gap is missing icon assets.
+**Current Release:** v0.1.0 (February 2025)
+**GitHub Releases:** https://github.com/Integrail/oneringai/releases
 
 ---
 
-## What's Already in Place
+## Implementation Status
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| electron-builder | Installed | v24.9.1 in devDependencies |
-| Build scripts | Configured | `npm run build` and `npm run package` |
-| App metadata | Set | appId: `ai.onering.hosea`, productName: `HOSEA` |
-| Mac target | Configured | DMG format |
-| Windows target | Configured | NSIS installer |
-| Linux target | Configured | AppImage format |
-| Icon files | Missing | `assets/icon.icns`, `icon.ico`, `icon.png` |
+| electron-builder | ✅ Implemented | v24.9.1 |
+| electron-updater | ✅ Implemented | v6.7.3 |
+| Build scripts | ✅ Implemented | `npm run build`, `npm run package` |
+| App metadata | ✅ Implemented | appId: `ai.everworker.hosea`, productName: `HOSEA` |
+| Mac target | ✅ Implemented | DMG format (Apple Silicon) |
+| Windows target | ✅ Implemented | NSIS installer |
+| Linux target | ✅ Implemented | AppImage format |
+| Icon files | ✅ Implemented | `assets/icon.icns`, `icon.ico`, `icon.png` |
+| Auto-updater service | ✅ Implemented | `src/main/AutoUpdaterService.ts` |
+| Update UI | ✅ Implemented | `src/renderer/components/UpdateNotification.tsx` |
+| GitHub publish | ✅ Implemented | `build.publish` config |
 
 ---
 
@@ -47,58 +52,50 @@ apps/hosea/assets/
 - Design a square icon (1024x1024 PNG master)
 - Export to all required formats
 
-### Phase 2: Verify/Update package.json Build Config
+### Phase 2: Build Config (IMPLEMENTED)
 
 **File:** `apps/hosea/package.json`
 
-The existing config (lines 55-77) is mostly correct. Verify these settings:
+The build config includes **critical file exclusions** to prevent bundling the entire parent repository:
 
 ```json
 {
   "build": {
-    "appId": "ai.onering.hosea",
+    "appId": "ai.everworker.hosea",
     "productName": "HOSEA",
-    "directories": {
-      "output": "release"
-    },
+    "directories": { "output": "release" },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/@everworker/oneringai/apps/**/*",
+      "!node_modules/@everworker/oneringai/src/**/*",
+      "!node_modules/@everworker/oneringai/tests/**/*",
+      "!node_modules/@everworker/oneringai/coverage/**/*",
+      "!node_modules/@everworker/oneringai/docs/**/*",
+      "!node_modules/@everworker/oneringai/examples/**/*",
+      "!node_modules/@everworker/oneringai/scripts/**/*",
+      "... (see package.json for full list)"
     ],
-    "mac": {
-      "target": "dmg",
-      "icon": "assets/icon.icns",
-      "category": "public.app-category.developer-tools"
+    "publish": {
+      "provider": "github",
+      "owner": "Integrail",
+      "repo": "oneringai"
     },
-    "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png",
-      "category": "Development"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
-    },
-    "dmg": {
-      "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
-      ]
-    }
+    "mac": { "target": "dmg", "icon": "assets/icon.icns" },
+    "win": { "target": "nsis", "icon": "assets/icon.ico" },
+    "linux": { "target": "AppImage", "icon": "assets/icon.png" }
   }
 }
 ```
 
-**Additions to consider:**
-- `mac.category` - App Store category
-- `nsis` block - Windows installer customization (allow custom install path)
-- `dmg.contents` - DMG window layout with Applications shortcut
+**Why exclusions are critical:**
+
+HOSEA uses `"@everworker/oneringai": "file:../.."`  which symlinks to the parent directory. Without exclusions, electron-builder bundles:
+- The entire `apps/` folder (including hosea itself → recursive!)
+- Source code, tests, coverage (~9GB total)
+
+With proper exclusions: **~180MB**. Without: **~9GB**.
 
 ### Phase 3: Build and Package
 
@@ -191,7 +188,11 @@ Optional but recommended to avoid "Unknown publisher" warnings:
 
 2. **Check output:**
    - Verify `release/` directory contains installer files
-   - Check file sizes are reasonable (50-150MB typical for Electron apps)
+   - Expected file sizes (with proper exclusions):
+     - macOS DMG: ~180MB
+     - Windows EXE: ~150MB
+     - Linux AppImage: ~200MB
+   - **Warning:** If files exceed 500MB, the build exclusions may be broken
 
 3. **macOS test:**
    - Mount the `.dmg` file
@@ -259,50 +260,33 @@ npm install electron-updater
 
 This is the official auto-update module from electron-builder.
 
-### Phase 5: Configure Update Source
+### Phase 5: Update Source (IMPLEMENTED)
 
-**Option A: GitHub Releases (Recommended for open-source)**
-
-Add to `apps/hosea/package.json`:
+**GitHub Releases** is configured as the update source:
 
 ```json
 {
   "build": {
     "publish": {
       "provider": "github",
-      "owner": "oneringai",
-      "repo": "hosea"
+      "owner": "Integrail",
+      "repo": "oneringai"
     }
   }
 }
 ```
 
-**Option B: S3/Generic Server**
+When electron-builder runs with `--publish always`, it:
+1. Creates/updates a GitHub Release
+2. Uploads installer files (dmg, exe, AppImage)
+3. Uploads `latest*.yml` manifest files
 
-```json
-{
-  "build": {
-    "publish": {
-      "provider": "s3",
-      "bucket": "hosea-updates",
-      "region": "us-east-1"
-    }
-  }
-}
-```
+The auto-updater checks these manifests to detect new versions.
 
-**Option C: Custom Server**
+**Alternative options** (not currently used):
 
-```json
-{
-  "build": {
-    "publish": {
-      "provider": "generic",
-      "url": "https://updates.onering.ai/hosea"
-    }
-  }
-}
-```
+- **S3**: `"provider": "s3", "bucket": "hosea-updates"`
+- **Generic server**: `"provider": "generic", "url": "https://updates.example.com"`
 
 ### Phase 6: Main Process - AutoUpdater Service
 

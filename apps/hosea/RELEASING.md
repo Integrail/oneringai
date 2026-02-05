@@ -65,31 +65,57 @@ This will:
 - Create git tag `hosea-vX.Y.Z`
 - Push commit and tag to GitHub
 
-### 4. Build Distribution Packages
+### 4. Build and Publish to GitHub Releases
 
-After versioning, build the distributable packages:
+Build all platform installers and publish directly to GitHub:
 
 ```bash
-# Build for current platform
-npm run package
+# Set GitHub token (fine-grained token with Contents read/write permission)
+export GH_TOKEN=your_github_token
 
-# Output will be in release/ directory
+# Build all platforms and publish to GitHub Releases
+npx electron-builder --mac --win --linux --publish always
 ```
 
-**Platform-specific builds:**
-- **macOS**: `release/HOSEA-X.Y.Z.dmg`
-- **Windows**: `release/HOSEA Setup X.Y.Z.exe`
-- **Linux**: `release/HOSEA-X.Y.Z.AppImage`
+This will:
+- Build installers for all platforms
+- Create a draft GitHub Release
+- Upload all installer files
+- Upload `latest*.yml` files for auto-updater
 
-### 5. Create GitHub Release
+**Output files:**
+| Platform | File | Typical Size |
+|----------|------|--------------|
+| macOS (Apple Silicon) | `HOSEA-X.Y.Z-arm64.dmg` | ~180MB |
+| Windows | `HOSEA Setup X.Y.Z.exe` | ~150MB |
+| Linux | `HOSEA-X.Y.Z-arm64.AppImage` | ~200MB |
+
+### 5. Finalize GitHub Release
+
+After electron-builder uploads the files:
 
 1. Go to https://github.com/Integrail/oneringai/releases
-2. Click "Draft a new release"
-3. Select tag `hosea-vX.Y.Z`
-4. Title: "HOSEA vX.Y.Z"
-5. Copy changelog entries to description
-6. Upload built packages (dmg, exe, AppImage)
-7. Publish release
+2. Find the draft release (will be named by version number)
+3. Edit the release:
+   - **Tag**: Change to `hosea-vX.Y.Z`
+   - **Title**: "HOSEA vX.Y.Z"
+   - **Description**: Add changelog entries and download instructions
+4. Uncheck "Set as a pre-release" if this is a stable release
+5. Click "Publish release"
+
+**Or use the API** (automated):
+```bash
+# Get release ID and publish
+RELEASE_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/Integrail/oneringai/releases" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+
+curl -X PATCH \
+  -H "Authorization: token $GH_TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://api.github.com/repos/Integrail/oneringai/releases/$RELEASE_ID" \
+  -d '{"tag_name": "hosea-vX.Y.Z", "name": "HOSEA vX.Y.Z", "draft": false}'
+```
 
 ## Quick Reference
 
@@ -98,14 +124,28 @@ npm run package
 cd apps/hosea
 
 # 1. Edit CHANGELOG.md
-# 2. Run:
+# 2. Bump version and push tag:
 npm run release:patch
 
-# 3. Build packages
-npm run package
+# 3. Build and publish to GitHub:
+export GH_TOKEN=your_github_token
+npx electron-builder --mac --win --linux --publish always
 
-# 4. Create GitHub release and upload packages
+# 4. Finalize the release on GitHub (set tag, title, publish)
 ```
+
+## GitHub Token Setup
+
+You need a **fine-grained personal access token** with:
+- **Repository access**: `Integrail/oneringai`
+- **Permissions**: Contents (Read and write)
+
+To create one:
+1. Go to https://github.com/settings/tokens?type=beta
+2. Click "Generate new token"
+3. Select repository: `Integrail/oneringai`
+4. Under "Permissions" → "Repository permissions" → "Contents": Read and write
+5. Generate and save the token securely
 
 ## Development vs Production
 
@@ -125,6 +165,42 @@ npm run package
 | **App ID** | `ai.everworker.hosea` |
 | **Product Name** | HOSEA |
 | **GitHub** | https://github.com/Integrail/oneringai/tree/main/apps/hosea |
+
+## Build Configuration
+
+### Critical: File Exclusions
+
+HOSEA uses a local file dependency (`@everworker/oneringai: "file:../.."`). Without proper exclusions, electron-builder would include the **entire parent repository** (~9GB) including:
+- The `apps/` folder (recursive nightmare - hosea inside oneringai inside hosea)
+- Source files, tests, coverage reports
+- Documentation and examples
+
+The `package.json` build config includes exclusions to only bundle the necessary `dist/` folder:
+
+```json
+"files": [
+  "dist/**/*",
+  "package.json",
+  "node_modules/**/*",
+  "!node_modules/@everworker/oneringai/apps/**/*",
+  "!node_modules/@everworker/oneringai/src/**/*",
+  "!node_modules/@everworker/oneringai/tests/**/*",
+  "!node_modules/@everworker/oneringai/coverage/**/*",
+  ...
+]
+```
+
+**Do not remove these exclusions!** They reduce build size from ~8GB to ~180MB.
+
+### Expected Build Sizes
+
+| Platform | Normal Size | Problem Size |
+|----------|-------------|--------------|
+| macOS DMG | 150-200MB | 8-9GB (missing exclusions) |
+| Windows EXE | 140-180MB | 8-9GB |
+| Linux AppImage | 180-220MB | 8-9GB |
+
+If builds exceed 500MB, check that the exclusions are in place.
 
 ## Troubleshooting
 
@@ -151,3 +227,44 @@ HOSEA uses prefixed tags to distinguish from core library releases:
 
 - Core library: `v0.1.0`, `v0.2.0`, etc.
 - HOSEA: `hosea-v0.1.0`, `hosea-v0.2.0`, etc.
+
+## Auto-Update System
+
+HOSEA includes built-in auto-update functionality via `electron-updater`.
+
+### How It Works
+
+1. **On app launch** (after 5s delay): Checks GitHub Releases for new versions
+2. **If update available**: Shows notification in bottom-right corner
+3. **User clicks Download**: Update downloads in background with progress
+4. **Download complete**: User can restart to install, or defer
+
+### Files Involved
+
+| Component | File |
+|-----------|------|
+| Main process service | `src/main/AutoUpdaterService.ts` |
+| Preload bridge | `src/preload/index.ts` (updater API) |
+| UI component | `src/renderer/components/UpdateNotification.tsx` |
+| Config | `package.json` (build.publish section) |
+
+### Update Manifest Files
+
+When publishing, electron-builder creates these files that the updater checks:
+
+- `latest-mac.yml` - macOS update info
+- `latest.yml` - Windows update info
+- `latest-linux-arm64.yml` - Linux update info
+
+These YAML files contain version, download URL, and checksums.
+
+### Testing Updates
+
+1. Install an older version of HOSEA
+2. Create a new release with a higher version number
+3. Launch the installed app
+4. After ~5 seconds, update notification should appear
+
+### Disabling Auto-Updates (Development)
+
+Auto-updates are disabled when running in dev mode (`--dev` flag). The check in `AutoUpdaterService` skips initialization in development.
