@@ -113,9 +113,11 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "5QKQW4L4PH"
+      }
     },
-    "afterSign": "scripts/notarize.cjs",
     "copyright": "Copyright © 2026 Everworker.ai",
     "win": {
       "target": "nsis",

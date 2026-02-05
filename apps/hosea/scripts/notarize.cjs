@@ -16,9 +16,9 @@ exports.default = async function notarizing(context) {
   }
 
   // Skip if credentials not provided
-  if (!process.env.APPLE_ID || !process.env.APPLE_APP_PASSWORD || !process.env.APPLE_TEAM_ID) {
+  if (!process.env.APPLE_ID || !process.env.APPLE_APP_SPECIFIC_PASSWORD || !process.env.APPLE_TEAM_ID) {
     console.log('  • Skipping notarization (credentials not set)');
-    console.log('    Set APPLE_ID, APPLE_APP_PASSWORD, and APPLE_TEAM_ID to enable');
+    console.log('    Set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID to enable');
     return;
   }
 
@@ -32,7 +32,7 @@ exports.default = async function notarizing(context) {
     await notarize({
       appPath,
       appleId: process.env.APPLE_ID,
-      appleIdPassword: process.env.APPLE_APP_PASSWORD,
+      appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
       teamId: process.env.APPLE_TEAM_ID,
     });
     console.log('  • Notarization complete!');
