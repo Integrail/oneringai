@@ -1,9 +1,9 @@
-# @oneringai/agents - Internal API Reference
+# @everworker/oneringai - Internal API Reference
 
 **Generated:** 2026-01-30
 **Mode:** full
 
-This document provides a complete reference for ALL APIs in `@oneringai/agents`, including internal implementations.
+This document provides a complete reference for ALL APIs in `@everworker/oneringai`, including internal implementations.
 
 > **Warning:** Internal APIs may change without notice. For stable APIs, see [API_REFERENCE.md](../API_REFERENCE.md).
 

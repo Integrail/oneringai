@@ -8,7 +8,7 @@
  * Phase 3+: Content extraction, interaction tools (placeholders)
  */
 
-import type { ToolFunction } from '@oneringai/agents';
+import type { ToolFunction } from '@everworker/oneringai';
 import type { BrowserService } from '../BrowserService.js';
 import type { NavigateOptions, ContentFormat, GetContentOptions, CookieData } from './types.js';
 

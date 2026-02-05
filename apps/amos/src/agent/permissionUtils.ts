@@ -9,7 +9,7 @@ import type {
   AgentPermissionsConfig,
   PermissionCheckContext,
   ApprovalDecision,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 import type { AmosConfig, ToolApprovalContext } from '../config/types.js';
 
 /**

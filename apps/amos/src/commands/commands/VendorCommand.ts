@@ -4,7 +4,7 @@
 
 import { BaseCommand } from '../BaseCommand.js';
 import type { CommandContext, CommandResult } from '../../config/types.js';
-import { Vendor, getModelsByVendor, type ILLMDescription } from '@oneringai/agents';
+import { Vendor, getModelsByVendor, type ILLMDescription } from '@everworker/oneringai';
 
 export class VendorCommand extends BaseCommand {
   readonly name = 'vendor';

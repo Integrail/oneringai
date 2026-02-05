@@ -32251,7 +32251,7 @@ var MCPClient = class extends eventemitter3.EventEmitter {
       this.transport = this.createTransport();
       this.client = new Client(
         {
-          name: "@oneringai/agents",
+          name: "@everworker/oneringai",
           version: "0.2.0"
         },
         {
@@ -43056,7 +43056,7 @@ function initVendorRegistry(templates) {
 function getVendorTemplate(vendorId) {
   if (!vendorRegistry) {
     throw new Error(
-      "Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates."
+      "Vendor registry not initialized. Make sure to import from @everworker/oneringai which auto-registers templates."
     );
   }
   return vendorRegistry.get(vendorId);
@@ -43064,7 +43064,7 @@ function getVendorTemplate(vendorId) {
 function getAllVendorTemplates() {
   if (!vendorRegistry) {
     throw new Error(
-      "Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates."
+      "Vendor registry not initialized. Make sure to import from @everworker/oneringai which auto-registers templates."
     );
   }
   return Array.from(vendorRegistry.values());
@@ -43077,7 +43077,7 @@ function getVendorAuthTemplate(vendorId, authId) {
 function listVendorIds() {
   if (!vendorRegistry) {
     throw new Error(
-      "Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates."
+      "Vendor registry not initialized. Make sure to import from @everworker/oneringai which auto-registers templates."
     );
   }
   return Array.from(vendorRegistry.keys());

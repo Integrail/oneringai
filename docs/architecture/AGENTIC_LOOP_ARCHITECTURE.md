@@ -1,6 +1,6 @@
 # Agentic Loop Architecture
 
-This document provides a detailed explanation of the Agent agentic loop implementation in `@oneringai/agents`.
+This document provides a detailed explanation of the Agent agentic loop implementation in `@everworker/oneringai`.
 
 ## Table of Contents
 

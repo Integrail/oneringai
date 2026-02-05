@@ -2,7 +2,7 @@
 
 **Advanced Multimodal Orchestration System**
 
-A powerful terminal-based AI assistant powered by `@oneringai/agents`. AMOS provides runtime configuration, multi-vendor support, tool permissions, session management, and an extensible command system.
+A powerful terminal-based AI assistant powered by `@everworker/oneringai`. AMOS provides runtime configuration, multi-vendor support, tool permissions, session management, and an extensible command system.
 
 ---
 
@@ -886,7 +886,7 @@ Log levels: `trace`, `debug`, `info`, `warn`, `error`, `silent`
 ## Version Information
 
 **AMOS Version**: 0.1.0
-**Built on**: @oneringai/agents
+**Built on**: @everworker/oneringai
 **Last Updated**: 2026-01-29
 
 ---

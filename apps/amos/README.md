@@ -1,6 +1,6 @@
 # AMOS - Advanced Multimodal Orchestration System
 
-A powerful terminal-based AI assistant powered by `@oneringai/agents`. Features multi-vendor support, runtime model switching, tool permissions, session management, and comprehensive context inspection.
+A powerful terminal-based AI assistant powered by `@everworker/oneringai`. Features multi-vendor support, runtime model switching, tool permissions, session management, and comprehensive context inspection.
 
 ## Features
 

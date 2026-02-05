@@ -4,7 +4,7 @@
 
 import { BaseCommand } from '../BaseCommand.js';
 import type { CommandContext, CommandResult } from '../../config/types.js';
-import { MODEL_REGISTRY, getModelsByVendor, getModelInfo } from '@oneringai/agents';
+import { MODEL_REGISTRY, getModelsByVendor, getModelInfo } from '@everworker/oneringai';
 
 export class ModelCommand extends BaseCommand {
   readonly name = 'model';

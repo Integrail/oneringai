@@ -10,7 +10,7 @@
  *   createConnectorFromTemplate,
  *   listVendors,
  *   getVendorTemplate,
- * } from '@oneringai/agents';
+ * } from '@everworker/oneringai';
  *
  * // List all available vendors
  * const vendors = listVendors();

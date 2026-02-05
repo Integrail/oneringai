@@ -1,5 +1,5 @@
 {
-  "name": "@oneringai/amos",
+  "name": "@everworker/amos",
   "version": "0.1.0",
   "description": "Advanced Multimodal Orchestration System - Terminal-based agentic app",
   "type": "module",
@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@oneringai/agents": "file:../..",
+    "@everworker/oneringai": "file:../..",
     "chalk": "^5.3.0",
     "ora": "^8.0.1"
   },

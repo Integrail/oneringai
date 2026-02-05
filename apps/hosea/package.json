@@ -1,5 +1,5 @@
 {
-  "name": "@oneringai/hosea",
+  "name": "@everworker/hosea",
   "version": "0.1.0",
   "description": "HOSEA - Human-Oriented System for Engaging Agents - Desktop UI for OneRing AI",
   "type": "module",
@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@oneringai/agents": "file:../..",
+    "@everworker/oneringai": "file:../..",
     "electron-store": "^10.0.0",
     "katex": "^0.16.28",
     "lucide-react": "^0.563.0",

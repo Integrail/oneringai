@@ -1,11 +1,11 @@
 /**
  * OneRingToolProvider
  *
- * Wraps @oneringai/agents ToolRegistry to provide tools to UnifiedToolCatalog
+ * Wraps @everworker/oneringai ToolRegistry to provide tools to UnifiedToolCatalog
  */
 
-import { ToolRegistry, getToolByName } from '@oneringai/agents';
-import type { ToolRegistryEntry, ConnectorToolEntry } from '@oneringai/agents';
+import { ToolRegistry, getToolByName } from '@everworker/oneringai';
+import type { ToolRegistryEntry, ConnectorToolEntry } from '@everworker/oneringai';
 import type {
   IToolProvider,
   UnifiedToolEntry,
@@ -14,12 +14,12 @@ import type {
 import { CATEGORY_DISPLAY_NAMES } from '../UnifiedToolCatalog.js';
 
 /**
- * Maps ToolRegistryEntry from @oneringai/agents to UnifiedToolEntry
+ * Maps ToolRegistryEntry from @everworker/oneringai to UnifiedToolEntry
  */
 function mapToUnifiedEntry(
   entry: ToolRegistryEntry | ConnectorToolEntry
 ): UnifiedToolEntry {
-  // ToolCategory from @oneringai/agents is compatible with HoseaToolCategory
+  // ToolCategory from @everworker/oneringai is compatible with HoseaToolCategory
   const category = entry.category as HoseaToolCategory;
 
   return {
@@ -39,7 +39,7 @@ function mapToUnifiedEntry(
 }
 
 /**
- * Provider that wraps @oneringai/agents ToolRegistry (static methods)
+ * Provider that wraps @everworker/oneringai ToolRegistry (static methods)
  */
 export class OneRingToolProvider implements IToolProvider {
   readonly name = 'oneringai';
@@ -48,7 +48,7 @@ export class OneRingToolProvider implements IToolProvider {
   private cachedEntries: UnifiedToolEntry[] | null = null;
 
   /**
-   * Get all tools from the @oneringai/agents registry
+   * Get all tools from the @everworker/oneringai registry
    */
   getTools(): UnifiedToolEntry[] {
     if (this.cachedEntries) {
@@ -69,7 +69,7 @@ export class OneRingToolProvider implements IToolProvider {
    * Get a specific tool by name
    */
   getToolByName(name: string): UnifiedToolEntry | undefined {
-    // Use the standalone getToolByName function from @oneringai/agents
+    // Use the standalone getToolByName function from @everworker/oneringai
     const entry = getToolByName(name);
     if (!entry) {
       return undefined;

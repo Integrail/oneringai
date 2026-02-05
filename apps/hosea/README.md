@@ -2,7 +2,7 @@
 
 **Human-Oriented System for Engaging Agents**
 
-A desktop application for interacting with AI agents powered by the `@oneringai/agents` library.
+A desktop application for interacting with AI agents powered by the `@everworker/oneringai` library.
 
 ## Features
 
@@ -52,7 +52,7 @@ npm run package
 src/
 ├── main/               # Electron main process
 │   ├── index.ts        # Window management, IPC setup
-│   └── AgentService.ts # @oneringai/agents integration
+│   └── AgentService.ts # @everworker/oneringai integration
 ├── preload/
 │   └── index.ts        # Context bridge for secure IPC
 └── renderer/           # React frontend

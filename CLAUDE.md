@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Name**: `@oneringai/agents`
+**Name**: `@everworker/oneringai`
 **Purpose**: Unified AI agent library with multi-vendor support for text, image, video, audio, and agentic workflows
 **Language**: TypeScript (strict mode) | **Runtime**: Node.js 18+ | **Package**: ESM
 
@@ -394,7 +394,7 @@ In-context memory for frequently-accessed state stored **directly in context** (
 ### Setup (NextGen)
 
 ```typescript
-import { AgentContextNextGen } from '@oneringai/agents';
+import { AgentContextNextGen } from '@everworker/oneringai';
 
 // Enable via features
 const ctx = AgentContextNextGen.create({
@@ -526,7 +526,7 @@ AgentContextNextGen supports full session persistence with `save()` and `load()`
 ### Setup
 
 ```typescript
-import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@everworker/oneringai';
 
 // Create storage for the agent
 const storage = createFileContextStorage('my-agent');

@@ -18,7 +18,7 @@ AI-powered assistant that helps you configure OAuth providers through interactiv
 **Usage**:
 
 ```typescript
-import { Connector, Vendor, ProviderConfigAgent } from '@oneringai/agents';
+import { Connector, Vendor, ProviderConfigAgent } from '@everworker/oneringai';
 
 // Create connector for the AI
 Connector.create({

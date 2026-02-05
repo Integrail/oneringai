@@ -1,9 +1,9 @@
-# @oneringai/agents - API Reference
+# @everworker/oneringai - API Reference
 
 **Generated:** 2026-01-30
 **Mode:** public
 
-This document provides a complete reference for the public API of `@oneringai/agents`.
+This document provides a complete reference for the public API of `@everworker/oneringai`.
 
 For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 

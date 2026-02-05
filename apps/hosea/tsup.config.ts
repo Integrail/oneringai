@@ -12,8 +12,8 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   external: ['electron'],
-  // Bundle @oneringai/agents into the output
-  noExternal: [/@oneringai/],
+  // Bundle @everworker/oneringai into the output
+  noExternal: [/@everworker/],
   platform: 'node',
   target: 'node18',
   // Handle dynamic requires

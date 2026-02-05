@@ -1,7 +1,7 @@
 /**
  * Tools Page - View and configure available tools
  *
- * Shows all tools from the @oneringai/agents registry.
+ * Shows all tools from the @everworker/oneringai registry.
  * Tools that require connectors can be configured directly from this page.
  * Enable/disable is handled per-agent in the Agent Editor, not here.
  */
@@ -269,7 +269,7 @@ export function ToolConnectorsPage(): React.ReactElement {
     <div className="page">
       <PageHeader
         title="Tool Catalog"
-        subtitle={`${tools.length} tools available from @oneringai/agents`}
+        subtitle={`${tools.length} tools available from @everworker/oneringai`}
       />
 
       <div className="page__content">

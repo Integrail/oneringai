@@ -151,7 +151,7 @@ export function SettingsModal({
               <p>Version 0.1.0</p>
               <hr />
               <p className="small text-muted">
-                Built with Electron, React, and @oneringai/agents
+                Built with Electron, React, and @everworker/oneringai
               </p>
               <Badge bg="info">OneRing AI</Badge>
             </div>

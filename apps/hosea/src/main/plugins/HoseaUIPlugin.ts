@@ -13,7 +13,7 @@ import type {
   IToolExecutionPlugin,
   PluginExecutionContext,
   BeforeExecuteResult,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 /**
  * Dynamic UI content structure for browser elements

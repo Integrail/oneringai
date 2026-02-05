@@ -18,7 +18,7 @@ import {
   type UniversalEvent,
   type AgentMode,
   type UniversalAgentContextAccess,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 import type {
   IAgentRunner,
   AgentResponse,

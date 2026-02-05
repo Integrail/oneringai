@@ -195,7 +195,7 @@ async function main() {
   console.log('────────────────────────────────────────────────────────────\n');
 
   console.log('```typescript');
-  console.log('import { Connector, Agent, Vendor, createExecuteJavaScriptTool } from "@oneringai/agents";\n');
+  console.log('import { Connector, Agent, Vendor, createExecuteJavaScriptTool } from "@everworker/oneringai";\n');
   console.log('// Create agent with JavaScript execution tool');
   console.log('const jsTool = createExecuteJavaScriptTool();\n');
   console.log('Connector.create({');

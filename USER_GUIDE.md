@@ -1,9 +1,9 @@
-# @oneringai/agents - Complete User Guide
+# @everworker/oneringai - Complete User Guide
 
 **Version:** 0.1.0
 **Last Updated:** 2026-02-05
 
-A comprehensive guide to using all features of the @oneringai/agents library.
+A comprehensive guide to using all features of the @everworker/oneringai library.
 
 ---
 
@@ -55,7 +55,7 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 ### Installation
 
 ```bash
-npm install @oneringai/agents
+npm install @everworker/oneringai
 ```
 
 ### Environment Setup
@@ -76,7 +76,7 @@ OAUTH_ENCRYPTION_KEY=your-32-byte-hex-key
 ### First Agent
 
 ```typescript
-import { Connector, Agent, Vendor } from '@oneringai/agents';
+import { Connector, Agent, Vendor } from '@everworker/oneringai';
 
 // 1. Create a connector (authentication)
 Connector.create({
@@ -128,7 +128,7 @@ User Code → Connector Registry → Agent → Provider → LLM
 ### Simple Question/Answer
 
 ```typescript
-import { Connector, Agent, Vendor } from '@oneringai/agents';
+import { Connector, Agent, Vendor } from '@everworker/oneringai';
 
 // Setup
 Connector.create({
@@ -210,7 +210,7 @@ console.log(agent.getTemperature()); // 0.9
 ### Creating Connectors
 
 ```typescript
-import { Connector, Vendor } from '@oneringai/agents';
+import { Connector, Vendor } from '@everworker/oneringai';
 
 // API Key Authentication
 Connector.create({
@@ -289,7 +289,7 @@ Connector.clear();
 ### Supported Vendors
 
 ```typescript
-import { Vendor } from '@oneringai/agents';
+import { Vendor } from '@everworker/oneringai';
 
 Vendor.OpenAI        // OpenAI (GPT-4, GPT-5, o3-mini)
 Vendor.Anthropic     // Anthropic (Claude)
@@ -395,7 +395,7 @@ Save and resume agent conversations across restarts using `AgentContextNextGen` 
 ### Quick Start
 
 ```typescript
-import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@everworker/oneringai';
 
 // Create storage for the agent
 const storage = createFileContextStorage('my-assistant');
@@ -429,7 +429,7 @@ if (loaded) {
 ### Storage Backend: FileContextStorage
 
 ```typescript
-import { FileContextStorage, createFileContextStorage } from '@oneringai/agents';
+import { FileContextStorage, createFileContextStorage } from '@everworker/oneringai';
 
 // Simple: use helper function
 const storage = createFileContextStorage('my-agent');
@@ -449,7 +449,7 @@ const storage = new FileContextStorage({
 Implement `IContextStorage` interface:
 
 ```typescript
-import type { IContextStorage, StoredContextSession } from '@oneringai/agents';
+import type { IContextStorage, StoredContextSession } from '@everworker/oneringai';
 
 class DatabaseContextStorage implements IContextStorage {
   async save(sessionId: string, state: SerializedContextState, metadata?) { /* ... */ }
@@ -483,7 +483,7 @@ for (const s of sessions) {
 ### Using with Agent
 
 ```typescript
-import { Agent, createFileContextStorage } from '@oneringai/agents';
+import { Agent, createFileContextStorage } from '@everworker/oneringai';
 
 const storage = createFileContextStorage('my-agent');
 
@@ -525,7 +525,7 @@ await agent.run('What is my favorite color?');
 The recommended approach to session persistence using `AgentContextNextGen`:
 
 ```typescript
-import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@everworker/oneringai';
 
 // Create storage for the agent
 const storage = createFileContextStorage('my-assistant');
@@ -620,7 +620,7 @@ const recentSessions = await storage.list({
 
 **FileContextStorage** (default):
 ```typescript
-import { FileContextStorage, createFileContextStorage } from '@oneringai/agents';
+import { FileContextStorage, createFileContextStorage } from '@everworker/oneringai';
 
 // Simple: use helper
 const storage = createFileContextStorage('my-agent');
@@ -635,7 +635,7 @@ const storage = new FileContextStorage({
 
 **Custom Storage** (implement `IContextStorage`):
 ```typescript
-import type { IContextStorage, StoredContextSession } from '@oneringai/agents';
+import type { IContextStorage, StoredContextSession } from '@everworker/oneringai';
 
 class RedisContextStorage implements IContextStorage {
   async save(sessionId: string, state: SerializedAgentContextState, metadata?) { /* ... */ }
@@ -652,7 +652,7 @@ class RedisContextStorage implements IContextStorage {
 Store agent **configuration** separately from sessions for easy instantiation:
 
 ```typescript
-import { Agent, createFileAgentDefinitionStorage } from '@oneringai/agents';
+import { Agent, createFileAgentDefinitionStorage } from '@everworker/oneringai';
 
 const defStorage = createFileAgentDefinitionStorage();
 // Stores at: ~/.oneringai/agents/<agentId>/definition.json
@@ -736,7 +736,7 @@ The library includes a **powerful, universal context management system** that au
 **AgentContextNextGen** is the modern, plugin-first context manager. It provides clean separation of concerns with composable plugins:
 
 ```typescript
-import { AgentContextNextGen } from '@oneringai/agents';
+import { AgentContextNextGen } from '@everworker/oneringai';
 
 // Create a context instance
 const ctx = AgentContextNextGen.create({
@@ -811,7 +811,7 @@ AgentContextNextGen uses a plugin architecture with these core components:
 **AgentContextNextGen is always available** - BaseAgent creates it in the constructor, making it the single source of truth for ToolManager:
 
 ```typescript
-import { Agent, AgentContextNextGen } from '@oneringai/agents';
+import { Agent, AgentContextNextGen } from '@everworker/oneringai';
 
 // AgentContextNextGen is auto-created with default config
 const agent = Agent.create({
@@ -906,7 +906,7 @@ interface ContextFeatures {
 AgentContextNextGen features enable plugins independently. When a feature is disabled, its associated tools are **not registered**, giving the LLM a cleaner tool set:
 
 ```typescript
-import { AgentContextNextGen, DEFAULT_FEATURES } from '@oneringai/agents';
+import { AgentContextNextGen, DEFAULT_FEATURES } from '@everworker/oneringai';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
@@ -995,7 +995,7 @@ const perms = ctx.requirePermissions();     // ToolPermissionManager (throws if 
 AgentContextNextGen automatically registers feature-aware tools based on enabled features:
 
 ```typescript
-import { AgentContextNextGen } from '@oneringai/agents';
+import { AgentContextNextGen } from '@everworker/oneringai';
 
 // With workingMemory enabled (default)
 const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
@@ -1024,7 +1024,7 @@ console.log(ctx2.tools.has('memory_store'));    // false
 AgentContextNextGen provides a simple API for managing conversation history:
 
 ```typescript
-import { AgentContextNextGen } from '@oneringai/agents';
+import { AgentContextNextGen } from '@everworker/oneringai';
 
 const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
@@ -1076,7 +1076,7 @@ console.log(compacted);                  // true if compaction occurred
 AgentContextNextGen supports saving and loading sessions:
 
 ```typescript
-import { AgentContextNextGen, createFileContextStorage } from '@oneringai/agents';
+import { AgentContextNextGen, createFileContextStorage } from '@everworker/oneringai';
 
 // Create storage
 const storage = createFileContextStorage('my-agent');
@@ -1105,7 +1105,7 @@ await ctx2.load('session-001');
 Extend AgentContextNextGen with custom plugins:
 
 ```typescript
-import { IContextPluginNextGen, BasePluginNextGen, AgentContextNextGen } from '@oneringai/agents';
+import { IContextPluginNextGen, BasePluginNextGen, AgentContextNextGen } from '@everworker/oneringai';
 
 // Create a custom plugin by extending BasePluginNextGen
 class MyPlugin extends BasePluginNextGen {
@@ -1189,7 +1189,7 @@ ctx.on('prepared', ({ budget }) => {
 Agent uses **AgentContextNextGen** with plugins for extended functionality:
 
 ```typescript
-import { Agent, AgentContextNextGen, WorkingMemoryPluginNextGen } from '@oneringai/agents';
+import { Agent, AgentContextNextGen, WorkingMemoryPluginNextGen } from '@everworker/oneringai';
 
 // Create Agent with NextGen context
 const agent = Agent.create({
@@ -1239,7 +1239,7 @@ ctx.tools;                                // ToolManager instance
 Use NextGen plugins to extend AgentContextNextGen:
 
 ```typescript
-import { BasePluginNextGen, WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen } from '@oneringai/agents';
+import { BasePluginNextGen, WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen } from '@everworker/oneringai';
 
 // Built-in NextGen plugins:
 // - WorkingMemoryPluginNextGen: Tiered memory (raw/summary/findings)
@@ -1279,7 +1279,7 @@ The context management system handles all of this automatically.
 Context management is **automatic** with AgentContextNextGen:
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+import { Agent } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -1334,7 +1334,7 @@ import {
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
   simpleTokenEstimator,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 // Create AgentContextNextGen with configuration
 const ctx = AgentContextNextGen.create({
@@ -1388,7 +1388,7 @@ Compactors determine **how** content is reduced during compaction. Each compacto
 The `SummarizeCompactor` uses an LLM to intelligently summarize content, preserving key information while reducing token count.
 
 ```typescript
-import { SummarizeCompactor, ApproximateTokenEstimator } from '@oneringai/agents';
+import { SummarizeCompactor, ApproximateTokenEstimator } from '@everworker/oneringai';
 
 const estimator = new ApproximateTokenEstimator();
 
@@ -1446,7 +1446,7 @@ const { budget } = await agent.context.prepare();
 Evicts low-priority memory entries based on the `avgEntrySize` metadata.
 
 ```typescript
-import { MemoryEvictionCompactor } from '@oneringai/agents';
+import { MemoryEvictionCompactor } from '@everworker/oneringai';
 
 const evictionCompactor = new MemoryEvictionCompactor(estimator);
 
@@ -1470,7 +1470,7 @@ const memoryComponent = {
 The `beforeCompaction` lifecycle hook allows agents to save important data before compaction occurs. This is critical for research tasks where tool outputs may contain valuable information.
 
 ```typescript
-import { Agent, BeforeCompactionContext } from '@oneringai/agents';
+import { Agent, BeforeCompactionContext } from '@everworker/oneringai';
 
 // Define lifecycle hooks when creating the agent
 const agent = Agent.create({
@@ -1607,7 +1607,7 @@ import {
   ContextConfig,
   BaseCompactionStrategy,  // Use this for easier implementation
   Agent,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 // Option 1: Implement from scratch
 class TimeBasedStrategy implements IContextStrategy {
@@ -1713,7 +1713,7 @@ const longRunningAgent = Agent.create({
 The `ApproximateTokenEstimator` provides content-type-aware estimation:
 
 ```typescript
-import { ApproximateTokenEstimator } from '@oneringai/agents';
+import { ApproximateTokenEstimator } from '@everworker/oneringai';
 
 const estimator = new ApproximateTokenEstimator();
 
@@ -1763,7 +1763,7 @@ console.log(`  Current input: ${budget.breakdown.currentInput} tokens`);
 Use lifecycle hooks to integrate context management with your application:
 
 ```typescript
-import { AgentLifecycleHooks } from '@oneringai/agents';
+import { AgentLifecycleHooks } from '@everworker/oneringai';
 
 const hooks: AgentLifecycleHooks = {
   // Called before context is prepared for LLM call
@@ -1818,7 +1818,7 @@ agent.setLifecycleHooks(hooks);
 #### 1. Choose the Right Strategy
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+import { Agent } from '@everworker/oneringai';
 
 // Short tasks, plenty of context → Lazy (90% threshold)
 const shortTask = Agent.create({
@@ -1918,7 +1918,7 @@ await memoryPlugin.storeFindings('data.findings', 'Key findings', findings);
 ### Quick Setup
 
 ```typescript
-import { AgentContextNextGen, InContextMemoryPluginNextGen } from '@oneringai/agents';
+import { AgentContextNextGen, InContextMemoryPluginNextGen } from '@everworker/oneringai';
 
 const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
@@ -1936,7 +1936,7 @@ plugin.set('state', 'Current processing state', { step: 1, status: 'active' });
 For more control, you can set up the plugin manually:
 
 ```typescript
-import { AgentContextNextGen, InContextMemoryPluginNextGen } from '@oneringai/agents';
+import { AgentContextNextGen, InContextMemoryPluginNextGen } from '@everworker/oneringai';
 
 const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
@@ -2246,7 +2246,7 @@ inContextPlugin.set('search_status', 'Search status', { completed: 3, pending: 2
 ### Quick Setup
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+import { Agent } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -2268,7 +2268,7 @@ const agent = Agent.create({
 For more control, you can set up the plugin manually:
 
 ```typescript
-import { AgentContextNextGen, PersistentInstructionsPluginNextGen } from '@oneringai/agents';
+import { AgentContextNextGen, PersistentInstructionsPluginNextGen } from '@everworker/oneringai';
 
 const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 
@@ -2580,7 +2580,7 @@ const agent = Agent.create({
 Tool Result Eviction is **enabled by default** when memory is enabled:
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+import { Agent } from '@everworker/oneringai';
 
 // Enabled by default
 const agent = Agent.create({
@@ -2597,7 +2597,7 @@ console.log(plugin?.getStats());
 ### Configuration
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+import { Agent } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -2987,7 +2987,7 @@ await agent.run('Now tell me more about the first item');
 ### Defining Tools
 
 ```typescript
-import { ToolFunction } from '@oneringai/agents';
+import { ToolFunction } from '@everworker/oneringai';
 
 const weatherTool: ToolFunction = {
   definition: {
@@ -3184,7 +3184,7 @@ console.log(budget);
 ### Code Execution Tool
 
 ```typescript
-import { createExecuteJavaScriptTool } from '@oneringai/agents';
+import { createExecuteJavaScriptTool } from '@everworker/oneringai';
 
 const jsTool = createExecuteJavaScriptTool();
 
@@ -3209,7 +3209,7 @@ A comprehensive set of tools for file system operations and shell command execut
 #### Quick Start
 
 ```typescript
-import { developerTools } from '@oneringai/agents';
+import { developerTools } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -3234,7 +3234,7 @@ import {
   createGrepTool,
   createListDirectoryTool,
   createBashTool,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 // Create tools with custom configuration
 const readFile = createReadFileTool({
@@ -3416,7 +3416,7 @@ Control tools at runtime for all agent types. Enable, disable, organize, and sel
 ### Quick Start
 
 ```typescript
-import { Agent } from '@oneringai/agents';
+import { Agent } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -3918,7 +3918,7 @@ The Tool Execution Plugin System provides a pluggable architecture for extending
 ### Basic Usage
 
 ```typescript
-import { Agent, LoggingPlugin, type IToolExecutionPlugin } from '@oneringai/agents';
+import { Agent, LoggingPlugin, type IToolExecutionPlugin } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -4167,7 +4167,7 @@ const latePlugin: IToolExecutionPlugin = { name: 'late', priority: 200 };
 Logs all tool executions with timing and result information:
 
 ```typescript
-import { LoggingPlugin } from '@oneringai/agents';
+import { LoggingPlugin } from '@everworker/oneringai';
 
 // Use with default settings (info level)
 agent.tools.executionPipeline.use(new LoggingPlugin());
@@ -4204,7 +4204,7 @@ The Hosea desktop app uses the plugin system to emit Dynamic UI content when bro
 
 ```typescript
 // apps/hosea/src/main/plugins/HoseaUIPlugin.ts
-import type { IToolExecutionPlugin, PluginExecutionContext } from '@oneringai/agents';
+import type { IToolExecutionPlugin, PluginExecutionContext } from '@everworker/oneringai';
 
 export class HoseaUIPlugin implements IToolExecutionPlugin {
   readonly name = 'hosea-ui';
@@ -4277,7 +4277,7 @@ npm install @modelcontextprotocol/sdk zod
 #### 2. Connect to a Local MCP Server
 
 ```typescript
-import { MCPRegistry, Agent, Connector, Vendor } from '@oneringai/agents';
+import { MCPRegistry, Agent, Connector, Vendor } from '@everworker/oneringai';
 
 // Setup connector for LLM
 Connector.create({
@@ -4377,7 +4377,7 @@ Create `oneringai.config.json` to declare MCP servers:
 Load and use the configuration:
 
 ```typescript
-import { Config, MCPRegistry, Agent } from '@oneringai/agents';
+import { Config, MCPRegistry, Agent } from '@everworker/oneringai';
 
 // Load configuration
 await Config.load('./oneringai.config.json');
@@ -4644,7 +4644,7 @@ console.log(toolNames.filter(name => name.startsWith('mcp:')));
 Connect to multiple MCP servers simultaneously:
 
 ```typescript
-import { MCPRegistry, Agent, Connector, Vendor } from '@oneringai/agents';
+import { MCPRegistry, Agent, Connector, Vendor } from '@everworker/oneringai';
 
 // Setup connector
 Connector.create({
@@ -4732,7 +4732,7 @@ import {
   MCPProtocolError,
   MCPToolError,
   MCPResourceError,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 try {
   await client.connect();
@@ -4873,7 +4873,7 @@ class CustomTransport implements Transport {
 ### Analyzing Images
 
 ```typescript
-import { Agent, createMessageWithImages } from '@oneringai/agents';
+import { Agent, createMessageWithImages } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -4914,7 +4914,7 @@ const response4 = await agent.run(
 Paste images directly from clipboard (like Claude Code!):
 
 ```typescript
-import { Agent, readClipboardImage, hasClipboardImage } from '@oneringai/agents';
+import { Agent, readClipboardImage, hasClipboardImage } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'anthropic',
@@ -4972,7 +4972,7 @@ The library provides comprehensive Text-to-Speech (TTS) and Speech-to-Text (STT)
 #### Basic Usage
 
 ```typescript
-import { Connector, TextToSpeech, Vendor } from '@oneringai/agents';
+import { Connector, TextToSpeech, Vendor } from '@everworker/oneringai';
 
 // Setup connector
 Connector.create({
@@ -5075,7 +5075,7 @@ const models = tts.listAvailableModels();
 #### Basic Usage
 
 ```typescript
-import { Connector, SpeechToText, Vendor } from '@oneringai/agents';
+import { Connector, SpeechToText, Vendor } from '@everworker/oneringai';
 
 // Setup connector
 Connector.create({
@@ -5207,7 +5207,7 @@ const granularities = stt.getTimestampGranularities();  // ['word', 'segment']
 Combine TTS and STT for a voice assistant:
 
 ```typescript
-import { Connector, Agent, TextToSpeech, SpeechToText, Vendor } from '@oneringai/agents';
+import { Connector, Agent, TextToSpeech, SpeechToText, Vendor } from '@everworker/oneringai';
 
 // Setup
 Connector.create({
@@ -5239,7 +5239,7 @@ async function voiceAssistant(audioInput: Buffer): Promise<Buffer> {
 ### Cost Estimation
 
 ```typescript
-import { calculateTTSCost, calculateSTTCost } from '@oneringai/agents';
+import { calculateTTSCost, calculateSTTCost } from '@everworker/oneringai';
 
 // TTS cost (per 1,000 characters)
 const ttsCost = calculateTTSCost('tts-1-hd', 5000);  // 5000 characters
@@ -5263,7 +5263,7 @@ The library provides comprehensive image generation capabilities with support fo
 ### Basic Usage
 
 ```typescript
-import { Connector, ImageGeneration, Vendor } from '@oneringai/agents';
+import { Connector, ImageGeneration, Vendor } from '@everworker/oneringai';
 import * as fs from 'fs/promises';
 
 // Setup connector
@@ -5386,7 +5386,7 @@ console.log('Has style control:', info.capabilities.features.styleControl);
 ### Cost Estimation
 
 ```typescript
-import { calculateImageCost } from '@oneringai/agents';
+import { calculateImageCost } from '@everworker/oneringai';
 
 // Standard quality
 const standardCost = calculateImageCost('dall-e-3', 5, 'standard');
@@ -5410,7 +5410,7 @@ The library provides comprehensive video generation capabilities with support fo
 ### Basic Usage
 
 ```typescript
-import { Connector, VideoGeneration, Vendor } from '@oneringai/agents';
+import { Connector, VideoGeneration, Vendor } from '@everworker/oneringai';
 import * as fs from 'fs/promises';
 
 // Setup connector
@@ -5665,7 +5665,7 @@ console.log('Style control:', info.capabilities.features.styleControl); // false
 ### Cost Estimation
 
 ```typescript
-import { calculateVideoCost } from '@oneringai/agents';
+import { calculateVideoCost } from '@everworker/oneringai';
 
 // Sora 2: $0.15/second
 const soraCost = calculateVideoCost('sora-2', 8);  // 8 seconds
@@ -5732,7 +5732,7 @@ Web search capabilities with Connector-based authentication. Supports multiple p
 ### Quick Start
 
 ```typescript
-import { Connector, SearchProvider, Services } from '@oneringai/agents';
+import { Connector, SearchProvider, Services } from '@everworker/oneringai';
 
 // Create search connector
 Connector.create({
@@ -5882,7 +5882,7 @@ const results = await search.search('query', {
 The webSearch tool is available for agents:
 
 ```typescript
-import { Agent, webSearch } from '@oneringai/agents';
+import { Agent, webSearch } from '@everworker/oneringai';
 
 // Create agent with webSearch tool
 const agent = Agent.create({
@@ -6024,7 +6024,7 @@ The library provides enterprise web scraping with automatic fallback chains and 
 ### Quick Start
 
 ```typescript
-import { Connector, ScrapeProvider, Services } from '@oneringai/agents';
+import { Connector, ScrapeProvider, Services } from '@everworker/oneringai';
 
 // Create ZenRows connector
 Connector.create({
@@ -6060,7 +6060,7 @@ ZenRows provides enterprise-grade scraping with:
 - Screenshot capture
 
 ```typescript
-import { ScrapeProvider, ZenRowsOptions } from '@oneringai/agents';
+import { ScrapeProvider, ZenRowsOptions } from '@everworker/oneringai';
 
 const scraper = ScrapeProvider.create({ connector: 'zenrows' });
 
@@ -6085,7 +6085,7 @@ const result = await scraper.scrape('https://protected-site.com', {
 The webScrape tool provides guaranteed URL reading with automatic fallback:
 
 ```typescript
-import { Agent, webScrape } from '@oneringai/agents';
+import { Agent, webScrape } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -6127,7 +6127,7 @@ Scraping strategy is handled internally - the tool will use the best available m
 ### Basic Streaming
 
 ```typescript
-import { Agent, isOutputTextDelta } from '@oneringai/agents';
+import { Agent, isOutputTextDelta } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -6145,7 +6145,7 @@ for await (const event of agent.stream('Tell me a story')) {
 ### Stream Helpers
 
 ```typescript
-import { StreamHelpers } from '@oneringai/agents';
+import { StreamHelpers } from '@everworker/oneringai';
 
 // Text only (filters to just text deltas)
 for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
@@ -6222,7 +6222,7 @@ External API integration uses the **Connector-First Architecture** - the same pa
 ### Quick Start
 
 ```typescript
-import { Connector, ConnectorTools, Services, Agent } from '@oneringai/agents';
+import { Connector, ConnectorTools, Services, Agent } from '@everworker/oneringai';
 
 // 1. Create a connector for an external service
 Connector.create({
@@ -6313,7 +6313,7 @@ The library includes built-in definitions for 35+ popular services:
 | **Monitoring** | Datadog, PagerDuty, Sentry, New Relic |
 
 ```typescript
-import { Services, getServiceInfo, getServicesByCategory } from '@oneringai/agents';
+import { Services, getServiceInfo, getServicesByCategory } from '@everworker/oneringai';
 
 // Use service constants
 Connector.create({
@@ -6375,7 +6375,7 @@ const urgent = await connector.fetch('/chat.postMessage', {
 #### Generate Tools for a Connector
 
 ```typescript
-import { ConnectorTools } from '@oneringai/agents';
+import { ConnectorTools } from '@everworker/oneringai';
 
 // Get all tools for a connector (generic API + any registered service tools)
 const tools = ConnectorTools.for('github');
@@ -6416,7 +6416,7 @@ Every connector with a `baseURL` gets a generic API tool that allows the agent t
 For frequently-used operations, register service-specific tools:
 
 ```typescript
-import { ConnectorTools, ToolFunction } from '@oneringai/agents';
+import { ConnectorTools, ToolFunction } from '@everworker/oneringai';
 
 // Register tools for a service type
 ConnectorTools.registerService('slack', (connector) => {
@@ -6512,7 +6512,7 @@ Unified view of all tools (built-in + connector-generated). Use this for UI tool
 #### Basic Usage
 
 ```typescript
-import { ToolRegistry } from '@oneringai/agents';
+import { ToolRegistry } from '@everworker/oneringai';
 
 // Get ALL tools (main API for UIs)
 const allTools = ToolRegistry.getAllTools();
@@ -6588,7 +6588,7 @@ for (const tool of ToolRegistry.getAllTools()) {
 Services are detected from URL patterns or explicit `serviceType`:
 
 ```typescript
-import { detectServiceFromURL, Services } from '@oneringai/agents';
+import { detectServiceFromURL, Services } from '@everworker/oneringai';
 
 // Automatic detection from URL
 detectServiceFromURL('https://api.github.com/repos');     // 'github'
@@ -6629,7 +6629,7 @@ if (connector.isDisposed()) {
 ### Complete Example
 
 ```typescript
-import { Connector, ConnectorTools, Services, Agent, Vendor } from '@oneringai/agents';
+import { Connector, ConnectorTools, Services, Agent, Vendor } from '@everworker/oneringai';
 
 // Setup AI connector
 Connector.create({
@@ -6688,7 +6688,7 @@ import {
   listVendors,
   getVendorTemplate,
   ConnectorTools
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 // Create GitHub connector with Personal Access Token
 const connector = createConnectorFromTemplate(
@@ -6714,7 +6714,7 @@ await agent.run('List my GitHub repositories');
 ### Discovering Available Vendors
 
 ```typescript
-import { listVendors, getVendorTemplate, getVendorInfo } from '@oneringai/agents';
+import { listVendors, getVendorTemplate, getVendorInfo } from '@everworker/oneringai';
 
 // List all available vendors
 const vendors = listVendors();
@@ -6737,7 +6737,7 @@ console.log(github);
 // }
 
 // Filter by category
-import { listVendorsByCategory, listVendorsByAuthType } from '@oneringai/agents';
+import { listVendorsByCategory, listVendorsByAuthType } from '@everworker/oneringai';
 
 const devVendors = listVendorsByCategory('development');
 // [github, gitlab, bitbucket, jira, linear, asana, trello]
@@ -6758,7 +6758,7 @@ import {
   hasVendorLogo,
   listVendorsWithLogos,
   getAllVendorLogos
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 // Check if logo is available
 if (hasVendorLogo('github')) {
@@ -6885,7 +6885,7 @@ createConnectorFromTemplate('my-paypal', 'paypal', 'oauth-client-credentials', {
 Each vendor template includes the URL where you create credentials:
 
 ```typescript
-import { getCredentialsSetupURL, getDocsURL } from '@oneringai/agents';
+import { getCredentialsSetupURL, getDocsURL } from '@everworker/oneringai';
 
 // Get where to create credentials
 const setupUrl = getCredentialsSetupURL('github');
@@ -7071,7 +7071,7 @@ The library includes full OAuth 2.0 support for external APIs.
 ### Basic OAuth Setup
 
 ```typescript
-import { OAuthManager, FileStorage } from '@oneringai/agents';
+import { OAuthManager, FileStorage } from '@everworker/oneringai';
 
 const oauth = new OAuthManager({
   flow: 'authorization_code',
@@ -7103,7 +7103,7 @@ const userToken = await oauth.getToken('user-123');
 ### Authenticated Fetch
 
 ```typescript
-import { createAuthenticatedFetch } from '@oneringai/agents';
+import { createAuthenticatedFetch } from '@everworker/oneringai';
 
 // Create connector for external API
 Connector.create({
@@ -7186,7 +7186,7 @@ import {
   getActiveModels,
   LLM_MODELS,
   Vendor,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 // Get model information
 const model = getModelInfo('gpt-5.2-thinking');
@@ -7283,7 +7283,7 @@ interface ILLMDescription {
 Intercept and modify agent behavior:
 
 ```typescript
-import { Agent, HookManager } from '@oneringai/agents';
+import { Agent, HookManager } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -7336,7 +7336,7 @@ agent.applyHooks(hooks);
 Protect external services:
 
 ```typescript
-import { CircuitBreaker } from '@oneringai/agents';
+import { CircuitBreaker } from '@everworker/oneringai';
 
 const breaker = new CircuitBreaker({
   failureThreshold: 5,        // Open after 5 failures
@@ -7370,7 +7370,7 @@ console.log(metrics);
 ### Retry with Backoff
 
 ```typescript
-import { retryWithBackoff } from '@oneringai/agents';
+import { retryWithBackoff } from '@everworker/oneringai';
 
 const result = await retryWithBackoff(
   async () => {
@@ -7390,7 +7390,7 @@ const result = await retryWithBackoff(
 ### Logging
 
 ```typescript
-import { logger } from '@oneringai/agents';
+import { logger } from '@everworker/oneringai';
 
 // Set log level
 logger.setLevel('debug'); // 'debug' | 'info' | 'warn' | 'error'
@@ -7408,7 +7408,7 @@ logger.info('User action', { userId: '123', action: 'login' });
 ### Metrics
 
 ```typescript
-import { metrics, setMetricsCollector, ConsoleMetrics } from '@oneringai/agents';
+import { metrics, setMetricsCollector, ConsoleMetrics } from '@everworker/oneringai';
 
 // Use console metrics
 setMetricsCollector(new ConsoleMetrics());
@@ -7468,7 +7468,7 @@ import {
   ProviderRateLimitError,
   ProviderContextLengthError,
   ToolExecutionError,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
 
@@ -7514,7 +7514,7 @@ const agent = Agent.create({
 #### 2. Handle Rate Limits
 
 ```typescript
-import { retryWithBackoff } from '@oneringai/agents';
+import { retryWithBackoff } from '@everworker/oneringai';
 
 const response = await retryWithBackoff(
   () => agent.run(input),
@@ -7539,7 +7539,7 @@ if (budget.utilizationPercent > 80) {
 #### 4. Use Circuit Breakers
 
 ```typescript
-import { CircuitBreaker } from '@oneringai/agents';
+import { CircuitBreaker } from '@everworker/oneringai';
 
 const breaker = new CircuitBreaker({
   failureThreshold: 5,

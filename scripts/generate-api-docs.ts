@@ -927,9 +927,9 @@ function parseArgs(): GeneratorConfig {
     return {
       mode: 'public',
       outputFile: 'API_REFERENCE.md',
-      title: '@oneringai/agents - API Reference',
+      title: '@everworker/oneringai - API Reference',
       description: `
-This document provides a complete reference for the public API of \`@oneringai/agents\`.
+This document provides a complete reference for the public API of \`@everworker/oneringai\`.
 
 For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 
@@ -940,9 +940,9 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
     return {
       mode: 'full',
       outputFile: 'docs/INTERNAL_API.md',
-      title: '@oneringai/agents - Internal API Reference',
+      title: '@everworker/oneringai - Internal API Reference',
       description: `
-This document provides a complete reference for ALL APIs in \`@oneringai/agents\`, including internal implementations.
+This document provides a complete reference for ALL APIs in \`@everworker/oneringai\`, including internal implementations.
 
 > **Warning:** Internal APIs may change without notice. For stable APIs, see [API_REFERENCE.md](../API_REFERENCE.md).
 `.trim(),

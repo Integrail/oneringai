@@ -1,4 +1,4 @@
-# Testing Guide for @oneringai/agents
+# Testing Guide for @everworker/oneringai
 
 **Test Framework**: Vitest v1.6.1
 **Coverage Tool**: v8

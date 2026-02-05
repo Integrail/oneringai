@@ -5,7 +5,7 @@
  * ======================
  *
  * For most users, import `AgentContext` from the main package:
- *   import { AgentContext } from '@oneringai/agents';
+ *   import { AgentContext } from '@everworker/oneringai';
  *
  * AgentContext (via AgentContextNextGen) is the unified context manager that handles:
  * - Conversation history
@@ -22,7 +22,7 @@
  * @example
  * ```typescript
  * // Simple API (recommended for most users)
- * import { AgentContext } from '@oneringai/agents';
+ * import { AgentContext } from '@everworker/oneringai';
  *
  * const ctx = AgentContext.create({ model: 'gpt-4', tools: [myTool] });
  * ctx.addMessage('user', 'Hello');

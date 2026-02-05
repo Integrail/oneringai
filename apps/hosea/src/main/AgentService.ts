@@ -1,5 +1,5 @@
 /**
- * AgentService - Manages the @oneringai/agents integration
+ * AgentService - Manages the @everworker/oneringai integration
  *
  * This service bridges Electron IPC with the agent library.
  */
@@ -68,7 +68,7 @@ import {
   type ContextBudget,
   type AgentContextNextGenConfig,
   type StrategyInfo,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import {
   UnifiedToolCatalog,
@@ -623,7 +623,7 @@ export class AgentService {
     // Initialize UnifiedToolCatalog with providers
     this.toolCatalog = new UnifiedToolCatalog();
 
-    // Register OneRing tools (from @oneringai/agents library)
+    // Register OneRing tools (from @everworker/oneringai library)
     const oneRingProvider = new OneRingToolProvider();
     this.toolCatalog.registerProvider(oneRingProvider);
 

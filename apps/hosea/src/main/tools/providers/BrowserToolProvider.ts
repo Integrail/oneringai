@@ -6,7 +6,7 @@
  * use the createTool factory pattern.
  */
 
-import type { ToolFunction } from '@oneringai/agents';
+import type { ToolFunction } from '@everworker/oneringai';
 import type {
   IToolProvider,
   UnifiedToolEntry,

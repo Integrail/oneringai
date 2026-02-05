@@ -4,7 +4,7 @@
  * Import and use with your agents:
  *
  * ```typescript
- * import { tools } from '@oneringai/agents';
+ * import { tools } from '@everworker/oneringai';
  *
  * const agent = Agent.create({
  *   connector: 'openai',
@@ -136,7 +136,7 @@ import { bash } from './shell/index.js';
  *
  * @example
  * ```typescript
- * import { tools } from '@oneringai/agents';
+ * import { tools } from '@everworker/oneringai';
  *
  * const agent = Agent.create({
  *   connector: 'openai',

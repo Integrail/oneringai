@@ -11,7 +11,7 @@ This repository contains both open-source and proprietary components with differ
 
 ## Open Source Components (MIT License)
 
-The core `@oneringai/agents` library and supporting files are licensed under the **MIT License**:
+The core `@everworker/oneringai` library and supporting files are licensed under the **MIT License**:
 
 - `src/` - Core library source code
 - `examples/` - Usage examples

@@ -6,7 +6,7 @@
  *
  * Usage:
  * ```typescript
- * import { ConnectorTools, Services } from '@oneringai/agents';
+ * import { ConnectorTools, Services } from '@everworker/oneringai';
  *
  * // Get generic API tool for any connector
  * const apiTool = ConnectorTools.genericAPI('my-connector');

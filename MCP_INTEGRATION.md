@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `@oneringai/agents` library now includes seamless integration with the [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol), enabling automatic discovery and registration of external tools from MCP servers.
+The `@everworker/oneringai` library now includes seamless integration with the [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol), enabling automatic discovery and registration of external tools from MCP servers.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ npm install @modelcontextprotocol/sdk zod
 ### 2. Basic Usage
 
 ```typescript
-import { Connector, Agent, Vendor, MCPRegistry } from '@oneringai/agents';
+import { Connector, Agent, Vendor, MCPRegistry } from '@everworker/oneringai';
 
 // Setup LLM connector
 Connector.create({
@@ -94,7 +94,7 @@ Create `oneringai.config.json`:
 Load configuration:
 
 ```typescript
-import { Config, MCPRegistry, Agent } from '@oneringai/agents';
+import { Config, MCPRegistry, Agent } from '@everworker/oneringai';
 
 // Load config
 await Config.load('./oneringai.config.json');
@@ -376,7 +376,7 @@ import {
   MCPProtocolError,
   MCPToolError,
   MCPResourceError,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 
 try {
   await client.connect();

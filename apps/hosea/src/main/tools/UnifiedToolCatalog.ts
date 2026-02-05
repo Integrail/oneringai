@@ -1,11 +1,11 @@
 /**
  * UnifiedToolCatalog
  *
- * A wrapper over @oneringai/agents ToolRegistry with pluggable architecture
+ * A wrapper over @everworker/oneringai ToolRegistry with pluggable architecture
  * for combining tools from multiple sources (oneringai, hosea, custom).
  */
 
-import type { ToolFunction, ToolCategory } from '@oneringai/agents';
+import type { ToolFunction, ToolCategory } from '@everworker/oneringai';
 
 /**
  * Extended category type for Hosea (adds 'browser')

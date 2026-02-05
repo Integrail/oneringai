@@ -225,7 +225,7 @@ export function SettingsPage(): React.ReactElement {
                       <tbody>
                         <tr>
                           <td className="text-muted">Built with</td>
-                          <td>@oneringai/agents</td>
+                          <td>@everworker/oneringai</td>
                         </tr>
                         <tr>
                           <td className="text-muted">Electron</td>

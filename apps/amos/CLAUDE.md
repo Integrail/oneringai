@@ -6,7 +6,7 @@ This document provides context for AI assistants to continue development of the 
 
 **Name**: AMOS (Advanced Multimodal Orchestration System)
 **Purpose**: Terminal-based agentic chat application with runtime configuration
-**Built on**: `@oneringai/agents` library (UniversalAgent)
+**Built on**: `@everworker/oneringai` library (UniversalAgent)
 **Language**: TypeScript (strict mode)
 **Runtime**: Node.js 18+
 **Package Type**: ESM
@@ -31,7 +31,7 @@ This document provides context for AI assistants to continue development of the 
     │            │            │            │            │     ┌──────────────┐
     │            │            │            │            │     │Universal     │
     │            │            │            │            │     │Agent         │
-    │            │            │            │            │     │(@oneringai)  │
+    │            │            │            │            │     │(@everworker)  │
     │            │            │            │            │     └──────────────┘
     ▼            ▼            ▼            ▼            ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -194,7 +194,7 @@ connectorManager.add(config): Promise<void>
 connectorManager.update(name, partial): Promise<void>
 connectorManager.delete(name): Promise<void>
 
-// Registration with @oneringai/agents Connector
+// Registration with @everworker/oneringai Connector
 connectorManager.registerConnector(name): void  // Calls Connector.create()
 connectorManager.unregisterConnector(name): void
 connectorManager.isRegistered(name): boolean
@@ -533,7 +533,7 @@ await app.createAgent();  // Recreates agent with new instructions
 
 ## Library Integration
 
-### Key imports from @oneringai/agents
+### Key imports from @everworker/oneringai
 
 ```typescript
 import {
@@ -554,7 +554,7 @@ import {
   MODEL_REGISTRY,
   getModelInfo,
   getModelsByVendor,
-} from '@oneringai/agents';
+} from '@everworker/oneringai';
 ```
 
 ### UniversalAgent API

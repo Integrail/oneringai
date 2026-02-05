@@ -31,7 +31,7 @@ export function initVendorRegistry(templates: VendorTemplate[]): void {
 export function getVendorTemplate(vendorId: string): VendorTemplate | undefined {
   if (!vendorRegistry) {
     throw new Error(
-      'Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates.'
+      'Vendor registry not initialized. Make sure to import from @everworker/oneringai which auto-registers templates.'
     );
   }
   return vendorRegistry.get(vendorId);
@@ -43,7 +43,7 @@ export function getVendorTemplate(vendorId: string): VendorTemplate | undefined 
 export function getAllVendorTemplates(): VendorTemplate[] {
   if (!vendorRegistry) {
     throw new Error(
-      'Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates.'
+      'Vendor registry not initialized. Make sure to import from @everworker/oneringai which auto-registers templates.'
     );
   }
   return Array.from(vendorRegistry.values());
@@ -67,7 +67,7 @@ export function getVendorAuthTemplate(
 export function listVendorIds(): string[] {
   if (!vendorRegistry) {
     throw new Error(
-      'Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates.'
+      'Vendor registry not initialized. Make sure to import from @everworker/oneringai which auto-registers templates.'
     );
   }
   return Array.from(vendorRegistry.keys());

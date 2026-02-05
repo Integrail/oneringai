@@ -3,7 +3,7 @@
  * Type definitions for the app configuration and state
  */
 
-import type { Vendor, ToolFunction, PermissionScope, RiskLevel } from '@oneringai/agents';
+import type { Vendor, ToolFunction, PermissionScope, RiskLevel } from '@everworker/oneringai';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // App Configuration

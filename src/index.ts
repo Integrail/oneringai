@@ -1,11 +1,11 @@
 /**
- * @oneringai/agents - Unified AI agent library
+ * @everworker/oneringai - Unified AI agent library
  *
  * Connector-First Architecture: Simple, DRY, Powerful
  *
  * @example
  * ```typescript
- * import { Connector, Agent, Vendor } from '@oneringai/agents';
+ * import { Connector, Agent, Vendor } from '@everworker/oneringai';
  *
  * // Create connector (can have multiple per vendor!)
  * Connector.create({

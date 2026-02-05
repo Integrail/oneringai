@@ -1,6 +1,6 @@
 # Tool Library
 
-Pre-built tools for AI agents in `@oneringai/agents`.
+Pre-built tools for AI agents in `@everworker/oneringai`.
 
 ## Overview
 
@@ -27,7 +27,7 @@ This library provides production-ready tools that agents can use. All tools are 
 
 **Example**:
 ```typescript
-import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@everworker/oneringai';
 
 Connector.create({
   name: 'openai',
@@ -181,7 +181,7 @@ TAVILY_API_KEY=your-key-here
 
 **Example**:
 ```typescript
-import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@everworker/oneringai';
 
 // Register OAuth connectors first
 Connector.create({
@@ -373,7 +373,7 @@ export { myTool } from './myCategory/myTool.js';
 ### Step 3: Use
 
 ```typescript
-import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@everworker/oneringai';
 
 Connector.create({
   name: 'openai',
@@ -460,7 +460,7 @@ Unified API for discovering all available tools (built-in + connector-generated)
 ### Usage
 
 ```typescript
-import { ToolRegistry } from '@oneringai/agents';
+import { ToolRegistry } from '@everworker/oneringai';
 
 // Get ALL tools (built-in + connector)
 const allTools = ToolRegistry.getAllTools();

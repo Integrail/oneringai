@@ -7,8 +7,8 @@
  * - Fetch tools (web_fetch) - No connector needed (native)
  */
 
-import { Connector } from '@oneringai/agents';
-import type { ToolFunction } from '@oneringai/agents';
+import { Connector } from '@everworker/oneringai';
+import type { ToolFunction } from '@everworker/oneringai';
 import type {
   ExternalToolsConfig,
   ExternalProviderConfig,
