@@ -18042,18 +18042,42 @@ var simpleTokenEstimator = {
   }
 };
 var BasePluginNextGen = class {
-  /** Cached token size for content */
+  /**
+   * Cached token size for content.
+   * Updated via updateTokenCache(), cleared via invalidateTokenCache().
+   */
   _contentTokenCache = null;
-  /** Cached token size for instructions */
+  /**
+   * Cached token size for instructions.
+   * Computed once on first call to getInstructionsTokenSize().
+   */
   _instructionsTokenCache = null;
-  /** Token estimator */
+  /**
+   * Token estimator instance.
+   * Override this in subclass to use a custom estimator (e.g., tiktoken).
+   *
+   * @example
+   * ```typescript
+   * class MyPlugin extends BasePluginNextGen {
+   *   protected estimator = myCustomTiktokenEstimator;
+   * }
+   * ```
+   */
   estimator = simpleTokenEstimator;
   // ============================================================================
   // Token size tracking
   // ============================================================================
   /**
    * Get current token size of content.
-   * Uses caching - call invalidateTokenCache() when content changes.
+   *
+   * Returns the cached value from the last `updateTokenCache()` call.
+   * Returns 0 if cache is null (content hasn't been calculated yet).
+   *
+   * **Note:** This is synchronous but `getContent()` is async. Plugins
+   * should call `updateTokenCache()` in their `getContent()` implementation
+   * to keep the cache accurate.
+   *
+   * @returns Cached token count (0 if cache not set)
    */
   getTokenSize() {
     if (this._contentTokenCache === null) {
@@ -18063,6 +18087,11 @@ var BasePluginNextGen = class {
   }
   /**
    * Get token size of instructions (cached after first call).
+   *
+   * Instructions are static, so this is computed once and cached permanently.
+   * The cache is never invalidated since instructions don't change.
+   *
+   * @returns Token count for instructions (0 if no instructions)
    */
   getInstructionsTokenSize() {
     if (this._instructionsTokenCache === null) {
@@ -18072,20 +18101,62 @@ var BasePluginNextGen = class {
     return this._instructionsTokenCache;
   }
   /**
-   * Invalidate token cache - call when content changes.
+   * Invalidate the content token cache.
+   *
+   * Call this when plugin state changes in a way that affects content size.
+   * The next call to `getTokenSize()` will return 0 until `updateTokenCache()`
+   * is called (typically in `getContent()`).
+   *
+   * @example
+   * ```typescript
+   * delete(key: string): boolean {
+   *   const deleted = this._entries.delete(key);
+   *   if (deleted) {
+   *     this.invalidateTokenCache();  // Content changed
+   *   }
+   *   return deleted;
+   * }
+   * ```
    */
   invalidateTokenCache() {
     this._contentTokenCache = null;
   }
   /**
-   * Update token cache with new size.
-   * Call this after modifying content.
+   * Update the content token cache with a new value.
+   *
+   * Call this in `getContent()` after formatting content, passing the
+   * estimated token count. This keeps budget calculations accurate.
+   *
+   * @param tokens - New token count to cache
+   *
+   * @example
+   * ```typescript
+   * async getContent(): Promise<string | null> {
+   *   const content = this.formatEntries();
+   *   this.updateTokenCache(this.estimator.estimateTokens(content));
+   *   return content;
+   * }
+   * ```
    */
   updateTokenCache(tokens) {
     this._contentTokenCache = tokens;
   }
   /**
    * Recalculate and cache token size from current content.
+   *
+   * Convenience method that calls `getContent()`, estimates tokens,
+   * and updates the cache. Use this when you need to immediately
+   * refresh the cache after a state change.
+   *
+   * @returns Calculated token count
+   *
+   * @example
+   * ```typescript
+   * async store(key: string, value: unknown): Promise<void> {
+   *   this._entries.set(key, value);
+   *   await this.recalculateTokenCache();  // Refresh immediately
+   * }
+   * ```
    */
   async recalculateTokenCache() {
     const content = await this.getContent();
@@ -18097,36 +18168,113 @@ var BasePluginNextGen = class {
   // Default implementations
   // ============================================================================
   /**
-   * Default: not compactable. Override if plugin supports compaction.
+   * Default: not compactable.
+   *
+   * Override to return `true` if your plugin can reduce its content size
+   * when context is tight. Also implement `compact()` to handle the actual
+   * compaction logic.
+   *
+   * @returns false by default
    */
   isCompactable() {
     return false;
   }
   /**
-   * Default: no compaction. Override if plugin supports compaction.
+   * Default: no compaction (returns 0).
+   *
+   * Override to implement compaction logic. Should attempt to free
+   * approximately `targetTokensToFree` tokens. Remember to call
+   * `invalidateTokenCache()` after modifying content.
+   *
+   * @param _targetTokensToFree - Approximate tokens to free (best effort)
+   * @returns 0 by default (no tokens freed)
+   *
+   * @example
+   * ```typescript
+   * async compact(targetTokensToFree: number): Promise<number> {
+   *   let freed = 0;
+   *   // Remove entries by priority until target reached
+   *   for (const [key, entry] of this.sortedByPriority()) {
+   *     if (entry.priority === 'critical') continue;
+   *     if (freed >= targetTokensToFree) break;
+   *     freed += entry.tokens;
+   *     this._entries.delete(key);
+   *   }
+   *   this.invalidateTokenCache();
+   *   return freed;
+   * }
+   * ```
    */
   async compact(_targetTokensToFree) {
     return 0;
   }
   /**
-   * Default: no tools. Override to provide plugin-specific tools.
+   * Default: no tools (returns empty array).
+   *
+   * Override to provide plugin-specific tools. Tools are auto-registered
+   * with ToolManager when the plugin is added to the context.
+   *
+   * Use a consistent naming convention: `<prefix>_<action>`
+   * - `memory_store`, `memory_retrieve`, `memory_delete`
+   * - `context_set`, `context_delete`, `context_list`
+   *
+   * @returns Empty array by default
    */
   getTools() {
     return [];
   }
   /**
-   * Default: no-op cleanup. Override if plugin has resources to release.
+   * Default: no-op cleanup.
+   *
+   * Override if your plugin has resources to release (file handles,
+   * timers, connections, etc.). Called when context is destroyed.
    */
   destroy() {
   }
   /**
-   * Default: return empty state. Override for persistence.
+   * Default: returns empty object.
+   *
+   * Override to serialize plugin state for session persistence.
+   * Return a JSON-serializable object. Consider including a version
+   * number for future migration support.
+   *
+   * @returns Empty object by default
+   *
+   * @example
+   * ```typescript
+   * getState(): unknown {
+   *   return {
+   *     version: 1,
+   *     entries: [...this._entries].map(([k, v]) => ({ key: k, ...v })),
+   *   };
+   * }
+   * ```
    */
   getState() {
     return {};
   }
   /**
-   * Default: no-op restore. Override for persistence.
+   * Default: no-op (ignores state).
+   *
+   * Override to restore plugin state from saved session. The state
+   * comes from a previous `getState()` call.
+   *
+   * **IMPORTANT:** Call `invalidateTokenCache()` after restoring state
+   * to ensure token counts are recalculated on next `getContent()` call.
+   *
+   * @param _state - Previously serialized state from getState()
+   *
+   * @example
+   * ```typescript
+   * restoreState(state: unknown): void {
+   *   const s = state as { entries: Array<{ key: string; value: unknown }> };
+   *   this._entries.clear();
+   *   for (const entry of s.entries || []) {
+   *     this._entries.set(entry.key, entry);
+   *   }
+   *   this.invalidateTokenCache();  // Don't forget this!
+   * }
+   * ```
    */
   restoreState(_state) {
   }
@@ -18930,19 +19078,24 @@ var WorkingMemoryPluginNextGen = class {
     const entries = await this.storage.getAll();
     const currentSize = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
     const maxSize = this.config.maxSizeBytes ?? DEFAULT_MEMORY_CONFIG.maxSizeBytes;
-    if (currentSize + neededBytes > maxSize) {
-      const toFree = currentSize + neededBytes - maxSize * 0.8;
-      let freed = 0;
-      const evictable = entries.filter((e) => !e.pinned && this.computePriority(e) !== "critical").sort((a, b) => {
-        const priorityDiff = MEMORY_PRIORITY_VALUES[this.computePriority(a)] - MEMORY_PRIORITY_VALUES[this.computePriority(b)];
-        if (priorityDiff !== 0) return priorityDiff;
-        return a.lastAccessedAt - b.lastAccessedAt;
-      });
-      for (const entry of evictable) {
-        if (freed >= toFree) break;
-        await this.storage.delete(entry.key);
-        freed += entry.sizeBytes;
-      }
+    const maxEntries = this.config.maxIndexEntries ?? DEFAULT_MEMORY_CONFIG.maxIndexEntries;
+    const needsSizeEviction = currentSize + neededBytes > maxSize;
+    const needsCountEviction = entries.length >= maxEntries;
+    if (!needsSizeEviction && !needsCountEviction) return;
+    const evictable = entries.filter((e) => !e.pinned && this.computePriority(e) !== "critical").sort((a, b) => {
+      const priorityDiff = MEMORY_PRIORITY_VALUES[this.computePriority(a)] - MEMORY_PRIORITY_VALUES[this.computePriority(b)];
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.lastAccessedAt - b.lastAccessedAt;
+    });
+    const bytesToFree = needsSizeEviction ? currentSize + neededBytes - maxSize * 0.8 : 0;
+    const entriesToFree = needsCountEviction ? entries.length - maxEntries + 1 : 0;
+    let freedBytes = 0;
+    let freedCount = 0;
+    for (const entry of evictable) {
+      if (freedBytes >= bytesToFree && freedCount >= entriesToFree) break;
+      await this.storage.delete(entry.key);
+      freedBytes += entry.sizeBytes;
+      freedCount++;
     }
   }
   assertNotDestroyed() {
@@ -19766,15 +19919,647 @@ ${trimmedSection}` : trimmedSection;
   }
 };
 
-// src/core/context-nextgen/types.ts
-var STRATEGY_THRESHOLDS = {
-  proactive: 0.7,
-  // Compact at 70% usage
-  balanced: 0.8,
-  // Compact at 80% usage
-  lazy: 0.9
-  // Compact at 90% usage
+// src/core/context-nextgen/strategies/DefaultCompactionStrategy.ts
+var DEFAULT_THRESHOLD = 0.7;
+var DefaultCompactionStrategy = class {
+  name = "default";
+  displayName = "Default";
+  description = "Standard compaction strategy. Compacts plugins first, then conversation history. Triggers at 70% context usage.";
+  threshold;
+  constructor(config) {
+    this.threshold = config?.threshold ?? DEFAULT_THRESHOLD;
+  }
+  /**
+   * Emergency compaction when thresholds exceeded.
+   *
+   * Strategy:
+   * 1. Compact plugins first (in_context_memory, then working_memory)
+   * 2. If still needed, remove oldest conversation messages (preserving tool pairs)
+   */
+  async compact(context, targetToFree) {
+    const log = [];
+    const pluginsCompacted = [];
+    let tokensFreed = 0;
+    let messagesRemoved = 0;
+    let remaining = targetToFree;
+    log.push(`Compaction started: need to free ~${targetToFree} tokens`);
+    const compactablePlugins = [...context.plugins].filter((p) => p.isCompactable()).sort((a, b) => {
+      const order = {
+        "in_context_memory": 1,
+        "working_memory": 2
+      };
+      return (order[a.name] ?? 10) - (order[b.name] ?? 10);
+    });
+    for (const plugin of compactablePlugins) {
+      if (remaining <= 0) break;
+      const freed = await context.compactPlugin(plugin.name, remaining);
+      if (freed > 0) {
+        tokensFreed += freed;
+        remaining -= freed;
+        pluginsCompacted.push(plugin.name);
+        log.push(`Compacted ${plugin.name}: freed ~${freed} tokens`);
+      }
+    }
+    if (remaining > 0 && context.conversation.length > 0) {
+      const conversationResult = await this.compactConversation(context, remaining, log);
+      tokensFreed += conversationResult.tokensFreed;
+      messagesRemoved = conversationResult.messagesRemoved;
+      remaining -= conversationResult.tokensFreed;
+    }
+    log.push(`Compaction complete: freed ~${tokensFreed} tokens total`);
+    return {
+      tokensFreed,
+      messagesRemoved,
+      pluginsCompacted,
+      log
+    };
+  }
+  /**
+   * Post-cycle consolidation.
+   *
+   * Default strategy does nothing - override in subclasses for:
+   * - Conversation summarization
+   * - Memory deduplication
+   * - Data promotion to persistent storage
+   */
+  async consolidate(_context) {
+    return {
+      performed: false,
+      tokensChanged: 0,
+      actions: []
+    };
+  }
+  /**
+   * Compact conversation by removing oldest messages.
+   * Preserves tool pairs (tool_use + tool_result).
+   */
+  async compactConversation(context, targetToFree, log) {
+    const conversation = context.conversation;
+    if (conversation.length === 0) {
+      return { tokensFreed: 0, messagesRemoved: 0 };
+    }
+    const toolPairs = this.findToolPairs(conversation);
+    const inPair = /* @__PURE__ */ new Set();
+    for (const indices of toolPairs.values()) {
+      for (const idx of indices) {
+        inPair.add(idx);
+      }
+    }
+    const safeToRemove = [];
+    for (let i = 0; i < conversation.length; i++) {
+      if (!inPair.has(i)) {
+        safeToRemove.push(i);
+      }
+    }
+    for (const [, indices] of toolPairs) {
+      if (indices.length >= 2) {
+        for (const idx of indices) {
+          if (!safeToRemove.includes(idx)) {
+            safeToRemove.push(idx);
+          }
+        }
+      }
+    }
+    safeToRemove.sort((a, b) => a - b);
+    let tokensFreed = 0;
+    const indicesToRemove = [];
+    for (const idx of safeToRemove) {
+      if (tokensFreed >= targetToFree) break;
+      const item = conversation[idx];
+      if (!item) continue;
+      const toolUseId = this.getToolUseId(item);
+      if (toolUseId) {
+        const pairIndices = toolPairs.get(toolUseId);
+        if (pairIndices && pairIndices.length >= 2) {
+          for (const pairIdx of pairIndices) {
+            if (!indicesToRemove.includes(pairIdx)) {
+              indicesToRemove.push(pairIdx);
+              const pairItem = conversation[pairIdx];
+              if (pairItem) {
+                tokensFreed += context.estimateTokens(pairItem);
+              }
+            }
+          }
+          continue;
+        }
+      }
+      if (!indicesToRemove.includes(idx)) {
+        indicesToRemove.push(idx);
+        tokensFreed += context.estimateTokens(item);
+      }
+    }
+    if (indicesToRemove.length > 0) {
+      await context.removeMessages(indicesToRemove);
+      log.push(`Removed ${indicesToRemove.length} messages from conversation: freed ~${tokensFreed} tokens`);
+    }
+    return {
+      tokensFreed,
+      messagesRemoved: indicesToRemove.length
+    };
+  }
+  /**
+   * Find tool_use/tool_result pairs in conversation.
+   * Returns Map<tool_use_id, array of message indices>.
+   */
+  findToolPairs(conversation) {
+    const pairs = /* @__PURE__ */ new Map();
+    for (let i = 0; i < conversation.length; i++) {
+      const item = conversation[i];
+      if (item?.type !== "message") continue;
+      const content = item.content;
+      if (!content) continue;
+      for (const c of content) {
+        if (c.type === "tool_use") {
+          const toolUseId = c.id;
+          if (toolUseId) {
+            const existing = pairs.get(toolUseId) ?? [];
+            existing.push(i);
+            pairs.set(toolUseId, existing);
+          }
+        } else if (c.type === "tool_result") {
+          const toolUseId = c.tool_use_id;
+          if (toolUseId) {
+            const existing = pairs.get(toolUseId) ?? [];
+            existing.push(i);
+            pairs.set(toolUseId, existing);
+          }
+        }
+      }
+    }
+    return pairs;
+  }
+  /**
+   * Get tool_use_id from an item (if it contains tool_use or tool_result).
+   */
+  getToolUseId(item) {
+    const msg = item;
+    if (msg?.type !== "message") return null;
+    const content = msg.content;
+    if (!content) return null;
+    for (const c of content) {
+      if (c.type === "tool_use") {
+        return c.id;
+      } else if (c.type === "tool_result") {
+        return c.tool_use_id;
+      }
+    }
+    return null;
+  }
 };
+
+// src/core/context-nextgen/strategies/AlgorithmicCompactionStrategy.ts
+var DEFAULT_THRESHOLD2 = 0.75;
+var DEFAULT_TOOL_RESULT_SIZE_THRESHOLD = 1024;
+var DEFAULT_MAX_TOOL_PAIRS = 10;
+var AlgorithmicCompactionStrategy = class {
+  name = "algorithmic";
+  displayName = "Algorithmic";
+  description = "Moves large tool results to working memory, limits tool pairs, applies rolling window. Ideal for tool-heavy agents.";
+  threshold;
+  requiredPlugins = ["working_memory"];
+  toolResultSizeThreshold;
+  maxToolPairs;
+  constructor(config) {
+    this.threshold = config?.threshold ?? DEFAULT_THRESHOLD2;
+    this.toolResultSizeThreshold = config?.toolResultSizeThreshold ?? DEFAULT_TOOL_RESULT_SIZE_THRESHOLD;
+    this.maxToolPairs = config?.maxToolPairs ?? DEFAULT_MAX_TOOL_PAIRS;
+  }
+  /**
+   * Emergency compaction when context exceeds threshold.
+   *
+   * Strategy:
+   * 1. Run consolidate() first to move tool results to memory
+   * 2. If still need space, apply rolling window (remove oldest messages)
+   */
+  async compact(context, targetToFree) {
+    const log = [];
+    let tokensFreed = 0;
+    let messagesRemoved = 0;
+    const pluginsCompacted = [];
+    log.push(`Algorithmic compaction started: need to free ~${targetToFree} tokens`);
+    const consolidateResult = await this.consolidate(context);
+    if (consolidateResult.performed) {
+      tokensFreed += Math.abs(consolidateResult.tokensChanged);
+      log.push(...consolidateResult.actions);
+    }
+    let remaining = targetToFree - tokensFreed;
+    if (remaining > 0 && context.conversation.length > 0) {
+      log.push(`Rolling window: need to free ~${remaining} more tokens`);
+      const result = await this.applyRollingWindow(context, remaining, log);
+      tokensFreed += result.tokensFreed;
+      messagesRemoved = result.messagesRemoved;
+    }
+    log.push(`Algorithmic compaction complete: freed ~${tokensFreed} tokens total`);
+    return { tokensFreed, messagesRemoved, pluginsCompacted, log };
+  }
+  /**
+   * Post-cycle consolidation.
+   *
+   * 1. Find all tool pairs in conversation
+   * 2. Move large tool results (> threshold) to Working Memory
+   * 3. Limit remaining tool pairs to maxToolPairs
+   */
+  async consolidate(context) {
+    const log = [];
+    let tokensChanged = 0;
+    const memory = this.getWorkingMemory(context);
+    const toolPairs = this.findToolPairs(context.conversation);
+    if (toolPairs.length === 0) {
+      return { performed: false, tokensChanged: 0, actions: [] };
+    }
+    const indicesToRemove = [];
+    for (const pair of toolPairs) {
+      if (pair.resultSizeBytes > this.toolResultSizeThreshold) {
+        const key = this.generateKey(pair.toolName, pair.toolUseId);
+        const desc = this.generateDescription(pair.toolName, pair.toolArgs);
+        await memory.store(key, desc, pair.resultContent, {
+          tier: "raw",
+          priority: "normal"
+        });
+        if (!indicesToRemove.includes(pair.toolUseIndex)) {
+          indicesToRemove.push(pair.toolUseIndex);
+        }
+        if (!indicesToRemove.includes(pair.toolResultIndex)) {
+          indicesToRemove.push(pair.toolResultIndex);
+        }
+        log.push(
+          `Moved ${pair.toolName} result (${this.formatBytes(pair.resultSizeBytes)}) to memory: ${key}`
+        );
+      }
+    }
+    const remainingPairs = toolPairs.filter(
+      (p) => !indicesToRemove.includes(p.toolUseIndex) && !indicesToRemove.includes(p.toolResultIndex)
+    );
+    if (remainingPairs.length > this.maxToolPairs) {
+      const toRemove = remainingPairs.slice(0, remainingPairs.length - this.maxToolPairs);
+      for (const pair of toRemove) {
+        if (!indicesToRemove.includes(pair.toolUseIndex)) {
+          indicesToRemove.push(pair.toolUseIndex);
+        }
+        if (!indicesToRemove.includes(pair.toolResultIndex)) {
+          indicesToRemove.push(pair.toolResultIndex);
+        }
+        log.push(`Removed old tool pair: ${pair.toolName} (exceeds ${this.maxToolPairs} pair limit)`);
+      }
+    }
+    if (indicesToRemove.length > 0) {
+      tokensChanged = -await context.removeMessages(indicesToRemove);
+      log.push(`Removed ${indicesToRemove.length} messages, freed ~${Math.abs(tokensChanged)} tokens`);
+    }
+    return {
+      performed: indicesToRemove.length > 0,
+      tokensChanged,
+      actions: log
+    };
+  }
+  /**
+   * Get the Working Memory plugin from context.
+   * @throws Error if plugin is not available
+   */
+  getWorkingMemory(context) {
+    const plugin = context.plugins.find((p) => p.name === "working_memory");
+    if (!plugin) {
+      throw new Error("AlgorithmicCompactionStrategy requires working_memory plugin");
+    }
+    return plugin;
+  }
+  /**
+   * Find all tool_use/tool_result pairs in conversation.
+   * Returns pairs sorted by oldest first (lowest index).
+   */
+  findToolPairs(conversation) {
+    const toolUses = /* @__PURE__ */ new Map();
+    const toolResults = /* @__PURE__ */ new Map();
+    for (let i = 0; i < conversation.length; i++) {
+      const item = conversation[i];
+      if (item?.type !== "message") continue;
+      const content = item.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content) {
+        if (block.type === "tool_use") {
+          const toolUseId = block.id;
+          if (toolUseId) {
+            toolUses.set(toolUseId, {
+              index: i,
+              toolName: block.name || "unknown",
+              toolArgs: block.input
+            });
+          }
+        } else if (block.type === "tool_result") {
+          const toolUseId = block.tool_use_id;
+          if (toolUseId) {
+            const resultContent = block.content;
+            const sizeBytes = this.estimateSize(resultContent);
+            toolResults.set(toolUseId, {
+              index: i,
+              content: resultContent,
+              sizeBytes
+            });
+          }
+        }
+      }
+    }
+    const pairs = [];
+    for (const [toolUseId, useInfo] of toolUses) {
+      const resultInfo = toolResults.get(toolUseId);
+      if (resultInfo) {
+        pairs.push({
+          toolUseId,
+          toolUseIndex: useInfo.index,
+          toolResultIndex: resultInfo.index,
+          toolName: useInfo.toolName,
+          toolArgs: useInfo.toolArgs,
+          resultContent: resultInfo.content,
+          resultSizeBytes: resultInfo.sizeBytes
+        });
+      }
+    }
+    pairs.sort((a, b) => a.toolUseIndex - b.toolUseIndex);
+    return pairs;
+  }
+  /**
+   * Generate a key for storing tool result in memory.
+   * Format: tool_result.<tool_name>.<short_id>
+   */
+  generateKey(toolName, toolUseId) {
+    const shortId = toolUseId.slice(-8);
+    const safeName = toolName.replace(/[^a-zA-Z0-9_]/g, "_");
+    return `tool_result.${safeName}.${shortId}`;
+  }
+  /**
+   * Generate a description for the stored tool result.
+   * Format: "Result of <tool_name>(<arg_summary>)"
+   */
+  generateDescription(toolName, toolArgs) {
+    const argSummary = this.summarizeArgs(toolArgs, 100);
+    const desc = `Result of ${toolName}(${argSummary})`;
+    return desc.length > 150 ? desc.slice(0, 147) + "..." : desc;
+  }
+  /**
+   * Summarize arguments for description, limiting to maxLength chars.
+   */
+  summarizeArgs(args, maxLength) {
+    if (args === void 0 || args === null) {
+      return "";
+    }
+    try {
+      if (typeof args === "object") {
+        const entries = Object.entries(args);
+        const parts = [];
+        let totalLen = 0;
+        for (const [key, value] of entries) {
+          let valueStr;
+          if (typeof value === "string") {
+            valueStr = value.length > 30 ? `"${value.slice(0, 27)}..."` : `"${value}"`;
+          } else if (typeof value === "object" && value !== null) {
+            valueStr = Array.isArray(value) ? `[${value.length} items]` : "{...}";
+          } else {
+            valueStr = String(value);
+          }
+          const part = `${key}=${valueStr}`;
+          if (totalLen + part.length + 2 > maxLength) {
+            parts.push("...");
+            break;
+          }
+          parts.push(part);
+          totalLen += part.length + 2;
+        }
+        return parts.join(", ");
+      }
+      return String(args).slice(0, maxLength);
+    } catch {
+      return "...";
+    }
+  }
+  /**
+   * Estimate the size of a value in bytes.
+   */
+  estimateSize(value) {
+    if (value === void 0 || value === null) {
+      return 0;
+    }
+    try {
+      const json = JSON.stringify(value);
+      return new TextEncoder().encode(json).length;
+    } catch {
+      return String(value).length * 2;
+    }
+  }
+  /**
+   * Format bytes for logging.
+   */
+  formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  }
+  /**
+   * Apply rolling window compaction - remove oldest messages until target is met.
+   */
+  async applyRollingWindow(context, targetToFree, log) {
+    const conversation = context.conversation;
+    if (conversation.length === 0) {
+      return { tokensFreed: 0, messagesRemoved: 0 };
+    }
+    const toolPairs = this.findToolPairs(conversation);
+    const pairIndices = /* @__PURE__ */ new Set();
+    for (const pair of toolPairs) {
+      pairIndices.add(pair.toolUseIndex);
+      pairIndices.add(pair.toolResultIndex);
+    }
+    const nonToolIndices = [];
+    for (let i = 0; i < conversation.length; i++) {
+      if (!pairIndices.has(i)) {
+        nonToolIndices.push(i);
+      }
+    }
+    let tokensFreed = 0;
+    const indicesToRemove = [];
+    for (const idx of nonToolIndices) {
+      if (tokensFreed >= targetToFree) break;
+      const item = conversation[idx];
+      if (item) {
+        tokensFreed += context.estimateTokens(item);
+        indicesToRemove.push(idx);
+      }
+    }
+    if (tokensFreed < targetToFree) {
+      for (const pair of toolPairs) {
+        if (tokensFreed >= targetToFree) break;
+        const useItem = conversation[pair.toolUseIndex];
+        const resultItem = conversation[pair.toolResultIndex];
+        if (useItem && !indicesToRemove.includes(pair.toolUseIndex)) {
+          tokensFreed += context.estimateTokens(useItem);
+          indicesToRemove.push(pair.toolUseIndex);
+        }
+        if (resultItem && !indicesToRemove.includes(pair.toolResultIndex)) {
+          tokensFreed += context.estimateTokens(resultItem);
+          indicesToRemove.push(pair.toolResultIndex);
+        }
+      }
+    }
+    if (indicesToRemove.length > 0) {
+      await context.removeMessages(indicesToRemove);
+      log.push(`Rolling window removed ${indicesToRemove.length} messages`);
+    }
+    return {
+      tokensFreed,
+      messagesRemoved: indicesToRemove.length
+    };
+  }
+};
+
+// src/core/context-nextgen/strategies/StrategyRegistry.ts
+var StrategyRegistry = class {
+  static registry = /* @__PURE__ */ new Map();
+  static initialized = false;
+  /**
+   * Ensure built-in strategies are registered
+   */
+  static ensureInitialized() {
+    if (this.initialized) return;
+    this.registerInternal(DefaultCompactionStrategy, { isBuiltIn: true });
+    this.registerInternal(AlgorithmicCompactionStrategy, { isBuiltIn: true });
+    this.initialized = true;
+  }
+  /**
+   * Internal registration that reads metadata from strategy instance
+   */
+  static registerInternal(strategyClass, options = {}) {
+    const instance = new strategyClass();
+    const entry = {
+      name: instance.name,
+      displayName: instance.displayName,
+      description: instance.description,
+      threshold: instance.threshold,
+      isBuiltIn: options.isBuiltIn ?? false,
+      strategyClass
+    };
+    if (this.registry.has(entry.name)) {
+      throw new Error(
+        `Strategy '${entry.name}' is already registered. Available strategies: ${this.list().join(", ")}`
+      );
+    }
+    this.registry.set(entry.name, entry);
+  }
+  /**
+   * Register a new strategy class.
+   *
+   * Metadata (name, displayName, description, threshold) is read from
+   * the strategy class itself.
+   *
+   * @param strategyClass - Strategy class to register
+   * @param options - Registration options (isBuiltIn defaults to false)
+   * @throws Error if a strategy with this name already exists
+   *
+   * @example
+   * ```typescript
+   * // Simple registration
+   * StrategyRegistry.register(SmartCompactionStrategy);
+   *
+   * // With options
+   * StrategyRegistry.register(SmartCompactionStrategy, { isBuiltIn: false });
+   * ```
+   */
+  static register(strategyClass, options) {
+    this.ensureInitialized();
+    this.registerInternal(strategyClass, options);
+  }
+  /**
+   * Get a strategy entry by name.
+   *
+   * @throws Error if strategy not found
+   */
+  static get(name) {
+    this.ensureInitialized();
+    const entry = this.registry.get(name);
+    if (!entry) {
+      throw new Error(
+        `Strategy '${name}' not found. Available strategies: ${this.list().join(", ")}`
+      );
+    }
+    return entry;
+  }
+  /**
+   * Check if a strategy exists.
+   */
+  static has(name) {
+    this.ensureInitialized();
+    return this.registry.has(name);
+  }
+  /**
+   * List all registered strategy names.
+   */
+  static list() {
+    this.ensureInitialized();
+    return Array.from(this.registry.keys());
+  }
+  /**
+   * Create a strategy instance by name.
+   *
+   * @param name - Strategy name
+   * @param config - Optional configuration for the strategy
+   * @throws Error if strategy not found
+   */
+  static create(name, config) {
+    const entry = this.get(name);
+    return new entry.strategyClass(config);
+  }
+  /**
+   * Get strategy information for UI display (serializable, no class refs).
+   *
+   * Returns array of StrategyInfo objects that can be safely serialized
+   * and sent over IPC.
+   */
+  static getInfo() {
+    this.ensureInitialized();
+    return Array.from(this.registry.values()).map(
+      ({ name, displayName, description, threshold, isBuiltIn }) => ({
+        name,
+        displayName,
+        description,
+        threshold,
+        isBuiltIn
+      })
+    );
+  }
+  /**
+   * Remove a strategy from the registry.
+   *
+   * @param name - Strategy name to remove
+   * @returns true if removed, false if not found
+   * @throws Error if trying to remove a built-in strategy
+   */
+  static remove(name) {
+    this.ensureInitialized();
+    const entry = this.registry.get(name);
+    if (!entry) {
+      return false;
+    }
+    if (entry.isBuiltIn) {
+      throw new Error(`Cannot remove built-in strategy '${name}'`);
+    }
+    return this.registry.delete(name);
+  }
+  /**
+   * Get a strategy entry without throwing.
+   * Returns undefined if not found.
+   */
+  static getIfExists(name) {
+    this.ensureInitialized();
+    return this.registry.get(name);
+  }
+  /**
+   * Reset the registry to initial state (for testing).
+   * @internal
+   */
+  static _reset() {
+    this.registry.clear();
+    this.initialized = false;
+  }
+};
+
+// src/core/context-nextgen/types.ts
 var DEFAULT_FEATURES = {
   workingMemory: true,
   inContextMemory: false,
@@ -19782,7 +20567,7 @@ var DEFAULT_FEATURES = {
 };
 var DEFAULT_CONFIG2 = {
   responseReserve: 4096,
-  strategy: "balanced"
+  strategy: "default"
 };
 
 // src/core/context-nextgen/AgentContextNextGen.ts
@@ -19794,8 +20579,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
   _config;
   /** Maximum context tokens for the model */
   _maxContextTokens;
-  /** Compaction strategy threshold */
-  _strategyThreshold;
+  /** Compaction strategy */
+  _compactionStrategy;
   /** System prompt (user-provided) */
   _systemPrompt;
   /** Conversation history (excludes current input) */
@@ -19816,6 +20601,10 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
   _storage;
   /** Destroyed flag */
   _destroyed = false;
+  /** Cached budget from last prepare() call */
+  _cachedBudget = null;
+  /** Callback for beforeCompaction hook (set by Agent) */
+  _beforeCompactionCallback = null;
   // ============================================================================
   // Static Factory
   // ============================================================================
@@ -19845,7 +20634,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
     this._storage = config.storage;
-    this._strategyThreshold = STRATEGY_THRESHOLDS[this._config.strategy];
+    this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
     this._tools = new ToolManager();
     if (config.tools) {
       for (const tool of config.tools) {
@@ -19880,6 +20669,21 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
         agentId: this._agentId,
         ...piConfig
       }));
+    }
+    this.validateStrategyDependencies(this._compactionStrategy);
+  }
+  /**
+   * Validate that a strategy's required plugins are registered.
+   * @throws Error if any required plugin is missing
+   */
+  validateStrategyDependencies(strategy) {
+    if (!strategy.requiredPlugins?.length) return;
+    const availablePlugins = new Set(this._plugins.keys());
+    const missing = strategy.requiredPlugins.filter((name) => !availablePlugins.has(name));
+    if (missing.length > 0) {
+      throw new Error(
+        `Strategy '${strategy.name}' requires plugins that are not registered: ${missing.join(", ")}. Available plugins: ${Array.from(availablePlugins).join(", ") || "none"}`
+      );
     }
   }
   // ============================================================================
@@ -19931,6 +20735,35 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
   /** Get current tools token usage (useful for debugging) */
   get toolsTokens() {
     return this.calculateToolsTokens();
+  }
+  /**
+   * Get the cached budget from the last prepare() call.
+   * Returns null if prepare() hasn't been called yet.
+   */
+  get lastBudget() {
+    return this._cachedBudget;
+  }
+  /**
+   * Get the current compaction strategy.
+   */
+  get compactionStrategy() {
+    return this._compactionStrategy;
+  }
+  /**
+   * Set the compaction strategy.
+   * Can be changed at runtime to switch compaction behavior.
+   */
+  setCompactionStrategy(strategy) {
+    this.assertNotDestroyed();
+    this.validateStrategyDependencies(strategy);
+    this._compactionStrategy = strategy;
+  }
+  /**
+   * Set the beforeCompaction callback.
+   * Called by Agent to wire up lifecycle hooks.
+   */
+  setBeforeCompactionCallback(callback) {
+    this._beforeCompactionCallback = callback;
   }
   // ============================================================================
   // Compatibility / Migration Helpers
@@ -20197,8 +21030,9 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
     let conversationTokens = this.calculateConversationTokens();
     let totalUsed = systemTokens + conversationTokens + currentInputTokens;
     let compacted = false;
-    if (totalUsed / availableForContent > this._strategyThreshold) {
-      const targetToFree = totalUsed - Math.floor(availableForContent * (this._strategyThreshold - 0.1));
+    const strategyThreshold = this._compactionStrategy.threshold;
+    if (totalUsed / availableForContent > strategyThreshold) {
+      const targetToFree = totalUsed - Math.floor(availableForContent * (strategyThreshold - 0.1));
       const freed = await this.runCompaction(targetToFree, compactionLog);
       compacted = freed > 0;
       conversationTokens = this.calculateConversationTokens();
@@ -20222,6 +21056,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
         currentInput: currentInputTokens
       }
     };
+    this._cachedBudget = budget;
+    this.emit("budget:updated", { budget, timestamp: Date.now() });
     if (budget.utilizationPercent >= 90) {
       this.emit("budget:critical", { budget });
     } else if (budget.utilizationPercent >= 70) {
@@ -20385,136 +21221,124 @@ ${content}`);
   // ============================================================================
   /**
    * Run compaction to free up tokens.
+   * Delegates to the current compaction strategy.
    * Returns total tokens freed.
    */
   async runCompaction(targetToFree, log) {
-    let totalFreed = 0;
-    let remaining = targetToFree;
-    log.push(`Compaction started: need to free ~${targetToFree} tokens`);
-    const compactablePlugins = Array.from(this._plugins.values()).filter((p) => p.isCompactable()).sort((a, b) => {
-      const order = {
-        "in_context_memory": 1,
-        "working_memory": 2
-      };
-      return (order[a.name] ?? 10) - (order[b.name] ?? 10);
-    });
-    for (const plugin of compactablePlugins) {
-      if (remaining <= 0) break;
-      const freed = await plugin.compact(remaining);
-      if (freed > 0) {
-        totalFreed += freed;
-        remaining -= freed;
-        log.push(`Compacted ${plugin.name}: freed ~${freed} tokens`);
+    const timestamp = Date.now();
+    if (this._cachedBudget) {
+      this.emit("compaction:starting", {
+        budget: this._cachedBudget,
+        targetTokensToFree: targetToFree,
+        timestamp
+      });
+    }
+    if (this._beforeCompactionCallback && this._cachedBudget) {
+      try {
+        await this._beforeCompactionCallback({
+          budget: this._cachedBudget,
+          targetTokensToFree: targetToFree,
+          strategy: this._compactionStrategy.name
+        });
+      } catch (error) {
+        log.push(`beforeCompaction callback error: ${error.message}`);
       }
     }
-    if (remaining > 0) {
-      const conversationFreed = await this.compactConversation(remaining, log);
-      totalFreed += conversationFreed;
-      remaining -= conversationFreed;
+    const context = this.buildCompactionContext();
+    const result = await this._compactionStrategy.compact(context, targetToFree);
+    log.push(...result.log);
+    if (result.tokensFreed > 0) {
+      this.emit("context:compacted", { tokensFreed: result.tokensFreed, log });
     }
-    log.push(`Compaction complete: freed ~${totalFreed} tokens total`);
-    if (totalFreed > 0) {
-      this.emit("context:compacted", { tokensFreed: totalFreed, log });
-    }
-    return totalFreed;
+    return result.tokensFreed;
   }
   /**
-   * Compact conversation history.
-   * Removes oldest messages while preserving tool pairs.
+   * Run post-cycle consolidation.
+   * Called by Agent after agentic cycle completes (before session save).
+   *
+   * Delegates to the current compaction strategy's consolidate() method.
+   * Use for more expensive operations like summarization.
    */
-  async compactConversation(targetToFree, log) {
-    if (this._conversation.length === 0) return 0;
-    const toolPairs = this.findToolPairs();
-    const safeToRemove = [];
-    const inPair = /* @__PURE__ */ new Set();
-    for (const indices of toolPairs.values()) {
-      for (const idx of indices) {
-        inPair.add(idx);
-      }
-    }
-    for (let i = 0; i < this._conversation.length; i++) {
-      if (!inPair.has(i)) {
-        safeToRemove.push(i);
-      }
-    }
-    for (const [_toolUseId, indices] of toolPairs) {
-      if (indices.length >= 2) {
-        for (const idx of indices) {
-          if (!safeToRemove.includes(idx)) {
-            safeToRemove.push(idx);
+  async consolidate() {
+    this.assertNotDestroyed();
+    const context = this.buildCompactionContext();
+    return this._compactionStrategy.consolidate(context);
+  }
+  /**
+   * Build CompactionContext for strategy.
+   * Provides controlled access to context state.
+   */
+  buildCompactionContext() {
+    const self = this;
+    return {
+      get budget() {
+        return self._cachedBudget ?? {
+          maxTokens: self._maxContextTokens,
+          responseReserve: self._config.responseReserve,
+          systemMessageTokens: 0,
+          toolsTokens: 0,
+          conversationTokens: 0,
+          currentInputTokens: 0,
+          totalUsed: 0,
+          available: self._maxContextTokens - self._config.responseReserve,
+          utilizationPercent: 0,
+          breakdown: {
+            systemPrompt: 0,
+            persistentInstructions: 0,
+            pluginInstructions: 0,
+            pluginContents: {},
+            tools: 0,
+            conversation: 0,
+            currentInput: 0
           }
+        };
+      },
+      get conversation() {
+        return self._conversation;
+      },
+      get currentInput() {
+        return self._currentInput;
+      },
+      get plugins() {
+        return Array.from(self._plugins.values());
+      },
+      get strategyName() {
+        return self._compactionStrategy.name;
+      },
+      async removeMessages(indices) {
+        return self.removeMessagesByIndices(indices);
+      },
+      async compactPlugin(pluginName, targetTokens) {
+        const plugin = self._plugins.get(pluginName);
+        if (!plugin || !plugin.isCompactable()) {
+          return 0;
         }
+        return plugin.compact(targetTokens);
+      },
+      estimateTokens(item) {
+        return self.estimateItemTokens(item);
       }
+    };
+  }
+  /**
+   * Remove messages by indices.
+   * Handles tool pair preservation internally.
+   * Used by CompactionContext.removeMessages().
+   */
+  removeMessagesByIndices(indices) {
+    if (indices.length === 0 || this._conversation.length === 0) {
+      return 0;
     }
-    safeToRemove.sort((a, b) => a - b);
     let tokensFreed = 0;
-    const indicesToRemove = /* @__PURE__ */ new Set();
-    for (const idx of safeToRemove) {
-      if (tokensFreed >= targetToFree) break;
+    const indicesToRemove = new Set(indices);
+    for (const idx of indicesToRemove) {
       const item = this._conversation[idx];
-      if (!item) continue;
-      const msg = item;
-      for (const c of msg.content) {
-        if (c.type === "tool_use" /* TOOL_USE */) {
-          const toolUseId = c.id;
-          const pairIndices = toolPairs.get(toolUseId);
-          if (pairIndices) {
-            for (const pairIdx of pairIndices) {
-              indicesToRemove.add(pairIdx);
-              tokensFreed += this.estimateItemTokens(this._conversation[pairIdx]);
-            }
-          }
-        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
-          const toolUseId = c.tool_use_id;
-          const pairIndices = toolPairs.get(toolUseId);
-          if (pairIndices) {
-            for (const pairIdx of pairIndices) {
-              indicesToRemove.add(pairIdx);
-              tokensFreed += this.estimateItemTokens(this._conversation[pairIdx]);
-            }
-          }
-        }
-      }
-      if (!indicesToRemove.has(idx)) {
-        indicesToRemove.add(idx);
+      if (item) {
         tokensFreed += this.estimateItemTokens(item);
       }
     }
-    if (indicesToRemove.size > 0) {
-      this._conversation = this._conversation.filter((_, i) => !indicesToRemove.has(i));
-      log.push(`Removed ${indicesToRemove.size} messages from conversation: freed ~${tokensFreed} tokens`);
-    }
+    this._conversation = this._conversation.filter((_, i) => !indicesToRemove.has(i));
     return tokensFreed;
-  }
-  /**
-   * Find tool_use/tool_result pairs in conversation.
-   * Returns Map<tool_use_id, array of message indices>.
-   */
-  findToolPairs() {
-    const pairs = /* @__PURE__ */ new Map();
-    for (let i = 0; i < this._conversation.length; i++) {
-      const item = this._conversation[i];
-      if (item?.type !== "message") continue;
-      const msg = item;
-      for (const c of msg.content) {
-        if (c.type === "tool_use" /* TOOL_USE */) {
-          const toolUseId = c.id;
-          if (toolUseId) {
-            const existing = pairs.get(toolUseId) ?? [];
-            existing.push(i);
-            pairs.set(toolUseId, existing);
-          }
-        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
-          const toolUseId = c.tool_use_id;
-          if (toolUseId) {
-            const existing = pairs.get(toolUseId) ?? [];
-            existing.push(i);
-            pairs.set(toolUseId, existing);
-          }
-        }
-      }
-    }
-    return pairs;
   }
   /**
    * Sanitize tool pairs in the input array.
@@ -20815,18 +21639,21 @@ ${content}`);
   // Inspection / Monitoring
   // ============================================================================
   /**
-   * Calculate current token budget without triggering compaction.
+   * Get the current token budget.
    *
-   * Use this method to inspect the current context state for monitoring/debugging.
-   * Unlike prepare(), this does NOT:
-   * - Trigger compaction
-   * - Modify any state
-   * - Emit any events
+   * Returns the cached budget from the last prepare() call if available.
+   * If prepare() hasn't been called yet, calculates a fresh budget.
+   *
+   * For monitoring purposes, prefer using the `lastBudget` getter or
+   * subscribing to the `budget:updated` event for reactive updates.
    *
    * @returns Current token budget breakdown
    */
   async calculateBudget() {
     this.assertNotDestroyed();
+    if (this._cachedBudget) {
+      return this._cachedBudget;
+    }
     const toolsTokens = this.calculateToolsTokens();
     const { systemTokens, breakdown } = await this.buildSystemMessage();
     const conversationTokens = this.calculateConversationTokens();
@@ -20855,13 +21682,13 @@ ${content}`);
    * Get the current strategy threshold (percentage at which compaction triggers).
    */
   get strategyThreshold() {
-    return this._strategyThreshold;
+    return this._compactionStrategy.threshold;
   }
   /**
    * Get the current strategy name.
    */
   get strategy() {
-    return this._config.strategy;
+    return this._compactionStrategy.name;
   }
   // ============================================================================
   // Utilities
@@ -25026,7 +25853,7 @@ var AGENT_DEFAULTS = {
 
 Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`
 };
-var STRATEGY_THRESHOLDS2 = {
+var STRATEGY_THRESHOLDS = {
   proactive: {
     // Most balanced - good for general use
     compactionTrigger: 0.75,
@@ -25199,6 +26026,34 @@ var Agent = class _Agent extends BaseAgent {
       this,
       config.errorHandling
     );
+    this._agentContext.setBeforeCompactionCallback(async (info) => {
+      const status = info.budget.utilizationPercent >= 90 ? "critical" : info.budget.utilizationPercent >= 70 ? "warning" : "ok";
+      const components = [];
+      for (const plugin of this._agentContext.getPlugins()) {
+        const order = {
+          "in_context_memory": 1,
+          "working_memory": 2
+        };
+        components.push({
+          name: plugin.name,
+          priority: order[plugin.name] ?? 10,
+          compactable: plugin.isCompactable()
+        });
+      }
+      await this.invokeBeforeCompaction({
+        agentId: this.name,
+        currentBudget: {
+          total: info.budget.maxTokens,
+          used: info.budget.totalUsed,
+          available: info.budget.available,
+          utilizationPercent: info.budget.utilizationPercent,
+          status
+        },
+        strategy: info.strategy,
+        components,
+        estimatedTokensToFree: info.targetTokensToFree
+      });
+    });
     this.initializeSession(config.session);
   }
   // ===== Abstract Method Implementations =====
@@ -25430,6 +26285,7 @@ var Agent = class _Agent extends BaseAgent {
         });
         finalResponse = wrapUpResponse;
       }
+      await this._agentContext.consolidate();
       await this._finalizeExecution(executionId, startTime, finalResponse, "run");
       return finalResponse;
     } catch (error) {
@@ -25671,6 +26527,7 @@ var Agent = class _Agent extends BaseAgent {
         };
         wrapUpStreamState.clear();
       }
+      await this._agentContext.consolidate();
       const placeholderResponse = this._buildPlaceholderResponse(executionId, startTime, globalStreamState);
       await this._finalizeExecution(executionId, startTime, placeholderResponse, "stream");
     } catch (error) {
@@ -34472,7 +35329,7 @@ var ContextGuardian = class {
       return this._configuredProtectedMessages;
     }
     if (this._maxContextTokens) {
-      const thresholds = STRATEGY_THRESHOLDS2[this._strategy];
+      const thresholds = STRATEGY_THRESHOLDS[this._strategy];
       const percentBasedTokens = Math.floor(this._maxContextTokens * thresholds.protectedContextPercent);
       const percentBasedMessages = Math.floor(percentBasedTokens / 100);
       const calculated = Math.max(percentBasedMessages, this._configuredProtectedMessages);
@@ -48154,6 +49011,7 @@ exports.DEFAULT_MEMORY_CONFIG = DEFAULT_MEMORY_CONFIG;
 exports.DEFAULT_PERMISSION_CONFIG = DEFAULT_PERMISSION_CONFIG;
 exports.DEFAULT_RATE_LIMITER_CONFIG = DEFAULT_RATE_LIMITER_CONFIG;
 exports.DEFAULT_SHELL_CONFIG = DEFAULT_SHELL_CONFIG;
+exports.DefaultCompactionStrategy = DefaultCompactionStrategy;
 exports.DependencyCycleError = DependencyCycleError;
 exports.ErrorHandler = ErrorHandler;
 exports.ExecutionContext = ExecutionContext;
@@ -48210,7 +49068,6 @@ exports.SERVICE_DEFINITIONS = SERVICE_DEFINITIONS;
 exports.SERVICE_INFO = SERVICE_INFO;
 exports.SERVICE_URL_PATTERNS = SERVICE_URL_PATTERNS;
 exports.SIMPLE_ICONS_CDN = SIMPLE_ICONS_CDN;
-exports.STRATEGY_THRESHOLDS = STRATEGY_THRESHOLDS;
 exports.STT_MODELS = STT_MODELS;
 exports.STT_MODEL_REGISTRY = STT_MODEL_REGISTRY;
 exports.ScrapeProvider = ScrapeProvider;
@@ -48218,6 +49075,7 @@ exports.SearchProvider = SearchProvider;
 exports.SerperProvider = SerperProvider;
 exports.Services = Services;
 exports.SpeechToText = SpeechToText;
+exports.StrategyRegistry = StrategyRegistry;
 exports.StreamEventType = StreamEventType;
 exports.StreamHelpers = StreamHelpers;
 exports.StreamState = StreamState;

@@ -102,6 +102,12 @@ interface PreparedContext {
   rawContext: string;
 }
 
+interface CompactionLogEntry {
+  timestamp: number;
+  tokensToFree: number;
+  message: string;
+}
+
 interface InternalsData {
   available: boolean;
   agentName: string | null;
@@ -113,6 +119,7 @@ interface InternalsData {
   systemPrompt: string | null;
   persistentInstructions: PersistentInstructions | null;
   tokenBreakdown: TokenBreakdown | null;
+  compactionLog?: CompactionLogEntry[];
 }
 
 interface InternalsContentProps {
@@ -404,6 +411,45 @@ export function InternalsContent({ instanceId }: InternalsContentProps): React.R
                           <span className="token-breakdown-item__value">
                             {comp.tokens.toLocaleString()} ({comp.percent.toFixed(1)}%)
                           </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Compaction Log Section */}
+            {data.compactionLog && data.compactionLog.length > 0 && (
+              <div className="internals-section">
+                <div
+                  className="internals-section__header"
+                  onClick={() => toggleSection('compactionLog')}
+                >
+                  {expandedSections.has('compactionLog') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Zap size={14} />
+                  <span>Compaction Log</span>
+                  <span className="internals-section__badge">{data.compactionLog.length}</span>
+                </div>
+                {expandedSections.has('compactionLog') && (
+                  <div className="internals-section__body">
+                    <div className="compaction-log-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {data.compactionLog.slice().reverse().map((entry, i) => (
+                        <div
+                          key={i}
+                          className="compaction-log-item"
+                          style={{
+                            padding: '6px 8px',
+                            borderBottom: '1px solid var(--bs-border-color)',
+                            fontSize: '0.85em',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ color: 'var(--bs-warning)' }}>{entry.message}</span>
+                            <span className="text-muted" style={{ fontSize: '0.9em' }}>
+                              {new Date(entry.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>

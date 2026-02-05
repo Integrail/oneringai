@@ -254,6 +254,42 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       config.errorHandling
     );
 
+    // Wire up beforeCompaction callback to invoke lifecycle hooks
+    this._agentContext.setBeforeCompactionCallback(async (info) => {
+      // Build BeforeCompactionContext for lifecycle hook
+      const status = info.budget.utilizationPercent >= 90 ? 'critical'
+        : info.budget.utilizationPercent >= 70 ? 'warning'
+        : 'ok';
+
+      // Build components list from plugins
+      const components: Array<{ name: string; priority: number; compactable: boolean }> = [];
+      for (const plugin of this._agentContext.getPlugins()) {
+        const order: Record<string, number> = {
+          'in_context_memory': 1,
+          'working_memory': 2,
+        };
+        components.push({
+          name: plugin.name,
+          priority: order[plugin.name] ?? 10,
+          compactable: plugin.isCompactable(),
+        });
+      }
+
+      await this.invokeBeforeCompaction({
+        agentId: this.name,
+        currentBudget: {
+          total: info.budget.maxTokens,
+          used: info.budget.totalUsed,
+          available: info.budget.available,
+          utilizationPercent: info.budget.utilizationPercent,
+          status,
+        },
+        strategy: info.strategy,
+        components,
+        estimatedTokensToFree: info.targetTokensToFree,
+      });
+    });
+
     // Initialize session (from BaseAgent)
     this.initializeSession(config.session);
   }
@@ -619,6 +655,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         finalResponse = wrapUpResponse;
       }
 
+      // Run post-cycle consolidation (summarization, memory optimization, etc.)
+      await this._agentContext.consolidate();
+
       await this._finalizeExecution(executionId, startTime, finalResponse!, 'run');
       return finalResponse!;
     } catch (error) {
@@ -935,6 +974,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
         wrapUpStreamState.clear();
       }
+
+      // Run post-cycle consolidation (summarization, memory optimization, etc.)
+      await this._agentContext.consolidate();
 
       // Finalize execution
       const placeholderResponse = this._buildPlaceholderResponse(executionId, startTime, globalStreamState);

@@ -261,6 +261,17 @@ export interface HoseaAPI {
     vendors: () => Promise<string[]>;
   };
 
+  // Strategies (compaction strategies)
+  strategy: {
+    list: () => Promise<Array<{
+      name: string;
+      displayName: string;
+      description: string;
+      threshold: number;
+      isBuiltIn: boolean;
+    }>>;
+  };
+
   // Sessions
   session: {
     save: () => Promise<{ success: boolean; sessionId?: string; error?: string }>;
@@ -1148,6 +1159,10 @@ const api: HoseaAPI = {
     list: () => ipcRenderer.invoke('model:list'),
     details: (modelId) => ipcRenderer.invoke('model:details', modelId),
     vendors: () => ipcRenderer.invoke('model:vendors'),
+  },
+
+  strategy: {
+    list: () => ipcRenderer.invoke('strategy:list'),
   },
 
   session: {

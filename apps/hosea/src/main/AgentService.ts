@@ -45,6 +45,8 @@ import {
   createConnectorFromTemplate,
   // MCP
   MCPRegistry,
+  // Strategy Registry
+  StrategyRegistry,
   type MCPServerConfig,
   type IMCPClient,
   type VendorInfo,
@@ -64,8 +66,8 @@ import {
   type AgentConfig,
   type ContextFeatures,
   type ContextBudget,
-  type CompactionStrategyName,
   type AgentContextNextGenConfig,
+  type StrategyInfo,
 } from '@oneringai/agents';
 import type { BrowserService } from './BrowserService.js';
 import {
@@ -90,30 +92,12 @@ interface StoredConnectorConfig {
 }
 
 /**
- * NextGen strategy type (replaces old strategies)
+ * Map old strategies to current strategy.
+ * Now all strategies map to 'default' since the registry only has one built-in strategy.
  */
-type NextGenStrategy = 'proactive' | 'balanced' | 'lazy';
-
-/**
- * Map old strategies to NextGen strategies
- */
-function mapToNextGenStrategy(oldStrategy: string): NextGenStrategy {
-  switch (oldStrategy) {
-    case 'proactive':
-      return 'proactive';
-    case 'aggressive':
-      return 'proactive'; // Map aggressive → proactive
-    case 'lazy':
-      return 'lazy';
-    case 'rolling-window':
-      return 'lazy'; // Map rolling-window → lazy
-    case 'adaptive':
-      return 'balanced'; // Map adaptive → balanced
-    case 'balanced':
-      return 'balanced';
-    default:
-      return 'balanced'; // Default to balanced
-  }
+function mapToCurrentStrategy(oldStrategy: string): string {
+  // All old strategies map to 'default'
+  return 'default';
 }
 
 /**
@@ -132,8 +116,8 @@ export interface StoredAgentConfig {
   temperature: number;
   // Execution settings
   maxIterations: number;
-  // Context settings (NextGen strategies only)
-  contextStrategy: NextGenStrategy;
+  // Context settings
+  contextStrategy: string;
   maxContextTokens: number;
   responseReserve: number;
   // Working Memory settings (renamed from 'memory' for NextGen clarity)
@@ -518,6 +502,9 @@ export class AgentService {
   private browserToolProvider: BrowserToolProvider;
   // Stream emitter for sending chunks to renderer (set by main process)
   private streamEmitter: ((instanceId: string, chunk: StreamChunk) => void) | null = null;
+  // Compaction event log (last N events for each instance/agent)
+  private compactionLogs: Map<string, Array<{ timestamp: number; tokensToFree: number; message: string }>> = new Map();
+  private readonly MAX_COMPACTION_LOG_ENTRIES = 20;
 
   // ============ Conversion Helpers ============
 
@@ -582,7 +569,7 @@ export class AgentService {
     const agentType: StoredAgentConfig['agentType'] = 'basic';
 
     // Map old strategies to NextGen strategies
-    const contextStrategy = mapToNextGenStrategy((typeConfig.contextStrategy as string) ?? 'proactive');
+    const contextStrategy = mapToCurrentStrategy((typeConfig.contextStrategy as string) ?? 'proactive');
 
     // Handle backward compatibility for feature names:
     // Old stored definitions use 'memory', new ones use 'workingMemory'
@@ -831,7 +818,7 @@ export class AgentService {
 
         // Convert old strategies to NextGen strategies
         const oldStrategy = config.contextStrategy;
-        const newStrategy = mapToNextGenStrategy(oldStrategy);
+        const newStrategy = mapToCurrentStrategy(oldStrategy);
         if (oldStrategy !== newStrategy) {
           updates.contextStrategy = newStrategy;
           needsSave = true;
@@ -858,6 +845,46 @@ export class AgentService {
     } catch (error) {
       console.warn('Error during NextGen agent migration:', error);
     }
+  }
+
+  /**
+   * Subscribe to context events for monitoring (compaction, budget updates)
+   */
+  private subscribeToContextEvents(agent: Agent, instanceId: string): void {
+    const ctx = agent.context;
+    if (!ctx) return;
+
+    // Initialize compaction log for this instance
+    if (!this.compactionLogs.has(instanceId)) {
+      this.compactionLogs.set(instanceId, []);
+    }
+    const log = this.compactionLogs.get(instanceId)!;
+
+    // Subscribe to compaction:starting event
+    ctx.on('compaction:starting', ({ timestamp, targetTokensToFree }) => {
+      log.push({
+        timestamp,
+        tokensToFree: targetTokensToFree,
+        message: `Compaction starting: need to free ~${targetTokensToFree} tokens`,
+      });
+      // Keep only last N entries
+      while (log.length > this.MAX_COMPACTION_LOG_ENTRIES) {
+        log.shift();
+      }
+    });
+
+    // Subscribe to context:compacted event
+    ctx.on('context:compacted', ({ tokensFreed, log: compactionLog }) => {
+      log.push({
+        timestamp: Date.now(),
+        tokensToFree: tokensFreed,
+        message: `Compaction complete: freed ${tokensFreed} tokens`,
+      });
+      // Keep only last N entries
+      while (log.length > this.MAX_COMPACTION_LOG_ENTRIES) {
+        log.shift();
+      }
+    });
   }
 
   async initialize(connectorName: string, model: string): Promise<{ success: boolean; error?: string }> {
@@ -900,6 +927,9 @@ export class AgentService {
       };
 
       this.agent = Agent.create(agentConfig);
+
+      // Subscribe to context events for monitoring
+      this.subscribeToContextEvents(this.agent, 'default');
 
       // Update config
       this.config.activeConnector = connectorName;
@@ -2210,7 +2240,7 @@ export class AgentService {
       instructions: 'You are a helpful AI assistant. Use the rich formatting capabilities available to you (charts, diagrams, tables, code highlighting) to provide clear and visually informative responses when appropriate.',
       temperature: 0.7,
       maxIterations: 50,
-      contextStrategy: 'proactive' as NextGenStrategy,
+      contextStrategy: 'default',
       maxContextTokens: 128000,
       responseReserve: 4096,
       workingMemoryEnabled: true,
@@ -2270,6 +2300,13 @@ export class AgentService {
    */
   listVendors(): string[] {
     return Object.values(Vendor).filter((v) => typeof v === 'string') as string[];
+  }
+
+  /**
+   * Get list of available compaction strategies
+   */
+  getStrategies(): StrategyInfo[] {
+    return StrategyRegistry.getInfo();
   }
 
   async saveSession(): Promise<{ success: boolean; sessionId?: string; error?: string }> {
@@ -2646,6 +2683,9 @@ export class AgentService {
       };
       this.instances.set(instanceId, agentInstance);
 
+      // Subscribe to context events for monitoring
+      this.subscribeToContextEvents(agent, instanceId);
+
       // Log plugin status for debugging
       const ctx = agent.context as AgentContextNextGen;
       const hasPI = ctx.hasPlugin('persistent_instructions');
@@ -2966,6 +3006,11 @@ export class AgentService {
       available: number;
       components: Array<{ name: string; tokens: number; percent: number }>;
     } | null;
+    compactionLog: Array<{
+      timestamp: number;
+      tokensToFree: number;
+      message: string;
+    }>;
   }> {
     // Get the agent - either from instance or legacy single agent
     let agent: Agent | null = null;
@@ -2996,11 +3041,12 @@ export class AgentService {
         systemPrompt: null,
         persistentInstructions: null,
         tokenBreakdown: null,
+        compactionLog: [],
       };
     }
 
-    // Delegate to the common helper
-    return this.getInternalsForAgent(agent, agentConfigId);
+    // Delegate to the common helper (pass instanceId for compaction log lookup)
+    return this.getInternalsForAgent(agent, agentConfigId, instanceId || 'default');
   }
 
   /**
@@ -3072,7 +3118,8 @@ export class AgentService {
    */
   private async getInternalsForAgent(
     agent: Agent,
-    agentConfigId: string | null
+    agentConfigId: string | null,
+    instanceId: string = 'default'
   ): Promise<{
     available: boolean;
     agentName: string | null;
@@ -3146,6 +3193,11 @@ export class AgentService {
       available: number;
       components: Array<{ name: string; tokens: number; percent: number }>;
     } | null;
+    compactionLog: Array<{
+      timestamp: number;
+      tokensToFree: number;
+      message: string;
+    }>;
   }> {
     try {
       // NextGen context uses AgentContextNextGen
@@ -3334,6 +3386,7 @@ export class AgentService {
         systemPrompt,
         persistentInstructions: persistentInstructionsData,
         tokenBreakdown,
+        compactionLog: this.compactionLogs.get(instanceId) || [],
       };
     } catch (error) {
       console.error('Error getting internals:', error);
@@ -3349,6 +3402,7 @@ export class AgentService {
         systemPrompt: null,
         persistentInstructions: null,
         tokenBreakdown: null,
+        compactionLog: [],
       };
     }
   }
@@ -3437,6 +3491,11 @@ export class AgentService {
       available: number;
       components: Array<{ name: string; tokens: number; percent: number }>;
     } | null;
+    compactionLog: Array<{
+      timestamp: number;
+      tokensToFree: number;
+      message: string;
+    }>;
   }> {
     // Delegate to the helper method (NextGen refactored to avoid duplication)
     if (!this.agent) {
@@ -3452,11 +3511,12 @@ export class AgentService {
         systemPrompt: null,
         persistentInstructions: null,
         tokenBreakdown: null,
+        compactionLog: [],
       };
     }
 
     const activeAgent = this.getActiveAgent();
-    return this.getInternalsForAgent(this.agent, activeAgent?.id || null);
+    return this.getInternalsForAgent(this.agent, activeAgent?.id || null, 'default');
   }
 
   /**

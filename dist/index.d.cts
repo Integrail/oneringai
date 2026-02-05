@@ -1424,87 +1424,312 @@ interface ITokenEstimator$1 {
     estimateDataTokens(data: unknown): number;
 }
 /**
- * Next-generation context plugin interface.
+ * Context plugin interface for NextGen context management.
  *
- * Plugins provide:
- * 1. Instructions (how to use the plugin) - added to system message, NEVER compacted
- * 2. Content (actual plugin data) - added to system message, may be compacted
- * 3. Tools (optional) - registered with ToolManager
+ * ## Implementing a Custom Plugin
  *
- * Each plugin is responsible for:
- * - Tracking its own token size
- * - Providing its full contents for inspection
- * - Compacting itself when requested
+ * 1. **Extend BasePluginNextGen** - provides token caching helpers
+ * 2. **Implement getInstructions()** - return LLM usage guide (static, cached)
+ * 3. **Implement getContent()** - return formatted content (Markdown with `##` header)
+ * 4. **Call updateTokenCache()** - after any state change that affects content
+ * 5. **Implement getTools()** - return tools with `<plugin_prefix>_*` naming
+ *
+ * ## Plugin Contributions
+ *
+ * Plugins provide three types of content to the system message:
+ * 1. **Instructions** - static usage guide for the LLM (NEVER compacted)
+ * 2. **Content** - dynamic plugin data/state (may be compacted)
+ * 3. **Tools** - registered with ToolManager (NEVER compacted)
+ *
+ * ## Token Cache Lifecycle
+ *
+ * Plugins must track their own token size for budget calculation. The pattern:
+ *
+ * ```typescript
+ * // When state changes:
+ * this._entries.set(key, value);
+ * this.invalidateTokenCache();  // Clear cached size
+ *
+ * // In getContent():
+ * const content = this.formatContent();
+ * this.updateTokenCache(this.estimator.estimateTokens(content));  // Update cache
+ * return content;
+ * ```
+ *
+ * ## Content Format
+ *
+ * `getContent()` should return Markdown with a descriptive header:
+ *
+ * ```markdown
+ * ## Plugin Display Name (optional stats)
+ *
+ * Formatted content here...
+ * - Entry 1: value
+ * - Entry 2: value
+ * ```
+ *
+ * Built-in plugins use these headers:
+ * - WorkingMemory: `## Working Memory (N entries)`
+ * - InContextMemory: `## Live Context (N entries)`
+ * - PersistentInstructions: No header (user's raw instructions)
+ *
+ * ## Tool Naming Convention
+ *
+ * Use a consistent prefix based on plugin name:
+ * - `working_memory` plugin → `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
+ * - `in_context_memory` plugin → `context_set`, `context_delete`, `context_list`
+ * - `persistent_instructions` plugin → `instructions_set`, `instructions_get`, etc.
+ *
+ * ## State Serialization
+ *
+ * `getState()` and `restoreState()` are **synchronous** for simplicity.
+ * If your plugin has async data, consider:
+ * - Storing only references/keys in state
+ * - Using a separate async initialization method
+ *
+ * @example
+ * ```typescript
+ * class MyPlugin extends BasePluginNextGen {
+ *   readonly name = 'my_plugin';
+ *   private _data = new Map<string, string>();
+ *
+ *   getInstructions(): string {
+ *     return '## My Plugin\n\nUse my_plugin_set to store data...';
+ *   }
+ *
+ *   async getContent(): Promise<string | null> {
+ *     if (this._data.size === 0) return null;
+ *     const lines = [...this._data].map(([k, v]) => `- ${k}: ${v}`);
+ *     const content = `## My Plugin (${this._data.size} entries)\n\n${lines.join('\n')}`;
+ *     this.updateTokenCache(this.estimator.estimateTokens(content));
+ *     return content;
+ *   }
+ *
+ *   getTools(): ToolFunction[] {
+ *     return [myPluginSetTool, myPluginGetTool];
+ *   }
+ *
+ *   getState(): unknown {
+ *     return { data: Object.fromEntries(this._data) };
+ *   }
+ *
+ *   restoreState(state: unknown): void {
+ *     const s = state as { data: Record<string, string> };
+ *     this._data = new Map(Object.entries(s.data || {}));
+ *     this.invalidateTokenCache();
+ *   }
+ * }
+ * ```
  */
 interface IContextPluginNextGen {
-    /** Unique plugin name */
+    /** Unique plugin name (used for lookup and tool prefixing) */
     readonly name: string;
     /**
-     * Get instructions explaining how to use this plugin.
-     * These are added to the system message and NEVER compacted.
-     * Return null if no instructions needed.
+     * Get usage instructions for the LLM.
+     *
+     * Returns static text explaining how to use this plugin's tools
+     * and data. This is placed in the system message and is NEVER
+     * compacted - it persists throughout the conversation.
+     *
+     * Instructions should include:
+     * - What the plugin does
+     * - How to use available tools
+     * - Best practices and conventions
+     *
+     * @returns Instructions string or null if no instructions needed
+     *
+     * @example
+     * ```typescript
+     * getInstructions(): string {
+     *   return `## Working Memory
+     *
+     * Use memory_store to save important data for later retrieval.
+     * Use memory_retrieve to recall previously stored data.
+     *
+     * Best practices:
+     * - Use descriptive keys like 'user_preferences' not 'data1'
+     * - Store intermediate results that may be needed later`;
+     * }
+     * ```
      */
     getInstructions(): string | null;
     /**
-     * Get the formatted content to include in the system message.
-     * For example: InContextMemory returns formatted KVPs, WorkingMemory returns formatted index.
-     * Return null if no content to add (e.g., empty memory).
+     * Get formatted content to include in system message.
+     *
+     * Returns the plugin's current state formatted for LLM consumption.
+     * Should be Markdown with a `## Header`. This content CAN be compacted
+     * if `isCompactable()` returns true.
+     *
+     * **IMPORTANT:** Call `updateTokenCache()` with the content's token size
+     * before returning to keep budget calculations accurate.
+     *
+     * @returns Formatted content string or null if empty
+     *
+     * @example
+     * ```typescript
+     * async getContent(): Promise<string | null> {
+     *   if (this._entries.size === 0) return null;
+     *
+     *   const lines = this._entries.map(e => `- ${e.key}: ${e.value}`);
+     *   const content = `## My Plugin (${this._entries.size} entries)\n\n${lines.join('\n')}`;
+     *
+     *   // IMPORTANT: Update token cache before returning
+     *   this.updateTokenCache(this.estimator.estimateTokens(content));
+     *   return content;
+     * }
+     * ```
      */
     getContent(): Promise<string | null>;
     /**
      * Get the full raw contents of this plugin for inspection.
-     * Used by library clients to inspect plugin state.
-     * Returns the actual data structure, not formatted string.
+     *
+     * Used by library clients to programmatically inspect plugin state.
+     * Returns the actual data structure, not the formatted string.
+     *
+     * @returns Raw plugin data (entries map, array, etc.)
      */
     getContents(): unknown;
     /**
-     * Get current token size of this plugin's content.
-     * Each plugin is responsible for tracking its own size.
-     * This should return the token count for getContent() output.
+     * Get current token size of plugin content.
+     *
+     * Returns the cached token count from the last `updateTokenCache()` call.
+     * This is used for budget calculation in `prepare()`.
+     *
+     * The cache should be updated via `updateTokenCache()` whenever content
+     * changes. If cache is null, returns 0.
+     *
+     * @returns Current token count (0 if no content or cache not set)
      */
     getTokenSize(): number;
     /**
-     * Get token size of instructions (cached, rarely changes).
+     * Get token size of instructions (cached after first call).
+     *
+     * Instructions are static, so this is computed once and cached.
+     * Used for budget calculation.
+     *
+     * @returns Token count for instructions (0 if no instructions)
      */
     getInstructionsTokenSize(): number;
     /**
      * Whether this plugin's content can be compacted when context is tight.
+     *
+     * Return true if the plugin can reduce its content size when requested.
+     * Examples: evicting low-priority entries, summarizing, removing old data.
+     *
+     * Return false if content cannot be reduced (e.g., critical state).
+     *
+     * @returns true if compact() can free tokens
      */
     isCompactable(): boolean;
     /**
-     * Compact the plugin's content to free up tokens.
-     * Only called if isCompactable() returns true.
+     * Compact plugin content to free tokens.
      *
-     * @param targetTokensToFree - Approximate tokens we'd like to free
-     * @returns Actual tokens freed
+     * Called by compaction strategies when context is too full.
+     * Should attempt to free **approximately** `targetTokensToFree` tokens.
+     *
+     * This is a **best effort** operation:
+     * - May free more or less than requested
+     * - May return 0 if nothing can be compacted (e.g., all entries are critical)
+     * - Should prioritize removing lowest-priority/oldest data first
+     *
+     * Strategies may include:
+     * - Evicting low-priority entries
+     * - Summarizing verbose content
+     * - Removing oldest data
+     * - Truncating large values
+     *
+     * **IMPORTANT:** Call `invalidateTokenCache()` or `updateTokenCache()`
+     * after modifying content.
+     *
+     * @param targetTokensToFree - Approximate tokens to free (best effort)
+     * @returns Actual tokens freed (may be 0 if nothing can be compacted)
+     *
+     * @example
+     * ```typescript
+     * async compact(targetTokensToFree: number): Promise<number> {
+     *   const before = this.getTokenSize();
+     *   let freed = 0;
+     *
+     *   // Remove low-priority entries until target reached
+     *   const sorted = [...this._entries].sort(byPriority);
+     *   for (const entry of sorted) {
+     *     if (entry.priority === 'critical') continue; // Never remove critical
+     *     if (freed >= targetTokensToFree) break;
+     *
+     *     freed += entry.tokens;
+     *     this._entries.delete(entry.key);
+     *   }
+     *
+     *   this.invalidateTokenCache();
+     *   return freed;
+     * }
+     * ```
      */
     compact(targetTokensToFree: number): Promise<number>;
     /**
      * Get tools provided by this plugin.
-     * Tools are automatically registered with ToolManager.
+     *
+     * Tools are automatically registered with ToolManager when the plugin
+     * is added to the context. Use a consistent naming convention:
+     * `<prefix>_<action>` (e.g., `memory_store`, `context_set`).
+     *
+     * @returns Array of tool definitions (empty array if no tools)
      */
     getTools(): ToolFunction[];
     /**
      * Cleanup resources when context is destroyed.
+     *
+     * Called when AgentContextNextGen.destroy() is invoked.
+     * Use for releasing resources, closing connections, etc.
      */
     destroy(): void;
     /**
-     * Get serializable state for session persistence.
+     * Serialize plugin state for session persistence.
+     *
+     * **MUST be synchronous.** Return a JSON-serializable object representing
+     * the plugin's current state. This is called when saving a session.
+     *
+     * For plugins with async data (e.g., external storage), return only
+     * references/keys here and handle async restoration separately.
+     *
+     * @returns Serializable state object
+     *
+     * @example
+     * ```typescript
+     * getState(): unknown {
+     *   return {
+     *     entries: [...this._entries].map(([k, v]) => ({ key: k, ...v })),
+     *     version: 1,  // Include version for future migrations
+     *   };
+     * }
+     * ```
      */
     getState(): unknown;
     /**
-     * Restore state from saved session.
+     * Restore plugin state from serialized data.
+     *
+     * Called when loading a saved session. The state comes from a previous
+     * `getState()` call on the same plugin type.
+     *
+     * **IMPORTANT:** Call `invalidateTokenCache()` after restoring state
+     * to ensure token counts are recalculated.
+     *
+     * @param state - Previously serialized state from getState()
+     *
+     * @example
+     * ```typescript
+     * restoreState(state: unknown): void {
+     *   const s = state as { entries: Array<{ key: string; value: unknown }> };
+     *   this._entries.clear();
+     *   for (const entry of s.entries || []) {
+     *     this._entries.set(entry.key, entry);
+     *   }
+     *   this.invalidateTokenCache(); // IMPORTANT: refresh token cache
+     * }
+     * ```
      */
     restoreState(state: unknown): void;
 }
-/**
- * Strategy names - determine when compaction triggers
- */
-type CompactionStrategyName = 'proactive' | 'balanced' | 'lazy';
-/**
- * Strategy thresholds (percentage of context used before compaction triggers)
- */
-declare const STRATEGY_THRESHOLDS$1: Record<CompactionStrategyName, number>;
 /**
  * Token budget breakdown - clear and simple
  */
@@ -1618,8 +1843,16 @@ interface AgentContextNextGenConfig {
     responseReserve?: number;
     /** System prompt provided by user */
     systemPrompt?: string;
-    /** Compaction strategy (default: 'balanced') */
-    strategy?: CompactionStrategyName;
+    /**
+     * Compaction strategy name (default: 'default').
+     * Used to create strategy from StrategyRegistry if compactionStrategy not provided.
+     */
+    strategy?: string;
+    /**
+     * Custom compaction strategy instance.
+     * If provided, overrides the `strategy` option.
+     */
+    compactionStrategy?: ICompactionStrategy;
     /** Feature flags */
     features?: ContextFeatures;
     /** Agent ID (required for PersistentInstructions) */
@@ -1636,7 +1869,7 @@ interface AgentContextNextGenConfig {
  */
 declare const DEFAULT_CONFIG: {
     responseReserve: number;
-    strategy: CompactionStrategyName;
+    strategy: string;
 };
 
 /**
@@ -1653,6 +1886,11 @@ interface ContextEvents {
         tokensFreed: number;
         log: string[];
     };
+    /** Emitted right after budget is calculated in prepare() - for reactive monitoring */
+    'budget:updated': {
+        budget: ContextBudget$1;
+        timestamp: number;
+    };
     /** Emitted when budget reaches warning threshold (>70%) */
     'budget:warning': {
         budget: ContextBudget$1;
@@ -1660,6 +1898,12 @@ interface ContextEvents {
     /** Emitted when budget reaches critical threshold (>90%) */
     'budget:critical': {
         budget: ContextBudget$1;
+    };
+    /** Emitted when compaction is about to start */
+    'compaction:starting': {
+        budget: ContextBudget$1;
+        targetTokensToFree: number;
+        timestamp: number;
     };
     /** Emitted when current input is too large */
     'input:oversized': {
@@ -1674,6 +1918,134 @@ interface ContextEvents {
     'conversation:cleared': {
         reason?: string;
     };
+}
+/**
+ * Callback type for beforeCompaction hook.
+ * Called before compaction starts, allowing agents to save important data.
+ */
+type BeforeCompactionCallback = (info: {
+    budget: ContextBudget$1;
+    targetTokensToFree: number;
+    strategy: string;
+}) => Promise<void>;
+/**
+ * Result of compact() operation.
+ */
+interface CompactionResult$1 {
+    /** Tokens actually freed by compaction */
+    tokensFreed: number;
+    /** Number of messages removed from conversation */
+    messagesRemoved: number;
+    /** Names of plugins that were compacted */
+    pluginsCompacted: string[];
+    /** Log of actions taken during compaction */
+    log: string[];
+}
+/**
+ * Result of consolidate() operation.
+ */
+interface ConsolidationResult {
+    /** Whether any consolidation was performed */
+    performed: boolean;
+    /** Net token change (negative = freed, positive = added, e.g., summaries) */
+    tokensChanged: number;
+    /** Description of actions taken */
+    actions: string[];
+}
+/**
+ * Read-only context passed to compaction strategies.
+ * Provides access to data needed for compaction decisions and
+ * controlled methods to modify state.
+ */
+interface CompactionContext {
+    /** Current budget (from prepare) */
+    readonly budget: ContextBudget$1;
+    /** Current conversation history (read-only) */
+    readonly conversation: ReadonlyArray<InputItem>;
+    /** Current input (read-only) */
+    readonly currentInput: ReadonlyArray<InputItem>;
+    /** Registered plugins (for querying state) */
+    readonly plugins: ReadonlyArray<IContextPluginNextGen>;
+    /** Strategy name for logging */
+    readonly strategyName: string;
+    /**
+     * Remove messages by indices.
+     * Handles tool pair preservation internally.
+     *
+     * @param indices - Array of message indices to remove
+     * @returns Tokens actually freed
+     */
+    removeMessages(indices: number[]): Promise<number>;
+    /**
+     * Compact a specific plugin.
+     *
+     * @param pluginName - Name of the plugin to compact
+     * @param targetTokens - Approximate tokens to free
+     * @returns Tokens actually freed
+     */
+    compactPlugin(pluginName: string, targetTokens: number): Promise<number>;
+    /**
+     * Estimate tokens for an item.
+     *
+     * @param item - Input item to estimate
+     * @returns Estimated token count
+     */
+    estimateTokens(item: InputItem): number;
+}
+/**
+ * Compaction strategy interface.
+ *
+ * Strategies implement two methods:
+ * - `compact()`: Emergency compaction when thresholds exceeded (called from prepare())
+ * - `consolidate()`: Post-cycle cleanup and optimization (called after agentic loop)
+ *
+ * Use `compact()` for quick, threshold-based token reduction.
+ * Use `consolidate()` for more expensive operations like summarization.
+ */
+interface ICompactionStrategy {
+    /** Strategy name (unique identifier) for identification and logging */
+    readonly name: string;
+    /** Human-readable display name for UI */
+    readonly displayName: string;
+    /** Description explaining the strategy behavior */
+    readonly description: string;
+    /** Threshold percentage (0-1) at which compact() is triggered */
+    readonly threshold: number;
+    /**
+     * Plugin names this strategy requires to function.
+     * Validation is performed when strategy is assigned to context.
+     * If any required plugin is missing, an error is thrown.
+     *
+     * @example
+     * ```typescript
+     * readonly requiredPlugins = ['working_memory'] as const;
+     * ```
+     */
+    readonly requiredPlugins?: readonly string[];
+    /**
+     * Emergency compaction - triggered when context usage exceeds threshold.
+     * Called from prepare() when utilization > threshold.
+     *
+     * Should be fast and focus on freeing tokens quickly.
+     *
+     * @param context - Compaction context with controlled access to state
+     * @param targetToFree - Approximate tokens to free
+     * @returns Result describing what was done
+     */
+    compact(context: CompactionContext, targetToFree: number): Promise<CompactionResult$1>;
+    /**
+     * Post-cycle consolidation - run after agentic cycle completes.
+     * Called from Agent after run()/stream() finishes (before session save).
+     *
+     * Use for more expensive operations:
+     * - Summarizing long conversations
+     * - Memory optimization and deduplication
+     * - Promoting important data to persistent storage
+     *
+     * @param context - Compaction context with controlled access to state
+     * @returns Result describing what was done
+     */
+    consolidate(context: CompactionContext): Promise<ConsolidationResult>;
 }
 
 /**
@@ -1880,8 +2252,8 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     private readonly _config;
     /** Maximum context tokens for the model */
     private readonly _maxContextTokens;
-    /** Compaction strategy threshold */
-    private readonly _strategyThreshold;
+    /** Compaction strategy */
+    private _compactionStrategy;
     /** System prompt (user-provided) */
     private _systemPrompt;
     /** Conversation history (excludes current input) */
@@ -1902,6 +2274,10 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     private readonly _storage?;
     /** Destroyed flag */
     private _destroyed;
+    /** Cached budget from last prepare() call */
+    private _cachedBudget;
+    /** Callback for beforeCompaction hook (set by Agent) */
+    private _beforeCompactionCallback;
     /**
      * Create a new AgentContextNextGen instance.
      */
@@ -1912,6 +2288,11 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
      * Called automatically in constructor.
      */
     private initializePlugins;
+    /**
+     * Validate that a strategy's required plugins are registered.
+     * @throws Error if any required plugin is missing
+     */
+    private validateStrategyDependencies;
     /** Get the tool manager */
     get tools(): ToolManager;
     /** Get the model name */
@@ -1935,6 +2316,25 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     get responseReserve(): number;
     /** Get current tools token usage (useful for debugging) */
     get toolsTokens(): number;
+    /**
+     * Get the cached budget from the last prepare() call.
+     * Returns null if prepare() hasn't been called yet.
+     */
+    get lastBudget(): ContextBudget$1 | null;
+    /**
+     * Get the current compaction strategy.
+     */
+    get compactionStrategy(): ICompactionStrategy;
+    /**
+     * Set the compaction strategy.
+     * Can be changed at runtime to switch compaction behavior.
+     */
+    setCompactionStrategy(strategy: ICompactionStrategy): void;
+    /**
+     * Set the beforeCompaction callback.
+     * Called by Agent to wire up lifecycle hooks.
+     */
+    setBeforeCompactionCallback(callback: BeforeCompactionCallback | null): void;
     /**
      * Get working memory plugin (if registered).
      * This is a compatibility accessor for code expecting ctx.memory
@@ -2054,19 +2454,29 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     private estimateItemTokens;
     /**
      * Run compaction to free up tokens.
+     * Delegates to the current compaction strategy.
      * Returns total tokens freed.
      */
     private runCompaction;
     /**
-     * Compact conversation history.
-     * Removes oldest messages while preserving tool pairs.
+     * Run post-cycle consolidation.
+     * Called by Agent after agentic cycle completes (before session save).
+     *
+     * Delegates to the current compaction strategy's consolidate() method.
+     * Use for more expensive operations like summarization.
      */
-    private compactConversation;
+    consolidate(): Promise<ConsolidationResult>;
     /**
-     * Find tool_use/tool_result pairs in conversation.
-     * Returns Map<tool_use_id, array of message indices>.
+     * Build CompactionContext for strategy.
+     * Provides controlled access to context state.
      */
-    private findToolPairs;
+    private buildCompactionContext;
+    /**
+     * Remove messages by indices.
+     * Handles tool pair preservation internally.
+     * Used by CompactionContext.removeMessages().
+     */
+    private removeMessagesByIndices;
     /**
      * Sanitize tool pairs in the input array.
      * Removes orphan TOOL_USE (no matching TOOL_RESULT) and
@@ -2126,13 +2536,13 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
      */
     restoreState(state: SerializedContextState): void;
     /**
-     * Calculate current token budget without triggering compaction.
+     * Get the current token budget.
      *
-     * Use this method to inspect the current context state for monitoring/debugging.
-     * Unlike prepare(), this does NOT:
-     * - Trigger compaction
-     * - Modify any state
-     * - Emit any events
+     * Returns the cached budget from the last prepare() call if available.
+     * If prepare() hasn't been called yet, calculates a fresh budget.
+     *
+     * For monitoring purposes, prefer using the `lastBudget` getter or
+     * subscribing to the `budget:updated` event for reactive updates.
      *
      * @returns Current token budget breakdown
      */
@@ -3032,73 +3442,317 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgentEvents> implements IDi
 
 /**
  * Simple token estimator used by plugins.
- * Uses character-based approximation (good enough for most cases).
+ *
+ * Uses character-based approximation (~3.5 chars/token) which is
+ * accurate enough for budget management purposes. For precise
+ * tokenization, you can provide a custom estimator via the
+ * `estimator` protected property.
+ *
+ * @example
+ * ```typescript
+ * const tokens = simpleTokenEstimator.estimateTokens("Hello world");
+ * // ~4 tokens
+ *
+ * const dataTokens = simpleTokenEstimator.estimateDataTokens({ key: "value" });
+ * // Stringifies and estimates
+ * ```
  */
 declare const simpleTokenEstimator: ITokenEstimator$1;
 /**
  * Base class for NextGen context plugins.
  *
- * Subclasses should:
- * 1. Override `name` property
- * 2. Implement `getInstructions()` and `getContent()`
- * 3. Call `invalidateTokenCache()` when content changes
- * 4. Optionally override other methods as needed
+ * Provides:
+ * - **Token cache management** - `invalidateTokenCache()`, `updateTokenCache()`, `recalculateTokenCache()`
+ * - **Simple token estimator** - `this.estimator` (can be overridden)
+ * - **Default implementations** - for optional interface methods
+ *
+ * ## Implementing a Plugin
+ *
+ * ```typescript
+ * class MyPlugin extends BasePluginNextGen {
+ *   readonly name = 'my_plugin';
+ *   private _data = new Map<string, string>();
+ *
+ *   // 1. Return static instructions (cached automatically)
+ *   getInstructions(): string {
+ *     return '## My Plugin\n\nUse my_plugin_set to store data...';
+ *   }
+ *
+ *   // 2. Return formatted content (update token cache!)
+ *   async getContent(): Promise<string | null> {
+ *     if (this._data.size === 0) return null;
+ *     const content = this.formatEntries();
+ *     this.updateTokenCache(this.estimator.estimateTokens(content));
+ *     return content;
+ *   }
+ *
+ *   // 3. Return raw data for inspection
+ *   getContents(): unknown {
+ *     return Object.fromEntries(this._data);
+ *   }
+ *
+ *   // 4. Invalidate cache when data changes
+ *   set(key: string, value: string): void {
+ *     this._data.set(key, value);
+ *     this.invalidateTokenCache();  // <-- Important!
+ *   }
+ * }
+ * ```
+ *
+ * ## Token Cache Lifecycle
+ *
+ * The token cache is used for budget calculation. Follow this pattern:
+ *
+ * 1. **When state changes** → Call `invalidateTokenCache()` to clear the cache
+ * 2. **In getContent()** → Call `updateTokenCache(tokens)` before returning
+ * 3. **For async recalc** → Use `recalculateTokenCache()` helper
+ *
+ * ```typescript
+ * // Pattern 1: Invalidate on change, update in getContent
+ * store(key: string, value: unknown): void {
+ *   this._entries.set(key, value);
+ *   this.invalidateTokenCache();  // Clear cache
+ * }
+ *
+ * async getContent(): Promise<string | null> {
+ *   const content = this.formatContent();
+ *   this.updateTokenCache(this.estimator.estimateTokens(content));  // Update cache
+ *   return content;
+ * }
+ *
+ * // Pattern 2: Recalculate immediately after change
+ * async store(key: string, value: unknown): Promise<void> {
+ *   this._entries.set(key, value);
+ *   await this.recalculateTokenCache();  // Recalc and cache
+ * }
+ * ```
+ *
+ * ## Compaction Support
+ *
+ * To make your plugin compactable:
+ *
+ * ```typescript
+ * isCompactable(): boolean {
+ *   return this._entries.size > 0;
+ * }
+ *
+ * async compact(targetTokensToFree: number): Promise<number> {
+ *   // Remove low-priority entries
+ *   let freed = 0;
+ *   for (const [key, entry] of this._entries) {
+ *     if (entry.priority !== 'critical' && freed < targetTokensToFree) {
+ *       freed += entry.tokens;
+ *       this._entries.delete(key);
+ *     }
+ *   }
+ *   this.invalidateTokenCache();
+ *   return freed;
+ * }
+ * ```
  */
 declare abstract class BasePluginNextGen implements IContextPluginNextGen {
     abstract readonly name: string;
-    /** Cached token size for content */
+    /**
+     * Cached token size for content.
+     * Updated via updateTokenCache(), cleared via invalidateTokenCache().
+     */
     private _contentTokenCache;
-    /** Cached token size for instructions */
+    /**
+     * Cached token size for instructions.
+     * Computed once on first call to getInstructionsTokenSize().
+     */
     private _instructionsTokenCache;
-    /** Token estimator */
+    /**
+     * Token estimator instance.
+     * Override this in subclass to use a custom estimator (e.g., tiktoken).
+     *
+     * @example
+     * ```typescript
+     * class MyPlugin extends BasePluginNextGen {
+     *   protected estimator = myCustomTiktokenEstimator;
+     * }
+     * ```
+     */
     protected estimator: ITokenEstimator$1;
     abstract getInstructions(): string | null;
     abstract getContent(): Promise<string | null>;
     abstract getContents(): unknown;
     /**
      * Get current token size of content.
-     * Uses caching - call invalidateTokenCache() when content changes.
+     *
+     * Returns the cached value from the last `updateTokenCache()` call.
+     * Returns 0 if cache is null (content hasn't been calculated yet).
+     *
+     * **Note:** This is synchronous but `getContent()` is async. Plugins
+     * should call `updateTokenCache()` in their `getContent()` implementation
+     * to keep the cache accurate.
+     *
+     * @returns Cached token count (0 if cache not set)
      */
     getTokenSize(): number;
     /**
      * Get token size of instructions (cached after first call).
+     *
+     * Instructions are static, so this is computed once and cached permanently.
+     * The cache is never invalidated since instructions don't change.
+     *
+     * @returns Token count for instructions (0 if no instructions)
      */
     getInstructionsTokenSize(): number;
     /**
-     * Invalidate token cache - call when content changes.
+     * Invalidate the content token cache.
+     *
+     * Call this when plugin state changes in a way that affects content size.
+     * The next call to `getTokenSize()` will return 0 until `updateTokenCache()`
+     * is called (typically in `getContent()`).
+     *
+     * @example
+     * ```typescript
+     * delete(key: string): boolean {
+     *   const deleted = this._entries.delete(key);
+     *   if (deleted) {
+     *     this.invalidateTokenCache();  // Content changed
+     *   }
+     *   return deleted;
+     * }
+     * ```
      */
     protected invalidateTokenCache(): void;
     /**
-     * Update token cache with new size.
-     * Call this after modifying content.
+     * Update the content token cache with a new value.
+     *
+     * Call this in `getContent()` after formatting content, passing the
+     * estimated token count. This keeps budget calculations accurate.
+     *
+     * @param tokens - New token count to cache
+     *
+     * @example
+     * ```typescript
+     * async getContent(): Promise<string | null> {
+     *   const content = this.formatEntries();
+     *   this.updateTokenCache(this.estimator.estimateTokens(content));
+     *   return content;
+     * }
+     * ```
      */
     protected updateTokenCache(tokens: number): void;
     /**
      * Recalculate and cache token size from current content.
+     *
+     * Convenience method that calls `getContent()`, estimates tokens,
+     * and updates the cache. Use this when you need to immediately
+     * refresh the cache after a state change.
+     *
+     * @returns Calculated token count
+     *
+     * @example
+     * ```typescript
+     * async store(key: string, value: unknown): Promise<void> {
+     *   this._entries.set(key, value);
+     *   await this.recalculateTokenCache();  // Refresh immediately
+     * }
+     * ```
      */
     protected recalculateTokenCache(): Promise<number>;
     /**
-     * Default: not compactable. Override if plugin supports compaction.
+     * Default: not compactable.
+     *
+     * Override to return `true` if your plugin can reduce its content size
+     * when context is tight. Also implement `compact()` to handle the actual
+     * compaction logic.
+     *
+     * @returns false by default
      */
     isCompactable(): boolean;
     /**
-     * Default: no compaction. Override if plugin supports compaction.
+     * Default: no compaction (returns 0).
+     *
+     * Override to implement compaction logic. Should attempt to free
+     * approximately `targetTokensToFree` tokens. Remember to call
+     * `invalidateTokenCache()` after modifying content.
+     *
+     * @param _targetTokensToFree - Approximate tokens to free (best effort)
+     * @returns 0 by default (no tokens freed)
+     *
+     * @example
+     * ```typescript
+     * async compact(targetTokensToFree: number): Promise<number> {
+     *   let freed = 0;
+     *   // Remove entries by priority until target reached
+     *   for (const [key, entry] of this.sortedByPriority()) {
+     *     if (entry.priority === 'critical') continue;
+     *     if (freed >= targetTokensToFree) break;
+     *     freed += entry.tokens;
+     *     this._entries.delete(key);
+     *   }
+     *   this.invalidateTokenCache();
+     *   return freed;
+     * }
+     * ```
      */
     compact(_targetTokensToFree: number): Promise<number>;
     /**
-     * Default: no tools. Override to provide plugin-specific tools.
+     * Default: no tools (returns empty array).
+     *
+     * Override to provide plugin-specific tools. Tools are auto-registered
+     * with ToolManager when the plugin is added to the context.
+     *
+     * Use a consistent naming convention: `<prefix>_<action>`
+     * - `memory_store`, `memory_retrieve`, `memory_delete`
+     * - `context_set`, `context_delete`, `context_list`
+     *
+     * @returns Empty array by default
      */
     getTools(): ToolFunction[];
     /**
-     * Default: no-op cleanup. Override if plugin has resources to release.
+     * Default: no-op cleanup.
+     *
+     * Override if your plugin has resources to release (file handles,
+     * timers, connections, etc.). Called when context is destroyed.
      */
     destroy(): void;
     /**
-     * Default: return empty state. Override for persistence.
+     * Default: returns empty object.
+     *
+     * Override to serialize plugin state for session persistence.
+     * Return a JSON-serializable object. Consider including a version
+     * number for future migration support.
+     *
+     * @returns Empty object by default
+     *
+     * @example
+     * ```typescript
+     * getState(): unknown {
+     *   return {
+     *     version: 1,
+     *     entries: [...this._entries].map(([k, v]) => ({ key: k, ...v })),
+     *   };
+     * }
+     * ```
      */
     getState(): unknown;
     /**
-     * Default: no-op restore. Override for persistence.
+     * Default: no-op (ignores state).
+     *
+     * Override to restore plugin state from saved session. The state
+     * comes from a previous `getState()` call.
+     *
+     * **IMPORTANT:** Call `invalidateTokenCache()` after restoring state
+     * to ensure token counts are recalculated on next `getContent()` call.
+     *
+     * @param _state - Previously serialized state from getState()
+     *
+     * @example
+     * ```typescript
+     * restoreState(state: unknown): void {
+     *   const s = state as { entries: Array<{ key: string; value: unknown }> };
+     *   this._entries.clear();
+     *   for (const entry of s.entries || []) {
+     *     this._entries.set(entry.key, entry);
+     *   }
+     *   this.invalidateTokenCache();  // Don't forget this!
+     * }
+     * ```
      */
     restoreState(_state: unknown): void;
 }
@@ -3322,6 +3976,224 @@ declare class PersistentInstructionsPluginNextGen implements IContextPluginNextG
     private createInstructionsAppendTool;
     private createInstructionsGetTool;
     private createInstructionsClearTool;
+}
+
+/**
+ * DefaultCompactionStrategy - Standard compaction behavior
+ *
+ * Implements the default compaction strategy:
+ * - compact(): Plugins first (by priority), then conversation history
+ * - consolidate(): No-op for now (returns performed: false)
+ *
+ * This strategy preserves the original AgentContextNextGen behavior.
+ */
+
+/**
+ * Configuration for DefaultCompactionStrategy
+ */
+interface DefaultCompactionStrategyConfig {
+    /** Custom threshold (default: 0.70 = 70%) */
+    threshold?: number;
+}
+/**
+ * Default compaction strategy.
+ *
+ * Behavior:
+ * - compact(): First compacts plugins (in_context_memory first, then working_memory),
+ *   then removes oldest messages from conversation while preserving tool pairs.
+ * - consolidate(): No-op - returns performed: false
+ *
+ * This strategy is fast and suitable for most use cases.
+ * Default threshold is 70%.
+ */
+declare class DefaultCompactionStrategy implements ICompactionStrategy {
+    readonly name = "default";
+    readonly displayName = "Default";
+    readonly description = "Standard compaction strategy. Compacts plugins first, then conversation history. Triggers at 70% context usage.";
+    readonly threshold: number;
+    constructor(config?: DefaultCompactionStrategyConfig);
+    /**
+     * Emergency compaction when thresholds exceeded.
+     *
+     * Strategy:
+     * 1. Compact plugins first (in_context_memory, then working_memory)
+     * 2. If still needed, remove oldest conversation messages (preserving tool pairs)
+     */
+    compact(context: CompactionContext, targetToFree: number): Promise<CompactionResult$1>;
+    /**
+     * Post-cycle consolidation.
+     *
+     * Default strategy does nothing - override in subclasses for:
+     * - Conversation summarization
+     * - Memory deduplication
+     * - Data promotion to persistent storage
+     */
+    consolidate(_context: CompactionContext): Promise<ConsolidationResult>;
+    /**
+     * Compact conversation by removing oldest messages.
+     * Preserves tool pairs (tool_use + tool_result).
+     */
+    private compactConversation;
+    /**
+     * Find tool_use/tool_result pairs in conversation.
+     * Returns Map<tool_use_id, array of message indices>.
+     */
+    private findToolPairs;
+    /**
+     * Get tool_use_id from an item (if it contains tool_use or tool_result).
+     */
+    private getToolUseId;
+}
+
+/**
+ * StrategyRegistry - Centralized registry for compaction strategies
+ *
+ * Follows the Connector pattern: static registry with register/get/list methods.
+ * Auto-registers built-in strategy classes on first access.
+ *
+ * Each registered entry represents an actual strategy CLASS.
+ * Library users can register their own custom strategy classes.
+ *
+ * Strategy metadata (name, displayName, description, threshold) comes from
+ * the strategy class itself via the ICompactionStrategy interface.
+ *
+ * @example
+ * ```typescript
+ * // Get available strategies for UI
+ * const strategies = StrategyRegistry.getInfo();
+ *
+ * // Create a strategy instance
+ * const strategy = StrategyRegistry.create('default');
+ *
+ * // Register a custom strategy class (metadata comes from the class)
+ * StrategyRegistry.register(SmartCompactionStrategy);
+ *
+ * // Register with isBuiltIn flag
+ * StrategyRegistry.register(SmartCompactionStrategy, { isBuiltIn: false });
+ * ```
+ */
+
+/**
+ * Strategy constructor type
+ */
+type StrategyClass = new (config?: any) => ICompactionStrategy;
+/**
+ * Strategy information for UI display (serializable, no class reference)
+ */
+interface StrategyInfo {
+    /** Strategy name (unique identifier) */
+    name: string;
+    /** Human-readable name for UI */
+    displayName: string;
+    /** Description explaining the strategy behavior */
+    description: string;
+    /** Compaction threshold (0-1, e.g., 0.70 = 70%) */
+    threshold: number;
+    /** Whether this is a built-in strategy */
+    isBuiltIn: boolean;
+}
+/**
+ * Full strategy registry entry (includes class reference)
+ */
+interface StrategyRegistryEntry extends StrategyInfo {
+    /** Strategy constructor class */
+    strategyClass: StrategyClass;
+}
+/**
+ * Options for registering a strategy
+ */
+interface StrategyRegisterOptions {
+    /** Whether this is a built-in strategy (default: false) */
+    isBuiltIn?: boolean;
+}
+/**
+ * Strategy Registry - manages compaction strategy registration and creation.
+ *
+ * Features:
+ * - Static registry pattern (like Connector)
+ * - Auto-registers built-in strategy classes on first access
+ * - Supports custom strategy class registration
+ * - Provides UI-safe getInfo() for serialization
+ * - Metadata (displayName, description) comes from strategy class
+ */
+declare class StrategyRegistry {
+    private static registry;
+    private static initialized;
+    /**
+     * Ensure built-in strategies are registered
+     */
+    private static ensureInitialized;
+    /**
+     * Internal registration that reads metadata from strategy instance
+     */
+    private static registerInternal;
+    /**
+     * Register a new strategy class.
+     *
+     * Metadata (name, displayName, description, threshold) is read from
+     * the strategy class itself.
+     *
+     * @param strategyClass - Strategy class to register
+     * @param options - Registration options (isBuiltIn defaults to false)
+     * @throws Error if a strategy with this name already exists
+     *
+     * @example
+     * ```typescript
+     * // Simple registration
+     * StrategyRegistry.register(SmartCompactionStrategy);
+     *
+     * // With options
+     * StrategyRegistry.register(SmartCompactionStrategy, { isBuiltIn: false });
+     * ```
+     */
+    static register(strategyClass: StrategyClass, options?: StrategyRegisterOptions): void;
+    /**
+     * Get a strategy entry by name.
+     *
+     * @throws Error if strategy not found
+     */
+    static get(name: string): StrategyRegistryEntry;
+    /**
+     * Check if a strategy exists.
+     */
+    static has(name: string): boolean;
+    /**
+     * List all registered strategy names.
+     */
+    static list(): string[];
+    /**
+     * Create a strategy instance by name.
+     *
+     * @param name - Strategy name
+     * @param config - Optional configuration for the strategy
+     * @throws Error if strategy not found
+     */
+    static create(name: string, config?: unknown): ICompactionStrategy;
+    /**
+     * Get strategy information for UI display (serializable, no class refs).
+     *
+     * Returns array of StrategyInfo objects that can be safely serialized
+     * and sent over IPC.
+     */
+    static getInfo(): StrategyInfo[];
+    /**
+     * Remove a strategy from the registry.
+     *
+     * @param name - Strategy name to remove
+     * @returns true if removed, false if not found
+     * @throws Error if trying to remove a built-in strategy
+     */
+    static remove(name: string): boolean;
+    /**
+     * Get a strategy entry without throwing.
+     * Returns undefined if not found.
+     */
+    static getIfExists(name: string): StrategyRegistryEntry | undefined;
+    /**
+     * Reset the registry to initial state (for testing).
+     * @internal
+     */
+    static _reset(): void;
 }
 
 /**
@@ -11104,7 +11976,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-04T20:28:58.005Z
+ * Generated at: 2026-02-05T11:28:31.572Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -11388,4 +12260,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AggressiveCompactionStrategy, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionStrategyName, Connector, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, ConsoleMetrics, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, ContextGuardian, type ContextGuardianConfig, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, type DefaultAllowlistedTool, type DegradationResult, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type GuardianValidation, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STRATEGY_THRESHOLDS$1 as STRATEGY_THRESHOLDS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isKnownService, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AggressiveCompactionStrategy, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult$1 as CompactionResult, Connector, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, ContextGuardian, type ContextGuardianConfig, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, type DegradationResult, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type GuardianValidation, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isKnownService, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

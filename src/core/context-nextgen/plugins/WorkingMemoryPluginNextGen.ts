@@ -588,27 +588,36 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
     const entries = await this.storage.getAll();
     const currentSize = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
     const maxSize = this.config.maxSizeBytes ?? DEFAULT_MEMORY_CONFIG.maxSizeBytes!;
+    const maxEntries = this.config.maxIndexEntries ?? DEFAULT_MEMORY_CONFIG.maxIndexEntries!;
 
-    if (currentSize + neededBytes > maxSize) {
-      // Need to evict
-      const toFree = currentSize + neededBytes - maxSize * 0.8; // Free to 80%
-      let freed = 0;
+    const needsSizeEviction = currentSize + neededBytes > maxSize;
+    const needsCountEviction = entries.length >= maxEntries;
 
-      const evictable = entries
-        .filter(e => !e.pinned && this.computePriority(e) !== 'critical')
-        .sort((a, b) => {
-          const priorityDiff =
-            MEMORY_PRIORITY_VALUES[this.computePriority(a)] -
-            MEMORY_PRIORITY_VALUES[this.computePriority(b)];
-          if (priorityDiff !== 0) return priorityDiff;
-          return a.lastAccessedAt - b.lastAccessedAt;
-        });
+    if (!needsSizeEviction && !needsCountEviction) return;
 
-      for (const entry of evictable) {
-        if (freed >= toFree) break;
-        await this.storage.delete(entry.key);
-        freed += entry.sizeBytes;
-      }
+    // Sort evictable entries by priority (lowest first), then by LRU
+    const evictable = entries
+      .filter(e => !e.pinned && this.computePriority(e) !== 'critical')
+      .sort((a, b) => {
+        const priorityDiff =
+          MEMORY_PRIORITY_VALUES[this.computePriority(a)] -
+          MEMORY_PRIORITY_VALUES[this.computePriority(b)];
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.lastAccessedAt - b.lastAccessedAt;
+      });
+
+    // Calculate eviction targets
+    const bytesToFree = needsSizeEviction ? currentSize + neededBytes - maxSize * 0.8 : 0;
+    const entriesToFree = needsCountEviction ? entries.length - maxEntries + 1 : 0; // +1 for incoming
+
+    let freedBytes = 0;
+    let freedCount = 0;
+
+    for (const entry of evictable) {
+      if (freedBytes >= bytesToFree && freedCount >= entriesToFree) break;
+      await this.storage.delete(entry.key);
+      freedBytes += entry.sizeBytes;
+      freedCount++;
     }
   }
 

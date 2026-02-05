@@ -23,35 +23,14 @@ import { useNavigation } from '../hooks/useNavigation';
 // Agent type - NextGen only supports 'basic' (other types deprecated)
 type AgentType = 'basic';
 
-// Context strategies (NextGen)
-const CONTEXT_STRATEGIES: {
-  value: string;
-  label: string;
-  threshold: string;
+// Strategy info type (matches StrategyInfo from library)
+interface StrategyInfo {
+  name: string;
+  displayName: string;
   description: string;
-}[] = [
-  {
-    value: 'proactive',
-    label: 'Proactive',
-    threshold: '70%',
-    description:
-      'Early compaction at 70%. Good for memory-constrained use cases.',
-  },
-  {
-    value: 'balanced',
-    label: 'Balanced',
-    threshold: '80%',
-    description:
-      'Default strategy. Compacts at 80% - balanced between context preservation and memory.',
-  },
-  {
-    value: 'lazy',
-    label: 'Lazy',
-    threshold: '90%',
-    description:
-      'Preserves maximum context. Only compacts at 90% - best when you need full conversation history.',
-  },
-];
+  threshold: number;
+  isBuiltIn: boolean;
+}
 
 interface ToolInfo {
   name: string;
@@ -151,7 +130,7 @@ const defaultFormData: AgentFormData = {
   // Execution settings
   maxIterations: 50, // Default from AGENT_DEFAULTS.MAX_ITERATIONS
   // Context settings
-  contextStrategy: 'balanced', // NextGen default
+  contextStrategy: 'default', // Default strategy from registry
   maxContextTokens: 128000,
   responseReserve: 4096,
   // Memory settings (workingMemory in NextGen)
@@ -192,29 +171,37 @@ export function AgentEditorPage(): React.ReactElement {
   const [mcpServers, setMCPServers] = useState<MCPServerInfo[]>([]);
   const [mcpServerTools, setMCPServerTools] = useState<Record<string, MCPTool[]>>({});
   const [loadingMCPTools, setLoadingMCPTools] = useState<string | null>(null);
+  const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Load data on mount
   useEffect(() => {
     async function loadData() {
       try {
-        const [connectorsList, models, tools, apiConns, mcpServersList] = await Promise.all([
+        const [connectorsList, models, tools, apiConns, mcpServersList, strategyList] = await Promise.all([
           window.hosea.connector.list(),
           window.hosea.model.list(),
           window.hosea.tool.registry(),
           window.hosea.apiConnector.list(),
           window.hosea.mcpServer.list(),
+          window.hosea.strategy.list(),
         ]);
         setConnectors(connectorsList);
         setModelsByVendor(models);
         setAvailableTools(tools);
         setAPIConnectors(apiConns);
         setMCPServers(mcpServersList);
+        setStrategies(strategyList);
 
         // Load existing agent data if in edit mode
         if (isEditMode && agentId) {
           const existingAgent = await window.hosea.agentConfig.get(agentId);
           if (existingAgent) {
+            // Validate strategy exists in registry, fallback to 'balanced' if not
+            const validStrategy = strategyList.some((s) => s.name === existingAgent.contextStrategy)
+              ? existingAgent.contextStrategy
+              : 'default';
+
             setFormData({
               name: existingAgent.name,
               connector: existingAgent.connector,
@@ -223,7 +210,7 @@ export function AgentEditorPage(): React.ReactElement {
               instructions: existingAgent.instructions,
               temperature: existingAgent.temperature,
               maxIterations: existingAgent.maxIterations ?? 50,
-              contextStrategy: existingAgent.contextStrategy,
+              contextStrategy: validStrategy,
               maxContextTokens: existingAgent.maxContextTokens,
               responseReserve: existingAgent.responseReserve,
               workingMemoryEnabled: existingAgent.workingMemoryEnabled,
@@ -1250,16 +1237,16 @@ export function AgentEditorPage(): React.ReactElement {
                           setFormData({ ...formData, contextStrategy: e.target.value })
                         }
                       >
-                        {CONTEXT_STRATEGIES.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label} ({s.threshold})
+                        {strategies.map((s) => (
+                          <option key={s.name} value={s.name}>
+                            {s.displayName} ({Math.round(s.threshold * 100)}%)
                           </option>
                         ))}
                       </Form.Select>
                       <Form.Text className="text-muted">
                         {
-                          CONTEXT_STRATEGIES.find(
-                            (s) => s.value === formData.contextStrategy
+                          strategies.find(
+                            (s) => s.name === formData.contextStrategy
                           )?.description
                         }
                       </Form.Text>

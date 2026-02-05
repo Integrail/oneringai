@@ -235,6 +235,11 @@ async function setupIPC(): Promise<void> {
     return agentService!.listVendors();
   });
 
+  // Strategy operations
+  ipcMain.handle('strategy:list', async () => {
+    return agentService!.getStrategies();
+  });
+
   // Session operations
   ipcMain.handle('session:save', async () => {
     return agentService!.saveSession();

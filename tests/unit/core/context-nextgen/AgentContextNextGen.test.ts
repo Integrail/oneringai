@@ -17,6 +17,7 @@ import { MessageRole } from '@/domain/entities/Message.js';
 import { ContentType } from '@/domain/entities/Content.js';
 import type { InputItem, Message, OutputItem } from '@/domain/entities/Message.js';
 import type { IContextStorage, StoredContextSession, ContextSessionSummary, SerializedContextState } from '@/domain/interfaces/IContextStorage.js';
+import type { ICompactionStrategy, CompactionResult, ConsolidationResult } from '@/core/context-nextgen/types.js';
 
 /**
  * Create mock storage for testing
@@ -335,7 +336,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 500,
         responseReserve: 100,
-        strategy: 'proactive', // Lower threshold
+        strategy: 'default', // 70% threshold
         features: { workingMemory: false },
       });
 
@@ -363,7 +364,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 1000,
         responseReserve: 200,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -400,7 +401,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 500,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -428,7 +429,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 800,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
       });
 
       // Add a tool use/result pair
@@ -491,6 +492,90 @@ describe('AgentContextNextGen', () => {
       }
 
       smallCtx.destroy();
+    });
+  });
+
+  describe('Strategy Dependencies', () => {
+    // Custom strategy that requires specific plugins
+    class PluginDependentStrategy implements ICompactionStrategy {
+      readonly name = 'plugin-dependent';
+      readonly displayName = 'Plugin Dependent';
+      readonly description = 'Requires working_memory plugin';
+      readonly threshold = 0.75;
+      readonly requiredPlugins = ['working_memory'] as const;
+
+      async compact(): Promise<CompactionResult> {
+        return { tokensFreed: 0, messagesRemoved: 0, pluginsCompacted: [], log: [] };
+      }
+
+      async consolidate(): Promise<ConsolidationResult> {
+        return { performed: false, tokensChanged: 0, actions: [] };
+      }
+    }
+
+    it('should accept strategy when required plugins are present', () => {
+      // Working memory is enabled by default
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        features: { workingMemory: true },
+        compactionStrategy: new PluginDependentStrategy(),
+      });
+
+      expect(ctx.compactionStrategy.name).toBe('plugin-dependent');
+      ctx.destroy();
+    });
+
+    it('should throw when required plugin is missing at creation', () => {
+      expect(() => {
+        AgentContextNextGen.create({
+          model: 'gpt-4',
+          features: { workingMemory: false }, // Disabled!
+          compactionStrategy: new PluginDependentStrategy(),
+        });
+      }).toThrow(/requires plugins that are not registered/);
+    });
+
+    it('should throw when required plugin is missing on setCompactionStrategy', () => {
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        features: { workingMemory: false },
+      });
+
+      expect(() => {
+        ctx.setCompactionStrategy(new PluginDependentStrategy());
+      }).toThrow(/requires plugins that are not registered.*working_memory/);
+
+      ctx.destroy();
+    });
+
+    it('should list available plugins in error message', () => {
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        features: { workingMemory: false, inContextMemory: true },
+      });
+
+      try {
+        ctx.setCompactionStrategy(new PluginDependentStrategy());
+        expect.fail('Should have thrown');
+      } catch (e) {
+        const error = e as Error;
+        expect(error.message).toContain('working_memory');
+        expect(error.message).toContain('in_context_memory'); // Available plugin listed
+      }
+
+      ctx.destroy();
+    });
+
+    it('should allow strategy without requiredPlugins', () => {
+      // Default strategy has no requiredPlugins
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        features: { workingMemory: false },
+      });
+
+      expect(ctx.compactionStrategy.name).toBe('default');
+      expect(ctx.compactionStrategy.requiredPlugins).toBeUndefined();
+      ctx.destroy();
     });
   });
 
@@ -558,7 +643,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 400,
         responseReserve: 50,
-        strategy: 'lazy', // High threshold to not compact
+        strategy: 'default', // Default strategy (70% threshold)
         features: { workingMemory: false },
       });
 

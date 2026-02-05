@@ -47,6 +47,10 @@ import type {
   SerializedContextState,
   ContextEvents,
   PluginConfigs,
+  BeforeCompactionCallback,
+  ICompactionStrategy,
+  CompactionContext,
+  ConsolidationResult,
 } from './types.js';
 import type { IContextStorage, StoredContextSession } from '../../domain/interfaces/IContextStorage.js';
 
@@ -62,8 +66,10 @@ import type {
   PersistentInstructionsConfig,
 } from './plugins/index.js';
 
+// Strategy imports
+import { StrategyRegistry } from './strategies/index.js';
+
 import {
-  STRATEGY_THRESHOLDS,
   DEFAULT_FEATURES,
   DEFAULT_CONFIG,
 } from './types.js';
@@ -101,7 +107,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -110,8 +116,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Maximum context tokens for the model */
   private readonly _maxContextTokens: number;
 
-  /** Compaction strategy threshold */
-  private readonly _strategyThreshold: number;
+  /** Compaction strategy */
+  private _compactionStrategy: ICompactionStrategy;
 
   /** System prompt (user-provided) */
   private _systemPrompt: string | undefined;
@@ -142,6 +148,12 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** Destroyed flag */
   private _destroyed = false;
+
+  /** Cached budget from last prepare() call */
+  private _cachedBudget: ContextBudget | null = null;
+
+  /** Callback for beforeCompaction hook (set by Agent) */
+  private _beforeCompactionCallback: BeforeCompactionCallback | null = null;
 
   // ============================================================================
   // Static Factory
@@ -180,7 +192,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
     this._storage = config.storage;
-    this._strategyThreshold = STRATEGY_THRESHOLDS[this._config.strategy];
+
+    // Initialize compaction strategy
+    // Use custom strategy if provided, otherwise create from registry
+    this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
 
     // Create tool manager
     this._tools = new ToolManager();
@@ -228,6 +243,27 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         agentId: this._agentId,
         ...piConfig,
       }));
+    }
+
+    // Validate strategy dependencies now that plugins are initialized
+    this.validateStrategyDependencies(this._compactionStrategy);
+  }
+
+  /**
+   * Validate that a strategy's required plugins are registered.
+   * @throws Error if any required plugin is missing
+   */
+  private validateStrategyDependencies(strategy: ICompactionStrategy): void {
+    if (!strategy.requiredPlugins?.length) return;
+
+    const availablePlugins = new Set(this._plugins.keys());
+    const missing = strategy.requiredPlugins.filter(name => !availablePlugins.has(name));
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Strategy '${strategy.name}' requires plugins that are not registered: ${missing.join(', ')}. ` +
+        `Available plugins: ${Array.from(availablePlugins).join(', ') || 'none'}`
+      );
     }
   }
 
@@ -292,6 +328,39 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Get current tools token usage (useful for debugging) */
   get toolsTokens(): number {
     return this.calculateToolsTokens();
+  }
+
+  /**
+   * Get the cached budget from the last prepare() call.
+   * Returns null if prepare() hasn't been called yet.
+   */
+  get lastBudget(): ContextBudget | null {
+    return this._cachedBudget;
+  }
+
+  /**
+   * Get the current compaction strategy.
+   */
+  get compactionStrategy(): ICompactionStrategy {
+    return this._compactionStrategy;
+  }
+
+  /**
+   * Set the compaction strategy.
+   * Can be changed at runtime to switch compaction behavior.
+   */
+  setCompactionStrategy(strategy: ICompactionStrategy): void {
+    this.assertNotDestroyed();
+    this.validateStrategyDependencies(strategy);
+    this._compactionStrategy = strategy;
+  }
+
+  /**
+   * Set the beforeCompaction callback.
+   * Called by Agent to wire up lifecycle hooks.
+   */
+  setBeforeCompactionCallback(callback: BeforeCompactionCallback | null): void {
+    this._beforeCompactionCallback = callback;
   }
 
   // ============================================================================
@@ -637,8 +706,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     // Step 6: Check if compaction needed
     let compacted = false;
-    if (totalUsed / availableForContent > this._strategyThreshold) {
-      const targetToFree = totalUsed - Math.floor(availableForContent * (this._strategyThreshold - 0.1));
+    const strategyThreshold = this._compactionStrategy.threshold;
+    if (totalUsed / availableForContent > strategyThreshold) {
+      const targetToFree = totalUsed - Math.floor(availableForContent * (strategyThreshold - 0.1));
 
       const freed = await this.runCompaction(targetToFree, compactionLog);
       compacted = freed > 0;
@@ -667,6 +737,12 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         currentInput: currentInputTokens,
       },
     };
+
+    // Cache the budget for inspection via lastBudget getter
+    this._cachedBudget = budget;
+
+    // Emit budget:updated event for reactive monitoring
+    this.emit('budget:updated', { budget, timestamp: Date.now() });
 
     // Step 8: Emit budget warnings
     if (budget.utilizationPercent >= 90) {
@@ -883,178 +959,156 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /**
    * Run compaction to free up tokens.
+   * Delegates to the current compaction strategy.
    * Returns total tokens freed.
    */
   private async runCompaction(targetToFree: number, log: string[]): Promise<number> {
-    let totalFreed = 0;
-    let remaining = targetToFree;
+    const timestamp = Date.now();
 
-    log.push(`Compaction started: need to free ~${targetToFree} tokens`);
-
-    // Step 1: Compact plugins (in order of priority - most expendable first)
-    const compactablePlugins = Array.from(this._plugins.values())
-      .filter(p => p.isCompactable())
-      .sort((a, b) => {
-        // InContextMemory first, then WorkingMemory
-        const order: Record<string, number> = {
-          'in_context_memory': 1,
-          'working_memory': 2,
-        };
-        return (order[a.name] ?? 10) - (order[b.name] ?? 10);
+    // Emit compaction:starting event BEFORE any compaction occurs
+    if (this._cachedBudget) {
+      this.emit('compaction:starting', {
+        budget: this._cachedBudget,
+        targetTokensToFree: targetToFree,
+        timestamp,
       });
+    }
 
-    for (const plugin of compactablePlugins) {
-      if (remaining <= 0) break;
-
-      const freed = await plugin.compact(remaining);
-      if (freed > 0) {
-        totalFreed += freed;
-        remaining -= freed;
-        log.push(`Compacted ${plugin.name}: freed ~${freed} tokens`);
+    // Call beforeCompaction callback if set (allows Agent to invoke lifecycle hooks)
+    if (this._beforeCompactionCallback && this._cachedBudget) {
+      try {
+        await this._beforeCompactionCallback({
+          budget: this._cachedBudget,
+          targetTokensToFree: targetToFree,
+          strategy: this._compactionStrategy.name,
+        });
+      } catch (error) {
+        // Log but don't block compaction
+        log.push(`beforeCompaction callback error: ${(error as Error).message}`);
       }
     }
 
-    // Step 2: Compact conversation history if still needed
-    if (remaining > 0) {
-      const conversationFreed = await this.compactConversation(remaining, log);
-      totalFreed += conversationFreed;
-      remaining -= conversationFreed;
+    // Build CompactionContext for strategy
+    const context = this.buildCompactionContext();
+
+    // Delegate to strategy
+    const result = await this._compactionStrategy.compact(context, targetToFree);
+
+    // Merge strategy log with our log
+    log.push(...result.log);
+
+    if (result.tokensFreed > 0) {
+      this.emit('context:compacted', { tokensFreed: result.tokensFreed, log });
     }
 
-    log.push(`Compaction complete: freed ~${totalFreed} tokens total`);
-
-    if (totalFreed > 0) {
-      this.emit('context:compacted', { tokensFreed: totalFreed, log });
-    }
-
-    return totalFreed;
+    return result.tokensFreed;
   }
 
   /**
-   * Compact conversation history.
-   * Removes oldest messages while preserving tool pairs.
+   * Run post-cycle consolidation.
+   * Called by Agent after agentic cycle completes (before session save).
+   *
+   * Delegates to the current compaction strategy's consolidate() method.
+   * Use for more expensive operations like summarization.
    */
-  private async compactConversation(targetToFree: number, log: string[]): Promise<number> {
-    if (this._conversation.length === 0) return 0;
+  async consolidate(): Promise<ConsolidationResult> {
+    this.assertNotDestroyed();
 
-    // Find tool pairs (tool_use_id -> indices)
-    const toolPairs = this.findToolPairs();
+    const context = this.buildCompactionContext();
+    return this._compactionStrategy.consolidate(context);
+  }
 
-    // Find safe indices to remove (from oldest, not part of incomplete pairs)
-    const safeToRemove: number[] = [];
-    const inPair = new Set<number>();
+  /**
+   * Build CompactionContext for strategy.
+   * Provides controlled access to context state.
+   */
+  private buildCompactionContext(): CompactionContext {
+    const self = this;
 
-    for (const indices of toolPairs.values()) {
-      for (const idx of indices) {
-        inPair.add(idx);
-      }
-    }
+    return {
+      get budget(): ContextBudget {
+        // Return cached budget or calculate fresh
+        return self._cachedBudget ?? {
+          maxTokens: self._maxContextTokens,
+          responseReserve: self._config.responseReserve,
+          systemMessageTokens: 0,
+          toolsTokens: 0,
+          conversationTokens: 0,
+          currentInputTokens: 0,
+          totalUsed: 0,
+          available: self._maxContextTokens - self._config.responseReserve,
+          utilizationPercent: 0,
+          breakdown: {
+            systemPrompt: 0,
+            persistentInstructions: 0,
+            pluginInstructions: 0,
+            pluginContents: {},
+            tools: 0,
+            conversation: 0,
+            currentInput: 0,
+          },
+        };
+      },
 
-    // First pass: find messages that can be safely removed
-    for (let i = 0; i < this._conversation.length; i++) {
-      if (!inPair.has(i)) {
-        safeToRemove.push(i);
-      }
-    }
+      get conversation(): ReadonlyArray<InputItem> {
+        return self._conversation;
+      },
 
-    // Second pass: add complete pairs (both tool_use and tool_result present)
-    for (const [_toolUseId, indices] of toolPairs) {
-      // A complete pair has at least 2 messages
-      if (indices.length >= 2) {
-        for (const idx of indices) {
-          if (!safeToRemove.includes(idx)) {
-            safeToRemove.push(idx);
-          }
+      get currentInput(): ReadonlyArray<InputItem> {
+        return self._currentInput;
+      },
+
+      get plugins(): ReadonlyArray<IContextPluginNextGen> {
+        return Array.from(self._plugins.values());
+      },
+
+      get strategyName(): string {
+        return self._compactionStrategy.name;
+      },
+
+      async removeMessages(indices: number[]): Promise<number> {
+        return self.removeMessagesByIndices(indices);
+      },
+
+      async compactPlugin(pluginName: string, targetTokens: number): Promise<number> {
+        const plugin = self._plugins.get(pluginName);
+        if (!plugin || !plugin.isCompactable()) {
+          return 0;
         }
-      }
+        return plugin.compact(targetTokens);
+      },
+
+      estimateTokens(item: InputItem): number {
+        return self.estimateItemTokens(item);
+      },
+    };
+  }
+
+  /**
+   * Remove messages by indices.
+   * Handles tool pair preservation internally.
+   * Used by CompactionContext.removeMessages().
+   */
+  private removeMessagesByIndices(indices: number[]): number {
+    if (indices.length === 0 || this._conversation.length === 0) {
+      return 0;
     }
 
-    // Sort by index (oldest first)
-    safeToRemove.sort((a, b) => a - b);
-
-    // Remove messages until we've freed enough tokens
+    // Calculate tokens being freed
     let tokensFreed = 0;
-    const indicesToRemove = new Set<number>();
+    const indicesToRemove = new Set(indices);
 
-    for (const idx of safeToRemove) {
-      if (tokensFreed >= targetToFree) break;
-
-      // If this is part of a pair, remove the whole pair
+    for (const idx of indicesToRemove) {
       const item = this._conversation[idx];
-      if (!item) continue;
-
-      // Check if this message has tool_use or tool_result
-      const msg = item as Message;
-      for (const c of msg.content) {
-        if (c.type === ContentType.TOOL_USE) {
-          const toolUseId = (c as any).id;
-          const pairIndices = toolPairs.get(toolUseId);
-          if (pairIndices) {
-            for (const pairIdx of pairIndices) {
-              indicesToRemove.add(pairIdx);
-              tokensFreed += this.estimateItemTokens(this._conversation[pairIdx]!);
-            }
-          }
-        } else if (c.type === ContentType.TOOL_RESULT) {
-          const toolUseId = (c as any).tool_use_id;
-          const pairIndices = toolPairs.get(toolUseId);
-          if (pairIndices) {
-            for (const pairIdx of pairIndices) {
-              indicesToRemove.add(pairIdx);
-              tokensFreed += this.estimateItemTokens(this._conversation[pairIdx]!);
-            }
-          }
-        }
-      }
-
-      // If not part of a pair, just remove this message
-      if (!indicesToRemove.has(idx)) {
-        indicesToRemove.add(idx);
+      if (item) {
         tokensFreed += this.estimateItemTokens(item);
       }
     }
 
     // Build new conversation without removed messages
-    if (indicesToRemove.size > 0) {
-      this._conversation = this._conversation.filter((_, i) => !indicesToRemove.has(i));
-      log.push(`Removed ${indicesToRemove.size} messages from conversation: freed ~${tokensFreed} tokens`);
-    }
+    this._conversation = this._conversation.filter((_, i) => !indicesToRemove.has(i));
 
     return tokensFreed;
-  }
-
-  /**
-   * Find tool_use/tool_result pairs in conversation.
-   * Returns Map<tool_use_id, array of message indices>.
-   */
-  private findToolPairs(): Map<string, number[]> {
-    const pairs = new Map<string, number[]>();
-
-    for (let i = 0; i < this._conversation.length; i++) {
-      const item = this._conversation[i];
-      if (item?.type !== 'message') continue;
-
-      const msg = item as Message;
-      for (const c of msg.content) {
-        if (c.type === ContentType.TOOL_USE) {
-          const toolUseId = (c as any).id;
-          if (toolUseId) {
-            const existing = pairs.get(toolUseId) ?? [];
-            existing.push(i);
-            pairs.set(toolUseId, existing);
-          }
-        } else if (c.type === ContentType.TOOL_RESULT) {
-          const toolUseId = (c as any).tool_use_id;
-          if (toolUseId) {
-            const existing = pairs.get(toolUseId) ?? [];
-            existing.push(i);
-            pairs.set(toolUseId, existing);
-          }
-        }
-      }
-    }
-
-    return pairs;
   }
 
   /**
@@ -1440,35 +1494,30 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /**
-   * Calculate current token budget without triggering compaction.
+   * Get the current token budget.
    *
-   * Use this method to inspect the current context state for monitoring/debugging.
-   * Unlike prepare(), this does NOT:
-   * - Trigger compaction
-   * - Modify any state
-   * - Emit any events
+   * Returns the cached budget from the last prepare() call if available.
+   * If prepare() hasn't been called yet, calculates a fresh budget.
+   *
+   * For monitoring purposes, prefer using the `lastBudget` getter or
+   * subscribing to the `budget:updated` event for reactive updates.
    *
    * @returns Current token budget breakdown
    */
   async calculateBudget(): Promise<ContextBudget> {
     this.assertNotDestroyed();
 
-    // Calculate tool tokens (never compacted)
+    // Return cached budget if available (from last prepare() call)
+    if (this._cachedBudget) {
+      return this._cachedBudget;
+    }
+
+    // No cached budget yet - calculate fresh (this happens before first prepare() call)
     const toolsTokens = this.calculateToolsTokens();
-
-    // Calculate system message tokens
     const { systemTokens, breakdown } = await this.buildSystemMessage();
-
-    // Calculate conversation tokens
     const conversationTokens = this.calculateConversationTokens();
-
-    // Calculate current input tokens
     const currentInputTokens = this.calculateInputTokens(this._currentInput);
-
-    // Total used (includes tools for accurate reporting)
     const totalUsed = systemTokens + conversationTokens + currentInputTokens + toolsTokens;
-
-    // Calculate available
     const availableForContent = this._maxContextTokens - this._config.responseReserve;
 
     return {
@@ -1494,14 +1543,14 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    * Get the current strategy threshold (percentage at which compaction triggers).
    */
   get strategyThreshold(): number {
-    return this._strategyThreshold;
+    return this._compactionStrategy.threshold;
   }
 
   /**
    * Get the current strategy name.
    */
   get strategy(): string {
-    return this._config.strategy;
+    return this._compactionStrategy.name;
   }
 
   // ============================================================================

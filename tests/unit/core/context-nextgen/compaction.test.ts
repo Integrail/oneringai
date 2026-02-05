@@ -18,20 +18,20 @@ import type { Message, OutputItem, InputItem } from '@/domain/entities/Message.j
 
 describe('Context Compaction Edge Cases', () => {
   describe('Strategy Thresholds', () => {
-    it('should compact at 70% for proactive strategy', async () => {
+    it('should compact at 70% for default strategy', async () => {
       // Disable auto-plugins to allow small context for testing
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         maxContextTokens: 1000,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
       const compactedListener = vi.fn();
       ctx.on('context:compacted', compactedListener);
 
-      // Fill well beyond 70% capacity (proactive threshold)
+      // Fill well beyond 70% capacity (default threshold)
       // maxContextTokens: 1000, responseReserve: 100 = 900 available
       // 70% of 900 = 630 tokens needed to trigger compaction
       // Each message pair needs ~20-30 tokens to be meaningful
@@ -52,18 +52,18 @@ describe('Context Compaction Edge Cases', () => {
       ctx.destroy();
     });
 
-    it('should NOT compact at 70% for lazy strategy', async () => {
+    it('should NOT compact when below 70% threshold', async () => {
       // Disable auto-plugins to allow small context for testing
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         maxContextTokens: 1000,
         responseReserve: 100,
-        strategy: 'lazy',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
-      // Fill to about 70% capacity (below lazy threshold of 90%)
-      for (let i = 0; i < 8; i++) {
+      // Fill to about 50% capacity (well below 70% threshold)
+      for (let i = 0; i < 5; i++) {
         ctx.addUserMessage(`Message ${i}`);
         ctx.addAssistantResponse([{
           type: 'message',
@@ -74,19 +74,19 @@ describe('Context Compaction Edge Cases', () => {
 
       const { compacted } = await ctx.prepare();
 
-      // Should NOT have compacted with lazy strategy
+      // Should NOT have compacted since we're below threshold
       expect(compacted).toBe(false);
 
       ctx.destroy();
     });
 
-    it('should compact at 75% for proactive strategy (default)', async () => {
+    it('should compact when using default strategy and context is full', async () => {
       // Disable auto-plugins to allow small context for testing
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         maxContextTokens: 600,
         responseReserve: 100,
-        // strategy defaults to 'balanced' (80% threshold)
+        // strategy defaults to 'default' (70% threshold)
         features: { workingMemory: false },
       });
 
@@ -122,7 +122,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 3000, // Larger to fit both plugin tools (~1000 tokens)
         responseReserve: 300,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false, inContextMemory: false },
       });
 
@@ -166,7 +166,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 2000, // Larger to fit plugin tools
         responseReserve: 200,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false, inContextMemory: false },
       });
 
@@ -213,7 +213,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 600,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -280,7 +280,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 800,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -357,7 +357,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 600,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -434,7 +434,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 2000, // Larger to fit tool definitions
         responseReserve: 200,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -466,7 +466,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 2000, // Larger to fit tool definitions
         responseReserve: 200,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false, inContextMemory: false },
       });
 
@@ -499,7 +499,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 2000, // Larger context to fit tool definitions
         responseReserve: 200,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -533,7 +533,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 800,
         responseReserve: 100,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -569,7 +569,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 2000, // Larger to fit tool definitions
         responseReserve: 200,
-        strategy: 'proactive',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 

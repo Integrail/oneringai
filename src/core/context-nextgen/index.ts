@@ -21,15 +21,18 @@ export type {
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
-  CompactionStrategyName,
   IContextStorage,
   SerializedContextState,
   ContextEvents,
   PluginConfigs,
+  // Compaction strategy types
+  ICompactionStrategy,
+  CompactionContext,
+  CompactionResult,
+  ConsolidationResult,
 } from './types.js';
 
 export {
-  STRATEGY_THRESHOLDS,
   DEFAULT_FEATURES,
   DEFAULT_CONFIG,
 } from './types.js';
@@ -55,3 +58,17 @@ export type {
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
 } from './plugins/index.js';
+
+// Compaction strategies
+export {
+  DefaultCompactionStrategy,
+  type DefaultCompactionStrategyConfig,
+  AlgorithmicCompactionStrategy,
+  type AlgorithmicCompactionStrategyConfig,
+  // Strategy Registry
+  StrategyRegistry,
+  type StrategyClass,
+  type StrategyInfo,
+  type StrategyRegistryEntry,
+  type StrategyRegisterOptions,
+} from './strategies/index.js';

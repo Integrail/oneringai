@@ -237,6 +237,107 @@ describe('WorkingMemoryPluginNextGen', () => {
     });
   });
 
+  describe('Entry Count Eviction', () => {
+    it('should auto-evict when entry count exceeds maxIndexEntries', async () => {
+      // Create plugin with maxIndexEntries = 5
+      const limitedPlugin = new WorkingMemoryPluginNextGen({
+        config: {
+          maxIndexEntries: 5,
+          maxSizeBytes: 25 * 1024 * 1024,
+          descriptionMaxLength: 150,
+          softLimitPercent: 80,
+          contextAllocationPercent: 20,
+        },
+      });
+
+      // Store 5 entries (at limit)
+      for (let i = 0; i < 5; i++) {
+        await limitedPlugin.store(`key${i}`, `Entry ${i}`, { index: i });
+      }
+
+      let result = await limitedPlugin.query();
+      expect(result.entries).toHaveLength(5);
+
+      // Store 6th entry - should trigger eviction
+      await limitedPlugin.store('key5', 'Entry 5', { index: 5 });
+
+      result = await limitedPlugin.query();
+      expect(result.entries).toHaveLength(5); // Still 5, oldest evicted
+
+      limitedPlugin.destroy();
+    });
+
+    it('should evict lowest priority entries first when count exceeded', async () => {
+      const limitedPlugin = new WorkingMemoryPluginNextGen({
+        config: {
+          maxIndexEntries: 3,
+          maxSizeBytes: 25 * 1024 * 1024,
+          descriptionMaxLength: 150,
+          softLimitPercent: 80,
+          contextAllocationPercent: 20,
+        },
+      });
+
+      // Store entries with different priorities
+      await limitedPlugin.store('low1', 'Low priority 1', {}, { priority: 'low' });
+      await limitedPlugin.store('high1', 'High priority', {}, { priority: 'high' });
+      await limitedPlugin.store('low2', 'Low priority 2', {}, { priority: 'low' });
+
+      // All 3 fit
+      let result = await limitedPlugin.query();
+      expect(result.entries).toHaveLength(3);
+
+      // Add 4th - should evict a low priority entry
+      await limitedPlugin.store('normal1', 'Normal priority', {}, { priority: 'normal' });
+
+      result = await limitedPlugin.query();
+      expect(result.entries).toHaveLength(3);
+
+      // High priority should remain
+      expect(await limitedPlugin.retrieve('high1')).toBeDefined();
+
+      // One of the low priority entries should be evicted
+      const lowCount = result.entries.filter(e =>
+        e.key === 'low1' || e.key === 'low2'
+      ).length;
+      expect(lowCount).toBe(1);
+
+      limitedPlugin.destroy();
+    });
+
+    it('should not evict pinned entries when count exceeded', async () => {
+      const limitedPlugin = new WorkingMemoryPluginNextGen({
+        config: {
+          maxIndexEntries: 2,
+          maxSizeBytes: 25 * 1024 * 1024,
+          descriptionMaxLength: 150,
+          softLimitPercent: 80,
+          contextAllocationPercent: 20,
+        },
+      });
+
+      await limitedPlugin.store('pinned', 'Pinned entry', {}, { pinned: true });
+      await limitedPlugin.store('normal', 'Normal entry', {});
+
+      // At limit with 2 entries
+      let result = await limitedPlugin.query();
+      expect(result.entries).toHaveLength(2);
+
+      // Add 3rd - should evict normal, not pinned
+      await limitedPlugin.store('new', 'New entry', {});
+
+      result = await limitedPlugin.query();
+      expect(result.entries).toHaveLength(2);
+
+      // Pinned should remain
+      expect(await limitedPlugin.retrieve('pinned')).toBeDefined();
+      // Normal should be evicted
+      expect(await limitedPlugin.retrieve('normal')).toBeUndefined();
+
+      limitedPlugin.destroy();
+    });
+  });
+
   describe('Content for Context', () => {
     it('should return null when empty', async () => {
       const content = await plugin.getContent();

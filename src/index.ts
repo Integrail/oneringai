@@ -35,12 +35,15 @@ export {
   AgentContextNextGen,
   DEFAULT_FEATURES,
   DEFAULT_CONFIG,
-  STRATEGY_THRESHOLDS,
   BasePluginNextGen,
   simpleTokenEstimator,
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
+  // Compaction strategies
+  DefaultCompactionStrategy,
+  // Strategy Registry
+  StrategyRegistry,
 } from './core/index.js';
 export type {
   AgentContextNextGenConfig,
@@ -53,7 +56,6 @@ export type {
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
-  CompactionStrategyName,
   PluginConfigs,
   // IContextStorage exported from domain/interfaces below
   WorkingMemoryPluginConfig,
@@ -65,6 +67,15 @@ export type {
   SerializedInContextMemoryState,
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
+  // Compaction strategy types
+  ICompactionStrategy,
+  CompactionContext,
+  CompactionResult,
+  ConsolidationResult,
+  DefaultCompactionStrategyConfig,
+  // Strategy Registry types
+  StrategyInfo,
+  StrategyRegistryEntry,
 } from './core/index.js';
 
 // Context Guardian (mandatory hard limit enforcement)

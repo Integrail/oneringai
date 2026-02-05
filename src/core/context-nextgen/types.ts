@@ -29,87 +29,320 @@ export interface ITokenEstimator {
 // ============================================================================
 
 /**
- * Next-generation context plugin interface.
+ * Context plugin interface for NextGen context management.
  *
- * Plugins provide:
- * 1. Instructions (how to use the plugin) - added to system message, NEVER compacted
- * 2. Content (actual plugin data) - added to system message, may be compacted
- * 3. Tools (optional) - registered with ToolManager
+ * ## Implementing a Custom Plugin
  *
- * Each plugin is responsible for:
- * - Tracking its own token size
- * - Providing its full contents for inspection
- * - Compacting itself when requested
+ * 1. **Extend BasePluginNextGen** - provides token caching helpers
+ * 2. **Implement getInstructions()** - return LLM usage guide (static, cached)
+ * 3. **Implement getContent()** - return formatted content (Markdown with `##` header)
+ * 4. **Call updateTokenCache()** - after any state change that affects content
+ * 5. **Implement getTools()** - return tools with `<plugin_prefix>_*` naming
+ *
+ * ## Plugin Contributions
+ *
+ * Plugins provide three types of content to the system message:
+ * 1. **Instructions** - static usage guide for the LLM (NEVER compacted)
+ * 2. **Content** - dynamic plugin data/state (may be compacted)
+ * 3. **Tools** - registered with ToolManager (NEVER compacted)
+ *
+ * ## Token Cache Lifecycle
+ *
+ * Plugins must track their own token size for budget calculation. The pattern:
+ *
+ * ```typescript
+ * // When state changes:
+ * this._entries.set(key, value);
+ * this.invalidateTokenCache();  // Clear cached size
+ *
+ * // In getContent():
+ * const content = this.formatContent();
+ * this.updateTokenCache(this.estimator.estimateTokens(content));  // Update cache
+ * return content;
+ * ```
+ *
+ * ## Content Format
+ *
+ * `getContent()` should return Markdown with a descriptive header:
+ *
+ * ```markdown
+ * ## Plugin Display Name (optional stats)
+ *
+ * Formatted content here...
+ * - Entry 1: value
+ * - Entry 2: value
+ * ```
+ *
+ * Built-in plugins use these headers:
+ * - WorkingMemory: `## Working Memory (N entries)`
+ * - InContextMemory: `## Live Context (N entries)`
+ * - PersistentInstructions: No header (user's raw instructions)
+ *
+ * ## Tool Naming Convention
+ *
+ * Use a consistent prefix based on plugin name:
+ * - `working_memory` plugin → `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
+ * - `in_context_memory` plugin → `context_set`, `context_delete`, `context_list`
+ * - `persistent_instructions` plugin → `instructions_set`, `instructions_get`, etc.
+ *
+ * ## State Serialization
+ *
+ * `getState()` and `restoreState()` are **synchronous** for simplicity.
+ * If your plugin has async data, consider:
+ * - Storing only references/keys in state
+ * - Using a separate async initialization method
+ *
+ * @example
+ * ```typescript
+ * class MyPlugin extends BasePluginNextGen {
+ *   readonly name = 'my_plugin';
+ *   private _data = new Map<string, string>();
+ *
+ *   getInstructions(): string {
+ *     return '## My Plugin\n\nUse my_plugin_set to store data...';
+ *   }
+ *
+ *   async getContent(): Promise<string | null> {
+ *     if (this._data.size === 0) return null;
+ *     const lines = [...this._data].map(([k, v]) => `- ${k}: ${v}`);
+ *     const content = `## My Plugin (${this._data.size} entries)\n\n${lines.join('\n')}`;
+ *     this.updateTokenCache(this.estimator.estimateTokens(content));
+ *     return content;
+ *   }
+ *
+ *   getTools(): ToolFunction[] {
+ *     return [myPluginSetTool, myPluginGetTool];
+ *   }
+ *
+ *   getState(): unknown {
+ *     return { data: Object.fromEntries(this._data) };
+ *   }
+ *
+ *   restoreState(state: unknown): void {
+ *     const s = state as { data: Record<string, string> };
+ *     this._data = new Map(Object.entries(s.data || {}));
+ *     this.invalidateTokenCache();
+ *   }
+ * }
+ * ```
  */
 export interface IContextPluginNextGen {
-  /** Unique plugin name */
+  /** Unique plugin name (used for lookup and tool prefixing) */
   readonly name: string;
 
   /**
-   * Get instructions explaining how to use this plugin.
-   * These are added to the system message and NEVER compacted.
-   * Return null if no instructions needed.
+   * Get usage instructions for the LLM.
+   *
+   * Returns static text explaining how to use this plugin's tools
+   * and data. This is placed in the system message and is NEVER
+   * compacted - it persists throughout the conversation.
+   *
+   * Instructions should include:
+   * - What the plugin does
+   * - How to use available tools
+   * - Best practices and conventions
+   *
+   * @returns Instructions string or null if no instructions needed
+   *
+   * @example
+   * ```typescript
+   * getInstructions(): string {
+   *   return `## Working Memory
+   *
+   * Use memory_store to save important data for later retrieval.
+   * Use memory_retrieve to recall previously stored data.
+   *
+   * Best practices:
+   * - Use descriptive keys like 'user_preferences' not 'data1'
+   * - Store intermediate results that may be needed later`;
+   * }
+   * ```
    */
   getInstructions(): string | null;
 
   /**
-   * Get the formatted content to include in the system message.
-   * For example: InContextMemory returns formatted KVPs, WorkingMemory returns formatted index.
-   * Return null if no content to add (e.g., empty memory).
+   * Get formatted content to include in system message.
+   *
+   * Returns the plugin's current state formatted for LLM consumption.
+   * Should be Markdown with a `## Header`. This content CAN be compacted
+   * if `isCompactable()` returns true.
+   *
+   * **IMPORTANT:** Call `updateTokenCache()` with the content's token size
+   * before returning to keep budget calculations accurate.
+   *
+   * @returns Formatted content string or null if empty
+   *
+   * @example
+   * ```typescript
+   * async getContent(): Promise<string | null> {
+   *   if (this._entries.size === 0) return null;
+   *
+   *   const lines = this._entries.map(e => `- ${e.key}: ${e.value}`);
+   *   const content = `## My Plugin (${this._entries.size} entries)\n\n${lines.join('\n')}`;
+   *
+   *   // IMPORTANT: Update token cache before returning
+   *   this.updateTokenCache(this.estimator.estimateTokens(content));
+   *   return content;
+   * }
+   * ```
    */
   getContent(): Promise<string | null>;
 
   /**
    * Get the full raw contents of this plugin for inspection.
-   * Used by library clients to inspect plugin state.
-   * Returns the actual data structure, not formatted string.
+   *
+   * Used by library clients to programmatically inspect plugin state.
+   * Returns the actual data structure, not the formatted string.
+   *
+   * @returns Raw plugin data (entries map, array, etc.)
    */
   getContents(): unknown;
 
   /**
-   * Get current token size of this plugin's content.
-   * Each plugin is responsible for tracking its own size.
-   * This should return the token count for getContent() output.
+   * Get current token size of plugin content.
+   *
+   * Returns the cached token count from the last `updateTokenCache()` call.
+   * This is used for budget calculation in `prepare()`.
+   *
+   * The cache should be updated via `updateTokenCache()` whenever content
+   * changes. If cache is null, returns 0.
+   *
+   * @returns Current token count (0 if no content or cache not set)
    */
   getTokenSize(): number;
 
   /**
-   * Get token size of instructions (cached, rarely changes).
+   * Get token size of instructions (cached after first call).
+   *
+   * Instructions are static, so this is computed once and cached.
+   * Used for budget calculation.
+   *
+   * @returns Token count for instructions (0 if no instructions)
    */
   getInstructionsTokenSize(): number;
 
   /**
    * Whether this plugin's content can be compacted when context is tight.
+   *
+   * Return true if the plugin can reduce its content size when requested.
+   * Examples: evicting low-priority entries, summarizing, removing old data.
+   *
+   * Return false if content cannot be reduced (e.g., critical state).
+   *
+   * @returns true if compact() can free tokens
    */
   isCompactable(): boolean;
 
   /**
-   * Compact the plugin's content to free up tokens.
-   * Only called if isCompactable() returns true.
+   * Compact plugin content to free tokens.
    *
-   * @param targetTokensToFree - Approximate tokens we'd like to free
-   * @returns Actual tokens freed
+   * Called by compaction strategies when context is too full.
+   * Should attempt to free **approximately** `targetTokensToFree` tokens.
+   *
+   * This is a **best effort** operation:
+   * - May free more or less than requested
+   * - May return 0 if nothing can be compacted (e.g., all entries are critical)
+   * - Should prioritize removing lowest-priority/oldest data first
+   *
+   * Strategies may include:
+   * - Evicting low-priority entries
+   * - Summarizing verbose content
+   * - Removing oldest data
+   * - Truncating large values
+   *
+   * **IMPORTANT:** Call `invalidateTokenCache()` or `updateTokenCache()`
+   * after modifying content.
+   *
+   * @param targetTokensToFree - Approximate tokens to free (best effort)
+   * @returns Actual tokens freed (may be 0 if nothing can be compacted)
+   *
+   * @example
+   * ```typescript
+   * async compact(targetTokensToFree: number): Promise<number> {
+   *   const before = this.getTokenSize();
+   *   let freed = 0;
+   *
+   *   // Remove low-priority entries until target reached
+   *   const sorted = [...this._entries].sort(byPriority);
+   *   for (const entry of sorted) {
+   *     if (entry.priority === 'critical') continue; // Never remove critical
+   *     if (freed >= targetTokensToFree) break;
+   *
+   *     freed += entry.tokens;
+   *     this._entries.delete(entry.key);
+   *   }
+   *
+   *   this.invalidateTokenCache();
+   *   return freed;
+   * }
+   * ```
    */
   compact(targetTokensToFree: number): Promise<number>;
 
   /**
    * Get tools provided by this plugin.
-   * Tools are automatically registered with ToolManager.
+   *
+   * Tools are automatically registered with ToolManager when the plugin
+   * is added to the context. Use a consistent naming convention:
+   * `<prefix>_<action>` (e.g., `memory_store`, `context_set`).
+   *
+   * @returns Array of tool definitions (empty array if no tools)
    */
   getTools(): ToolFunction[];
 
   /**
    * Cleanup resources when context is destroyed.
+   *
+   * Called when AgentContextNextGen.destroy() is invoked.
+   * Use for releasing resources, closing connections, etc.
    */
   destroy(): void;
 
   /**
-   * Get serializable state for session persistence.
+   * Serialize plugin state for session persistence.
+   *
+   * **MUST be synchronous.** Return a JSON-serializable object representing
+   * the plugin's current state. This is called when saving a session.
+   *
+   * For plugins with async data (e.g., external storage), return only
+   * references/keys here and handle async restoration separately.
+   *
+   * @returns Serializable state object
+   *
+   * @example
+   * ```typescript
+   * getState(): unknown {
+   *   return {
+   *     entries: [...this._entries].map(([k, v]) => ({ key: k, ...v })),
+   *     version: 1,  // Include version for future migrations
+   *   };
+   * }
+   * ```
    */
   getState(): unknown;
 
   /**
-   * Restore state from saved session.
+   * Restore plugin state from serialized data.
+   *
+   * Called when loading a saved session. The state comes from a previous
+   * `getState()` call on the same plugin type.
+   *
+   * **IMPORTANT:** Call `invalidateTokenCache()` after restoring state
+   * to ensure token counts are recalculated.
+   *
+   * @param state - Previously serialized state from getState()
+   *
+   * @example
+   * ```typescript
+   * restoreState(state: unknown): void {
+   *   const s = state as { entries: Array<{ key: string; value: unknown }> };
+   *   this._entries.clear();
+   *   for (const entry of s.entries || []) {
+   *     this._entries.set(entry.key, entry);
+   *   }
+   *   this.invalidateTokenCache(); // IMPORTANT: refresh token cache
+   * }
+   * ```
    */
   restoreState(state: unknown): void;
 }
@@ -117,20 +350,6 @@ export interface IContextPluginNextGen {
 // ============================================================================
 // Compaction Strategy
 // ============================================================================
-
-/**
- * Strategy names - determine when compaction triggers
- */
-export type CompactionStrategyName = 'proactive' | 'balanced' | 'lazy';
-
-/**
- * Strategy thresholds (percentage of context used before compaction triggers)
- */
-export const STRATEGY_THRESHOLDS: Record<CompactionStrategyName, number> = {
-  proactive: 0.70, // Compact at 70% usage
-  balanced: 0.80, // Compact at 80% usage
-  lazy: 0.90, // Compact at 90% usage
-};
 
 // ============================================================================
 // Context Budget
@@ -300,8 +519,17 @@ export interface AgentContextNextGenConfig {
   /** System prompt provided by user */
   systemPrompt?: string;
 
-  /** Compaction strategy (default: 'balanced') */
-  strategy?: CompactionStrategyName;
+  /**
+   * Compaction strategy name (default: 'default').
+   * Used to create strategy from StrategyRegistry if compactionStrategy not provided.
+   */
+  strategy?: string;
+
+  /**
+   * Custom compaction strategy instance.
+   * If provided, overrides the `strategy` option.
+   */
+  compactionStrategy?: ICompactionStrategy;
 
   /** Feature flags */
   features?: ContextFeatures;
@@ -324,7 +552,7 @@ export interface AgentContextNextGenConfig {
  */
 export const DEFAULT_CONFIG = {
   responseReserve: 4096,
-  strategy: 'balanced' as CompactionStrategyName,
+  strategy: 'default',
 };
 
 // ============================================================================
@@ -356,11 +584,21 @@ export interface ContextEvents {
   /** Emitted when compaction is performed */
   'context:compacted': { tokensFreed: number; log: string[] };
 
+  /** Emitted right after budget is calculated in prepare() - for reactive monitoring */
+  'budget:updated': { budget: ContextBudget; timestamp: number };
+
   /** Emitted when budget reaches warning threshold (>70%) */
   'budget:warning': { budget: ContextBudget };
 
   /** Emitted when budget reaches critical threshold (>90%) */
   'budget:critical': { budget: ContextBudget };
+
+  /** Emitted when compaction is about to start */
+  'compaction:starting': {
+    budget: ContextBudget;
+    targetTokensToFree: number;
+    timestamp: number;
+  };
 
   /** Emitted when current input is too large */
   'input:oversized': { result: OversizedInputResult };
@@ -370,4 +608,161 @@ export interface ContextEvents {
 
   /** Emitted when conversation is cleared */
   'conversation:cleared': { reason?: string };
+}
+
+/**
+ * Callback type for beforeCompaction hook.
+ * Called before compaction starts, allowing agents to save important data.
+ */
+export type BeforeCompactionCallback = (info: {
+  budget: ContextBudget;
+  targetTokensToFree: number;
+  strategy: string;
+}) => Promise<void>;
+
+// ============================================================================
+// Compaction Strategy Interface (Pluggable)
+// ============================================================================
+
+/**
+ * Result of compact() operation.
+ */
+export interface CompactionResult {
+  /** Tokens actually freed by compaction */
+  tokensFreed: number;
+
+  /** Number of messages removed from conversation */
+  messagesRemoved: number;
+
+  /** Names of plugins that were compacted */
+  pluginsCompacted: string[];
+
+  /** Log of actions taken during compaction */
+  log: string[];
+}
+
+/**
+ * Result of consolidate() operation.
+ */
+export interface ConsolidationResult {
+  /** Whether any consolidation was performed */
+  performed: boolean;
+
+  /** Net token change (negative = freed, positive = added, e.g., summaries) */
+  tokensChanged: number;
+
+  /** Description of actions taken */
+  actions: string[];
+}
+
+/**
+ * Read-only context passed to compaction strategies.
+ * Provides access to data needed for compaction decisions and
+ * controlled methods to modify state.
+ */
+export interface CompactionContext {
+  /** Current budget (from prepare) */
+  readonly budget: ContextBudget;
+
+  /** Current conversation history (read-only) */
+  readonly conversation: ReadonlyArray<InputItem>;
+
+  /** Current input (read-only) */
+  readonly currentInput: ReadonlyArray<InputItem>;
+
+  /** Registered plugins (for querying state) */
+  readonly plugins: ReadonlyArray<IContextPluginNextGen>;
+
+  /** Strategy name for logging */
+  readonly strategyName: string;
+
+  // === Methods for strategy to modify state (controlled access) ===
+
+  /**
+   * Remove messages by indices.
+   * Handles tool pair preservation internally.
+   *
+   * @param indices - Array of message indices to remove
+   * @returns Tokens actually freed
+   */
+  removeMessages(indices: number[]): Promise<number>;
+
+  /**
+   * Compact a specific plugin.
+   *
+   * @param pluginName - Name of the plugin to compact
+   * @param targetTokens - Approximate tokens to free
+   * @returns Tokens actually freed
+   */
+  compactPlugin(pluginName: string, targetTokens: number): Promise<number>;
+
+  /**
+   * Estimate tokens for an item.
+   *
+   * @param item - Input item to estimate
+   * @returns Estimated token count
+   */
+  estimateTokens(item: InputItem): number;
+}
+
+/**
+ * Compaction strategy interface.
+ *
+ * Strategies implement two methods:
+ * - `compact()`: Emergency compaction when thresholds exceeded (called from prepare())
+ * - `consolidate()`: Post-cycle cleanup and optimization (called after agentic loop)
+ *
+ * Use `compact()` for quick, threshold-based token reduction.
+ * Use `consolidate()` for more expensive operations like summarization.
+ */
+export interface ICompactionStrategy {
+  /** Strategy name (unique identifier) for identification and logging */
+  readonly name: string;
+
+  /** Human-readable display name for UI */
+  readonly displayName: string;
+
+  /** Description explaining the strategy behavior */
+  readonly description: string;
+
+  /** Threshold percentage (0-1) at which compact() is triggered */
+  readonly threshold: number;
+
+  /**
+   * Plugin names this strategy requires to function.
+   * Validation is performed when strategy is assigned to context.
+   * If any required plugin is missing, an error is thrown.
+   *
+   * @example
+   * ```typescript
+   * readonly requiredPlugins = ['working_memory'] as const;
+   * ```
+   */
+  readonly requiredPlugins?: readonly string[];
+
+  /**
+   * Emergency compaction - triggered when context usage exceeds threshold.
+   * Called from prepare() when utilization > threshold.
+   *
+   * Should be fast and focus on freeing tokens quickly.
+   *
+   * @param context - Compaction context with controlled access to state
+   * @param targetToFree - Approximate tokens to free
+   * @returns Result describing what was done
+   */
+  compact(context: CompactionContext, targetToFree: number): Promise<CompactionResult>;
+
+  /**
+   * Post-cycle consolidation - run after agentic cycle completes.
+   * Called from Agent after run()/stream() finishes (before session save).
+   *
+   * Use for more expensive operations:
+   * - Summarizing long conversations
+   * - Memory optimization and deduplication
+   * - Promoting important data to persistent storage
+   *
+   * @param context - Compaction context with controlled access to state
+   * @returns Result describing what was done
+   */
+  consolidate(context: CompactionContext): Promise<ConsolidationResult>;
 }

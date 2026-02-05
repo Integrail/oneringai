@@ -36,12 +36,15 @@ export {
   AgentContextNextGen,
   DEFAULT_FEATURES,
   DEFAULT_CONFIG,
-  STRATEGY_THRESHOLDS,
   BasePluginNextGen,
   simpleTokenEstimator,
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
+  // Compaction strategies
+  DefaultCompactionStrategy,
+  // Strategy Registry
+  StrategyRegistry,
 } from './context-nextgen/index.js';
 export type {
   IContextPluginNextGen,
@@ -51,7 +54,6 @@ export type {
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
-  CompactionStrategyName,
   IContextStorage,
   SerializedContextState,
   ContextEvents,
@@ -65,6 +67,15 @@ export type {
   SerializedInContextMemoryState,
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
+  // Compaction strategy types
+  ICompactionStrategy,
+  CompactionContext,
+  CompactionResult,
+  ConsolidationResult,
+  DefaultCompactionStrategyConfig,
+  // Strategy Registry types
+  StrategyInfo,
+  StrategyRegistryEntry,
 } from './context-nextgen/index.js';
 
 // SmartCompactor - LLM-powered intelligent context compaction (Phase 4)
