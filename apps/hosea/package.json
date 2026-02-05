@@ -67,7 +67,33 @@
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/@everworker/oneringai/apps/**/*",
+      "!node_modules/@everworker/oneringai/src/**/*",
+      "!node_modules/@everworker/oneringai/tests/**/*",
+      "!node_modules/@everworker/oneringai/coverage/**/*",
+      "!node_modules/@everworker/oneringai/docs/**/*",
+      "!node_modules/@everworker/oneringai/examples/**/*",
+      "!node_modules/@everworker/oneringai/scripts/**/*",
+      "!node_modules/@everworker/oneringai/.git/**/*",
+      "!node_modules/@everworker/oneringai/*.md",
+      "!node_modules/@everworker/oneringai/tsconfig*.json",
+      "!node_modules/@everworker/oneringai/vitest*.ts",
+      "!node_modules/@everworker/oneringai/.eslint*",
+      "!node_modules/@everworker/oneringai/.prettier*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.vscode,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "asarUnpack": [
+      "node_modules/puppeteer/**/*"
     ],
     "publish": {
       "provider": "github",
