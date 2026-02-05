@@ -43,5 +43,7 @@ logs/
 *.temp
 .cache/
 
-# Publish script (contains GitHub token)
+# Publish scripts (contain secrets)
 publish.sh
+publish-nonotary.sh
+notarize-later.sh
