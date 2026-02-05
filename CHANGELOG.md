@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-02-05
 
 ### Added
-- Initial release of `@oneringai/agents`
+- Initial release of `@everworker/oneringai`
 - **Connector-First Architecture** - Single auth system with named connectors
 - **Multi-Provider Support** - OpenAI, Anthropic, Google, Groq, DeepSeek, Mistral, Grok, Together, Ollama
 - **AgentContextNextGen** - Plugin-based context management
