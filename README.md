@@ -927,6 +927,7 @@ Connector.create({
 });
 
 // Generate tools from the connector
+// Tools are prefixed with connector name: github_api, github_list_repos, etc.
 const tools = ConnectorTools.for('github');
 
 // Use with an agent

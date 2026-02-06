@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-06
+
+### Fixed
+- **Multimedia tool naming collisions** - Multiple vendors registering tools with the same base name (e.g., `generate_image`) caused only the last vendor's tools to survive deduplication in UIs. `ConnectorTools.for()` now prefixes service-specific tool names with the connector name (e.g., `google_generate_image`, `main-openai_text_to_speech`), matching the existing generic API tool pattern (`${connector.name}_api`).
+- **ToolRegistry display names** - `ToolRegistry` now resolves vendor display names via `getVendorInfo()` and strips connector prefixes for clean display names (e.g., "OpenAI Generate Image", "Google Text To Speech").
+
+### Changed
+- **ConnectorTools.for()** - Service-specific tools returned by registered factories are now prefixed with `${connector.name}_`. This is a **breaking change** if you reference multimedia tool names by their old unprefixed names (e.g., `generate_image` → `google_generate_image`).
+- **ToolRegistry.deriveDisplayName()** - Accepts `connectorName` parameter, strips connector prefix, prepends vendor display name.
+
 ## [0.1.0] - 2026-02-05
 
 ### Added
@@ -39,5 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Google (Gemini 3, Gemini 2.5)
 - Groq, DeepSeek, Mistral, Grok, Together AI, Ollama
 
-[Unreleased]: https://github.com/Integrail/oneringai/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Integrail/oneringai/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Integrail/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Integrail/oneringai/releases/tag/v0.1.0
