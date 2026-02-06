@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Scoped Connector Registry** - Pluggable access control for multi-tenant connector isolation
+  - `IConnectorRegistry` interface — read-only registry contract (`get`, `has`, `list`, `listAll`, `size`, `getDescriptionsForTools`, `getInfo`)
+  - `IConnectorAccessPolicy` interface — sync predicate with opaque `ConnectorAccessContext`
+  - `ScopedConnectorRegistry` class — filtered view over the Connector registry, gated by a user-provided policy
+  - `Connector.setAccessPolicy()` / `Connector.getAccessPolicy()` — global policy management
+  - `Connector.scoped(context)` — factory for scoped registry views
+  - `Connector.asRegistry()` — unfiltered `IConnectorRegistry` adapter over static methods
+  - `BaseAgentConfig.registry` — optional scoped registry for `Agent.create()`
+  - `ConnectorTools.for()`, `discoverAll()`, `findConnector()`, `findConnectors()` now accept optional `{ registry }` option
+  - Security: denied connectors produce the same "not found" error as missing ones (no information leakage)
+  - 29 new unit tests
+
 ### Fixed
 
 - **WorkingMemoryPluginNextGen state serialization** - `getState()` now returns actual entries instead of an empty array. Added synchronous `_syncEntries` cache to bridge the async `IMemoryStorage` with the synchronous `IContextPluginNextGen.getState()` contract. Session persistence now correctly saves and restores all Working Memory entries.

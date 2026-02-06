@@ -45,8 +45,12 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Complete Vendor Reference
 21. [OAuth for External APIs](#oauth-for-external-apis)
 22. [Model Registry](#model-registry)
-23. [Advanced Features](#advanced-features)
-24. [Production Deployment](#production-deployment)
+23. [Scoped Connector Registry](#scoped-connector-registry)
+    - Access Control Policies
+    - Multi-Tenant Isolation
+    - Using with Agent and ConnectorTools
+24. [Advanced Features](#advanced-features)
+25. [Production Deployment](#production-deployment)
 
 ---
 
@@ -284,6 +288,13 @@ console.log(names); // ['openai', 'anthropic', 'google']
 
 // Clear all (useful for testing)
 Connector.clear();
+
+// Get an IConnectorRegistry interface (unfiltered)
+const registry = Connector.asRegistry();
+
+// Create a scoped (filtered) view — see Scoped Connector Registry section
+Connector.setAccessPolicy(myPolicy);
+const scopedView = Connector.scoped({ tenantId: 'acme' });
 ```
 
 ### Supported Vendors
@@ -6321,6 +6332,10 @@ import { ConnectorTools } from '@everworker/oneringai';
 const tools = ConnectorTools.for('github');
 const tools = ConnectorTools.for(connector);  // Can pass instance too
 
+// With scoped registry (access control)
+const registry = Connector.scoped({ tenantId: 'acme' });
+const tools = ConnectorTools.for('github', undefined, { registry });
+
 // Get only the generic API tool
 const apiTool = ConnectorTools.genericAPI('github');
 
@@ -7229,6 +7244,209 @@ interface ILLMDescription {
 
 ---
 
+## Scoped Connector Registry
+
+In multi-user or multi-tenant systems, you often need to limit which connectors are visible to which users. The **Scoped Connector Registry** provides a pluggable access control layer over the Connector registry — a lightweight filtered view gated by a user-provided policy predicate. Zero changes to the existing API; scoping is entirely opt-in.
+
+### Access Control Policies
+
+Define a policy that determines which connectors a given context can access:
+
+```typescript
+import { Connector, ScopedConnectorRegistry } from '@everworker/oneringai';
+import type { IConnectorAccessPolicy, ConnectorAccessContext } from '@everworker/oneringai';
+
+// Tag-based policy: connector must have a matching tenant tag
+const tenantPolicy: IConnectorAccessPolicy = {
+  canAccess: (connector, context) => {
+    const tags = connector.config.tags as string[] | undefined;
+    const tenantId = context.tenantId as string;
+    return !!tags && tags.includes(tenantId);
+  },
+};
+
+// Role-based policy
+const rolePolicy: IConnectorAccessPolicy = {
+  canAccess: (connector, context) => {
+    const roles = context.roles as string[];
+    if (roles.includes('admin')) return true;
+    // Non-admins can only see connectors in their department
+    const dept = connector.config.tags as string[] | undefined;
+    return !!dept && dept.includes(context.department as string);
+  },
+};
+```
+
+**Policy rules:**
+- `canAccess()` is **synchronous** — access checks must be fast, policy data should be in-memory
+- `context` is an opaque `Record<string, unknown>` — the library imposes no structure
+- The policy receives the full `Connector` instance so it can inspect `config.tags`, `vendor`, `serviceType`, `baseURL`, etc.
+
+### Setting a Global Policy
+
+```typescript
+// Set the policy (required before calling Connector.scoped())
+Connector.setAccessPolicy(tenantPolicy);
+
+// Check current policy
+const current = Connector.getAccessPolicy(); // IConnectorAccessPolicy | null
+
+// Clear the policy
+Connector.setAccessPolicy(null);
+```
+
+### Creating Scoped Views
+
+```typescript
+// Create a scoped view for tenant "acme"
+const acmeRegistry = Connector.scoped({ tenantId: 'acme' });
+
+// Only connectors tagged with "acme" are visible
+acmeRegistry.list();       // ['acme-openai', 'acme-slack']
+acmeRegistry.size();       // 2
+acmeRegistry.has('other'); // false
+
+// Accessing a denied connector gives the same "not found" error
+// as a truly non-existent one — no information leakage
+acmeRegistry.get('competitor-key');
+// throws: "Connector 'competitor-key' not found. Available: acme-openai, acme-slack"
+```
+
+You can also create a `ScopedConnectorRegistry` directly with any policy (not just the global one):
+
+```typescript
+import { ScopedConnectorRegistry } from '@everworker/oneringai';
+
+const custom = new ScopedConnectorRegistry(myPolicy, { userId: 'user-123' });
+```
+
+### Unfiltered Admin View
+
+When your code accepts `IConnectorRegistry` but you want the full, unfiltered view:
+
+```typescript
+import type { IConnectorRegistry } from '@everworker/oneringai';
+
+// Returns an IConnectorRegistry that delegates to Connector static methods
+const adminRegistry: IConnectorRegistry = Connector.asRegistry();
+
+// Full access, no filtering
+adminRegistry.list(); // all connectors
+```
+
+### Using with Agent
+
+Pass a scoped registry to `Agent.create()` via the `registry` option:
+
+```typescript
+const registry = Connector.scoped({ tenantId: 'acme' });
+
+const agent = Agent.create({
+  connector: 'acme-openai',  // Resolved via scoped registry
+  model: 'gpt-4',
+  registry,
+});
+
+// The agent can only see connectors accessible to 'acme'
+```
+
+If the connector name isn't accessible through the scoped registry, agent creation throws the standard "Connector not found" error listing only visible connectors.
+
+### Using with ConnectorTools
+
+All major `ConnectorTools` methods accept an optional `{ registry }` option:
+
+```typescript
+const registry = Connector.scoped({ tenantId: 'acme' });
+
+// Get tools for a specific connector (resolved via scoped registry)
+const tools = ConnectorTools.for('acme-slack', undefined, { registry });
+
+// Discover tools for all accessible connectors
+const allTools = ConnectorTools.discoverAll(undefined, { registry });
+
+// Find connectors by service type (searches only accessible connectors)
+const github = ConnectorTools.findConnector('github', { registry });
+const allGithubs = ConnectorTools.findConnectors('github', { registry });
+```
+
+### Multi-Tenant Example
+
+```typescript
+import { Connector, Agent, Vendor, ConnectorTools } from '@everworker/oneringai';
+import type { IConnectorAccessPolicy } from '@everworker/oneringai';
+
+// 1. Create connectors with tenant tags
+Connector.create({
+  name: 'acme-openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.ACME_OPENAI_KEY! },
+  tags: ['acme'],
+});
+
+Connector.create({
+  name: 'globex-openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.GLOBEX_OPENAI_KEY! },
+  tags: ['globex'],
+});
+
+Connector.create({
+  name: 'acme-github',
+  auth: { type: 'api_key', apiKey: process.env.ACME_GITHUB_TOKEN! },
+  baseURL: 'https://api.github.com',
+  tags: ['acme'],
+});
+
+// 2. Set up the policy
+const policy: IConnectorAccessPolicy = {
+  canAccess: (connector, ctx) => {
+    const tags = connector.config.tags as string[] | undefined;
+    return !!tags && tags.includes(ctx.tenantId as string);
+  },
+};
+Connector.setAccessPolicy(policy);
+
+// 3. Per-request: create a scoped view
+function handleRequest(tenantId: string) {
+  const registry = Connector.scoped({ tenantId });
+
+  // This tenant can only see their own connectors
+  const agent = Agent.create({
+    connector: `${tenantId}-openai`,
+    model: 'gpt-4',
+    registry,
+  });
+
+  // Discover tools only for this tenant's connectors
+  const tools = ConnectorTools.discoverAll(undefined, { registry });
+
+  return { agent, tools };
+}
+
+// Acme sees: acme-openai, acme-github
+handleRequest('acme');
+
+// Globex sees: globex-openai
+handleRequest('globex');
+```
+
+### IConnectorRegistry Interface
+
+The `IConnectorRegistry` interface covers the read-only subset of Connector static methods:
+
+| Method | Description |
+|--------|-------------|
+| `get(name)` | Get connector by name (throws if not found/denied) |
+| `has(name)` | Check if connector exists and is accessible |
+| `list()` | List accessible connector names |
+| `listAll()` | List accessible connector instances |
+| `size()` | Count of accessible connectors |
+| `getDescriptionsForTools()` | Formatted descriptions for LLM tool parameters |
+| `getInfo()` | Connector info map for UI/documentation |
+
+---
+
 ## Advanced Features
 
 ### Hooks & Lifecycle Events
@@ -7690,5 +7908,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-01-28
-**Version:** 0.2.0
+**Last Updated:** 2026-02-06
+**Version:** 0.1.2

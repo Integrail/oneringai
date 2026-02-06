@@ -558,6 +558,10 @@ export type { IToolExecutor } from './domain/interfaces/IToolExecutor.js';
 export type { IDisposable, IAsyncDisposable } from './domain/interfaces/IDisposable.js';
 export { assertNotDestroyed } from './domain/interfaces/IDisposable.js';
 
+// Connector Registry & Access Control
+export type { IConnectorRegistry } from './domain/interfaces/IConnectorRegistry.js';
+export type { IConnectorAccessPolicy, ConnectorAccessContext } from './domain/interfaces/IConnectorAccessPolicy.js';
+
 // Audio Interfaces
 export type {
   ITextToSpeechProvider,
@@ -642,6 +646,7 @@ export type {
   GenericAPIToolOptions,
   GenericAPICallArgs,
   GenericAPICallResult,
+  ConnectorToolsOptions,
 } from './tools/connector/index.js';
 
 // ============ OAuth & Storage (for external APIs) ============

@@ -30,6 +30,7 @@
 - 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
+- 🔐 **Scoped Connector Registry** - NEW: Pluggable access control for multi-tenant connector isolation
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
 - 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
 - 🔄 **Streaming** - Real-time responses with event streams
@@ -963,6 +964,51 @@ const metrics = connector.getMetrics();
 console.log(`Success rate: ${metrics.successCount / metrics.requestCount * 100}%`);
 ```
 
+#### Scoped Connector Registry (NEW)
+
+Limit connector visibility by user, group, or tenant in multi-user systems:
+
+```typescript
+import { Connector, ScopedConnectorRegistry } from '@everworker/oneringai';
+import type { IConnectorAccessPolicy } from '@everworker/oneringai';
+
+// Define an access policy
+const policy: IConnectorAccessPolicy = {
+  canAccess: (connector, context) => {
+    const tags = connector.config.tags as string[] | undefined;
+    return !!tags && tags.includes(context.tenantId as string);
+  },
+};
+
+// Set the global policy
+Connector.setAccessPolicy(policy);
+
+// Create a scoped view for a specific tenant
+const registry = Connector.scoped({ tenantId: 'acme-corp' });
+
+// Only connectors tagged with 'acme-corp' are visible
+registry.list();           // ['acme-openai', 'acme-slack']
+registry.get('other-co');  // throws "not found" (no info leakage)
+
+// Use with Agent
+const agent = Agent.create({
+  connector: 'acme-openai',
+  model: 'gpt-4',
+  registry,  // Agent resolves connectors through the scoped view
+});
+
+// Use with ConnectorTools
+const tools = ConnectorTools.for('acme-slack', undefined, { registry });
+const allTools = ConnectorTools.discoverAll(undefined, { registry });
+```
+
+**Features:**
+- Pluggable `IConnectorAccessPolicy` interface — bring your own access logic
+- Opaque context object (`{ userId, tenantId, roles, ... }`) — library imposes no structure
+- Denied connectors get the same "not found" error — no information leakage
+- Zero changes to existing API — scoping is entirely opt-in
+- Works with `Agent.create()`, `ConnectorTools.for()`, and `ConnectorTools.discoverAll()`
+
 #### Vendor Templates (NEW)
 
 Quickly set up connectors for 43+ services with pre-configured authentication templates:
@@ -1193,6 +1239,7 @@ User Code → Connector Registry → Agent → Provider → LLM
 - ✅ Named connectors for easy reference
 - ✅ No API key management in agent code
 - ✅ Same pattern for AI providers AND external APIs
+- ✅ Scoped registry for multi-tenant access control
 
 ## Troubleshooting
 
@@ -1218,8 +1265,8 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.1.0
-**Last Updated:** 2026-02-05
+**Version:** 0.1.2
+**Last Updated:** 2026-02-06
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
 

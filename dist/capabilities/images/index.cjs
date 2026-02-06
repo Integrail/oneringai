@@ -1452,6 +1452,58 @@ var metrics = createMetricsCollector(
   process.env.METRICS_PREFIX || "oneringai"
 );
 
+// src/core/ScopedConnectorRegistry.ts
+var ScopedConnectorRegistry = class {
+  constructor(policy, context) {
+    this.policy = policy;
+    this.context = context;
+  }
+  get(name) {
+    if (!Connector.has(name)) {
+      const available = this.list().join(", ") || "none";
+      throw new Error(`Connector '${name}' not found. Available: ${available}`);
+    }
+    const connector = Connector.get(name);
+    if (!this.policy.canAccess(connector, this.context)) {
+      const available = this.list().join(", ") || "none";
+      throw new Error(`Connector '${name}' not found. Available: ${available}`);
+    }
+    return connector;
+  }
+  has(name) {
+    if (!Connector.has(name)) return false;
+    const connector = Connector.get(name);
+    return this.policy.canAccess(connector, this.context);
+  }
+  list() {
+    return this.listAll().map((c) => c.name);
+  }
+  listAll() {
+    return Connector.listAll().filter((c) => this.policy.canAccess(c, this.context));
+  }
+  size() {
+    return this.listAll().length;
+  }
+  getDescriptionsForTools() {
+    const connectors = this.listAll();
+    if (connectors.length === 0) {
+      return "No connectors registered yet.";
+    }
+    return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || "No description"}`).join("\n");
+  }
+  getInfo() {
+    const info = {};
+    for (const connector of this.listAll()) {
+      info[connector.name] = {
+        displayName: connector.displayName,
+        description: connector.config.description || "",
+        baseURL: connector.baseURL
+      };
+    }
+    return info;
+  }
+};
+
 // src/core/Connector.ts
 var DEFAULT_CONNECTOR_TIMEOUT = 3e4;
 var DEFAULT_MAX_RETRIES = 3;
@@ -1536,6 +1588,50 @@ var Connector = class _Connector {
    */
   static size() {
     return _Connector.registry.size;
+  }
+  // ============ Access Control ============
+  static _accessPolicy = null;
+  /**
+   * Set a global access policy for connector scoping.
+   * Pass null to clear the policy.
+   */
+  static setAccessPolicy(policy) {
+    _Connector._accessPolicy = policy;
+  }
+  /**
+   * Get the current global access policy (or null if none set).
+   */
+  static getAccessPolicy() {
+    return _Connector._accessPolicy;
+  }
+  /**
+   * Create a scoped (filtered) view of the connector registry.
+   * Requires a global access policy to be set via setAccessPolicy().
+   *
+   * @param context - Opaque context passed to the policy (e.g., { userId, tenantId })
+   * @returns IConnectorRegistry that only exposes accessible connectors
+   * @throws Error if no access policy is set
+   */
+  static scoped(context) {
+    if (!_Connector._accessPolicy) {
+      throw new Error("No access policy set. Call Connector.setAccessPolicy() first.");
+    }
+    return new ScopedConnectorRegistry(_Connector._accessPolicy, context);
+  }
+  /**
+   * Return the static Connector methods as an IConnectorRegistry object (unfiltered).
+   * Useful when code accepts the interface but you want the full admin view.
+   */
+  static asRegistry() {
+    return {
+      get: (name) => _Connector.get(name),
+      has: (name) => _Connector.has(name),
+      list: () => _Connector.list(),
+      listAll: () => _Connector.listAll(),
+      size: () => _Connector.size(),
+      getDescriptionsForTools: () => _Connector.getDescriptionsForTools(),
+      getInfo: () => _Connector.getInfo()
+    };
   }
   /**
    * Get connector descriptions formatted for tool parameters

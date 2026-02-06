@@ -27,4 +27,5 @@ export {
   type GenericAPIToolOptions,
   type GenericAPICallArgs,
   type GenericAPICallResult,
+  type ConnectorToolsOptions,
 } from './ConnectorTools.js';

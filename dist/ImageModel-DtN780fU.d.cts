@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 
 /**
  * Supported AI Vendors
@@ -228,6 +228,57 @@ interface ITokenStorage {
 }
 
 /**
+ * IConnectorRegistry - Read-only interface for connector lookup
+ *
+ * Covers the read-only subset of Connector static methods.
+ * Used by ScopedConnectorRegistry to provide filtered views
+ * and by consumers that only need to read from the registry.
+ */
+
+interface IConnectorRegistry {
+    /** Get a connector by name. Throws if not found (or not accessible). */
+    get(name: string): Connector;
+    /** Check if a connector exists (and is accessible) */
+    has(name: string): boolean;
+    /** List all accessible connector names */
+    list(): string[];
+    /** List all accessible connector instances */
+    listAll(): Connector[];
+    /** Get number of accessible connectors */
+    size(): number;
+    /** Get connector descriptions formatted for tool parameters */
+    getDescriptionsForTools(): string;
+    /** Get connector info map */
+    getInfo(): Record<string, {
+        displayName: string;
+        description: string;
+        baseURL: string;
+    }>;
+}
+
+/**
+ * IConnectorAccessPolicy - Pluggable access control for connector registry
+ *
+ * Policies are sync-only for performance — access checks must be fast
+ * and policy data should be in-memory.
+ */
+
+/**
+ * Opaque context passed to access policy checks.
+ * Library imposes no structure — consumers define their own shape
+ * (e.g., { userId, tenantId, roles }).
+ */
+type ConnectorAccessContext = Record<string, unknown>;
+interface IConnectorAccessPolicy {
+    /**
+     * Check if a connector is accessible in the given context.
+     * Receives the full Connector instance so it can inspect
+     * config.tags, vendor, serviceType, etc.
+     */
+    canAccess(connector: Connector, context: ConnectorAccessContext): boolean;
+}
+
+/**
  * Connector - The single source of truth for authentication
  *
  * Manages authenticated connections to:
@@ -305,6 +356,30 @@ declare class Connector {
      * Get number of registered connectors
      */
     static size(): number;
+    private static _accessPolicy;
+    /**
+     * Set a global access policy for connector scoping.
+     * Pass null to clear the policy.
+     */
+    static setAccessPolicy(policy: IConnectorAccessPolicy | null): void;
+    /**
+     * Get the current global access policy (or null if none set).
+     */
+    static getAccessPolicy(): IConnectorAccessPolicy | null;
+    /**
+     * Create a scoped (filtered) view of the connector registry.
+     * Requires a global access policy to be set via setAccessPolicy().
+     *
+     * @param context - Opaque context passed to the policy (e.g., { userId, tenantId })
+     * @returns IConnectorRegistry that only exposes accessible connectors
+     * @throws Error if no access policy is set
+     */
+    static scoped(context: ConnectorAccessContext): IConnectorRegistry;
+    /**
+     * Return the static Connector methods as an IConnectorRegistry object (unfiltered).
+     * Useful when code accepts the interface but you want the full admin view.
+     */
+    static asRegistry(): IConnectorRegistry;
     /**
      * Get connector descriptions formatted for tool parameters
      * Useful for generating dynamic tool descriptions
@@ -760,4 +835,4 @@ declare function getImageModelsWithFeature(feature: keyof IImageModelDescription
  */
 declare function calculateImageCost(modelName: string, imageCount: number, quality?: 'standard' | 'hd'): number | null;
 
-export { type AudioFormat as A, type ImageResponse as B, Connector as C, type AspectRatio$1 as D, type OutputFormat as E, type ISourceLinks as F, DEFAULT_CONNECTOR_TIMEOUT as G, DEFAULT_MAX_RETRIES as H, type IBaseModelDescription as I, type JWTConnectorAuth as J, DEFAULT_RETRYABLE_STATUSES as K, DEFAULT_BASE_DELAY_MS as L, DEFAULT_MAX_DELAY_MS as M, type OAuthConnectorAuth as O, type QualityLevel as Q, type StoredToken as S, type VendorOptionSchema as V, Vendor as a, type IImageProvider as b, type ConnectorFetchOptions as c, type ITokenStorage as d, type ConnectorConfig as e, type ConnectorAuth as f, type ConnectorConfigResult as g, VENDORS as h, isVendor as i, ImageGeneration as j, type ImageGenerationCreateOptions as k, type SimpleGenerateOptions as l, type APIKeyConnectorAuth as m, type IImageModelDescription as n, type ImageModelCapabilities as o, type ImageModelPricing as p, IMAGE_MODELS as q, IMAGE_MODEL_REGISTRY as r, getImageModelInfo as s, getImageModelsByVendor as t, getActiveImageModels as u, getImageModelsWithFeature as v, calculateImageCost as w, type ImageGenerateOptions as x, type ImageEditOptions as y, type ImageVariationOptions as z };
+export { type AudioFormat as A, type ImageGenerateOptions as B, type ConnectorAccessContext as C, type ImageEditOptions as D, type ImageVariationOptions as E, type ImageResponse as F, type AspectRatio$1 as G, type OutputFormat as H, type IConnectorRegistry as I, type JWTConnectorAuth as J, type ISourceLinks as K, DEFAULT_CONNECTOR_TIMEOUT as L, DEFAULT_MAX_RETRIES as M, DEFAULT_RETRYABLE_STATUSES as N, type OAuthConnectorAuth as O, DEFAULT_BASE_DELAY_MS as P, type QualityLevel as Q, DEFAULT_MAX_DELAY_MS as R, type StoredToken as S, type VendorOptionSchema as V, type IConnectorAccessPolicy as a, Connector as b, type IBaseModelDescription as c, Vendor as d, type IImageProvider as e, type ConnectorFetchOptions as f, type ITokenStorage as g, type ConnectorConfig as h, type ConnectorAuth as i, type ConnectorConfigResult as j, VENDORS as k, isVendor as l, ImageGeneration as m, type ImageGenerationCreateOptions as n, type SimpleGenerateOptions as o, type APIKeyConnectorAuth as p, type IImageModelDescription as q, type ImageModelCapabilities as r, type ImageModelPricing as s, IMAGE_MODELS as t, IMAGE_MODEL_REGISTRY as u, getImageModelInfo as v, getImageModelsByVendor as w, getActiveImageModels as x, getImageModelsWithFeature as y, calculateImageCost as z };

@@ -1628,6 +1628,64 @@ var init_Metrics = __esm({
   }
 });
 
+// src/core/ScopedConnectorRegistry.ts
+exports.ScopedConnectorRegistry = void 0;
+var init_ScopedConnectorRegistry = __esm({
+  "src/core/ScopedConnectorRegistry.ts"() {
+    init_Connector();
+    exports.ScopedConnectorRegistry = class {
+      constructor(policy, context) {
+        this.policy = policy;
+        this.context = context;
+      }
+      get(name) {
+        if (!exports.Connector.has(name)) {
+          const available = this.list().join(", ") || "none";
+          throw new Error(`Connector '${name}' not found. Available: ${available}`);
+        }
+        const connector = exports.Connector.get(name);
+        if (!this.policy.canAccess(connector, this.context)) {
+          const available = this.list().join(", ") || "none";
+          throw new Error(`Connector '${name}' not found. Available: ${available}`);
+        }
+        return connector;
+      }
+      has(name) {
+        if (!exports.Connector.has(name)) return false;
+        const connector = exports.Connector.get(name);
+        return this.policy.canAccess(connector, this.context);
+      }
+      list() {
+        return this.listAll().map((c) => c.name);
+      }
+      listAll() {
+        return exports.Connector.listAll().filter((c) => this.policy.canAccess(c, this.context));
+      }
+      size() {
+        return this.listAll().length;
+      }
+      getDescriptionsForTools() {
+        const connectors = this.listAll();
+        if (connectors.length === 0) {
+          return "No connectors registered yet.";
+        }
+        return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || "No description"}`).join("\n");
+      }
+      getInfo() {
+        const info = {};
+        for (const connector of this.listAll()) {
+          info[connector.name] = {
+            displayName: connector.displayName,
+            description: connector.config.description || "",
+            baseURL: connector.baseURL
+          };
+        }
+        return info;
+      }
+    };
+  }
+});
+
 // src/core/Connector.ts
 var Connector_exports = {};
 __export(Connector_exports, {
@@ -1647,6 +1705,7 @@ var init_Connector = __esm({
     init_BackoffStrategy();
     init_Logger();
     init_Metrics();
+    init_ScopedConnectorRegistry();
     exports.DEFAULT_CONNECTOR_TIMEOUT = 3e4;
     exports.DEFAULT_MAX_RETRIES = 3;
     exports.DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
@@ -1730,6 +1789,50 @@ var init_Connector = __esm({
        */
       static size() {
         return _Connector.registry.size;
+      }
+      // ============ Access Control ============
+      static _accessPolicy = null;
+      /**
+       * Set a global access policy for connector scoping.
+       * Pass null to clear the policy.
+       */
+      static setAccessPolicy(policy) {
+        _Connector._accessPolicy = policy;
+      }
+      /**
+       * Get the current global access policy (or null if none set).
+       */
+      static getAccessPolicy() {
+        return _Connector._accessPolicy;
+      }
+      /**
+       * Create a scoped (filtered) view of the connector registry.
+       * Requires a global access policy to be set via setAccessPolicy().
+       *
+       * @param context - Opaque context passed to the policy (e.g., { userId, tenantId })
+       * @returns IConnectorRegistry that only exposes accessible connectors
+       * @throws Error if no access policy is set
+       */
+      static scoped(context) {
+        if (!_Connector._accessPolicy) {
+          throw new Error("No access policy set. Call Connector.setAccessPolicy() first.");
+        }
+        return new exports.ScopedConnectorRegistry(_Connector._accessPolicy, context);
+      }
+      /**
+       * Return the static Connector methods as an IConnectorRegistry object (unfiltered).
+       * Useful when code accepts the interface but you want the full admin view.
+       */
+      static asRegistry() {
+        return {
+          get: (name) => _Connector.get(name),
+          has: (name) => _Connector.has(name),
+          list: () => _Connector.list(),
+          listAll: () => _Connector.listAll(),
+          size: () => _Connector.size(),
+          getDescriptionsForTools: () => _Connector.getDescriptionsForTools(),
+          getInfo: () => _Connector.getInfo()
+        };
       }
       /**
        * Get connector descriptions formatted for tool parameters
@@ -6460,13 +6563,13 @@ var require_core = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger4) {
-      if (logger4 === false)
+    function getLogger(logger2) {
+      if (logger2 === false)
         return noLogs;
-      if (logger4 === void 0)
+      if (logger2 === void 0)
         return console;
-      if (logger4.log && logger4.warn && logger4.error)
-        return logger4;
+      if (logger2.log && logger2.warn && logger2.error)
+        return logger2;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -12285,13 +12388,13 @@ var require_core3 = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger4) {
-      if (logger4 === false)
+    function getLogger(logger2) {
+      if (logger2 === false)
         return noLogs;
-      if (logger4 === void 0)
+      if (logger2 === void 0)
         return console;
-      if (logger4.log && logger4.warn && logger4.error)
-        return logger4;
+      if (logger2.log && logger2.warn && logger2.error)
+        return logger2;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -14955,6 +15058,7 @@ var require_cross_spawn = __commonJS({
 
 // src/core/index.ts
 init_Connector();
+init_ScopedConnectorRegistry();
 
 // src/core/BaseAgent.ts
 init_Connector();
@@ -18029,12 +18133,28 @@ var ContentType = /* @__PURE__ */ ((ContentType2) => {
   ContentType2["TOOL_RESULT"] = "tool_result";
   return ContentType2;
 })(ContentType || {});
+var AGENT_DEFAULTS = {
+  /** Default maximum iterations for agentic loop */
+  MAX_ITERATIONS: 50,
+  /** Default temperature for LLM calls */
+  DEFAULT_TEMPERATURE: 0.7,
+  /** Message injected when max iterations is reached */
+  MAX_ITERATIONS_MESSAGE: `You have reached the maximum iteration limit for this execution. Please:
+1. Summarize what you have accomplished so far
+2. Explain what remains to be done (if anything)
+3. Ask the user if they would like you to continue
+
+Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`
+};
+var TOKEN_ESTIMATION = {
+  /** Characters per token for mixed content */
+  MIXED_CHARS_PER_TOKEN: 3.5};
 
 // src/core/context-nextgen/BasePluginNextGen.ts
 var simpleTokenEstimator = {
   estimateTokens(text) {
     if (!text || text.length === 0) return 0;
-    return Math.ceil(text.length / 3.5);
+    return Math.ceil(text.length / TOKEN_ESTIMATION.MIXED_CHARS_PER_TOKEN);
   },
   estimateDataTokens(data) {
     const text = typeof data === "string" ? data : JSON.stringify(data);
@@ -18804,6 +18924,13 @@ var WorkingMemoryPluginNextGen = class {
   _destroyed = false;
   _tokenCache = null;
   _instructionsTokenCache = null;
+  /**
+   * Synchronous snapshot of entries for getState() serialization.
+   * Updated on every mutation (store, delete, evict, cleanupRaw, restoreState).
+   * Solves the async/sync mismatch: IMemoryStorage.getAll() is async but
+   * IContextPluginNextGen.getState() must be sync.
+   */
+  _syncEntries = /* @__PURE__ */ new Map();
   constructor(pluginConfig = {}) {
     this.storage = pluginConfig.storage ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
@@ -18864,28 +18991,13 @@ var WorkingMemoryPluginNextGen = class {
   getState() {
     return {
       version: 1,
-      entries: []
-      // Will be populated by async getStateAsync()
-    };
-  }
-  async getStateAsync() {
-    const entries = await this.storage.getAll();
-    return {
-      version: 1,
-      entries: entries.map((e) => ({
-        key: e.key,
-        description: e.description,
-        value: e.value,
-        scope: e.scope,
-        sizeBytes: e.sizeBytes,
-        basePriority: e.basePriority,
-        pinned: e.pinned
-      }))
+      entries: Array.from(this._syncEntries.values())
     };
   }
   restoreState(state) {
     const s = state;
     if (!s || !s.entries) return;
+    this._syncEntries.clear();
     for (const entry of s.entries) {
       const memEntry = createMemoryEntry({
         key: entry.key,
@@ -18896,6 +19008,15 @@ var WorkingMemoryPluginNextGen = class {
         pinned: entry.pinned
       }, this.config);
       this.storage.set(entry.key, memEntry);
+      this._syncEntries.set(entry.key, {
+        key: entry.key,
+        description: entry.description,
+        value: entry.value,
+        scope: entry.scope,
+        sizeBytes: entry.sizeBytes,
+        basePriority: entry.basePriority,
+        pinned: entry.pinned
+      });
     }
     this._tokenCache = null;
   }
@@ -18924,6 +19045,15 @@ var WorkingMemoryPluginNextGen = class {
     }, this.config);
     await this.ensureCapacity(entry.sizeBytes);
     await this.storage.set(finalKey, entry);
+    this._syncEntries.set(finalKey, {
+      key: finalKey,
+      description,
+      value,
+      scope,
+      sizeBytes: entry.sizeBytes,
+      basePriority: finalPriority,
+      pinned: options?.pinned
+    });
     this._tokenCache = null;
     return { key: finalKey, sizeBytes: entry.sizeBytes };
   }
@@ -18949,6 +19079,7 @@ var WorkingMemoryPluginNextGen = class {
     const exists = await this.storage.has(key);
     if (exists) {
       await this.storage.delete(key);
+      this._syncEntries.delete(key);
       this._tokenCache = null;
       return true;
     }
@@ -19012,6 +19143,7 @@ var WorkingMemoryPluginNextGen = class {
     const evictedKeys = [];
     for (const entry of toEvict) {
       await this.storage.delete(entry.key);
+      this._syncEntries.delete(entry.key);
       evictedKeys.push(entry.key);
     }
     if (evictedKeys.length > 0) {
@@ -19028,6 +19160,7 @@ var WorkingMemoryPluginNextGen = class {
     const keys = [];
     for (const entry of rawEntries) {
       await this.storage.delete(entry.key);
+      this._syncEntries.delete(entry.key);
       keys.push(entry.key);
     }
     if (keys.length > 0) {
@@ -19094,6 +19227,7 @@ var WorkingMemoryPluginNextGen = class {
     for (const entry of evictable) {
       if (freedBytes >= bytesToFree && freedCount >= entriesToFree) break;
       await this.storage.delete(entry.key);
+      this._syncEntries.delete(entry.key);
       freedBytes += entry.sizeBytes;
       freedCount++;
     }
@@ -19356,6 +19490,7 @@ var InContextMemoryPluginNextGen = class {
     };
     this.entries.set(key, entry);
     this.enforceMaxEntries();
+    this.enforceTokenLimit();
     this._tokenCache = null;
   }
   /**
@@ -19426,15 +19561,42 @@ ${valueStr}
   }
   enforceMaxEntries() {
     if (this.entries.size <= this.config.maxEntries) return;
-    const evictable = Array.from(this.entries.values()).filter((e) => e.priority !== "critical").sort((a, b) => {
-      const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
-      if (priorityDiff !== 0) return priorityDiff;
-      return a.updatedAt - b.updatedAt;
-    });
+    const evictable = this.getEvictableEntries();
     while (this.entries.size > this.config.maxEntries && evictable.length > 0) {
       const toEvict = evictable.shift();
       this.entries.delete(toEvict.key);
     }
+  }
+  enforceTokenLimit() {
+    const maxTokens = this.config.maxTotalTokens;
+    if (maxTokens <= 0) return;
+    let totalTokens = this.estimateTotalTokens();
+    if (totalTokens <= maxTokens) return;
+    const evictable = this.getEvictableEntries();
+    while (totalTokens > maxTokens && evictable.length > 0) {
+      const toEvict = evictable.shift();
+      const entryTokens = this.estimator.estimateTokens(this.formatEntry(toEvict));
+      this.entries.delete(toEvict.key);
+      totalTokens -= entryTokens;
+    }
+  }
+  estimateTotalTokens() {
+    let total = 0;
+    for (const entry of this.entries.values()) {
+      total += this.estimator.estimateTokens(this.formatEntry(entry));
+    }
+    return total;
+  }
+  /**
+   * Get entries sorted by eviction priority (lowest priority, oldest first).
+   * Critical entries are excluded.
+   */
+  getEvictableEntries() {
+    return Array.from(this.entries.values()).filter((e) => e.priority !== "critical").sort((a, b) => {
+      const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.updatedAt - b.updatedAt;
+    });
   }
   assertNotDestroyed() {
     if (this._destroyed) {
@@ -24525,6 +24687,8 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   _sessionConfig = null;
   _autoSaveInterval = null;
   _pendingSessionLoad = null;
+  /** Whether caller provided explicit instructions/systemPrompt (takes precedence over saved session) */
+  _hasExplicitInstructions = false;
   // Provider for LLM calls - single instance shared by all methods
   _provider;
   // ===== Constructor =====
@@ -24556,7 +24720,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
    */
   resolveConnector(ref) {
     if (typeof ref === "string") {
-      return exports.Connector.get(ref);
+      return this._config.registry ? this._config.registry.get(ref) : exports.Connector.get(ref);
     }
     return ref;
   }
@@ -24701,9 +24865,14 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   /**
    * Restore context from saved state.
    * Override in subclasses to restore agent-specific state from agentState field.
+   * Preserves explicit instructions if caller provided them at construction time.
    */
   async restoreContextState(state) {
+    const explicitPrompt = this._hasExplicitInstructions ? this._agentContext.systemPrompt : void 0;
     this._agentContext.restoreState(state);
+    if (this._hasExplicitInstructions && explicitPrompt !== void 0) {
+      this._agentContext.systemPrompt = explicitPrompt;
+    }
   }
   // ===== Public Permission API =====
   /**
@@ -25800,126 +25969,6 @@ function assertNotDestroyed(obj, operation) {
 
 // src/core/Agent.ts
 init_Metrics();
-
-// src/core/constants.ts
-var PROACTIVE_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.65,
-  /** Base reduction factor for round 1 */
-  BASE_REDUCTION_FACTOR: 0.5,
-  /** Reduction step per round (more aggressive each round) */
-  REDUCTION_STEP: 0.15,
-  /** Maximum compaction rounds */
-  MAX_ROUNDS: 3
-};
-var AGGRESSIVE_STRATEGY_DEFAULTS = {
-  /** Threshold to trigger compaction */
-  THRESHOLD: 0.6,
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.5,
-  /** Reduction factor (keep 30% of original) */
-  REDUCTION_FACTOR: 0.3
-};
-var LAZY_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.85,
-  /** Reduction factor (keep 70% of original) */
-  REDUCTION_FACTOR: 0.7
-};
-var ADAPTIVE_STRATEGY_DEFAULTS = {
-  /** Number of compactions to learn from */
-  LEARNING_WINDOW: 10,
-  /** Compactions per minute threshold to switch to aggressive */
-  SWITCH_THRESHOLD: 5,
-  /** Low utilization threshold to switch to lazy */
-  LOW_UTILIZATION_THRESHOLD: 70,
-  /** Low frequency threshold to switch to lazy */
-  LOW_FREQUENCY_THRESHOLD: 0.5
-};
-var ROLLING_WINDOW_DEFAULTS = {
-  /** Default maximum messages to keep */
-  MAX_MESSAGES: 20
-};
-var AGENT_DEFAULTS = {
-  /** Default maximum iterations for agentic loop */
-  MAX_ITERATIONS: 50,
-  /** Default temperature for LLM calls */
-  DEFAULT_TEMPERATURE: 0.7,
-  /** Message injected when max iterations is reached */
-  MAX_ITERATIONS_MESSAGE: `You have reached the maximum iteration limit for this execution. Please:
-1. Summarize what you have accomplished so far
-2. Explain what remains to be done (if anything)
-3. Ask the user if they would like you to continue
-
-Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`
-};
-var STRATEGY_THRESHOLDS = {
-  proactive: {
-    // Most balanced - good for general use
-    compactionTrigger: 0.75,
-    // Start compaction at 75%
-    compactionTarget: 0.65,
-    // Reduce to 65%
-    smartCompactionTrigger: 0.7,
-    // Trigger smart compaction at 70%
-    maxToolResultsPercent: 0.3,
-    // Tool results can use up to 30% of context
-    protectedContextPercent: 0.1
-    // Protect at least 10% of context (recent messages)
-  },
-  aggressive: {
-    // Memory-constrained - compact early and often
-    compactionTrigger: 0.6,
-    compactionTarget: 0.5,
-    smartCompactionTrigger: 0.55,
-    maxToolResultsPercent: 0.25,
-    protectedContextPercent: 0.08
-  },
-  lazy: {
-    // Preserve context - only compact when critical
-    compactionTrigger: 0.9,
-    compactionTarget: 0.85,
-    smartCompactionTrigger: 0.85,
-    maxToolResultsPercent: 0.4,
-    // Allow more tool results
-    protectedContextPercent: 0.15
-    // Protect more recent context
-  },
-  adaptive: {
-    // Starts with proactive, adjusts based on performance
-    compactionTrigger: 0.75,
-    compactionTarget: 0.65,
-    smartCompactionTrigger: 0.7,
-    maxToolResultsPercent: 0.3,
-    protectedContextPercent: 0.1
-  },
-  "rolling-window": {
-    // Fixed window, similar to lazy but with message count focus
-    compactionTrigger: 0.85,
-    compactionTarget: 0.75,
-    smartCompactionTrigger: 0.8,
-    maxToolResultsPercent: 0.35,
-    protectedContextPercent: 0.12
-  }
-};
-var SAFETY_CAPS = {
-  /** Always keep at least this many messages */
-  MIN_PROTECTED_MESSAGES: 10
-};
-var GUARDIAN_DEFAULTS = {
-  /** Enable guardian validation (can be disabled for testing) */
-  ENABLED: true,
-  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
-  MAX_TOOL_RESULT_TOKENS: 2e3,
-  /** Minimum system prompt tokens to preserve during emergency compaction */
-  MIN_SYSTEM_PROMPT_TOKENS: 3e3,
-  /** Number of most recent messages to always protect (increased from 4) */
-  PROTECTED_RECENT_MESSAGES: 20,
-  /** Truncation suffix for oversized content */
-  TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
-};
-
-// src/core/Agent.ts
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
   hookManager;
@@ -26014,6 +26063,7 @@ var Agent = class _Agent extends BaseAgent {
     });
     if (config.instructions) {
       this._agentContext.systemPrompt = config.instructions;
+      this._hasExplicitInstructions = true;
     }
     this._agentContext.tools.on("tool:registered", ({ name }) => {
       const permission = this._agentContext.tools.getPermission(name);
@@ -27125,10 +27175,6 @@ var Agent = class _Agent extends BaseAgent {
     this._logger.debug("Agent destroyed");
   }
 };
-
-// src/core/context/SmartCompactor.ts
-init_Logger();
-exports.logger.child({ component: "SmartCompactor" });
 (class {
   static DEFAULT_PATHS = [
     "./oneringai.config.json",
@@ -35297,393 +35343,6 @@ var ErrorHandler = class extends eventemitter3.EventEmitter {
 };
 var globalErrorHandler = new ErrorHandler();
 
-// src/core/context/ContextGuardian.ts
-init_Logger();
-var logger3 = exports.logger.child({ component: "ContextGuardian" });
-var ContextGuardian = class {
-  _enabled;
-  _maxToolResultTokens;
-  _minSystemPromptTokens;
-  _configuredProtectedMessages;
-  _maxContextTokens;
-  _strategy;
-  _estimator;
-  constructor(estimator, config = {}) {
-    this._estimator = estimator;
-    this._enabled = config.enabled ?? GUARDIAN_DEFAULTS.ENABLED;
-    this._maxToolResultTokens = config.maxToolResultTokens ?? GUARDIAN_DEFAULTS.MAX_TOOL_RESULT_TOKENS;
-    this._minSystemPromptTokens = config.minSystemPromptTokens ?? GUARDIAN_DEFAULTS.MIN_SYSTEM_PROMPT_TOKENS;
-    this._configuredProtectedMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
-    this._maxContextTokens = config.maxContextTokens;
-    this._strategy = config.strategy ?? "proactive";
-  }
-  /**
-   * Get effective protected message count, considering strategy and context size.
-   * Uses percentage-based calculation if maxContextTokens is available.
-   *
-   * NOTE: If an explicit value was configured (not using default), it's honored
-   * without applying minimum caps - this allows tests and special cases to work.
-   */
-  get _protectedRecentMessages() {
-    if (this._configuredProtectedMessages !== GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES) {
-      return this._configuredProtectedMessages;
-    }
-    if (this._maxContextTokens) {
-      const thresholds = STRATEGY_THRESHOLDS[this._strategy];
-      const percentBasedTokens = Math.floor(this._maxContextTokens * thresholds.protectedContextPercent);
-      const percentBasedMessages = Math.floor(percentBasedTokens / 100);
-      const calculated = Math.max(percentBasedMessages, this._configuredProtectedMessages);
-      return Math.max(calculated, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
-    }
-    return Math.max(this._configuredProtectedMessages, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
-  }
-  /**
-   * Check if guardian is enabled
-   */
-  get enabled() {
-    return this._enabled;
-  }
-  /**
-   * Validate that input fits within token limits
-   *
-   * @param input - The InputItem[] to validate
-   * @param maxTokens - Maximum allowed tokens (after reserving for response)
-   * @returns Validation result with actual counts and breakdown
-   */
-  validate(input, maxTokens) {
-    const breakdown = {
-      system: 0,
-      user: 0,
-      assistant: 0,
-      tool_use: 0,
-      tool_result: 0,
-      other: 0
-    };
-    let actualTokens = 0;
-    for (const item of input) {
-      const tokens = this.estimateInputItemTokens(item);
-      actualTokens += tokens;
-      if (item.type === "message") {
-        const msg = item;
-        if (msg.role === "developer" /* DEVELOPER */) {
-          breakdown.system += tokens;
-        } else if (msg.role === "user" /* USER */) {
-          const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
-          if (hasToolResult) {
-            breakdown.tool_result += tokens;
-          } else {
-            breakdown.user += tokens;
-          }
-        } else if (msg.role === "assistant" /* ASSISTANT */) {
-          const hasToolUse = msg.content.some((c) => c.type === "tool_use" /* TOOL_USE */);
-          if (hasToolUse) {
-            breakdown.tool_use += tokens;
-          } else {
-            breakdown.assistant += tokens;
-          }
-        }
-      } else {
-        breakdown.other += tokens;
-      }
-    }
-    const valid = actualTokens <= maxTokens;
-    const overageTokens = valid ? 0 : actualTokens - maxTokens;
-    logger3.debug({
-      actualTokens,
-      maxTokens,
-      valid,
-      overageTokens,
-      breakdown
-    }, `Guardian validation: ${valid ? "PASS" : "FAIL"}`);
-    return {
-      valid,
-      actualTokens,
-      targetTokens: maxTokens,
-      overageTokens,
-      breakdown
-    };
-  }
-  /**
-   * Apply graceful degradation to reduce input size
-   *
-   * @param input - The InputItem[] to potentially modify
-   * @param targetTokens - Target token count to achieve
-   * @returns Degradation result with potentially modified input
-   */
-  applyGracefulDegradation(input, targetTokens) {
-    const log = [];
-    let tokensFreed = 0;
-    let currentInput = [...input];
-    const initialValidation = this.validate(currentInput, targetTokens);
-    if (initialValidation.valid) {
-      return {
-        input: currentInput,
-        log: ["No degradation needed"],
-        finalTokens: initialValidation.actualTokens,
-        tokensFreed: 0,
-        success: true
-      };
-    }
-    log.push(`Starting graceful degradation: ${initialValidation.actualTokens} tokens, target: ${targetTokens}`);
-    const level1Result = this.truncateToolResults(currentInput, log);
-    currentInput = level1Result.input;
-    tokensFreed += level1Result.tokensFreed;
-    let validation = this.validate(currentInput, targetTokens);
-    if (validation.valid) {
-      log.push(`Level 1 (truncate tool results) successful: ${validation.actualTokens} tokens`);
-      return {
-        input: currentInput,
-        log,
-        finalTokens: validation.actualTokens,
-        tokensFreed,
-        success: true
-      };
-    }
-    const level2Result = this.removeOldestToolPairs(currentInput, validation.overageTokens, log);
-    currentInput = level2Result.input;
-    tokensFreed += level2Result.tokensFreed;
-    validation = this.validate(currentInput, targetTokens);
-    if (validation.valid) {
-      log.push(`Level 2 (remove tool pairs) successful: ${validation.actualTokens} tokens`);
-      return {
-        input: currentInput,
-        log,
-        finalTokens: validation.actualTokens,
-        tokensFreed,
-        success: true
-      };
-    }
-    const level3Result = this.truncateSystemPrompt(currentInput, log);
-    currentInput = level3Result.input;
-    tokensFreed += level3Result.tokensFreed;
-    validation = this.validate(currentInput, targetTokens);
-    if (validation.valid) {
-      log.push(`Level 3 (truncate system prompt) successful: ${validation.actualTokens} tokens`);
-      return {
-        input: currentInput,
-        log,
-        finalTokens: validation.actualTokens,
-        tokensFreed,
-        success: true
-      };
-    }
-    log.push(`All degradation levels exhausted: ${validation.actualTokens} tokens (target: ${targetTokens})`);
-    throw new ContextOverflowError(
-      "All graceful degradation levels exhausted",
-      {
-        actualTokens: validation.actualTokens,
-        maxTokens: targetTokens,
-        overageTokens: validation.overageTokens,
-        breakdown: validation.breakdown,
-        degradationLog: log
-      }
-    );
-  }
-  /**
-   * Emergency compact - more aggressive than graceful degradation
-   * Used when even graceful degradation fails
-   *
-   * @param input - The InputItem[] to compact
-   * @param targetTokens - Target token count
-   * @returns Compacted InputItem[] (may lose significant data)
-   */
-  emergencyCompact(input, targetTokens) {
-    const log = ["EMERGENCY COMPACTION"];
-    let result = [...input];
-    const systemMessages = [];
-    const otherMessages = [];
-    for (const item of result) {
-      if (item.type === "message" && item.role === "developer" /* DEVELOPER */) {
-        systemMessages.push(item);
-      } else {
-        otherMessages.push(item);
-      }
-    }
-    const truncatedSystem = systemMessages.map(
-      (item) => this.truncateMessage(item, this._minSystemPromptTokens)
-    );
-    const protectedMessages = otherMessages.slice(-this._protectedRecentMessages);
-    result = [...truncatedSystem, ...protectedMessages];
-    const validation = this.validate(result, targetTokens);
-    if (!validation.valid) {
-      log.push(`Emergency compaction failed: still at ${validation.actualTokens} tokens`);
-      logger3.error({ validation, log }, "Emergency compaction failed");
-    }
-    return result;
-  }
-  // ============================================================================
-  // Private Helper Methods
-  // ============================================================================
-  /**
-   * Estimate tokens for an InputItem
-   */
-  estimateInputItemTokens(item) {
-    if (item.type !== "message") {
-      return 50;
-    }
-    const msg = item;
-    let total = 4;
-    for (const content of msg.content) {
-      if (content.type === "input_text" /* INPUT_TEXT */ || content.type === "output_text" /* OUTPUT_TEXT */) {
-        total += this._estimator.estimateTokens(content.text || "");
-      } else if (content.type === "tool_use" /* TOOL_USE */) {
-        total += this._estimator.estimateTokens(content.name || "");
-        total += this._estimator.estimateDataTokens(content.input || {});
-      } else if (content.type === "tool_result" /* TOOL_RESULT */) {
-        total += this._estimator.estimateTokens(content.content || "");
-      } else if (content.type === "input_image_url" /* INPUT_IMAGE_URL */) {
-        total += 200;
-      }
-    }
-    return total;
-  }
-  /**
-   * Level 1: Truncate large tool results
-   */
-  truncateToolResults(input, log) {
-    let tokensFreed = 0;
-    const result = [];
-    for (const item of input) {
-      if (item.type !== "message") {
-        result.push(item);
-        continue;
-      }
-      const msg = item;
-      const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
-      if (!hasToolResult) {
-        result.push(item);
-        continue;
-      }
-      const newContent = msg.content.map((c) => {
-        if (c.type !== "tool_result" /* TOOL_RESULT */) return c;
-        const toolResult = c;
-        const content = toolResult.content || "";
-        const currentTokens = this._estimator.estimateTokens(content);
-        if (currentTokens > this._maxToolResultTokens) {
-          const targetChars = this._maxToolResultTokens * 4;
-          const truncated = content.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
-          const freed = currentTokens - this._estimator.estimateTokens(truncated);
-          tokensFreed += freed;
-          log.push(`Truncated tool result ${toolResult.tool_use_id}: ${currentTokens} \u2192 ${currentTokens - freed} tokens`);
-          return {
-            ...toolResult,
-            content: truncated
-          };
-        }
-        return c;
-      });
-      result.push({
-        ...msg,
-        content: newContent
-      });
-    }
-    if (tokensFreed > 0) {
-      log.push(`Level 1: Truncated tool results, freed ${tokensFreed} tokens`);
-    }
-    return { input: result, tokensFreed };
-  }
-  /**
-   * Level 2: Remove oldest unprotected tool pairs
-   */
-  removeOldestToolPairs(input, overageTokens, log) {
-    const toolPairs = /* @__PURE__ */ new Map();
-    for (let i = 0; i < input.length; i++) {
-      const item = input[i];
-      if (item?.type !== "message") continue;
-      const msg = item;
-      for (const content of msg.content) {
-        if (content.type === "tool_use" /* TOOL_USE */) {
-          const toolUseId = content.id;
-          if (toolUseId) {
-            toolPairs.set(toolUseId, { useIndex: i, resultIndex: null });
-          }
-        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
-          const toolUseId = content.tool_use_id;
-          const pair = toolPairs.get(toolUseId);
-          if (pair) {
-            pair.resultIndex = i;
-          }
-        }
-      }
-    }
-    const sortedPairs = [...toolPairs.entries()].filter(([, pair]) => pair.resultIndex !== null).sort(([, a], [, b]) => a.useIndex - b.useIndex);
-    const protectedStart = input.length - this._protectedRecentMessages;
-    const indicesToRemove = /* @__PURE__ */ new Set();
-    let tokensFreed = 0;
-    for (const [toolUseId, pair] of sortedPairs) {
-      if (tokensFreed >= overageTokens) break;
-      if (pair.useIndex >= protectedStart || pair.resultIndex !== null && pair.resultIndex >= protectedStart) {
-        continue;
-      }
-      indicesToRemove.add(pair.useIndex);
-      if (pair.resultIndex !== null) {
-        indicesToRemove.add(pair.resultIndex);
-      }
-      const useItem = input[pair.useIndex];
-      const resultItem = pair.resultIndex !== null ? input[pair.resultIndex] : null;
-      if (useItem) tokensFreed += this.estimateInputItemTokens(useItem);
-      if (resultItem) tokensFreed += this.estimateInputItemTokens(resultItem);
-      log.push(`Removing tool pair ${toolUseId}`);
-    }
-    const result = input.filter((_, i) => !indicesToRemove.has(i));
-    if (indicesToRemove.size > 0) {
-      log.push(`Level 2: Removed ${indicesToRemove.size} messages (${sortedPairs.length} tool pairs evaluated), freed ${tokensFreed} tokens`);
-    }
-    return { input: result, tokensFreed };
-  }
-  /**
-   * Level 3: Truncate system prompt
-   */
-  truncateSystemPrompt(input, log) {
-    let tokensFreed = 0;
-    const result = [];
-    for (const item of input) {
-      if (item.type !== "message") {
-        result.push(item);
-        continue;
-      }
-      const msg = item;
-      if (msg.role !== "developer" /* DEVELOPER */) {
-        result.push(item);
-        continue;
-      }
-      const currentTokens = this.estimateInputItemTokens(msg);
-      if (currentTokens > this._minSystemPromptTokens) {
-        const truncated = this.truncateMessage(msg, this._minSystemPromptTokens);
-        const newTokens = this.estimateInputItemTokens(truncated);
-        tokensFreed += currentTokens - newTokens;
-        log.push(`Truncated system prompt: ${currentTokens} \u2192 ${newTokens} tokens`);
-        result.push(truncated);
-      } else {
-        result.push(item);
-      }
-    }
-    if (tokensFreed > 0) {
-      log.push(`Level 3: Truncated system prompt, freed ${tokensFreed} tokens`);
-    }
-    return { input: result, tokensFreed };
-  }
-  /**
-   * Truncate a message to target token count
-   */
-  truncateMessage(msg, targetTokens) {
-    const newContent = msg.content.map((c) => {
-      if (c.type !== "input_text" /* INPUT_TEXT */ && c.type !== "output_text" /* OUTPUT_TEXT */) {
-        return c;
-      }
-      const text = c.text || "";
-      const currentTokens = this._estimator.estimateTokens(text);
-      if (currentTokens > targetTokens) {
-        const targetChars = targetTokens * 4;
-        const truncated = text.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
-        return { ...c, text: truncated };
-      }
-      return c;
-    });
-    return { ...msg, content: newContent };
-  }
-};
-
 // src/capabilities/images/ImageGeneration.ts
 init_Connector();
 
@@ -40141,334 +39800,6 @@ var DEFAULT_CONTEXT_CONFIG = {
   strategyOptions: {}
 };
 
-// src/core/context/utils/ContextUtils.ts
-function estimateComponentTokens(component, estimator) {
-  if (typeof component.content === "string") {
-    return estimator.estimateTokens(component.content);
-  }
-  return estimator.estimateDataTokens(component.content);
-}
-function sortCompactableByPriority(components) {
-  return components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-}
-function findCompactorForComponent(component, compactors) {
-  return compactors.find((c) => c.canCompact(component));
-}
-async function executeCompactionLoop(options) {
-  const {
-    components,
-    tokensToFree,
-    compactors,
-    estimator,
-    calculateTargetSize,
-    maxRounds = 1,
-    logPrefix = ""
-  } = options;
-  const log = [];
-  let current = [...components];
-  let freedTokens = 0;
-  let round = 0;
-  const sortedComponents = sortCompactableByPriority(current);
-  while (freedTokens < tokensToFree && round < maxRounds) {
-    round++;
-    let roundFreed = 0;
-    for (const component of sortedComponents) {
-      if (freedTokens >= tokensToFree) break;
-      const compactor = findCompactorForComponent(component, compactors);
-      if (!compactor) continue;
-      const beforeSize = estimateComponentTokens(component, estimator);
-      const targetSize = calculateTargetSize(beforeSize, round);
-      if (targetSize >= beforeSize) continue;
-      const compacted = await compactor.compact(component, targetSize);
-      const index = current.findIndex((c) => c.name === component.name);
-      if (index !== -1) {
-        current[index] = compacted;
-      }
-      const afterSize = estimateComponentTokens(compacted, estimator);
-      const saved = beforeSize - afterSize;
-      freedTokens += saved;
-      roundFreed += saved;
-      const prefix = logPrefix ? `${logPrefix}: ` : "";
-      const roundInfo = maxRounds > 1 ? `Round ${round}: ` : "";
-      log.push(
-        `${prefix}${roundInfo}${compactor.name} compacted "${component.name}" by ${saved} tokens`
-      );
-    }
-    if (roundFreed === 0) break;
-  }
-  return { components: current, log, tokensFreed: freedTokens };
-}
-
-// src/core/context/strategies/BaseCompactionStrategy.ts
-var BaseCompactionStrategy = class {
-  metrics = {
-    compactionCount: 0,
-    totalTokensFreed: 0,
-    avgTokensFreedPerCompaction: 0
-  };
-  /**
-   * Get the maximum number of compaction rounds.
-   * Override in subclasses for multi-round strategies.
-   */
-  getMaxRounds() {
-    return 1;
-  }
-  /**
-   * Get the log prefix for compaction messages.
-   * Override to customize logging.
-   */
-  getLogPrefix() {
-    return this.name.charAt(0).toUpperCase() + this.name.slice(1);
-  }
-  /**
-   * Compact components to fit within budget.
-   * Uses the shared compaction loop with strategy-specific target calculation.
-   */
-  async compact(components, budget, compactors, estimator) {
-    const targetUsage = Math.floor(budget.total * this.getTargetUtilization());
-    const tokensToFree = budget.used - targetUsage;
-    const result = await executeCompactionLoop({
-      components,
-      tokensToFree,
-      compactors,
-      estimator,
-      calculateTargetSize: this.calculateTargetSize.bind(this),
-      maxRounds: this.getMaxRounds(),
-      logPrefix: this.getLogPrefix()
-    });
-    this.updateMetrics(result.tokensFreed);
-    return result;
-  }
-  /**
-   * Update internal metrics after compaction
-   */
-  updateMetrics(tokensFreed) {
-    this.metrics.compactionCount++;
-    this.metrics.totalTokensFreed += tokensFreed;
-    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
-  }
-  /**
-   * Get strategy metrics
-   */
-  getMetrics() {
-    return { ...this.metrics };
-  }
-  /**
-   * Reset metrics (useful for testing)
-   */
-  resetMetrics() {
-    this.metrics = {
-      compactionCount: 0,
-      totalTokensFreed: 0,
-      avgTokensFreedPerCompaction: 0
-    };
-  }
-};
-
-// src/core/context/strategies/ProactiveStrategy.ts
-var DEFAULT_OPTIONS = {
-  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
-  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
-  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS
-};
-var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "proactive";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS, ...options };
-  }
-  shouldCompact(budget, _config) {
-    return budget.status === "warning" || budget.status === "critical";
-  }
-  calculateTargetSize(beforeSize, round) {
-    const reductionFactor = this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
-    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1));
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getMaxRounds() {
-    return this.options.maxRounds;
-  }
-  getLogPrefix() {
-    return "Proactive";
-  }
-};
-
-// src/core/context/strategies/AggressiveStrategy.ts
-var DEFAULT_OPTIONS2 = {
-  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
-  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR
-};
-var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "aggressive";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS2, ...options };
-  }
-  shouldCompact(budget, _config) {
-    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
-    return utilizationRatio >= this.options.threshold;
-  }
-  calculateTargetSize(beforeSize, _round) {
-    return Math.floor(beforeSize * this.options.reductionFactor);
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getLogPrefix() {
-    return "Aggressive";
-  }
-};
-
-// src/core/context/strategies/LazyStrategy.ts
-var DEFAULT_OPTIONS3 = {
-  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR
-};
-var LazyCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "lazy";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS3, ...options };
-  }
-  shouldCompact(budget, _config) {
-    return budget.status === "critical";
-  }
-  calculateTargetSize(beforeSize, _round) {
-    return Math.floor(beforeSize * this.options.reductionFactor);
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getLogPrefix() {
-    return "Lazy";
-  }
-};
-
-// src/core/context/strategies/RollingWindowStrategy.ts
-var RollingWindowStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  name = "rolling-window";
-  shouldCompact(_budget, _config) {
-    return false;
-  }
-  async prepareComponents(components) {
-    return components.map((component) => {
-      if (Array.isArray(component.content)) {
-        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
-        if (component.content.length > maxMessages) {
-          return {
-            ...component,
-            content: component.content.slice(-maxMessages),
-            metadata: {
-              ...component.metadata,
-              windowed: true,
-              originalLength: component.content.length,
-              keptLength: maxMessages
-            }
-          };
-        }
-      }
-      return component;
-    });
-  }
-  async compact() {
-    return { components: [], log: [], tokensFreed: 0 };
-  }
-};
-
-// src/core/context/strategies/AdaptiveStrategy.ts
-var AdaptiveStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-    this.currentStrategy = new ProactiveCompactionStrategy();
-  }
-  name = "adaptive";
-  currentStrategy;
-  metrics = {
-    avgUtilization: 0,
-    compactionFrequency: 0,
-    lastCompactions: []
-  };
-  shouldCompact(budget, config) {
-    this.updateMetrics(budget);
-    this.maybeAdapt();
-    return this.currentStrategy.shouldCompact(budget, config);
-  }
-  async compact(components, budget, compactors, estimator) {
-    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
-    this.metrics.lastCompactions.push(Date.now());
-    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
-    if (this.metrics.lastCompactions.length > window) {
-      this.metrics.lastCompactions.shift();
-    }
-    return {
-      ...result,
-      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
-    };
-  }
-  updateMetrics(budget) {
-    const alpha = 0.1;
-    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
-  }
-  maybeAdapt() {
-    const now = Date.now();
-    if (this.metrics.lastCompactions.length >= 2) {
-      const firstCompaction = this.metrics.lastCompactions[0];
-      if (firstCompaction !== void 0) {
-        const timeSpan = now - firstCompaction;
-        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
-      }
-    }
-    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
-    if (this.metrics.compactionFrequency > threshold) {
-      if (this.currentStrategy.name !== "aggressive") {
-        this.currentStrategy = new AggressiveCompactionStrategy();
-      }
-    } else if (this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD && this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD) {
-      if (this.currentStrategy.name !== "lazy") {
-        this.currentStrategy = new LazyCompactionStrategy();
-      }
-    } else {
-      if (this.currentStrategy.name !== "proactive") {
-        this.currentStrategy = new ProactiveCompactionStrategy();
-      }
-    }
-  }
-  getMetrics() {
-    return {
-      ...this.metrics,
-      currentStrategy: this.currentStrategy.name
-    };
-  }
-};
-
-// src/core/context/strategies/index.ts
-function createStrategy(name, options = {}) {
-  switch (name) {
-    case "proactive":
-      return new ProactiveCompactionStrategy(options);
-    case "aggressive":
-      return new AggressiveCompactionStrategy(options);
-    case "lazy":
-      return new LazyCompactionStrategy(options);
-    case "rolling-window":
-      return new RollingWindowStrategy(options);
-    case "adaptive":
-      return new AdaptiveStrategy(options);
-    default:
-      throw new Error(`Unknown context strategy: ${name}`);
-  }
-}
-
 // src/infrastructure/context/compactors/TruncateCompactor.ts
 var TruncateCompactor = class {
   constructor(estimator) {
@@ -42179,8 +41510,8 @@ var ConnectorTools = class {
    * // Returns: [slack_api, slack_send_message, slack_list_channels, ...]
    * ```
    */
-  static for(connectorOrName, userId) {
-    const connector = this.resolveConnector(connectorOrName);
+  static for(connectorOrName, userId, options) {
+    const connector = this.resolveConnector(connectorOrName, options?.registry);
     const tools = [];
     if (connector.baseURL) {
       tools.push(this.createGenericAPITool(connector, { userId }));
@@ -42242,9 +41573,9 @@ var ConnectorTools = class {
    * }
    * ```
    */
-  static discoverAll(userId) {
+  static discoverAll(userId, options) {
     const result = /* @__PURE__ */ new Map();
-    const allConnectors = exports.Connector.listAll();
+    const allConnectors = options?.registry ? options.registry.listAll() : exports.Connector.listAll();
     const factoryKeys = Array.from(this.factories.keys());
     exports.logger.debug(`[ConnectorTools.discoverAll] ${allConnectors.length} connectors in library, ${factoryKeys.length} factories registered: [${factoryKeys.join(", ")}]`);
     for (const connector of allConnectors) {
@@ -42274,8 +41605,9 @@ var ConnectorTools = class {
    * @param serviceType - Service identifier
    * @returns Connector or undefined
    */
-  static findConnector(serviceType) {
-    return exports.Connector.listAll().find((c) => this.detectService(c) === serviceType);
+  static findConnector(serviceType, options) {
+    const connectors = options?.registry ? options.registry.listAll() : exports.Connector.listAll();
+    return connectors.find((c) => this.detectService(c) === serviceType);
   }
   /**
    * Find all connectors for a service type
@@ -42284,8 +41616,9 @@ var ConnectorTools = class {
    * @param serviceType - Service identifier
    * @returns Array of matching connectors
    */
-  static findConnectors(serviceType) {
-    return exports.Connector.listAll().filter((c) => this.detectService(c) === serviceType);
+  static findConnectors(serviceType, options) {
+    const connectors = options?.registry ? options.registry.listAll() : exports.Connector.listAll();
+    return connectors.filter((c) => this.detectService(c) === serviceType);
   }
   /**
    * List services that have registered tool factories
@@ -42335,8 +41668,11 @@ var ConnectorTools = class {
     }
   }
   // ============ Private Methods ============
-  static resolveConnector(connectorOrName) {
-    return typeof connectorOrName === "string" ? exports.Connector.get(connectorOrName) : connectorOrName;
+  static resolveConnector(connectorOrName, registry) {
+    if (typeof connectorOrName === "string") {
+      return registry ? registry.get(connectorOrName) : exports.Connector.get(connectorOrName);
+    }
+    return connectorOrName;
   }
   static createGenericAPITool(connector, options) {
     const toolName = options?.toolName ?? `${connector.name}_api`;
@@ -49607,10 +48943,8 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
 exports.AGENT_DEFINITION_FORMAT_VERSION = AGENT_DEFINITION_FORMAT_VERSION;
 exports.AIError = AIError;
 exports.APPROVAL_STATE_VERSION = APPROVAL_STATE_VERSION;
-exports.AdaptiveStrategy = AdaptiveStrategy;
 exports.Agent = Agent;
 exports.AgentContextNextGen = AgentContextNextGen;
-exports.AggressiveCompactionStrategy = AggressiveCompactionStrategy;
 exports.ApproximateTokenEstimator = ApproximateTokenEstimator;
 exports.BaseMediaProvider = BaseMediaProvider;
 exports.BasePluginNextGen = BasePluginNextGen;
@@ -49623,7 +48957,6 @@ exports.CheckpointManager = CheckpointManager;
 exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConnectorTools = ConnectorTools;
 exports.ContentType = ContentType;
-exports.ContextGuardian = ContextGuardian;
 exports.ContextOverflowError = ContextOverflowError;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
@@ -49659,7 +48992,6 @@ exports.InMemoryStorage = InMemoryStorage;
 exports.InvalidConfigError = InvalidConfigError;
 exports.InvalidToolArgumentsError = InvalidToolArgumentsError;
 exports.LLM_MODELS = LLM_MODELS;
-exports.LazyCompactionStrategy = LazyCompactionStrategy;
 exports.LoggingPlugin = LoggingPlugin;
 exports.MCPClient = MCPClient;
 exports.MCPConnectionError = MCPConnectionError;
@@ -49679,7 +49011,6 @@ exports.ModelNotSupportedError = ModelNotSupportedError;
 exports.ParallelTasksError = ParallelTasksError;
 exports.PersistentInstructionsPluginNextGen = PersistentInstructionsPluginNextGen;
 exports.PlanningAgent = PlanningAgent;
-exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
 exports.ProviderAuthError = ProviderAuthError;
 exports.ProviderConfigAgent = ProviderConfigAgent;
 exports.ProviderContextLengthError = ProviderContextLengthError;
@@ -49689,7 +49020,6 @@ exports.ProviderNotFoundError = ProviderNotFoundError;
 exports.ProviderRateLimitError = ProviderRateLimitError;
 exports.RapidAPIProvider = RapidAPIProvider;
 exports.RateLimitError = RateLimitError;
-exports.RollingWindowStrategy = RollingWindowStrategy;
 exports.SERVICE_DEFINITIONS = SERVICE_DEFINITIONS;
 exports.SERVICE_INFO = SERVICE_INFO;
 exports.SERVICE_URL_PATTERNS = SERVICE_URL_PATTERNS;
@@ -49769,7 +49099,6 @@ exports.createPlan = createPlan;
 exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
 exports.createSpeechToTextTool = createSpeechToTextTool;
-exports.createStrategy = createStrategy;
 exports.createTask = createTask;
 exports.createTextMessage = createTextMessage;
 exports.createTextToSpeechTool = createTextToSpeechTool;
