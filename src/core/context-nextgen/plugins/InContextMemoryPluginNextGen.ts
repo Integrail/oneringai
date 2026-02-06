@@ -275,6 +275,7 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
 
     this.entries.set(key, entry);
     this.enforceMaxEntries();
+    this.enforceTokenLimit();
     this._tokenCache = null;
   }
 
@@ -361,18 +362,52 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
     if (this.entries.size <= this.config.maxEntries) return;
 
     // Evict lowest priority, oldest entries
-    const evictable = Array.from(this.entries.values())
+    const evictable = this.getEvictableEntries();
+
+    while (this.entries.size > this.config.maxEntries && evictable.length > 0) {
+      const toEvict = evictable.shift()!;
+      this.entries.delete(toEvict.key);
+    }
+  }
+
+  private enforceTokenLimit(): void {
+    const maxTokens = this.config.maxTotalTokens;
+    if (maxTokens <= 0) return;
+
+    let totalTokens = this.estimateTotalTokens();
+    if (totalTokens <= maxTokens) return;
+
+    // Evict lowest priority, oldest entries until under limit
+    const evictable = this.getEvictableEntries();
+
+    while (totalTokens > maxTokens && evictable.length > 0) {
+      const toEvict = evictable.shift()!;
+      const entryTokens = this.estimator.estimateTokens(this.formatEntry(toEvict));
+      this.entries.delete(toEvict.key);
+      totalTokens -= entryTokens;
+    }
+  }
+
+  private estimateTotalTokens(): number {
+    let total = 0;
+    for (const entry of this.entries.values()) {
+      total += this.estimator.estimateTokens(this.formatEntry(entry));
+    }
+    return total;
+  }
+
+  /**
+   * Get entries sorted by eviction priority (lowest priority, oldest first).
+   * Critical entries are excluded.
+   */
+  private getEvictableEntries(): InContextEntry[] {
+    return Array.from(this.entries.values())
       .filter(e => e.priority !== 'critical')
       .sort((a, b) => {
         const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
         if (priorityDiff !== 0) return priorityDiff;
         return a.updatedAt - b.updatedAt;
       });
-
-    while (this.entries.size > this.config.maxEntries && evictable.length > 0) {
-      const toEvict = evictable.shift()!;
-      this.entries.delete(toEvict.key);
-    }
   }
 
   private assertNotDestroyed(): void {

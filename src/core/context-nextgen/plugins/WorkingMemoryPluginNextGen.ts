@@ -211,6 +211,14 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
   private _tokenCache: number | null = null;
   private _instructionsTokenCache: number | null = null;
 
+  /**
+   * Synchronous snapshot of entries for getState() serialization.
+   * Updated on every mutation (store, delete, evict, cleanupRaw, restoreState).
+   * Solves the async/sync mismatch: IMemoryStorage.getAll() is async but
+   * IContextPluginNextGen.getState() must be sync.
+   */
+  private _syncEntries: Map<string, SerializedWorkingMemoryState['entries'][number]> = new Map();
+
   constructor(pluginConfig: WorkingMemoryPluginConfig = {}) {
     this.storage = pluginConfig.storage ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
@@ -287,27 +295,9 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
   }
 
   getState(): SerializedWorkingMemoryState {
-    // Synchronous snapshot - storage.getAll() returns Promise but we need sync
-    // For serialization, we'll return a marker and handle async in save()
     return {
       version: 1,
-      entries: [], // Will be populated by async getStateAsync()
-    };
-  }
-
-  async getStateAsync(): Promise<SerializedWorkingMemoryState> {
-    const entries = await this.storage.getAll();
-    return {
-      version: 1,
-      entries: entries.map(e => ({
-        key: e.key,
-        description: e.description,
-        value: e.value,
-        scope: e.scope,
-        sizeBytes: e.sizeBytes,
-        basePriority: e.basePriority,
-        pinned: e.pinned,
-      })),
+      entries: Array.from(this._syncEntries.values()),
     };
   }
 
@@ -315,7 +305,10 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
     const s = state as SerializedWorkingMemoryState;
     if (!s || !s.entries) return;
 
-    // Restore entries
+    // Clear sync snapshot and rebuild
+    this._syncEntries.clear();
+
+    // Restore entries to both storage and sync snapshot
     for (const entry of s.entries) {
       const memEntry = createMemoryEntry({
         key: entry.key,
@@ -326,6 +319,15 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
         pinned: entry.pinned,
       }, this.config);
       this.storage.set(entry.key, memEntry);
+      this._syncEntries.set(entry.key, {
+        key: entry.key,
+        description: entry.description,
+        value: entry.value,
+        scope: entry.scope,
+        sizeBytes: entry.sizeBytes,
+        basePriority: entry.basePriority,
+        pinned: entry.pinned,
+      });
     }
     this._tokenCache = null;
   }
@@ -375,6 +377,15 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
     await this.ensureCapacity(entry.sizeBytes);
 
     await this.storage.set(finalKey, entry);
+    this._syncEntries.set(finalKey, {
+      key: finalKey,
+      description,
+      value,
+      scope,
+      sizeBytes: entry.sizeBytes,
+      basePriority: finalPriority,
+      pinned: options?.pinned,
+    });
     this._tokenCache = null; // Invalidate cache
 
     return { key: finalKey, sizeBytes: entry.sizeBytes };
@@ -403,6 +414,7 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
     const exists = await this.storage.has(key);
     if (exists) {
       await this.storage.delete(key);
+      this._syncEntries.delete(key);
       this._tokenCache = null;
       return true;
     }
@@ -504,6 +516,7 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
 
     for (const entry of toEvict) {
       await this.storage.delete(entry.key);
+      this._syncEntries.delete(entry.key);
       evictedKeys.push(entry.key);
     }
 
@@ -524,6 +537,7 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
     const keys: string[] = [];
     for (const entry of rawEntries) {
       await this.storage.delete(entry.key);
+      this._syncEntries.delete(entry.key);
       keys.push(entry.key);
     }
 
@@ -616,6 +630,7 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
     for (const entry of evictable) {
       if (freedBytes >= bytesToFree && freedCount >= entriesToFree) break;
       await this.storage.delete(entry.key);
+      this._syncEntries.delete(entry.key);
       freedBytes += entry.sizeBytes;
       freedCount++;
     }

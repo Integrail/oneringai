@@ -22,7 +22,7 @@
 - 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
 - 🤖 **Task Agents** - ⚠️ *Deprecated* - Use `Agent` with `WorkingMemoryPluginNextGen`
 - 🔬 **Research Agent** - ⚠️ *Deprecated* - Use `Agent` with search tools
-- 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
+- 🎯 **Context Management** - Algorithmic compaction with tool-result-to-memory offloading
 - 📌 **InContextMemory** - NEW: Live key-value storage directly in LLM context for instant access
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
@@ -578,7 +578,6 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    strategy: 'balanced', // proactive, balanced, lazy
     features: { workingMemory: true },
   },
 });
@@ -629,10 +628,8 @@ const agent = Agent.create({
 - **Single system message** - All context components combined
 - **Smart compaction** - Happens once, right before LLM call
 
-**Three compaction strategies:**
-- **proactive** - Compact at 70% usage
-- **balanced** (default) - Compact at 80% usage
-- **lazy** - Compact at 90% usage
+**Compaction strategy:**
+- **algorithmic** (default) - Moves large tool results to Working Memory, limits tool pairs, applies rolling window. Triggers at 75% context usage.
 
 **Context preparation:**
 ```typescript

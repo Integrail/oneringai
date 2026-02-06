@@ -27,6 +27,7 @@ import type { LLMResponse } from '../domain/entities/Response.js';
 import type { InputItem } from '../domain/entities/Message.js';
 import type { StreamEvent } from '../domain/entities/StreamEvent.js';
 import type { IContextStorage, ContextSessionMetadata } from '../domain/interfaces/IContextStorage.js';
+import type { IConnectorRegistry } from '../domain/interfaces/IConnectorRegistry.js';
 
 /**
  * Options for tool registration
@@ -184,6 +185,9 @@ export interface BaseAgentConfig {
   /** Model identifier */
   model: string;
 
+  /** Optional scoped connector registry for access-controlled lookup */
+  registry?: IConnectorRegistry;
+
   /** Agent name (optional, auto-generated if not provided) */
   name?: string;
 
@@ -279,6 +283,9 @@ export abstract class BaseAgent<
   protected _autoSaveInterval: ReturnType<typeof setInterval> | null = null;
   protected _pendingSessionLoad: Promise<boolean> | null = null;
 
+  /** Whether caller provided explicit instructions/systemPrompt (takes precedence over saved session) */
+  protected _hasExplicitInstructions = false;
+
   // Provider for LLM calls - single instance shared by all methods
   protected _provider: ITextProvider;
 
@@ -337,7 +344,9 @@ export abstract class BaseAgent<
    */
   protected resolveConnector(ref: string | Connector): Connector {
     if (typeof ref === 'string') {
-      return Connector.get(ref);
+      return this._config.registry
+        ? this._config.registry.get(ref)
+        : Connector.get(ref);
     }
     return ref;
   }
@@ -517,9 +526,15 @@ export abstract class BaseAgent<
   /**
    * Restore context from saved state.
    * Override in subclasses to restore agent-specific state from agentState field.
+   * Preserves explicit instructions if caller provided them at construction time.
    */
   async restoreContextState(state: SerializedContextState): Promise<void> {
+    // Preserve caller-provided instructions over saved session's systemPrompt
+    const explicitPrompt = this._hasExplicitInstructions ? this._agentContext.systemPrompt : undefined;
     this._agentContext.restoreState(state);
+    if (this._hasExplicitInstructions && explicitPrompt !== undefined) {
+      this._agentContext.systemPrompt = explicitPrompt;
+    }
   }
 
   // ===== Public Permission API =====

@@ -237,6 +237,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     // Set system prompt on inherited AgentContext if instructions provided
     if (config.instructions) {
       this._agentContext.systemPrompt = config.instructions;
+      this._hasExplicitInstructions = true;
     }
 
     // Sync tool permission configs from ToolManager (via AgentContext) to PermissionManager

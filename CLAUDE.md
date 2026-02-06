@@ -202,9 +202,8 @@ src/
 │   │   ├── BasePluginNextGen.ts    # Base plugin class
 │   │   └── plugins/            # WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen,
 │   │                           # PersistentInstructionsPluginNextGen
-│   ├── context/                # Strategies and SmartCompactor (plugins removed)
-│   │   ├── strategies/         # Proactive, Balanced, Lazy compaction strategies
-│   │   └── SmartCompactor.ts   # LLM-powered intelligent compaction
+│   ├── context/                # Legacy types (strategies removed)
+│   │   └── types.ts            # Legacy type definitions
 │   ├── ToolManager.ts          # Tool management + execution
 │   ├── Connector.ts            # Auth registry
 │   ├── Vendor.ts               # Vendor enum
@@ -284,13 +283,13 @@ toolManager.setCircuitBreakerConfig('tool', { failureThreshold: 3, resetTimeoutM
 
 ## Context Management Strategies
 
-| Strategy | Threshold | Use Case |
-|----------|-----------|----------|
-| **proactive** | 75% | Default, balanced |
-| **aggressive** | 60% | Memory-constrained |
-| **lazy** | 90% | Preserve context |
-| **rolling-window** | N messages | Fixed window |
-| **adaptive** | Learns | Auto-adjusts |
+AgentContextNextGen uses `ICompactionStrategy` implementations registered via `StrategyRegistry`:
+
+| Strategy | Threshold | Description |
+|----------|-----------|-------------|
+| **algorithmic** (default) | 75% | Moves large tool results to Working Memory, limits tool pairs, applies rolling window |
+
+Custom strategies can be registered via `StrategyRegistry.register(MyStrategy)`.
 
 ## Tool Permissions
 

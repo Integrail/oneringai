@@ -747,7 +747,7 @@ const ctx = AgentContextNextGen.create({
     inContextMemory: true,    // InContextMemoryPluginNextGen
     persistentInstructions: false,
   },
-  strategy: 'balanced', // 'proactive' | 'balanced' | 'lazy'
+  strategy: 'algorithmic', // Default strategy (75% threshold)
 });
 
 // Add user message
@@ -819,7 +819,7 @@ const agent = Agent.create({
   model: 'gpt-4',
   tools: [weatherTool],
   context: {
-    strategy: 'balanced',       // NextGen strategies: 'proactive' (70%), 'balanced' (80%), 'lazy' (90%)
+    strategy: 'algorithmic',    // Default strategy: algorithmic compaction at 75% threshold
     features: { workingMemory: true },
   },
 });
@@ -877,7 +877,7 @@ interface AgentContextNextGenConfig {
   features?: ContextFeatures;
 
   /** Compaction strategy */
-  strategy?: CompactionStrategyName;  // 'proactive' (70%) | 'balanced' (80%) | 'lazy' (90%)
+  strategy?: string;  // 'algorithmic' (default, 75%) or custom registered strategy name
 
   /** Token estimator (default: simpleTokenEstimator) */
   tokenEstimator?: ITokenEstimator;
@@ -1057,9 +1057,9 @@ Compaction happens automatically during `prepare()` when context utilization exc
 
 | Strategy | Threshold | Description |
 |----------|-----------|-------------|
-| `proactive` | 70% | Compact early to maintain headroom |
-| `balanced` | 80% | Balance context preservation vs headroom (default) |
-| `lazy` | 90% | Preserve maximum context |
+| `algorithmic` | 75% | Moves large tool results to Working Memory, limits tool pairs, applies rolling window (default) |
+
+Custom strategies can be registered via `StrategyRegistry.register()`.
 
 **Context Budget:**
 
@@ -1286,7 +1286,7 @@ const agent = Agent.create({
   model: 'gpt-4',
   tools: [myTool],
   context: {
-    strategy: 'balanced',  // Compact at 80% utilization
+    strategy: 'algorithmic',  // Default: compact at 75% utilization
     features: { workingMemory: true },
   },
 });
@@ -1319,7 +1319,7 @@ The context management system is built around **AgentContextNextGen** - the clea
 │ (when)  │ │ (what)   │ │ Structure     │
 └─────────┘ └──────────┘ └───────────────┘
 
-Strategy: Decides WHEN to compact (proactive 70%, balanced 80%, lazy 90%)
+Strategy: Decides WHEN to compact (algorithmic: 75% threshold, or custom)
 Plugins: WorkingMemoryPluginNextGen, InContextMemoryPluginNextGen, etc.
 Context: Developer Message → Conversation History → Current Input
 ```
@@ -1342,7 +1342,7 @@ const ctx = AgentContextNextGen.create({
   systemPrompt: 'Your system instructions',
   maxContextTokens: 128000,    // Model's context window
   responseReserve: 4096,       // Reserve tokens for response
-  strategy: 'balanced',        // Compaction strategy: 'proactive' (70%), 'balanced' (80%), 'lazy' (90%)
+  strategy: 'algorithmic',     // Default compaction strategy (75% threshold)
   features: {
     workingMemory: true,       // Enable WorkingMemoryPluginNextGen
     inContextMemory: true,     // Enable InContextMemoryPluginNextGen
@@ -1432,7 +1432,6 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    strategy: 'proactive',
     features: { workingMemory: true },
   },
 });
@@ -1511,7 +1510,7 @@ interface BeforeCompactionContext {
   /** Current context budget */
   currentBudget: ContextBudget;
 
-  /** Strategy being used ('proactive', 'balanced', 'lazy') */
+  /** Strategy being used (e.g. 'algorithmic') */
   strategy: string;
 
   /** Components about to be compacted */
@@ -1539,55 +1538,29 @@ const hooks = {
 
 ### Context Strategies Deep Dive
 
-The library provides **five built-in strategies**, each optimized for different use cases. Understanding how each works internally helps you choose the right one.
+AgentContextNextGen uses a **strategy-based compaction system** with the `ICompactionStrategy` interface. The strategy controls when and how context is compacted.
 
-#### Strategy Comparison Table (NextGen)
+#### Built-in Strategies
 
-AgentContextNextGen uses simplified strategies with clear thresholds:
+| Strategy | Threshold | Description |
+|----------|-----------|-------------|
+| **algorithmic** (default) | 75% | Moves large tool results to Working Memory, limits tool pairs to 10, applies rolling window. Best for tool-heavy agents. |
 
-| Strategy | Compact Threshold | Best For | Description |
-|----------|-------------------|----------|-------------|
-| **proactive** | 70% | Conservative compaction | Compact early to maintain headroom |
-| **balanced** | 80% | General purpose (default) | Balance context preservation vs headroom |
-| **lazy** | 90% | Short tasks, large contexts | Preserve maximum context, compact only when needed |
-
----
-
-### Strategy Details
-
-#### Proactive Strategy (70% threshold)
-
-Best for long-running tasks that accumulate context. Compacts early to maintain headroom.
+The `algorithmic` strategy is the recommended default. It requires the `working_memory` plugin to be enabled (which it is by default).
 
 ```typescript
+// Default - uses algorithmic strategy automatically
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: { strategy: 'proactive' },
+  context: { features: { workingMemory: true } },
 });
-```
 
-#### Balanced Strategy (80% threshold)
-
-Default strategy. Good balance between context preservation and compaction.
-
-```typescript
+// Explicit strategy selection
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: { strategy: 'balanced' },
-});
-```
-
-#### Lazy Strategy (90% threshold)
-
-Best for short tasks or when context preservation is critical. Compacts only when necessary.
-
-```typescript
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4-turbo',
-  context: { strategy: 'lazy' },
+  context: { strategy: 'algorithmic' },
 });
 ```
 
@@ -1595,116 +1568,93 @@ const agent = Agent.create({
 
 ### Creating Custom Strategies
 
-For specialized use cases, implement `IContextStrategy`:
+For specialized use cases, implement `ICompactionStrategy` and register it via `StrategyRegistry`:
 
 ```typescript
 import {
-  IContextStrategy,
-  IContextComponent,
-  IContextCompactor,
-  ITokenEstimator,
-  ContextBudget,
-  ContextConfig,
-  BaseCompactionStrategy,  // Use this for easier implementation
+  ICompactionStrategy,
+  CompactionContext,
+  CompactionResult,
+  ConsolidationResult,
+  StrategyRegistry,
   Agent,
 } from '@everworker/oneringai';
 
-// Option 1: Implement from scratch
-class TimeBasedStrategy implements IContextStrategy {
+// Implement the ICompactionStrategy interface
+class TimeBasedStrategy implements ICompactionStrategy {
   readonly name = 'time-based';
+  readonly displayName = 'Time-Based';
+  readonly description = 'Adjusts compaction threshold based on time of day';
 
-  shouldCompact(budget: ContextBudget, config: ContextConfig): boolean {
+  get threshold(): number {
     const hour = new Date().getHours();
     const isBusinessHours = hour >= 9 && hour <= 17;
-
-    // More aggressive during peak hours
-    const threshold = isBusinessHours ? 0.60 : 0.85;
-    return budget.utilizationPercent > threshold * 100;
+    return isBusinessHours ? 0.60 : 0.85;
   }
 
-  async prepareComponents(components: IContextComponent[]): Promise<IContextComponent[]> {
-    return components; // No modification
+  async compact(context: CompactionContext): Promise<CompactionResult> {
+    const log: string[] = [];
+    let tokensFreed = 0;
+
+    // Remove old messages from conversation
+    const messages = context.getConversation();
+    const toRemove = Math.floor(messages.length * 0.3);
+    for (let i = 0; i < toRemove; i++) {
+      context.removeMessage(i);
+      tokensFreed += 100; // Approximate
+    }
+
+    log.push(`Time-based: removed ${toRemove} old messages`);
+    return { tokensFreed, log };
   }
 
-  async compact(
-    components: IContextComponent[],
-    budget: ContextBudget,
-    compactors: IContextCompactor[],
-    estimator: ITokenEstimator
-  ): Promise<{ components: IContextComponent[]; log: string[]; tokensFreed: number }> {
-    // Your compaction logic
-    const hour = new Date().getHours();
-    const targetUtilization = hour >= 9 && hour <= 17 ? 0.45 : 0.75;
-
-    // ... implement compaction
-    return { components, log: ['Time-based compaction'], tokensFreed: 0 };
+  async consolidate(context: CompactionContext): Promise<ConsolidationResult> {
+    // Post-cycle cleanup (optional)
+    return { tokensFreed: 0, log: [] };
   }
 }
-
-// Option 2: Extend BaseCompactionStrategy (recommended)
-// This gives you the template method pattern with shared logic
-class PriorityAwareStrategy extends BaseCompactionStrategy {
-  readonly name = 'priority-aware';
-
-  shouldCompact(budget: ContextBudget, config: ContextConfig): boolean {
-    // Check if high-priority content is at risk
-    const highPriorityRatio = this.calculateHighPriorityRatio(budget);
-    return budget.utilizationPercent > 70 && highPriorityRatio < 0.5;
-  }
-
-  calculateTargetSize(beforeSize: number, round: number): number {
-    // Reduce by 30% each round, preserving high-priority content
-    return Math.floor(beforeSize * (0.7 - round * 0.1));
-  }
 
   getTargetUtilization(): number {
     return 0.55;
   }
 
-  protected getMaxRounds(): number {
-    return 4;
-  }
-
-  private calculateHighPriorityRatio(budget: ContextBudget): number {
-    // Custom logic to assess high-priority content ratio
-    return 0.6; // Example
-  }
-}
+// Register the custom strategy
+StrategyRegistry.register(TimeBasedStrategy);
 
 // Use your custom strategy via Agent.create()
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    customStrategy: new PriorityAwareStrategy(),
+    strategy: 'time-based',  // Uses your registered strategy
+  },
+});
+
+// Or provide a strategy instance directly
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    compactionStrategy: new TimeBasedStrategy(),
   },
 });
 ```
 
-### Choosing a Strategy
-
-Select the appropriate strategy at creation based on your use case:
+### Using Strategies
 
 ```typescript
-// For short conversations - preserve maximum context
-const shortTaskAgent = Agent.create({
+// Default - algorithmic strategy (recommended for most use cases)
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: { strategy: 'lazy' },  // 90% threshold
+  // strategy defaults to 'algorithmic' (75% threshold)
 });
 
-// For general purpose - balanced approach (default)
-const generalAgent = Agent.create({
+// Custom registered strategy
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: { strategy: 'balanced' },  // 80% threshold
-});
-
-// For long-running tasks - compact early
-const longRunningAgent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: { strategy: 'proactive' },  // 70% threshold
+  context: { strategy: 'time-based' },  // Your registered strategy
 });
 ```
 
@@ -1804,7 +1754,7 @@ const hooks: AgentLifecycleHooks = {
   onError: async (error, context) => {
     if (context.phase === 'context_preparation') {
       console.error('Context preparation failed:', error);
-      // Could fall back to proactive strategy
+      // Could adjust strategy or retry
     }
   },
 };
@@ -1815,31 +1765,21 @@ agent.setLifecycleHooks(hooks);
 
 ### Best Practices for Context Management
 
-#### 1. Choose the Right Strategy
+#### 1. Use the Default Strategy
+
+The `algorithmic` strategy (default, 75% threshold) works well for most use cases. It automatically offloads large tool results to Working Memory and manages conversation history:
 
 ```typescript
 import { Agent } from '@everworker/oneringai';
 
-// Short tasks, plenty of context → Lazy (90% threshold)
-const shortTask = Agent.create({
+// Default algorithmic strategy - recommended for most use cases
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  context: { strategy: 'lazy' },
+  context: { features: { workingMemory: true } },
 });
 
-// Long conversations → Proactive (70% threshold)
-const chatBot = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: { strategy: 'proactive' },
-});
-
-// General purpose → Balanced (80% threshold, default)
-const productionAgent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  context: { strategy: 'balanced' },
-});
+// For custom compaction behavior, register a custom strategy via StrategyRegistry
 ```
 
 #### 2. Monitor in Production
@@ -7625,9 +7565,9 @@ if (!toolManager.isDestroyed) {
    - Lower perceived latency
 
 4. **Manage context:**
-   - Use proactive strategy for short conversations
-   - Use balanced strategy (default) for general use
-   - Use lazy strategy for long conversations
+   - The default `algorithmic` strategy (75% threshold) handles most use cases
+   - Enable `workingMemory` for automatic tool result offloading
+   - Register custom strategies via `StrategyRegistry` for specialized needs
 
 5. **Batch requests:**
    - Batch API calls where possible

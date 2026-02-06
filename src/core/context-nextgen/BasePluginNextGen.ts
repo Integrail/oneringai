@@ -9,6 +9,7 @@
 
 import type { IContextPluginNextGen, ITokenEstimator } from './types.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import { TOKEN_ESTIMATION } from '../constants.js';
 
 /**
  * Simple token estimator used by plugins.
@@ -30,8 +31,7 @@ import type { ToolFunction } from '../../domain/entities/Tool.js';
 export const simpleTokenEstimator: ITokenEstimator = {
   estimateTokens(text: string): number {
     if (!text || text.length === 0) return 0;
-    // ~3.5 characters per token on average for mixed content
-    return Math.ceil(text.length / 3.5);
+    return Math.ceil(text.length / TOKEN_ESTIMATION.MIXED_CHARS_PER_TOKEN);
   },
 
   estimateDataTokens(data: unknown): number {

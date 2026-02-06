@@ -43,75 +43,6 @@ export const CONTEXT_DEFAULTS = {
   HARD_LIMIT: 0.90,
 } as const;
 
-// ============ Strategy Defaults ============
-
-/**
- * Proactive strategy configuration
- */
-export const PROACTIVE_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.65,
-
-  /** Base reduction factor for round 1 */
-  BASE_REDUCTION_FACTOR: 0.50,
-
-  /** Reduction step per round (more aggressive each round) */
-  REDUCTION_STEP: 0.15,
-
-  /** Maximum compaction rounds */
-  MAX_ROUNDS: 3,
-} as const;
-
-/**
- * Aggressive strategy configuration
- */
-export const AGGRESSIVE_STRATEGY_DEFAULTS = {
-  /** Threshold to trigger compaction */
-  THRESHOLD: 0.60,
-
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.50,
-
-  /** Reduction factor (keep 30% of original) */
-  REDUCTION_FACTOR: 0.30,
-} as const;
-
-/**
- * Lazy strategy configuration
- */
-export const LAZY_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.85,
-
-  /** Reduction factor (keep 70% of original) */
-  REDUCTION_FACTOR: 0.70,
-} as const;
-
-/**
- * Adaptive strategy configuration
- */
-export const ADAPTIVE_STRATEGY_DEFAULTS = {
-  /** Number of compactions to learn from */
-  LEARNING_WINDOW: 10,
-
-  /** Compactions per minute threshold to switch to aggressive */
-  SWITCH_THRESHOLD: 5,
-
-  /** Low utilization threshold to switch to lazy */
-  LOW_UTILIZATION_THRESHOLD: 70,
-
-  /** Low frequency threshold to switch to lazy */
-  LOW_FREQUENCY_THRESHOLD: 0.5,
-} as const;
-
-/**
- * Rolling window strategy configuration
- */
-export const ROLLING_WINDOW_DEFAULTS = {
-  /** Default maximum messages to keep */
-  MAX_MESSAGES: 20,
-} as const;
-
 // ============ Memory Defaults ============
 
 /**
@@ -347,29 +278,3 @@ export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
   web_fetch_js: 6,
 };
 
-// ============ Context Guardian Defaults ============
-
-/**
- * ContextGuardian configuration - mandatory hard limit enforcement
- * before LLM calls to prevent context overflow.
- *
- * NOTE: The guardian acts as a LAST RESORT after smart compaction and strategy-based
- * eviction have already been attempted. Its thresholds should be more permissive
- * to avoid aggressive data loss.
- */
-export const GUARDIAN_DEFAULTS = {
-  /** Enable guardian validation (can be disabled for testing) */
-  ENABLED: true,
-
-  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
-  MAX_TOOL_RESULT_TOKENS: 2000,
-
-  /** Minimum system prompt tokens to preserve during emergency compaction */
-  MIN_SYSTEM_PROMPT_TOKENS: 3000,
-
-  /** Number of most recent messages to always protect (increased from 4) */
-  PROTECTED_RECENT_MESSAGES: 20,
-
-  /** Truncation suffix for oversized content */
-  TRUNCATION_SUFFIX: '\n\n[Content truncated by ContextGuardian - original data may be available in memory]',
-} as const;

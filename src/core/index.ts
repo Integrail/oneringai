@@ -26,6 +26,7 @@
  */
 
 export { Connector } from './Connector.js';
+export { ScopedConnectorRegistry } from './ScopedConnectorRegistry.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 
@@ -78,15 +79,6 @@ export type {
   StrategyRegistryEntry,
 } from './context-nextgen/index.js';
 
-// SmartCompactor - LLM-powered intelligent context compaction (Phase 4)
-export { SmartCompactor, createSmartCompactor } from './context/SmartCompactor.js';
-export type {
-  SmartCompactorConfig,
-  SmartCompactionResult,
-  CompactionSummary,
-  SpilledData,
-} from './context/SmartCompactor.js';
-
 // Lifecycle hooks and direct call types (from BaseAgent)
 export type {
   AgentLifecycleHooks,
@@ -101,11 +93,6 @@ export { createProvider, createProviderAsync } from './createProvider.js';
 export {
   TASK_DEFAULTS,
   CONTEXT_DEFAULTS,
-  PROACTIVE_STRATEGY_DEFAULTS,
-  AGGRESSIVE_STRATEGY_DEFAULTS,
-  LAZY_STRATEGY_DEFAULTS,
-  ADAPTIVE_STRATEGY_DEFAULTS,
-  ROLLING_WINDOW_DEFAULTS,
   MEMORY_DEFAULTS,
   SESSION_DEFAULTS,
   AGENT_DEFAULTS,
@@ -114,10 +101,9 @@ export {
   TOKEN_ESTIMATION,
   TOOL_RESULT_EVICTION_DEFAULTS,
   DEFAULT_TOOL_RETENTION,
-  GUARDIAN_DEFAULTS,
-  // Note: STRATEGY_THRESHOLDS is exported from context-nextgen/index.js above
   SAFETY_CAPS,
   TOOL_RETENTION_MULTIPLIERS,
+  STRATEGY_THRESHOLDS,
 } from './constants.js';
 export type { StrategyName } from './constants.js';
 

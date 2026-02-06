@@ -204,7 +204,7 @@ describe('WorkingMemoryPluginNextGen', () => {
     it('should store with session scope by default', async () => {
       await plugin.store('key', 'Description', { data: 1 });
 
-      const state = await plugin.getStateAsync();
+      const state = plugin.getState();
       const entry = state.entries.find(e => e.key === 'key');
       expect(entry?.scope).toBe('session');
     });
@@ -369,7 +369,7 @@ describe('WorkingMemoryPluginNextGen', () => {
       await plugin.store('key1', 'Desc 1', { value: 1 });
       await plugin.store('key2', 'Desc 2', { value: 2 }, { tier: 'findings' });
 
-      const state = await plugin.getStateAsync();
+      const state = plugin.getState();
 
       expect(state.version).toBe(1);
       expect(state.entries).toHaveLength(2);
@@ -380,7 +380,7 @@ describe('WorkingMemoryPluginNextGen', () => {
 
     it('should restore state', async () => {
       await plugin.store('key1', 'Desc 1', { original: true });
-      const state = await plugin.getStateAsync();
+      const state = plugin.getState();
 
       // Create new plugin and restore
       const newPlugin = new WorkingMemoryPluginNextGen();

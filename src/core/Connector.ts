@@ -21,6 +21,9 @@ import { CircuitBreaker } from '../infrastructure/resilience/CircuitBreaker.js';
 import { calculateBackoff, BackoffConfig } from '../infrastructure/resilience/BackoffStrategy.js';
 import { logger } from '../infrastructure/observability/Logger.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
+import type { IConnectorRegistry } from '../domain/interfaces/IConnectorRegistry.js';
+import type { IConnectorAccessPolicy, ConnectorAccessContext } from '../domain/interfaces/IConnectorAccessPolicy.js';
+import { ScopedConnectorRegistry } from './ScopedConnectorRegistry.js';
 
 /**
  * Default configuration values for resilience features
@@ -134,6 +137,56 @@ export class Connector {
    */
   static size(): number {
     return Connector.registry.size;
+  }
+
+  // ============ Access Control ============
+
+  private static _accessPolicy: IConnectorAccessPolicy | null = null;
+
+  /**
+   * Set a global access policy for connector scoping.
+   * Pass null to clear the policy.
+   */
+  static setAccessPolicy(policy: IConnectorAccessPolicy | null): void {
+    Connector._accessPolicy = policy;
+  }
+
+  /**
+   * Get the current global access policy (or null if none set).
+   */
+  static getAccessPolicy(): IConnectorAccessPolicy | null {
+    return Connector._accessPolicy;
+  }
+
+  /**
+   * Create a scoped (filtered) view of the connector registry.
+   * Requires a global access policy to be set via setAccessPolicy().
+   *
+   * @param context - Opaque context passed to the policy (e.g., { userId, tenantId })
+   * @returns IConnectorRegistry that only exposes accessible connectors
+   * @throws Error if no access policy is set
+   */
+  static scoped(context: ConnectorAccessContext): IConnectorRegistry {
+    if (!Connector._accessPolicy) {
+      throw new Error('No access policy set. Call Connector.setAccessPolicy() first.');
+    }
+    return new ScopedConnectorRegistry(Connector._accessPolicy, context);
+  }
+
+  /**
+   * Return the static Connector methods as an IConnectorRegistry object (unfiltered).
+   * Useful when code accepts the interface but you want the full admin view.
+   */
+  static asRegistry(): IConnectorRegistry {
+    return {
+      get: (name: string) => Connector.get(name),
+      has: (name: string) => Connector.has(name),
+      list: () => Connector.list(),
+      listAll: () => Connector.listAll(),
+      size: () => Connector.size(),
+      getDescriptionsForTools: () => Connector.getDescriptionsForTools(),
+      getInfo: () => Connector.getInfo(),
+    };
   }
 
   /**

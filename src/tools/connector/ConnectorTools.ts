@@ -15,6 +15,7 @@ import { Connector } from '../../core/Connector.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
 import { ToolFunction, ToolPermissionConfig } from '../../domain/entities/Tool.js';
 import { detectServiceFromURL } from '../../domain/entities/Services.js';
+import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
 
 /**
  * Headers that are protected and cannot be overridden by tool arguments
@@ -94,6 +95,14 @@ export interface GenericAPICallResult {
 }
 
 /**
+ * Options for ConnectorTools methods that accept a scoped registry
+ */
+export interface ConnectorToolsOptions {
+  /** Optional scoped registry for access-controlled connector lookup */
+  registry?: IConnectorRegistry;
+}
+
+/**
  * ConnectorTools - Main API for vendor-dependent tools
  *
  * Usage:
@@ -106,6 +115,10 @@ export interface GenericAPICallResult {
  *
  * // Discover all available connector tools
  * const allTools = ConnectorTools.discoverAll();
+ *
+ * // With scoped registry (access control)
+ * const registry = Connector.scoped({ tenantId: 'acme' });
+ * const tools = ConnectorTools.for('slack', undefined, { registry });
  * ```
  */
 export class ConnectorTools {
@@ -182,8 +195,8 @@ export class ConnectorTools {
    * // Returns: [slack_api, slack_send_message, slack_list_channels, ...]
    * ```
    */
-  static for(connectorOrName: Connector | string, userId?: string): ToolFunction[] {
-    const connector = this.resolveConnector(connectorOrName);
+  static for(connectorOrName: Connector | string, userId?: string, options?: ConnectorToolsOptions): ToolFunction[] {
+    const connector = this.resolveConnector(connectorOrName, options?.registry);
     const tools: ToolFunction[] = [];
 
     // 1. Always include generic API tool if baseURL exists
@@ -261,9 +274,9 @@ export class ConnectorTools {
    * }
    * ```
    */
-  static discoverAll(userId?: string): Map<string, ToolFunction[]> {
+  static discoverAll(userId?: string, options?: ConnectorToolsOptions): Map<string, ToolFunction[]> {
     const result = new Map<string, ToolFunction[]>();
-    const allConnectors = Connector.listAll();
+    const allConnectors = options?.registry ? options.registry.listAll() : Connector.listAll();
     const factoryKeys = Array.from(this.factories.keys());
     logger.debug(`[ConnectorTools.discoverAll] ${allConnectors.length} connectors in library, ${factoryKeys.length} factories registered: [${factoryKeys.join(', ')}]`);
 
@@ -302,8 +315,9 @@ export class ConnectorTools {
    * @param serviceType - Service identifier
    * @returns Connector or undefined
    */
-  static findConnector(serviceType: string): Connector | undefined {
-    return Connector.listAll().find((c) => this.detectService(c) === serviceType);
+  static findConnector(serviceType: string, options?: ConnectorToolsOptions): Connector | undefined {
+    const connectors = options?.registry ? options.registry.listAll() : Connector.listAll();
+    return connectors.find((c) => this.detectService(c) === serviceType);
   }
 
   /**
@@ -313,8 +327,9 @@ export class ConnectorTools {
    * @param serviceType - Service identifier
    * @returns Array of matching connectors
    */
-  static findConnectors(serviceType: string): Connector[] {
-    return Connector.listAll().filter((c) => this.detectService(c) === serviceType);
+  static findConnectors(serviceType: string, options?: ConnectorToolsOptions): Connector[] {
+    const connectors = options?.registry ? options.registry.listAll() : Connector.listAll();
+    return connectors.filter((c) => this.detectService(c) === serviceType);
   }
 
   /**
@@ -382,8 +397,11 @@ export class ConnectorTools {
 
   // ============ Private Methods ============
 
-  private static resolveConnector(connectorOrName: Connector | string): Connector {
-    return typeof connectorOrName === 'string' ? Connector.get(connectorOrName) : connectorOrName;
+  private static resolveConnector(connectorOrName: Connector | string, registry?: IConnectorRegistry): Connector {
+    if (typeof connectorOrName === 'string') {
+      return registry ? registry.get(connectorOrName) : Connector.get(connectorOrName);
+    }
+    return connectorOrName;
   }
 
   private static createGenericAPITool(

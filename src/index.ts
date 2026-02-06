@@ -27,7 +27,7 @@
  */
 
 // ============ Core API (Primary) ============
-export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
+export { Connector, ScopedConnectorRegistry, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContextNextGen - Clean, Simple Context Management
@@ -77,14 +77,6 @@ export type {
   StrategyInfo,
   StrategyRegistryEntry,
 } from './core/index.js';
-
-// Context Guardian (mandatory hard limit enforcement)
-export { ContextGuardian } from './core/context/ContextGuardian.js';
-export type {
-  ContextGuardianConfig,
-  GuardianValidation,
-  DegradationResult,
-} from './core/context/ContextGuardian.js';
 
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';
@@ -261,16 +253,6 @@ export type {
   TokenContentType,
 } from './core/context/types.js';
 export { DEFAULT_CONTEXT_CONFIG } from './core/context/types.js';
-
-// Context Strategies
-export {
-  ProactiveCompactionStrategy,
-  AggressiveCompactionStrategy,
-  LazyCompactionStrategy,
-  RollingWindowStrategy,
-  AdaptiveStrategy,
-  createStrategy,
-} from './core/context/strategies/index.js';
 
 // Context Infrastructure
 export {
