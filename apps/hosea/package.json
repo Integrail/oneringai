@@ -1,6 +1,6 @@
 {
   "name": "@everworker/hosea",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "HOSEA - Human-Oriented System for Engaging Agents - Desktop UI for OneRing AI",
   "author": {
     "name": "Everworker.ai",
@@ -107,7 +107,7 @@
       "repo": "oneringai"
     },
     "mac": {
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,

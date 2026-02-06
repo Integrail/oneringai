@@ -15,7 +15,35 @@ export function UpdateNotification(): React.ReactElement | null {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    window.hosea.updater.onStatus(setUpdateStatus);
+    window.hosea.updater.onStatus((status) => {
+      // Convert flat type to discriminated union
+      switch (status.status) {
+        case 'checking':
+          setUpdateStatus({ status: 'checking' });
+          break;
+        case 'available':
+          setUpdateStatus({ status: 'available', version: status.version!, releaseNotes: status.releaseNotes });
+          break;
+        case 'not-available':
+          setUpdateStatus({ status: 'not-available' });
+          break;
+        case 'downloading':
+          setUpdateStatus({
+            status: 'downloading',
+            percent: status.percent!,
+            bytesPerSecond: status.bytesPerSecond,
+            transferred: status.transferred,
+            total: status.total,
+          });
+          break;
+        case 'downloaded':
+          setUpdateStatus({ status: 'downloaded', version: status.version! });
+          break;
+        case 'error':
+          setUpdateStatus({ status: 'error', message: status.message || 'Unknown error' });
+          break;
+      }
+    });
     return () => window.hosea.updater.removeStatusListener();
   }, []);
 
