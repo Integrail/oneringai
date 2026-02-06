@@ -552,7 +552,7 @@ export interface AgentContextNextGenConfig {
  */
 export const DEFAULT_CONFIG = {
   responseReserve: 4096,
-  strategy: 'default',
+  strategy: 'algorithmic',
 };
 
 // ============================================================================

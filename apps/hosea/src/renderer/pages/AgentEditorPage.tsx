@@ -130,7 +130,7 @@ const defaultFormData: AgentFormData = {
   // Execution settings
   maxIterations: 50, // Default from AGENT_DEFAULTS.MAX_ITERATIONS
   // Context settings
-  contextStrategy: 'default', // Default strategy from registry
+  contextStrategy: 'algorithmic', // Default strategy from registry
   maxContextTokens: 128000,
   responseReserve: 4096,
   // Memory settings (workingMemory in NextGen)

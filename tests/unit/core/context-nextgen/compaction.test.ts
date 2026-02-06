@@ -86,7 +86,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 600,
         responseReserve: 100,
-        // strategy defaults to 'default' (70% threshold)
+        strategy: 'default', // 70% threshold
         features: { workingMemory: false },
       });
 
@@ -612,6 +612,7 @@ describe('Context Compaction Edge Cases', () => {
         model: 'gpt-4',
         maxContextTokens: 800,
         responseReserve: 100,
+        strategy: 'default',
         features: { workingMemory: false },
       });
 

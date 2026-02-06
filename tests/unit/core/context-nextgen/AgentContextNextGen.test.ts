@@ -233,6 +233,7 @@ describe('AgentContextNextGen', () => {
       // Create context with auto-plugins disabled to test manual registration
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -249,6 +250,7 @@ describe('AgentContextNextGen', () => {
       // Create context with auto-plugins disabled
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -266,6 +268,7 @@ describe('AgentContextNextGen', () => {
       // Create context with auto-plugins disabled
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -283,6 +286,7 @@ describe('AgentContextNextGen', () => {
       // Create context with auto-plugins disabled
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -306,6 +310,7 @@ describe('AgentContextNextGen', () => {
       // Create context with auto-plugins disabled
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false, inContextMemory: false },
       });
 
@@ -538,6 +543,7 @@ describe('AgentContextNextGen', () => {
     it('should throw when required plugin is missing on setCompactionStrategy', () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -551,6 +557,7 @@ describe('AgentContextNextGen', () => {
     it('should list available plugins in error message', () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false, inContextMemory: true },
       });
 
@@ -567,9 +574,10 @@ describe('AgentContextNextGen', () => {
     });
 
     it('should allow strategy without requiredPlugins', () => {
-      // Default strategy has no requiredPlugins
+      // 'default' strategy has no requiredPlugins
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -586,6 +594,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 200,
         responseReserve: 50,
+        strategy: 'default',
         features: { workingMemory: false },
       });
 
@@ -604,6 +613,7 @@ describe('AgentContextNextGen', () => {
         model: 'gpt-4',
         maxContextTokens: 500,
         responseReserve: 100,
+        strategy: 'default',
         features: { workingMemory: false },
       });
 

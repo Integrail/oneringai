@@ -41,9 +41,8 @@ export interface DefaultCompactionStrategyConfig {
  */
 export class DefaultCompactionStrategy implements ICompactionStrategy {
   readonly name = 'default';
-  readonly displayName = 'Default';
-  readonly description =
-    'Standard compaction strategy. Compacts plugins first, then conversation history. Triggers at 70% context usage.';
+  readonly displayName = 'Dumb';
+  readonly description = 'Do not use';
   readonly threshold: number;
 
   constructor(config?: DefaultCompactionStrategyConfig) {

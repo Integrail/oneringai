@@ -37,8 +37,8 @@ describe('StrategyRegistry', () => {
       expect(info).toHaveLength(2);
       expect(info.find(s => s.name === 'default')).toEqual({
         name: 'default',
-        displayName: 'Default',
-        description: expect.stringContaining('70%'),
+        displayName: 'Dumb',
+        description: 'Do not use',
         threshold: 0.7,
         isBuiltIn: true,
       });
@@ -53,8 +53,8 @@ describe('StrategyRegistry', () => {
 
     it('should include displayName and description on default strategy instance', () => {
       const strategy = StrategyRegistry.create('default');
-      expect(strategy.displayName).toBe('Default');
-      expect(strategy.description).toContain('70%');
+      expect(strategy.displayName).toBe('Dumb');
+      expect(strategy.description).toBe('Do not use');
     });
   });
 

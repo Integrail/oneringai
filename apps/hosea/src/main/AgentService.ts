@@ -95,13 +95,13 @@ interface StoredConnectorConfig {
 
 /**
  * Validate strategy exists in StrategyRegistry.
- * Returns the strategy name if valid, or 'default' if not found.
+ * Returns the strategy name if valid, or 'algorithmic' if not found.
  */
 function validateStrategy(strategyName: string): { strategy: string; isValid: boolean } {
   if (StrategyRegistry.has(strategyName)) {
     return { strategy: strategyName, isValid: true };
   }
-  return { strategy: 'default', isValid: false };
+  return { strategy: 'algorithmic', isValid: false };
 }
 
 /**
@@ -594,7 +594,7 @@ export class AgentService {
     const agentType: StoredAgentConfig['agentType'] = 'basic';
 
     // Use stored strategy directly - validation happens at initialization time
-    const contextStrategy = (typeConfig.contextStrategy as string) ?? 'default';
+    const contextStrategy = (typeConfig.contextStrategy as string) ?? 'algorithmic';
 
     // Handle backward compatibility for feature names:
     // Old stored definitions use 'memory', new ones use 'workingMemory'
@@ -897,7 +897,7 @@ export class AgentService {
             'rolling-window': 'lazy',
             'adaptive': 'balanced',
           };
-          const mappedStrategy = legacyMapping[config.contextStrategy] ?? 'default';
+          const mappedStrategy = legacyMapping[config.contextStrategy] ?? 'algorithmic';
           updates.contextStrategy = mappedStrategy;
           needsSave = true;
           console.log(`NextGen migration: Converted agent "${config.name}" strategy from "${config.contextStrategy}" to "${mappedStrategy}" (original strategy not found in registry)`);
@@ -2386,7 +2386,7 @@ export class AgentService {
       instructions: 'You are a helpful AI assistant. Use the rich formatting capabilities available to you (charts, diagrams, tables, code highlighting) to provide clear and visually informative responses when appropriate.',
       temperature: 0.7,
       maxIterations: 50,
-      contextStrategy: 'default',
+      contextStrategy: 'algorithmic',
       maxContextTokens: 128000,
       responseReserve: 4096,
       workingMemoryEnabled: true,
