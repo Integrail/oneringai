@@ -12,6 +12,7 @@
  */
 
 import { Connector } from '../../core/Connector.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
 import { ToolFunction, ToolPermissionConfig } from '../../domain/entities/Tool.js';
 import { detectServiceFromURL } from '../../domain/entities/Services.js';
 
@@ -157,6 +158,7 @@ export class ConnectorTools {
    */
   static registerService(serviceType: string, factory: ServiceToolFactory): void {
     this.factories.set(serviceType, factory);
+    logger.debug(`[ConnectorTools.registerService] Registered factory for: ${serviceType} (total factories: ${this.factories.size})`);
   }
 
   /**
@@ -190,10 +192,17 @@ export class ConnectorTools {
     }
 
     // 2. Add service-specific tools if factory exists
+    // Prefix with connector name (same pattern as generic API tool: ${connector.name}_api)
+    // This prevents naming collisions when multiple vendors have tools with the same name
+    // (e.g., openai generate_image vs google generate_image)
     const serviceType = this.detectService(connector);
     if (serviceType && this.factories.has(serviceType)) {
       const factory = this.factories.get(serviceType)!;
-      tools.push(...factory(connector, userId));
+      const serviceTools = factory(connector, userId);
+      for (const tool of serviceTools) {
+        tool.definition.function.name = `${connector.name}_${tool.definition.function.name}`;
+      }
+      tools.push(...serviceTools);
     }
 
     return tools;
@@ -254,22 +263,35 @@ export class ConnectorTools {
    */
   static discoverAll(userId?: string): Map<string, ToolFunction[]> {
     const result = new Map<string, ToolFunction[]>();
+    const allConnectors = Connector.listAll();
+    const factoryKeys = Array.from(this.factories.keys());
+    logger.debug(`[ConnectorTools.discoverAll] ${allConnectors.length} connectors in library, ${factoryKeys.length} factories registered: [${factoryKeys.join(', ')}]`);
 
-    for (const connector of Connector.listAll()) {
+    for (const connector of allConnectors) {
       // Include connectors that:
       // 1. Have explicit serviceType, OR
-      // 2. Have baseURL but no vendor (external API, not AI provider)
+      // 2. Have baseURL but no vendor (external API, not AI provider), OR
+      // 3. Have a vendor with registered tool factories (e.g., multimedia tools)
       const hasServiceType = !!connector.config.serviceType;
       const isExternalAPI = connector.baseURL && !connector.vendor;
+      const hasVendorFactory = !!connector.vendor && this.factories.has(connector.vendor);
 
-      if (hasServiceType || isExternalAPI) {
-        const tools = this.for(connector, userId);
-        if (tools.length > 0) {
-          result.set(connector.name, tools);
+      logger.debug(`[ConnectorTools.discoverAll] connector=${connector.name}: vendor=${connector.vendor}, serviceType=${connector.config.serviceType}, baseURL=${connector.baseURL ? 'yes' : 'no'} → hasServiceType=${hasServiceType}, isExternalAPI=${isExternalAPI}, hasVendorFactory=${hasVendorFactory}`);
+
+      if (hasServiceType || isExternalAPI || hasVendorFactory) {
+        try {
+          const tools = this.for(connector, userId);
+          logger.debug(`[ConnectorTools.discoverAll]   → ${tools.length} tools: [${tools.map(t => t.definition.function.name).join(', ')}]`);
+          if (tools.length > 0) {
+            result.set(connector.name, tools);
+          }
+        } catch (err) {
+          logger.error(`[ConnectorTools.discoverAll]   → ERROR generating tools for ${connector.name}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }
 
+    logger.debug(`[ConnectorTools.discoverAll] Result: ${result.size} connectors with tools`);
     return result;
   }
 
@@ -330,6 +352,11 @@ export class ConnectorTools {
     // 2. Infer from baseURL patterns
     else if (connector.baseURL) {
       result = detectServiceFromURL(connector.baseURL);
+    }
+
+    // 3. Fall back to vendor as service identifier (for AI vendor connectors)
+    if (!result && connector.vendor) {
+      result = connector.vendor;
     }
 
     // Cache the result (even if undefined)

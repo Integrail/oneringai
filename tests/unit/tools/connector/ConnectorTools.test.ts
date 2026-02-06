@@ -219,7 +219,7 @@ describe('ConnectorTools', () => {
 
       expect(mockFactory).toHaveBeenCalled();
       expect(tools.length).toBe(2); // generic + custom
-      expect(tools.some((t) => t.definition.function.name === 'custom_tool')).toBe(true);
+      expect(tools.some((t) => t.definition.function.name === 'custom_custom_tool')).toBe(true);
 
       // Cleanup
       ConnectorTools.unregisterService('custom-service');

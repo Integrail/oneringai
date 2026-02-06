@@ -834,6 +834,23 @@ export type {
 // Unified Tool Registry (built-in + connector tools)
 export { ToolRegistry, type ConnectorToolEntry } from './tools/index.js';
 
+// Multimedia tools (auto-registered with ConnectorTools for AI vendors)
+export {
+  FileMediaOutputHandler,
+  setMediaOutputHandler,
+  getMediaOutputHandler,
+  createImageGenerationTool,
+  createVideoTools,
+  createTextToSpeechTool,
+  createSpeechToTextTool,
+} from './tools/index.js';
+
+export type {
+  IMediaOutputHandler,
+  MediaOutputMetadata,
+  MediaOutputResult,
+} from './tools/index.js';
+
 // ============ Built-in Agents ============
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';

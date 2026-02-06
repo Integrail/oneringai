@@ -68,6 +68,8 @@ import {
   type ContextBudget,
   type AgentContextNextGenConfig,
   type StrategyInfo,
+  ConnectorTools,
+  ToolRegistry,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import {
@@ -443,6 +445,26 @@ Create interactive mindmaps from markdown hierarchies:
 ## Branch 3
 \`\`\`
 
+### Displaying Generated Media (Images, Video, Audio)
+When a media generation tool returns a result with a \`location\` field containing a local file path, display it immediately. Use the **raw file path** (no file:// prefix). HOSEA's renderer automatically handles local paths.
+
+**Images** — use markdown image syntax:
+\`\`\`
+![description](/path/to/media/image.png)
+\`\`\`
+
+**Audio** (text_to_speech results) — use a markdown link:
+\`\`\`
+[Play: description](/path/to/media/audio.mp3)
+\`\`\`
+
+**Video** — use a markdown link:
+\`\`\`
+[Play: description](/path/to/media/video.mp4)
+\`\`\`
+
+HOSEA renders audio/video links as inline players automatically. Do NOT use image syntax (\`![]()\`) for audio or video files.
+
 ### Best Practices
 1. Use diagrams and charts when explaining complex concepts, processes, or data
 2. Use tables for comparing options or presenting structured data
@@ -501,6 +523,7 @@ export class AgentService {
   private browserService: BrowserService | null = null;
   // Unified tool catalog (combines oneringai + hosea tools)
   private toolCatalog: UnifiedToolCatalog;
+  private oneRingToolProvider: OneRingToolProvider;
   private browserToolProvider: BrowserToolProvider;
   // Stream emitter for sending chunks to renderer (set by main process)
   private streamEmitter: ((instanceId: string, chunk: StreamChunk) => void) | null = null;
@@ -624,8 +647,8 @@ export class AgentService {
     this.toolCatalog = new UnifiedToolCatalog();
 
     // Register OneRing tools (from @everworker/oneringai library)
-    const oneRingProvider = new OneRingToolProvider();
-    this.toolCatalog.registerProvider(oneRingProvider);
+    this.oneRingToolProvider = new OneRingToolProvider();
+    this.toolCatalog.registerProvider(this.oneRingToolProvider);
 
     // Register Browser tools provider (tools will be available once BrowserService is set)
     this.browserToolProvider = new BrowserToolProvider();
@@ -652,6 +675,30 @@ export class AgentService {
     await this.loadAPIConnectors();
     await this.loadUniversalConnectors();
     await this.migrateAPIConnectorsToUniversal();
+
+    // Refresh tool catalog now that all connectors are registered with the library.
+    // ConnectorTools.discoverAll() can now find vendor connectors and generate multimedia tools.
+    logger.debug('[initializeService] Invalidating tool caches after connector loading...');
+    logger.debug(`[initializeService] Connector.list() = ${JSON.stringify(Connector.list())}`);
+
+    // Check what ConnectorTools.discoverAll() returns BEFORE cache invalidation
+    const discoveredBefore = ConnectorTools.discoverAll();
+    logger.debug(`[initializeService] ConnectorTools.discoverAll() BEFORE invalidation: ${discoveredBefore.size} connectors`);
+    for (const [name, tools] of discoveredBefore) {
+      logger.debug(`  connector=${name}: ${tools.length} tools [${tools.map(t => t.definition.function.name).join(', ')}]`);
+    }
+
+    this.oneRingToolProvider.invalidateCache();
+    this.toolCatalog.invalidateCache();
+
+    // Now check what ToolRegistry returns after invalidation
+    const allTools = ToolRegistry.getAllTools();
+    const connectorTools = allTools.filter(t => 'connectorName' in t);
+    logger.info(`[initializeService] After cache invalidation: ToolRegistry has ${allTools.length} total tools (${connectorTools.length} connector tools)`);
+    for (const t of connectorTools) {
+      logger.debug(`  tool=${t.name}, category=${t.category}, connectorServiceTypes=${JSON.stringify(t.connectorServiceTypes)}`);
+    }
+
     await this.loadAgents();
     await this.migrateAgentsToNextGen(); // Migrate existing agents to NextGen format
     await this.loadMCPServers();
@@ -700,19 +747,39 @@ export class AgentService {
 
   private async loadConnectors(): Promise<void> {
     const connectorsDir = join(this.dataDir, 'connectors');
-    if (!existsSync(connectorsDir)) return;
+    logger.debug('[loadConnectors] Looking for connectors in:', connectorsDir);
+    if (!existsSync(connectorsDir)) {
+      logger.debug('[loadConnectors] Directory does not exist, skipping');
+      return;
+    }
 
     try {
       const files = await readdir(connectorsDir);
+      logger.debug(`[loadConnectors] Found files: ${JSON.stringify(files)}`);
       for (const file of files) {
         if (file.endsWith('.json')) {
           const content = await readFile(join(connectorsDir, file), 'utf-8');
           const config = JSON.parse(content) as StoredConnectorConfig;
           this.connectors.set(config.name, config);
+          logger.debug(`[loadConnectors] Loaded connector: name=${config.name}, vendor=${config.vendor}`);
+
+          // Register with the library so ConnectorTools can discover vendor-based tools
+          if (!Connector.has(config.name)) {
+            Connector.create({
+              name: config.name,
+              vendor: config.vendor as Vendor,
+              auth: config.auth,
+              baseURL: config.baseURL,
+            });
+            logger.debug(`[loadConnectors] Registered with Connector library: ${config.name}`);
+          } else {
+            logger.debug(`[loadConnectors] Already registered in library: ${config.name}`);
+          }
         }
       }
-    } catch {
-      // Ignore errors
+      logger.info(`[loadConnectors] Loaded ${this.connectors.size} LLM connectors. Library has ${Connector.list().length} total connectors: ${Connector.list().join(', ')}`);
+    } catch (err) {
+      logger.error(`[loadConnectors] Error loading connectors: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -2056,6 +2123,8 @@ export class AgentService {
         return { success: false, error: `Agent "${id}" not found` };
       }
 
+      const oldToolNames = existing.tools;
+
       const updated: StoredAgentConfig = {
         ...existing,
         ...updates,
@@ -2068,9 +2137,64 @@ export class AgentService {
       const definition = this.toStoredDefinition(updated);
       await this.agentDefinitionStorage.save(definition);
 
+      // Sync tools on running instances that use this agent config
+      if (updates.tools) {
+        this.syncInstanceTools(id, oldToolNames, updated.tools);
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Sync tools on all running instances of an agent config after config update.
+   * Only touches user-configured tools — plugin tools (memory, context) and MCP tools are untouched.
+   */
+  private syncInstanceTools(agentConfigId: string, oldToolNames: string[], newToolNames: string[]): void {
+    for (const [instanceId, instance] of this.instances) {
+      if (instance.agentConfigId !== agentConfigId) continue;
+
+      const toolManager = instance.agent.tools;
+      const context = { instanceId };
+
+      // Remove tools that were in old config but not in new
+      const toRemove = oldToolNames.filter(name => !newToolNames.includes(name));
+      for (const name of toRemove) {
+        toolManager.unregister(name);
+      }
+
+      // Add tools that are in new config but not in old
+      const toAdd = newToolNames.filter(name => !oldToolNames.includes(name));
+      if (toAdd.length > 0) {
+        const newTools = this.toolCatalog.resolveToolsForAgent(toAdd, context);
+        toolManager.registerMany(newTools);
+      }
+
+      logger.info(`[syncInstanceTools] Instance ${instanceId}: removed ${toRemove.length}, added ${toAdd.length} tools`);
+    }
+
+    // Also update the legacy single-agent if it uses this config
+    if (this.agent) {
+      const activeConfig = this.getActiveAgent();
+      if (activeConfig && activeConfig.id === agentConfigId) {
+        const toolManager = this.agent.tools;
+        const context = { instanceId: agentConfigId };
+
+        const toRemove = oldToolNames.filter(name => !newToolNames.includes(name));
+        for (const name of toRemove) {
+          toolManager.unregister(name);
+        }
+
+        const toAdd = newToolNames.filter(name => !oldToolNames.includes(name));
+        if (toAdd.length > 0) {
+          const newTools = this.toolCatalog.resolveToolsForAgent(toAdd, context);
+          toolManager.registerMany(newTools);
+        }
+
+        logger.info(`[syncInstanceTools] Legacy agent: removed ${toRemove.length}, added ${toAdd.length} tools`);
+      }
     }
   }
 
@@ -2423,6 +2547,11 @@ export class AgentService {
   }[] {
     // Use UnifiedToolCatalog which combines oneringai + hosea tools
     const allTools = this.toolCatalog.getAllTools();
+    const connectorTools = allTools.filter(t => t.requiresConnector);
+    logger.debug(`[getAvailableTools] Returning ${allTools.length} tools (${connectorTools.length} require connector)`);
+    for (const t of connectorTools) {
+      logger.debug(`  requiresConnector tool: name=${t.name}, serviceTypes=${JSON.stringify(t.connectorServiceTypes)}, source=${t.source}`);
+    }
     return allTools.map((entry: UnifiedToolEntry) => ({
       name: entry.name,
       displayName: entry.displayName,

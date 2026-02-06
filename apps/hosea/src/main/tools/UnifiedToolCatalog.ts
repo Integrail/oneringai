@@ -229,9 +229,9 @@ export class UnifiedToolCatalog {
   }
 
   /**
-   * Invalidate the cache (called when providers change)
+   * Invalidate the cache (called when providers change or connectors are loaded)
    */
-  private invalidateCache(): void {
+  invalidateCache(): void {
     this.cacheValid = false;
     this.toolCache.clear();
   }

@@ -119,6 +119,26 @@ export {
 } from './connector/index.js';
 
 // ============================================================================
+// Multimedia Tools (Auto-registered with ConnectorTools for AI vendors)
+// ============================================================================
+
+export {
+  FileMediaOutputHandler,
+  setMediaOutputHandler,
+  getMediaOutputHandler,
+  createImageGenerationTool,
+  createVideoTools,
+  createTextToSpeechTool,
+  createSpeechToTextTool,
+} from './multimedia/index.js';
+
+export type {
+  IMediaOutputHandler,
+  MediaOutputMetadata,
+  MediaOutputResult,
+} from './multimedia/index.js';
+
+// ============================================================================
 // Convenience: All Developer Tools Bundle
 // ============================================================================
 

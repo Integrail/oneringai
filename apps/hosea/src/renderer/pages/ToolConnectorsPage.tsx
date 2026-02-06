@@ -122,6 +122,7 @@ const serviceTypeInfo: Record<string, { name: string; docsUrl?: string; defaultB
 export function ToolConnectorsPage(): React.ReactElement {
   const [tools, setTools] = useState<ToolEntry[]>([]);
   const [apiConnectors, setApiConnectors] = useState<APIConnector[]>([]);
+  const [llmConnectors, setLlmConnectors] = useState<{ name: string; vendor: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,12 +140,14 @@ export function ToolConnectorsPage(): React.ReactElement {
 
   const loadData = useCallback(async () => {
     try {
-      const [registry, connectors] = await Promise.all([
+      const [registry, connectors, llmConns] = await Promise.all([
         window.hosea.tool.registry(),
         window.hosea.apiConnector.list(),
+        window.hosea.connector.list(),
       ]);
       setTools(registry);
       setApiConnectors(connectors);
+      setLlmConnectors(llmConns);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -194,7 +197,9 @@ export function ToolConnectorsPage(): React.ReactElement {
   // Check if any of the tool's required services are configured
   const isToolConfigured = (tool: ToolEntry): boolean => {
     if (!tool.requiresConnector || !tool.connectorServiceTypes) return true;
-    return tool.connectorServiceTypes.some((st) => getConnectorForServiceType(st));
+    return tool.connectorServiceTypes.some(
+      (st) => getConnectorForServiceType(st) || llmConnectors.some((c) => c.vendor === st)
+    );
   };
 
   const handleConfigureTool = (tool: ToolEntry) => {
@@ -369,7 +374,7 @@ export function ToolConnectorsPage(): React.ReactElement {
                       <div className="mt-2">
                         <span className="text-xs text-muted">Services: </span>
                         {tool.connectorServiceTypes?.map((type) => {
-                          const hasConnector = !!getConnectorForServiceType(type);
+                          const hasConnector = !!getConnectorForServiceType(type) || llmConnectors.some((c) => c.vendor === type);
                           return (
                             <Badge
                               key={type}

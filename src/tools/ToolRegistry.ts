@@ -25,6 +25,7 @@ import { toolRegistry, type ToolRegistryEntry, type ToolCategory } from './regis
 import { ConnectorTools } from './connector/ConnectorTools.js';
 import { Connector } from '../core/Connector.js';
 import { getServiceInfo } from '../domain/entities/Services.js';
+import { getVendorInfo } from '../connectors/vendors/helpers.js';
 
 /**
  * Extended registry entry for connector-generated tools
@@ -145,21 +146,27 @@ export class ToolRegistry {
    */
   private static toRegistryEntry(tool: ToolFunction, connectorName: string): ConnectorToolEntry {
     let serviceType: string | undefined;
+    let displayPrefix: string | undefined;
 
     try {
       const connector = Connector.get(connectorName);
       serviceType = ConnectorTools.detectService(connector);
+      if (connector.vendor) {
+        const vendorInfo = getVendorInfo(connector.vendor);
+        displayPrefix = vendorInfo?.name || connector.vendor;
+      }
     } catch {
       // Connector may not exist
     }
 
     const serviceInfo = serviceType ? getServiceInfo(serviceType) : undefined;
+    const displayContext = displayPrefix || serviceInfo?.name;
     const def = tool.definition.function;
 
     return {
       name: def.name,
       exportName: def.name,
-      displayName: this.deriveDisplayName(def.name, serviceInfo?.name),
+      displayName: this.deriveDisplayName(def.name, displayContext, connectorName),
       category: 'connector' as ToolCategory,
       description: def.description || `API tool for ${connectorName}`,
       tool,
@@ -173,21 +180,33 @@ export class ToolRegistry {
 
   /**
    * Derive a human-readable display name from a tool name
+   *
+   * @param toolName - Full tool name (e.g., "main-openai_generate_image")
+   * @param contextName - Vendor or service display name (e.g., "OpenAI")
+   * @param connectorName - Connector name used as prefix (e.g., "main-openai")
    */
-  private static deriveDisplayName(toolName: string, serviceName?: string): string {
-    // If we have service name, use it for the prefix
-    if (serviceName) {
-      // "github_api" -> "GitHub API"
-      const suffix = toolName.includes('_api') ? ' API' : '';
-      return `${serviceName}${suffix}`;
+  private static deriveDisplayName(
+    toolName: string,
+    contextName?: string,
+    connectorName?: string
+  ): string {
+    // Strip connector name prefix if present
+    let baseName = toolName;
+    if (connectorName && toolName.startsWith(connectorName + '_')) {
+      baseName = toolName.slice(connectorName.length + 1);
     }
 
-    // Convert snake_case to Title Case
-    // "github_api" -> "Github Api", "slack_send_message" -> "Slack Send Message"
-    const withoutSuffix = toolName.replace(/_api$/, ' API');
-    return withoutSuffix
+    // "api" → "Context API"
+    if (baseName === 'api') {
+      return contextName ? `${contextName} API` : toolName.replace(/_/g, ' ');
+    }
+
+    // Convert base to Title Case
+    const readable = baseName
       .split('_')
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(' ');
+
+    return contextName ? `${contextName} ${readable}` : readable;
   }
 }

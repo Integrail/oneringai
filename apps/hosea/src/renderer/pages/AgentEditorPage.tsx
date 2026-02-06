@@ -266,12 +266,14 @@ export function AgentEditorPage(): React.ReactElement {
       if (!tool.requiresConnector) return true;
       if (!tool.connectorServiceTypes || tool.connectorServiceTypes.length === 0) return true;
 
-      // Check if any required service type has a configured connector
-      return tool.connectorServiceTypes.some((serviceType) =>
-        apiConnectors.some((ac) => ac.serviceType === serviceType)
+      // Check API service connectors OR LLM provider connectors (by vendor)
+      return tool.connectorServiceTypes.some(
+        (serviceType) =>
+          apiConnectors.some((ac) => ac.serviceType === serviceType) ||
+          connectors.some((c) => c.vendor === serviceType)
       );
     },
-    [apiConnectors]
+    [apiConnectors, connectors]
   );
 
   // Separate tools into operational and non-operational, and group them

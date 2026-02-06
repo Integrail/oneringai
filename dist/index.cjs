@@ -5322,8 +5322,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path5) {
-      let input = path5;
+    function removeDotSegments(path6) {
+      let input = path6;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -5521,8 +5521,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path5, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
+        const [path6, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path6 && path6 !== "/" ? path6 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -14452,12 +14452,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs16, exportName) {
+    function addFormats(ajv, list, fs18, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs16[f]);
+        ajv.addFormat(f, fs18[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -14470,8 +14470,8 @@ var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs16 = __require("fs");
-    function checkPathExt(path5, options) {
+    var fs18 = __require("fs");
+    function checkPathExt(path6, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
         return true;
@@ -14482,25 +14482,25 @@ var require_windows = __commonJS({
       }
       for (var i = 0; i < pathext.length; i++) {
         var p = pathext[i].toLowerCase();
-        if (p && path5.substr(-p.length).toLowerCase() === p) {
+        if (p && path6.substr(-p.length).toLowerCase() === p) {
           return true;
         }
       }
       return false;
     }
-    function checkStat(stat5, path5, options) {
+    function checkStat(stat5, path6, options) {
       if (!stat5.isSymbolicLink() && !stat5.isFile()) {
         return false;
       }
-      return checkPathExt(path5, options);
+      return checkPathExt(path6, options);
     }
-    function isexe(path5, options, cb) {
-      fs16.stat(path5, function(er, stat5) {
-        cb(er, er ? false : checkStat(stat5, path5, options));
+    function isexe(path6, options, cb) {
+      fs18.stat(path6, function(er, stat5) {
+        cb(er, er ? false : checkStat(stat5, path6, options));
       });
     }
-    function sync(path5, options) {
-      return checkStat(fs16.statSync(path5), path5, options);
+    function sync(path6, options) {
+      return checkStat(fs18.statSync(path6), path6, options);
     }
   }
 });
@@ -14510,14 +14510,14 @@ var require_mode = __commonJS({
   "node_modules/isexe/mode.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs16 = __require("fs");
-    function isexe(path5, options, cb) {
-      fs16.stat(path5, function(er, stat5) {
+    var fs18 = __require("fs");
+    function isexe(path6, options, cb) {
+      fs18.stat(path6, function(er, stat5) {
         cb(er, er ? false : checkStat(stat5, options));
       });
     }
-    function sync(path5, options) {
-      return checkStat(fs16.statSync(path5), options);
+    function sync(path6, options) {
+      return checkStat(fs18.statSync(path6), options);
     }
     function checkStat(stat5, options) {
       return stat5.isFile() && checkMode(stat5, options);
@@ -14550,7 +14550,7 @@ var require_isexe = __commonJS({
     }
     module.exports = isexe;
     isexe.sync = sync;
-    function isexe(path5, options, cb) {
+    function isexe(path6, options, cb) {
       if (typeof options === "function") {
         cb = options;
         options = {};
@@ -14560,7 +14560,7 @@ var require_isexe = __commonJS({
           throw new TypeError("callback not provided");
         }
         return new Promise(function(resolve4, reject) {
-          isexe(path5, options || {}, function(er, is) {
+          isexe(path6, options || {}, function(er, is) {
             if (er) {
               reject(er);
             } else {
@@ -14569,7 +14569,7 @@ var require_isexe = __commonJS({
           });
         });
       }
-      core(path5, options || {}, function(er, is) {
+      core(path6, options || {}, function(er, is) {
         if (er) {
           if (er.code === "EACCES" || options && options.ignoreErrors) {
             er = null;
@@ -14579,9 +14579,9 @@ var require_isexe = __commonJS({
         cb(er, is);
       });
     }
-    function sync(path5, options) {
+    function sync(path6, options) {
       try {
-        return core.sync(path5, options || {});
+        return core.sync(path6, options || {});
       } catch (er) {
         if (options && options.ignoreErrors || er.code === "EACCES") {
           return false;
@@ -14597,7 +14597,7 @@ var require_isexe = __commonJS({
 var require_which = __commonJS({
   "node_modules/which/which.js"(exports$1, module) {
     var isWindows = process.platform === "win32" || process.env.OSTYPE === "cygwin" || process.env.OSTYPE === "msys";
-    var path5 = __require("path");
+    var path6 = __require("path");
     var COLON = isWindows ? ";" : ":";
     var isexe = require_isexe();
     var getNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: "ENOENT" });
@@ -14635,7 +14635,7 @@ var require_which = __commonJS({
           return opt.all && found.length ? resolve4(found) : reject(getNotFoundError(cmd));
         const ppRaw = pathEnv[i];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path5.join(pathPart, cmd);
+        const pCmd = path6.join(pathPart, cmd);
         const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
         resolve4(subStep(p, i, 0));
       });
@@ -14662,7 +14662,7 @@ var require_which = __commonJS({
       for (let i = 0; i < pathEnv.length; i++) {
         const ppRaw = pathEnv[i];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path5.join(pathPart, cmd);
+        const pCmd = path6.join(pathPart, cmd);
         const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
         for (let j = 0; j < pathExt.length; j++) {
           const cur = p + pathExt[j];
@@ -14708,7 +14708,7 @@ var require_path_key = __commonJS({
 // node_modules/cross-spawn/lib/util/resolveCommand.js
 var require_resolveCommand = __commonJS({
   "node_modules/cross-spawn/lib/util/resolveCommand.js"(exports$1, module) {
-    var path5 = __require("path");
+    var path6 = __require("path");
     var which = require_which();
     var getPathKey = require_path_key();
     function resolveCommandAttempt(parsed, withoutPathExt) {
@@ -14726,7 +14726,7 @@ var require_resolveCommand = __commonJS({
       try {
         resolved = which.sync(parsed.command, {
           path: env[getPathKey({ env })],
-          pathExt: withoutPathExt ? path5.delimiter : void 0
+          pathExt: withoutPathExt ? path6.delimiter : void 0
         });
       } catch (e) {
       } finally {
@@ -14735,7 +14735,7 @@ var require_resolveCommand = __commonJS({
         }
       }
       if (resolved) {
-        resolved = path5.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
+        resolved = path6.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
       }
       return resolved;
     }
@@ -14786,8 +14786,8 @@ var require_shebang_command = __commonJS({
       if (!match) {
         return null;
       }
-      const [path5, argument] = match[0].replace(/#! ?/, "").split(" ");
-      const binary = path5.split("/").pop();
+      const [path6, argument] = match[0].replace(/#! ?/, "").split(" ");
+      const binary = path6.split("/").pop();
       if (binary === "env") {
         return argument;
       }
@@ -14799,16 +14799,16 @@ var require_shebang_command = __commonJS({
 // node_modules/cross-spawn/lib/util/readShebang.js
 var require_readShebang = __commonJS({
   "node_modules/cross-spawn/lib/util/readShebang.js"(exports$1, module) {
-    var fs16 = __require("fs");
+    var fs18 = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command) {
       const size = 150;
       const buffer = Buffer.alloc(size);
       let fd;
       try {
-        fd = fs16.openSync(command, "r");
-        fs16.readSync(fd, buffer, 0, size, 0);
-        fs16.closeSync(fd);
+        fd = fs18.openSync(command, "r");
+        fs18.readSync(fd, buffer, 0, size, 0);
+        fs18.closeSync(fd);
       } catch (e) {
       }
       return shebangCommand(buffer.toString());
@@ -14820,7 +14820,7 @@ var require_readShebang = __commonJS({
 // node_modules/cross-spawn/lib/parse.js
 var require_parse = __commonJS({
   "node_modules/cross-spawn/lib/parse.js"(exports$1, module) {
-    var path5 = __require("path");
+    var path6 = __require("path");
     var resolveCommand = require_resolveCommand();
     var escape2 = require_escape();
     var readShebang = require_readShebang();
@@ -14845,7 +14845,7 @@ var require_parse = __commonJS({
       const needsShell = !isExecutableRegExp.test(commandFile);
       if (parsed.options.forceShell || needsShell) {
         const needsDoubleEscapeMetaChars = isCmdShimRegExp.test(commandFile);
-        parsed.command = path5.normalize(parsed.command);
+        parsed.command = path6.normalize(parsed.command);
         parsed.command = escape2.command(parsed.command);
         parsed.args = parsed.args.map((arg) => escape2.argument(arg, needsDoubleEscapeMetaChars));
         const shellCommand = [parsed.command].concat(parsed.args).join(" ");
@@ -27137,8 +27137,8 @@ exports.logger.child({ component: "SmartCompactor" });
   /**
    * Load configuration from file
    */
-  static async load(path5) {
-    const configPath = path5 ? path3.resolve(path5) : await this.findConfig();
+  static async load(path6) {
+    const configPath = path6 ? path3.resolve(path6) : await this.findConfig();
     if (!configPath) {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
@@ -27158,14 +27158,14 @@ exports.logger.child({ component: "SmartCompactor" });
   /**
    * Load configuration synchronously
    */
-  static loadSync(path5) {
-    const configPath = path5 ? path3.resolve(path5) : this.findConfigSync();
+  static loadSync(path6) {
+    const configPath = path6 ? path3.resolve(path6) : this.findConfigSync();
     if (!configPath) {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs16 = __require("fs");
-      const content = fs16.readFileSync(configPath, "utf-8");
+      const fs18 = __require("fs");
+      const content = fs18.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -27181,10 +27181,10 @@ exports.logger.child({ component: "SmartCompactor" });
    * Find configuration file in default paths
    */
   static async findConfig() {
-    for (const path5 of this.DEFAULT_PATHS) {
+    for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs15.promises.access(path3.resolve(path5));
-        return path3.resolve(path5);
+        await fs15.promises.access(path3.resolve(path6));
+        return path3.resolve(path6);
       } catch {
       }
     }
@@ -27194,11 +27194,11 @@ exports.logger.child({ component: "SmartCompactor" });
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs16 = __require("fs");
-    for (const path5 of this.DEFAULT_PATHS) {
+    const fs18 = __require("fs");
+    for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs16.accessSync(path3.resolve(path5));
-        return path3.resolve(path5);
+        fs18.accessSync(path3.resolve(path6));
+        return path3.resolve(path6);
       } catch {
       }
     }
@@ -30777,8 +30777,8 @@ async function random(size) {
   const evenDistCutoff = Math.pow(2, 8) - Math.pow(2, 8) % mask.length;
   let result = "";
   while (result.length < size) {
-    const randomBytes3 = await getRandomValues(size - result.length);
-    for (const randomByte of randomBytes3) {
+    const randomBytes4 = await getRandomValues(size - result.length);
+    for (const randomByte of randomBytes4) {
       if (randomByte < evenDistCutoff) {
         result += mask[randomByte % mask.length];
       }
@@ -32753,9 +32753,9 @@ var MCPRegistry = class {
   /**
    * Load MCP configuration from file and create clients
    */
-  static async loadFromConfigFile(path5) {
+  static async loadFromConfigFile(path6) {
     try {
-      const configPath = path3.resolve(path5);
+      const configPath = path3.resolve(path6);
       const content = await fs15.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
@@ -32767,7 +32767,7 @@ var MCPRegistry = class {
       if (error instanceof MCPError) {
         throw error;
       }
-      throw new MCPError(`Failed to load MCP configuration from '${path5}'`, void 0, error);
+      throw new MCPError(`Failed to load MCP configuration from '${path6}'`, void 0, error);
     }
   }
   /**
@@ -34735,8 +34735,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs16 = await import('fs');
-      const buffer = fs16.readFileSync(image);
+      const fs18 = await import('fs');
+      const buffer = fs18.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -36734,8 +36734,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs16 = await import('fs');
-      const data = fs16.readFileSync(image);
+      const fs18 = await import('fs');
+      const data = fs18.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -36913,22 +36913,22 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs16 = await import('fs/promises');
-            const os2 = await import('os');
-            const path5 = await import('path');
-            const tempDir = os2.tmpdir();
-            const tempFile = path5.join(tempDir, `veo-${Date.now()}.mp4`);
+            const fs18 = await import('fs/promises');
+            const os3 = await import('os');
+            const path6 = await import('path');
+            const tempDir = os3.tmpdir();
+            const tempFile = path6.join(tempDir, `veo-${Date.now()}.mp4`);
             try {
               await this.client.files.download({
                 file: { video },
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs16.readFile(tempFile);
-              await fs16.unlink(tempFile).catch(() => {
+              buffer = await fs18.readFile(tempFile);
+              await fs18.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs16.unlink(tempFile).catch(() => {
+              await fs18.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -37050,8 +37050,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs16 = await import('fs/promises');
-    const data = await fs16.readFile(image);
+    const fs18 = await import('fs/promises');
+    const data = await fs18.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -37358,8 +37358,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs16 = await import('fs');
-    const data = fs16.readFileSync(image);
+    const fs18 = await import('fs');
+    const data = fs18.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -39746,10 +39746,10 @@ function detectDependencyCycle(tasks) {
   const visited = /* @__PURE__ */ new Set();
   const recStack = /* @__PURE__ */ new Set();
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
-  function dfs(taskId, path5) {
+  function dfs(taskId, path6) {
     if (recStack.has(taskId)) {
-      const cycleStart = path5.indexOf(taskId);
-      return [...path5.slice(cycleStart), taskId];
+      const cycleStart = path6.indexOf(taskId);
+      return [...path6.slice(cycleStart), taskId];
     }
     if (visited.has(taskId)) {
       return null;
@@ -39759,7 +39759,7 @@ function detectDependencyCycle(tasks) {
     const task = taskMap.get(taskId);
     if (task) {
       for (const depId of task.dependsOn) {
-        const cycle = dfs(depId, [...path5, taskId]);
+        const cycle = dfs(depId, [...path6, taskId]);
         if (cycle) {
           return cycle;
         }
@@ -42090,6 +42090,7 @@ init_Connector();
 
 // src/tools/connector/ConnectorTools.ts
 init_Connector();
+init_Logger();
 var PROTECTED_HEADERS = ["authorization", "x-api-key", "api-key", "bearer"];
 function safeStringify2(obj) {
   const seen = /* @__PURE__ */ new WeakSet();
@@ -42156,6 +42157,7 @@ var ConnectorTools = class {
    */
   static registerService(serviceType, factory) {
     this.factories.set(serviceType, factory);
+    exports.logger.debug(`[ConnectorTools.registerService] Registered factory for: ${serviceType} (total factories: ${this.factories.size})`);
   }
   /**
    * Unregister a service tool factory
@@ -42186,7 +42188,11 @@ var ConnectorTools = class {
     const serviceType = this.detectService(connector);
     if (serviceType && this.factories.has(serviceType)) {
       const factory = this.factories.get(serviceType);
-      tools.push(...factory(connector, userId));
+      const serviceTools = factory(connector, userId);
+      for (const tool of serviceTools) {
+        tool.definition.function.name = `${connector.name}_${tool.definition.function.name}`;
+      }
+      tools.push(...serviceTools);
     }
     return tools;
   }
@@ -42238,16 +42244,27 @@ var ConnectorTools = class {
    */
   static discoverAll(userId) {
     const result = /* @__PURE__ */ new Map();
-    for (const connector of exports.Connector.listAll()) {
+    const allConnectors = exports.Connector.listAll();
+    const factoryKeys = Array.from(this.factories.keys());
+    exports.logger.debug(`[ConnectorTools.discoverAll] ${allConnectors.length} connectors in library, ${factoryKeys.length} factories registered: [${factoryKeys.join(", ")}]`);
+    for (const connector of allConnectors) {
       const hasServiceType = !!connector.config.serviceType;
       const isExternalAPI = connector.baseURL && !connector.vendor;
-      if (hasServiceType || isExternalAPI) {
-        const tools = this.for(connector, userId);
-        if (tools.length > 0) {
-          result.set(connector.name, tools);
+      const hasVendorFactory = !!connector.vendor && this.factories.has(connector.vendor);
+      exports.logger.debug(`[ConnectorTools.discoverAll] connector=${connector.name}: vendor=${connector.vendor}, serviceType=${connector.config.serviceType}, baseURL=${connector.baseURL ? "yes" : "no"} \u2192 hasServiceType=${hasServiceType}, isExternalAPI=${isExternalAPI}, hasVendorFactory=${hasVendorFactory}`);
+      if (hasServiceType || isExternalAPI || hasVendorFactory) {
+        try {
+          const tools = this.for(connector, userId);
+          exports.logger.debug(`[ConnectorTools.discoverAll]   \u2192 ${tools.length} tools: [${tools.map((t) => t.definition.function.name).join(", ")}]`);
+          if (tools.length > 0) {
+            result.set(connector.name, tools);
+          }
+        } catch (err) {
+          exports.logger.error(`[ConnectorTools.discoverAll]   \u2192 ERROR generating tools for ${connector.name}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }
+    exports.logger.debug(`[ConnectorTools.discoverAll] Result: ${result.size} connectors with tools`);
     return result;
   }
   /**
@@ -42297,6 +42314,9 @@ var ConnectorTools = class {
       result = connector.config.serviceType;
     } else if (connector.baseURL) {
       result = detectServiceFromURL(connector.baseURL);
+    }
+    if (!result && connector.vendor) {
+      result = connector.vendor;
     }
     this.maintainCacheSize(this.serviceTypeCache);
     this.serviceTypeCache.set(cacheKey, result);
@@ -45562,6 +45582,7 @@ __export(tools_exports, {
   ConnectorTools: () => ConnectorTools,
   DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
   DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
+  FileMediaOutputHandler: () => FileMediaOutputHandler,
   ToolRegistry: () => ToolRegistry,
   bash: () => bash,
   createBashTool: () => createBashTool,
@@ -45569,8 +45590,12 @@ __export(tools_exports, {
   createExecuteJavaScriptTool: () => createExecuteJavaScriptTool,
   createGlobTool: () => createGlobTool,
   createGrepTool: () => createGrepTool,
+  createImageGenerationTool: () => createImageGenerationTool,
   createListDirectoryTool: () => createListDirectoryTool,
   createReadFileTool: () => createReadFileTool,
+  createSpeechToTextTool: () => createSpeechToTextTool,
+  createTextToSpeechTool: () => createTextToSpeechTool,
+  createVideoTools: () => createVideoTools,
   createWriteFileTool: () => createWriteFileTool,
   developerTools: () => developerTools,
   editFile: () => editFile,
@@ -45578,6 +45603,7 @@ __export(tools_exports, {
   expandTilde: () => expandTilde,
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
+  getMediaOutputHandler: () => getMediaOutputHandler,
   getToolByName: () => getToolByName,
   getToolCategories: () => getToolCategories,
   getToolRegistry: () => getToolRegistry,
@@ -45591,6 +45617,7 @@ __export(tools_exports, {
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   readFile: () => readFile4,
+  setMediaOutputHandler: () => setMediaOutputHandler,
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
@@ -46208,8 +46235,8 @@ WHEN TO USE:
       return args.pattern;
     },
     execute: async (args) => {
-      const { pattern, path: path5 } = args;
-      const searchDir = path5 || mergedConfig.workingDirectory;
+      const { pattern, path: path6 } = args;
+      const searchDir = path6 || mergedConfig.workingDirectory;
       const validation = validatePath(searchDir, {
         ...mergedConfig,
         blockedDirectories: []
@@ -46429,7 +46456,7 @@ WHEN TO USE:
     execute: async (args) => {
       const {
         pattern,
-        path: path5,
+        path: path6,
         glob: globPattern,
         type: fileType,
         output_mode = "files_with_matches",
@@ -46438,7 +46465,7 @@ WHEN TO USE:
         context_after = 0,
         limit
       } = args;
-      const searchPath = path5 || mergedConfig.workingDirectory;
+      const searchPath = path6 || mergedConfig.workingDirectory;
       const validation = validatePath(searchPath, {
         ...mergedConfig,
         blockedDirectories: []
@@ -46656,8 +46683,8 @@ EXAMPLES:
       return args.path;
     },
     execute: async (args) => {
-      const { path: path5, recursive = false, filter, max_depth = 3 } = args;
-      const validation = validatePath(path5, {
+      const { path: path6, recursive = false, filter, max_depth = 3 } = args;
+      const validation = validatePath(path6, {
         ...mergedConfig,
         blockedDirectories: []
         // Allow listing any valid directory
@@ -46672,7 +46699,7 @@ EXAMPLES:
       if (!fs15.existsSync(resolvedPath)) {
         return {
           success: false,
-          error: `Directory not found: ${path5}`
+          error: `Directory not found: ${path6}`
         };
       }
       try {
@@ -46680,7 +46707,7 @@ EXAMPLES:
         if (!stats.isDirectory()) {
           return {
             success: false,
-            error: `Path is not a directory: ${path5}. Use read_file to read file contents.`
+            error: `Path is not a directory: ${path6}. Use read_file to read file contents.`
           };
         }
         const entries = await listDir(
@@ -46982,19 +47009,19 @@ function killBackgroundProcess(bgId) {
 var bash = createBashTool();
 
 // src/tools/json/pathUtils.ts
-function parsePath(path5) {
-  if (path5 === "" || path5 === "$") {
+function parsePath(path6) {
+  if (path6 === "" || path6 === "$") {
     return [];
   }
-  const keys = path5.split(".");
+  const keys = path6.split(".");
   const filtered = keys.filter((p) => p.length > 0);
   if (filtered.length !== keys.length) {
-    throw new Error(`Invalid path format: ${path5} (consecutive dots not allowed)`);
+    throw new Error(`Invalid path format: ${path6} (consecutive dots not allowed)`);
   }
   return filtered;
 }
-function getValueAtPath(obj, path5) {
-  const keys = parsePath(path5);
+function getValueAtPath(obj, path6) {
+  const keys = parsePath(path6);
   let current = obj;
   for (const key of keys) {
     if (current === null || current === void 0) {
@@ -47004,8 +47031,8 @@ function getValueAtPath(obj, path5) {
   }
   return current;
 }
-function setValueAtPath(obj, path5, value) {
-  const keys = parsePath(path5);
+function setValueAtPath(obj, path6, value) {
+  const keys = parsePath(path6);
   if (keys.length === 0) {
     throw new Error("Cannot set root object - path must not be empty");
   }
@@ -47034,8 +47061,8 @@ function setValueAtPath(obj, path5, value) {
   }
   return true;
 }
-function deleteAtPath(obj, path5) {
-  const keys = parsePath(path5);
+function deleteAtPath(obj, path6) {
+  const keys = parsePath(path6);
   if (keys.length === 0) {
     throw new Error("Cannot delete root object - path must not be empty");
   }
@@ -47065,9 +47092,9 @@ function deleteAtPath(obj, path5) {
   }
   return true;
 }
-function pathExists(obj, path5) {
+function pathExists(obj, path6) {
   try {
-    const value = getValueAtPath(obj, path5);
+    const value = getValueAtPath(obj, path6);
     return value !== void 0;
   } catch {
     return false;
@@ -48512,6 +48539,591 @@ async function executeInVM(code, input, timeout, logs) {
   const result = await resultPromise;
   return result !== void 0 ? result : sandbox.output;
 }
+var MIME_TYPES = {
+  png: "image/png",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  opus: "audio/opus",
+  ogg: "audio/ogg",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  pcm: "audio/pcm"
+};
+var FileMediaOutputHandler = class {
+  outputDir;
+  initialized = false;
+  constructor(outputDir) {
+    this.outputDir = outputDir ?? path3__namespace.join(os__namespace.tmpdir(), "oneringai-media");
+  }
+  async save(data, metadata) {
+    if (!this.initialized) {
+      await fs14__namespace.mkdir(this.outputDir, { recursive: true });
+      this.initialized = true;
+    }
+    const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
+    const filePath = path3__namespace.join(this.outputDir, filename);
+    await fs14__namespace.writeFile(filePath, data);
+    const format = metadata.format.toLowerCase();
+    const mimeType = MIME_TYPES[format] ?? `application/octet-stream`;
+    return {
+      location: filePath,
+      mimeType,
+      size: data.length
+    };
+  }
+  generateFilename(metadata) {
+    const timestamp = Date.now();
+    const random2 = crypto2__namespace.randomBytes(4).toString("hex");
+    const indexSuffix = metadata.index != null ? `_${metadata.index}` : "";
+    return `${metadata.type}_${timestamp}_${random2}${indexSuffix}.${metadata.format}`;
+  }
+};
+
+// src/tools/multimedia/config.ts
+var _outputHandler = null;
+function getMediaOutputHandler() {
+  if (!_outputHandler) {
+    _outputHandler = new FileMediaOutputHandler();
+  }
+  return _outputHandler;
+}
+function setMediaOutputHandler(handler) {
+  _outputHandler = handler;
+}
+
+// src/tools/multimedia/imageGeneration.ts
+function createImageGenerationTool(connector, outputHandler) {
+  const vendor = connector.vendor;
+  const handler = outputHandler ?? getMediaOutputHandler();
+  const vendorModels = vendor ? getImageModelsByVendor(vendor) : [];
+  const modelNames = vendorModels.map((m) => m.name);
+  const properties = {
+    prompt: {
+      type: "string",
+      description: "Text description of the image to generate"
+    }
+  };
+  if (modelNames.length > 0) {
+    const descriptions = vendorModels.map((m) => `${m.name}: ${m.description || m.displayName}`).join("; ");
+    properties.model = {
+      type: "string",
+      enum: modelNames,
+      description: `Image model to use. Options: ${descriptions}`
+    };
+  }
+  const hasSizes = vendorModels.some((m) => m.capabilities.sizes.length > 1);
+  if (hasSizes) {
+    const allSizes = [...new Set(vendorModels.flatMap((m) => m.capabilities.sizes))];
+    properties.size = {
+      type: "string",
+      enum: allSizes,
+      description: "Image dimensions"
+    };
+  }
+  const hasAspectRatios = vendorModels.some((m) => m.capabilities.aspectRatios?.length);
+  if (hasAspectRatios) {
+    const allRatios = [...new Set(vendorModels.flatMap((m) => m.capabilities.aspectRatios ?? []))];
+    properties.aspectRatio = {
+      type: "string",
+      enum: allRatios,
+      description: "Image aspect ratio"
+    };
+  }
+  const hasQuality = vendorModels.some((m) => m.capabilities.features.qualityControl);
+  if (hasQuality) {
+    properties.quality = {
+      type: "string",
+      enum: ["standard", "hd"],
+      description: "Image quality level"
+    };
+  }
+  const hasStyle = vendorModels.some((m) => m.capabilities.features.styleControl);
+  if (hasStyle) {
+    properties.style = {
+      type: "string",
+      enum: ["vivid", "natural"],
+      description: "Image style (vivid for hyper-real, natural for less hyper-real)"
+    };
+  }
+  const maxN = Math.max(...vendorModels.map((m) => m.capabilities.maxImagesPerRequest));
+  if (maxN > 1) {
+    properties.n = {
+      type: "number",
+      description: `Number of images to generate (1-${maxN})`,
+      minimum: 1,
+      maximum: maxN
+    };
+  }
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "generate_image",
+        description: `Generate images from text prompts using ${connector.displayName}`,
+        parameters: {
+          type: "object",
+          properties,
+          required: ["prompt"]
+        }
+      }
+    },
+    execute: async (args) => {
+      try {
+        const imageGen = ImageGeneration.create({ connector });
+        const response = await imageGen.generate({
+          prompt: args.prompt,
+          model: args.model,
+          size: args.size,
+          quality: args.quality,
+          style: args.style,
+          n: args.n,
+          response_format: "b64_json"
+        });
+        const images = [];
+        for (let i = 0; i < response.data.length; i++) {
+          const item = response.data[i];
+          let buffer;
+          if (item.b64_json) {
+            buffer = Buffer.from(item.b64_json, "base64");
+          } else if (item.url) {
+            const resp = await fetch(item.url);
+            buffer = Buffer.from(await resp.arrayBuffer());
+          } else {
+            continue;
+          }
+          const modelName = args.model || modelNames[0] || "unknown";
+          const modelInfo = IMAGE_MODEL_REGISTRY[modelName];
+          const format = modelInfo?.capabilities.outputFormats[0] === "url" ? "png" : modelInfo?.capabilities.outputFormats[0] || "png";
+          const result = await handler.save(buffer, {
+            type: "image",
+            format,
+            model: modelName,
+            vendor: vendor || "unknown",
+            index: response.data.length > 1 ? i : void 0
+          });
+          images.push({
+            location: result.location,
+            mimeType: result.mimeType,
+            revisedPrompt: item.revised_prompt
+          });
+        }
+        return { success: true, images };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+    describeCall: (args) => args.prompt.length > 50 ? args.prompt.slice(0, 47) + "..." : args.prompt,
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Generate image(s) using ${connector.displayName}`
+    }
+  };
+}
+
+// src/tools/multimedia/videoGeneration.ts
+var videoGenInstances = /* @__PURE__ */ new Map();
+function createVideoTools(connector, outputHandler) {
+  const vendor = connector.vendor;
+  const handler = outputHandler ?? getMediaOutputHandler();
+  const vendorModels = vendor ? getVideoModelsByVendor(vendor) : [];
+  const modelNames = vendorModels.map((m) => m.name);
+  const generateProperties = {
+    prompt: {
+      type: "string",
+      description: "Text description of the video to generate"
+    }
+  };
+  if (modelNames.length > 0) {
+    const descriptions = vendorModels.map((m) => `${m.name}: ${m.displayName}`).join("; ");
+    generateProperties.model = {
+      type: "string",
+      enum: modelNames,
+      description: `Video model to use. Options: ${descriptions}`
+    };
+  }
+  const allDurations = [...new Set(vendorModels.flatMap((m) => m.capabilities.durations))].sort(
+    (a, b) => a - b
+  );
+  if (allDurations.length > 0) {
+    generateProperties.duration = {
+      type: "number",
+      description: `Video duration in seconds. Supported: ${allDurations.join(", ")}`
+    };
+  }
+  const allResolutions = [...new Set(vendorModels.flatMap((m) => m.capabilities.resolutions))];
+  if (allResolutions.length > 0) {
+    generateProperties.resolution = {
+      type: "string",
+      enum: allResolutions,
+      description: "Video resolution"
+    };
+  }
+  const allAspectRatios = [
+    ...new Set(vendorModels.flatMap((m) => m.capabilities.aspectRatios ?? []))
+  ];
+  if (allAspectRatios.length > 0) {
+    generateProperties.aspectRatio = {
+      type: "string",
+      enum: allAspectRatios,
+      description: "Video aspect ratio"
+    };
+  }
+  const hasSeed = vendorModels.some((m) => m.capabilities.features.seed);
+  if (hasSeed) {
+    generateProperties.seed = {
+      type: "number",
+      description: "Random seed for reproducible generation"
+    };
+  }
+  const generateTool = {
+    definition: {
+      type: "function",
+      function: {
+        name: "generate_video",
+        description: `Start video generation from a text prompt using ${connector.displayName}. Returns a jobId to check status with video_status.`,
+        parameters: {
+          type: "object",
+          properties: generateProperties,
+          required: ["prompt"]
+        }
+      }
+    },
+    execute: async (args) => {
+      try {
+        const videoGen = VideoGeneration.create({ connector });
+        const response = await videoGen.generate({
+          prompt: args.prompt,
+          model: args.model,
+          duration: args.duration,
+          resolution: args.resolution,
+          aspectRatio: args.aspectRatio,
+          seed: args.seed
+        });
+        videoGenInstances.set(response.jobId, videoGen);
+        return {
+          success: true,
+          jobId: response.jobId,
+          status: response.status
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+    describeCall: (args) => args.prompt.length > 50 ? args.prompt.slice(0, 47) + "..." : args.prompt,
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Generate video using ${connector.displayName}`
+    }
+  };
+  const statusTool = {
+    definition: {
+      type: "function",
+      function: {
+        name: "video_status",
+        description: "Check the status of a video generation job. If completed, downloads and saves the video.",
+        parameters: {
+          type: "object",
+          properties: {
+            jobId: {
+              type: "string",
+              description: "The job ID returned by generate_video"
+            }
+          },
+          required: ["jobId"]
+        }
+      }
+    },
+    execute: async (args) => {
+      try {
+        let videoGen = videoGenInstances.get(args.jobId);
+        if (!videoGen) {
+          videoGen = VideoGeneration.create({ connector });
+        }
+        const status = await videoGen.getStatus(args.jobId);
+        if (status.status === "completed") {
+          let buffer;
+          if (status.video?.b64_json) {
+            buffer = Buffer.from(status.video.b64_json, "base64");
+          } else if (status.video?.url) {
+            const resp = await fetch(status.video.url);
+            buffer = Buffer.from(await resp.arrayBuffer());
+          } else if (videoGen.download) {
+            try {
+              buffer = await videoGen.download(args.jobId);
+            } catch {
+            }
+          }
+          if (buffer) {
+            const format = status.video?.format || "mp4";
+            const modelName = modelNames[0] || "unknown";
+            const result = await handler.save(buffer, {
+              type: "video",
+              format,
+              model: modelName,
+              vendor: vendor || "unknown"
+            });
+            videoGenInstances.delete(args.jobId);
+            return {
+              success: true,
+              status: "completed",
+              location: result.location,
+              mimeType: result.mimeType
+            };
+          }
+          videoGenInstances.delete(args.jobId);
+          return {
+            success: true,
+            status: "completed",
+            location: status.video?.url
+          };
+        }
+        if (status.status === "failed") {
+          videoGenInstances.delete(args.jobId);
+          return {
+            success: false,
+            status: "failed",
+            error: status.error || "Video generation failed"
+          };
+        }
+        return {
+          success: true,
+          status: status.status,
+          progress: status.progress
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+    describeCall: (args) => `job ${args.jobId}`,
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: "Check video generation status"
+    }
+  };
+  return [generateTool, statusTool];
+}
+
+// src/tools/multimedia/textToSpeech.ts
+function createTextToSpeechTool(connector, outputHandler) {
+  const vendor = connector.vendor;
+  const handler = outputHandler ?? getMediaOutputHandler();
+  const vendorModels = vendor ? getTTSModelsByVendor(vendor) : [];
+  const modelNames = vendorModels.map((m) => m.name);
+  const properties = {
+    text: {
+      type: "string",
+      description: "Text to convert to speech"
+    }
+  };
+  if (modelNames.length > 0) {
+    const descriptions = vendorModels.map((m) => `${m.name}: ${m.description || m.displayName}`).join("; ");
+    properties.model = {
+      type: "string",
+      enum: modelNames,
+      description: `TTS model to use. Options: ${descriptions}`
+    };
+  }
+  const allVoices = [
+    ...new Map(
+      vendorModels.flatMap((m) => m.capabilities.voices).map((v) => [v.id, v])
+    ).values()
+  ];
+  if (allVoices.length > 0) {
+    const voiceDescriptions = allVoices.slice(0, 10).map((v) => `${v.id}${v.name !== v.id ? ` (${v.name})` : ""}`).join(", ");
+    properties.voice = {
+      type: "string",
+      enum: allVoices.map((v) => v.id),
+      description: `Voice to use. Options include: ${voiceDescriptions}${allVoices.length > 10 ? `, and ${allVoices.length - 10} more` : ""}`
+    };
+  }
+  const allFormats = [...new Set(vendorModels.flatMap((m) => [...m.capabilities.formats]))];
+  if (allFormats.length > 0) {
+    properties.format = {
+      type: "string",
+      enum: allFormats,
+      description: `Output audio format: ${allFormats.join(", ")}`
+    };
+  }
+  const hasSpeed = vendorModels.some((m) => m.capabilities.speed.supported);
+  if (hasSpeed) {
+    const speedModel = vendorModels.find((m) => m.capabilities.speed.supported);
+    properties.speed = {
+      type: "number",
+      description: `Speech speed (${speedModel?.capabilities.speed.min ?? 0.25} to ${speedModel?.capabilities.speed.max ?? 4})`,
+      minimum: speedModel?.capabilities.speed.min ?? 0.25,
+      maximum: speedModel?.capabilities.speed.max ?? 4
+    };
+  }
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "text_to_speech",
+        description: `Convert text to speech audio using ${connector.displayName}`,
+        parameters: {
+          type: "object",
+          properties,
+          required: ["text"]
+        }
+      }
+    },
+    execute: async (args) => {
+      try {
+        const tts = TextToSpeech.create({
+          connector,
+          model: args.model,
+          voice: args.voice,
+          format: args.format,
+          speed: args.speed
+        });
+        const response = await tts.synthesize(args.text);
+        const format = response.format || args.format || "mp3";
+        const result = await handler.save(response.audio, {
+          type: "audio",
+          format,
+          model: args.model || modelNames[0] || "unknown",
+          vendor: vendor || "unknown"
+        });
+        return {
+          success: true,
+          location: result.location,
+          format,
+          mimeType: result.mimeType
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+    describeCall: (args) => args.text.length > 50 ? args.text.slice(0, 47) + "..." : args.text,
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Convert text to speech using ${connector.displayName}`
+    }
+  };
+}
+function createSpeechToTextTool(connector) {
+  const vendor = connector.vendor;
+  const vendorModels = vendor ? getSTTModelsByVendor(vendor) : [];
+  const modelNames = vendorModels.map((m) => m.name);
+  const properties = {
+    audioFilePath: {
+      type: "string",
+      description: "Path to the audio file to transcribe"
+    }
+  };
+  if (modelNames.length > 0) {
+    const descriptions = vendorModels.map((m) => `${m.name}: ${m.description || m.displayName}`).join("; ");
+    properties.model = {
+      type: "string",
+      enum: modelNames,
+      description: `STT model to use. Options: ${descriptions}`
+    };
+  }
+  properties.language = {
+    type: "string",
+    description: 'Language code (ISO-639-1, e.g., "en", "es", "fr"). Optional for auto-detection.'
+  };
+  properties.prompt = {
+    type: "string",
+    description: "Optional context hint to guide transcription (e.g., domain-specific terms)"
+  };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "speech_to_text",
+        description: `Transcribe audio to text using ${connector.displayName}`,
+        parameters: {
+          type: "object",
+          properties,
+          required: ["audioFilePath"]
+        }
+      }
+    },
+    execute: async (args) => {
+      try {
+        const audioBuffer = await fs14__namespace.readFile(args.audioFilePath);
+        const stt = SpeechToText.create({
+          connector,
+          model: args.model,
+          language: args.language
+        });
+        const response = await stt.transcribe(audioBuffer, {
+          prompt: args.prompt
+        });
+        return {
+          success: true,
+          text: response.text,
+          language: response.language,
+          durationSeconds: response.durationSeconds
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+    describeCall: (args) => args.audioFilePath,
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Transcribe audio using ${connector.displayName}`
+    }
+  };
+}
+
+// src/tools/multimedia/register.ts
+var VENDOR_CAPABILITIES = {
+  [Vendor.OpenAI]: ["image", "video", "tts", "stt"],
+  [Vendor.Google]: ["image", "video", "tts"],
+  [Vendor.Grok]: ["image", "video"]
+};
+function registerMultimediaTools() {
+  for (const [vendor, capabilities] of Object.entries(VENDOR_CAPABILITIES)) {
+    ConnectorTools.registerService(vendor, (connector, _userId) => {
+      const tools = [];
+      if (capabilities.includes("image")) {
+        tools.push(createImageGenerationTool(connector));
+      }
+      if (capabilities.includes("video")) {
+        tools.push(...createVideoTools(connector));
+      }
+      if (capabilities.includes("tts")) {
+        tools.push(createTextToSpeechTool(connector));
+      }
+      if (capabilities.includes("stt")) {
+        tools.push(createSpeechToTextTool(connector));
+      }
+      return tools;
+    });
+  }
+}
+
+// src/tools/multimedia/index.ts
+registerMultimediaTools();
 
 // src/tools/registry.generated.ts
 var toolRegistry = [
@@ -48755,17 +49367,23 @@ var ToolRegistry = class {
    */
   static toRegistryEntry(tool, connectorName) {
     let serviceType;
+    let displayPrefix;
     try {
       const connector = exports.Connector.get(connectorName);
       serviceType = ConnectorTools.detectService(connector);
+      if (connector.vendor) {
+        const vendorInfo = getVendorInfo(connector.vendor);
+        displayPrefix = vendorInfo?.name || connector.vendor;
+      }
     } catch {
     }
     const serviceInfo = serviceType ? getServiceInfo(serviceType) : void 0;
+    const displayContext = displayPrefix || serviceInfo?.name;
     const def = tool.definition.function;
     return {
       name: def.name,
       exportName: def.name,
-      displayName: this.deriveDisplayName(def.name, serviceInfo?.name),
+      displayName: this.deriveDisplayName(def.name, displayContext, connectorName),
       category: "connector",
       description: def.description || `API tool for ${connectorName}`,
       tool,
@@ -48778,14 +49396,21 @@ var ToolRegistry = class {
   }
   /**
    * Derive a human-readable display name from a tool name
+   *
+   * @param toolName - Full tool name (e.g., "main-openai_generate_image")
+   * @param contextName - Vendor or service display name (e.g., "OpenAI")
+   * @param connectorName - Connector name used as prefix (e.g., "main-openai")
    */
-  static deriveDisplayName(toolName, serviceName) {
-    if (serviceName) {
-      const suffix = toolName.includes("_api") ? " API" : "";
-      return `${serviceName}${suffix}`;
+  static deriveDisplayName(toolName, contextName, connectorName) {
+    let baseName = toolName;
+    if (connectorName && toolName.startsWith(connectorName + "_")) {
+      baseName = toolName.slice(connectorName.length + 1);
     }
-    const withoutSuffix = toolName.replace(/_api$/, " API");
-    return withoutSuffix.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    if (baseName === "api") {
+      return contextName ? `${contextName} API` : toolName.replace(/_/g, " ");
+    }
+    const readable = baseName.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    return contextName ? `${contextName} ${readable}` : readable;
   }
 };
 
@@ -49019,6 +49644,7 @@ exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileAgentDefinitionStorage = FileAgentDefinitionStorage;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileContextStorage = FileContextStorage;
+exports.FileMediaOutputHandler = FileMediaOutputHandler;
 exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
 exports.FileStorage = FileStorage;
 exports.HookManager = HookManager;
@@ -49134,6 +49760,7 @@ exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
 exports.createFileContextStorage = createFileContextStorage;
 exports.createGlobTool = createGlobTool;
 exports.createGrepTool = createGrepTool;
+exports.createImageGenerationTool = createImageGenerationTool;
 exports.createImageProvider = createImageProvider;
 exports.createListDirectoryTool = createListDirectoryTool;
 exports.createMessageWithImages = createMessageWithImages;
@@ -49141,10 +49768,13 @@ exports.createMetricsCollector = createMetricsCollector;
 exports.createPlan = createPlan;
 exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
+exports.createSpeechToTextTool = createSpeechToTextTool;
 exports.createStrategy = createStrategy;
 exports.createTask = createTask;
 exports.createTextMessage = createTextMessage;
+exports.createTextToSpeechTool = createTextToSpeechTool;
 exports.createVideoProvider = createVideoProvider;
+exports.createVideoTools = createVideoTools;
 exports.createWriteFileTool = createWriteFileTool;
 exports.defaultDescribeCall = defaultDescribeCall;
 exports.detectDependencyCycle = detectDependencyCycle;
@@ -49177,6 +49807,7 @@ exports.getDocsURL = getDocsURL;
 exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
+exports.getMediaOutputHandler = getMediaOutputHandler;
 exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
 exports.getNextExecutableTasks = getNextExecutableTasks;
@@ -49245,6 +49876,7 @@ exports.resolveDependencies = resolveDependencies;
 exports.retryWithBackoff = retryWithBackoff;
 exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
+exports.setMediaOutputHandler = setMediaOutputHandler;
 exports.setMetricsCollector = setMetricsCollector;
 exports.simpleTokenEstimator = simpleTokenEstimator;
 exports.toConnectorOptions = toConnectorOptions;

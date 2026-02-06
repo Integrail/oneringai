@@ -54,6 +54,32 @@ function CodeComponent({ node, className, children, ...props }: any) {
   return <CodeBlock language={language} code={code} isStreaming={isStreaming} />;
 }
 
+// Audio file extensions for detecting audio links
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.aac', '.flac', '.opus', '.pcm', '.webm'];
+// Video file extensions for detecting video links
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov'];
+
+/**
+ * Resolve a local filesystem path or file:// URL to a local-media:// URL.
+ * Returns the original URL unchanged for remote URLs.
+ */
+function resolveLocalMediaUrl(url: string | undefined): string | undefined {
+  if (!url) return url;
+  if (url.startsWith('file://')) {
+    return url.replace('file://', 'local-media://');
+  }
+  if (url.startsWith('/')) {
+    return `local-media://${url}`;
+  }
+  return url;
+}
+
+/** Check if a URL points to a file with one of the given extensions */
+function hasExtension(url: string, extensions: string[]): boolean {
+  const lower = url.toLowerCase().split('?')[0]!; // strip query params
+  return extensions.some(ext => lower.endsWith(ext));
+}
+
 // Custom components for react-markdown
 const markdownComponents: Components = {
   // Code blocks with syntax highlighting and special renderers
@@ -68,8 +94,24 @@ const markdownComponents: Components = {
     );
   },
 
-  // Links open in external browser
+  // Links — render audio/video links as inline players, others open in external browser
   a({ href, children, ...props }) {
+    if (href && hasExtension(href, AUDIO_EXTENSIONS)) {
+      const resolvedHref = resolveLocalMediaUrl(href);
+      return (
+        <audio controls className="markdown-audio">
+          <source src={resolvedHref} />
+        </audio>
+      );
+    }
+    if (href && hasExtension(href, VIDEO_EXTENSIONS)) {
+      const resolvedHref = resolveLocalMediaUrl(href);
+      return (
+        <video controls className="markdown-video">
+          <source src={resolvedHref} />
+        </video>
+      );
+    }
     return (
       <a
         href={href}
@@ -83,10 +125,29 @@ const markdownComponents: Components = {
   },
 
   // Images with responsive styling
+  // Local filesystem paths are converted to local-media:// protocol for Electron security
+  // Also handles cases where LLM uses image syntax for audio/video by converting to player
   img({ src, alt, ...props }) {
+    if (src && hasExtension(src, AUDIO_EXTENSIONS)) {
+      const resolvedSrc = resolveLocalMediaUrl(src);
+      return (
+        <audio controls className="markdown-audio">
+          <source src={resolvedSrc} />
+        </audio>
+      );
+    }
+    if (src && hasExtension(src, VIDEO_EXTENSIONS)) {
+      const resolvedSrc = resolveLocalMediaUrl(src);
+      return (
+        <video controls className="markdown-video">
+          <source src={resolvedSrc} />
+        </video>
+      );
+    }
+    const resolvedSrc = resolveLocalMediaUrl(src);
     return (
       <img
-        src={src}
+        src={resolvedSrc}
         alt={alt || ''}
         className="markdown-image"
         loading="lazy"

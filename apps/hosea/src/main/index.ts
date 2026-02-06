@@ -4,10 +4,10 @@
  * Electron main process - handles window management and IPC with the agent.
  */
 
-import { app, BrowserWindow, ipcMain, shell, dialog, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, Menu, protocol, net } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { AgentService } from './AgentService.js';
 import { BrowserService } from './BrowserService.js';
 import { AutoUpdaterService } from './AutoUpdaterService.js';
@@ -819,8 +819,32 @@ function createAppMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
+// Register custom protocol for serving local media files (images, video, audio)
+// Must be called before app.whenReady()
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'local-media',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+}]);
+
 // App lifecycle
 app.whenReady().then(async () => {
+  // Handle local-media:// protocol - serves files from the media output directory
+  const allowedMediaDir = join(tmpdir(), 'oneringai-media');
+  protocol.handle('local-media', async (request) => {
+    const url = new URL(request.url);
+    // Standard URL parsing may capture the first path segment as hostname
+    // e.g. local-media:///var/folders/... → hostname:"var", pathname:"/folders/..."
+    // Reconstruct the full absolute path
+    const filePath = url.hostname
+      ? decodeURIComponent(`/${url.hostname}${url.pathname}`)
+      : decodeURIComponent(url.pathname);
+    // Security: only serve files from the media output directory
+    if (!filePath.startsWith(allowedMediaDir)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return net.fetch(`file://${filePath}`);
+  });
+
   await setupIPC();
   await createWindow();
 
