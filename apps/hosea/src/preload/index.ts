@@ -1042,6 +1042,11 @@ export interface HoseaAPI {
     }>;
   };
 
+  // Shell
+  shell: {
+    openExternal: (url: string) => Promise<void>;
+  };
+
   // Auto-updater
   updater: {
     check: () => Promise<{ success: boolean; updateInfo?: unknown; error?: string }>;
@@ -1294,6 +1299,10 @@ const api: HoseaAPI = {
 
   dialog: {
     showOpenDialog: (options) => ipcRenderer.invoke('dialog:show-open-dialog', options),
+  },
+
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   },
 
   updater: {

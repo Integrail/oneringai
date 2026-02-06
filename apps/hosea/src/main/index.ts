@@ -571,6 +571,11 @@ async function setupIPC(): Promise<void> {
     return dialog.showOpenDialog(mainWindow, options);
   });
 
+  // Shell operations
+  ipcMain.handle('shell:open-external', async (_event, url: string) => {
+    await shell.openExternal(url);
+  });
+
   // ============ Browser Automation IPC Handlers ============
 
   ipcMain.handle('browser:create', async (_event, instanceId: string) => {

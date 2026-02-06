@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Download, RefreshCw, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle, AlertTriangle, X, ExternalLink } from 'lucide-react';
 import { Alert, Button, ProgressBar } from 'react-bootstrap';
+
+function isSignatureError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('code signature') ||
+         lower.includes('code failed to satisfy') ||
+         lower.includes('designated requirement');
+}
 
 type UpdateStatus =
   | { status: 'checking' }
@@ -113,15 +120,40 @@ export function UpdateNotification(): React.ReactElement | null {
       )}
 
       {updateStatus.status === 'error' && (
-        <Alert variant="warning" className="d-flex align-items-center gap-2 mb-0">
-          <AlertTriangle size={18} />
-          <div className="flex-grow-1">
-            <strong>Update Failed</strong>
-            <div className="small">{updateStatus.message}</div>
+        <Alert variant="warning" className="mb-0">
+          <div className="d-flex align-items-center gap-2">
+            <AlertTriangle size={18} />
+            <div className="flex-grow-1">
+              {isSignatureError(updateStatus.message) ? (
+                <>
+                  <strong>Manual Update Required</strong>
+                  <div className="small">
+                    Security certificate changed. Please download the latest version manually.
+                    Future updates will work automatically.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <strong>Update Failed</strong>
+                  <div className="small">{updateStatus.message}</div>
+                </>
+              )}
+            </div>
+            <Button size="sm" variant="outline-secondary" onClick={handleDismiss}>
+              <X size={14} />
+            </Button>
           </div>
-          <Button size="sm" variant="outline-secondary" onClick={handleDismiss}>
-            <X size={14} />
-          </Button>
+          {isSignatureError(updateStatus.message) && (
+            <Button
+              size="sm"
+              variant="primary"
+              className="mt-2 w-100"
+              onClick={() => window.hosea.shell.openExternal('https://github.com/Integrail/oneringai/releases/latest')}
+            >
+              <ExternalLink size={14} className="me-1" />
+              Download Latest Version
+            </Button>
+          )}
         </Alert>
       )}
     </div>
