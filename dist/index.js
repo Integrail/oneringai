@@ -19892,8 +19892,8 @@ ${trimmedSection}` : trimmedSection;
 var DEFAULT_THRESHOLD = 0.7;
 var DefaultCompactionStrategy = class {
   name = "default";
-  displayName = "Default";
-  description = "Standard compaction strategy. Compacts plugins first, then conversation history. Triggers at 70% context usage.";
+  displayName = "Dumb";
+  description = "Do not use";
   threshold;
   constructor(config) {
     this.threshold = config?.threshold ?? DEFAULT_THRESHOLD;
@@ -20536,7 +20536,7 @@ var DEFAULT_FEATURES = {
 };
 var DEFAULT_CONFIG2 = {
   responseReserve: 4096,
-  strategy: "default"
+  strategy: "algorithmic"
 };
 
 // src/core/context-nextgen/AgentContextNextGen.ts
