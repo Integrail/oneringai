@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.1.1
-**Last Updated:** 2026-02-06
+**Version:** 0.1.3
+**Last Updated:** 2026-02-07
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -16,7 +16,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 5. [Agent Features](#agent-features)
 6. [Session Persistence](#session-persistence)
 7. [Context Management](#context-management)
-   - Strategy Deep Dive (Proactive, Balanced, Lazy)
+   - Strategy Deep Dive (Algorithmic, Custom)
    - Token Estimation
    - Lifecycle Hooks
 8. [InContextMemory](#in-context-memory)
@@ -179,7 +179,7 @@ const agent = Agent.create({
 
   // Optional settings
   temperature: 0.7,          // Randomness (0.0 - 1.0)
-  maxIterations: 10,         // Max tool calling rounds
+  maxIterations: 50,         // Max tool calling rounds (default: 50)
   maxOutputTokens: 2000,     // Max response length
 
   instructions: `You are a helpful assistant.
@@ -1927,7 +1927,7 @@ interface InContextMemoryConfig {
 
 ### Available Tools
 
-The LLM has access to four tools for managing in-context memory:
+The LLM has access to three tools for managing in-context memory (values are always visible directly in context, so no `get` tool is needed):
 
 #### context_set
 
@@ -1944,21 +1944,6 @@ Store or update a key-value pair in the live context:
     "priority": "high"  // optional: low, normal, high, critical
   }
 }
-```
-
-#### context_get
-
-Read a value from the live context (for verification, though values are visible):
-
-```typescript
-// Tool call from LLM
-{
-  "name": "context_get",
-  "arguments": {
-    "key": "current_state"
-  }
-}
-// Returns: { "key": "current_state", "value": { "step": 3, "status": "active", "errors": [] } }
 ```
 
 #### context_delete
@@ -7447,55 +7432,79 @@ The `IConnectorRegistry` interface covers the read-only subset of Connector stat
 
 ### Hooks & Lifecycle Events
 
-Intercept and modify agent behavior:
+#### Lifecycle Hooks (via AgentConfig)
+
+Intercept tool execution, compaction, and error events:
 
 ```typescript
-import { Agent, HookManager } from '@everworker/oneringai';
+import { Agent } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
+
+  // Lifecycle hooks
+  lifecycleHooks: {
+    beforeToolExecution: async (context) => {
+      console.log(`About to call: ${context.toolName}`);
+      // Throw to prevent execution
+    },
+    afterToolExecution: async (result) => {
+      console.log(`Tool ${result.toolName} completed in ${result.durationMs}ms`);
+    },
+    beforeCompaction: async (context) => {
+      console.log(`Compaction starting for agent ${context.agentId}`);
+    },
+    afterCompaction: async (log, tokensFreed) => {
+      console.log(`Compaction freed ${tokensFreed} tokens`);
+    },
+    onError: async (error, context) => {
+      console.error(`Error in ${context.phase}: ${error.message}`);
+    },
+  },
+});
+```
+
+#### Execution Hooks (via HookConfig)
+
+For finer control over the agentic loop, use the `hooks` config with named hook points:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  hooks: {
+    'before:tool': async (context) => {
+      console.log(`Calling ${context.tool.name}`);
+      return context.args; // Return modified args
+    },
+    'after:tool': async (context) => {
+      console.log(`Result: ${JSON.stringify(context.result)}`);
+      return context.result; // Return modified result
+    },
+    'approve:tool': async (context) => {
+      // Return approval decision
+      return { approved: true, message: 'Approved' };
+    },
+  },
+});
+```
+
+#### Context Events
+
+Subscribe to context events for monitoring (as used in the hosea reference app):
+
+```typescript
+const ctx = agent.context;
+
+ctx.on('compaction:starting', ({ timestamp, targetTokensToFree }) => {
+  console.log(`Compaction starting: need to free ~${targetTokensToFree} tokens`);
 });
 
-// Create hook manager
-const hooks = new HookManager();
-
-// Before tool execution
-hooks.registerHook('before:tool', async (context) => {
-  console.log(`Calling ${context.tool.name}`);
-
-  // Modify arguments
-  return {
-    ...context.args,
-    modified: true,
-  };
+ctx.on('context:compacted', ({ tokensFreed }) => {
+  console.log(`Compaction complete: freed ${tokensFreed} tokens`);
 });
-
-// After tool execution
-hooks.registerHook('after:tool', async (context) => {
-  console.log(`Result: ${JSON.stringify(context.result)}`);
-
-  // Modify result
-  return {
-    ...context.result,
-    timestamp: Date.now(),
-  };
-});
-
-// Approve tool (require confirmation)
-hooks.registerHook('approve:tool', async (context) => {
-  console.log(`Approve ${context.tool.name}?`);
-
-  // Could ask user for confirmation
-  return {
-    approved: true,
-    message: 'Approved',
-  };
-});
-
-// Apply hooks to agent
-agent.applyHooks(hooks);
 ```
 
 ### Circuit Breaker
@@ -7767,9 +7776,9 @@ if (!toolManager.isDestroyed) {
 ### Performance Tips
 
 1. **Use appropriate models:**
-   - GPT-3.5/Claude Haiku for simple tasks
-   - GPT-4/Claude Sonnet for complex tasks
-   - GPT-4-turbo/Claude Opus for critical tasks
+   - GPT-4.1-nano/Claude Haiku 4.5 for simple tasks
+   - GPT-4.1/Claude Sonnet 4.5 for complex tasks
+   - GPT-5.2/Claude Opus 4.5 for critical tasks
 
 2. **Leverage caching:**
    - Prompt caching (Anthropic/OpenAI)
@@ -7796,13 +7805,21 @@ See the `examples/` directory:
 
 ```bash
 # Basic examples
-npm run example:basic              # Simple text generation
-npm run example:streaming          # Streaming responses
+npm run example:text               # Simple text generation
+npm run example:agent              # Basic agent with tools
+npm run example:conversation       # Multi-turn conversation
+npm run example:chat               # Interactive chat
 npm run example:vision             # Image analysis
-npm run example:tools              # Tool calling
+npm run example:providers          # Multi-provider comparison
 
-# Context management
-npm run example:context-management # Context strategies
+# Tools and hooks
+npm run example:json-tool          # JSON manipulation tool
+npm run example:hooks              # Agent lifecycle hooks
+npm run example:web                # Web research agent
+
+# OAuth examples
+npm run example:oauth              # OAuth demo
+npm run example:oauth-registry     # OAuth registry
 ```
 
 ### Quick Recipes
@@ -7891,8 +7908,8 @@ const response = await agent.run(`
 
 ## Support & Resources
 
-- **GitHub:** https://github.com/anthropics/oneringai
-- **Issues:** https://github.com/anthropics/oneringai/issues
+- **GitHub:** https://github.com/Integrail/oneringai
+- **Issues:** https://github.com/Integrail/oneringai/issues
 - **Examples:** `/examples` directory in repo
 - **TypeScript Docs:** Full IntelliSense support
 
