@@ -26,7 +26,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
 - [Utilities](#utilities) (6 items)
-- [Interfaces](#interfaces) (36 items)
+- [Interfaces](#interfaces) (37 items)
 - [Base Classes](#base-classes) (3 items)
 - [Other](#other) (180 items)
 
@@ -8912,7 +8912,7 @@ async rebuildIndex(): Promise&lt;void&gt;
 
 ### FilePersistentInstructionsStorage `class`
 
-📍 [`src/infrastructure/storage/FilePersistentInstructionsStorage.ts:70`](src/infrastructure/storage/FilePersistentInstructionsStorage.ts)
+📍 [`src/infrastructure/storage/FilePersistentInstructionsStorage.ts:79`](src/infrastructure/storage/FilePersistentInstructionsStorage.ts)
 
 File-based storage for persistent agent instructions
 
@@ -8935,31 +8935,33 @@ constructor(config: FilePersistentInstructionsStorageConfig)
 
 #### `load()`
 
-Load instructions from file
+Load instruction entries from file.
+Falls back to legacy .md file migration if JSON not found.
 
 ```typescript
-async load(): Promise&lt;string | null&gt;
+async load(): Promise&lt;InstructionEntry[] | null&gt;
 ```
 
-**Returns:** `Promise&lt;string | null&gt;`
+**Returns:** `Promise&lt;InstructionEntry[] | null&gt;`
 
 #### `save()`
 
-Save instructions to file
-Creates directory if it doesn't exist
+Save instruction entries to file as JSON.
+Creates directory if it doesn't exist.
+Cleans up legacy .md file if present.
 
 ```typescript
-async save(content: string): Promise&lt;void&gt;
+async save(entries: InstructionEntry[]): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `content`: `string`
+- `entries`: `InstructionEntry[]`
 
 **Returns:** `Promise&lt;void&gt;`
 
 #### `delete()`
 
-Delete instructions file
+Delete instructions file (and legacy .md if exists)
 
 ```typescript
 async delete(): Promise&lt;void&gt;
@@ -8969,7 +8971,7 @@ async delete(): Promise&lt;void&gt;
 
 #### `exists()`
 
-Check if instructions file exists
+Check if instructions file exists (JSON or legacy .md)
 
 ```typescript
 async exists(): Promise&lt;boolean&gt;
@@ -9006,6 +9008,7 @@ getAgentId(): string
 |----------|------|-------------|
 | `directory` | `directory: string` | - |
 | `filePath` | `filePath: string` | - |
+| `legacyFilePath` | `legacyFilePath: string` | - |
 | `agentId` | `agentId: string` | - |
 
 </details>
@@ -9207,7 +9210,7 @@ Configuration for FileContextStorage
 
 ### FilePersistentInstructionsStorageConfig `interface`
 
-📍 [`src/infrastructure/storage/FilePersistentInstructionsStorage.ts:23`](src/infrastructure/storage/FilePersistentInstructionsStorage.ts)
+📍 [`src/infrastructure/storage/FilePersistentInstructionsStorage.ts:24`](src/infrastructure/storage/FilePersistentInstructionsStorage.ts)
 
 Configuration for FilePersistentInstructionsStorage
 
@@ -9218,7 +9221,7 @@ Configuration for FilePersistentInstructionsStorage
 |----------|------|-------------|
 | `agentId` | `agentId: string;` | Agent ID (used to create unique storage path) |
 | `baseDirectory?` | `baseDirectory?: string;` | Override the base directory (default: ~/.oneringai/agents) |
-| `filename?` | `filename?: string;` | Override the filename (default: custom_instructions.md) |
+| `filename?` | `filename?: string;` | Override the filename (default: custom_instructions.json) |
 
 </details>
 
@@ -18900,9 +18903,9 @@ destroy(): void;
 
 ---
 
-### IPersistentInstructionsStorage `interface`
+### InstructionEntry `interface`
 
-📍 [`src/domain/interfaces/IPersistentInstructionsStorage.ts:14`](src/domain/interfaces/IPersistentInstructionsStorage.ts)
+📍 [`src/domain/interfaces/IPersistentInstructionsStorage.ts:15`](src/domain/interfaces/IPersistentInstructionsStorage.ts)
 
 IPersistentInstructionsStorage - Storage interface for persistent instructions
 
@@ -18910,28 +18913,51 @@ Abstracted storage interface following Clean Architecture principles.
 Implementations can use file system, database, or any other storage backend.
 
 <details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | User-supplied key (e.g., "style", "code_rules") |
+| `content` | `content: string;` | Instruction text (markdown) |
+| `createdAt` | `createdAt: number;` | Timestamp when entry was first created |
+| `updatedAt` | `updatedAt: number;` | Timestamp when entry was last updated |
+
+</details>
+
+---
+
+### IPersistentInstructionsStorage `interface`
+
+📍 [`src/domain/interfaces/IPersistentInstructionsStorage.ts:36`](src/domain/interfaces/IPersistentInstructionsStorage.ts)
+
+Storage interface for persistent agent instructions
+
+Implementations handle the actual storage mechanism while the plugin
+handles the business logic.
+
+<details>
 <summary><strong>Methods</strong></summary>
 
 #### `load()`
 
-Load instructions from storage
+Load instruction entries from storage
 
 ```typescript
-load(): Promise&lt;string | null&gt;;
+load(): Promise&lt;InstructionEntry[] | null&gt;;
 ```
 
-**Returns:** `Promise&lt;string | null&gt;`
+**Returns:** `Promise&lt;InstructionEntry[] | null&gt;`
 
 #### `save()`
 
-Save instructions to storage
+Save instruction entries to storage
 
 ```typescript
-save(content: string): Promise&lt;void&gt;;
+save(entries: InstructionEntry[]): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `content`: `string`
+- `entries`: `InstructionEntry[]`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -21480,7 +21506,7 @@ static clear(): void
 
 ### PersistentInstructionsPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:135`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:162`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -21518,10 +21544,10 @@ async getContent(): Promise&lt;string | null&gt;
 #### `getContents()`
 
 ```typescript
-getContents(): string | null
+getContents(): Map&lt;string, InstructionEntry&gt;
 ```
 
-**Returns:** `string | null`
+**Returns:** `Map&lt;string, InstructionEntry&gt;`
 
 #### `getTokenSize()`
 
@@ -21605,43 +21631,57 @@ async initialize(): Promise&lt;void&gt;
 
 #### `set()`
 
-Set entire instructions content (replaces existing)
+Add or update an instruction entry by key
 
 ```typescript
-async set(content: string): Promise&lt;boolean&gt;
+async set(key: string, content: string): Promise&lt;boolean&gt;
 ```
 
 **Parameters:**
+- `key`: `string`
 - `content`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
 
-#### `append()`
+#### `remove()`
 
-Append a section to existing instructions
+Remove an instruction entry by key
 
 ```typescript
-async append(section: string): Promise&lt;boolean&gt;
+async remove(key: string): Promise&lt;boolean&gt;
 ```
 
 **Parameters:**
-- `section`: `string`
+- `key`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
 
 #### `get()`
 
-Get current content
+Get one entry by key, or all entries if no key provided
 
 ```typescript
-async get(): Promise&lt;string | null&gt;
+async get(key?: string): Promise&lt;InstructionEntry | InstructionEntry[] | null&gt;
 ```
 
-**Returns:** `Promise&lt;string | null&gt;`
+**Parameters:**
+- `key`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;InstructionEntry | InstructionEntry[] | null&gt;`
+
+#### `list()`
+
+List metadata for all entries
+
+```typescript
+async list(): Promise&lt;
+```
+
+**Returns:** `Promise&lt;{ key: string; contentLength: number; createdAt: number; updatedAt: number; }[]&gt;`
 
 #### `clear()`
 
-Clear all instructions
+Clear all instruction entries
 
 ```typescript
 async clear(): Promise&lt;void&gt;
@@ -21658,7 +21698,8 @@ async clear(): Promise&lt;void&gt;
 |----------|------|-------------|
 | `name` | `name: "persistent_instructions"` | - |
 | `storage` | `storage: IPersistentInstructionsStorage` | - |
-| `maxLength` | `maxLength: number` | - |
+| `maxTotalLength` | `maxTotalLength: number` | - |
+| `maxEntries` | `maxEntries: number` | - |
 | `agentId` | `agentId: string` | - |
 | `estimator` | `estimator: ITokenEstimator` | - |
 
@@ -23274,7 +23315,7 @@ Built-in plugins use these headers:
 Use a consistent prefix based on plugin name:
 - `working_memory` plugin → `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
 - `in_context_memory` plugin → `context_set`, `context_delete`, `context_list`
-- `persistent_instructions` plugin → `instructions_set`, `instructions_get`, etc.
+- `persistent_instructions` plugin → `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear`
 
 ## State Serialization
 
@@ -24285,7 +24326,7 @@ Result of checking if a tool needs approval
 
 ### PersistentInstructionsConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:26`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:28`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24294,7 +24335,8 @@ Result of checking if a tool needs approval
 |----------|------|-------------|
 | `agentId` | `agentId: string;` | Agent ID - used to determine storage path (REQUIRED) |
 | `storage?` | `storage?: IPersistentInstructionsStorage;` | Custom storage implementation (default: FilePersistentInstructionsStorage) |
-| `maxLength?` | `maxLength?: number;` | Maximum instructions length in characters (default: 50000) |
+| `maxTotalLength?` | `maxTotalLength?: number;` | Maximum total content length across all entries in characters (default: 50000) |
+| `maxEntries?` | `maxEntries?: number;` | Maximum number of entries (default: 50) |
 
 </details>
 
@@ -24809,15 +24851,16 @@ Serialized approval state for session persistence
 
 ### SerializedPersistentInstructionsState `interface`
 
-📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:35`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:39`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `content` | `content: string | null;` | - |
+| `entries` | `entries: InstructionEntry[];` | - |
 | `agentId` | `agentId: string;` | - |
+| `version` | `version: 2;` | - |
 
 </details>
 
