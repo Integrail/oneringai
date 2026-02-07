@@ -18,10 +18,10 @@
   - [4. Session Persistence](#4-session-persistence)
   - [5. Working Memory](#5-working-memory)
   - [6. Research with Search Tools](#6-research-with-search-tools)
-  - [6. Context Management](#6-context-management)
-  - [7. InContextMemory](#7-incontextmemory)
-  - [8. Persistent Instructions](#8-persistent-instructions)
-  - [9. Direct LLM Access](#9-direct-llm-access)
+  - [7. Context Management](#7-context-management)
+  - [8. InContextMemory](#8-incontextmemory)
+  - [9. Persistent Instructions](#9-persistent-instructions)
+  - [10. Direct LLM Access](#10-direct-llm-access)
   - [11. Audio Capabilities](#11-audio-capabilities)
   - [12. Model Registry](#12-model-registry)
   - [13. Streaming](#13-streaming)
@@ -605,7 +605,7 @@ await agent.run('Research AI developments in 2026 and store key findings');
 - 📝 **Working Memory** - Store findings with priority-based eviction
 - 🏗️ **Tiered Memory** - Raw → Summary → Findings pattern
 
-### 6. Context Management
+### 7. Context Management
 
 **AgentContextNextGen** is the modern, plugin-based context manager. It provides clean separation of concerns with composable plugins:
 
@@ -689,7 +689,7 @@ console.log(budget.available);           // Remaining tokens
 console.log(budget.utilizationPercent);  // Usage percentage
 ```
 
-### 7. InContextMemory
+### 8. InContextMemory
 
 Store key-value pairs **directly in context** for instant LLM access without retrieval calls:
 
@@ -722,7 +722,7 @@ const state = plugin.get('current_state');  // { step: 2, status: 'active' }
 
 **Use cases:** Session state, user preferences, counters, flags, small accumulated results.
 
-### 8. Persistent Instructions
+### 9. Persistent Instructions
 
 Store agent-level custom instructions that persist across sessions on disk:
 
@@ -758,7 +758,7 @@ const agent = Agent.create({
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
 
-### 9. Direct LLM Access
+### 10. Direct LLM Access
 
 Bypass all context management for simple, stateless LLM calls:
 
@@ -1225,21 +1225,21 @@ See [MCP_INTEGRATION.md](./MCP_INTEGRATION.md) for complete documentation.
 
 ```bash
 # Basic examples
-npm run example:basic              # Simple text generation
-npm run example:streaming          # Streaming responses
+npm run example:text               # Simple text generation
+npm run example:agent              # Basic agent with tools
+npm run example:conversation       # Multi-turn conversation
+npm run example:chat               # Interactive chat
 npm run example:vision             # Image analysis
-npm run example:tools              # Tool calling
+npm run example:providers          # Multi-provider comparison
 
-# Audio examples
-npm run example:audio              # TTS and STT demo
+# Tools and hooks
+npm run example:json-tool          # JSON manipulation tool
+npm run example:hooks              # Agent lifecycle hooks
+npm run example:web                # Web research agent
 
-# Task Agent examples
-npm run example:task-agent         # Basic task agent
-npm run example:task-agent-demo    # Full demo with memory
-npm run example:planning-agent     # AI-driven planning
-
-# Context management
-npm run example:context-management # All strategies demo
+# OAuth examples
+npm run example:oauth              # OAuth demo
+npm run example:oauth-registry     # OAuth registry
 ```
 
 ## Development
