@@ -7904,5 +7904,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-02-06
-**Version:** 0.1.2
+**Last Updated:** 2026-02-07
+**Version:** 0.1.3
