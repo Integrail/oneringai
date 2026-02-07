@@ -545,6 +545,14 @@ export interface AgentContextNextGenConfig {
 
   /** Plugin-specific configurations (used with features flags) */
   plugins?: PluginConfigs;
+
+  /**
+   * Hard timeout in milliseconds for any single tool execution.
+   * Acts as a safety net: if a tool's own timeout mechanism fails
+   * (e.g. a child process doesn't exit), this will force-resolve with an error.
+   * Default: 0 (disabled - relies on each tool's own timeout)
+   */
+  toolExecutionTimeout?: number;
 }
 
 /**

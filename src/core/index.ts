@@ -133,6 +133,7 @@ export type {
   ToolRegistration,
   ToolMetadata,
   ToolManagerStats,
+  ToolManagerConfig,
   SerializedToolState,
   ToolManagerEvent,
 } from './ToolManager.js';

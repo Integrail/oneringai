@@ -154,12 +154,16 @@ EXAMPLES:
       return new Promise((resolve) => {
         const startTime = Date.now();
 
-        // Spawn the process
+        // Spawn the process in a new process group (detached) so we can
+        // kill the entire tree on timeout, not just the shell process.
+        // Without this, child processes (e.g. npm run dev → node server)
+        // keep stdout/stderr pipes open and the Promise never resolves.
         const childProcess = spawn(command, [], {
           shell: mergedConfig.shell,
           cwd: mergedConfig.workingDirectory,
           env,
           stdio: ['pipe', 'pipe', 'pipe'],
+          detached: true,
         });
 
         // Handle background execution
@@ -196,15 +200,29 @@ EXAMPLES:
         let stderr = '';
         let killed = false;
 
-        // Set up timeout
+        // Helper to kill the entire process group (not just the shell).
+        // Uses negative PID to signal the whole group created by detached: true.
+        const killProcessGroup = (signal: NodeJS.Signals): void => {
+          try {
+            if (childProcess.pid) {
+              process.kill(-childProcess.pid, signal);
+            }
+          } catch {
+            // Process group may already be gone; fall back to direct kill
+            try { childProcess.kill(signal); } catch { /* already dead */ }
+          }
+        };
+
+        // Set up timeout - kills entire process tree
+        const GRACEFUL_KILL_WAIT_MS = 3000;
         const timeoutId = setTimeout(() => {
           killed = true;
-          childProcess.kill('SIGTERM');
+          killProcessGroup('SIGTERM');
           setTimeout(() => {
             if (!childProcess.killed) {
-              childProcess.kill('SIGKILL');
+              killProcessGroup('SIGKILL');
             }
-          }, 5000);
+          }, GRACEFUL_KILL_WAIT_MS);
         }, effectiveTimeout);
 
         // Collect stdout
@@ -224,9 +242,34 @@ EXAMPLES:
           }
         });
 
+        let resolved = false;
+        const safeResolve = (result: BashResult): void => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timeoutId);
+          clearTimeout(hardTimeoutId);
+          resolve(result);
+        };
+
+        // Hard safety-net timeout: if 'close' event never fires (e.g. orphaned
+        // child processes still holding pipes), force-resolve after an extra grace period.
+        const HARD_TIMEOUT_GRACE_MS = 5000;
+        const hardTimeoutId = setTimeout(() => {
+          if (!resolved) {
+            // Last resort: try SIGKILL on the group
+            killProcessGroup('SIGKILL');
+            safeResolve({
+              success: false,
+              stdout,
+              stderr,
+              duration: Date.now() - startTime,
+              error: `Command timed out after ${effectiveTimeout}ms (hard timeout: process group did not exit)`,
+            });
+          }
+        }, effectiveTimeout + GRACEFUL_KILL_WAIT_MS + HARD_TIMEOUT_GRACE_MS);
+
         // Handle process completion
         childProcess.on('close', (code, signal) => {
-          clearTimeout(timeoutId);
           const duration = Date.now() - startTime;
 
           // Truncate output if needed
@@ -241,7 +284,7 @@ EXAMPLES:
           }
 
           if (killed) {
-            resolve({
+            safeResolve({
               success: false,
               stdout,
               stderr,
@@ -252,7 +295,7 @@ EXAMPLES:
               error: `Command timed out after ${effectiveTimeout}ms`,
             });
           } else {
-            resolve({
+            safeResolve({
               success: code === 0,
               stdout,
               stderr,
@@ -267,8 +310,7 @@ EXAMPLES:
 
         // Handle spawn errors
         childProcess.on('error', (error) => {
-          clearTimeout(timeoutId);
-          resolve({
+          safeResolve({
             success: false,
             error: `Failed to execute command: ${error.message}`,
             duration: Date.now() - startTime,

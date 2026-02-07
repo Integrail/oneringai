@@ -107,7 +107,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -197,8 +197,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     // Use custom strategy if provided, otherwise create from registry
     this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
 
-    // Create tool manager
-    this._tools = new ToolManager();
+    // Create tool manager (with optional hard execution timeout)
+    this._tools = new ToolManager(
+      config.toolExecutionTimeout ? { toolExecutionTimeout: config.toolExecutionTimeout } : undefined,
+    );
 
     // Register initial tools
     if (config.tools) {

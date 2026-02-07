@@ -273,8 +273,8 @@ async function tryNative(
       method: 'native',
       title: result.title,
       content: cleanContent,
-      // Note: raw HTML not available with native method (returns markdown instead)
-      markdown: args.includeMarkdown ? cleanContent : undefined,
+      // Native method already returns markdown-like content — no separate markdown field needed
+      // (would just duplicate content and waste tokens)
       qualityScore: result.qualityScore,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -319,8 +319,7 @@ async function tryJS(
       method: 'js',
       title: result.title,
       content: cleanContent,
-      // Note: raw HTML not available with JS method (returns markdown instead)
-      markdown: args.includeMarkdown ? cleanContent : undefined,
+      // JS method already returns markdown-like content — no separate markdown field needed
       qualityScore: result.success ? 80 : 0,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -363,8 +362,15 @@ async function tryAPI(
     const result: ScrapeResponse = await provider.scrape(args.url, options);
 
     // Strip base64 data URIs to prevent context overflow
-    const cleanContent = stripBase64DataUris(result.result?.content || '');
-    const cleanMarkdown = result.result?.markdown ? stripBase64DataUris(result.result.markdown) : undefined;
+    const rawContent = result.result?.content || '';
+    const rawMarkdown = result.result?.markdown;
+    const cleanContent = stripBase64DataUris(rawContent);
+    const cleanMarkdown = rawMarkdown ? stripBase64DataUris(rawMarkdown) : undefined;
+
+    // Avoid returning duplicate content in both `content` and `markdown`.
+    // When provider returns markdown as content (e.g., ZenRows with response_type=markdown),
+    // both fields are identical — omit `markdown` to save tokens.
+    const isDuplicate = !!cleanMarkdown && cleanContent === cleanMarkdown;
 
     return {
       success: result.success,
@@ -374,7 +380,7 @@ async function tryAPI(
       title: result.result?.title || '',
       content: cleanContent,
       html: result.result?.html, // Keep raw HTML as-is (only used if explicitly requested)
-      markdown: cleanMarkdown,
+      markdown: isDuplicate ? undefined : cleanMarkdown,
       metadata: result.result?.metadata,
       links: result.result?.links,
       qualityScore: result.success ? 90 : 0,

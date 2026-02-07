@@ -207,6 +207,14 @@ export interface BaseAgentConfig {
   lifecycleHooks?: AgentLifecycleHooks;
 
   /**
+   * Hard timeout in milliseconds for any single tool execution.
+   * Acts as a safety net at the ToolManager level: if a tool's own timeout
+   * mechanism fails, this will force-reject with an error.
+   * Default: 0 (disabled - relies on each tool's own timeout).
+   */
+  toolExecutionTimeout?: number;
+
+  /**
    * Optional AgentContextNextGen configuration.
    * If provided as AgentContextNextGen instance, it will be used directly.
    * If provided as config object, a new AgentContextNextGen will be created.
@@ -370,7 +378,10 @@ export abstract class BaseAgent<
       agentId: config.name,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
+      // Thread tool execution timeout to ToolManager
+      toolExecutionTimeout: config.toolExecutionTimeout,
       // Subclasses can add systemPrompt via their config
+      // Note: context-level toolExecutionTimeout overrides agent-level if both set
       ...(typeof config.context === 'object' && config.context !== null ? config.context : {}),
     };
 

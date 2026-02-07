@@ -627,4 +627,81 @@ describe('ToolManager', () => {
       expect(statesAfter.size).toBe(0);
     });
   });
+
+  describe('toolExecutionTimeout (hard timeout safety net)', () => {
+    it('should default to 0 (disabled)', () => {
+      const tm = new ToolManager();
+      expect(tm.toolExecutionTimeout).toBe(0);
+    });
+
+    it('should accept timeout via constructor config', () => {
+      const tm = new ToolManager({ toolExecutionTimeout: 5000 });
+      expect(tm.toolExecutionTimeout).toBe(5000);
+    });
+
+    it('should allow setting timeout via property', () => {
+      const tm = new ToolManager();
+      tm.toolExecutionTimeout = 10000;
+      expect(tm.toolExecutionTimeout).toBe(10000);
+    });
+
+    it('should not interfere with fast tools when enabled', async () => {
+      const tm = new ToolManager({ toolExecutionTimeout: 5000 });
+      const fastTool: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'fast_tool',
+            description: 'Returns immediately',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        execute: async () => ({ result: 'fast' }),
+      };
+
+      tm.register(fastTool);
+      const result = await tm.execute('fast_tool', {});
+      expect(result).toEqual({ result: 'fast' });
+    });
+
+    it('should reject with ToolExecutionError when tool exceeds hard timeout', async () => {
+      const tm = new ToolManager({ toolExecutionTimeout: 100 });
+      const slowTool: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'slow_tool',
+            description: 'Takes forever',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        execute: () => new Promise(() => {}), // never resolves
+      };
+
+      tm.register(slowTool);
+      await expect(tm.execute('slow_tool', {})).rejects.toThrow('hard timeout');
+    }, 5000);
+
+    it('should not enforce hard timeout when disabled (0)', async () => {
+      const tm = new ToolManager({ toolExecutionTimeout: 0 });
+      const tool: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'quick_tool',
+            description: 'Quick',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        execute: async () => {
+          await new Promise((r) => setTimeout(r, 50));
+          return { result: 'done' };
+        },
+      };
+
+      tm.register(tool);
+      const result = await tm.execute('quick_tool', {});
+      expect(result).toEqual({ result: 'done' });
+    });
+  });
 });

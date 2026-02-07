@@ -143,6 +143,7 @@ export type {
   ToolRegistration,
   ToolMetadata,
   ToolManagerStats,
+  ToolManagerConfig,
   SerializedToolState,
   ToolManagerEvent,
 } from './core/index.js';

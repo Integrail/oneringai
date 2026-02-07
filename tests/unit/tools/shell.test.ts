@@ -96,7 +96,38 @@ describe('Shell Tools', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('timed out');
-    }, 5000);
+    }, 15000);
+
+    it('should kill child process tree on timeout (not just the shell)', async () => {
+      const tool = createBashTool();
+      // Spawn a command that creates a child process tree:
+      // bash -> bash -> sleep
+      const result = await tool.execute({
+        command: 'bash -c "sleep 30"',
+        timeout: 200,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('timed out');
+      // Should resolve well before the 30s sleep would complete
+      expect(result.duration).toBeLessThan(12000);
+    }, 15000);
+
+    it('should resolve even when child processes hold pipes (hard timeout safety net)', async () => {
+      const tool = createBashTool();
+      const start = Date.now();
+      const result = await tool.execute({
+        command: 'sleep 60',
+        timeout: 200,
+      });
+      const elapsed = Date.now() - start;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('timed out');
+      // Must resolve within a reasonable time (timeout + grace periods)
+      // not hang for 60 seconds
+      expect(elapsed).toBeLessThan(15000);
+    }, 20000);
 
     it('should capture exit code', async () => {
       const tool = createBashTool();

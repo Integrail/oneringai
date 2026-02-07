@@ -126,6 +126,19 @@ export type ToolManagerEvent =
 // ToolManager Class
 // ============================================================================
 
+/**
+ * Configuration for ToolManager
+ */
+export interface ToolManagerConfig {
+  /**
+   * Hard timeout in milliseconds for any single tool execution.
+   * Acts as a safety net: if a tool's own timeout mechanism fails
+   * (e.g. child process doesn't exit), this will force-resolve with an error.
+   * Default: 0 (disabled - relies on tool's own timeout)
+   */
+  toolExecutionTimeout?: number;
+}
+
 export class ToolManager extends EventEmitter implements IToolExecutor, IDisposable {
   private registry: Map<string, ToolRegistration> = new Map();
   private namespaceIndex: Map<string, Set<string>> = new Map();
@@ -137,8 +150,12 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   /** Optional tool context for execution (set by agent before runs) */
   private _toolContext: ToolContext | undefined;
 
-  constructor() {
+  /** Hard timeout for tool execution (0 = disabled) */
+  private _toolExecutionTimeout: number;
+
+  constructor(config?: ToolManagerConfig) {
     super();
+    this._toolExecutionTimeout = config?.toolExecutionTimeout ?? 0;
     // Initialize default namespace
     this.namespaceIndex.set('default', new Set());
     this.toolLogger = logger.child({ component: 'ToolManager' });
@@ -147,6 +164,18 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     // Register built-in result normalizer to guarantee valid tool results
     // Runs LAST in afterExecute (priority 0) to catch undefined/null returns
     this.pipeline.use(new ResultNormalizerPlugin());
+  }
+
+  /**
+   * Get or set the hard tool execution timeout in milliseconds.
+   * 0 = disabled (relies on tool's own timeout).
+   */
+  get toolExecutionTimeout(): number {
+    return this._toolExecutionTimeout;
+  }
+
+  set toolExecutionTimeout(value: number) {
+    this._toolExecutionTimeout = Math.max(0, value);
   }
 
   /**
@@ -775,8 +804,8 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     metrics.increment('tool.executed', 1, { tool: toolName });
 
     try {
-      // Execute with circuit breaker protection
-      const result = await breaker.execute(async () => {
+      // Build the core execution promise (circuit breaker + pipeline)
+      const executionPromise = breaker.execute(async () => {
         // Create a wrapper tool that includes the tool context
         // This allows the pipeline to execute the tool with proper context
         const toolWithContext: ToolFunction = {
@@ -789,6 +818,11 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
         // Execute through the plugin pipeline
         return await this.pipeline.execute(toolWithContext, args);
       });
+
+      // Wrap with hard timeout safety net if configured
+      const result = this._toolExecutionTimeout > 0
+        ? await this.withHardTimeout(executionPromise, toolName, this._toolExecutionTimeout)
+        : await executionPromise;
 
       const duration = Date.now() - startTime;
 
@@ -866,6 +900,32 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
    */
   listTools(): string[] {
     return this.list();
+  }
+
+  // ==========================================================================
+  // Hard Timeout
+  // ==========================================================================
+
+  /**
+   * Wrap a promise with a hard timeout safety net.
+   * If the promise doesn't resolve within the timeout, throws ToolExecutionError.
+   */
+  private async withHardTimeout<T>(promise: Promise<T>, toolName: string, timeoutMs: number): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new ToolExecutionError(
+          toolName,
+          `Tool execution hard timeout after ${timeoutMs}ms (safety net - tool's own timeout may have failed)`
+        ));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId!);
+    }
   }
 
   // ==========================================================================

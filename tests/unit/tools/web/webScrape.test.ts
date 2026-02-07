@@ -239,7 +239,7 @@ describe('webScrape', () => {
   // ============================================================================
 
   describe('markdown content', () => {
-    it('should return markdown content from native fetch', async () => {
+    it('should return markdown in content field from native fetch (no duplicate markdown field)', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Test',
@@ -255,11 +255,13 @@ describe('webScrape', () => {
       });
 
       expect(result.success).toBe(true);
+      // Native fetch already returns markdown-like content in the content field
+      // No separate markdown field to avoid token-wasting duplication
       expect(result.content).toContain('# Heading');
-      expect(result.markdown).toBe('# Heading\n\nSome **bold** text');
+      expect(result.markdown).toBeUndefined();
     });
 
-    it('should return markdown content from JS fetch', async () => {
+    it('should return markdown in content field from JS fetch (no duplicate markdown field)', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         qualityScore: 30,
@@ -276,7 +278,9 @@ describe('webScrape', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.markdown).toBe('## JS Content\n\nRendered text');
+      // JS fetch already returns markdown-like content in the content field
+      expect(result.content).toContain('## JS Content');
+      expect(result.markdown).toBeUndefined();
     });
 
     it('should not include markdown when not requested', async () => {

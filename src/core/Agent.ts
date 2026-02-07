@@ -68,8 +68,17 @@ export interface AgentConfig extends BaseAgentConfig {
   context?: AgentContextNextGen | AgentContextNextGenConfig;
 
   /**
-   * @deprecated Tool timeouts are now handled by ToolManager per-tool.
-   * Configure timeouts in individual tool definitions instead.
+   * Hard timeout in milliseconds for any single tool execution.
+   * Acts as a safety net: if a tool's own timeout mechanism fails
+   * (e.g. a spawned child process doesn't exit), this will force-resolve
+   * with an error. Default: 0 (disabled - relies on each tool's own timeout).
+   *
+   * Example: `toolExecutionTimeout: 300000` (5 minutes hard cap per tool call)
+   */
+  toolExecutionTimeout?: number;
+
+  /**
+   * @deprecated Use `toolExecutionTimeout` instead.
    */
   toolTimeout?: number;
 

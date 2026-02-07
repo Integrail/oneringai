@@ -16020,12 +16020,25 @@ var ToolManager = class extends eventemitter3.EventEmitter {
   pipeline;
   /** Optional tool context for execution (set by agent before runs) */
   _toolContext;
-  constructor() {
+  /** Hard timeout for tool execution (0 = disabled) */
+  _toolExecutionTimeout;
+  constructor(config) {
     super();
+    this._toolExecutionTimeout = config?.toolExecutionTimeout ?? 0;
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
     this.toolLogger = exports.logger.child({ component: "ToolManager" });
     this.pipeline = new ToolExecutionPipeline();
     this.pipeline.use(new ResultNormalizerPlugin());
+  }
+  /**
+   * Get or set the hard tool execution timeout in milliseconds.
+   * 0 = disabled (relies on tool's own timeout).
+   */
+  get toolExecutionTimeout() {
+    return this._toolExecutionTimeout;
+  }
+  set toolExecutionTimeout(value) {
+    this._toolExecutionTimeout = Math.max(0, value);
   }
   /**
    * Access the execution pipeline for plugin management.
@@ -16524,7 +16537,7 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     const startTime = Date.now();
     exports.metrics.increment("tool.executed", 1, { tool: toolName });
     try {
-      const result = await breaker.execute(async () => {
+      const executionPromise = breaker.execute(async () => {
         const toolWithContext = {
           ...registration.tool,
           execute: async (pipelineArgs) => {
@@ -16533,6 +16546,7 @@ var ToolManager = class extends eventemitter3.EventEmitter {
         };
         return await this.pipeline.execute(toolWithContext, args);
       });
+      const result = this._toolExecutionTimeout > 0 ? await this.withHardTimeout(executionPromise, toolName, this._toolExecutionTimeout) : await executionPromise;
       const duration = Date.now() - startTime;
       this.recordExecution(toolName, duration, true);
       const resultSummary = this.summarizeResult(result);
@@ -16593,6 +16607,29 @@ var ToolManager = class extends eventemitter3.EventEmitter {
    */
   listTools() {
     return this.list();
+  }
+  // ==========================================================================
+  // Hard Timeout
+  // ==========================================================================
+  /**
+   * Wrap a promise with a hard timeout safety net.
+   * If the promise doesn't resolve within the timeout, throws ToolExecutionError.
+   */
+  async withHardTimeout(promise, toolName, timeoutMs) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new ToolExecutionError(
+          toolName,
+          `Tool execution hard timeout after ${timeoutMs}ms (safety net - tool's own timeout may have failed)`
+        ));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
   // ==========================================================================
   // Circuit Breaker Management
@@ -20973,7 +21010,9 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
     this._agentId = this._config.agentId;
     this._storage = config.storage;
     this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
-    this._tools = new ToolManager();
+    this._tools = new ToolManager(
+      config.toolExecutionTimeout ? { toolExecutionTimeout: config.toolExecutionTimeout } : void 0
+    );
     if (config.tools) {
       for (const tool of config.tools) {
         this._tools.register(tool);
@@ -24914,7 +24953,10 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
       agentId: config.name,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
+      // Thread tool execution timeout to ToolManager
+      toolExecutionTimeout: config.toolExecutionTimeout,
       // Subclasses can add systemPrompt via their config
+      // Note: context-level toolExecutionTimeout overrides agent-level if both set
       ...typeof config.context === "object" && config.context !== null ? config.context : {}
     };
     return AgentContextNextGen.create(contextConfig);
@@ -46403,7 +46445,8 @@ EXAMPLES:
           shell: mergedConfig.shell,
           cwd: mergedConfig.workingDirectory,
           env,
-          stdio: ["pipe", "pipe", "pipe"]
+          stdio: ["pipe", "pipe", "pipe"],
+          detached: true
         });
         if (run_in_background && mergedConfig.allowBackground) {
           const bgId = generateBackgroundId();
@@ -46430,14 +46473,27 @@ EXAMPLES:
         let stdout = "";
         let stderr = "";
         let killed = false;
+        const killProcessGroup = (signal) => {
+          try {
+            if (childProcess.pid) {
+              process.kill(-childProcess.pid, signal);
+            }
+          } catch {
+            try {
+              childProcess.kill(signal);
+            } catch {
+            }
+          }
+        };
+        const GRACEFUL_KILL_WAIT_MS = 3e3;
         const timeoutId = setTimeout(() => {
           killed = true;
-          childProcess.kill("SIGTERM");
+          killProcessGroup("SIGTERM");
           setTimeout(() => {
             if (!childProcess.killed) {
-              childProcess.kill("SIGKILL");
+              killProcessGroup("SIGKILL");
             }
-          }, 5e3);
+          }, GRACEFUL_KILL_WAIT_MS);
         }, effectiveTimeout);
         childProcess.stdout.on("data", (data) => {
           stdout += data.toString();
@@ -46451,8 +46507,28 @@ EXAMPLES:
             stderr = stderr.slice(-mergedConfig.maxOutputSize);
           }
         });
-        childProcess.on("close", (code, signal) => {
+        let resolved = false;
+        const safeResolve = (result) => {
+          if (resolved) return;
+          resolved = true;
           clearTimeout(timeoutId);
+          clearTimeout(hardTimeoutId);
+          resolve4(result);
+        };
+        const HARD_TIMEOUT_GRACE_MS = 5e3;
+        const hardTimeoutId = setTimeout(() => {
+          if (!resolved) {
+            killProcessGroup("SIGKILL");
+            safeResolve({
+              success: false,
+              stdout,
+              stderr,
+              duration: Date.now() - startTime,
+              error: `Command timed out after ${effectiveTimeout}ms (hard timeout: process group did not exit)`
+            });
+          }
+        }, effectiveTimeout + GRACEFUL_KILL_WAIT_MS + HARD_TIMEOUT_GRACE_MS);
+        childProcess.on("close", (code, signal) => {
           const duration = Date.now() - startTime;
           let truncated = false;
           if (stdout.length > mergedConfig.maxOutputSize) {
@@ -46464,7 +46540,7 @@ EXAMPLES:
             truncated = true;
           }
           if (killed) {
-            resolve4({
+            safeResolve({
               success: false,
               stdout,
               stderr,
@@ -46475,7 +46551,7 @@ EXAMPLES:
               error: `Command timed out after ${effectiveTimeout}ms`
             });
           } else {
-            resolve4({
+            safeResolve({
               success: code === 0,
               stdout,
               stderr,
@@ -46488,8 +46564,7 @@ EXAMPLES:
           }
         });
         childProcess.on("error", (error) => {
-          clearTimeout(timeoutId);
-          resolve4({
+          safeResolve({
             success: false,
             error: `Failed to execute command: ${error.message}`,
             duration: Date.now() - startTime
@@ -47755,8 +47830,8 @@ async function tryNative(args, startTime, attemptedMethods) {
       method: "native",
       title: result.title,
       content: cleanContent,
-      // Note: raw HTML not available with native method (returns markdown instead)
-      markdown: args.includeMarkdown ? cleanContent : void 0,
+      // Native method already returns markdown-like content — no separate markdown field needed
+      // (would just duplicate content and waste tokens)
       qualityScore: result.qualityScore,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -47792,8 +47867,7 @@ async function tryJS(args, startTime, attemptedMethods) {
       method: "js",
       title: result.title,
       content: cleanContent,
-      // Note: raw HTML not available with JS method (returns markdown instead)
-      markdown: args.includeMarkdown ? cleanContent : void 0,
+      // JS method already returns markdown-like content — no separate markdown field needed
       qualityScore: result.success ? 80 : 0,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -47825,8 +47899,11 @@ async function tryAPI(connectorName, args, startTime, attemptedMethods) {
       includeLinks: args.includeLinks
     };
     const result = await provider.scrape(args.url, options);
-    const cleanContent = stripBase64DataUris(result.result?.content || "");
-    const cleanMarkdown = result.result?.markdown ? stripBase64DataUris(result.result.markdown) : void 0;
+    const rawContent = result.result?.content || "";
+    const rawMarkdown = result.result?.markdown;
+    const cleanContent = stripBase64DataUris(rawContent);
+    const cleanMarkdown = rawMarkdown ? stripBase64DataUris(rawMarkdown) : void 0;
+    const isDuplicate = !!cleanMarkdown && cleanContent === cleanMarkdown;
     return {
       success: result.success,
       url: args.url,
@@ -47836,7 +47913,7 @@ async function tryAPI(connectorName, args, startTime, attemptedMethods) {
       content: cleanContent,
       html: result.result?.html,
       // Keep raw HTML as-is (only used if explicitly requested)
-      markdown: cleanMarkdown,
+      markdown: isDuplicate ? void 0 : cleanMarkdown,
       metadata: result.result?.metadata,
       links: result.result?.links,
       qualityScore: result.success ? 90 : 0,
