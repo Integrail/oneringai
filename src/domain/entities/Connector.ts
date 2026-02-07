@@ -56,6 +56,9 @@ export interface OAuthConnectorAuth {
   // Advanced options
   refreshBeforeExpiry?: number; // Seconds before expiry to refresh (default: 300)
   storageKey?: string; // Custom storage key
+
+  /** Vendor-specific extra credentials */
+  extra?: Record<string, string>;
 }
 
 /**
@@ -67,6 +70,12 @@ export interface APIKeyConnectorAuth {
   apiKey: string;
   headerName?: string; // Default: "Authorization"
   headerPrefix?: string; // Default: "Bearer"
+
+  /**
+   * Vendor-specific extra credentials beyond the primary API key.
+   * E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' }
+   */
+  extra?: Record<string, string>;
 }
 
 /**
@@ -83,6 +92,9 @@ export interface JWTConnectorAuth {
   issuer?: string;
   subject?: string;
   audience?: string;
+
+  /** Vendor-specific extra credentials */
+  extra?: Record<string, string>;
 }
 
 /**

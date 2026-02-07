@@ -87,11 +87,21 @@ export function buildAuthConfig(
       throw new Error('API key is required for api_key auth');
     }
 
+    // Collect vendor-specific extra fields (those in optionalFields that aren't standard api_key props)
+    const standardApiKeyFields = new Set(['apiKey', 'headerName', 'headerPrefix']);
+    const extra: Record<string, string> = {};
+    for (const field of authTemplate.optionalFields ?? []) {
+      if (!standardApiKeyFields.has(field) && credentials[field]) {
+        extra[field] = credentials[field]!;
+      }
+    }
+
     return {
       type: 'api_key',
       apiKey: credentials.apiKey,
       headerName: (defaults as { headerName?: string }).headerName ?? 'Authorization',
       headerPrefix: (defaults as { headerPrefix?: string }).headerPrefix ?? 'Bearer',
+      ...(Object.keys(extra).length > 0 ? { extra } : {}),
     };
   }
 

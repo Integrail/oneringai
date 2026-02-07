@@ -173,11 +173,14 @@ export class ConnectorConfigStore {
    * Encrypt secrets in ConnectorAuth based on auth type
    */
   private encryptAuthSecrets(auth: ConnectorAuth): ConnectorAuth {
+    const encryptedExtra = this.encryptExtra((auth as any).extra);
+
     switch (auth.type) {
       case 'api_key':
         return {
           ...auth,
           apiKey: this.encryptValue(auth.apiKey),
+          ...(encryptedExtra ? { extra: encryptedExtra } : {}),
         };
 
       case 'oauth':
@@ -189,12 +192,14 @@ export class ConnectorConfigStore {
           privateKey: auth.privateKey
             ? this.encryptValue(auth.privateKey)
             : undefined,
+          ...(encryptedExtra ? { extra: encryptedExtra } : {}),
         };
 
       case 'jwt':
         return {
           ...auth,
           privateKey: this.encryptValue(auth.privateKey),
+          ...(encryptedExtra ? { extra: encryptedExtra } : {}),
         };
 
       default:
@@ -206,11 +211,14 @@ export class ConnectorConfigStore {
    * Decrypt secrets in ConnectorAuth based on auth type
    */
   private decryptAuthSecrets(auth: ConnectorAuth): ConnectorAuth {
+    const decryptedExtra = this.decryptExtra((auth as any).extra);
+
     switch (auth.type) {
       case 'api_key':
         return {
           ...auth,
           apiKey: this.decryptValue(auth.apiKey),
+          ...(decryptedExtra ? { extra: decryptedExtra } : {}),
         };
 
       case 'oauth':
@@ -222,17 +230,47 @@ export class ConnectorConfigStore {
           privateKey: auth.privateKey
             ? this.decryptValue(auth.privateKey)
             : undefined,
+          ...(decryptedExtra ? { extra: decryptedExtra } : {}),
         };
 
       case 'jwt':
         return {
           ...auth,
           privateKey: this.decryptValue(auth.privateKey),
+          ...(decryptedExtra ? { extra: decryptedExtra } : {}),
         };
 
       default:
         return auth;
     }
+  }
+
+  /**
+   * Encrypt all values in an extra Record (vendor-specific credentials)
+   */
+  private encryptExtra(
+    extra: Record<string, string> | undefined,
+  ): Record<string, string> | undefined {
+    if (!extra || Object.keys(extra).length === 0) return undefined;
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(extra)) {
+      result[key] = this.encryptValue(value);
+    }
+    return result;
+  }
+
+  /**
+   * Decrypt all values in an extra Record (vendor-specific credentials)
+   */
+  private decryptExtra(
+    extra: Record<string, string> | undefined,
+  ): Record<string, string> | undefined {
+    if (!extra || Object.keys(extra).length === 0) return undefined;
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(extra)) {
+      result[key] = this.decryptValue(value);
+    }
+    return result;
   }
 
   /**

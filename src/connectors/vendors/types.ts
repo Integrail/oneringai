@@ -64,7 +64,10 @@ export type AuthTemplateField =
   | 'region'
   | 'accessKeyId'
   | 'secretAccessKey'
-  | 'applicationKey';
+  | 'applicationKey'
+  // Vendor-specific extra fields (stored in auth.extra)
+  | 'appToken'
+  | 'signingSecret';
 
 /**
  * Vendor template definition

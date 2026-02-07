@@ -42367,22 +42367,26 @@ var ConnectorConfigStore = class {
    * Encrypt secrets in ConnectorAuth based on auth type
    */
   encryptAuthSecrets(auth2) {
+    const encryptedExtra = this.encryptExtra(auth2.extra);
     switch (auth2.type) {
       case "api_key":
         return {
           ...auth2,
-          apiKey: this.encryptValue(auth2.apiKey)
+          apiKey: this.encryptValue(auth2.apiKey),
+          ...encryptedExtra ? { extra: encryptedExtra } : {}
         };
       case "oauth":
         return {
           ...auth2,
           clientSecret: auth2.clientSecret ? this.encryptValue(auth2.clientSecret) : void 0,
-          privateKey: auth2.privateKey ? this.encryptValue(auth2.privateKey) : void 0
+          privateKey: auth2.privateKey ? this.encryptValue(auth2.privateKey) : void 0,
+          ...encryptedExtra ? { extra: encryptedExtra } : {}
         };
       case "jwt":
         return {
           ...auth2,
-          privateKey: this.encryptValue(auth2.privateKey)
+          privateKey: this.encryptValue(auth2.privateKey),
+          ...encryptedExtra ? { extra: encryptedExtra } : {}
         };
       default:
         return auth2;
@@ -42392,26 +42396,52 @@ var ConnectorConfigStore = class {
    * Decrypt secrets in ConnectorAuth based on auth type
    */
   decryptAuthSecrets(auth2) {
+    const decryptedExtra = this.decryptExtra(auth2.extra);
     switch (auth2.type) {
       case "api_key":
         return {
           ...auth2,
-          apiKey: this.decryptValue(auth2.apiKey)
+          apiKey: this.decryptValue(auth2.apiKey),
+          ...decryptedExtra ? { extra: decryptedExtra } : {}
         };
       case "oauth":
         return {
           ...auth2,
           clientSecret: auth2.clientSecret ? this.decryptValue(auth2.clientSecret) : void 0,
-          privateKey: auth2.privateKey ? this.decryptValue(auth2.privateKey) : void 0
+          privateKey: auth2.privateKey ? this.decryptValue(auth2.privateKey) : void 0,
+          ...decryptedExtra ? { extra: decryptedExtra } : {}
         };
       case "jwt":
         return {
           ...auth2,
-          privateKey: this.decryptValue(auth2.privateKey)
+          privateKey: this.decryptValue(auth2.privateKey),
+          ...decryptedExtra ? { extra: decryptedExtra } : {}
         };
       default:
         return auth2;
     }
+  }
+  /**
+   * Encrypt all values in an extra Record (vendor-specific credentials)
+   */
+  encryptExtra(extra) {
+    if (!extra || Object.keys(extra).length === 0) return void 0;
+    const result = {};
+    for (const [key, value] of Object.entries(extra)) {
+      result[key] = this.encryptValue(value);
+    }
+    return result;
+  }
+  /**
+   * Decrypt all values in an extra Record (vendor-specific credentials)
+   */
+  decryptExtra(extra) {
+    if (!extra || Object.keys(extra).length === 0) return void 0;
+    const result = {};
+    for (const [key, value] of Object.entries(extra)) {
+      result[key] = this.decryptValue(value);
+    }
+    return result;
   }
   /**
    * Encrypt a single value if not already encrypted
@@ -42665,11 +42695,19 @@ function buildAuthConfig(authTemplate, credentials) {
     if (!credentials.apiKey) {
       throw new Error("API key is required for api_key auth");
     }
+    const standardApiKeyFields = /* @__PURE__ */ new Set(["apiKey", "headerName", "headerPrefix"]);
+    const extra = {};
+    for (const field of authTemplate.optionalFields ?? []) {
+      if (!standardApiKeyFields.has(field) && credentials[field]) {
+        extra[field] = credentials[field];
+      }
+    }
     return {
       type: "api_key",
       apiKey: credentials.apiKey,
       headerName: defaults.headerName ?? "Authorization",
-      headerPrefix: defaults.headerPrefix ?? "Bearer"
+      headerPrefix: defaults.headerPrefix ?? "Bearer",
+      ...Object.keys(extra).length > 0 ? { extra } : {}
     };
   }
   if (!authTemplate.flow) {
@@ -42939,8 +42977,9 @@ var slackTemplate = {
       id: "bot-token",
       name: "Bot Token",
       type: "api_key",
-      description: "Internal workspace bot - get from OAuth & Permissions page of your Slack app",
+      description: "Internal workspace bot - get from OAuth & Permissions page of your Slack app. For Socket Mode bots, also provide appToken and signingSecret in extra fields.",
       requiredFields: ["apiKey"],
+      optionalFields: ["appToken", "signingSecret"],
       defaults: {
         type: "api_key",
         headerName: "Authorization",

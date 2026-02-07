@@ -17,8 +17,9 @@ export const slackTemplate: VendorTemplate = {
       id: 'bot-token',
       name: 'Bot Token',
       type: 'api_key',
-      description: 'Internal workspace bot - get from OAuth & Permissions page of your Slack app',
+      description: 'Internal workspace bot - get from OAuth & Permissions page of your Slack app. For Socket Mode bots, also provide appToken and signingSecret in extra fields.',
       requiredFields: ['apiKey'],
+      optionalFields: ['appToken', 'signingSecret'],
       defaults: {
         type: 'api_key',
         headerName: 'Authorization',

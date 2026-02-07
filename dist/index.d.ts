@@ -1,5 +1,5 @@
-import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, A as AudioFormat, c as IBaseModelDescription, V as VendorOptionSchema, d as Vendor, e as IImageProvider, f as ConnectorFetchOptions, g as ITokenStorage, S as StoredToken$1, h as ConnectorConfig, i as ConnectorAuth, j as ConnectorConfigResult } from './ImageModel-BkAX5Rr5.js';
-export { p as APIKeyConnectorAuth, G as AspectRatio, P as DEFAULT_BASE_DELAY_MS, L as DEFAULT_CONNECTOR_TIMEOUT, R as DEFAULT_MAX_DELAY_MS, M as DEFAULT_MAX_RETRIES, N as DEFAULT_RETRYABLE_STATUSES, q as IImageModelDescription, t as IMAGE_MODELS, u as IMAGE_MODEL_REGISTRY, K as ISourceLinks, D as ImageEditOptions, B as ImageGenerateOptions, m as ImageGeneration, n as ImageGenerationCreateOptions, r as ImageModelCapabilities, s as ImageModelPricing, F as ImageResponse, E as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, H as OutputFormat, Q as QualityLevel, o as SimpleGenerateOptions, k as VENDORS, z as calculateImageCost, x as getActiveImageModels, v as getImageModelInfo, w as getImageModelsByVendor, y as getImageModelsWithFeature, l as isVendor } from './ImageModel-BkAX5Rr5.js';
+import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, A as AudioFormat, c as IBaseModelDescription, V as VendorOptionSchema, d as Vendor, e as IImageProvider, f as ConnectorFetchOptions, g as ITokenStorage, S as StoredToken$1, h as ConnectorConfig, i as ConnectorAuth, j as ConnectorConfigResult } from './ImageModel-4HmJw3Mk.js';
+export { p as APIKeyConnectorAuth, G as AspectRatio, P as DEFAULT_BASE_DELAY_MS, L as DEFAULT_CONNECTOR_TIMEOUT, R as DEFAULT_MAX_DELAY_MS, M as DEFAULT_MAX_RETRIES, N as DEFAULT_RETRYABLE_STATUSES, q as IImageModelDescription, t as IMAGE_MODELS, u as IMAGE_MODEL_REGISTRY, K as ISourceLinks, D as ImageEditOptions, B as ImageGenerateOptions, m as ImageGeneration, n as ImageGenerationCreateOptions, r as ImageModelCapabilities, s as ImageModelPricing, F as ImageResponse, E as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, H as OutputFormat, Q as QualityLevel, o as SimpleGenerateOptions, k as VENDORS, z as calculateImageCost, x as getActiveImageModels, v as getImageModelInfo, w as getImageModelsByVendor, y as getImageModelsWithFeature, l as isVendor } from './ImageModel-4HmJw3Mk.js';
 import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-BmOYeqU7.js';
 export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-BmOYeqU7.js';
 import { EventEmitter } from 'eventemitter3';
@@ -10138,6 +10138,14 @@ declare class ConnectorConfigStore {
      */
     private decryptAuthSecrets;
     /**
+     * Encrypt all values in an extra Record (vendor-specific credentials)
+     */
+    private encryptExtra;
+    /**
+     * Decrypt all values in an extra Record (vendor-specific credentials)
+     */
+    private decryptExtra;
+    /**
      * Encrypt a single value if not already encrypted
      */
     private encryptValue;
@@ -10269,7 +10277,7 @@ interface AuthTemplate {
 /**
  * Known fields that can be required/optional in auth templates
  */
-type AuthTemplateField = 'apiKey' | 'clientId' | 'clientSecret' | 'redirectUri' | 'scope' | 'privateKey' | 'privateKeyPath' | 'appId' | 'installationId' | 'tenantId' | 'username' | 'subject' | 'audience' | 'userScope' | 'accountId' | 'subdomain' | 'region' | 'accessKeyId' | 'secretAccessKey' | 'applicationKey';
+type AuthTemplateField = 'apiKey' | 'clientId' | 'clientSecret' | 'redirectUri' | 'scope' | 'privateKey' | 'privateKeyPath' | 'appId' | 'installationId' | 'tenantId' | 'username' | 'subject' | 'audience' | 'userScope' | 'accountId' | 'subdomain' | 'region' | 'accessKeyId' | 'secretAccessKey' | 'applicationKey' | 'appToken' | 'signingSecret';
 /**
  * Vendor template definition
  * Complete configuration for a vendor's supported authentication methods
@@ -11836,7 +11844,7 @@ declare function createSpeechToTextTool(connector: Connector): ToolFunction<Spee
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-07T15:12:19.672Z
+ * Generated at: 2026-02-07T16:46:34.017Z
  *
  * To regenerate: npm run generate:tools
  */

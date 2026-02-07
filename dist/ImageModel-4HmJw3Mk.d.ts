@@ -72,6 +72,8 @@ interface OAuthConnectorAuth {
     audience?: string;
     refreshBeforeExpiry?: number;
     storageKey?: string;
+    /** Vendor-specific extra credentials */
+    extra?: Record<string, string>;
 }
 /**
  * Static API key authentication
@@ -82,6 +84,11 @@ interface APIKeyConnectorAuth {
     apiKey: string;
     headerName?: string;
     headerPrefix?: string;
+    /**
+     * Vendor-specific extra credentials beyond the primary API key.
+     * E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' }
+     */
+    extra?: Record<string, string>;
 }
 /**
  * JWT Bearer token authentication
@@ -97,6 +104,8 @@ interface JWTConnectorAuth {
     issuer?: string;
     subject?: string;
     audience?: string;
+    /** Vendor-specific extra credentials */
+    extra?: Record<string, string>;
 }
 /**
  * Complete connector configuration
