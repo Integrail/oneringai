@@ -2,7 +2,6 @@ export { ChatPage } from './ChatPage';
 export { AgentsPage } from './AgentsPage';
 export { AgentEditorPage } from './AgentEditorPage';
 export { LLMConnectorsPage } from './LLMConnectorsPage';
-export { APIConnectorsPage } from './APIConnectorsPage';
 export { UniversalConnectorsPage } from './UniversalConnectorsPage';
 export { ConnectorCatalogPage } from './ConnectorCatalogPage';
 export { ConnectorCreatePage } from './ConnectorCreatePage';

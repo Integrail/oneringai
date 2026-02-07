@@ -7,6 +7,7 @@ import { Button, Spinner } from 'react-bootstrap';
 import { Plus, Bot, Settings, Trash2, MessageSquare, MoreVertical } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
+import { useTabContext } from '../hooks/useTabContext';
 
 interface AgentConfig {
   id: string;
@@ -22,6 +23,7 @@ interface AgentConfig {
 
 export function AgentsPage(): React.ReactElement {
   const { navigate } = useNavigation();
+  const { createTab } = useTabContext();
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,14 +52,16 @@ export function AgentsPage(): React.ReactElement {
 
   const handleChatWithAgent = async (agentId: string) => {
     try {
-      const result = await window.hosea.agentConfig.setActive(agentId);
-      if (result.success) {
+      const agent = agents.find(a => a.id === agentId);
+      const agentName = agent?.name || 'Assistant';
+      const tabId = await createTab(agentId, agentName);
+      if (tabId) {
         navigate('chat');
       } else {
-        alert(`Failed to activate agent: ${result.error}`);
+        alert('Failed to create chat tab');
       }
     } catch (error) {
-      console.error('Failed to set active agent:', error);
+      console.error('Failed to create chat tab:', error);
     }
   };
 

@@ -414,7 +414,8 @@ export class ConnectorTools {
     const description =
       options?.description ??
       `Make an authenticated API call to ${connector.displayName}.` +
-        (connector.baseURL ? ` Base URL: ${connector.baseURL}` : ' Provide full URL in endpoint.');
+        (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : ' Provide full URL in endpoint.') +
+        ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.';
 
     return {
       definition: {
@@ -432,15 +433,15 @@ export class ConnectorTools {
               },
               endpoint: {
                 type: 'string',
-                description: 'API endpoint (relative to base URL) or full URL',
+                description: 'API endpoint path (relative to base URL) or full URL. Do NOT put request data as query parameters here for POST/PUT/PATCH — use the "body" parameter instead.',
               },
               body: {
                 type: 'object',
-                description: 'Request body (for POST/PUT/PATCH)',
+                description: 'JSON request body for POST/PUT/PATCH requests. ALWAYS use this for sending data (e.g., {"channel": "C123", "text": "hello"}) instead of query string parameters.',
               },
               queryParams: {
                 type: 'object',
-                description: 'URL query parameters',
+                description: 'URL query parameters (for filtering/pagination on GET requests). Do NOT use for POST/PUT/PATCH data — use "body" instead.',
               },
               headers: {
                 type: 'object',
@@ -518,7 +519,10 @@ export class ConnectorTools {
         }
       },
 
-      describeCall: (args: GenericAPICallArgs) => `${args.method} ${args.endpoint}`,
+      describeCall: (args: GenericAPICallArgs) => {
+        const bodyInfo = args.body ? ` body=${JSON.stringify(args.body).slice(0, 100)}` : '';
+        return `${args.method} ${args.endpoint}${bodyInfo}`;
+      },
 
       permission: options?.permission ?? {
         scope: 'session',

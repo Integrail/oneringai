@@ -38,14 +38,18 @@ interface ToolEntry {
   connectorServiceTypes?: string[];
 }
 
-interface APIConnector {
+interface UniversalConnector {
   name: string;
-  serviceType: string;
+  vendorId: string;
+  vendorName: string;
+  authMethodId: string;
+  authMethodName: string;
+  credentials: Record<string, string>;
   displayName?: string;
-  auth: { type: 'api_key'; apiKey: string };
   baseURL?: string;
   createdAt: number;
   updatedAt: number;
+  status: 'active' | 'error' | 'untested';
 }
 
 // Icons and colors for categories
@@ -121,7 +125,7 @@ const serviceTypeInfo: Record<string, { name: string; docsUrl?: string; defaultB
 
 export function ToolConnectorsPage(): React.ReactElement {
   const [tools, setTools] = useState<ToolEntry[]>([]);
-  const [apiConnectors, setApiConnectors] = useState<APIConnector[]>([]);
+  const [universalConnectors, setUniversalConnectors] = useState<UniversalConnector[]>([]);
   const [llmConnectors, setLlmConnectors] = useState<{ name: string; vendor: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -140,13 +144,13 @@ export function ToolConnectorsPage(): React.ReactElement {
 
   const loadData = useCallback(async () => {
     try {
-      const [registry, connectors, llmConns] = await Promise.all([
+      const [registry, uniConns, llmConns] = await Promise.all([
         window.hosea.tool.registry(),
-        window.hosea.apiConnector.list(),
+        window.hosea.universalConnector.list(),
         window.hosea.connector.list(),
       ]);
       setTools(registry);
-      setApiConnectors(connectors);
+      setUniversalConnectors(uniConns);
       setLlmConnectors(llmConns);
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -189,9 +193,9 @@ export function ToolConnectorsPage(): React.ReactElement {
   // Tools requiring connector configuration
   const toolsRequiringConfig = tools.filter((t) => t.requiresConnector);
 
-  // Check if a service type has a configured connector
-  const getConnectorForServiceType = (serviceType: string): APIConnector | undefined => {
-    return apiConnectors.find((c) => c.serviceType === serviceType);
+  // Check if a service type has a configured universal connector
+  const getConnectorForServiceType = (serviceType: string): UniversalConnector | undefined => {
+    return universalConnectors.find((uc) => uc.vendorId === serviceType);
   };
 
   // Check if any of the tool's required services are configured
@@ -227,14 +231,12 @@ export function ToolConnectorsPage(): React.ReactElement {
     setFormError(null);
 
     try {
-      const result = await window.hosea.apiConnector.add({
+      const result = await window.hosea.universalConnector.create({
         name: formName.trim(),
-        serviceType: addingForServiceType,
+        vendorId: addingForServiceType,
+        authMethodId: 'api-key',
+        credentials: { apiKey: formApiKey.trim() },
         displayName: serviceTypeInfo[addingForServiceType]?.name,
-        auth: {
-          type: 'api_key',
-          apiKey: formApiKey.trim(),
-        },
         baseURL: formBaseURL.trim() || undefined,
       });
 

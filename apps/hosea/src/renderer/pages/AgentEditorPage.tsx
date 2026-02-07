@@ -55,9 +55,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-interface APIConnector {
+interface UniversalConnector {
   name: string;
-  serviceType: string;
+  vendorId: string;
+  vendorName: string;
+  authMethodId: string;
+  authMethodName: string;
+  credentials: Record<string, string>;
+  displayName?: string;
+  baseURL?: string;
+  status: 'active' | 'error' | 'untested';
 }
 
 interface MCPServerInfo {
@@ -167,7 +174,7 @@ export function AgentEditorPage(): React.ReactElement {
     { vendor: string; models: ModelInfo[] }[]
   >([]);
   const [availableTools, setAvailableTools] = useState<ToolInfo[]>([]);
-  const [apiConnectors, setAPIConnectors] = useState<APIConnector[]>([]);
+  const [universalConnectors, setUniversalConnectors] = useState<UniversalConnector[]>([]);
   const [mcpServers, setMCPServers] = useState<MCPServerInfo[]>([]);
   const [mcpServerTools, setMCPServerTools] = useState<Record<string, MCPTool[]>>({});
   const [loadingMCPTools, setLoadingMCPTools] = useState<string | null>(null);
@@ -178,18 +185,18 @@ export function AgentEditorPage(): React.ReactElement {
   useEffect(() => {
     async function loadData() {
       try {
-        const [connectorsList, models, tools, apiConns, mcpServersList, strategyList] = await Promise.all([
+        const [connectorsList, models, tools, uniConns, mcpServersList, strategyList] = await Promise.all([
           window.hosea.connector.list(),
           window.hosea.model.list(),
           window.hosea.tool.registry(),
-          window.hosea.apiConnector.list(),
+          window.hosea.universalConnector.list(),
           window.hosea.mcpServer.list(),
           window.hosea.strategy.list(),
         ]);
         setConnectors(connectorsList);
         setModelsByVendor(models);
         setAvailableTools(tools);
-        setAPIConnectors(apiConns);
+        setUniversalConnectors(uniConns);
         setMCPServers(mcpServersList);
         setStrategies(strategyList);
 
@@ -266,14 +273,14 @@ export function AgentEditorPage(): React.ReactElement {
       if (!tool.requiresConnector) return true;
       if (!tool.connectorServiceTypes || tool.connectorServiceTypes.length === 0) return true;
 
-      // Check API service connectors OR LLM provider connectors (by vendor)
+      // Check universal connectors (by vendorId) OR LLM provider connectors (by vendor)
       return tool.connectorServiceTypes.some(
         (serviceType) =>
-          apiConnectors.some((ac) => ac.serviceType === serviceType) ||
+          universalConnectors.some((uc) => uc.vendorId === serviceType) ||
           connectors.some((c) => c.vendor === serviceType)
       );
     },
-    [apiConnectors, connectors]
+    [universalConnectors, connectors]
   );
 
   // Separate tools into operational and non-operational, and group them
@@ -991,8 +998,8 @@ export function AgentEditorPage(): React.ReactElement {
                       <Alert variant="warning" className="py-2 mb-3">
                         <small>
                           <AlertCircle size={14} className="me-1" />
-                          These tools require API connectors to be configured in{' '}
-                          <strong>Connectors &gt; API Services</strong>
+                          These tools require connectors to be configured in{' '}
+                          <strong>Connectors &gt; Universal Connectors</strong>
                         </small>
                       </Alert>
                       <Row className="g-2">
