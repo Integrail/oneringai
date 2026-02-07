@@ -6,6 +6,54 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start) — Installation, basic usage, tools, vision, audio, images, video, search, scraping
+- [Supported Providers](#supported-providers)
+- [Key Features](#key-features)
+  - [1. Agent with Plugins](#1-agent-with-plugins)
+  - [2. Dynamic Tool Management](#2-dynamic-tool-management-new)
+  - [3. Tool Execution Plugins](#3-tool-execution-plugins-new)
+  - [4. Session Persistence](#4-session-persistence)
+  - [5. Working Memory](#5-working-memory)
+  - [6. Research with Search Tools](#6-research-with-search-tools)
+  - [6. Context Management](#6-context-management)
+  - [7. InContextMemory](#7-incontextmemory)
+  - [8. Persistent Instructions](#8-persistent-instructions)
+  - [9. Direct LLM Access](#9-direct-llm-access)
+  - [11. Audio Capabilities](#11-audio-capabilities)
+  - [12. Model Registry](#12-model-registry)
+  - [13. Streaming](#13-streaming)
+  - [14. OAuth for External APIs](#14-oauth-for-external-apis)
+  - [15. Developer Tools](#15-developer-tools)
+  - [16. External API Integration](#16-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+- [MCP Integration](#mcp-model-context-protocol-integration)
+- [Documentation](#documentation)
+- [Examples](#examples)
+- [Development](#development)
+- [Architecture](#architecture)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
+<!-- For in-depth guides and full API reference, see the docs section below -->
+
+## Documentation
+
+> **Start here if you're looking for detailed docs or the full API reference.**
+
+| Document | Description |
+|----------|-------------|
+| **[User Guide](./USER_GUIDE.md)** | Comprehensive guide covering every feature with examples — connectors, agents, context, plugins, audio, video, search, MCP, OAuth, and more |
+| **[API Reference](./API_REFERENCE.md)** | Auto-generated reference for all 600+ public exports — classes, interfaces, types, and functions with signatures |
+| [CHANGELOG](./CHANGELOG.md) | Version history and migration notes |
+| [MCP Integration](./MCP_INTEGRATION.md) | Model Context Protocol setup and usage |
+| [Architecture (CLAUDE.md)](./CLAUDE.md) | Internal architecture guide |
+| [Testing Guide](./TESTING.md) | How to run and write tests |
+
+---
+
 ## Features
 
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
@@ -621,7 +669,7 @@ const agent = Agent.create({
 |---------|---------|--------|------------------|
 | `workingMemory` | `true` | WorkingMemoryPluginNextGen | `memory_store/retrieve/delete/list` |
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen | `context_set/delete/list` |
-| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | `instructions_set/get/append/clear` |
+| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | `instructions_set/remove/list/clear` |
 
 **AgentContextNextGen architecture:**
 - **Plugin-first design** - All features are composable plugins
@@ -692,8 +740,8 @@ const agent = Agent.create({
   },
 });
 
-// LLM can now use instructions_set/append/get/clear tools
-// Instructions persist to ~/.oneringai/agents/my-assistant/custom_instructions.md
+// LLM can now use instructions_set/remove/list/clear tools
+// Instructions persist to ~/.oneringai/agents/my-assistant/custom_instructions.json
 ```
 
 **Key Features:**
@@ -703,9 +751,9 @@ const agent = Agent.create({
 - 🛡️ **Never Compacted** - Critical instructions always preserved in context
 
 **Available Tools:**
-- `instructions_set` - Replace all custom instructions
-- `instructions_append` - Add a new section to existing instructions
-- `instructions_get` - Read current instructions
+- `instructions_set` - Add or update a single instruction by key
+- `instructions_remove` - Remove a single instruction by key
+- `instructions_list` - List all instructions with keys and content
 - `instructions_clear` - Remove all instructions (requires confirmation)
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
@@ -1173,18 +1221,6 @@ await agent.run('List files and analyze them');
 
 See [MCP_INTEGRATION.md](./MCP_INTEGRATION.md) for complete documentation.
 
-## Documentation
-
-📖 **[Complete User Guide](./USER_GUIDE.md)** - Comprehensive guide covering all features
-
-### Additional Resources
-
-- **[MCP_INTEGRATION.md](./MCP_INTEGRATION.md)** - Model Context Protocol integration guide
-- **[CLAUDE.md](./CLAUDE.md)** - Architecture guide for AI assistants
-- **[MULTIMODAL_ARCHITECTURE.md](./MULTIMODAL_ARCHITECTURE.md)** - Multimodal implementation details
-- **[MICROSOFT_GRAPH_SETUP.md](./MICROSOFT_GRAPH_SETUP.md)** - Microsoft Graph OAuth setup
-- **[TESTING.md](./TESTING.md)** - Testing guide for contributors
-
 ## Examples
 
 ```bash
@@ -1265,9 +1301,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.1.2
-**Last Updated:** 2026-02-06
-
-For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
-
-For internal development and architecture improvement plans, see **[IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md)**.
+**Version:** 0.1.2 | **Last Updated:** 2026-02-06 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

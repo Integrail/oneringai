@@ -363,7 +363,7 @@ plugin.set('state', 'Current state', { step: 1 }, 'high');
 
 ### PersistentInstructionsPluginNextGen
 
-Agent instructions that persist to disk across sessions:
+Agent instructions that persist to disk as individually **keyed entries** across sessions:
 
 ```typescript
 const ctx = AgentContextNextGen.create({
@@ -373,14 +373,30 @@ const ctx = AgentContextNextGen.create({
 });
 
 const plugin = ctx.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions');
-await plugin.set('Always be helpful.');
+await plugin.set('personality', 'Always be helpful.');
+await plugin.set('code_rules', 'Follow existing patterns.');
+
+// Get one entry
+const entry = await plugin.get('personality');  // InstructionEntry | null
+
+// Get all entries
+const all = await plugin.get();  // InstructionEntry[] | null
+
+// Remove one entry
+await plugin.remove('code_rules');
+
+// List metadata
+const list = await plugin.list();  // { key, contentLength, createdAt, updatedAt }[]
 ```
 
 **Tools provided:**
-- `instructions_set` - Replace instructions
-- `instructions_append` - Add to instructions
-- `instructions_get` - Read instructions
-- `instructions_clear` - Clear instructions
+- `instructions_set` - Add/update instruction by key (`key`, `content`)
+- `instructions_remove` - Remove instruction by key
+- `instructions_list` - List all instructions
+- `instructions_clear` - Clear all instructions
+
+**Config:** `maxTotalLength` (default: 50000), `maxEntries` (default: 50)
+**Storage:** `~/.oneringai/agents/<agentId>/custom_instructions.json`
 
 ## InContextMemory
 
@@ -575,7 +591,7 @@ storage.list(options?);                     // List sessions
 ```
 ~/.oneringai/agents/<agentId>/
 ├── definition.json              # Agent configuration (if using Agent.saveDefinition)
-├── custom_instructions.md       # Persistent instructions (if PersistentInstructionsPluginNextGen enabled)
+├── custom_instructions.json      # Persistent instructions (if PersistentInstructionsPluginNextGen enabled)
 └── sessions/
     ├── _index.json              # Session index for fast listing
     ├── session-001.json         # Session state

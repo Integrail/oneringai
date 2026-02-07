@@ -45,7 +45,7 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "prepare": "",
-    "prepublishOnly": "npm run build && npm run typecheck && npm run test:unit",
+    "prepublishOnly": "npm run build && npm run typecheck && npm run test:unit && npm run docs",
     "preversion": "npm run build && npm run typecheck",
     "version": "npm run build && git add -A",
     "postversion": "git push && git push --tags",

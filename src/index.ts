@@ -67,6 +67,7 @@ export type {
   SerializedInContextMemoryState,
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
+  InstructionEntry,
   // Compaction strategy types
   ICompactionStrategy,
   CompactionContext,

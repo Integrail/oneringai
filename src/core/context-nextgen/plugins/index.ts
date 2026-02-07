@@ -21,4 +21,5 @@ export { PersistentInstructionsPluginNextGen } from './PersistentInstructionsPlu
 export type {
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
+  InstructionEntry,
 } from './PersistentInstructionsPluginNextGen.js';

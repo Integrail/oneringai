@@ -5,6 +5,28 @@
  * Implementations can use file system, database, or any other storage backend.
  */
 
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * A single instruction entry, independently addressable by key.
+ */
+export interface InstructionEntry {
+  /** User-supplied key (e.g., "style", "code_rules") */
+  id: string;
+  /** Instruction text (markdown) */
+  content: string;
+  /** Timestamp when entry was first created */
+  createdAt: number;
+  /** Timestamp when entry was last updated */
+  updatedAt: number;
+}
+
+// ============================================================================
+// Storage Interface
+// ============================================================================
+
 /**
  * Storage interface for persistent agent instructions
  *
@@ -13,18 +35,18 @@
  */
 export interface IPersistentInstructionsStorage {
   /**
-   * Load instructions from storage
+   * Load instruction entries from storage
    *
-   * @returns The stored instructions content, or null if none exist
+   * @returns The stored instruction entries, or null if none exist
    */
-  load(): Promise<string | null>;
+  load(): Promise<InstructionEntry[] | null>;
 
   /**
-   * Save instructions to storage
+   * Save instruction entries to storage
    *
-   * @param content - The instructions content to save
+   * @param entries - The instruction entries to save
    */
-  save(content: string): Promise<void>;
+  save(entries: InstructionEntry[]): Promise<void>;
 
   /**
    * Delete instructions from storage

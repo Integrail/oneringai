@@ -688,8 +688,8 @@ describe('ToolPermissionManager', () => {
 
       // Check persistent instructions tools
       expect(allowlist).toContain('instructions_set');
-      expect(allowlist).toContain('instructions_append');
-      expect(allowlist).toContain('instructions_get');
+      expect(allowlist).toContain('instructions_remove');
+      expect(allowlist).toContain('instructions_list');
       expect(allowlist).toContain('instructions_clear');
 
       // Check meta-tools

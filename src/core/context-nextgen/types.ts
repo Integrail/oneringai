@@ -83,7 +83,7 @@ export interface ITokenEstimator {
  * Use a consistent prefix based on plugin name:
  * - `working_memory` plugin → `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
  * - `in_context_memory` plugin → `context_set`, `context_delete`, `context_list`
- * - `persistent_instructions` plugin → `instructions_set`, `instructions_get`, etc.
+ * - `persistent_instructions` plugin → `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear`
  *
  * ## State Serialization
  *

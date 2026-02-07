@@ -57,6 +57,7 @@ export type {
   SerializedInContextMemoryState,
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
+  InstructionEntry,
 } from './plugins/index.js';
 
 // Compaction strategies

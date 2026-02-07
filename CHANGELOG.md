@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Persistent Instructions Plugin - Granular KVP API** — `PersistentInstructionsPluginNextGen`
+  now stores instructions as individually keyed entries instead of a single text blob.
+  - **`IPersistentInstructionsStorage` interface changed**: `load()` returns `InstructionEntry[] | null`
+    (was `string | null`), `save()` accepts `InstructionEntry[]` (was `string`). Custom storage
+    backends (MongoDB, Redis, etc.) must be updated.
+  - **Tool API changed**: `instructions_append` and `instructions_get` removed.
+    Replaced with `instructions_remove` and `instructions_list`. `instructions_set` now takes
+    `(key, content)` instead of `(content)`.
+  - **Public API changed**: `set(content)` → `set(key, content)`, `append(section)` removed,
+    `get()` → `get(key?)`, new `remove(key)` and `list()` methods.
+  - **Config changed**: `maxLength` renamed to `maxTotalLength`, new `maxEntries` option.
+  - **File format changed**: `custom_instructions.md` → `custom_instructions.json`.
+    Legacy `.md` files are auto-migrated on first load.
+  - **Session state format changed**: `restoreState()` handles both legacy and new formats.
+
 ## [0.1.2] - 2026-02-06
 
 ### Added

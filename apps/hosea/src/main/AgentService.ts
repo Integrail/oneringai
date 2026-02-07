@@ -3373,7 +3373,7 @@ export class AgentService {
       // Get working memory via NextGen plugin API
       let memoryData = null;
       if (ctx.features.workingMemory && ctx.memory) {
-        const memState = await ctx.memory.getStateAsync();
+        const memState = ctx.memory.getState();
         const totalSizeBytes = memState.entries.reduce((sum, e) => sum + (e.sizeBytes || 0), 0);
         const maxSizeBytes = 25 * 1024 * 1024; // Default max
         memoryData = {
@@ -3717,14 +3717,14 @@ export class AgentService {
     updatedAt: number;
     value?: unknown;
   }>> {
-    // NextGen uses memory.getStateAsync() instead of getIndex()
+    // NextGen uses memory.getState() instead of getIndex()
     const ctx = this.agent?.context as AgentContextNextGen | undefined;
     if (!ctx?.memory) {
       return [];
     }
 
     try {
-      const memState = await ctx.memory.getStateAsync();
+      const memState = ctx.memory.getState();
       const result = [];
       for (const entry of memState.entries) {
         result.push({

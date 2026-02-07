@@ -337,8 +337,8 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
 
   // Persistent instructions tools
   'instructions_set',
-  'instructions_append',
-  'instructions_get',
+  'instructions_remove',
+  'instructions_list',
   'instructions_clear',
 
   // Meta-tools (internal coordination)

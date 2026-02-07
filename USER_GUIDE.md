@@ -26,7 +26,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Use Cases and Best Practices
 9. [Persistent Instructions](#persistent-instructions)
    - Setup and Configuration
-   - Tools (instructions_set, instructions_get, instructions_append, instructions_clear)
+   - Tools (instructions_set, instructions_remove, instructions_list, instructions_clear)
    - Storage and Persistence
    - Use Cases and Best Practices
 10. [Tools & Function Calling](#tools--function-calling)
@@ -725,7 +725,7 @@ const taskAgents = await defStorage.list({ agentType: 'task-agent' });
 ~/.oneringai/agents/
 ├── support-bot/
 │   ├── definition.json          # Agent configuration
-│   ├── custom_instructions.md   # Persistent instructions (if enabled)
+│   ├── custom_instructions.json  # Persistent instructions (if enabled)
 │   └── sessions/
 │       ├── _index.json          # Session index for fast listing
 │       ├── session-001.json     # Full session state
@@ -930,7 +930,7 @@ console.log(DEFAULT_FEATURES);
 |---------|---------|--------|---------------|
 | `workingMemory` | `true` | WorkingMemoryPluginNextGen - tiered memory (raw/summary/findings) | `memory_*` tools not registered; `ctx.memory` returns `null` |
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen - live key-value storage directly in context | `context_set/delete/list` tools not registered |
-| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk | `instructions_*` tools not registered |
+| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk (KVP entries) | `instructions_*` tools not registered |
 
 **Usage Examples:**
 
@@ -1023,7 +1023,7 @@ console.log(ctx2.tools.has('memory_store'));    // false
 **Tools registered by feature:**
 - **workingMemory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
 - **inContextMemory=true**: `context_set`, `context_delete`, `context_list`
-- **persistentInstructions=true**: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
+- **persistentInstructions=true**: `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear`
 
 **Backward Compatibility:**
 
@@ -2181,18 +2181,18 @@ inContextPlugin.set('search_status', 'Search status', { completed: 3, pending: 2
 
 ## Persistent Instructions (NextGen Plugin)
 
-**PersistentInstructionsPluginNextGen** is a context plugin that stores agent-level custom instructions on disk. Unlike InContextMemory (volatile key-value pairs), persistent instructions survive process restarts and are automatically loaded when the agent starts.
+**PersistentInstructionsPluginNextGen** is a context plugin that stores agent-level custom instructions on disk as **individually keyed entries**. Unlike InContextMemory (volatile key-value pairs), persistent instructions survive process restarts and are automatically loaded when the agent starts.
 
 ### Key Difference from InContextMemory
 
 | Feature | InContextMemory | Persistent Instructions |
 |---------|-----------------|------------------------|
-| **Storage** | In-memory (volatile) | Disk (persistent) |
+| **Storage** | In-memory (volatile) | Disk (persistent JSON) |
 | **Survives restarts** | No | Yes |
 | **Best for** | Session state, counters, flags | Agent personality, learned rules |
-| **LLM can modify** | Yes (context_set) | Yes (instructions_set/append) |
+| **LLM can modify** | Yes (context_set) | Yes (instructions_set/remove) |
 | **Auto-loaded** | Via session restore | Always on agent start |
-| **Default capacity** | 20 entries, 4000 tokens | 50,000 characters |
+| **Default capacity** | 20 entries, 4000 tokens | 50 entries, 50,000 chars total |
 
 ### Quick Setup
 
@@ -2210,7 +2210,7 @@ const agent = Agent.create({
   },
 });
 
-// Plugin is accessible via ctx.getPlugin('persistent-instructions')
+// Plugin is accessible via ctx.getPlugin('persistent_instructions')
 // Instructions are automatically loaded from disk on first context prepare
 ```
 
@@ -2226,14 +2226,16 @@ const ctx = AgentContextNextGen.create({ model: 'gpt-4' });
 // Create and configure plugin
 const plugin = new PersistentInstructionsPluginNextGen({
   agentId: 'my-assistant',
-  maxLength: 100000,  // Characters, default is 50000
+  maxTotalLength: 100000,  // Characters across all entries, default is 50000
+  maxEntries: 50,          // Maximum number of keyed entries, default is 50
 });
 
 // Register with context
 ctx.registerPlugin(plugin);
 
-// Set instructions programmatically
-await plugin.set('Always respond in a friendly tone.\n\nPrefer bullet points for lists.');
+// Set instructions programmatically (keyed entries)
+await plugin.set('personality', 'Always respond in a friendly tone.');
+await plugin.set('formatting', 'Prefer bullet points for lists.');
 ```
 
 ### Configuration Options
@@ -2246,16 +2248,19 @@ interface PersistentInstructionsConfig {
   /** Custom storage implementation (default: FilePersistentInstructionsStorage) */
   storage?: IPersistentInstructionsStorage;
 
-  /** Maximum instructions length in characters (default: 50000) */
-  maxLength?: number;
+  /** Maximum total content length across all entries in characters (default: 50000) */
+  maxTotalLength?: number;
+
+  /** Maximum number of entries (default: 50) */
+  maxEntries?: number;
 }
 ```
 
 ### Storage Path
 
 Instructions are stored at:
-- **Unix/macOS**: `~/.oneringai/agents/<agentId>/custom_instructions.md`
-- **Windows**: `%APPDATA%/oneringai/agents/<agentId>/custom_instructions.md`
+- **Unix/macOS**: `~/.oneringai/agents/<agentId>/custom_instructions.json`
+- **Windows**: `%APPDATA%/oneringai/agents/<agentId>/custom_instructions.json`
 
 The agent ID is sanitized to be filesystem-safe (lowercase, special chars replaced with underscores).
 
@@ -2265,50 +2270,52 @@ The LLM has access to four tools for managing persistent instructions:
 
 #### instructions_set
 
-Replace all custom instructions:
+Add or update a single instruction by key:
 
 ```typescript
 // Tool call from LLM
 {
   "name": "instructions_set",
   "arguments": {
-    "content": "## Personality\nAlways be friendly and helpful.\n\n## Formatting\n- Use bullet points for lists\n- Keep responses concise"
+    "key": "personality",
+    "content": "Always be friendly and helpful. Use clear, simple language."
   }
 }
-// Returns: { "success": true, "message": "Instructions saved successfully", "path": "...", "length": 95 }
+// Returns: { "success": true, "message": "Instruction 'personality' added", "key": "personality", "contentLength": 57 }
 ```
 
-#### instructions_append
+#### instructions_remove
 
-Add a new section to existing instructions:
+Remove a single instruction by key:
 
 ```typescript
 // Tool call from LLM
 {
-  "name": "instructions_append",
+  "name": "instructions_remove",
   "arguments": {
-    "section": "## Learned Preferences\n- User prefers dark mode\n- User likes technical details"
+    "key": "personality"
   }
 }
-// Returns: { "success": true, "message": "Section appended successfully", "newLength": 180 }
+// Returns: { "success": true, "message": "Instruction 'personality' removed", "key": "personality" }
 ```
 
-#### instructions_get
+#### instructions_list
 
-Read current instructions:
+List all instructions with their keys and content:
 
 ```typescript
 // Tool call from LLM
 {
-  "name": "instructions_get",
+  "name": "instructions_list",
   "arguments": {}
 }
 // Returns: {
-//   "exists": true,
-//   "content": "## Personality\n...",
-//   "length": 180,
-//   "maxLength": 50000,
-//   "path": "/Users/.../.oneringai/agents/my-assistant/custom_instructions.md"
+//   "count": 2,
+//   "entries": [
+//     { "key": "personality", "content": "Always be friendly...", "contentLength": 57, "createdAt": ..., "updatedAt": ... },
+//     { "key": "formatting", "content": "Use bullet points...", "contentLength": 35, "createdAt": ..., "updatedAt": ... }
+//   ],
+//   "agentId": "my-assistant"
 // }
 ```
 
@@ -2324,7 +2331,7 @@ Remove all instructions (requires confirmation):
     "confirm": true  // Must be true, otherwise rejected
   }
 }
-// Returns: { "success": true, "message": "Instructions cleared successfully", "path": "..." }
+// Returns: { "success": true, "message": "All custom instructions cleared" }
 ```
 
 ### Direct API Access
@@ -2332,69 +2339,58 @@ Remove all instructions (requires confirmation):
 The plugin provides a programmatic API for direct manipulation:
 
 ```typescript
-const plugin = agent.context.persistentInstructions;
+const plugin = ctx.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
 
-// Set instructions (replaces existing)
-await plugin.set('New instructions content');
+// Add/update entry by key
+await plugin.set('personality', 'Always be friendly and helpful.');
+await plugin.set('formatting', 'Use bullet points for lists.');
 
-// Append section
-await plugin.append('## New Section\nContent here');
+// Get single entry by key
+const entry = await plugin.get('personality');  // InstructionEntry | null
+// entry = { id: 'personality', content: '...', createdAt: ..., updatedAt: ... }
 
-// Get current instructions
-const content = plugin.get();  // string | null
+// Get all entries (sorted by createdAt)
+const all = await plugin.get();  // InstructionEntry[] | null
 
-// Check if instructions exist
-plugin.has();  // true/false
+// List metadata for all entries
+const list = await plugin.list();
+// [{ key: 'personality', contentLength: 35, createdAt: ..., updatedAt: ... }, ...]
+
+// Remove a single entry
+await plugin.remove('formatting');  // true if found, false if not
 
 // Clear all
 await plugin.clear();
-
-// Get storage path
-plugin.getPath();  // "/Users/.../.oneringai/agents/my-assistant/custom_instructions.md"
-
-// Get length info
-plugin.getLength();     // Current length in characters
-plugin.getMaxLength();  // Maximum allowed length
 ```
 
 ### Context Output Format
 
-When the LLM context is prepared, persistent instructions appear with an explanation:
+When the LLM context is prepared, persistent instruction entries are rendered as markdown sections:
 
 ```markdown
-## Custom Instructions
+### personality
+Always be friendly and helpful. Use clear, simple language.
 
-These are your persistent instructions that apply across all sessions.
-They are stored on disk and automatically loaded when you start.
-
-**To modify:** Use `instructions_set` (replace all), `instructions_append` (add section), or `instructions_clear` (remove all).
-**Storage path:** /Users/.../.oneringai/agents/my-assistant/custom_instructions.md
-
----
-
-## Personality
-Always be friendly and helpful.
-
-## Formatting
+### formatting
 - Use bullet points for lists
 - Keep responses concise
 
-## Learned Preferences
-- User prefers dark mode
-- User likes technical details
+### user_preferences
+The user prefers dark mode and verbose explanations.
 ```
 
 ### Session Persistence
 
-PersistentInstructionsPluginNextGen supports state serialization, but since instructions are stored on disk, the primary persistence mechanism is the file itself:
+PersistentInstructionsPluginNextGen supports state serialization. The state format includes all entries:
 
 ```typescript
-// State includes current content
-const state = plugin.serialize();
-// state = { content: "...", agentId: "my-assistant" }
+// State includes all entries
+const state = plugin.getState();
+// state = { entries: [...], agentId: "my-assistant", version: 2 }
 
 // Restore state (useful for in-memory state sync)
-plugin.deserialize(state);
+plugin.restoreState(state);
+// Also handles legacy format: { content: string | null, agentId: string }
 ```
 
 ### Use Cases
@@ -2413,58 +2409,48 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   systemPrompt: `You are a learning assistant. When the user expresses preferences or
-gives feedback about your responses, use instructions_append to remember them for
-future sessions. Review your custom instructions at the start of each conversation.`,
+gives feedback about your responses, use instructions_set to remember them for
+future sessions. Use descriptive keys like "user_preferences", "response_style", etc.
+Review your instructions with instructions_list at the start of each conversation.`,
   context: {
-    agentId: 'learning-assistant',  // Used for persistent storage path
-    features: { persistentInstructions: true },  // Enables PersistentInstructionsPluginNextGen
+    agentId: 'learning-assistant',
+    features: { persistentInstructions: true },
   },
 });
 
 // User: "I prefer when you explain things with analogies"
-// Agent calls: instructions_append({ section: "## User Preferences\n- Explain concepts using analogies" })
+// Agent calls: instructions_set({ key: "response_style", content: "Explain concepts using analogies when possible" })
 // Next session, agent sees this in context automatically
 ```
 
 ### Best Practices
 
-#### 1. Use Structured Markdown
-
-```markdown
-## Personality
-- Be friendly and approachable
-- Use clear, simple language
-
-## Formatting Preferences
-- Use bullet points for lists
-- Include code examples when relevant
-
-## Domain Knowledge
-- User works in fintech
-- Focus on practical applications
-```
-
-#### 2. Append Rather Than Replace
+#### 1. Use Descriptive Keys
 
 ```typescript
-// GOOD: Append new learnings
-await plugin.append('## New Learning\n- User prefers concise responses');
+// GOOD: Descriptive, categorical keys
+await plugin.set('personality', 'Be friendly and approachable');
+await plugin.set('formatting_rules', 'Use bullet points for lists');
+await plugin.set('domain_knowledge', 'User works in fintech');
 
-// AVOID: Replacing everything (loses previous instructions)
-await plugin.set('User prefers concise responses');  // Lost previous content!
+// AVOID: Generic or numbered keys
+await plugin.set('rule1', '...');  // Not descriptive
+await plugin.set('misc', '...');   // Too vague
 ```
 
-#### 3. Organize with Sections
+#### 2. One Concern Per Entry
 
 ```typescript
-// Encourage LLM to organize instructions
-const systemPrompt = `When updating your custom instructions:
-1. Use ## headings for sections
-2. Group related items together
-3. Keep each section focused`;
+// GOOD: Each entry covers one topic
+await plugin.set('tone', 'Use formal language');
+await plugin.set('code_style', 'Use TypeScript, follow existing patterns');
+await plugin.set('response_length', 'Keep responses concise, 2-3 paragraphs max');
+
+// AVOID: Mixing concerns in one entry
+await plugin.set('rules', 'Be formal. Use TypeScript. Keep it short.');
 ```
 
-#### 4. Combine with InContextMemory
+#### 3. Combine with InContextMemory
 
 Use both systems for their strengths:
 
@@ -2480,14 +2466,14 @@ Use both systems for their strengths:
 // - Running totals
 ```
 
-#### 5. Set Reasonable Max Length
+#### 4. Set Reasonable Limits
 
 ```typescript
 // For simple agents
 const agent = Agent.create({
   context: {
     features: { persistentInstructions: true },
-    persistentInstructions: { maxLength: 10000 },  // 10KB
+    plugins: { persistentInstructions: { maxTotalLength: 10000, maxEntries: 20 } },
   },
 });
 
@@ -2495,10 +2481,20 @@ const agent = Agent.create({
 const agent = Agent.create({
   context: {
     features: { persistentInstructions: true },
-    persistentInstructions: { maxLength: 100000 },  // 100KB
+    plugins: { persistentInstructions: { maxTotalLength: 100000, maxEntries: 100 } },
   },
 });
 ```
+
+### Upgrade Guide (from single-string to KVP)
+
+If upgrading from the previous single-string persistent instructions:
+
+1. **File storage**: Auto-migrated. Legacy `custom_instructions.md` files are read as a single `legacy_instructions` entry and converted to `custom_instructions.json` on next save. No action needed.
+2. **Custom storage backends**: Update `load()` to return `InstructionEntry[] | null` and `save()` to accept `InstructionEntry[]` instead of `string`.
+3. **Tool API**: `instructions_append` is removed — use `instructions_set(key, content)` to add new entries. `instructions_get` is removed — use `instructions_list()` to see all entries.
+4. **Programmatic API**: `plugin.set(content)` → `plugin.set(key, content)`. `plugin.append(section)` → `plugin.set(newKey, section)`. `plugin.get()` now returns `InstructionEntry[] | null` (or a single `InstructionEntry` when called with a key).
+5. **Session state**: Existing saved sessions with old format (`{ content: string | null }`) are auto-migrated on `restoreState()`.
 
 ---
 

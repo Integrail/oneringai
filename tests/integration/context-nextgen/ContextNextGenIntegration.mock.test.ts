@@ -553,7 +553,7 @@ describe('AgentContextNextGen Integration (Mock)', () => {
 
       // PersistentInstructions tools
       expect(toolNames).toContain('instructions_set');
-      expect(toolNames).toContain('instructions_get');
+      expect(toolNames).toContain('instructions_list');
     });
 
     it('should not register tools for disabled features', () => {

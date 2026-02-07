@@ -15089,8 +15089,8 @@ var DEFAULT_ALLOWLIST = [
   "context_list",
   // Persistent instructions tools
   "instructions_set",
-  "instructions_append",
-  "instructions_get",
+  "instructions_remove",
+  "instructions_list",
   "instructions_clear",
   // Meta-tools (internal coordination)
   "_start_planning",
@@ -19664,22 +19664,45 @@ function sanitizeAgentId(agentId) {
 var FilePersistentInstructionsStorage = class {
   directory;
   filePath;
+  legacyFilePath;
   agentId;
   constructor(config) {
     this.agentId = config.agentId;
     const sanitizedId = sanitizeAgentId(config.agentId);
     const baseDir = config.baseDirectory ?? getDefaultBaseDirectory();
-    const filename = config.filename ?? "custom_instructions.md";
+    const filename = config.filename ?? "custom_instructions.json";
     this.directory = path3.join(baseDir, sanitizedId);
     this.filePath = path3.join(this.directory, filename);
+    this.legacyFilePath = path3.join(this.directory, "custom_instructions.md");
   }
   /**
-   * Load instructions from file
+   * Load instruction entries from file.
+   * Falls back to legacy .md file migration if JSON not found.
    */
   async load() {
     try {
-      const content = await fs15.promises.readFile(this.filePath, "utf-8");
-      return content.trim() || null;
+      const raw = await fs15.promises.readFile(this.filePath, "utf-8");
+      const data = JSON.parse(raw);
+      if (data.version === 2 && Array.isArray(data.entries)) {
+        return data.entries.length > 0 ? data.entries : null;
+      }
+      return null;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+        throw error;
+      }
+    }
+    try {
+      const content = await fs15.promises.readFile(this.legacyFilePath, "utf-8");
+      const trimmed = content.trim();
+      if (!trimmed) return null;
+      const now = Date.now();
+      return [{
+        id: "legacy_instructions",
+        content: trimmed,
+        createdAt: now,
+        updatedAt: now
+      }];
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         return null;
@@ -19688,14 +19711,19 @@ var FilePersistentInstructionsStorage = class {
     }
   }
   /**
-   * Save instructions to file
-   * Creates directory if it doesn't exist
+   * Save instruction entries to file as JSON.
+   * Creates directory if it doesn't exist.
+   * Cleans up legacy .md file if present.
    */
-  async save(content) {
+  async save(entries) {
     await this.ensureDirectory();
+    const data = {
+      version: 2,
+      entries
+    };
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, content, "utf-8");
+      await fs15.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
       await fs15.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
@@ -19704,9 +19732,10 @@ var FilePersistentInstructionsStorage = class {
       }
       throw error;
     }
+    await this.removeLegacyFile();
   }
   /**
-   * Delete instructions file
+   * Delete instructions file (and legacy .md if exists)
    */
   async delete() {
     try {
@@ -19716,16 +19745,22 @@ var FilePersistentInstructionsStorage = class {
         throw error;
       }
     }
+    await this.removeLegacyFile();
   }
   /**
-   * Check if instructions file exists
+   * Check if instructions file exists (JSON or legacy .md)
    */
   async exists() {
     try {
       await fs15.promises.access(this.filePath);
       return true;
     } catch {
-      return false;
+      try {
+        await fs15.promises.access(this.legacyFilePath);
+        return true;
+      } catch {
+        return false;
+      }
     }
   }
   /**
@@ -19752,58 +19787,79 @@ var FilePersistentInstructionsStorage = class {
       }
     }
   }
+  /**
+   * Remove legacy .md file if it exists
+   */
+  async removeLegacyFile() {
+    try {
+      await fs15.promises.unlink(this.legacyFilePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        console.warn(`Failed to remove legacy instructions file: ${this.legacyFilePath}`);
+      }
+    }
+  }
 };
 
 // src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts
-var DEFAULT_MAX_LENGTH = 5e4;
+var DEFAULT_MAX_TOTAL_LENGTH = 5e4;
+var DEFAULT_MAX_ENTRIES = 50;
+var KEY_MAX_LENGTH = 100;
+var KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 var PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = `Persistent Instructions are stored on disk and survive across sessions.
+Each instruction is a keyed entry that can be independently managed.
 
 **To modify:**
-- \`instructions_set(content)\`: Replace all instructions
-- \`instructions_append(section)\`: Add a section
-- \`instructions_clear(confirm: true)\`: Remove all (destructive!)
+- \`instructions_set(key, content)\`: Add or update a single instruction by key
+- \`instructions_remove(key)\`: Remove a single instruction by key
+- \`instructions_list()\`: List all instructions with keys and content
+- \`instructions_clear(confirm: true)\`: Remove all instructions (destructive!)
 
 **Use for:** Agent personality, user preferences, learned rules, guidelines.`;
 var instructionsSetDefinition = {
   type: "function",
   function: {
     name: "instructions_set",
-    description: `Set or replace all custom instructions. Persists across sessions.
-IMPORTANT: This replaces ALL existing instructions.`,
+    description: `Add or update a single persistent instruction by key. Persists across sessions.
+If the key exists, it will be updated. If not, a new entry is created.`,
     parameters: {
       type: "object",
       properties: {
+        key: {
+          type: "string",
+          description: "Unique key for the instruction (alphanumeric, dash, underscore; max 100 chars)"
+        },
         content: {
           type: "string",
-          description: "Full instructions content (markdown supported)"
+          description: "Instruction content (markdown supported)"
         }
       },
-      required: ["content"]
+      required: ["key", "content"]
     }
   }
 };
-var instructionsAppendDefinition = {
+var instructionsRemoveDefinition = {
   type: "function",
   function: {
-    name: "instructions_append",
-    description: "Append a section to existing instructions.",
+    name: "instructions_remove",
+    description: "Remove a single persistent instruction by key.",
     parameters: {
       type: "object",
       properties: {
-        section: {
+        key: {
           type: "string",
-          description: "Section to append (will add newlines before)"
+          description: "Key of the instruction to remove"
         }
       },
-      required: ["section"]
+      required: ["key"]
     }
   }
 };
-var instructionsGetDefinition = {
+var instructionsListDefinition = {
   type: "function",
   function: {
-    name: "instructions_get",
-    description: "Get current custom instructions.",
+    name: "instructions_list",
+    description: "List all persistent instructions with their keys and content.",
     parameters: {
       type: "object",
       properties: {},
@@ -19815,7 +19871,7 @@ var instructionsClearDefinition = {
   type: "function",
   function: {
     name: "instructions_clear",
-    description: "Clear all custom instructions (DESTRUCTIVE). Requires confirmation.",
+    description: "Clear all persistent instructions (DESTRUCTIVE). Requires confirmation.",
     parameters: {
       type: "object",
       properties: {
@@ -19828,13 +19884,22 @@ var instructionsClearDefinition = {
     }
   }
 };
+function validateKey(key) {
+  if (typeof key !== "string") return "Key must be a string";
+  const trimmed = key.trim();
+  if (trimmed.length === 0) return "Key cannot be empty";
+  if (trimmed.length > KEY_MAX_LENGTH) return `Key exceeds maximum length (${KEY_MAX_LENGTH} chars)`;
+  if (!KEY_PATTERN.test(trimmed)) return "Key must contain only alphanumeric characters, dashes, and underscores";
+  return null;
+}
 var PersistentInstructionsPluginNextGen = class {
   name = "persistent_instructions";
-  _content = null;
+  _entries = /* @__PURE__ */ new Map();
   _initialized = false;
   _destroyed = false;
   storage;
-  maxLength;
+  maxTotalLength;
+  maxEntries;
   agentId;
   estimator = simpleTokenEstimator;
   _tokenCache = null;
@@ -19844,7 +19909,8 @@ var PersistentInstructionsPluginNextGen = class {
       throw new Error("PersistentInstructionsPluginNextGen requires agentId");
     }
     this.agentId = config.agentId;
-    this.maxLength = config.maxLength ?? DEFAULT_MAX_LENGTH;
+    this.maxTotalLength = config.maxTotalLength ?? DEFAULT_MAX_TOTAL_LENGTH;
+    this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.storage = config.storage ?? new FilePersistentInstructionsStorage({
       agentId: config.agentId
     });
@@ -19857,14 +19923,16 @@ var PersistentInstructionsPluginNextGen = class {
   }
   async getContent() {
     await this.ensureInitialized();
-    if (!this._content) {
+    if (this._entries.size === 0) {
+      this._tokenCache = 0;
       return null;
     }
-    this._tokenCache = this.estimator.estimateTokens(this._content);
-    return this._content;
+    const rendered = this.renderContent();
+    this._tokenCache = this.estimator.estimateTokens(rendered);
+    return rendered;
   }
   getContents() {
-    return this._content;
+    return new Map(this._entries);
   }
   getTokenSize() {
     return this._tokenCache ?? 0;
@@ -19884,32 +19952,54 @@ var PersistentInstructionsPluginNextGen = class {
   getTools() {
     return [
       this.createInstructionsSetTool(),
-      this.createInstructionsAppendTool(),
-      this.createInstructionsGetTool(),
+      this.createInstructionsRemoveTool(),
+      this.createInstructionsListTool(),
       this.createInstructionsClearTool()
     ];
   }
   destroy() {
     if (this._destroyed) return;
-    this._content = null;
+    this._entries.clear();
     this._destroyed = true;
     this._tokenCache = null;
   }
   getState() {
     return {
-      content: this._content,
-      agentId: this.agentId
+      entries: Array.from(this._entries.values()),
+      agentId: this.agentId,
+      version: 2
     };
   }
   restoreState(state) {
+    if (!state || typeof state !== "object") return;
     const s = state;
-    if (!s) return;
-    this._content = s.content;
-    this._initialized = true;
-    this._tokenCache = null;
+    if ("version" in s && s.version === 2 && Array.isArray(s.entries)) {
+      this._entries.clear();
+      for (const entry of s.entries) {
+        this._entries.set(entry.id, entry);
+      }
+      this._initialized = true;
+      this._tokenCache = null;
+      return;
+    }
+    if ("content" in s) {
+      this._entries.clear();
+      const content = s.content;
+      if (content) {
+        const now = Date.now();
+        this._entries.set("legacy_instructions", {
+          id: "legacy_instructions",
+          content,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+      this._initialized = true;
+      this._tokenCache = null;
+    }
   }
   // ============================================================================
-  // Content Management
+  // Public API
   // ============================================================================
   /**
    * Initialize by loading from storage (called lazily)
@@ -19917,66 +20007,99 @@ var PersistentInstructionsPluginNextGen = class {
   async initialize() {
     if (this._initialized || this._destroyed) return;
     try {
-      this._content = await this.storage.load();
+      const entries = await this.storage.load();
+      this._entries.clear();
+      if (entries) {
+        for (const entry of entries) {
+          this._entries.set(entry.id, entry);
+        }
+      }
       this._initialized = true;
     } catch (error) {
       console.warn(`Failed to load persistent instructions for agent '${this.agentId}':`, error);
-      this._content = null;
+      this._entries.clear();
       this._initialized = true;
     }
     this._tokenCache = null;
   }
   /**
-   * Set entire instructions content (replaces existing)
+   * Add or update an instruction entry by key
    */
-  async set(content) {
+  async set(key, content) {
     this.assertNotDestroyed();
-    if (content.length > this.maxLength) {
+    await this.ensureInitialized();
+    const keyError = validateKey(key);
+    if (keyError) return false;
+    const trimmedContent = content.trim();
+    if (trimmedContent.length === 0) return false;
+    if (!this._entries.has(key) && this._entries.size >= this.maxEntries) {
       return false;
     }
-    this._content = content.trim() || null;
-    if (this._content) {
-      await this.storage.save(this._content);
-    } else {
+    const currentTotal = this.calculateTotalContentLength();
+    const existingLength = this._entries.get(key)?.content.length ?? 0;
+    const newTotal = currentTotal - existingLength + trimmedContent.length;
+    if (newTotal > this.maxTotalLength) {
+      return false;
+    }
+    const now = Date.now();
+    const existing = this._entries.get(key);
+    this._entries.set(key, {
+      id: key,
+      content: trimmedContent,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    });
+    await this.persistToStorage();
+    this._tokenCache = null;
+    return true;
+  }
+  /**
+   * Remove an instruction entry by key
+   */
+  async remove(key) {
+    this.assertNotDestroyed();
+    await this.ensureInitialized();
+    if (!this._entries.has(key)) return false;
+    this._entries.delete(key);
+    if (this._entries.size === 0) {
       await this.storage.delete();
+    } else {
+      await this.persistToStorage();
     }
     this._tokenCache = null;
     return true;
   }
   /**
-   * Append a section to existing instructions
+   * Get one entry by key, or all entries if no key provided
    */
-  async append(section) {
+  async get(key) {
     this.assertNotDestroyed();
     await this.ensureInitialized();
-    const trimmedSection = section.trim();
-    if (!trimmedSection) return true;
-    const currentContent = this._content || "";
-    const newContent = currentContent ? `${currentContent}
-
-${trimmedSection}` : trimmedSection;
-    if (newContent.length > this.maxLength) {
-      return false;
+    if (key !== void 0) {
+      return this._entries.get(key) ?? null;
     }
-    this._content = newContent;
-    await this.storage.save(this._content);
-    this._tokenCache = null;
-    return true;
+    if (this._entries.size === 0) return null;
+    return this.getSortedEntries();
   }
   /**
-   * Get current content
+   * List metadata for all entries
    */
-  async get() {
+  async list() {
     this.assertNotDestroyed();
     await this.ensureInitialized();
-    return this._content;
+    return this.getSortedEntries().map((entry) => ({
+      key: entry.id,
+      contentLength: entry.content.length,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt
+    }));
   }
   /**
-   * Clear all instructions
+   * Clear all instruction entries
    */
   async clear() {
     this.assertNotDestroyed();
-    this._content = null;
+    this._entries.clear();
     await this.storage.delete();
     this._tokenCache = null;
   }
@@ -19999,6 +20122,35 @@ ${trimmedSection}` : trimmedSection;
       throw new Error("PersistentInstructionsPluginNextGen is destroyed");
     }
   }
+  /**
+   * Persist current entries to storage
+   */
+  async persistToStorage() {
+    await this.storage.save(Array.from(this._entries.values()));
+  }
+  /**
+   * Calculate total content length across all entries
+   */
+  calculateTotalContentLength() {
+    let total = 0;
+    for (const entry of this._entries.values()) {
+      total += entry.content.length;
+    }
+    return total;
+  }
+  /**
+   * Get entries sorted by createdAt (oldest first)
+   */
+  getSortedEntries() {
+    return Array.from(this._entries.values()).sort((a, b) => a.createdAt - b.createdAt);
+  }
+  /**
+   * Render all entries as markdown for context injection
+   */
+  renderContent() {
+    return this.getSortedEntries().map((entry) => `### ${entry.id}
+${entry.content}`).join("\n\n");
+  }
   // ============================================================================
   // Tool Factories
   // ============================================================================
@@ -20006,60 +20158,84 @@ ${trimmedSection}` : trimmedSection;
     return {
       definition: instructionsSetDefinition,
       execute: async (args) => {
+        const key = args.key;
         const content = args.content;
+        const keyError = validateKey(key);
+        if (keyError) {
+          return { error: keyError };
+        }
         if (!content || content.trim().length === 0) {
-          return { error: "Content cannot be empty. Use instructions_clear to remove." };
+          return { error: "Content cannot be empty. Use instructions_remove to delete an entry." };
         }
-        const success = await this.set(content);
+        const isUpdate = this._entries.has(key.trim());
+        const success = await this.set(key.trim(), content);
         if (!success) {
-          return { error: `Content exceeds maximum length (${this.maxLength} chars)` };
+          if (!isUpdate && this._entries.size >= this.maxEntries) {
+            return { error: `Maximum number of entries reached (${this.maxEntries})` };
+          }
+          return { error: `Content would exceed maximum total length (${this.maxTotalLength} chars)` };
         }
         return {
           success: true,
-          message: "Custom instructions updated",
-          length: content.length
+          message: isUpdate ? `Instruction '${key.trim()}' updated` : `Instruction '${key.trim()}' added`,
+          key: key.trim(),
+          contentLength: content.trim().length
         };
       },
       permission: { scope: "always", riskLevel: "low" },
-      describeCall: () => "set instructions"
+      describeCall: (args) => `set instruction '${args.key}'`
     };
   }
-  createInstructionsAppendTool() {
+  createInstructionsRemoveTool() {
     return {
-      definition: instructionsAppendDefinition,
+      definition: instructionsRemoveDefinition,
       execute: async (args) => {
-        const section = args.section;
-        if (!section || section.trim().length === 0) {
-          return { error: "Section cannot be empty" };
+        const key = args.key;
+        if (!key || typeof key !== "string" || key.trim().length === 0) {
+          return { error: "Key is required" };
         }
-        const success = await this.append(section);
+        const success = await this.remove(key.trim());
         if (!success) {
-          return { error: `Would exceed maximum length (${this.maxLength} chars)` };
+          return { error: `Instruction '${key.trim()}' not found` };
         }
         return {
           success: true,
-          message: "Section appended to instructions",
-          newLength: this._content?.length ?? 0
+          message: `Instruction '${key.trim()}' removed`,
+          key: key.trim()
         };
       },
       permission: { scope: "always", riskLevel: "low" },
-      describeCall: () => "append to instructions"
+      describeCall: (args) => `remove instruction '${args.key}'`
     };
   }
-  createInstructionsGetTool() {
+  createInstructionsListTool() {
     return {
-      definition: instructionsGetDefinition,
+      definition: instructionsListDefinition,
       execute: async () => {
-        const content = await this.get();
+        const entries = await this.list();
+        const all = await this.get();
+        if (entries.length === 0) {
+          return {
+            count: 0,
+            entries: [],
+            message: "(no custom instructions set)"
+          };
+        }
+        const allEntries = all;
         return {
-          hasContent: content !== null,
-          content: content ?? "(no custom instructions set)",
-          length: content?.length ?? 0,
+          count: entries.length,
+          entries: allEntries.map((e) => ({
+            key: e.id,
+            content: e.content,
+            contentLength: e.content.length,
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt
+          })),
           agentId: this.agentId
         };
       },
       permission: { scope: "always", riskLevel: "low" },
-      describeCall: () => "get instructions"
+      describeCall: () => "list instructions"
     };
   }
   createInstructionsClearTool() {
@@ -20072,7 +20248,7 @@ ${trimmedSection}` : trimmedSection;
         await this.clear();
         return {
           success: true,
-          message: "Custom instructions cleared"
+          message: "All custom instructions cleared"
         };
       },
       permission: { scope: "once", riskLevel: "medium" },

@@ -279,29 +279,29 @@ export function mockMemoryCleanupRaw(): MockToolCall {
 /**
  * Helper to create instructions_set tool call
  */
-export function mockInstructionsSet(instructions: string): MockToolCall {
+export function mockInstructionsSet(key: string, content: string): MockToolCall {
   return {
     name: 'instructions_set',
-    arguments: { instructions },
+    arguments: { key, content },
   };
 }
 
 /**
- * Helper to create instructions_append tool call
+ * Helper to create instructions_remove tool call
  */
-export function mockInstructionsAppend(content: string): MockToolCall {
+export function mockInstructionsRemove(key: string): MockToolCall {
   return {
-    name: 'instructions_append',
-    arguments: { content },
+    name: 'instructions_remove',
+    arguments: { key },
   };
 }
 
 /**
- * Helper to create instructions_get tool call
+ * Helper to create instructions_list tool call
  */
-export function mockInstructionsGet(): MockToolCall {
+export function mockInstructionsList(): MockToolCall {
   return {
-    name: 'instructions_get',
+    name: 'instructions_list',
     arguments: {},
   };
 }

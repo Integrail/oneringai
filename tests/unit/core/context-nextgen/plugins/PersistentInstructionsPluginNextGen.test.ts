@@ -2,38 +2,40 @@
  * PersistentInstructionsPluginNextGen Unit Tests
  *
  * Tests for the NextGen persistent instructions plugin covering:
- * - Core operations (set, append, get, clear)
- * - Maximum length enforcement
+ * - Core KVP operations (set, remove, get, list, clear)
+ * - Key validation
+ * - Maximum entries/length enforcement
  * - Lazy initialization
  * - Non-compactable behavior
- * - Serialization/deserialization
+ * - Serialization/deserialization (new + legacy)
+ * - Content rendering
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PersistentInstructionsPluginNextGen } from '@/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.js';
 import type { PersistentInstructionsConfig } from '@/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.js';
-import type { IPersistentInstructionsStorage } from '@/domain/interfaces/IPersistentInstructionsStorage.js';
+import type { IPersistentInstructionsStorage, InstructionEntry } from '@/domain/interfaces/IPersistentInstructionsStorage.js';
 
 /**
  * Create a mock storage implementation for testing
  */
-function createMockStorage(): IPersistentInstructionsStorage & { _content: string | null } {
+function createMockStorage(): IPersistentInstructionsStorage & { _entries: InstructionEntry[] | null } {
   return {
-    _content: null,
-    async load(): Promise<string | null> {
-      return this._content;
+    _entries: null,
+    async load(): Promise<InstructionEntry[] | null> {
+      return this._entries;
     },
-    async save(content: string): Promise<void> {
-      this._content = content;
+    async save(entries: InstructionEntry[]): Promise<void> {
+      this._entries = entries;
     },
     async delete(): Promise<void> {
-      this._content = null;
+      this._entries = null;
     },
     async exists(): Promise<boolean> {
-      return this._content !== null;
+      return this._entries !== null;
     },
     getPath(): string {
-      return '/mock/path/instructions.md';
+      return '/mock/path/custom_instructions.json';
     },
   };
 }
@@ -63,6 +65,8 @@ describe('PersistentInstructionsPluginNextGen', () => {
       const instructions = plugin.getInstructions();
       expect(instructions).toContain('Persistent Instructions');
       expect(instructions).toContain('instructions_set');
+      expect(instructions).toContain('instructions_remove');
+      expect(instructions).toContain('instructions_list');
     });
 
     it('should NOT be compactable', () => {
@@ -70,7 +74,7 @@ describe('PersistentInstructionsPluginNextGen', () => {
     });
 
     it('should return 0 tokens freed on compact', async () => {
-      await plugin.set('Some content');
+      await plugin.set('style', 'Some content');
       const freed = await plugin.compact(1000);
       expect(freed).toBe(0);
     });
@@ -81,8 +85,8 @@ describe('PersistentInstructionsPluginNextGen', () => {
 
       const toolNames = tools.map(t => t.definition.function.name);
       expect(toolNames).toContain('instructions_set');
-      expect(toolNames).toContain('instructions_append');
-      expect(toolNames).toContain('instructions_get');
+      expect(toolNames).toContain('instructions_remove');
+      expect(toolNames).toContain('instructions_list');
       expect(toolNames).toContain('instructions_clear');
     });
 
@@ -95,127 +99,252 @@ describe('PersistentInstructionsPluginNextGen', () => {
   });
 
   describe('Set Operation', () => {
-    it('should set content', async () => {
-      const success = await plugin.set('My custom instructions');
+    it('should add a new entry by key', async () => {
+      const success = await plugin.set('style', 'Be formal and concise');
       expect(success).toBe(true);
 
-      const content = await plugin.get();
-      expect(content).toBe('My custom instructions');
+      const entry = await plugin.get('style');
+      expect(entry).not.toBeNull();
+      expect((entry as InstructionEntry).content).toBe('Be formal and concise');
+      expect((entry as InstructionEntry).id).toBe('style');
     });
 
-    it('should replace existing content', async () => {
-      await plugin.set('First content');
-      await plugin.set('Second content');
+    it('should update an existing entry', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('style', 'Be casual');
 
-      const content = await plugin.get();
-      expect(content).toBe('Second content');
+      const entry = await plugin.get('style') as InstructionEntry;
+      expect(entry.content).toBe('Be casual');
     });
 
-    it('should trim whitespace', async () => {
-      await plugin.set('  Content with whitespace  ');
+    it('should preserve createdAt on update', async () => {
+      await plugin.set('style', 'Be formal');
+      const original = await plugin.get('style') as InstructionEntry;
 
-      const content = await plugin.get();
-      expect(content).toBe('Content with whitespace');
+      // Small delay to ensure different timestamps
+      await new Promise(r => setTimeout(r, 10));
+      await plugin.set('style', 'Be casual');
+
+      const updated = await plugin.get('style') as InstructionEntry;
+      expect(updated.createdAt).toBe(original.createdAt);
+      expect(updated.updatedAt).toBeGreaterThanOrEqual(original.updatedAt);
     });
 
-    it('should set null for empty content', async () => {
-      await plugin.set('Some content');
-      await plugin.set('   ');
+    it('should trim content', async () => {
+      await plugin.set('style', '  Trimmed content  ');
 
-      const content = await plugin.get();
-      expect(content).toBeNull();
+      const entry = await plugin.get('style') as InstructionEntry;
+      expect(entry.content).toBe('Trimmed content');
     });
 
-    it('should enforce max length', async () => {
-      const longContent = 'x'.repeat(60000);
-      const success = await plugin.set(longContent);
-
+    it('should reject empty content', async () => {
+      const success = await plugin.set('style', '   ');
       expect(success).toBe(false);
     });
 
     it('should persist to storage', async () => {
-      await plugin.set('Persisted content');
+      await plugin.set('style', 'Persisted content');
 
-      expect(mockStorage._content).toBe('Persisted content');
+      expect(mockStorage._entries).not.toBeNull();
+      expect(mockStorage._entries!.length).toBe(1);
+      expect(mockStorage._entries![0].id).toBe('style');
+      expect(mockStorage._entries![0].content).toBe('Persisted content');
+    });
+
+    it('should add multiple entries', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('code', 'Use TypeScript');
+
+      const all = await plugin.get() as InstructionEntry[];
+      expect(all).toHaveLength(2);
     });
   });
 
-  describe('Append Operation', () => {
-    it('should append to existing content', async () => {
-      await plugin.set('First section');
-      await plugin.append('Second section');
-
-      const content = await plugin.get();
-      expect(content).toBe('First section\n\nSecond section');
+  describe('Key Validation', () => {
+    it('should accept valid alphanumeric keys', async () => {
+      expect(await plugin.set('style', 'content')).toBe(true);
+      expect(await plugin.set('code_rules', 'content')).toBe(true);
+      expect(await plugin.set('my-key', 'content')).toBe(true);
+      expect(await plugin.set('KEY123', 'content')).toBe(true);
     });
 
-    it('should start fresh when no existing content', async () => {
-      await plugin.append('New section');
-
-      const content = await plugin.get();
-      expect(content).toBe('New section');
+    it('should reject empty key', async () => {
+      expect(await plugin.set('', 'content')).toBe(false);
+      expect(await plugin.set('   ', 'content')).toBe(false);
     });
 
-    it('should trim appended content', async () => {
-      await plugin.set('Base');
-      await plugin.append('  Appended  ');
-
-      const content = await plugin.get();
-      expect(content).toBe('Base\n\nAppended');
+    it('should reject keys with invalid characters', async () => {
+      expect(await plugin.set('key with spaces', 'content')).toBe(false);
+      expect(await plugin.set('key.dot', 'content')).toBe(false);
+      expect(await plugin.set('key/slash', 'content')).toBe(false);
     });
 
-    it('should return true for empty append', async () => {
-      await plugin.set('Base');
-      const success = await plugin.append('   ');
+    it('should reject keys exceeding max length', async () => {
+      const longKey = 'a'.repeat(101);
+      expect(await plugin.set(longKey, 'content')).toBe(false);
+    });
 
+    it('should accept key at exactly max length', async () => {
+      const maxKey = 'a'.repeat(100);
+      expect(await plugin.set(maxKey, 'content')).toBe(true);
+    });
+  });
+
+  describe('Remove Operation', () => {
+    it('should remove an existing entry', async () => {
+      await plugin.set('style', 'Be formal');
+      const success = await plugin.remove('style');
       expect(success).toBe(true);
+
+      const entry = await plugin.get('style');
+      expect(entry).toBeNull();
     });
 
-    it('should enforce max length on append', async () => {
-      await plugin.set('Short');
-      const longAppend = 'x'.repeat(60000);
-      const success = await plugin.append(longAppend);
-
+    it('should return false for non-existent key', async () => {
+      const success = await plugin.remove('nonexistent');
       expect(success).toBe(false);
+    });
+
+    it('should delete storage when last entry removed', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.remove('style');
+
+      expect(mockStorage._entries).toBeNull();
+    });
+
+    it('should persist remaining entries when not last', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('code', 'Use TypeScript');
+      await plugin.remove('style');
+
+      expect(mockStorage._entries).not.toBeNull();
+      expect(mockStorage._entries!.length).toBe(1);
+      expect(mockStorage._entries![0].id).toBe('code');
     });
   });
 
   describe('Get Operation', () => {
-    it('should return null when no content', async () => {
-      const content = await plugin.get();
-      expect(content).toBeNull();
+    it('should return null for non-existent key', async () => {
+      const entry = await plugin.get('nonexistent');
+      expect(entry).toBeNull();
     });
 
-    it('should return content after set', async () => {
-      await plugin.set('My content');
+    it('should return null when no entries (no key)', async () => {
+      const entries = await plugin.get();
+      expect(entries).toBeNull();
+    });
 
-      const content = await plugin.get();
-      expect(content).toBe('My content');
+    it('should return single entry by key', async () => {
+      await plugin.set('style', 'Be formal');
+
+      const entry = await plugin.get('style') as InstructionEntry;
+      expect(entry.id).toBe('style');
+      expect(entry.content).toBe('Be formal');
+    });
+
+    it('should return all entries sorted by createdAt when no key', async () => {
+      await plugin.set('style', 'Be formal');
+      await new Promise(r => setTimeout(r, 5));
+      await plugin.set('code', 'Use TypeScript');
+
+      const all = await plugin.get() as InstructionEntry[];
+      expect(all).toHaveLength(2);
+      expect(all[0].id).toBe('style');
+      expect(all[1].id).toBe('code');
+    });
+  });
+
+  describe('List Operation', () => {
+    it('should return empty array when no entries', async () => {
+      const entries = await plugin.list();
+      expect(entries).toEqual([]);
+    });
+
+    it('should return metadata for all entries', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('code', 'Use TypeScript');
+
+      const entries = await plugin.list();
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toHaveProperty('key');
+      expect(entries[0]).toHaveProperty('contentLength');
+      expect(entries[0]).toHaveProperty('createdAt');
+      expect(entries[0]).toHaveProperty('updatedAt');
     });
   });
 
   describe('Clear Operation', () => {
-    it('should clear content', async () => {
-      await plugin.set('Content to clear');
+    it('should clear all entries', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('code', 'Use TypeScript');
       await plugin.clear();
 
-      const content = await plugin.get();
-      expect(content).toBeNull();
+      const entries = await plugin.get();
+      expect(entries).toBeNull();
     });
 
     it('should delete from storage', async () => {
-      await plugin.set('Will be deleted');
+      await plugin.set('style', 'Be formal');
       await plugin.clear();
 
-      expect(mockStorage._content).toBeNull();
+      expect(mockStorage._entries).toBeNull();
+    });
+  });
+
+  describe('Limits', () => {
+    it('should enforce maxEntries', async () => {
+      const limitedPlugin = new PersistentInstructionsPluginNextGen({
+        agentId: 'test-agent',
+        storage: mockStorage,
+        maxEntries: 3,
+      });
+
+      expect(await limitedPlugin.set('a', 'content')).toBe(true);
+      expect(await limitedPlugin.set('b', 'content')).toBe(true);
+      expect(await limitedPlugin.set('c', 'content')).toBe(true);
+      expect(await limitedPlugin.set('d', 'content')).toBe(false); // Over limit
+
+      // Update existing should still work
+      expect(await limitedPlugin.set('a', 'updated')).toBe(true);
+
+      limitedPlugin.destroy();
+    });
+
+    it('should enforce maxTotalLength', async () => {
+      const limitedPlugin = new PersistentInstructionsPluginNextGen({
+        agentId: 'test-agent',
+        storage: mockStorage,
+        maxTotalLength: 100,
+      });
+
+      expect(await limitedPlugin.set('a', 'x'.repeat(50))).toBe(true);
+      expect(await limitedPlugin.set('b', 'x'.repeat(60))).toBe(false); // Would exceed 100
+
+      limitedPlugin.destroy();
+    });
+
+    it('should account for existing entry length when updating', async () => {
+      const limitedPlugin = new PersistentInstructionsPluginNextGen({
+        agentId: 'test-agent',
+        storage: mockStorage,
+        maxTotalLength: 100,
+      });
+
+      expect(await limitedPlugin.set('a', 'x'.repeat(80))).toBe(true);
+      // Replacing 80 chars with 90 chars should work (still under 100)
+      expect(await limitedPlugin.set('a', 'x'.repeat(90))).toBe(true);
+
+      limitedPlugin.destroy();
     });
   });
 
   describe('Lazy Initialization', () => {
     it('should initialize from storage on first access', async () => {
-      mockStorage._content = 'Preloaded content';
+      const now = Date.now();
+      mockStorage._entries = [
+        { id: 'style', content: 'Preloaded', createdAt: now, updatedAt: now },
+      ];
 
-      // New plugin should load from storage
       const newPlugin = new PersistentInstructionsPluginNextGen({
         agentId: 'test-agent',
         storage: mockStorage,
@@ -223,8 +352,8 @@ describe('PersistentInstructionsPluginNextGen', () => {
 
       expect(newPlugin.isInitialized).toBe(false);
 
-      const content = await newPlugin.get();
-      expect(content).toBe('Preloaded content');
+      const entry = await newPlugin.get('style') as InstructionEntry;
+      expect(entry.content).toBe('Preloaded');
       expect(newPlugin.isInitialized).toBe(true);
 
       newPlugin.destroy();
@@ -232,7 +361,7 @@ describe('PersistentInstructionsPluginNextGen', () => {
 
     it('should handle storage errors gracefully', async () => {
       const errorStorage: IPersistentInstructionsStorage = {
-        async load(): Promise<string | null> {
+        async load(): Promise<InstructionEntry[] | null> {
           throw new Error('Storage error');
         },
         async save(): Promise<void> {},
@@ -252,63 +381,126 @@ describe('PersistentInstructionsPluginNextGen', () => {
         storage: errorStorage,
       });
 
-      const content = await errorPlugin.get();
-      expect(content).toBeNull();
+      const entries = await errorPlugin.get();
+      expect(entries).toBeNull();
 
       consoleSpy.mockRestore();
       errorPlugin.destroy();
     });
   });
 
-  describe('Content for Context', () => {
-    it('should return null when no content', async () => {
+  describe('Content Rendering', () => {
+    it('should return null when no entries', async () => {
       const content = await plugin.getContent();
       expect(content).toBeNull();
     });
 
-    it('should return content when set', async () => {
-      await plugin.set('Instructions content');
+    it('should render entries as markdown sections', async () => {
+      await plugin.set('style', 'Be formal');
+      await new Promise(r => setTimeout(r, 5));
+      await plugin.set('code', 'Use TypeScript');
 
       const content = await plugin.getContent();
-      expect(content).toBe('Instructions content');
+      expect(content).toContain('### style');
+      expect(content).toContain('Be formal');
+      expect(content).toContain('### code');
+      expect(content).toContain('Use TypeScript');
     });
 
     it('should track token size', async () => {
       expect(plugin.getTokenSize()).toBe(0);
 
-      await plugin.set('Some instructions content here');
+      await plugin.set('style', 'Some instructions content here');
       await plugin.getContent(); // Triggers token calculation
 
       expect(plugin.getTokenSize()).toBeGreaterThan(0);
     });
   });
 
+  describe('getContents', () => {
+    it('should return empty map when no entries', () => {
+      const contents = plugin.getContents();
+      expect(contents).toBeInstanceOf(Map);
+      expect(contents.size).toBe(0);
+    });
+
+    it('should return map of entries', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('code', 'Use TypeScript');
+
+      const contents = plugin.getContents();
+      expect(contents.size).toBe(2);
+      expect(contents.get('style')!.content).toBe('Be formal');
+      expect(contents.get('code')!.content).toBe('Use TypeScript');
+    });
+  });
+
   describe('Serialization', () => {
-    it('should serialize state', async () => {
-      await plugin.set('Serialized content');
+    it('should serialize state with version 2', async () => {
+      await plugin.set('style', 'Be formal');
 
       const state = plugin.getState();
 
-      expect(state.content).toBe('Serialized content');
+      expect(state.version).toBe(2);
       expect(state.agentId).toBe('test-agent');
+      expect(state.entries).toHaveLength(1);
+      expect(state.entries[0].id).toBe('style');
+      expect(state.entries[0].content).toBe('Be formal');
     });
 
-    it('should serialize null content', async () => {
+    it('should serialize empty state', async () => {
       const state = plugin.getState();
-      expect(state.content).toBeNull();
+      expect(state.entries).toEqual([]);
+      expect(state.version).toBe(2);
     });
 
-    it('should restore state', async () => {
+    it('should restore state from new format', async () => {
+      const now = Date.now();
       const state = {
-        content: 'Restored content',
+        entries: [
+          { id: 'style', content: 'Restored', createdAt: now, updatedAt: now },
+        ],
         agentId: 'test-agent',
+        version: 2,
       };
 
       plugin.restoreState(state);
 
-      const content = await plugin.get();
-      expect(content).toBe('Restored content');
+      const entry = await plugin.get('style') as InstructionEntry;
+      expect(entry.content).toBe('Restored');
       expect(plugin.isInitialized).toBe(true);
+    });
+
+    it('should restore state from legacy format', async () => {
+      const legacyState = {
+        content: 'Legacy instructions content',
+        agentId: 'test-agent',
+      };
+
+      plugin.restoreState(legacyState);
+
+      const entry = await plugin.get('legacy_instructions') as InstructionEntry;
+      expect(entry.content).toBe('Legacy instructions content');
+      expect(plugin.isInitialized).toBe(true);
+    });
+
+    it('should restore null content from legacy format', async () => {
+      const legacyState = {
+        content: null,
+        agentId: 'test-agent',
+      };
+
+      plugin.restoreState(legacyState);
+
+      const entries = await plugin.get();
+      expect(entries).toBeNull();
+    });
+
+    it('should handle invalid state gracefully', () => {
+      plugin.restoreState(null);
+      plugin.restoreState(undefined);
+      plugin.restoreState('invalid');
+      // Should not throw
     });
   });
 
@@ -316,8 +508,10 @@ describe('PersistentInstructionsPluginNextGen', () => {
     it('should throw when destroyed', async () => {
       plugin.destroy();
 
-      await expect(plugin.set('content')).rejects.toThrow('destroyed');
+      await expect(plugin.set('key', 'content')).rejects.toThrow('destroyed');
       await expect(plugin.get()).rejects.toThrow('destroyed');
+      await expect(plugin.remove('key')).rejects.toThrow('destroyed');
+      await expect(plugin.list()).rejects.toThrow('destroyed');
       await expect(plugin.clear()).rejects.toThrow('destroyed');
     });
   });
@@ -328,56 +522,91 @@ describe('PersistentInstructionsPluginNextGen', () => {
       const setTool = tools.find(t => t.definition.function.name === 'instructions_set')!;
 
       const result = await setTool.execute({
-        content: 'Tool-set content',
+        key: 'style',
+        content: 'Be formal',
       });
 
       expect(result.success).toBe(true);
-      expect(result.length).toBe('Tool-set content'.length);
+      expect(result.key).toBe('style');
 
-      const content = await plugin.get();
-      expect(content).toBe('Tool-set content');
+      const entry = await plugin.get('style') as InstructionEntry;
+      expect(entry.content).toBe('Be formal');
     });
 
     it('should reject empty content in instructions_set', async () => {
       const tools = plugin.getTools();
       const setTool = tools.find(t => t.definition.function.name === 'instructions_set')!;
 
-      const result = await setTool.execute({ content: '' });
+      const result = await setTool.execute({ key: 'style', content: '' });
       expect(result.error).toContain('empty');
     });
 
-    it('should execute instructions_append tool', async () => {
-      await plugin.set('Base content');
-
+    it('should reject invalid key in instructions_set', async () => {
       const tools = plugin.getTools();
-      const appendTool = tools.find(t => t.definition.function.name === 'instructions_append')!;
+      const setTool = tools.find(t => t.definition.function.name === 'instructions_set')!;
 
-      const result = await appendTool.execute({
-        section: 'Appended section',
-      });
-
-      expect(result.success).toBe(true);
-
-      const content = await plugin.get();
-      expect(content).toContain('Base content');
-      expect(content).toContain('Appended section');
+      const result = await setTool.execute({ key: 'key with spaces', content: 'value' });
+      expect(result.error).toBeDefined();
     });
 
-    it('should execute instructions_get tool', async () => {
-      await plugin.set('Get this content');
+    it('should report update vs add in instructions_set', async () => {
+      const tools = plugin.getTools();
+      const setTool = tools.find(t => t.definition.function.name === 'instructions_set')!;
+
+      const addResult = await setTool.execute({ key: 'style', content: 'Be formal' });
+      expect(addResult.message).toContain('added');
+
+      const updateResult = await setTool.execute({ key: 'style', content: 'Be casual' });
+      expect(updateResult.message).toContain('updated');
+    });
+
+    it('should execute instructions_remove tool', async () => {
+      await plugin.set('style', 'Be formal');
 
       const tools = plugin.getTools();
-      const getTool = tools.find(t => t.definition.function.name === 'instructions_get')!;
+      const removeTool = tools.find(t => t.definition.function.name === 'instructions_remove')!;
 
-      const result = await getTool.execute({});
+      const result = await removeTool.execute({ key: 'style' });
+      expect(result.success).toBe(true);
 
-      expect(result.hasContent).toBe(true);
-      expect(result.content).toBe('Get this content');
-      expect(result.length).toBe('Get this content'.length);
+      const entry = await plugin.get('style');
+      expect(entry).toBeNull();
+    });
+
+    it('should return error for non-existent key in instructions_remove', async () => {
+      const tools = plugin.getTools();
+      const removeTool = tools.find(t => t.definition.function.name === 'instructions_remove')!;
+
+      const result = await removeTool.execute({ key: 'nonexistent' });
+      expect(result.error).toContain('not found');
+    });
+
+    it('should execute instructions_list tool', async () => {
+      await plugin.set('style', 'Be formal');
+      await plugin.set('code', 'Use TypeScript');
+
+      const tools = plugin.getTools();
+      const listTool = tools.find(t => t.definition.function.name === 'instructions_list')!;
+
+      const result = await listTool.execute({});
+
+      expect(result.count).toBe(2);
+      expect(result.entries).toHaveLength(2);
+      expect(result.entries[0].key).toBeDefined();
+      expect(result.entries[0].content).toBeDefined();
+    });
+
+    it('should handle empty list in instructions_list', async () => {
+      const tools = plugin.getTools();
+      const listTool = tools.find(t => t.definition.function.name === 'instructions_list')!;
+
+      const result = await listTool.execute({});
+      expect(result.count).toBe(0);
+      expect(result.entries).toEqual([]);
     });
 
     it('should execute instructions_clear tool with confirmation', async () => {
-      await plugin.set('Content to clear');
+      await plugin.set('style', 'Be formal');
 
       const tools = plugin.getTools();
       const clearTool = tools.find(t => t.definition.function.name === 'instructions_clear')!;
@@ -390,26 +619,40 @@ describe('PersistentInstructionsPluginNextGen', () => {
       const successResult = await clearTool.execute({ confirm: true });
       expect(successResult.success).toBe(true);
 
-      const content = await plugin.get();
-      expect(content).toBeNull();
+      const entries = await plugin.get();
+      expect(entries).toBeNull();
     });
   });
 
   describe('Custom Configuration', () => {
-    it('should use custom max length', async () => {
+    it('should use custom maxTotalLength', async () => {
       const customPlugin = new PersistentInstructionsPluginNextGen({
         agentId: 'test-agent',
         storage: mockStorage,
-        maxLength: 100,
+        maxTotalLength: 100,
       });
 
       const longContent = 'x'.repeat(150);
-      const success = await customPlugin.set(longContent);
+      const success = await customPlugin.set('key', longContent);
       expect(success).toBe(false);
 
       const shortContent = 'x'.repeat(50);
-      const successShort = await customPlugin.set(shortContent);
+      const successShort = await customPlugin.set('key', shortContent);
       expect(successShort).toBe(true);
+
+      customPlugin.destroy();
+    });
+
+    it('should use custom maxEntries', async () => {
+      const customPlugin = new PersistentInstructionsPluginNextGen({
+        agentId: 'test-agent',
+        storage: mockStorage,
+        maxEntries: 2,
+      });
+
+      expect(await customPlugin.set('a', 'content')).toBe(true);
+      expect(await customPlugin.set('b', 'content')).toBe(true);
+      expect(await customPlugin.set('c', 'content')).toBe(false);
 
       customPlugin.destroy();
     });

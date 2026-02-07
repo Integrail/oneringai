@@ -1,7 +1,7 @@
 /**
- * PersistentInstructionsPluginNextGen - Disk-persisted instructions for NextGen context
+ * PersistentInstructionsPluginNextGen - Disk-persisted KVP instructions for NextGen context
  *
- * Stores custom instructions that persist across sessions on disk.
+ * Stores custom instructions as individually keyed entries that persist across sessions on disk.
  * These are NEVER compacted - always included in context.
  *
  * Use cases:
@@ -10,12 +10,12 @@
  * - Accumulated knowledge/rules
  * - Custom tool usage guidelines
  *
- * Storage: ~/.oneringai/agents/<agentId>/custom_instructions.md
+ * Storage: ~/.oneringai/agents/<agentId>/custom_instructions.json
  */
 
 import type { IContextPluginNextGen, ITokenEstimator } from '../types.js';
 import type { ToolFunction } from '../../../domain/entities/Tool.js';
-import type { IPersistentInstructionsStorage } from '../../../domain/interfaces/IPersistentInstructionsStorage.js';
+import type { IPersistentInstructionsStorage, InstructionEntry } from '../../../domain/interfaces/IPersistentInstructionsStorage.js';
 import { FilePersistentInstructionsStorage } from '../../../infrastructure/storage/FilePersistentInstructionsStorage.js';
 import { simpleTokenEstimator } from '../BasePluginNextGen.js';
 
@@ -23,36 +23,46 @@ import { simpleTokenEstimator } from '../BasePluginNextGen.js';
 // Types
 // ============================================================================
 
+export type { InstructionEntry } from '../../../domain/interfaces/IPersistentInstructionsStorage.js';
+
 export interface PersistentInstructionsConfig {
   /** Agent ID - used to determine storage path (REQUIRED) */
   agentId: string;
   /** Custom storage implementation (default: FilePersistentInstructionsStorage) */
   storage?: IPersistentInstructionsStorage;
-  /** Maximum instructions length in characters (default: 50000) */
-  maxLength?: number;
+  /** Maximum total content length across all entries in characters (default: 50000) */
+  maxTotalLength?: number;
+  /** Maximum number of entries (default: 50) */
+  maxEntries?: number;
 }
 
 export interface SerializedPersistentInstructionsState {
-  content: string | null;
+  entries: InstructionEntry[];
   agentId: string;
+  version: 2;
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const DEFAULT_MAX_LENGTH = 50000;
+const DEFAULT_MAX_TOTAL_LENGTH = 50000;
+const DEFAULT_MAX_ENTRIES = 50;
+const KEY_MAX_LENGTH = 100;
+const KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 // ============================================================================
 // Instructions
 // ============================================================================
 
 const PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = `Persistent Instructions are stored on disk and survive across sessions.
+Each instruction is a keyed entry that can be independently managed.
 
 **To modify:**
-- \`instructions_set(content)\`: Replace all instructions
-- \`instructions_append(section)\`: Add a section
-- \`instructions_clear(confirm: true)\`: Remove all (destructive!)
+- \`instructions_set(key, content)\`: Add or update a single instruction by key
+- \`instructions_remove(key)\`: Remove a single instruction by key
+- \`instructions_list()\`: List all instructions with keys and content
+- \`instructions_clear(confirm: true)\`: Remove all instructions (destructive!)
 
 **Use for:** Agent personality, user preferences, learned rules, guidelines.`;
 
@@ -64,44 +74,48 @@ const instructionsSetDefinition = {
   type: 'function' as const,
   function: {
     name: 'instructions_set',
-    description: `Set or replace all custom instructions. Persists across sessions.
-IMPORTANT: This replaces ALL existing instructions.`,
+    description: `Add or update a single persistent instruction by key. Persists across sessions.
+If the key exists, it will be updated. If not, a new entry is created.`,
     parameters: {
       type: 'object',
       properties: {
+        key: {
+          type: 'string',
+          description: 'Unique key for the instruction (alphanumeric, dash, underscore; max 100 chars)',
+        },
         content: {
           type: 'string',
-          description: 'Full instructions content (markdown supported)',
+          description: 'Instruction content (markdown supported)',
         },
       },
-      required: ['content'],
+      required: ['key', 'content'],
     },
   },
 };
 
-const instructionsAppendDefinition = {
+const instructionsRemoveDefinition = {
   type: 'function' as const,
   function: {
-    name: 'instructions_append',
-    description: 'Append a section to existing instructions.',
+    name: 'instructions_remove',
+    description: 'Remove a single persistent instruction by key.',
     parameters: {
       type: 'object',
       properties: {
-        section: {
+        key: {
           type: 'string',
-          description: 'Section to append (will add newlines before)',
+          description: 'Key of the instruction to remove',
         },
       },
-      required: ['section'],
+      required: ['key'],
     },
   },
 };
 
-const instructionsGetDefinition = {
+const instructionsListDefinition = {
   type: 'function' as const,
   function: {
-    name: 'instructions_get',
-    description: 'Get current custom instructions.',
+    name: 'instructions_list',
+    description: 'List all persistent instructions with their keys and content.',
     parameters: {
       type: 'object',
       properties: {},
@@ -114,7 +128,7 @@ const instructionsClearDefinition = {
   type: 'function' as const,
   function: {
     name: 'instructions_clear',
-    description: 'Clear all custom instructions (DESTRUCTIVE). Requires confirmation.',
+    description: 'Clear all persistent instructions (DESTRUCTIVE). Requires confirmation.',
     parameters: {
       type: 'object',
       properties: {
@@ -129,18 +143,32 @@ const instructionsClearDefinition = {
 };
 
 // ============================================================================
+// Key Validation
+// ============================================================================
+
+function validateKey(key: unknown): string | null {
+  if (typeof key !== 'string') return 'Key must be a string';
+  const trimmed = key.trim();
+  if (trimmed.length === 0) return 'Key cannot be empty';
+  if (trimmed.length > KEY_MAX_LENGTH) return `Key exceeds maximum length (${KEY_MAX_LENGTH} chars)`;
+  if (!KEY_PATTERN.test(trimmed)) return 'Key must contain only alphanumeric characters, dashes, and underscores';
+  return null;
+}
+
+// ============================================================================
 // Plugin Implementation
 // ============================================================================
 
 export class PersistentInstructionsPluginNextGen implements IContextPluginNextGen {
   readonly name = 'persistent_instructions';
 
-  private _content: string | null = null;
+  private _entries: Map<string, InstructionEntry> = new Map();
   private _initialized = false;
   private _destroyed = false;
 
   private readonly storage: IPersistentInstructionsStorage;
-  private readonly maxLength: number;
+  private readonly maxTotalLength: number;
+  private readonly maxEntries: number;
   private readonly agentId: string;
   private readonly estimator: ITokenEstimator = simpleTokenEstimator;
 
@@ -153,7 +181,8 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
     }
 
     this.agentId = config.agentId;
-    this.maxLength = config.maxLength ?? DEFAULT_MAX_LENGTH;
+    this.maxTotalLength = config.maxTotalLength ?? DEFAULT_MAX_TOTAL_LENGTH;
+    this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.storage = config.storage ?? new FilePersistentInstructionsStorage({
       agentId: config.agentId,
     });
@@ -170,16 +199,18 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
   async getContent(): Promise<string | null> {
     await this.ensureInitialized();
 
-    if (!this._content) {
+    if (this._entries.size === 0) {
+      this._tokenCache = 0;
       return null;
     }
 
-    this._tokenCache = this.estimator.estimateTokens(this._content);
-    return this._content;
+    const rendered = this.renderContent();
+    this._tokenCache = this.estimator.estimateTokens(rendered);
+    return rendered;
   }
 
-  getContents(): string | null {
-    return this._content;
+  getContents(): Map<string, InstructionEntry> {
+    return new Map(this._entries);
   }
 
   getTokenSize(): number {
@@ -206,37 +237,63 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
   getTools(): ToolFunction[] {
     return [
       this.createInstructionsSetTool(),
-      this.createInstructionsAppendTool(),
-      this.createInstructionsGetTool(),
+      this.createInstructionsRemoveTool(),
+      this.createInstructionsListTool(),
       this.createInstructionsClearTool(),
     ];
   }
 
   destroy(): void {
     if (this._destroyed) return;
-    this._content = null;
+    this._entries.clear();
     this._destroyed = true;
     this._tokenCache = null;
   }
 
   getState(): SerializedPersistentInstructionsState {
     return {
-      content: this._content,
+      entries: Array.from(this._entries.values()),
       agentId: this.agentId,
+      version: 2,
     };
   }
 
   restoreState(state: unknown): void {
-    const s = state as SerializedPersistentInstructionsState;
-    if (!s) return;
+    if (!state || typeof state !== 'object') return;
 
-    this._content = s.content;
-    this._initialized = true;
-    this._tokenCache = null;
+    const s = state as Record<string, unknown>;
+
+    // New format: { entries: InstructionEntry[], version: 2 }
+    if ('version' in s && s.version === 2 && Array.isArray(s.entries)) {
+      this._entries.clear();
+      for (const entry of s.entries as InstructionEntry[]) {
+        this._entries.set(entry.id, entry);
+      }
+      this._initialized = true;
+      this._tokenCache = null;
+      return;
+    }
+
+    // Legacy format: { content: string | null }
+    if ('content' in s) {
+      this._entries.clear();
+      const content = s.content as string | null;
+      if (content) {
+        const now = Date.now();
+        this._entries.set('legacy_instructions', {
+          id: 'legacy_instructions',
+          content,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      this._initialized = true;
+      this._tokenCache = null;
+    }
   }
 
   // ============================================================================
-  // Content Management
+  // Public API
   // ============================================================================
 
   /**
@@ -246,32 +303,77 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
     if (this._initialized || this._destroyed) return;
 
     try {
-      this._content = await this.storage.load();
+      const entries = await this.storage.load();
+      this._entries.clear();
+      if (entries) {
+        for (const entry of entries) {
+          this._entries.set(entry.id, entry);
+        }
+      }
       this._initialized = true;
     } catch (error) {
       console.warn(`Failed to load persistent instructions for agent '${this.agentId}':`, error);
-      this._content = null;
+      this._entries.clear();
       this._initialized = true;
     }
     this._tokenCache = null;
   }
 
   /**
-   * Set entire instructions content (replaces existing)
+   * Add or update an instruction entry by key
    */
-  async set(content: string): Promise<boolean> {
+  async set(key: string, content: string): Promise<boolean> {
     this.assertNotDestroyed();
+    await this.ensureInitialized();
 
-    if (content.length > this.maxLength) {
+    const keyError = validateKey(key);
+    if (keyError) return false;
+
+    const trimmedContent = content.trim();
+    if (trimmedContent.length === 0) return false;
+
+    // Check maxEntries (new entry only)
+    if (!this._entries.has(key) && this._entries.size >= this.maxEntries) {
       return false;
     }
 
-    this._content = content.trim() || null;
+    // Check maxTotalLength
+    const currentTotal = this.calculateTotalContentLength();
+    const existingLength = this._entries.get(key)?.content.length ?? 0;
+    const newTotal = currentTotal - existingLength + trimmedContent.length;
+    if (newTotal > this.maxTotalLength) {
+      return false;
+    }
 
-    if (this._content) {
-      await this.storage.save(this._content);
-    } else {
+    const now = Date.now();
+    const existing = this._entries.get(key);
+    this._entries.set(key, {
+      id: key,
+      content: trimmedContent,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    });
+
+    await this.persistToStorage();
+    this._tokenCache = null;
+    return true;
+  }
+
+  /**
+   * Remove an instruction entry by key
+   */
+  async remove(key: string): Promise<boolean> {
+    this.assertNotDestroyed();
+    await this.ensureInitialized();
+
+    if (!this._entries.has(key)) return false;
+
+    this._entries.delete(key);
+
+    if (this._entries.size === 0) {
       await this.storage.delete();
+    } else {
+      await this.persistToStorage();
     }
 
     this._tokenCache = null;
@@ -279,45 +381,41 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
   }
 
   /**
-   * Append a section to existing instructions
+   * Get one entry by key, or all entries if no key provided
    */
-  async append(section: string): Promise<boolean> {
+  async get(key?: string): Promise<InstructionEntry | InstructionEntry[] | null> {
     this.assertNotDestroyed();
     await this.ensureInitialized();
 
-    const trimmedSection = section.trim();
-    if (!trimmedSection) return true;
-
-    const currentContent = this._content || '';
-    const newContent = currentContent
-      ? `${currentContent}\n\n${trimmedSection}`
-      : trimmedSection;
-
-    if (newContent.length > this.maxLength) {
-      return false;
+    if (key !== undefined) {
+      return this._entries.get(key) ?? null;
     }
 
-    this._content = newContent;
-    await this.storage.save(this._content);
-    this._tokenCache = null;
-    return true;
+    if (this._entries.size === 0) return null;
+    return this.getSortedEntries();
   }
 
   /**
-   * Get current content
+   * List metadata for all entries
    */
-  async get(): Promise<string | null> {
+  async list(): Promise<{ key: string; contentLength: number; createdAt: number; updatedAt: number }[]> {
     this.assertNotDestroyed();
     await this.ensureInitialized();
-    return this._content;
+
+    return this.getSortedEntries().map(entry => ({
+      key: entry.id,
+      contentLength: entry.content.length,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt,
+    }));
   }
 
   /**
-   * Clear all instructions
+   * Clear all instruction entries
    */
   async clear(): Promise<void> {
     this.assertNotDestroyed();
-    this._content = null;
+    this._entries.clear();
     await this.storage.delete();
     this._tokenCache = null;
   }
@@ -345,6 +443,40 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
     }
   }
 
+  /**
+   * Persist current entries to storage
+   */
+  private async persistToStorage(): Promise<void> {
+    await this.storage.save(Array.from(this._entries.values()));
+  }
+
+  /**
+   * Calculate total content length across all entries
+   */
+  private calculateTotalContentLength(): number {
+    let total = 0;
+    for (const entry of this._entries.values()) {
+      total += entry.content.length;
+    }
+    return total;
+  }
+
+  /**
+   * Get entries sorted by createdAt (oldest first)
+   */
+  private getSortedEntries(): InstructionEntry[] {
+    return Array.from(this._entries.values()).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /**
+   * Render all entries as markdown for context injection
+   */
+  private renderContent(): string {
+    return this.getSortedEntries()
+      .map(entry => `### ${entry.id}\n${entry.content}`)
+      .join('\n\n');
+  }
+
   // ============================================================================
   // Tool Factories
   // ============================================================================
@@ -353,68 +485,96 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
     return {
       definition: instructionsSetDefinition,
       execute: async (args: Record<string, unknown>) => {
+        const key = args.key as string;
         const content = args.content as string;
 
+        const keyError = validateKey(key);
+        if (keyError) {
+          return { error: keyError };
+        }
+
         if (!content || content.trim().length === 0) {
-          return { error: 'Content cannot be empty. Use instructions_clear to remove.' };
+          return { error: 'Content cannot be empty. Use instructions_remove to delete an entry.' };
         }
 
-        const success = await this.set(content);
+        const isUpdate = this._entries.has(key.trim());
+        const success = await this.set(key.trim(), content);
         if (!success) {
-          return { error: `Content exceeds maximum length (${this.maxLength} chars)` };
+          if (!isUpdate && this._entries.size >= this.maxEntries) {
+            return { error: `Maximum number of entries reached (${this.maxEntries})` };
+          }
+          return { error: `Content would exceed maximum total length (${this.maxTotalLength} chars)` };
         }
 
         return {
           success: true,
-          message: 'Custom instructions updated',
-          length: content.length,
+          message: isUpdate ? `Instruction '${key.trim()}' updated` : `Instruction '${key.trim()}' added`,
+          key: key.trim(),
+          contentLength: content.trim().length,
         };
       },
       permission: { scope: 'always', riskLevel: 'low' },
-      describeCall: () => 'set instructions',
+      describeCall: (args) => `set instruction '${args.key}'`,
     };
   }
 
-  private createInstructionsAppendTool(): ToolFunction {
+  private createInstructionsRemoveTool(): ToolFunction {
     return {
-      definition: instructionsAppendDefinition,
+      definition: instructionsRemoveDefinition,
       execute: async (args: Record<string, unknown>) => {
-        const section = args.section as string;
+        const key = args.key as string;
 
-        if (!section || section.trim().length === 0) {
-          return { error: 'Section cannot be empty' };
+        if (!key || typeof key !== 'string' || key.trim().length === 0) {
+          return { error: 'Key is required' };
         }
 
-        const success = await this.append(section);
+        const success = await this.remove(key.trim());
         if (!success) {
-          return { error: `Would exceed maximum length (${this.maxLength} chars)` };
+          return { error: `Instruction '${key.trim()}' not found` };
         }
 
         return {
           success: true,
-          message: 'Section appended to instructions',
-          newLength: this._content?.length ?? 0,
+          message: `Instruction '${key.trim()}' removed`,
+          key: key.trim(),
         };
       },
       permission: { scope: 'always', riskLevel: 'low' },
-      describeCall: () => 'append to instructions',
+      describeCall: (args) => `remove instruction '${args.key}'`,
     };
   }
 
-  private createInstructionsGetTool(): ToolFunction {
+  private createInstructionsListTool(): ToolFunction {
     return {
-      definition: instructionsGetDefinition,
+      definition: instructionsListDefinition,
       execute: async () => {
-        const content = await this.get();
+        const entries = await this.list();
+        const all = await this.get();
+
+        if (entries.length === 0) {
+          return {
+            count: 0,
+            entries: [],
+            message: '(no custom instructions set)',
+          };
+        }
+
+        // Include full content in the listing for transparency
+        const allEntries = all as InstructionEntry[];
         return {
-          hasContent: content !== null,
-          content: content ?? '(no custom instructions set)',
-          length: content?.length ?? 0,
+          count: entries.length,
+          entries: allEntries.map(e => ({
+            key: e.id,
+            content: e.content,
+            contentLength: e.content.length,
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt,
+          })),
           agentId: this.agentId,
         };
       },
       permission: { scope: 'always', riskLevel: 'low' },
-      describeCall: () => 'get instructions',
+      describeCall: () => 'list instructions',
     };
   }
 
@@ -429,7 +589,7 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
         await this.clear();
         return {
           success: true,
-          message: 'Custom instructions cleared',
+          message: 'All custom instructions cleared',
         };
       },
       permission: { scope: 'once', riskLevel: 'medium' },

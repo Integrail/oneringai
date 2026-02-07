@@ -346,36 +346,36 @@ describe('AgentContextNextGen Plugins Integration (Mock)', () => {
       expect(plugin?.name).toBe('persistent_instructions');
     });
 
-    it('should set and get instructions', async () => {
+    it('should set and get instructions by key', async () => {
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
 
-      await plugin.set('Always be helpful and concise.');
-      const instructions = await plugin.get();
+      await plugin.set('style', 'Always be helpful and concise.');
+      const entry = await plugin.get('style');
 
-      expect(instructions).toBe('Always be helpful and concise.');
+      expect(entry).not.toBeNull();
+      expect((entry as any).content).toBe('Always be helpful and concise.');
     });
 
-    it('should append to instructions', async () => {
+    it('should manage multiple instruction entries', async () => {
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
 
-      await plugin.set('Rule 1: Be helpful.');
-      await plugin.append('Rule 2: Be concise.');
+      await plugin.set('rule1', 'Be helpful.');
+      await plugin.set('rule2', 'Be concise.');
 
-      const instructions = await plugin.get();
+      const entries = await plugin.get();
 
-      expect(instructions).toContain('Rule 1');
-      expect(instructions).toContain('Rule 2');
+      expect(Array.isArray(entries)).toBe(true);
+      expect((entries as any[]).length).toBe(2);
     });
 
     it('should clear instructions', async () => {
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
 
-      await plugin.set('Some instructions');
+      await plugin.set('style', 'Some instructions');
       await plugin.clear();
 
       const instructions = await plugin.get();
 
-      // clear() sets content to null (not empty string)
       expect(instructions).toBeNull();
     });
 
@@ -383,49 +383,49 @@ describe('AgentContextNextGen Plugins Integration (Mock)', () => {
       const toolNames = ctx!.tools.getEnabled().map(t => t.definition.function.name);
 
       expect(toolNames).toContain('instructions_set');
-      expect(toolNames).toContain('instructions_append');
-      expect(toolNames).toContain('instructions_get');
+      expect(toolNames).toContain('instructions_remove');
+      expect(toolNames).toContain('instructions_list');
       expect(toolNames).toContain('instructions_clear');
     });
 
     it('should execute instructions_set tool', async () => {
       await ctx!.tools.execute('instructions_set', {
-        content: 'New instructions from tool',  // API uses 'content' not 'instructions'
+        key: 'style',
+        content: 'New instructions from tool',
       });
 
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
-      const instructions = await plugin.get();
+      const entry = await plugin.get('style');
 
-      expect(instructions).toBe('New instructions from tool');
+      expect((entry as any).content).toBe('New instructions from tool');
     });
 
-    it('should execute instructions_append tool', async () => {
+    it('should execute instructions_remove tool', async () => {
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
-      await plugin.set('Initial instructions.');
+      await plugin.set('style', 'Initial instructions.');
 
-      await ctx!.tools.execute('instructions_append', {
-        section: 'Additional instructions.',  // API uses 'section' not 'content'
+      await ctx!.tools.execute('instructions_remove', {
+        key: 'style',
       });
 
-      const instructions = await plugin.get();
-      expect(instructions).toContain('Initial instructions.');
-      expect(instructions).toContain('Additional instructions.');
+      const entry = await plugin.get('style');
+      expect(entry).toBeNull();
     });
 
-    it('should execute instructions_get tool', async () => {
+    it('should execute instructions_list tool', async () => {
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
-      await plugin.set('Test instructions');
+      await plugin.set('style', 'Test instructions');
 
-      const result = await ctx!.tools.execute('instructions_get', {});
+      const result = await ctx!.tools.execute('instructions_list', {});
 
-      // API returns 'content' not 'instructions'
-      expect(result).toHaveProperty('content', 'Test instructions');
-      expect(result).toHaveProperty('hasContent', true);
+      expect(result).toHaveProperty('count', 1);
+      expect(result).toHaveProperty('entries');
+      expect((result as any).entries[0].key).toBe('style');
     });
 
     it('should include instructions in prepared context', async () => {
       const plugin = ctx!.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions')!;
-      await plugin.set('Always respond in French.');
+      await plugin.set('language', 'Always respond in French.');
 
       ctx!.addUserMessage('Hello');
       const { input } = await ctx!.prepare();
@@ -505,7 +505,7 @@ describe('AgentContextNextGen Plugins Integration (Mock)', () => {
       await ctx.memory!.store('key2', 'Desc 2', { nested: 'data' });
 
       // Get state
-      const state = await ctx.memory!.getStateAsync();
+      const state = ctx.memory!.getState();
 
       // Create new context and restore
       const ctx2 = createContextWithFeatures(FEATURE_PRESETS.memoryOnly);
