@@ -232,10 +232,28 @@ export interface HoseaAPI {
     list: () => Promise<Array<{
       name: string;
       vendor: string;
+      source?: 'local' | 'everworker';
+      models?: string[];
       createdAt: number;
     }>>;
     add: (config: unknown) => Promise<{ success: boolean; error?: string }>;
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
+  // Everworker Backend
+  everworker: {
+    getConfig: () => Promise<{
+      url: string;
+      token: string;
+      enabled: boolean;
+    } | null>;
+    setConfig: (config: {
+      url: string;
+      token: string;
+      enabled: boolean;
+    }) => Promise<{ success: boolean; error?: string }>;
+    testConnection: () => Promise<{ success: boolean; connectorCount?: number; error?: string }>;
+    syncConnectors: () => Promise<{ success: boolean; added: number; updated: number; removed: number; error?: string }>;
   };
 
   // Models
@@ -598,31 +616,6 @@ export interface HoseaAPI {
     forceCompactForInstance: (instanceId: string | null) => Promise<{ success: boolean; tokensFreed: number; error?: string }>;
   };
 
-  // API Connectors (for tools like web_search, web_scrape)
-  apiConnector: {
-    list: () => Promise<Array<{
-      name: string;
-      serviceType: string;
-      displayName?: string;
-      auth: { type: 'api_key'; apiKey: string; headerName?: string; headerPrefix?: string };
-      baseURL?: string;
-      createdAt: number;
-      updatedAt: number;
-    }>>;
-    listByService: (serviceType: string) => Promise<Array<{
-      name: string;
-      serviceType: string;
-      displayName?: string;
-      auth: { type: 'api_key'; apiKey: string; headerName?: string; headerPrefix?: string };
-      baseURL?: string;
-      createdAt: number;
-      updatedAt: number;
-    }>>;
-    add: (config: unknown) => Promise<{ success: boolean; error?: string }>;
-    update: (name: string, updates: unknown) => Promise<{ success: boolean; error?: string }>;
-    delete: (name: string) => Promise<{ success: boolean; error?: string }>;
-  };
-
   // Universal Connectors (vendor templates)
   universalConnector: {
     // Vendor template access (read-only from library)
@@ -712,6 +705,7 @@ export interface HoseaAPI {
       lastTestedAt?: number;
       status: 'active' | 'error' | 'untested';
       legacyServiceType?: string;
+      source?: 'local' | 'everworker';
     }>>;
     get: (name: string) => Promise<{
       name: string;
@@ -727,6 +721,7 @@ export interface HoseaAPI {
       lastTestedAt?: number;
       status: 'active' | 'error' | 'untested';
       legacyServiceType?: string;
+      source?: 'local' | 'everworker';
     } | null>;
     create: (config: {
       name: string;
@@ -1180,6 +1175,13 @@ const api: HoseaAPI = {
     delete: (name) => ipcRenderer.invoke('connector:delete', name),
   },
 
+  everworker: {
+    getConfig: () => ipcRenderer.invoke('everworker:get-config'),
+    setConfig: (config) => ipcRenderer.invoke('everworker:set-config', config),
+    testConnection: () => ipcRenderer.invoke('everworker:test-connection'),
+    syncConnectors: () => ipcRenderer.invoke('everworker:sync-connectors'),
+  },
+
   model: {
     list: () => ipcRenderer.invoke('model:list'),
     details: (modelId) => ipcRenderer.invoke('model:details', modelId),
@@ -1218,14 +1220,6 @@ const api: HoseaAPI = {
     setActive: (id) => ipcRenderer.invoke('agent-config:set-active', id),
     getActive: () => ipcRenderer.invoke('agent-config:get-active'),
     createDefault: (connectorName, model) => ipcRenderer.invoke('agent-config:create-default', connectorName, model),
-  },
-
-  apiConnector: {
-    list: () => ipcRenderer.invoke('api-connector:list'),
-    listByService: (serviceType) => ipcRenderer.invoke('api-connector:list-by-service', serviceType),
-    add: (config) => ipcRenderer.invoke('api-connector:add', config),
-    update: (name, updates) => ipcRenderer.invoke('api-connector:update', name, updates),
-    delete: (name) => ipcRenderer.invoke('api-connector:delete', name),
   },
 
   universalConnector: {

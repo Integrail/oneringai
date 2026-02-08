@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import {
   Connector,
   Vendor,
+  isVendor,
   Agent,
   // NextGen context (replaces old AgentContext)
   AgentContextNextGen,
@@ -89,8 +90,32 @@ interface StoredConnectorConfig {
   };
   baseURL?: string;
   models?: string[];
+  /** Where this connector comes from: 'local' (user-configured) or 'everworker' (synced from EW backend) */
+  source?: 'local' | 'everworker';
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * Everworker Backend configuration for proxy mode.
+ * Stored at ~/.everworker/hosea/everworker-backend.json
+ */
+export interface EverworkerBackendConfig {
+  /** EW backend URL (e.g., 'https://ew.company.com') */
+  url: string;
+  /** JWT token with llm:proxy scope */
+  token: string;
+  /** Whether EW integration is enabled */
+  enabled: boolean;
+}
+
+/** Connector info returned by EW discovery endpoint */
+interface EWRemoteConnector {
+  name: string;
+  vendor: string;
+  type?: 'llm' | 'universal';
+  serviceType?: string;
+  models?: string[];
 }
 
 /**
@@ -164,24 +189,6 @@ export interface StoredAgentConfig {
 }
 
 /**
- * API Service Connector (for tools like web_search, web_scrape)
- */
-export interface StoredAPIConnectorConfig {
-  name: string;
-  serviceType: string; // e.g., 'serper', 'brave-search', 'zenrows'
-  displayName?: string;
-  auth: {
-    type: 'api_key';
-    apiKey: string;
-    headerName?: string;
-    headerPrefix?: string;
-  };
-  baseURL?: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-/**
  * Universal Connector - connector created from vendor template
  */
 export interface StoredUniversalConnector {
@@ -209,6 +216,8 @@ export interface StoredUniversalConnector {
   status: 'active' | 'error' | 'untested';
   /** For migrated connectors - original serviceType for tool compatibility */
   legacyServiceType?: string;
+  /** Where this connector comes from: 'local' (user-configured) or 'everworker' (synced from EW backend) */
+  source?: 'local' | 'everworker';
 }
 
 /**
@@ -508,7 +517,6 @@ export class AgentService {
   private agent: Agent | null = null;
   private config: HoseaConfig = DEFAULT_CONFIG;
   private connectors: Map<string, StoredConnectorConfig> = new Map();
-  private apiConnectors: Map<string, StoredAPIConnectorConfig> = new Map();
   private universalConnectors: Map<string, StoredUniversalConnector> = new Map();
   private agents: Map<string, StoredAgentConfig> = new Map();
   private sessionStorage: IContextStorage | null = null;
@@ -530,6 +538,8 @@ export class AgentService {
   // Compaction event log (last N events for each instance/agent)
   private compactionLogs: Map<string, Array<{ timestamp: number; tokensToFree: number; message: string }>> = new Map();
   private readonly MAX_COMPACTION_LOG_ENTRIES = 20;
+  // Everworker backend configuration (for proxy mode)
+  private ewConfig: EverworkerBackendConfig | null = null;
 
   // ============ Conversion Helpers ============
 
@@ -672,7 +682,6 @@ export class AgentService {
     await this.ensureDirectories();
     await this.loadConfig();
     await this.loadConnectors();
-    await this.loadAPIConnectors();
     await this.loadUniversalConnectors();
     await this.migrateAPIConnectorsToUniversal();
 
@@ -699,6 +708,8 @@ export class AgentService {
       logger.debug(`  tool=${t.name}, category=${t.category}, connectorServiceTypes=${JSON.stringify(t.connectorServiceTypes)}`);
     }
 
+    await this.loadEWConfig();
+    await this.syncEWConnectors(); // Sync remote connectors if EW is configured
     await this.loadAgents();
     await this.migrateAgentsToNextGen(); // Migrate existing agents to NextGen format
     await this.loadMCPServers();
@@ -783,31 +794,249 @@ export class AgentService {
     }
   }
 
-  private async loadAPIConnectors(): Promise<void> {
-    const apiConnectorsDir = join(this.dataDir, 'api-connectors');
-    if (!existsSync(apiConnectorsDir)) return;
+  // ============ Everworker Backend Integration ============
+
+  private async loadEWConfig(): Promise<void> {
+    const configPath = join(this.dataDir, 'everworker-backend.json');
+    if (!existsSync(configPath)) return;
+    try {
+      const content = await readFile(configPath, 'utf-8');
+      this.ewConfig = JSON.parse(content) as EverworkerBackendConfig;
+      logger.info(`[loadEWConfig] Everworker backend config loaded (enabled: ${this.ewConfig.enabled}, url: ${this.ewConfig.url})`);
+    } catch (err) {
+      logger.error(`[loadEWConfig] Failed to load EW config: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async saveEWConfig(): Promise<void> {
+    const configPath = join(this.dataDir, 'everworker-backend.json');
+    await writeFile(configPath, JSON.stringify(this.ewConfig, null, 2));
+  }
+
+  getEWConfig(): EverworkerBackendConfig | null {
+    return this.ewConfig;
+  }
+
+  async setEWConfig(config: EverworkerBackendConfig): Promise<{ success: boolean; error?: string }> {
+    try {
+      this.ewConfig = config;
+      await this.saveEWConfig();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  async testEWConnection(): Promise<{ success: boolean; connectorCount?: number; error?: string }> {
+    if (!this.ewConfig || !this.ewConfig.enabled) {
+      return { success: false, error: 'Everworker backend not configured or disabled' };
+    }
+    try {
+      const url = `${this.ewConfig.url}/api/v1/proxy/connectors`;
+      logger.info(`[testEWConnection] Testing connection to ${url}`);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.ewConfig.token}`,
+        },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        logger.error(`[testEWConnection] HTTP ${response.status}: ${text}`);
+        return { success: false, error: `HTTP ${response.status}: ${text}` };
+      }
+      const data = await response.json() as { connectors: EWRemoteConnector[] };
+      const count = data.connectors?.length ?? 0;
+      const names = data.connectors?.map(c => c.name) ?? [];
+      logger.info(`[testEWConnection] Success: ${count} connectors available: ${names.join(', ')}`);
+      return { success: true, connectorCount: count };
+    } catch (error) {
+      logger.error(`[testEWConnection] Error: ${error instanceof Error ? error.message : String(error)}`);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Sync remote connectors from EW backend.
+   * Routes LLM connectors to this.connectors and non-LLM connectors to this.universalConnectors.
+   * Removes stale EW connectors that no longer exist on the server.
+   */
+  async syncEWConnectors(): Promise<{ success: boolean; added: number; updated: number; removed: number; error?: string }> {
+    if (!this.ewConfig || !this.ewConfig.enabled) {
+      return { success: true, added: 0, updated: 0, removed: 0 };
+    }
 
     try {
-      const files = await readdir(apiConnectorsDir);
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          const content = await readFile(join(apiConnectorsDir, file), 'utf-8');
-          const config = JSON.parse(content) as StoredAPIConnectorConfig;
-          this.apiConnectors.set(config.name, config);
+      const url = `${this.ewConfig.url}/api/v1/proxy/connectors`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.ewConfig.token}`,
+        },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        logger.error(`[syncEWConnectors] Discovery endpoint returned HTTP ${response.status}: ${text}`);
+        return { success: false, added: 0, updated: 0, removed: 0, error: `HTTP ${response.status}: ${text}` };
+      }
 
-          // Register with the library if not already registered
-          if (!Connector.has(config.name)) {
-            Connector.create({
-              name: config.name,
-              serviceType: config.serviceType,
-              auth: config.auth,
-              baseURL: config.baseURL,
-            });
+      const data = await response.json() as { connectors: EWRemoteConnector[] };
+      const remoteConnectors = data.connectors ?? [];
+
+      let added = 0;
+      let updated = 0;
+      let removed = 0;
+
+      // ---- Phase 1: Purge ALL existing EW-sourced entries from both stores ----
+      // This ensures connectors that change classification (e.g. previously stored
+      // as LLM but now routed as universal) don't end up in both stores.
+      // Collect names first to track which ones existed before (for added vs updated count).
+      const previousEWNames = new Set<string>();
+      const { unlink } = await import('node:fs/promises');
+
+      for (const [name, config] of [...this.connectors.entries()]) {
+        if (config.source === 'everworker') {
+          previousEWNames.add(name);
+          this.connectors.delete(name);
+          if (Connector.has(name)) {
+            Connector.remove(name);
+          }
+          const filePath = join(this.dataDir, 'connectors', `${name}.json`);
+          if (existsSync(filePath)) {
+            await unlink(filePath);
           }
         }
       }
-    } catch {
-      // Ignore errors
+
+      for (const [name, config] of [...this.universalConnectors.entries()]) {
+        if (config.source === 'everworker') {
+          previousEWNames.add(name);
+          this.universalConnectors.delete(name);
+          if (Connector.has(name)) {
+            Connector.remove(name);
+          }
+          const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+          if (existsSync(filePath)) {
+            await unlink(filePath);
+          }
+        }
+      }
+
+      logger.debug(`[syncEWConnectors] Purged ${previousEWNames.size} previous EW entries, re-adding ${remoteConnectors.length} from server`);
+
+      // ---- Phase 2: Re-add all remote connectors into the correct store ----
+      for (const remote of remoteConnectors) {
+        const proxyBaseURL = `${this.ewConfig.url}/api/v1/proxy/${remote.name}`;
+        // Determine if this is an LLM connector: use server-provided type, fall back to isVendor()
+        const isLLM = remote.type === 'llm' || (remote.type === undefined && isVendor(remote.vendor));
+        const wasKnown = previousEWNames.has(remote.name);
+
+        if (isLLM) {
+          // ---- Route to LLM connectors store ----
+
+          // Skip if there's a local connector with the same name (local takes priority)
+          const localExisting = this.connectors.get(remote.name);
+          if (localExisting) {
+            logger.debug(`[syncEWConnectors] Skipping LLM "${remote.name}" - local connector exists`);
+            continue;
+          }
+
+          const config: StoredConnectorConfig = {
+            name: remote.name,
+            vendor: remote.vendor,
+            auth: {
+              type: 'api_key',
+              apiKey: this.ewConfig.token,
+            },
+            baseURL: proxyBaseURL,
+            models: remote.models,
+            source: 'everworker',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+
+          this.connectors.set(remote.name, config);
+
+          // Save to disk
+          const filePath = join(this.dataDir, 'connectors', `${remote.name}.json`);
+          await writeFile(filePath, JSON.stringify(config, null, 2));
+
+          // Register with the library
+          if (Connector.has(remote.name)) {
+            Connector.remove(remote.name);
+          }
+          Connector.create({
+            name: remote.name,
+            vendor: remote.vendor as Vendor,
+            auth: config.auth,
+            baseURL: config.baseURL,
+          });
+
+          if (wasKnown) updated++; else added++;
+          logger.debug(`[syncEWConnectors] Synced LLM connector: ${remote.name} (vendor: ${remote.vendor})`);
+        } else {
+          // ---- Route to Universal connectors store ----
+
+          // Skip if there's a local universal connector with the same name
+          const localExisting = this.universalConnectors.get(remote.name);
+          if (localExisting) {
+            logger.debug(`[syncEWConnectors] Skipping universal "${remote.name}" - local connector exists`);
+            continue;
+          }
+
+          const config: StoredUniversalConnector = {
+            name: remote.name,
+            vendorId: remote.vendor || remote.serviceType || remote.name,
+            vendorName: remote.name,
+            authMethodId: 'ew-proxy',
+            authMethodName: 'Everworker Proxy',
+            credentials: {},
+            baseURL: proxyBaseURL,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            status: 'active',
+            source: 'everworker',
+          };
+
+          this.universalConnectors.set(remote.name, config);
+
+          // Save to disk
+          const filePath = join(this.dataDir, 'universal-connectors', `${remote.name}.json`);
+          await writeFile(filePath, JSON.stringify(config, null, 2));
+
+          // Register with the library (use proxy baseURL + JWT as apiKey)
+          if (Connector.has(remote.name)) {
+            Connector.remove(remote.name);
+          }
+          Connector.create({
+            name: remote.name,
+            serviceType: remote.serviceType,
+            auth: {
+              type: 'api_key',
+              apiKey: this.ewConfig.token,
+            },
+            baseURL: proxyBaseURL,
+          });
+
+          if (wasKnown) updated++; else added++;
+          logger.debug(`[syncEWConnectors] Synced universal connector: ${remote.name} (vendor: ${remote.vendor})`);
+        }
+      }
+
+      // ---- Phase 3: Count removals (entries we purged that weren't re-added) ----
+      const remoteNames = new Set(remoteConnectors.map(c => c.name));
+      for (const name of previousEWNames) {
+        if (!remoteNames.has(name)) {
+          removed++;
+          logger.info(`[syncEWConnectors] Removed EW connector no longer on server: ${name}`);
+        }
+      }
+
+      logger.info(`[syncEWConnectors] Sync complete: ${added} added, ${updated} updated, ${removed} removed, ${remoteConnectors.length} total remote`);
+      return { success: true, added, updated, removed };
+    } catch (error) {
+      logger.error(`[syncEWConnectors] Error: ${error instanceof Error ? error.message : String(error)}`);
+      return { success: false, added: 0, updated: 0, removed: 0, error: String(error) };
     }
   }
 
@@ -1285,105 +1514,6 @@ export class AgentService {
     }
   }
 
-  // ============ API Connectors (for tools like web_search, web_scrape) ============
-
-  listAPIConnectors(): StoredAPIConnectorConfig[] {
-    return Array.from(this.apiConnectors.values());
-  }
-
-  getAPIConnectorsByServiceType(serviceType: string): StoredAPIConnectorConfig[] {
-    return Array.from(this.apiConnectors.values()).filter(
-      (c) => c.serviceType === serviceType
-    );
-  }
-
-  async addAPIConnector(config: unknown): Promise<{ success: boolean; error?: string }> {
-    try {
-      const apiConfig = config as StoredAPIConnectorConfig;
-      apiConfig.createdAt = Date.now();
-      apiConfig.updatedAt = Date.now();
-
-      // Store in memory
-      this.apiConnectors.set(apiConfig.name, apiConfig);
-
-      // Register with the library
-      if (Connector.has(apiConfig.name)) {
-        Connector.remove(apiConfig.name);
-      }
-      Connector.create({
-        name: apiConfig.name,
-        serviceType: apiConfig.serviceType,
-        auth: apiConfig.auth,
-        baseURL: apiConfig.baseURL,
-      });
-
-      // Save to file
-      const filePath = join(this.dataDir, 'api-connectors', `${apiConfig.name}.json`);
-      await writeFile(filePath, JSON.stringify(apiConfig, null, 2));
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: String(error) };
-    }
-  }
-
-  async updateAPIConnector(name: string, updates: Partial<StoredAPIConnectorConfig>): Promise<{ success: boolean; error?: string }> {
-    try {
-      const existing = this.apiConnectors.get(name);
-      if (!existing) {
-        return { success: false, error: `API connector "${name}" not found` };
-      }
-
-      const updated = { ...existing, ...updates, updatedAt: Date.now() };
-      this.apiConnectors.set(name, updated);
-
-      // Re-register with the library
-      if (Connector.has(name)) {
-        Connector.remove(name);
-      }
-      Connector.create({
-        name: updated.name,
-        serviceType: updated.serviceType,
-        auth: updated.auth,
-        baseURL: updated.baseURL,
-      });
-
-      // Save to file
-      const filePath = join(this.dataDir, 'api-connectors', `${name}.json`);
-      await writeFile(filePath, JSON.stringify(updated, null, 2));
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: String(error) };
-    }
-  }
-
-  async deleteAPIConnector(name: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      if (!this.apiConnectors.has(name)) {
-        return { success: false, error: `API connector "${name}" not found` };
-      }
-
-      this.apiConnectors.delete(name);
-
-      // Remove from library
-      if (Connector.has(name)) {
-        Connector.remove(name);
-      }
-
-      // Delete file
-      const filePath = join(this.dataDir, 'api-connectors', `${name}.json`);
-      if (existsSync(filePath)) {
-        const { unlink } = await import('node:fs/promises');
-        await unlink(filePath);
-      }
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: String(error) };
-    }
-  }
-
   // ============ Universal Connectors (Vendor Templates) ============
 
   /**
@@ -1426,6 +1556,17 @@ export class AgentService {
    * Migrate existing API connectors to universal connectors format
    */
   private async migrateAPIConnectorsToUniversal(): Promise<void> {
+    // Legacy type shape (inlined since StoredAPIConnectorConfig was removed)
+    interface LegacyAPIConnectorConfig {
+      name: string;
+      serviceType: string;
+      displayName?: string;
+      auth: { type: 'api_key'; apiKey: string; headerName?: string; headerPrefix?: string };
+      baseURL?: string;
+      createdAt: number;
+      updatedAt: number;
+    }
+
     // Map old serviceType to vendor template IDs
     const LEGACY_SERVICE_MAP: Record<string, { vendorId: string; authMethodId: string }> = {
       'serper': { vendorId: 'serper', authMethodId: 'api-key' },
@@ -1446,7 +1587,7 @@ export class AgentService {
 
         const filePath = join(apiConnectorsDir, file);
         const content = await readFile(filePath, 'utf-8');
-        const apiConfig = JSON.parse(content) as StoredAPIConnectorConfig;
+        const apiConfig = JSON.parse(content) as LegacyAPIConnectorConfig;
 
         const mapping = LEGACY_SERVICE_MAP[apiConfig.serviceType];
         if (!mapping) {

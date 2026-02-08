@@ -30,6 +30,7 @@ interface StoredUniversalConnector {
   lastTestedAt?: number;
   status: 'active' | 'error' | 'untested';
   legacyServiceType?: string;
+  source?: 'local' | 'everworker';
 }
 
 interface VendorInfo {

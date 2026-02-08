@@ -10,6 +10,7 @@ interface SetupModalProps {
 interface ConnectorConfig {
   name: string;
   vendor: string;
+  source?: 'local' | 'everworker';
   createdAt: number;
 }
 
@@ -178,7 +179,7 @@ export function SetupModal({
             <option value="">Choose...</option>
             {connectors.map((c) => (
               <option key={c.name} value={c.name}>
-                {c.name} ({c.vendor})
+                {c.name} ({c.vendor}){c.source === 'everworker' ? ' [EW]' : c.source === 'local' ? ' [Local]' : ''}
               </option>
             ))}
           </Form.Select>

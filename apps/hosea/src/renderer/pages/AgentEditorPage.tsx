@@ -169,7 +169,7 @@ export function AgentEditorPage(): React.ReactElement {
   const [saving, setSaving] = useState(false);
 
   // Data from API
-  const [connectors, setConnectors] = useState<{ name: string; vendor: string }[]>([]);
+  const [connectors, setConnectors] = useState<{ name: string; vendor: string; source?: 'local' | 'everworker' }[]>([]);
   const [modelsByVendor, setModelsByVendor] = useState<
     { vendor: string; models: ModelInfo[] }[]
   >([]);
@@ -667,7 +667,7 @@ export function AgentEditorPage(): React.ReactElement {
                       <option value="">Select connector...</option>
                       {connectors.map((c) => (
                         <option key={c.name} value={c.name}>
-                          {c.name} ({c.vendor})
+                          {c.name} ({c.vendor}){c.source === 'everworker' ? ' [EW]' : c.source === 'local' ? ' [Local]' : ''}
                         </option>
                       ))}
                     </Form.Select>

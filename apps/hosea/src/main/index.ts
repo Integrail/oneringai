@@ -309,27 +309,6 @@ async function setupIPC(): Promise<void> {
     return agentService!.createDefaultAgent(connectorName, model);
   });
 
-  // API Connector operations (for tools like web_search, web_scrape)
-  ipcMain.handle('api-connector:list', async () => {
-    return agentService!.listAPIConnectors();
-  });
-
-  ipcMain.handle('api-connector:list-by-service', async (_event, serviceType: string) => {
-    return agentService!.getAPIConnectorsByServiceType(serviceType);
-  });
-
-  ipcMain.handle('api-connector:add', async (_event, config: unknown) => {
-    return agentService!.addAPIConnector(config);
-  });
-
-  ipcMain.handle('api-connector:update', async (_event, name: string, updates: unknown) => {
-    return agentService!.updateAPIConnector(name, updates as any);
-  });
-
-  ipcMain.handle('api-connector:delete', async (_event, name: string) => {
-    return agentService!.deleteAPIConnector(name);
-  });
-
   // Universal Connector operations (vendor templates)
   ipcMain.handle('universal-connector:list-vendors', async () => {
     return agentService!.listVendorTemplates();
@@ -414,6 +393,23 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('mcp-server:refresh-tools', async (_event, name: string) => {
     return agentService!.refreshMCPServerTools(name);
+  });
+
+  // Everworker Backend operations
+  ipcMain.handle('everworker:get-config', async () => {
+    return agentService!.getEWConfig();
+  });
+
+  ipcMain.handle('everworker:set-config', async (_event, config: unknown) => {
+    return agentService!.setEWConfig(config as any);
+  });
+
+  ipcMain.handle('everworker:test-connection', async () => {
+    return agentService!.testEWConnection();
+  });
+
+  ipcMain.handle('everworker:sync-connectors', async () => {
+    return agentService!.syncEWConnectors();
   });
 
   // Config operations

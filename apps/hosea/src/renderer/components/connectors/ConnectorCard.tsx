@@ -15,6 +15,8 @@ import {
   Trash2,
   RefreshCw,
   ExternalLink,
+  Cloud,
+  Monitor,
 } from 'lucide-react';
 import { VendorLogo } from './VendorLogo';
 
@@ -32,6 +34,7 @@ interface StoredUniversalConnector {
   lastTestedAt?: number;
   status: 'active' | 'error' | 'untested';
   legacyServiceType?: string;
+  source?: 'local' | 'everworker';
 }
 
 interface ConnectorCardProps {
@@ -87,6 +90,7 @@ export function ConnectorCard({
 }: ConnectorCardProps): React.ReactElement {
   const statusConfig = getStatusConfig(connector.status);
   const displayName = connector.displayName || connector.vendorName;
+  const isEW = connector.source === 'everworker';
 
   return (
     <div className="connector-card">
@@ -99,6 +103,17 @@ export function ConnectorCard({
               {statusConfig.icon}
               <span className="ms-1">{statusConfig.label}</span>
             </Badge>
+            {connector.source === 'everworker' ? (
+              <Badge bg="info" className="ms-2 d-inline-flex align-items-center gap-1">
+                <Cloud size={10} />
+                EW
+              </Badge>
+            ) : connector.source === 'local' ? (
+              <Badge bg="secondary" className="ms-2 d-inline-flex align-items-center gap-1">
+                <Monitor size={10} />
+                Local
+              </Badge>
+            ) : null}
           </div>
           <div className="connector-card__subtitle">
             <code>{connector.name}</code>
@@ -169,9 +184,9 @@ export function ConnectorCard({
       </div>
 
       <div className="connector-card__footer">
-        <Button variant="outline-secondary" size="sm" onClick={onEdit}>
+        <Button variant="outline-secondary" size="sm" onClick={onEdit} disabled={isEW}>
           <Edit2 size={14} className="me-1" />
-          Edit
+          {isEW ? 'Managed' : 'Edit'}
         </Button>
         <Button
           variant="outline-primary"

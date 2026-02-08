@@ -6,7 +6,7 @@ var fs16 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
 var os2 = require('os');
-var OpenAI2 = require('openai');
+var OpenAI3 = require('openai');
 var Anthropic = require('@anthropic-ai/sdk');
 var genai = require('@google/genai');
 require('zod/v3');
@@ -47,7 +47,7 @@ var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
 var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
 var os2__namespace = /*#__PURE__*/_interopNamespace(os2);
-var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
+var OpenAI3__default = /*#__PURE__*/_interopDefault(OpenAI3);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
 var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
@@ -22748,7 +22748,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
   streamConverter;
   constructor(config) {
     super(config);
-    this.client = new OpenAI2__default.default({
+    this.client = new OpenAI3__default.default({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
       organization: config.organization,
@@ -24775,6 +24775,30 @@ var GenericOpenAIProvider = class extends OpenAITextProvider {
 };
 
 // src/core/createProvider.ts
+var VENDOR_DEFAULT_URLS = (() => {
+  const map = /* @__PURE__ */ new Map();
+  try {
+    map.set(Vendor.OpenAI, new OpenAI3__default.default({ apiKey: "_" }).baseURL);
+  } catch {
+  }
+  try {
+    map.set(Vendor.Anthropic, new Anthropic__default.default({ apiKey: "_" }).baseURL);
+  } catch {
+  }
+  map.set(Vendor.Google, "https://generativelanguage.googleapis.com");
+  map.set(Vendor.GoogleVertex, "https://us-central1-aiplatform.googleapis.com");
+  map.set(Vendor.Groq, "https://api.groq.com/openai/v1");
+  map.set(Vendor.Together, "https://api.together.xyz/v1");
+  map.set(Vendor.Perplexity, "https://api.perplexity.ai");
+  map.set(Vendor.Grok, "https://api.x.ai/v1");
+  map.set(Vendor.DeepSeek, "https://api.deepseek.com/v1");
+  map.set(Vendor.Mistral, "https://api.mistral.ai/v1");
+  map.set(Vendor.Ollama, "http://localhost:11434/v1");
+  return map;
+})();
+function getVendorDefaultBaseURL(vendor) {
+  return VENDOR_DEFAULT_URLS.get(vendor);
+}
 function createProvider(connector) {
   const injectedProvider = connector.getOptions().provider;
   if (injectedProvider && typeof injectedProvider.generate === "function") {
@@ -24809,39 +24833,15 @@ function createProvider(connector) {
       });
     // OpenAI-compatible providers (use connector.name for unique identification)
     case Vendor.Groq:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.groq.com/openai/v1"
-      });
     case Vendor.Together:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.together.xyz/v1"
-      });
     case Vendor.Perplexity:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.perplexity.ai"
-      });
     case Vendor.Grok:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.x.ai/v1"
-      });
     case Vendor.DeepSeek:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.deepseek.com/v1"
-      });
     case Vendor.Mistral:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || "https://api.mistral.ai/v1"
-      });
     case Vendor.Ollama:
       return new GenericOpenAIProvider(connector.name, {
         ...config,
-        baseURL: config.baseURL || "http://localhost:11434/v1"
+        baseURL: config.baseURL || getVendorDefaultBaseURL(vendor)
       });
     case Vendor.Custom:
       if (!config.baseURL) {
@@ -33408,7 +33408,7 @@ var OpenAITTSProvider = class extends BaseMediaProvider {
   client;
   constructor(config) {
     super({ apiKey: config.auth.apiKey, ...config });
-    this.client = new OpenAI2__default.default({
+    this.client = new OpenAI3__default.default({
       apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
@@ -33491,7 +33491,7 @@ var OpenAITTSProvider = class extends BaseMediaProvider {
    * Handle OpenAI API errors
    */
   handleError(error) {
-    if (error instanceof OpenAI2__default.default.APIError) {
+    if (error instanceof OpenAI3__default.default.APIError) {
       const status = error.status;
       const message = error.message || "Unknown OpenAI API error";
       if (status === 401) {
@@ -33523,7 +33523,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
   client;
   constructor(config) {
     super({ apiKey: config.auth.apiKey, ...config });
-    this.client = new OpenAI2__default.default({
+    this.client = new OpenAI3__default.default({
       apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
@@ -33684,7 +33684,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
    * Handle OpenAI API errors
    */
   handleError(error) {
-    if (error instanceof OpenAI2__default.default.APIError) {
+    if (error instanceof OpenAI3__default.default.APIError) {
       const status = error.status;
       const message = error.message || "Unknown OpenAI API error";
       if (status === 401) {
@@ -34690,7 +34690,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
   client;
   constructor(config) {
     super({ apiKey: config.auth.apiKey, ...config });
-    this.client = new OpenAI2__default.default({
+    this.client = new OpenAI3__default.default({
       apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
@@ -35050,7 +35050,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
   client;
   constructor(config) {
     super({ apiKey: config.auth.apiKey, ...config });
-    this.client = new OpenAI2__default.default({
+    this.client = new OpenAI3__default.default({
       apiKey: config.auth.apiKey,
       baseURL: config.baseURL || GROK_API_BASE_URL,
       timeout: config.timeout,
@@ -36363,7 +36363,7 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
   client;
   constructor(config) {
     super({ apiKey: config.auth.apiKey, ...config });
-    this.client = new OpenAI2__default.default({
+    this.client = new OpenAI3__default.default({
       apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
@@ -50413,6 +50413,7 @@ exports.getToolsByCategory = getToolsByCategory;
 exports.getToolsRequiringConnector = getToolsRequiringConnector;
 exports.getVendorAuthTemplate = getVendorAuthTemplate;
 exports.getVendorColor = getVendorColor;
+exports.getVendorDefaultBaseURL = getVendorDefaultBaseURL;
 exports.getVendorInfo = getVendorInfo;
 exports.getVendorLogo = getVendorLogo;
 exports.getVendorLogoCdnUrl = getVendorLogoCdnUrl;

@@ -4,12 +4,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button, Modal, Form, Alert, Badge, Spinner } from 'react-bootstrap';
-import { Plus, Brain, Key, Trash2, Check } from 'lucide-react';
+import { Plus, Brain, Key, Trash2, Check, Cloud, Monitor } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 
 interface ConnectorConfig {
   name: string;
   vendor: string;
+  source?: 'local' | 'everworker';
+  models?: string[];
   createdAt: number;
 }
 
@@ -110,6 +112,7 @@ export function LLMConnectorsPage(): React.ReactElement {
                 color: '#64748b',
                 label: connector.vendor,
               };
+              const isEW = connector.source === 'everworker';
               return (
                 <div key={connector.name} className="card connector-card">
                   <div className="card__body">
@@ -121,22 +124,52 @@ export function LLMConnectorsPage(): React.ReactElement {
                     </div>
                     <h3 className="connector-card__name">{connector.name}</h3>
                     <p className="connector-card__vendor">{info.label}</p>
-                    <div className="connector-card__status">
+                    <div className="connector-card__status d-flex gap-2 align-items-center flex-wrap">
                       <span className="badge badge--success">
                         <Check size={12} />
                         Connected
                       </span>
+                      {isEW ? (
+                        <Badge bg="info" className="d-flex align-items-center gap-1">
+                          <Cloud size={10} />
+                          EW
+                        </Badge>
+                      ) : (
+                        <Badge bg="secondary" className="d-flex align-items-center gap-1">
+                          <Monitor size={10} />
+                          Local
+                        </Badge>
+                      )}
                     </div>
+                    {isEW && connector.models && connector.models.length > 0 && (
+                      <div className="mt-2" style={{ fontSize: '0.75rem' }}>
+                        <span className="text-muted">Models: </span>
+                        {connector.models.slice(0, 3).map((m) => (
+                          <Badge key={m} bg="light" text="dark" className="me-1" style={{ fontSize: '0.7rem' }}>
+                            {m}
+                          </Badge>
+                        ))}
+                        {connector.models.length > 3 && (
+                          <span className="text-muted">+{connector.models.length - 3} more</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="card__footer">
-                    <Button variant="outline-secondary" size="sm">
-                      <Key size={14} className="me-1" />
-                      Update Key
-                    </Button>
+                    {!isEW && (
+                      <Button variant="outline-secondary" size="sm">
+                        <Key size={14} className="me-1" />
+                        Update Key
+                      </Button>
+                    )}
+                    {isEW && (
+                      <small className="text-muted">Managed by Everworker</small>
+                    )}
                     <Button
                       variant="outline-danger"
                       size="sm"
                       onClick={() => handleDeleteConnector(connector.name)}
+                      title={isEW ? 'Remove local copy (will return on next sync)' : 'Delete connector'}
                     >
                       <Trash2 size={14} />
                     </Button>

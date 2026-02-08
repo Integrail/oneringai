@@ -5,6 +5,8 @@
  * It extracts credentials from the connector and instantiates the appropriate SDK.
  */
 
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { Connector } from './Connector.js';
 import { Vendor } from './Vendor.js';
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
@@ -16,6 +18,48 @@ import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/Ant
 import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
 import { VertexAITextProvider } from '../infrastructure/providers/vertex/VertexAITextProvider.js';
 import { GenericOpenAIProvider } from '../infrastructure/providers/generic/GenericOpenAIProvider.js';
+
+// ---------------------------------------------------------------------------
+// Vendor default base URLs — built once at module load from SDKs
+// ---------------------------------------------------------------------------
+
+/**
+ * Immutable map of vendor → default API base URL, built at startup.
+ * For OpenAI/Anthropic: reads from the installed SDK so we auto-track URL changes.
+ * For OpenAI-compatible vendors: same URLs already in createProvider().
+ * For Google/Vertex: stable API gateway endpoints.
+ */
+const VENDOR_DEFAULT_URLS: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+
+  // Read from actual SDKs at startup
+  try { map.set(Vendor.OpenAI, new OpenAI({ apiKey: '_' }).baseURL); } catch { /* SDK not installed */ }
+  try { map.set(Vendor.Anthropic, new Anthropic({ apiKey: '_' }).baseURL); } catch { /* SDK not installed */ }
+
+  // Google — SDKs don't expose a simple baseURL property
+  map.set(Vendor.Google, 'https://generativelanguage.googleapis.com');
+  map.set(Vendor.GoogleVertex, 'https://us-central1-aiplatform.googleapis.com');
+
+  // OpenAI-compatible vendors — no dedicated SDKs
+  map.set(Vendor.Groq, 'https://api.groq.com/openai/v1');
+  map.set(Vendor.Together, 'https://api.together.xyz/v1');
+  map.set(Vendor.Perplexity, 'https://api.perplexity.ai');
+  map.set(Vendor.Grok, 'https://api.x.ai/v1');
+  map.set(Vendor.DeepSeek, 'https://api.deepseek.com/v1');
+  map.set(Vendor.Mistral, 'https://api.mistral.ai/v1');
+  map.set(Vendor.Ollama, 'http://localhost:11434/v1');
+
+  return map;
+})();
+
+/**
+ * Get the default API base URL for a vendor.
+ * For OpenAI/Anthropic reads from the installed SDK at runtime.
+ * Returns undefined for Custom or unknown vendors.
+ */
+export function getVendorDefaultBaseURL(vendor: string): string | undefined {
+  return VENDOR_DEFAULT_URLS.get(vendor);
+}
 
 /**
  * Create a text provider from a connector
@@ -65,45 +109,15 @@ export function createProvider(connector: Connector): ITextProvider {
 
     // OpenAI-compatible providers (use connector.name for unique identification)
     case Vendor.Groq:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || 'https://api.groq.com/openai/v1',
-      });
-
     case Vendor.Together:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || 'https://api.together.xyz/v1',
-      });
-
     case Vendor.Perplexity:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || 'https://api.perplexity.ai',
-      });
-
     case Vendor.Grok:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || 'https://api.x.ai/v1',
-      });
-
     case Vendor.DeepSeek:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || 'https://api.deepseek.com/v1',
-      });
-
     case Vendor.Mistral:
-      return new GenericOpenAIProvider(connector.name, {
-        ...config,
-        baseURL: config.baseURL || 'https://api.mistral.ai/v1',
-      });
-
     case Vendor.Ollama:
       return new GenericOpenAIProvider(connector.name, {
         ...config,
-        baseURL: config.baseURL || 'http://localhost:11434/v1',
+        baseURL: config.baseURL || getVendorDefaultBaseURL(vendor)!,
       });
 
     case Vendor.Custom:

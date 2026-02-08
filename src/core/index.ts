@@ -88,7 +88,7 @@ export type {
   DirectCallOptions,
 } from './BaseAgent.js';
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
-export { createProvider, createProviderAsync } from './createProvider.js';
+export { createProvider, createProviderAsync, getVendorDefaultBaseURL } from './createProvider.js';
 
 // Centralized constants
 export {
