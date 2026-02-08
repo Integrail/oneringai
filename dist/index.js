@@ -40966,9 +40966,10 @@ var FileMediaStorage = class {
     this.outputDir = config?.outputDir ?? path2.join(os2.tmpdir(), "oneringai-media");
   }
   async save(data, metadata) {
-    await this.ensureDir();
+    const dir = metadata.userId ? path2.join(this.outputDir, metadata.userId) : this.outputDir;
+    await fs15.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
-    const filePath = path2.join(this.outputDir, filename);
+    const filePath = path2.join(dir, filename);
     await fs15.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES[format] ?? "application/octet-stream";
@@ -48285,7 +48286,7 @@ var getMediaOutputHandler = getMediaStorage;
 var setMediaOutputHandler = setMediaStorage;
 
 // src/tools/multimedia/imageGeneration.ts
-function createImageGenerationTool(connector, storage) {
+function createImageGenerationTool(connector, storage, userId) {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getImageModelsByVendor(vendor) : [];
@@ -48360,8 +48361,9 @@ function createImageGenerationTool(connector, storage) {
         }
       }
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
       try {
+        const effectiveUserId = userId ?? context?.userId;
         const imageGen = ImageGeneration.create({ connector });
         const response = await imageGen.generate({
           prompt: args.prompt,
@@ -48392,7 +48394,8 @@ function createImageGenerationTool(connector, storage) {
             format,
             model: modelName,
             vendor: vendor || "unknown",
-            index: response.data.length > 1 ? i : void 0
+            index: response.data.length > 1 ? i : void 0,
+            userId: effectiveUserId
           });
           images.push({
             location: result.location,
@@ -48419,7 +48422,7 @@ function createImageGenerationTool(connector, storage) {
 
 // src/tools/multimedia/videoGeneration.ts
 var videoGenInstances = /* @__PURE__ */ new Map();
-function createVideoTools(connector, storage) {
+function createVideoTools(connector, storage, userId) {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getVideoModelsByVendor(vendor) : [];
@@ -48485,7 +48488,7 @@ function createVideoTools(connector, storage) {
         }
       }
     },
-    execute: async (args) => {
+    execute: async (args, _context) => {
       try {
         const videoGen = VideoGeneration.create({ connector });
         const response = await videoGen.generate({
@@ -48534,8 +48537,9 @@ function createVideoTools(connector, storage) {
         }
       }
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
       try {
+        const effectiveUserId = userId ?? context?.userId;
         let videoGen = videoGenInstances.get(args.jobId);
         if (!videoGen) {
           videoGen = VideoGeneration.create({ connector });
@@ -48561,7 +48565,8 @@ function createVideoTools(connector, storage) {
               type: "video",
               format,
               model: modelName,
-              vendor: vendor || "unknown"
+              vendor: vendor || "unknown",
+              userId: effectiveUserId
             });
             videoGenInstances.delete(args.jobId);
             return {
@@ -48609,7 +48614,7 @@ function createVideoTools(connector, storage) {
 }
 
 // src/tools/multimedia/textToSpeech.ts
-function createTextToSpeechTool(connector, storage) {
+function createTextToSpeechTool(connector, storage, userId) {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getTTSModelsByVendor(vendor) : [];
@@ -48672,8 +48677,9 @@ function createTextToSpeechTool(connector, storage) {
         }
       }
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
       try {
+        const effectiveUserId = userId ?? context?.userId;
         const tts = TextToSpeech.create({
           connector,
           model: args.model,
@@ -48687,7 +48693,8 @@ function createTextToSpeechTool(connector, storage) {
           type: "audio",
           format,
           model: args.model || modelNames[0] || "unknown",
-          vendor: vendor || "unknown"
+          vendor: vendor || "unknown",
+          userId: effectiveUserId
         });
         return {
           success: true,
@@ -48712,7 +48719,7 @@ function createTextToSpeechTool(connector, storage) {
 }
 
 // src/tools/multimedia/speechToText.ts
-function createSpeechToTextTool(connector, storage) {
+function createSpeechToTextTool(connector, storage, _userId) {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getSTTModelsByVendor(vendor) : [];
@@ -48752,7 +48759,7 @@ function createSpeechToTextTool(connector, storage) {
         }
       }
     },
-    execute: async (args) => {
+    execute: async (args, _context) => {
       try {
         const audioBuffer = await handler.read(args.audioSource);
         if (!audioBuffer) {
@@ -48799,17 +48806,17 @@ var VENDOR_CAPABILITIES = {
 };
 function registerMultimediaTools(storage) {
   for (const [vendor, capabilities] of Object.entries(VENDOR_CAPABILITIES)) {
-    ConnectorTools.registerService(vendor, (connector, _userId) => {
+    ConnectorTools.registerService(vendor, (connector, userId) => {
       const handler = getMediaStorage();
       const tools = [];
       if (capabilities.includes("image")) {
-        tools.push(createImageGenerationTool(connector, handler));
+        tools.push(createImageGenerationTool(connector, handler, userId));
       }
       if (capabilities.includes("video")) {
-        tools.push(...createVideoTools(connector, handler));
+        tools.push(...createVideoTools(connector, handler, userId));
       }
       if (capabilities.includes("tts")) {
-        tools.push(createTextToSpeechTool(connector, handler));
+        tools.push(createTextToSpeechTool(connector, handler, userId));
       }
       if (capabilities.includes("stt")) {
         tools.push(createSpeechToTextTool(connector, handler));

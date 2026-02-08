@@ -53,10 +53,13 @@ export class FileMediaStorage implements IMediaStorage {
   }
 
   async save(data: Buffer, metadata: MediaStorageMetadata): Promise<MediaStorageResult> {
-    await this.ensureDir();
+    const dir = metadata.userId
+      ? path.join(this.outputDir, metadata.userId)
+      : this.outputDir;
+    await fs.mkdir(dir, { recursive: true });
 
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
-    const filePath = path.join(this.outputDir, filename);
+    const filePath = path.join(dir, filename);
     await fs.writeFile(filePath, data);
 
     const format = metadata.format.toLowerCase();

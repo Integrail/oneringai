@@ -8,6 +8,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import { getMediaStorage } from './config.js';
 import { TextToSpeech } from '../../core/TextToSpeech.js';
 import { getTTSModelsByVendor } from '../../domain/entities/TTSModel.js';
@@ -30,7 +31,8 @@ interface TextToSpeechResult {
 
 export function createTextToSpeechTool(
   connector: Connector,
-  storage?: IMediaStorage
+  storage?: IMediaStorage,
+  userId?: string
 ): ToolFunction<TextToSpeechArgs, TextToSpeechResult> {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
@@ -115,8 +117,9 @@ export function createTextToSpeechTool(
       },
     },
 
-    execute: async (args: TextToSpeechArgs): Promise<TextToSpeechResult> => {
+    execute: async (args: TextToSpeechArgs, context?: ToolContext): Promise<TextToSpeechResult> => {
       try {
+        const effectiveUserId = userId ?? context?.userId;
         const tts = TextToSpeech.create({
           connector,
           model: args.model,
@@ -133,6 +136,7 @@ export function createTextToSpeechTool(
           format,
           model: args.model || modelNames[0] || 'unknown',
           vendor: vendor || 'unknown',
+          userId: effectiveUserId,
         });
 
         return {

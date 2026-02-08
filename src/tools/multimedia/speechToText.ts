@@ -8,6 +8,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import { getMediaStorage } from './config.js';
 import { SpeechToText } from '../../core/SpeechToText.js';
 import { getSTTModelsByVendor } from '../../domain/entities/STTModel.js';
@@ -29,7 +30,8 @@ interface SpeechToTextResult {
 
 export function createSpeechToTextTool(
   connector: Connector,
-  storage?: IMediaStorage
+  storage?: IMediaStorage,
+  _userId?: string
 ): ToolFunction<SpeechToTextArgs, SpeechToTextResult> {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
@@ -81,7 +83,7 @@ export function createSpeechToTextTool(
       },
     },
 
-    execute: async (args: SpeechToTextArgs): Promise<SpeechToTextResult> => {
+    execute: async (args: SpeechToTextArgs, _context?: ToolContext): Promise<SpeechToTextResult> => {
       try {
         const audioBuffer = await handler.read(args.audioSource);
 

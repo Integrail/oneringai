@@ -1,0 +1,24 @@
+name = "oneringai-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "oneringai-db"
+database_id = "placeholder-replace-after-creation"
+
+# KV Namespace (for caching, rate limiting, platform keys)
+[[kv_namespaces]]
+binding = "KV"
+id = "placeholder-replace-after-creation"
+
+# Secrets (set via `wrangler secret put`):
+# JWT_SECRET - HMAC key for JWT signing
+# ENCRYPTION_KEY - AES-256 key for credential encryption (hex-encoded)
+# STRIPE_SECRET_KEY - Stripe API key
+# STRIPE_WEBHOOK_SECRET - Stripe webhook signing secret

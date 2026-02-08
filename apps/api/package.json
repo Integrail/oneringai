@@ -1,0 +1,29 @@
+{
+  "name": "@everworker/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 execute oneringai-db --file=schema.sql",
+    "db:migrate:local": "wrangler d1 execute oneringai-db --local --file=schema.sql",
+    "db:seed:models": "tsx seed-models.ts | wrangler d1 execute oneringai-db --local --file=-",
+    "db:seed:overrides": "wrangler d1 execute oneringai-db --local --file=seed-overrides.sql",
+    "db:seed:admin": "wrangler d1 execute oneringai-db --local --file=seed-admin.sql",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "@everworker/oneringai": "file:../.."
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^4.0.0",
+    "tsx": "^4.21.0",
+    "vitest": "^1.2.0"
+  }
+}

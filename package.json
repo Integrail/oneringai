@@ -17,6 +17,11 @@
       "import": "./dist/capabilities/agents/index.js",
       "require": "./dist/capabilities/agents/index.cjs"
     },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js",
+      "require": "./dist/shared/index.cjs"
+    },
     "./images": {
       "types": "./dist/capabilities/images/index.d.ts",
       "import": "./dist/capabilities/images/index.js",

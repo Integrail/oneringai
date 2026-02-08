@@ -8,6 +8,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import { getMediaStorage } from './config.js';
 import { ImageGeneration } from '../../capabilities/images/ImageGeneration.js';
 import { getImageModelsByVendor, IMAGE_MODEL_REGISTRY } from '../../domain/entities/ImageModel.js';
@@ -34,7 +35,8 @@ interface GenerateImageResult {
 
 export function createImageGenerationTool(
   connector: Connector,
-  storage?: IMediaStorage
+  storage?: IMediaStorage,
+  userId?: string
 ): ToolFunction<GenerateImageArgs, GenerateImageResult> {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
@@ -129,8 +131,9 @@ export function createImageGenerationTool(
       },
     },
 
-    execute: async (args: GenerateImageArgs): Promise<GenerateImageResult> => {
+    execute: async (args: GenerateImageArgs, context?: ToolContext): Promise<GenerateImageResult> => {
       try {
+        const effectiveUserId = userId ?? context?.userId;
         const imageGen = ImageGeneration.create({ connector });
         const response = await imageGen.generate({
           prompt: args.prompt,
@@ -168,6 +171,7 @@ export function createImageGenerationTool(
             model: modelName,
             vendor: vendor || 'unknown',
             index: response.data.length > 1 ? i : undefined,
+            userId: effectiveUserId,
           });
 
           images.push({

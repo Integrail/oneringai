@@ -35,21 +35,21 @@ const VENDOR_CAPABILITIES: Record<string, readonly Capability[]> = {
  */
 export function registerMultimediaTools(storage?: IMediaStorage): void {
   for (const [vendor, capabilities] of Object.entries(VENDOR_CAPABILITIES)) {
-    ConnectorTools.registerService(vendor, (connector: Connector, _userId?: string) => {
+    ConnectorTools.registerService(vendor, (connector: Connector, userId?: string) => {
       const handler = storage ?? getMediaStorage();
       const tools: ToolFunction[] = [];
 
       if (capabilities.includes('image')) {
-        tools.push(createImageGenerationTool(connector, handler));
+        tools.push(createImageGenerationTool(connector, handler, userId));
       }
       if (capabilities.includes('video')) {
-        tools.push(...createVideoTools(connector, handler));
+        tools.push(...createVideoTools(connector, handler, userId));
       }
       if (capabilities.includes('tts')) {
-        tools.push(createTextToSpeechTool(connector, handler));
+        tools.push(createTextToSpeechTool(connector, handler, userId));
       }
       if (capabilities.includes('stt')) {
-        tools.push(createSpeechToTextTool(connector, handler));
+        tools.push(createSpeechToTextTool(connector, handler, userId));
       }
 
       return tools;

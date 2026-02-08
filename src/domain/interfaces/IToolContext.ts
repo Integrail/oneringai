@@ -75,6 +75,9 @@ export interface ToolContext {
   /** Task ID (if running in TaskAgent) */
   taskId?: string;
 
+  /** User ID — set by host app via agent.tools.setToolContext() for per-user operations */
+  userId?: string;
+
   /** Working memory access (if agent has memory feature enabled) */
   memory?: WorkingMemoryAccess;
 

@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -268,6 +268,8 @@ interface ToolContext {
     agentId?: string;
     /** Task ID (if running in TaskAgent) */
     taskId?: string;
+    /** User ID — set by host app via agent.tools.setToolContext() for per-user operations */
+    userId?: string;
     /** Working memory access (if agent has memory feature enabled) */
     memory?: WorkingMemoryAccess;
     /** Abort signal for cancellation */

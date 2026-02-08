@@ -28,6 +28,8 @@ export interface MediaStorageMetadata {
   index?: number;
   /** Suggested filename (without path) */
   suggestedFilename?: string;
+  /** User ID — set by tool when userId is known, for per-user storage organization */
+  userId?: string;
 }
 
 /**

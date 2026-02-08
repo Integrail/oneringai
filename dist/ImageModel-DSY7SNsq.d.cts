@@ -1,34 +1,5 @@
+import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 import { I as IProvider } from './IProvider-BP49c93d.cjs';
-
-/**
- * Supported AI Vendors
- *
- * Use this enum instead of string literals for type safety.
- * These map to specific provider implementations.
- */
-declare const Vendor: {
-    readonly OpenAI: "openai";
-    readonly Anthropic: "anthropic";
-    readonly Google: "google";
-    readonly GoogleVertex: "google-vertex";
-    readonly Groq: "groq";
-    readonly Together: "together";
-    readonly Perplexity: "perplexity";
-    readonly Grok: "grok";
-    readonly DeepSeek: "deepseek";
-    readonly Mistral: "mistral";
-    readonly Ollama: "ollama";
-    readonly Custom: "custom";
-};
-type Vendor = (typeof Vendor)[keyof typeof Vendor];
-/**
- * All vendor values as array (useful for validation)
- */
-declare const VENDORS: ("openai" | "anthropic" | "google" | "google-vertex" | "groq" | "together" | "perplexity" | "grok" | "deepseek" | "mistral" | "ollama" | "custom")[];
-/**
- * Check if a string is a valid vendor
- */
-declare function isVendor(value: string): value is Vendor;
 
 /**
  * Connector - Represents authenticated connection to ANY API
@@ -844,4 +815,4 @@ declare function getImageModelsWithFeature(feature: keyof IImageModelDescription
  */
 declare function calculateImageCost(modelName: string, imageCount: number, quality?: 'standard' | 'hd'): number | null;
 
-export { type AudioFormat as A, type ImageGenerateOptions as B, type ConnectorAccessContext as C, type ImageEditOptions as D, type ImageVariationOptions as E, type ImageResponse as F, type AspectRatio$1 as G, type OutputFormat as H, type IConnectorRegistry as I, type JWTConnectorAuth as J, type ISourceLinks as K, DEFAULT_CONNECTOR_TIMEOUT as L, DEFAULT_MAX_RETRIES as M, DEFAULT_RETRYABLE_STATUSES as N, type OAuthConnectorAuth as O, DEFAULT_BASE_DELAY_MS as P, type QualityLevel as Q, DEFAULT_MAX_DELAY_MS as R, type StoredToken as S, type VendorOptionSchema as V, type IConnectorAccessPolicy as a, Connector as b, type IBaseModelDescription as c, Vendor as d, type IImageProvider as e, type ConnectorFetchOptions as f, type ITokenStorage as g, type ConnectorConfig as h, type ConnectorAuth as i, type ConnectorConfigResult as j, VENDORS as k, isVendor as l, ImageGeneration as m, type ImageGenerationCreateOptions as n, type SimpleGenerateOptions as o, type APIKeyConnectorAuth as p, type IImageModelDescription as q, type ImageModelCapabilities as r, type ImageModelPricing as s, IMAGE_MODELS as t, IMAGE_MODEL_REGISTRY as u, getImageModelInfo as v, getImageModelsByVendor as w, getActiveImageModels as x, getImageModelsWithFeature as y, calculateImageCost as z };
+export { type AudioFormat as A, type ImageResponse as B, type ConnectorAccessContext as C, type AspectRatio$1 as D, type OutputFormat as E, type ISourceLinks as F, DEFAULT_CONNECTOR_TIMEOUT as G, DEFAULT_MAX_RETRIES as H, type IConnectorRegistry as I, type JWTConnectorAuth as J, DEFAULT_RETRYABLE_STATUSES as K, DEFAULT_BASE_DELAY_MS as L, DEFAULT_MAX_DELAY_MS as M, type OAuthConnectorAuth as O, type QualityLevel as Q, type StoredToken as S, type VendorOptionSchema as V, type IConnectorAccessPolicy as a, Connector as b, type IBaseModelDescription as c, type IImageProvider as d, type ConnectorFetchOptions as e, type ITokenStorage as f, type ConnectorConfig as g, type ConnectorAuth as h, type ConnectorConfigResult as i, ImageGeneration as j, type ImageGenerationCreateOptions as k, type SimpleGenerateOptions as l, type APIKeyConnectorAuth as m, type IImageModelDescription as n, type ImageModelCapabilities as o, type ImageModelPricing as p, IMAGE_MODELS as q, IMAGE_MODEL_REGISTRY as r, getImageModelInfo as s, getImageModelsByVendor as t, getActiveImageModels as u, getImageModelsWithFeature as v, calculateImageCost as w, type ImageGenerateOptions as x, type ImageEditOptions as y, type ImageVariationOptions as z };

@@ -9,6 +9,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import { getMediaStorage } from './config.js';
 import { VideoGeneration } from '../../capabilities/video/VideoGeneration.js';
 import { getVideoModelsByVendor } from '../../domain/entities/VideoModel.js';
@@ -47,7 +48,8 @@ const videoGenInstances = new Map<string, VideoGeneration>();
 
 export function createVideoTools(
   connector: Connector,
-  storage?: IMediaStorage
+  storage?: IMediaStorage,
+  userId?: string
 ): ToolFunction[] {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
@@ -131,7 +133,7 @@ export function createVideoTools(
       },
     },
 
-    execute: async (args: GenerateVideoArgs): Promise<GenerateVideoResult> => {
+    execute: async (args: GenerateVideoArgs, _context?: ToolContext): Promise<GenerateVideoResult> => {
       try {
         const videoGen = VideoGeneration.create({ connector });
         // Store instance for status checks
@@ -190,8 +192,9 @@ export function createVideoTools(
       },
     },
 
-    execute: async (args: VideoStatusArgs): Promise<VideoStatusResult> => {
+    execute: async (args: VideoStatusArgs, context?: ToolContext): Promise<VideoStatusResult> => {
       try {
+        const effectiveUserId = userId ?? context?.userId;
         let videoGen = videoGenInstances.get(args.jobId);
         if (!videoGen) {
           // Recreate if not in cache (e.g., after restart)
@@ -226,6 +229,7 @@ export function createVideoTools(
               format,
               model: modelName,
               vendor: vendor || 'unknown',
+              userId: effectiveUserId,
             });
 
             // Clean up instance
