@@ -690,4 +690,4 @@ const myTool: ToolFunction = {
 
 ---
 
-**Version**: 0.1.0 | **Last Updated**: 2026-02-05 | **Architecture**: Connector-First + NextGen Context
+**Version**: 0.1.4 | **Last Updated**: 2026-02-08 | **Architecture**: Connector-First + NextGen Context
