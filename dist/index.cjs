@@ -24478,7 +24478,9 @@ var GoogleTextProvider = class extends BaseTextProvider {
   constructor(config) {
     super(config);
     this.client = new genai.GoogleGenAI({
-      apiKey: this.getApiKey()
+      apiKey: this.getApiKey(),
+      // Pass custom baseURL for proxy support (e.g. when routing through EW proxy)
+      ...config.baseURL ? { httpOptions: { baseUrl: config.baseURL } } : {}
     });
     this.converter = new GoogleConverter();
     this.streamConverter = new GoogleStreamConverter();

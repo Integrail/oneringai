@@ -36,6 +36,8 @@ export class GoogleTextProvider extends BaseTextProvider {
     // New SDK uses object config
     this.client = new GoogleGenAI({
       apiKey: this.getApiKey(),
+      // Pass custom baseURL for proxy support (e.g. when routing through EW proxy)
+      ...(config.baseURL ? { httpOptions: { baseUrl: config.baseURL } } : {}),
     });
     this.converter = new GoogleConverter();
     this.streamConverter = new GoogleStreamConverter();
