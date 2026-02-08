@@ -46,6 +46,10 @@ export interface UnifiedToolEntry {
   connectorServiceTypes?: string[];
   /** Source of the tool */
   source: 'oneringai' | 'hosea' | 'custom';
+  /** Connector name that generated this tool (for connector tools) */
+  connectorName?: string;
+  /** Service type (e.g., 'github', 'slack') */
+  serviceType?: string;
   /** Factory for runtime tool creation (for Hosea tools that need context) */
   createTool?: (ctx: ToolCreationContext) => ToolFunction;
   /** Direct tool reference (for oneringai tools or static hosea tools) */

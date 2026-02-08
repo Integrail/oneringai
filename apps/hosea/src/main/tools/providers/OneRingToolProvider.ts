@@ -22,7 +22,7 @@ function mapToUnifiedEntry(
   // ToolCategory from @everworker/oneringai is compatible with HoseaToolCategory
   const category = entry.category as HoseaToolCategory;
 
-  return {
+  const result: UnifiedToolEntry = {
     name: entry.name,
     exportName: entry.exportName,
     displayName: entry.displayName,
@@ -36,6 +36,14 @@ function mapToUnifiedEntry(
     // Direct tool reference - these tools are static
     tool: entry.tool,
   };
+
+  // Pass through connector metadata if present
+  if (ToolRegistry.isConnectorTool(entry)) {
+    result.connectorName = entry.connectorName;
+    result.serviceType = entry.serviceType;
+  }
+
+  return result;
 }
 
 /**

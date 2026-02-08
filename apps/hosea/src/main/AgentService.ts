@@ -1629,6 +1629,11 @@ export class AgentService {
       const filePath = join(this.dataDir, 'universal-connectors', `${input.name}.json`);
       await writeFile(filePath, JSON.stringify(config, null, 2));
 
+      // Invalidate caches so tools appear immediately without restart
+      ConnectorTools.clearCache();
+      this.oneRingToolProvider.invalidateCache();
+      this.toolCatalog.invalidateCache();
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1676,6 +1681,11 @@ export class AgentService {
       const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
       await writeFile(filePath, JSON.stringify(updated, null, 2));
 
+      // Invalidate caches so tool changes appear immediately
+      ConnectorTools.clearCache();
+      this.oneRingToolProvider.invalidateCache();
+      this.toolCatalog.invalidateCache();
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1704,6 +1714,11 @@ export class AgentService {
         const { unlink } = await import('node:fs/promises');
         await unlink(filePath);
       }
+
+      // Invalidate caches so removed tools disappear immediately
+      ConnectorTools.clearCache();
+      this.oneRingToolProvider.invalidateCache();
+      this.toolCatalog.invalidateCache();
 
       return { success: true };
     } catch (error) {
@@ -2544,6 +2559,8 @@ export class AgentService {
     requiresConnector: boolean;
     connectorServiceTypes?: string[];
     source: 'oneringai' | 'hosea' | 'custom';
+    connectorName?: string;
+    serviceType?: string;
   }[] {
     // Use UnifiedToolCatalog which combines oneringai + hosea tools
     const allTools = this.toolCatalog.getAllTools();
@@ -2562,6 +2579,8 @@ export class AgentService {
       requiresConnector: entry.requiresConnector || false,
       connectorServiceTypes: entry.connectorServiceTypes,
       source: entry.source,
+      connectorName: entry.connectorName,
+      serviceType: entry.serviceType,
     }));
   }
 
