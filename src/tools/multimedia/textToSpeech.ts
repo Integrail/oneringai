@@ -7,8 +7,8 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
-import type { IMediaOutputHandler } from './IMediaOutputHandler.js';
-import { getMediaOutputHandler } from './config.js';
+import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import { getMediaStorage } from './config.js';
 import { TextToSpeech } from '../../core/TextToSpeech.js';
 import { getTTSModelsByVendor } from '../../domain/entities/TTSModel.js';
 
@@ -30,10 +30,10 @@ interface TextToSpeechResult {
 
 export function createTextToSpeechTool(
   connector: Connector,
-  outputHandler?: IMediaOutputHandler
+  storage?: IMediaStorage
 ): ToolFunction<TextToSpeechArgs, TextToSpeechResult> {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
 
   // Build model enum from registry
   const vendorModels = vendor ? getTTSModelsByVendor(vendor) : [];

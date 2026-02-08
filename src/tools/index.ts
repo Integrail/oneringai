@@ -122,14 +122,21 @@ export {
 // Multimedia Tools (Auto-registered with ConnectorTools for AI vendors)
 // ============================================================================
 
+// Canonical exports
 export {
-  FileMediaOutputHandler,
-  setMediaOutputHandler,
-  getMediaOutputHandler,
+  setMediaStorage,
+  getMediaStorage,
   createImageGenerationTool,
   createVideoTools,
   createTextToSpeechTool,
   createSpeechToTextTool,
+} from './multimedia/index.js';
+
+// Deprecated aliases (backward compat - remove in next major version)
+export {
+  FileMediaOutputHandler,
+  setMediaOutputHandler,
+  getMediaOutputHandler,
 } from './multimedia/index.js';
 
 export type {

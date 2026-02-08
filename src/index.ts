@@ -202,6 +202,15 @@ export type {
 } from './domain/interfaces/IAgentDefinitionStorage.js';
 export { AGENT_DEFINITION_FORMAT_VERSION } from './domain/interfaces/IAgentDefinitionStorage.js';
 
+// Media Storage (Multimedia Tool Outputs)
+export type {
+  IMediaStorage,
+  MediaStorageMetadata,
+  MediaStorageResult,
+  MediaStorageEntry,
+  MediaStorageListOptions,
+} from './domain/interfaces/IMediaStorage.js';
+
 // ============ Error Handling ============
 export { ErrorHandler, globalErrorHandler } from './core/index.js';
 export type {
@@ -825,13 +834,23 @@ export { ToolRegistry, type ConnectorToolEntry } from './tools/index.js';
 
 // Multimedia tools (auto-registered with ConnectorTools for AI vendors)
 export {
-  FileMediaOutputHandler,
-  setMediaOutputHandler,
-  getMediaOutputHandler,
+  setMediaStorage,
+  getMediaStorage,
   createImageGenerationTool,
   createVideoTools,
   createTextToSpeechTool,
   createSpeechToTextTool,
+} from './tools/index.js';
+
+// Media storage infrastructure
+export { FileMediaStorage, createFileMediaStorage } from './infrastructure/storage/index.js';
+export type { FileMediaStorageConfig } from './infrastructure/storage/index.js';
+
+// Deprecated multimedia aliases (backward compat - remove in next major version)
+export {
+  FileMediaOutputHandler,
+  setMediaOutputHandler,
+  getMediaOutputHandler,
 } from './tools/index.js';
 
 export type {

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **IMediaStorage Interface & FileMediaStorage** — Pluggable media storage following Clean Architecture.
+  - New domain interface `IMediaStorage` with full CRUD: `save()`, `read()`, `delete()`, `exists()`, optional `list()`, `getPath()`
+  - New infrastructure implementation `FileMediaStorage` (replaces `FileMediaOutputHandler`)
+  - `setMediaStorage()` / `getMediaStorage()` replace `setMediaOutputHandler()` / `getMediaOutputHandler()`
+  - `speech_to_text` tool now reads audio through storage (`handler.read()`) instead of hardcoded `fs.readFile()`
+  - Tool parameter renamed: `audioFilePath` → `audioSource` in `speech_to_text`
+  - Storage is threaded through `registerMultimediaTools()` and all tool factories
+  - Deprecated aliases provided for all renamed exports (one version cycle)
+  - Factory function `createFileMediaStorage()` for easy instantiation
+
 - **GitHub Connector Tools** — First external service connector tools. When a GitHub connector is registered, `ConnectorTools.for('github')` automatically returns 7 dedicated tools:
   - `search_files` — Search files by glob pattern in a repository (mirrors local `glob`)
   - `search_code` — Search code content across a repository (mirrors local `grep`)

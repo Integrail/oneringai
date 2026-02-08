@@ -8,8 +8,8 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
-import type { IMediaOutputHandler } from './IMediaOutputHandler.js';
-import { getMediaOutputHandler } from './config.js';
+import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import { getMediaStorage } from './config.js';
 import { VideoGeneration } from '../../capabilities/video/VideoGeneration.js';
 import { getVideoModelsByVendor } from '../../domain/entities/VideoModel.js';
 
@@ -47,10 +47,10 @@ const videoGenInstances = new Map<string, VideoGeneration>();
 
 export function createVideoTools(
   connector: Connector,
-  outputHandler?: IMediaOutputHandler
+  storage?: IMediaStorage
 ): ToolFunction[] {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
 
   // Build model enum from registry
   const vendorModels = vendor ? getVideoModelsByVendor(vendor) : [];

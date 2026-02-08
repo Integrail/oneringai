@@ -1,38 +1,48 @@
 /**
- * Module-level configuration for multimedia output handling
+ * Module-level configuration for multimedia output storage
  *
- * Provides a global default output handler used by all tool factories
+ * Provides a global default media storage used by all tool factories
  * when called through ConnectorTools.registerService().
  *
  * @example
  * ```typescript
- * import { setMediaOutputHandler } from '@everworker/oneringai';
+ * import { setMediaStorage } from '@everworker/oneringai';
  *
- * // Use custom S3 handler before creating agents
- * setMediaOutputHandler(myS3Handler);
+ * // Use custom S3 storage before creating agents
+ * setMediaStorage(myS3Storage);
  * ```
  */
 
-import type { IMediaOutputHandler } from './IMediaOutputHandler.js';
-import { FileMediaOutputHandler } from './FileMediaOutputHandler.js';
+import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import { FileMediaStorage } from '../../infrastructure/storage/FileMediaStorage.js';
 
-let _outputHandler: IMediaOutputHandler | null = null;
+let _storage: IMediaStorage | null = null;
 
 /**
- * Get the global media output handler (creates default FileMediaOutputHandler on first access)
+ * Get the global media storage (creates default FileMediaStorage on first access)
  */
-export function getMediaOutputHandler(): IMediaOutputHandler {
-  if (!_outputHandler) {
-    _outputHandler = new FileMediaOutputHandler();
+export function getMediaStorage(): IMediaStorage {
+  if (!_storage) {
+    _storage = new FileMediaStorage();
   }
-  return _outputHandler;
+  return _storage;
 }
 
 /**
- * Set a custom global media output handler
+ * Set a custom global media storage
  *
  * Call this before agent creation to use custom storage (S3, GCS, etc.)
  */
-export function setMediaOutputHandler(handler: IMediaOutputHandler): void {
-  _outputHandler = handler;
+export function setMediaStorage(storage: IMediaStorage): void {
+  _storage = storage;
 }
+
+// ============================================================================
+// Deprecated aliases (remove in next major version)
+// ============================================================================
+
+/** @deprecated Use `getMediaStorage()` instead */
+export const getMediaOutputHandler = getMediaStorage;
+
+/** @deprecated Use `setMediaStorage()` instead */
+export const setMediaOutputHandler = setMediaStorage;

@@ -2,10 +2,10 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs15 = require('fs');
+var fs16 = require('fs');
 var eventemitter3 = require('eventemitter3');
-var path3 = require('path');
-var os = require('os');
+var path2 = require('path');
+var os2 = require('os');
 var OpenAI2 = require('openai');
 var Anthropic = require('@anthropic-ai/sdk');
 var genai = require('@google/genai');
@@ -14,7 +14,7 @@ var z4mini = require('zod/v4-mini');
 var z = require('zod/v4');
 var process2 = require('process');
 var stream = require('stream');
-var fs14 = require('fs/promises');
+var fs15 = require('fs/promises');
 var simpleIcons = require('simple-icons');
 var child_process = require('child_process');
 var util = require('util');
@@ -44,15 +44,15 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
-var path3__namespace = /*#__PURE__*/_interopNamespace(path3);
-var os__namespace = /*#__PURE__*/_interopNamespace(os);
+var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
+var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
+var os2__namespace = /*#__PURE__*/_interopNamespace(os2);
 var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
 var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
-var fs14__namespace = /*#__PURE__*/_interopNamespace(fs14);
+var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
 var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
@@ -631,7 +631,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs15__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs16__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1281,11 +1281,11 @@ var init_Logger = __esm({
        */
       initFileStream(filePath) {
         try {
-          const dir = path3__namespace.dirname(filePath);
-          if (!fs15__namespace.existsSync(dir)) {
-            fs15__namespace.mkdirSync(dir, { recursive: true });
+          const dir = path2__namespace.dirname(filePath);
+          if (!fs16__namespace.existsSync(dir)) {
+            fs16__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs15__namespace.createWriteStream(filePath, {
+          this.fileStream = fs16__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -14555,12 +14555,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs18, exportName) {
+    function addFormats(ajv, list, fs17, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs18[f]);
+        ajv.addFormat(f, fs17[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -14573,7 +14573,7 @@ var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs18 = __require("fs");
+    var fs17 = __require("fs");
     function checkPathExt(path6, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
@@ -14591,19 +14591,19 @@ var require_windows = __commonJS({
       }
       return false;
     }
-    function checkStat(stat5, path6, options) {
-      if (!stat5.isSymbolicLink() && !stat5.isFile()) {
+    function checkStat(stat6, path6, options) {
+      if (!stat6.isSymbolicLink() && !stat6.isFile()) {
         return false;
       }
       return checkPathExt(path6, options);
     }
     function isexe(path6, options, cb) {
-      fs18.stat(path6, function(er, stat5) {
-        cb(er, er ? false : checkStat(stat5, path6, options));
+      fs17.stat(path6, function(er, stat6) {
+        cb(er, er ? false : checkStat(stat6, path6, options));
       });
     }
     function sync(path6, options) {
-      return checkStat(fs18.statSync(path6), path6, options);
+      return checkStat(fs17.statSync(path6), path6, options);
     }
   }
 });
@@ -14613,22 +14613,22 @@ var require_mode = __commonJS({
   "node_modules/isexe/mode.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs18 = __require("fs");
+    var fs17 = __require("fs");
     function isexe(path6, options, cb) {
-      fs18.stat(path6, function(er, stat5) {
-        cb(er, er ? false : checkStat(stat5, options));
+      fs17.stat(path6, function(er, stat6) {
+        cb(er, er ? false : checkStat(stat6, options));
       });
     }
     function sync(path6, options) {
-      return checkStat(fs18.statSync(path6), options);
+      return checkStat(fs17.statSync(path6), options);
     }
-    function checkStat(stat5, options) {
-      return stat5.isFile() && checkMode(stat5, options);
+    function checkStat(stat6, options) {
+      return stat6.isFile() && checkMode(stat6, options);
     }
-    function checkMode(stat5, options) {
-      var mod = stat5.mode;
-      var uid = stat5.uid;
-      var gid = stat5.gid;
+    function checkMode(stat6, options) {
+      var mod = stat6.mode;
+      var uid = stat6.uid;
+      var gid = stat6.gid;
       var myUid = options.uid !== void 0 ? options.uid : process.getuid && process.getuid();
       var myGid = options.gid !== void 0 ? options.gid : process.getgid && process.getgid();
       var u = parseInt("100", 8);
@@ -14902,16 +14902,16 @@ var require_shebang_command = __commonJS({
 // node_modules/cross-spawn/lib/util/readShebang.js
 var require_readShebang = __commonJS({
   "node_modules/cross-spawn/lib/util/readShebang.js"(exports$1, module) {
-    var fs18 = __require("fs");
+    var fs17 = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command) {
       const size = 150;
       const buffer = Buffer.alloc(size);
       let fd;
       try {
-        fd = fs18.openSync(command, "r");
-        fs18.readSync(fd, buffer, 0, size, 0);
-        fs18.closeSync(fd);
+        fd = fs17.openSync(command, "r");
+        fs17.readSync(fd, buffer, 0, size, 0);
+        fs17.closeSync(fd);
       } catch (e) {
       }
       return shebangCommand(buffer.toString());
@@ -19690,10 +19690,10 @@ function getDefaultBaseDirectory() {
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path3.join(appData, "oneringai", "agents");
+      return path2.join(appData, "oneringai", "agents");
     }
   }
-  return path3.join(os.homedir(), ".oneringai", "agents");
+  return path2.join(os2.homedir(), ".oneringai", "agents");
 }
 function sanitizeAgentId(agentId) {
   return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -19708,9 +19708,9 @@ var FilePersistentInstructionsStorage = class {
     const sanitizedId = sanitizeAgentId(config.agentId);
     const baseDir = config.baseDirectory ?? getDefaultBaseDirectory();
     const filename = config.filename ?? "custom_instructions.json";
-    this.directory = path3.join(baseDir, sanitizedId);
-    this.filePath = path3.join(this.directory, filename);
-    this.legacyFilePath = path3.join(this.directory, "custom_instructions.md");
+    this.directory = path2.join(baseDir, sanitizedId);
+    this.filePath = path2.join(this.directory, filename);
+    this.legacyFilePath = path2.join(this.directory, "custom_instructions.md");
   }
   /**
    * Load instruction entries from file.
@@ -19718,7 +19718,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async load() {
     try {
-      const raw = await fs15.promises.readFile(this.filePath, "utf-8");
+      const raw = await fs16.promises.readFile(this.filePath, "utf-8");
       const data = JSON.parse(raw);
       if (data.version === 2 && Array.isArray(data.entries)) {
         return data.entries.length > 0 ? data.entries : null;
@@ -19730,7 +19730,7 @@ var FilePersistentInstructionsStorage = class {
       }
     }
     try {
-      const content = await fs15.promises.readFile(this.legacyFilePath, "utf-8");
+      const content = await fs16.promises.readFile(this.legacyFilePath, "utf-8");
       const trimmed = content.trim();
       if (!trimmed) return null;
       const now = Date.now();
@@ -19760,11 +19760,11 @@ var FilePersistentInstructionsStorage = class {
     };
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
-      await fs15.promises.rename(tempPath, this.filePath);
+      await fs16.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await fs16.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
-        await fs15.promises.unlink(tempPath);
+        await fs16.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -19776,7 +19776,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async delete() {
     try {
-      await fs15.promises.unlink(this.filePath);
+      await fs16.promises.unlink(this.filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -19789,11 +19789,11 @@ var FilePersistentInstructionsStorage = class {
    */
   async exists() {
     try {
-      await fs15.promises.access(this.filePath);
+      await fs16.promises.access(this.filePath);
       return true;
     } catch {
       try {
-        await fs15.promises.access(this.legacyFilePath);
+        await fs16.promises.access(this.legacyFilePath);
         return true;
       } catch {
         return false;
@@ -19817,7 +19817,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async ensureDirectory() {
     try {
-      await fs15.promises.mkdir(this.directory, { recursive: true });
+      await fs16.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -19829,7 +19829,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async removeLegacyFile() {
     try {
-      await fs15.promises.unlink(this.legacyFilePath);
+      await fs16.promises.unlink(this.legacyFilePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         console.warn(`Failed to remove legacy instructions file: ${this.legacyFilePath}`);
@@ -27396,18 +27396,18 @@ var Agent = class _Agent extends BaseAgent {
 (class {
   static DEFAULT_PATHS = [
     "./oneringai.config.json",
-    path3.join(os.homedir(), ".oneringai", "config.json")
+    path2.join(os2.homedir(), ".oneringai", "config.json")
   ];
   /**
    * Load configuration from file
    */
   static async load(path6) {
-    const configPath = path6 ? path3.resolve(path6) : await this.findConfig();
+    const configPath = path6 ? path2.resolve(path6) : await this.findConfig();
     if (!configPath) {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const content = await fs15.promises.readFile(configPath, "utf-8");
+      const content = await fs16.promises.readFile(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -27423,13 +27423,13 @@ var Agent = class _Agent extends BaseAgent {
    * Load configuration synchronously
    */
   static loadSync(path6) {
-    const configPath = path6 ? path3.resolve(path6) : this.findConfigSync();
+    const configPath = path6 ? path2.resolve(path6) : this.findConfigSync();
     if (!configPath) {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs18 = __require("fs");
-      const content = fs18.readFileSync(configPath, "utf-8");
+      const fs17 = __require("fs");
+      const content = fs17.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -27447,8 +27447,8 @@ var Agent = class _Agent extends BaseAgent {
   static async findConfig() {
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs15.promises.access(path3.resolve(path6));
-        return path3.resolve(path6);
+        await fs16.promises.access(path2.resolve(path6));
+        return path2.resolve(path6);
       } catch {
       }
     }
@@ -27458,11 +27458,11 @@ var Agent = class _Agent extends BaseAgent {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs18 = __require("fs");
+    const fs17 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs18.accessSync(path3.resolve(path6));
-        return path3.resolve(path6);
+        fs17.accessSync(path2.resolve(path6));
+        return path2.resolve(path6);
       } catch {
       }
     }
@@ -33019,8 +33019,8 @@ var MCPRegistry = class {
    */
   static async loadFromConfigFile(path6) {
     try {
-      const configPath = path3.resolve(path6);
-      const content = await fs15.promises.readFile(configPath, "utf-8");
+      const configPath = path2.resolve(path6);
+      const content = await fs16.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -33625,7 +33625,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs15__namespace.createReadStream(audio);
+      return fs16__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -34178,7 +34178,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs14__namespace.writeFile(filePath, response.audio);
+    await fs15__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -34526,7 +34526,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs14__namespace.readFile(filePath);
+    const audio = await fs15__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -34852,7 +34852,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs15__namespace.createReadStream(image);
+    return fs16__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -34999,8 +34999,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs18 = await import('fs');
-      const buffer = fs18.readFileSync(image);
+      const fs17 = await import('fs');
+      const buffer = fs17.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -35161,7 +35161,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs15__namespace.createReadStream(image);
+    return fs16__namespace.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -36611,8 +36611,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs18 = await import('fs');
-      const data = fs18.readFileSync(image);
+      const fs17 = await import('fs');
+      const data = fs17.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -36790,7 +36790,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs18 = await import('fs/promises');
+            const fs17 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -36801,11 +36801,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs18.readFile(tempFile);
-              await fs18.unlink(tempFile).catch(() => {
+              buffer = await fs17.readFile(tempFile);
+              await fs17.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs18.unlink(tempFile).catch(() => {
+              await fs17.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -36927,8 +36927,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs18 = await import('fs/promises');
-    const data = await fs18.readFile(image);
+    const fs17 = await import('fs/promises');
+    const data = await fs17.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -37235,8 +37235,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs18 = await import('fs');
-    const data = fs18.readFileSync(image);
+    const fs17 = await import('fs');
+    const data = fs17.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -40441,10 +40441,10 @@ function getDefaultBaseDirectory2() {
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path3.join(appData, "oneringai", "agents");
+      return path2.join(appData, "oneringai", "agents");
     }
   }
-  return path3.join(os.homedir(), ".oneringai", "agents");
+  return path2.join(os2.homedir(), ".oneringai", "agents");
 }
 function sanitizeId(id) {
   return id.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -40461,8 +40461,8 @@ var FileContextStorage = class {
     const sanitizedAgentId = sanitizeId(config.agentId);
     const baseDir = config.baseDirectory ?? getDefaultBaseDirectory2();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.sessionsDirectory = path3.join(baseDir, sanitizedAgentId, "sessions");
-    this.indexPath = path3.join(this.sessionsDirectory, "_index.json");
+    this.sessionsDirectory = path2.join(baseDir, sanitizedAgentId, "sessions");
+    this.indexPath = path2.join(this.sessionsDirectory, "_index.json");
   }
   /**
    * Save context state to a session file
@@ -40488,11 +40488,11 @@ var FileContextStorage = class {
     const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, data, "utf-8");
-      await fs15.promises.rename(tempPath, filePath);
+      await fs16.promises.writeFile(tempPath, data, "utf-8");
+      await fs16.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs15.promises.unlink(tempPath);
+        await fs16.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -40513,7 +40513,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs15.promises.unlink(filePath);
+      await fs16.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -40528,7 +40528,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs15.promises.access(filePath);
+      await fs16.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -40593,7 +40593,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
-    await fs15.promises.writeFile(filePath, data, "utf-8");
+    await fs16.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(stored);
   }
   /**
@@ -40614,13 +40614,13 @@ var FileContextStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs15.promises.readdir(this.sessionsDirectory);
+    const files = await fs16.promises.readdir(this.sessionsDirectory);
     const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
-        const filePath = path3.join(this.sessionsDirectory, file);
-        const data = await fs15.promises.readFile(filePath, "utf-8");
+        const filePath = path2.join(this.sessionsDirectory, file);
+        const data = await fs16.promises.readFile(filePath, "utf-8");
         const stored = JSON.parse(data);
         entries.push(this.storedToIndexEntry(stored));
       } catch {
@@ -40638,11 +40638,11 @@ var FileContextStorage = class {
   // Private Helpers
   // ==========================================================================
   getFilePath(sanitizedSessionId) {
-    return path3.join(this.sessionsDirectory, `${sanitizedSessionId}.json`);
+    return path2.join(this.sessionsDirectory, `${sanitizedSessionId}.json`);
   }
   async ensureDirectory() {
     try {
-      await fs15.promises.mkdir(this.sessionsDirectory, { recursive: true });
+      await fs16.promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -40652,7 +40652,7 @@ var FileContextStorage = class {
   async loadRaw(sanitizedSessionId) {
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      const data = await fs15.promises.readFile(filePath, "utf-8");
+      const data = await fs16.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -40670,7 +40670,7 @@ var FileContextStorage = class {
       return this.index;
     }
     try {
-      const data = await fs15.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -40691,7 +40691,7 @@ var FileContextStorage = class {
     await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs15.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(stored) {
     const index = await this.loadIndex();
@@ -40729,10 +40729,10 @@ function getDefaultBaseDirectory3() {
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path3.join(appData, "oneringai", "agents");
+      return path2.join(appData, "oneringai", "agents");
     }
   }
-  return path3.join(os.homedir(), ".oneringai", "agents");
+  return path2.join(os2.homedir(), ".oneringai", "agents");
 }
 function sanitizeAgentId2(agentId) {
   return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -40745,15 +40745,15 @@ var FileAgentDefinitionStorage = class {
   constructor(config = {}) {
     this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory3();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.indexPath = path3.join(this.baseDirectory, "_agents_index.json");
+    this.indexPath = path2.join(this.baseDirectory, "_agents_index.json");
   }
   /**
    * Save an agent definition
    */
   async save(definition) {
     const sanitizedId = sanitizeAgentId2(definition.agentId);
-    const agentDir = path3.join(this.baseDirectory, sanitizedId);
-    const filePath = path3.join(agentDir, "definition.json");
+    const agentDir = path2.join(this.baseDirectory, sanitizedId);
+    const filePath = path2.join(agentDir, "definition.json");
     await this.ensureDirectory(agentDir);
     const now = (/* @__PURE__ */ new Date()).toISOString();
     if (!definition.createdAt) {
@@ -40765,11 +40765,11 @@ var FileAgentDefinitionStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, data, "utf-8");
-      await fs15.promises.rename(tempPath, filePath);
+      await fs16.promises.writeFile(tempPath, data, "utf-8");
+      await fs16.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs15.promises.unlink(tempPath);
+        await fs16.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -40788,10 +40788,10 @@ var FileAgentDefinitionStorage = class {
    */
   async delete(agentId) {
     const sanitizedId = sanitizeAgentId2(agentId);
-    const agentDir = path3.join(this.baseDirectory, sanitizedId);
-    const filePath = path3.join(agentDir, "definition.json");
+    const agentDir = path2.join(this.baseDirectory, sanitizedId);
+    const filePath = path2.join(agentDir, "definition.json");
     try {
-      await fs15.promises.unlink(filePath);
+      await fs16.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -40804,9 +40804,9 @@ var FileAgentDefinitionStorage = class {
    */
   async exists(agentId) {
     const sanitizedId = sanitizeAgentId2(agentId);
-    const filePath = path3.join(this.baseDirectory, sanitizedId, "definition.json");
+    const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      await fs15.promises.access(filePath);
+      await fs16.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -40868,13 +40868,13 @@ var FileAgentDefinitionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory(this.baseDirectory);
-    const entries = await fs15.promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const entries = await fs16.promises.readdir(this.baseDirectory, { withFileTypes: true });
     const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
     const indexEntries = [];
     for (const dir of agentDirs) {
       try {
-        const filePath = path3.join(this.baseDirectory, dir.name, "definition.json");
-        const data = await fs15.promises.readFile(filePath, "utf-8");
+        const filePath = path2.join(this.baseDirectory, dir.name, "definition.json");
+        const data = await fs16.promises.readFile(filePath, "utf-8");
         const definition = JSON.parse(data);
         indexEntries.push(this.definitionToIndexEntry(definition));
       } catch {
@@ -40892,7 +40892,7 @@ var FileAgentDefinitionStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs15.promises.mkdir(dir, { recursive: true });
+      await fs16.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -40900,9 +40900,9 @@ var FileAgentDefinitionStorage = class {
     }
   }
   async loadRaw(sanitizedId) {
-    const filePath = path3.join(this.baseDirectory, sanitizedId, "definition.json");
+    const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      const data = await fs15.promises.readFile(filePath, "utf-8");
+      const data = await fs16.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -40920,7 +40920,7 @@ var FileAgentDefinitionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs15.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -40940,7 +40940,7 @@ var FileAgentDefinitionStorage = class {
     await this.ensureDirectory(this.baseDirectory);
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs15.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(definition) {
     const index = await this.loadIndex();
@@ -40972,6 +40972,125 @@ var FileAgentDefinitionStorage = class {
 };
 function createFileAgentDefinitionStorage(config) {
   return new FileAgentDefinitionStorage(config);
+}
+var MIME_TYPES = {
+  png: "image/png",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  opus: "audio/opus",
+  ogg: "audio/ogg",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  pcm: "audio/pcm"
+};
+var MEDIA_TYPE_PREFIXES = ["image", "video", "audio"];
+var FileMediaStorage = class {
+  outputDir;
+  initialized = false;
+  constructor(config) {
+    this.outputDir = config?.outputDir ?? path2__namespace.join(os2__namespace.tmpdir(), "oneringai-media");
+  }
+  async save(data, metadata) {
+    await this.ensureDir();
+    const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
+    const filePath = path2__namespace.join(this.outputDir, filename);
+    await fs15__namespace.writeFile(filePath, data);
+    const format = metadata.format.toLowerCase();
+    const mimeType = MIME_TYPES[format] ?? "application/octet-stream";
+    return {
+      location: filePath,
+      mimeType,
+      size: data.length
+    };
+  }
+  async read(location) {
+    try {
+      return await fs15__namespace.readFile(location);
+    } catch (err) {
+      if (err.code === "ENOENT") {
+        return null;
+      }
+      throw err;
+    }
+  }
+  async delete(location) {
+    try {
+      await fs15__namespace.unlink(location);
+    } catch (err) {
+      if (err.code === "ENOENT") {
+        return;
+      }
+      throw err;
+    }
+  }
+  async exists(location) {
+    try {
+      await fs15__namespace.access(location);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list(options) {
+    await this.ensureDir();
+    let entries = [];
+    const files = await fs15__namespace.readdir(this.outputDir);
+    for (const file of files) {
+      const filePath = path2__namespace.join(this.outputDir, file);
+      try {
+        const stat6 = await fs15__namespace.stat(filePath);
+        if (!stat6.isFile()) continue;
+        const ext = path2__namespace.extname(file).slice(1).toLowerCase();
+        const mimeType = MIME_TYPES[ext] ?? "application/octet-stream";
+        let type;
+        for (const prefix of MEDIA_TYPE_PREFIXES) {
+          if (file.startsWith(`${prefix}_`)) {
+            type = prefix;
+            break;
+          }
+        }
+        entries.push({
+          location: filePath,
+          mimeType,
+          size: stat6.size,
+          type,
+          createdAt: stat6.birthtime
+        });
+      } catch {
+      }
+    }
+    if (options?.type) {
+      entries = entries.filter((e) => e.type === options.type);
+    }
+    entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? entries.length;
+    return entries.slice(offset, offset + limit);
+  }
+  getPath() {
+    return this.outputDir;
+  }
+  generateFilename(metadata) {
+    const timestamp = Date.now();
+    const random2 = crypto2__namespace.randomBytes(4).toString("hex");
+    const indexSuffix = metadata.index != null ? `_${metadata.index}` : "";
+    return `${metadata.type}_${timestamp}_${random2}${indexSuffix}.${metadata.format}`;
+  }
+  async ensureDir() {
+    if (!this.initialized) {
+      await fs15__namespace.mkdir(this.outputDir, { recursive: true });
+      this.initialized = true;
+    }
+  }
+};
+function createFileMediaStorage(config) {
+  return new FileMediaStorage(config);
 }
 
 // src/capabilities/agents/StreamHelpers.ts
@@ -42023,8 +42142,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs14__namespace.mkdir(this.directory, { recursive: true });
-      await fs14__namespace.chmod(this.directory, 448);
+      await fs15__namespace.mkdir(this.directory, { recursive: true });
+      await fs15__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -42033,20 +42152,20 @@ var FileStorage = class {
    */
   getFilePath(key) {
     const hash = crypto2__namespace.createHash("sha256").update(key).digest("hex");
-    return path3__namespace.join(this.directory, `${hash}.token`);
+    return path2__namespace.join(this.directory, `${hash}.token`);
   }
   async storeToken(key, token) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs14__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs14__namespace.chmod(filePath, 384);
+    await fs15__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs15__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs14__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs15__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -42055,7 +42174,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs14__namespace.unlink(filePath);
+        await fs15__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -42064,7 +42183,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs14__namespace.unlink(filePath);
+      await fs15__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -42074,7 +42193,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs14__namespace.access(filePath);
+      await fs15__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -42085,7 +42204,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs14__namespace.readdir(this.directory);
+      const files = await fs15__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -42096,10 +42215,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs14__namespace.readdir(this.directory);
+      const files = await fs15__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs14__namespace.unlink(path3__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -42520,20 +42639,20 @@ var FileConnectorStorage = class {
       throw new Error("FileConnectorStorage requires a directory path");
     }
     this.directory = config.directory;
-    this.indexPath = path3__namespace.join(this.directory, "_index.json");
+    this.indexPath = path2__namespace.join(this.directory, "_index.json");
   }
   async save(name, stored) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs14__namespace.writeFile(filePath, json, "utf8");
-    await fs14__namespace.chmod(filePath, 384);
+    await fs15__namespace.writeFile(filePath, json, "utf8");
+    await fs15__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs14__namespace.readFile(filePath, "utf8");
+      const json = await fs15__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -42546,7 +42665,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs14__namespace.unlink(filePath);
+      await fs15__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -42560,7 +42679,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs14__namespace.access(filePath);
+      await fs15__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -42586,13 +42705,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs14__namespace.readdir(this.directory);
+      const files = await fs15__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs14__namespace.unlink(path3__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -42605,7 +42724,7 @@ var FileConnectorStorage = class {
    */
   getFilePath(name) {
     const hash = this.hashName(name);
-    return path3__namespace.join(this.directory, `${hash}.connector.json`);
+    return path2__namespace.join(this.directory, `${hash}.connector.json`);
   }
   /**
    * Hash connector name to prevent enumeration
@@ -42619,8 +42738,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs14__namespace.mkdir(this.directory, { recursive: true });
-      await fs14__namespace.chmod(this.directory, 448);
+      await fs15__namespace.mkdir(this.directory, { recursive: true });
+      await fs15__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -42631,7 +42750,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs14__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs15__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -42649,8 +42768,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs14__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs14__namespace.chmod(this.indexPath, 384);
+    await fs15__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs15__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -44817,14 +44936,14 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs15__namespace.existsSync(filePath)) {
-      fs15__namespace.unlinkSync(filePath);
+    if (fs16__namespace.existsSync(filePath)) {
+      fs16__namespace.unlinkSync(filePath);
     }
   } catch {
   }
 }
 async function readClipboardImage() {
-  const platform2 = os__namespace.platform();
+  const platform2 = os2__namespace.platform();
   try {
     switch (platform2) {
       case "darwin":
@@ -44847,7 +44966,7 @@ async function readClipboardImage() {
   }
 }
 async function readClipboardImageMac() {
-  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2__namespace.join(os2__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`pngpaste "${tempFile}"`);
@@ -44869,7 +44988,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs15__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs16__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -44882,18 +45001,18 @@ async function readClipboardImageMac() {
   }
 }
 async function readClipboardImageLinux() {
-  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2__namespace.join(os2__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
+      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
+      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -44907,7 +45026,7 @@ async function readClipboardImageLinux() {
   }
 }
 async function readClipboardImageWindows() {
-  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2__namespace.join(os2__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     const psScript = `
       Add-Type -AssemblyName System.Windows.Forms;
@@ -44920,7 +45039,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
+    if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -44933,7 +45052,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs15__namespace.readFileSync(filePath);
+    const imageBuffer = fs16__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -44960,7 +45079,7 @@ async function convertFileToDataUri(filePath) {
   }
 }
 async function hasClipboardImage() {
-  const platform2 = os__namespace.platform();
+  const platform2 = os2__namespace.platform();
   try {
     switch (platform2) {
       case "darwin":
@@ -45178,7 +45297,7 @@ __export(tools_exports, {
   ConnectorTools: () => ConnectorTools,
   DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
   DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
-  FileMediaOutputHandler: () => FileMediaOutputHandler,
+  FileMediaOutputHandler: () => FileMediaStorage,
   ToolRegistry: () => ToolRegistry,
   bash: () => bash,
   createBashTool: () => createBashTool,
@@ -45207,6 +45326,7 @@ __export(tools_exports, {
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
   getMediaOutputHandler: () => getMediaOutputHandler,
+  getMediaStorage: () => getMediaStorage,
   getToolByName: () => getToolByName,
   getToolCategories: () => getToolCategories,
   getToolRegistry: () => getToolRegistry,
@@ -45220,16 +45340,17 @@ __export(tools_exports, {
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   parseRepository: () => parseRepository,
-  readFile: () => readFile4,
+  readFile: () => readFile5,
   resolveRepository: () => resolveRepository,
   setMediaOutputHandler: () => setMediaOutputHandler,
+  setMediaStorage: () => setMediaStorage,
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
   webFetchJS: () => webFetchJS,
   webScrape: () => webScrape,
   webSearch: () => webSearch,
-  writeFile: () => writeFile4
+  writeFile: () => writeFile5
 });
 var DEFAULT_FILESYSTEM_CONFIG = {
   workingDirectory: process.cwd(),
@@ -45288,15 +45409,15 @@ function validatePath(inputPath, config = {}) {
   const blockedDirs = config.blockedDirectories || DEFAULT_FILESYSTEM_CONFIG.blockedDirectories;
   let expandedPath = inputPath;
   if (inputPath.startsWith("~/")) {
-    expandedPath = path3.resolve(os.homedir(), inputPath.slice(2));
+    expandedPath = path2.resolve(os2.homedir(), inputPath.slice(2));
   } else if (inputPath === "~") {
-    expandedPath = os.homedir();
+    expandedPath = os2.homedir();
   }
   let resolvedPath;
-  if (path3.isAbsolute(expandedPath)) {
-    resolvedPath = path3.normalize(expandedPath);
+  if (path2.isAbsolute(expandedPath)) {
+    resolvedPath = path2.normalize(expandedPath);
   } else {
-    resolvedPath = path3.resolve(workingDir, expandedPath);
+    resolvedPath = path2.resolve(workingDir, expandedPath);
   }
   const pathSegments = resolvedPath.split("/").filter(Boolean);
   for (const blocked of blockedDirs) {
@@ -45309,7 +45430,7 @@ function validatePath(inputPath, config = {}) {
         };
       }
     } else {
-      const blockedPath = path3.isAbsolute(blocked) ? blocked : path3.resolve(workingDir, blocked);
+      const blockedPath = path2.isAbsolute(blocked) ? blocked : path2.resolve(workingDir, blocked);
       if (resolvedPath.startsWith(blockedPath + "/") || resolvedPath === blockedPath) {
         return {
           valid: false,
@@ -45322,7 +45443,7 @@ function validatePath(inputPath, config = {}) {
   if (allowedDirs.length > 0) {
     let isAllowed = false;
     for (const allowed of allowedDirs) {
-      const allowedPath = path3.isAbsolute(allowed) ? allowed : path3.resolve(workingDir, allowed);
+      const allowedPath = path2.isAbsolute(allowed) ? allowed : path2.resolve(workingDir, allowed);
       if (resolvedPath.startsWith(allowedPath + "/") || resolvedPath === allowedPath) {
         isAllowed = true;
         break;
@@ -45340,9 +45461,9 @@ function validatePath(inputPath, config = {}) {
 }
 function expandTilde(inputPath) {
   if (inputPath.startsWith("~/")) {
-    return path3.resolve(os.homedir(), inputPath.slice(2));
+    return path2.resolve(os2.homedir(), inputPath.slice(2));
   } else if (inputPath === "~") {
-    return os.homedir();
+    return os2.homedir();
   }
   return inputPath;
 }
@@ -45417,7 +45538,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -45425,7 +45546,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs14.stat(resolvedPath);
+        const stats = await fs15.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -45441,7 +45562,7 @@ EXAMPLES:
             size: stats.size
           };
         }
-        const content = await fs14.readFile(resolvedPath, "utf-8");
+        const content = await fs15.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -45482,7 +45603,7 @@ EXAMPLES:
     }
   };
 }
-var readFile4 = createReadFileTool();
+var readFile5 = createReadFileTool();
 function createWriteFileTool(config = {}) {
   const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
   return {
@@ -45546,13 +45667,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs15.existsSync(resolvedPath);
+      const fileExists = fs16.existsSync(resolvedPath);
       try {
-        const parentDir = path3.dirname(resolvedPath);
-        if (!fs15.existsSync(parentDir)) {
-          await fs14.mkdir(parentDir, { recursive: true });
+        const parentDir = path2.dirname(resolvedPath);
+        if (!fs16.existsSync(parentDir)) {
+          await fs15.mkdir(parentDir, { recursive: true });
         }
-        await fs14.writeFile(resolvedPath, content, "utf-8");
+        await fs15.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -45569,7 +45690,7 @@ EXAMPLES:
     }
   };
 }
-var writeFile4 = createWriteFileTool();
+var writeFile5 = createWriteFileTool();
 function createEditFileTool(config = {}) {
   const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
   return {
@@ -45655,7 +45776,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -45663,7 +45784,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs14.readFile(resolvedPath, "utf-8");
+        const content = await fs15.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -45702,7 +45823,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs14.writeFile(resolvedPath, newContent, "utf-8");
+        await fs15.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -45758,11 +45879,11 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs14.readdir(dir, { withFileTypes: true });
+    const entries = await fs15.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
-      const fullPath = path3.join(dir, entry.name);
-      const relativePath = path3.relative(baseDir, fullPath);
+      const fullPath = path2.join(dir, entry.name);
+      const relativePath = path2.relative(baseDir, fullPath);
       if (entry.isDirectory()) {
         const isBlocked = config.blockedDirectories.some(
           (blocked) => entry.name === blocked || relativePath.includes(`/${blocked}/`) || relativePath.startsWith(`${blocked}/`)
@@ -45772,7 +45893,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs14.stat(fullPath);
+            const stats = await fs15.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -45854,7 +45975,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedDir)) {
+      if (!fs16.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -45909,9 +46030,9 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs14.readdir(dir, { withFileTypes: true });
+    const entries = await fs15.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const fullPath = path3.join(dir, entry.name);
+      const fullPath = path2.join(dir, entry.name);
       if (entry.isDirectory()) {
         const isBlocked = config.blockedDirectories.some(
           (blocked) => entry.name === blocked
@@ -45923,7 +46044,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
         if (fileType) {
           const extensions = FILE_TYPE_MAP[fileType.toLowerCase()];
           if (extensions) {
-            const ext = path3.extname(entry.name).toLowerCase();
+            const ext = path2.extname(entry.name).toLowerCase();
             if (!extensions.includes(ext)) continue;
           }
         }
@@ -45942,7 +46063,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs14.readFile(filePath, "utf-8");
+    const content = await fs15.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -46083,7 +46204,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -46099,7 +46220,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs14.stat(resolvedPath);
+        const stats = await fs15.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -46125,7 +46246,7 @@ WHEN TO USE:
           );
           if (matches.length > 0) {
             filesMatched++;
-            const relativePath = path3.relative(resolvedPath, file) || file;
+            const relativePath = path2.relative(resolvedPath, file) || file;
             for (const match of matches) {
               match.file = relativePath;
             }
@@ -46187,11 +46308,11 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs14.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs15.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
-      const fullPath = path3.join(dir, entry.name);
-      const relativePath = path3.relative(baseDir, fullPath);
+      const fullPath = path2.join(dir, entry.name);
+      const relativePath = path2.relative(baseDir, fullPath);
       if (entry.isDirectory() && config.blockedDirectories.includes(entry.name)) {
         continue;
       }
@@ -46205,7 +46326,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs14.stat(fullPath);
+        const stats = await fs15.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -46301,14 +46422,14 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Directory not found: ${path6}`
         };
       }
       try {
-        const stats = await fs14.stat(resolvedPath);
+        const stats = await fs15.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
@@ -48179,68 +48300,25 @@ async function executeInVM(code, input, timeout, logs) {
   const result = await resultPromise;
   return result !== void 0 ? result : sandbox.output;
 }
-var MIME_TYPES = {
-  png: "image/png",
-  jpeg: "image/jpeg",
-  jpg: "image/jpeg",
-  webp: "image/webp",
-  gif: "image/gif",
-  mp4: "video/mp4",
-  webm: "video/webm",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  opus: "audio/opus",
-  ogg: "audio/ogg",
-  aac: "audio/aac",
-  flac: "audio/flac",
-  pcm: "audio/pcm"
-};
-var FileMediaOutputHandler = class {
-  outputDir;
-  initialized = false;
-  constructor(outputDir) {
-    this.outputDir = outputDir ?? path3__namespace.join(os__namespace.tmpdir(), "oneringai-media");
-  }
-  async save(data, metadata) {
-    if (!this.initialized) {
-      await fs14__namespace.mkdir(this.outputDir, { recursive: true });
-      this.initialized = true;
-    }
-    const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
-    const filePath = path3__namespace.join(this.outputDir, filename);
-    await fs14__namespace.writeFile(filePath, data);
-    const format = metadata.format.toLowerCase();
-    const mimeType = MIME_TYPES[format] ?? `application/octet-stream`;
-    return {
-      location: filePath,
-      mimeType,
-      size: data.length
-    };
-  }
-  generateFilename(metadata) {
-    const timestamp = Date.now();
-    const random2 = crypto2__namespace.randomBytes(4).toString("hex");
-    const indexSuffix = metadata.index != null ? `_${metadata.index}` : "";
-    return `${metadata.type}_${timestamp}_${random2}${indexSuffix}.${metadata.format}`;
-  }
-};
 
 // src/tools/multimedia/config.ts
-var _outputHandler = null;
-function getMediaOutputHandler() {
-  if (!_outputHandler) {
-    _outputHandler = new FileMediaOutputHandler();
+var _storage = null;
+function getMediaStorage() {
+  if (!_storage) {
+    _storage = new FileMediaStorage();
   }
-  return _outputHandler;
+  return _storage;
 }
-function setMediaOutputHandler(handler) {
-  _outputHandler = handler;
+function setMediaStorage(storage) {
+  _storage = storage;
 }
+var getMediaOutputHandler = getMediaStorage;
+var setMediaOutputHandler = setMediaStorage;
 
 // src/tools/multimedia/imageGeneration.ts
-function createImageGenerationTool(connector, outputHandler) {
+function createImageGenerationTool(connector, storage) {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getImageModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const properties = {
@@ -48372,9 +48450,9 @@ function createImageGenerationTool(connector, outputHandler) {
 
 // src/tools/multimedia/videoGeneration.ts
 var videoGenInstances = /* @__PURE__ */ new Map();
-function createVideoTools(connector, outputHandler) {
+function createVideoTools(connector, storage) {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getVideoModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const generateProperties = {
@@ -48562,9 +48640,9 @@ function createVideoTools(connector, outputHandler) {
 }
 
 // src/tools/multimedia/textToSpeech.ts
-function createTextToSpeechTool(connector, outputHandler) {
+function createTextToSpeechTool(connector, storage) {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getTTSModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const properties = {
@@ -48663,14 +48741,17 @@ function createTextToSpeechTool(connector, outputHandler) {
     }
   };
 }
-function createSpeechToTextTool(connector) {
+
+// src/tools/multimedia/speechToText.ts
+function createSpeechToTextTool(connector, storage) {
   const vendor = connector.vendor;
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getSTTModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const properties = {
-    audioFilePath: {
+    audioSource: {
       type: "string",
-      description: "Path to the audio file to transcribe"
+      description: "Path or location of the audio file to transcribe (file path, storage location, etc.)"
     }
   };
   if (modelNames.length > 0) {
@@ -48698,13 +48779,19 @@ function createSpeechToTextTool(connector) {
         parameters: {
           type: "object",
           properties,
-          required: ["audioFilePath"]
+          required: ["audioSource"]
         }
       }
     },
     execute: async (args) => {
       try {
-        const audioBuffer = await fs14__namespace.readFile(args.audioFilePath);
+        const audioBuffer = await handler.read(args.audioSource);
+        if (!audioBuffer) {
+          return {
+            success: false,
+            error: `Audio not found at: ${args.audioSource}`
+          };
+        }
         const stt = SpeechToText.create({
           connector,
           model: args.model,
@@ -48726,7 +48813,7 @@ function createSpeechToTextTool(connector) {
         };
       }
     },
-    describeCall: (args) => args.audioFilePath,
+    describeCall: (args) => args.audioSource,
     permission: {
       scope: "session",
       riskLevel: "low",
@@ -48741,21 +48828,22 @@ var VENDOR_CAPABILITIES = {
   [Vendor.Google]: ["image", "video", "tts"],
   [Vendor.Grok]: ["image", "video"]
 };
-function registerMultimediaTools() {
+function registerMultimediaTools(storage) {
   for (const [vendor, capabilities] of Object.entries(VENDOR_CAPABILITIES)) {
     ConnectorTools.registerService(vendor, (connector, _userId) => {
+      const handler = getMediaStorage();
       const tools = [];
       if (capabilities.includes("image")) {
-        tools.push(createImageGenerationTool(connector));
+        tools.push(createImageGenerationTool(connector, handler));
       }
       if (capabilities.includes("video")) {
-        tools.push(...createVideoTools(connector));
+        tools.push(...createVideoTools(connector, handler));
       }
       if (capabilities.includes("tts")) {
-        tools.push(createTextToSpeechTool(connector));
+        tools.push(createTextToSpeechTool(connector, handler));
       }
       if (capabilities.includes("stt")) {
-        tools.push(createSpeechToTextTool(connector));
+        tools.push(createSpeechToTextTool(connector, handler));
       }
       return tools;
     });
@@ -49663,7 +49751,7 @@ var toolRegistry = [
     displayName: "Read File",
     category: "filesystem",
     description: "Read content from a file on the local filesystem.",
-    tool: readFile4,
+    tool: readFile5,
     safeByDefault: true
   },
   {
@@ -49672,7 +49760,7 @@ var toolRegistry = [
     displayName: "Write File",
     category: "filesystem",
     description: "Write content to a file on the local filesystem.",
-    tool: writeFile4,
+    tool: writeFile5,
     safeByDefault: false
   },
   {
@@ -49901,8 +49989,8 @@ var ToolRegistry = class {
 
 // src/tools/index.ts
 var developerTools = [
-  readFile4,
-  writeFile4,
+  readFile5,
+  writeFile5,
   editFile,
   glob,
   grep,
@@ -50126,7 +50214,8 @@ exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileAgentDefinitionStorage = FileAgentDefinitionStorage;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileContextStorage = FileContextStorage;
-exports.FileMediaOutputHandler = FileMediaOutputHandler;
+exports.FileMediaOutputHandler = FileMediaStorage;
+exports.FileMediaStorage = FileMediaStorage;
 exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
 exports.FileStorage = FileStorage;
 exports.HookManager = HookManager;
@@ -50238,6 +50327,7 @@ exports.createEstimator = createEstimator;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
 exports.createFileContextStorage = createFileContextStorage;
+exports.createFileMediaStorage = createFileMediaStorage;
 exports.createGetPRTool = createGetPRTool;
 exports.createGitHubReadFileTool = createGitHubReadFileTool;
 exports.createGlobTool = createGlobTool;
@@ -50293,6 +50383,7 @@ exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
 exports.getMediaOutputHandler = getMediaOutputHandler;
+exports.getMediaStorage = getMediaStorage;
 exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
 exports.getNextExecutableTasks = getNextExecutableTasks;
@@ -50355,7 +50446,7 @@ exports.listVendorsByCategory = listVendorsByCategory;
 exports.listVendorsWithLogos = listVendorsWithLogos;
 exports.parseRepository = parseRepository;
 exports.readClipboardImage = readClipboardImage;
-exports.readFile = readFile4;
+exports.readFile = readFile5;
 exports.registerScrapeProvider = registerScrapeProvider;
 exports.resolveConnector = resolveConnector;
 exports.resolveDependencies = resolveDependencies;
@@ -50364,6 +50455,7 @@ exports.retryWithBackoff = retryWithBackoff;
 exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
 exports.setMediaOutputHandler = setMediaOutputHandler;
+exports.setMediaStorage = setMediaStorage;
 exports.setMetricsCollector = setMetricsCollector;
 exports.simpleTokenEstimator = simpleTokenEstimator;
 exports.toConnectorOptions = toConnectorOptions;
@@ -50371,6 +50463,6 @@ exports.toolRegistry = toolRegistry;
 exports.tools = tools_exports;
 exports.updateTaskStatus = updateTaskStatus;
 exports.validatePath = validatePath;
-exports.writeFile = writeFile4;
+exports.writeFile = writeFile5;
 //# sourceMappingURL=index.cjs.map
 //# sourceMappingURL=index.cjs.map

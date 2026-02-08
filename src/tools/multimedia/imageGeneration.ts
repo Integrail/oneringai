@@ -7,8 +7,8 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
-import type { IMediaOutputHandler } from './IMediaOutputHandler.js';
-import { getMediaOutputHandler } from './config.js';
+import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import { getMediaStorage } from './config.js';
 import { ImageGeneration } from '../../capabilities/images/ImageGeneration.js';
 import { getImageModelsByVendor, IMAGE_MODEL_REGISTRY } from '../../domain/entities/ImageModel.js';
 
@@ -34,10 +34,10 @@ interface GenerateImageResult {
 
 export function createImageGenerationTool(
   connector: Connector,
-  outputHandler?: IMediaOutputHandler
+  storage?: IMediaStorage
 ): ToolFunction<GenerateImageArgs, GenerateImageResult> {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
 
   // Build model enum from registry
   const vendorModels = vendor ? getImageModelsByVendor(vendor) : [];

@@ -1,12 +1,12 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs15 from 'fs';
+import * as fs16 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
-import * as path3 from 'path';
+import * as path2 from 'path';
 import { join, resolve, dirname, relative, isAbsolute, normalize, extname } from 'path';
-import * as os from 'os';
+import * as os2 from 'os';
 import { homedir } from 'os';
 import OpenAI2 from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
@@ -16,7 +16,7 @@ import * as z4mini from 'zod/v4-mini';
 import * as z from 'zod/v4';
 import process2 from 'process';
 import { PassThrough } from 'stream';
-import * as fs14 from 'fs/promises';
+import * as fs15 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import * as simpleIcons from 'simple-icons';
 import { exec, spawn } from 'child_process';
@@ -600,7 +600,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs15.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs16.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1250,11 +1250,11 @@ var init_Logger = __esm({
        */
       initFileStream(filePath) {
         try {
-          const dir = path3.dirname(filePath);
-          if (!fs15.existsSync(dir)) {
-            fs15.mkdirSync(dir, { recursive: true });
+          const dir = path2.dirname(filePath);
+          if (!fs16.existsSync(dir)) {
+            fs16.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs15.createWriteStream(filePath, {
+          this.fileStream = fs16.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -14524,12 +14524,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs18, exportName) {
+    function addFormats(ajv, list, fs17, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs18[f]);
+        ajv.addFormat(f, fs17[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -14542,7 +14542,7 @@ var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs18 = __require("fs");
+    var fs17 = __require("fs");
     function checkPathExt(path6, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
@@ -14560,19 +14560,19 @@ var require_windows = __commonJS({
       }
       return false;
     }
-    function checkStat(stat5, path6, options) {
-      if (!stat5.isSymbolicLink() && !stat5.isFile()) {
+    function checkStat(stat6, path6, options) {
+      if (!stat6.isSymbolicLink() && !stat6.isFile()) {
         return false;
       }
       return checkPathExt(path6, options);
     }
     function isexe(path6, options, cb) {
-      fs18.stat(path6, function(er, stat5) {
-        cb(er, er ? false : checkStat(stat5, path6, options));
+      fs17.stat(path6, function(er, stat6) {
+        cb(er, er ? false : checkStat(stat6, path6, options));
       });
     }
     function sync(path6, options) {
-      return checkStat(fs18.statSync(path6), path6, options);
+      return checkStat(fs17.statSync(path6), path6, options);
     }
   }
 });
@@ -14582,22 +14582,22 @@ var require_mode = __commonJS({
   "node_modules/isexe/mode.js"(exports$1, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs18 = __require("fs");
+    var fs17 = __require("fs");
     function isexe(path6, options, cb) {
-      fs18.stat(path6, function(er, stat5) {
-        cb(er, er ? false : checkStat(stat5, options));
+      fs17.stat(path6, function(er, stat6) {
+        cb(er, er ? false : checkStat(stat6, options));
       });
     }
     function sync(path6, options) {
-      return checkStat(fs18.statSync(path6), options);
+      return checkStat(fs17.statSync(path6), options);
     }
-    function checkStat(stat5, options) {
-      return stat5.isFile() && checkMode(stat5, options);
+    function checkStat(stat6, options) {
+      return stat6.isFile() && checkMode(stat6, options);
     }
-    function checkMode(stat5, options) {
-      var mod = stat5.mode;
-      var uid = stat5.uid;
-      var gid = stat5.gid;
+    function checkMode(stat6, options) {
+      var mod = stat6.mode;
+      var uid = stat6.uid;
+      var gid = stat6.gid;
       var myUid = options.uid !== void 0 ? options.uid : process.getuid && process.getuid();
       var myGid = options.gid !== void 0 ? options.gid : process.getgid && process.getgid();
       var u = parseInt("100", 8);
@@ -14871,16 +14871,16 @@ var require_shebang_command = __commonJS({
 // node_modules/cross-spawn/lib/util/readShebang.js
 var require_readShebang = __commonJS({
   "node_modules/cross-spawn/lib/util/readShebang.js"(exports$1, module) {
-    var fs18 = __require("fs");
+    var fs17 = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command) {
       const size = 150;
       const buffer = Buffer.alloc(size);
       let fd;
       try {
-        fd = fs18.openSync(command, "r");
-        fs18.readSync(fd, buffer, 0, size, 0);
-        fs18.closeSync(fd);
+        fd = fs17.openSync(command, "r");
+        fs17.readSync(fd, buffer, 0, size, 0);
+        fs17.closeSync(fd);
       } catch (e) {
       }
       return shebangCommand(buffer.toString());
@@ -27397,8 +27397,8 @@ var Agent = class _Agent extends BaseAgent {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs18 = __require("fs");
-      const content = fs18.readFileSync(configPath, "utf-8");
+      const fs17 = __require("fs");
+      const content = fs17.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -27427,10 +27427,10 @@ var Agent = class _Agent extends BaseAgent {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs18 = __require("fs");
+    const fs17 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs18.accessSync(resolve(path6));
+        fs17.accessSync(resolve(path6));
         return resolve(path6);
       } catch {
       }
@@ -33594,7 +33594,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs15.createReadStream(audio);
+      return fs16.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -34147,7 +34147,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs14.writeFile(filePath, response.audio);
+    await fs15.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -34495,7 +34495,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs14.readFile(filePath);
+    const audio = await fs15.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -34821,7 +34821,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs15.createReadStream(image);
+    return fs16.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -34968,8 +34968,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs18 = await import('fs');
-      const buffer = fs18.readFileSync(image);
+      const fs17 = await import('fs');
+      const buffer = fs17.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -35130,7 +35130,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs15.createReadStream(image);
+    return fs16.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -36580,8 +36580,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs18 = await import('fs');
-      const data = fs18.readFileSync(image);
+      const fs17 = await import('fs');
+      const data = fs17.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -36759,7 +36759,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs18 = await import('fs/promises');
+            const fs17 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -36770,11 +36770,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs18.readFile(tempFile);
-              await fs18.unlink(tempFile).catch(() => {
+              buffer = await fs17.readFile(tempFile);
+              await fs17.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs18.unlink(tempFile).catch(() => {
+              await fs17.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -36896,8 +36896,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs18 = await import('fs/promises');
-    const data = await fs18.readFile(image);
+    const fs17 = await import('fs/promises');
+    const data = await fs17.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -37204,8 +37204,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs18 = await import('fs');
-    const data = fs18.readFileSync(image);
+    const fs17 = await import('fs');
+    const data = fs17.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -40942,6 +40942,125 @@ var FileAgentDefinitionStorage = class {
 function createFileAgentDefinitionStorage(config) {
   return new FileAgentDefinitionStorage(config);
 }
+var MIME_TYPES = {
+  png: "image/png",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  opus: "audio/opus",
+  ogg: "audio/ogg",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  pcm: "audio/pcm"
+};
+var MEDIA_TYPE_PREFIXES = ["image", "video", "audio"];
+var FileMediaStorage = class {
+  outputDir;
+  initialized = false;
+  constructor(config) {
+    this.outputDir = config?.outputDir ?? path2.join(os2.tmpdir(), "oneringai-media");
+  }
+  async save(data, metadata) {
+    await this.ensureDir();
+    const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
+    const filePath = path2.join(this.outputDir, filename);
+    await fs15.writeFile(filePath, data);
+    const format = metadata.format.toLowerCase();
+    const mimeType = MIME_TYPES[format] ?? "application/octet-stream";
+    return {
+      location: filePath,
+      mimeType,
+      size: data.length
+    };
+  }
+  async read(location) {
+    try {
+      return await fs15.readFile(location);
+    } catch (err) {
+      if (err.code === "ENOENT") {
+        return null;
+      }
+      throw err;
+    }
+  }
+  async delete(location) {
+    try {
+      await fs15.unlink(location);
+    } catch (err) {
+      if (err.code === "ENOENT") {
+        return;
+      }
+      throw err;
+    }
+  }
+  async exists(location) {
+    try {
+      await fs15.access(location);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list(options) {
+    await this.ensureDir();
+    let entries = [];
+    const files = await fs15.readdir(this.outputDir);
+    for (const file of files) {
+      const filePath = path2.join(this.outputDir, file);
+      try {
+        const stat6 = await fs15.stat(filePath);
+        if (!stat6.isFile()) continue;
+        const ext = path2.extname(file).slice(1).toLowerCase();
+        const mimeType = MIME_TYPES[ext] ?? "application/octet-stream";
+        let type;
+        for (const prefix of MEDIA_TYPE_PREFIXES) {
+          if (file.startsWith(`${prefix}_`)) {
+            type = prefix;
+            break;
+          }
+        }
+        entries.push({
+          location: filePath,
+          mimeType,
+          size: stat6.size,
+          type,
+          createdAt: stat6.birthtime
+        });
+      } catch {
+      }
+    }
+    if (options?.type) {
+      entries = entries.filter((e) => e.type === options.type);
+    }
+    entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? entries.length;
+    return entries.slice(offset, offset + limit);
+  }
+  getPath() {
+    return this.outputDir;
+  }
+  generateFilename(metadata) {
+    const timestamp = Date.now();
+    const random2 = crypto2.randomBytes(4).toString("hex");
+    const indexSuffix = metadata.index != null ? `_${metadata.index}` : "";
+    return `${metadata.type}_${timestamp}_${random2}${indexSuffix}.${metadata.format}`;
+  }
+  async ensureDir() {
+    if (!this.initialized) {
+      await fs15.mkdir(this.outputDir, { recursive: true });
+      this.initialized = true;
+    }
+  }
+};
+function createFileMediaStorage(config) {
+  return new FileMediaStorage(config);
+}
 
 // src/capabilities/agents/StreamHelpers.ts
 var StreamHelpers = class {
@@ -41992,8 +42111,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs14.mkdir(this.directory, { recursive: true });
-      await fs14.chmod(this.directory, 448);
+      await fs15.mkdir(this.directory, { recursive: true });
+      await fs15.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -42002,20 +42121,20 @@ var FileStorage = class {
    */
   getFilePath(key) {
     const hash = crypto2.createHash("sha256").update(key).digest("hex");
-    return path3.join(this.directory, `${hash}.token`);
+    return path2.join(this.directory, `${hash}.token`);
   }
   async storeToken(key, token) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs14.writeFile(filePath, encrypted, "utf8");
-    await fs14.chmod(filePath, 384);
+    await fs15.writeFile(filePath, encrypted, "utf8");
+    await fs15.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs14.readFile(filePath, "utf8");
+      const encrypted = await fs15.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -42024,7 +42143,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs14.unlink(filePath);
+        await fs15.unlink(filePath);
       } catch {
       }
       return null;
@@ -42033,7 +42152,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs14.unlink(filePath);
+      await fs15.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -42043,7 +42162,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs14.access(filePath);
+      await fs15.access(filePath);
       return true;
     } catch {
       return false;
@@ -42054,7 +42173,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs14.readdir(this.directory);
+      const files = await fs15.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -42065,10 +42184,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs14.readdir(this.directory);
+      const files = await fs15.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs14.unlink(path3.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs15.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -42489,20 +42608,20 @@ var FileConnectorStorage = class {
       throw new Error("FileConnectorStorage requires a directory path");
     }
     this.directory = config.directory;
-    this.indexPath = path3.join(this.directory, "_index.json");
+    this.indexPath = path2.join(this.directory, "_index.json");
   }
   async save(name, stored) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs14.writeFile(filePath, json, "utf8");
-    await fs14.chmod(filePath, 384);
+    await fs15.writeFile(filePath, json, "utf8");
+    await fs15.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs14.readFile(filePath, "utf8");
+      const json = await fs15.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -42515,7 +42634,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs14.unlink(filePath);
+      await fs15.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -42529,7 +42648,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs14.access(filePath);
+      await fs15.access(filePath);
       return true;
     } catch {
       return false;
@@ -42555,13 +42674,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs14.readdir(this.directory);
+      const files = await fs15.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs14.unlink(path3.join(this.directory, f)).catch(() => {
+          (f) => fs15.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -42574,7 +42693,7 @@ var FileConnectorStorage = class {
    */
   getFilePath(name) {
     const hash = this.hashName(name);
-    return path3.join(this.directory, `${hash}.connector.json`);
+    return path2.join(this.directory, `${hash}.connector.json`);
   }
   /**
    * Hash connector name to prevent enumeration
@@ -42588,8 +42707,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs14.mkdir(this.directory, { recursive: true });
-      await fs14.chmod(this.directory, 448);
+      await fs15.mkdir(this.directory, { recursive: true });
+      await fs15.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -42600,7 +42719,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs14.readFile(this.indexPath, "utf8");
+      const json = await fs15.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -42618,8 +42737,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs14.writeFile(this.indexPath, json, "utf8");
-    await fs14.chmod(this.indexPath, 384);
+    await fs15.writeFile(this.indexPath, json, "utf8");
+    await fs15.chmod(this.indexPath, 384);
   }
 };
 
@@ -44786,14 +44905,14 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs15.existsSync(filePath)) {
-      fs15.unlinkSync(filePath);
+    if (fs16.existsSync(filePath)) {
+      fs16.unlinkSync(filePath);
     }
   } catch {
   }
 }
 async function readClipboardImage() {
-  const platform2 = os.platform();
+  const platform2 = os2.platform();
   try {
     switch (platform2) {
       case "darwin":
@@ -44816,7 +44935,7 @@ async function readClipboardImage() {
   }
 }
 async function readClipboardImageMac() {
-  const tempFile = path3.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2.join(os2.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`pngpaste "${tempFile}"`);
@@ -44838,7 +44957,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs15.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs16.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -44851,18 +44970,18 @@ async function readClipboardImageMac() {
   }
 }
 async function readClipboardImageLinux() {
-  const tempFile = path3.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2.join(os2.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs15.existsSync(tempFile) && fs15.statSync(tempFile).size > 0) {
+      if (fs16.existsSync(tempFile) && fs16.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs15.existsSync(tempFile) && fs15.statSync(tempFile).size > 0) {
+      if (fs16.existsSync(tempFile) && fs16.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -44876,7 +44995,7 @@ async function readClipboardImageLinux() {
   }
 }
 async function readClipboardImageWindows() {
-  const tempFile = path3.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2.join(os2.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     const psScript = `
       Add-Type -AssemblyName System.Windows.Forms;
@@ -44889,7 +45008,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs15.existsSync(tempFile) && fs15.statSync(tempFile).size > 0) {
+    if (fs16.existsSync(tempFile) && fs16.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -44902,7 +45021,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs15.readFileSync(filePath);
+    const imageBuffer = fs16.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -44929,7 +45048,7 @@ async function convertFileToDataUri(filePath) {
   }
 }
 async function hasClipboardImage() {
-  const platform2 = os.platform();
+  const platform2 = os2.platform();
   try {
     switch (platform2) {
       case "darwin":
@@ -45147,7 +45266,7 @@ __export(tools_exports, {
   ConnectorTools: () => ConnectorTools,
   DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
   DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
-  FileMediaOutputHandler: () => FileMediaOutputHandler,
+  FileMediaOutputHandler: () => FileMediaStorage,
   ToolRegistry: () => ToolRegistry,
   bash: () => bash,
   createBashTool: () => createBashTool,
@@ -45176,6 +45295,7 @@ __export(tools_exports, {
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
   getMediaOutputHandler: () => getMediaOutputHandler,
+  getMediaStorage: () => getMediaStorage,
   getToolByName: () => getToolByName,
   getToolCategories: () => getToolCategories,
   getToolRegistry: () => getToolRegistry,
@@ -45189,16 +45309,17 @@ __export(tools_exports, {
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   parseRepository: () => parseRepository,
-  readFile: () => readFile4,
+  readFile: () => readFile5,
   resolveRepository: () => resolveRepository,
   setMediaOutputHandler: () => setMediaOutputHandler,
+  setMediaStorage: () => setMediaStorage,
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
   webFetchJS: () => webFetchJS,
   webScrape: () => webScrape,
   webSearch: () => webSearch,
-  writeFile: () => writeFile4
+  writeFile: () => writeFile5
 });
 var DEFAULT_FILESYSTEM_CONFIG = {
   workingDirectory: process.cwd(),
@@ -45451,7 +45572,7 @@ EXAMPLES:
     }
   };
 }
-var readFile4 = createReadFileTool();
+var readFile5 = createReadFileTool();
 function createWriteFileTool(config = {}) {
   const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
   return {
@@ -45538,7 +45659,7 @@ EXAMPLES:
     }
   };
 }
-var writeFile4 = createWriteFileTool();
+var writeFile5 = createWriteFileTool();
 function createEditFileTool(config = {}) {
   const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
   return {
@@ -48148,68 +48269,25 @@ async function executeInVM(code, input, timeout, logs) {
   const result = await resultPromise;
   return result !== void 0 ? result : sandbox.output;
 }
-var MIME_TYPES = {
-  png: "image/png",
-  jpeg: "image/jpeg",
-  jpg: "image/jpeg",
-  webp: "image/webp",
-  gif: "image/gif",
-  mp4: "video/mp4",
-  webm: "video/webm",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  opus: "audio/opus",
-  ogg: "audio/ogg",
-  aac: "audio/aac",
-  flac: "audio/flac",
-  pcm: "audio/pcm"
-};
-var FileMediaOutputHandler = class {
-  outputDir;
-  initialized = false;
-  constructor(outputDir) {
-    this.outputDir = outputDir ?? path3.join(os.tmpdir(), "oneringai-media");
-  }
-  async save(data, metadata) {
-    if (!this.initialized) {
-      await fs14.mkdir(this.outputDir, { recursive: true });
-      this.initialized = true;
-    }
-    const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
-    const filePath = path3.join(this.outputDir, filename);
-    await fs14.writeFile(filePath, data);
-    const format = metadata.format.toLowerCase();
-    const mimeType = MIME_TYPES[format] ?? `application/octet-stream`;
-    return {
-      location: filePath,
-      mimeType,
-      size: data.length
-    };
-  }
-  generateFilename(metadata) {
-    const timestamp = Date.now();
-    const random2 = crypto2.randomBytes(4).toString("hex");
-    const indexSuffix = metadata.index != null ? `_${metadata.index}` : "";
-    return `${metadata.type}_${timestamp}_${random2}${indexSuffix}.${metadata.format}`;
-  }
-};
 
 // src/tools/multimedia/config.ts
-var _outputHandler = null;
-function getMediaOutputHandler() {
-  if (!_outputHandler) {
-    _outputHandler = new FileMediaOutputHandler();
+var _storage = null;
+function getMediaStorage() {
+  if (!_storage) {
+    _storage = new FileMediaStorage();
   }
-  return _outputHandler;
+  return _storage;
 }
-function setMediaOutputHandler(handler) {
-  _outputHandler = handler;
+function setMediaStorage(storage) {
+  _storage = storage;
 }
+var getMediaOutputHandler = getMediaStorage;
+var setMediaOutputHandler = setMediaStorage;
 
 // src/tools/multimedia/imageGeneration.ts
-function createImageGenerationTool(connector, outputHandler) {
+function createImageGenerationTool(connector, storage) {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getImageModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const properties = {
@@ -48341,9 +48419,9 @@ function createImageGenerationTool(connector, outputHandler) {
 
 // src/tools/multimedia/videoGeneration.ts
 var videoGenInstances = /* @__PURE__ */ new Map();
-function createVideoTools(connector, outputHandler) {
+function createVideoTools(connector, storage) {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getVideoModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const generateProperties = {
@@ -48531,9 +48609,9 @@ function createVideoTools(connector, outputHandler) {
 }
 
 // src/tools/multimedia/textToSpeech.ts
-function createTextToSpeechTool(connector, outputHandler) {
+function createTextToSpeechTool(connector, storage) {
   const vendor = connector.vendor;
-  const handler = outputHandler ?? getMediaOutputHandler();
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getTTSModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const properties = {
@@ -48632,14 +48710,17 @@ function createTextToSpeechTool(connector, outputHandler) {
     }
   };
 }
-function createSpeechToTextTool(connector) {
+
+// src/tools/multimedia/speechToText.ts
+function createSpeechToTextTool(connector, storage) {
   const vendor = connector.vendor;
+  const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getSTTModelsByVendor(vendor) : [];
   const modelNames = vendorModels.map((m) => m.name);
   const properties = {
-    audioFilePath: {
+    audioSource: {
       type: "string",
-      description: "Path to the audio file to transcribe"
+      description: "Path or location of the audio file to transcribe (file path, storage location, etc.)"
     }
   };
   if (modelNames.length > 0) {
@@ -48667,13 +48748,19 @@ function createSpeechToTextTool(connector) {
         parameters: {
           type: "object",
           properties,
-          required: ["audioFilePath"]
+          required: ["audioSource"]
         }
       }
     },
     execute: async (args) => {
       try {
-        const audioBuffer = await fs14.readFile(args.audioFilePath);
+        const audioBuffer = await handler.read(args.audioSource);
+        if (!audioBuffer) {
+          return {
+            success: false,
+            error: `Audio not found at: ${args.audioSource}`
+          };
+        }
         const stt = SpeechToText.create({
           connector,
           model: args.model,
@@ -48695,7 +48782,7 @@ function createSpeechToTextTool(connector) {
         };
       }
     },
-    describeCall: (args) => args.audioFilePath,
+    describeCall: (args) => args.audioSource,
     permission: {
       scope: "session",
       riskLevel: "low",
@@ -48710,21 +48797,22 @@ var VENDOR_CAPABILITIES = {
   [Vendor.Google]: ["image", "video", "tts"],
   [Vendor.Grok]: ["image", "video"]
 };
-function registerMultimediaTools() {
+function registerMultimediaTools(storage) {
   for (const [vendor, capabilities] of Object.entries(VENDOR_CAPABILITIES)) {
     ConnectorTools.registerService(vendor, (connector, _userId) => {
+      const handler = getMediaStorage();
       const tools = [];
       if (capabilities.includes("image")) {
-        tools.push(createImageGenerationTool(connector));
+        tools.push(createImageGenerationTool(connector, handler));
       }
       if (capabilities.includes("video")) {
-        tools.push(...createVideoTools(connector));
+        tools.push(...createVideoTools(connector, handler));
       }
       if (capabilities.includes("tts")) {
-        tools.push(createTextToSpeechTool(connector));
+        tools.push(createTextToSpeechTool(connector, handler));
       }
       if (capabilities.includes("stt")) {
-        tools.push(createSpeechToTextTool(connector));
+        tools.push(createSpeechToTextTool(connector, handler));
       }
       return tools;
     });
@@ -49632,7 +49720,7 @@ var toolRegistry = [
     displayName: "Read File",
     category: "filesystem",
     description: "Read content from a file on the local filesystem.",
-    tool: readFile4,
+    tool: readFile5,
     safeByDefault: true
   },
   {
@@ -49641,7 +49729,7 @@ var toolRegistry = [
     displayName: "Write File",
     category: "filesystem",
     description: "Write content to a file on the local filesystem.",
-    tool: writeFile4,
+    tool: writeFile5,
     safeByDefault: false
   },
   {
@@ -49870,8 +49958,8 @@ var ToolRegistry = class {
 
 // src/tools/index.ts
 var developerTools = [
-  readFile4,
-  writeFile4,
+  readFile5,
+  writeFile5,
   editFile,
   glob,
   grep,
@@ -50058,6 +50146,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaOutputHandler, FilePersistentInstructionsStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, parseRepository, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, parseRepository, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

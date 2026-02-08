@@ -5,14 +5,15 @@
  * Parameters are built dynamically from the STT model registry for the connector's vendor.
  */
 
-import * as fs from 'fs/promises';
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
+import { getMediaStorage } from './config.js';
 import { SpeechToText } from '../../core/SpeechToText.js';
 import { getSTTModelsByVendor } from '../../domain/entities/STTModel.js';
 
 interface SpeechToTextArgs {
-  audioFilePath: string;
+  audioSource: string;
   model?: string;
   language?: string;
   prompt?: string;
@@ -27,9 +28,11 @@ interface SpeechToTextResult {
 }
 
 export function createSpeechToTextTool(
-  connector: Connector
+  connector: Connector,
+  storage?: IMediaStorage
 ): ToolFunction<SpeechToTextArgs, SpeechToTextResult> {
   const vendor = connector.vendor;
+  const handler = storage ?? getMediaStorage();
 
   // Build model enum from registry
   const vendorModels = vendor ? getSTTModelsByVendor(vendor) : [];
@@ -37,9 +40,9 @@ export function createSpeechToTextTool(
 
   // Build parameters
   const properties: Record<string, any> = {
-    audioFilePath: {
+    audioSource: {
       type: 'string',
-      description: 'Path to the audio file to transcribe',
+      description: 'Path or location of the audio file to transcribe (file path, storage location, etc.)',
     },
   };
 
@@ -73,14 +76,21 @@ export function createSpeechToTextTool(
         parameters: {
           type: 'object',
           properties,
-          required: ['audioFilePath'],
+          required: ['audioSource'],
         },
       },
     },
 
     execute: async (args: SpeechToTextArgs): Promise<SpeechToTextResult> => {
       try {
-        const audioBuffer = await fs.readFile(args.audioFilePath);
+        const audioBuffer = await handler.read(args.audioSource);
+
+        if (!audioBuffer) {
+          return {
+            success: false,
+            error: `Audio not found at: ${args.audioSource}`,
+          };
+        }
 
         const stt = SpeechToText.create({
           connector,
@@ -106,7 +116,7 @@ export function createSpeechToTextTool(
       }
     },
 
-    describeCall: (args: SpeechToTextArgs) => args.audioFilePath,
+    describeCall: (args: SpeechToTextArgs) => args.audioSource,
 
     permission: {
       scope: 'session',

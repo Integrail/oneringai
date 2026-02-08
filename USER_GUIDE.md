@@ -41,21 +41,25 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 14. [Audio (TTS/STT)](#audio-ttsstt)
 15. [Image Generation](#image-generation)
 16. [Video Generation](#video-generation)
-17. [Web Search](#web-search)
-18. [Streaming](#streaming)
-19. [External API Integration](#external-api-integration)
-20. [Vendor Templates](#vendor-templates)
+17. [Custom Media Storage](#custom-media-storage)
+    - IMediaStorage Interface
+    - Custom S3 Backend Example
+    - FileMediaStorage Default
+18. [Web Search](#web-search)
+19. [Streaming](#streaming)
+20. [External API Integration](#external-api-integration)
+21. [Vendor Templates](#vendor-templates)
     - Quick Setup for 43+ Services
     - Authentication Methods
     - Complete Vendor Reference
-21. [OAuth for External APIs](#oauth-for-external-apis)
-22. [Model Registry](#model-registry)
-23. [Scoped Connector Registry](#scoped-connector-registry)
+22. [OAuth for External APIs](#oauth-for-external-apis)
+23. [Model Registry](#model-registry)
+24. [Scoped Connector Registry](#scoped-connector-registry)
     - Access Control Policies
     - Multi-Tenant Isolation
     - Using with Agent and ConnectorTools
-24. [Advanced Features](#advanced-features)
-25. [Production Deployment](#production-deployment)
+25. [Advanced Features](#advanced-features)
+26. [Production Deployment](#production-deployment)
 
 ---
 
@@ -5993,6 +5997,132 @@ const job = await videoGen.generate({ prompt: '...', duration: 8 });
 // Changed your mind? Cancel it
 const cancelled = await videoGen.cancel(job.jobId);
 console.log('Cancelled:', cancelled);  // true
+```
+
+---
+
+## Custom Media Storage
+
+By default, multimedia tools (image generation, video generation, TTS, STT) save outputs to the local filesystem via `FileMediaStorage`. You can plug in custom storage backends (S3, GCS, Azure Blob, etc.) by implementing the `IMediaStorage` interface.
+
+### The IMediaStorage Interface
+
+```typescript
+import type { IMediaStorage, MediaStorageMetadata, MediaStorageResult } from '@everworker/oneringai';
+
+interface IMediaStorage {
+  save(data: Buffer, metadata: MediaStorageMetadata): Promise<MediaStorageResult>;
+  read(location: string): Promise<Buffer | null>;
+  delete(location: string): Promise<void>;
+  exists(location: string): Promise<boolean>;
+  list?(options?: MediaStorageListOptions): Promise<MediaStorageEntry[]>;  // optional
+  getPath(): string;
+}
+```
+
+**`MediaStorageMetadata`** describes the media being saved:
+- `type`: `'image' | 'video' | 'audio'`
+- `format`: file extension (e.g., `'png'`, `'mp4'`, `'mp3'`)
+- `model`: model name used for generation
+- `vendor`: vendor that produced the output
+- `index?`: index for multi-image results
+- `suggestedFilename?`: optional filename hint
+
+**`MediaStorageResult`** returned by `save()`:
+- `location`: where the file was stored (path, URL, S3 key, etc.)
+- `mimeType`: MIME type of the saved file
+- `size`: file size in bytes
+
+### Custom S3 Backend Example
+
+```typescript
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import type { IMediaStorage, MediaStorageMetadata, MediaStorageResult } from '@everworker/oneringai';
+
+class S3MediaStorage implements IMediaStorage {
+  private s3: S3Client;
+  private bucket: string;
+
+  constructor(bucket: string, region: string) {
+    this.s3 = new S3Client({ region });
+    this.bucket = bucket;
+  }
+
+  async save(data: Buffer, metadata: MediaStorageMetadata): Promise<MediaStorageResult> {
+    const key = `media/${metadata.type}/${Date.now()}_${Math.random().toString(36).slice(2)}.${metadata.format}`;
+    await this.s3.send(new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: data,
+      ContentType: this.getMimeType(metadata.format),
+    }));
+    return { location: key, mimeType: this.getMimeType(metadata.format), size: data.length };
+  }
+
+  async read(location: string): Promise<Buffer | null> {
+    try {
+      const response = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: location }));
+      return Buffer.from(await response.Body!.transformToByteArray());
+    } catch (err: any) {
+      if (err.name === 'NoSuchKey') return null;
+      throw err;
+    }
+  }
+
+  async delete(location: string): Promise<void> {
+    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: location }));
+  }
+
+  async exists(location: string): Promise<boolean> {
+    try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: location }));
+      return true;
+    } catch { return false; }
+  }
+
+  getPath(): string { return `s3://${this.bucket}/media/`; }
+
+  private getMimeType(format: string): string {
+    const map: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', mp4: 'video/mp4', mp3: 'audio/mpeg' };
+    return map[format] ?? 'application/octet-stream';
+  }
+}
+```
+
+### Setting the Global Storage
+
+```typescript
+import { setMediaStorage } from '@everworker/oneringai';
+
+// Set globally before creating agents - all multimedia tools will use this
+setMediaStorage(new S3MediaStorage('my-bucket', 'us-east-1'));
+```
+
+All multimedia tools (`generate_image`, `generate_video`, `text_to_speech`, `speech_to_text`) automatically use the global storage handler.
+
+### FileMediaStorage Default
+
+The built-in `FileMediaStorage` saves files to `os.tmpdir()/oneringai-media/` by default:
+
+```typescript
+import { FileMediaStorage, createFileMediaStorage } from '@everworker/oneringai';
+
+// Use defaults (saves to /tmp/oneringai-media/)
+const storage = createFileMediaStorage();
+
+// Custom output directory
+const storage = createFileMediaStorage({ outputDir: '/data/media-outputs' });
+```
+
+### Per-Tool-Factory Storage
+
+For advanced use cases, you can pass a storage instance directly to individual tool factories:
+
+```typescript
+import { createImageGenerationTool } from '@everworker/oneringai';
+
+const connector = Connector.get('openai');
+const tool = createImageGenerationTool(connector, myCustomStorage);
 ```
 
 ---
