@@ -13,7 +13,7 @@ export const requireAdmin = createMiddleware<{ Bindings: Env }>(async (c, next) 
   if (role !== 'admin' && role !== 'super_admin') {
     return c.json({ error: 'forbidden', message: 'Admin access required' }, 403);
   }
-  await next();
+  return next();
 });
 
 /**
@@ -24,5 +24,5 @@ export const requireSuperAdmin = createMiddleware<{ Bindings: Env }>(async (c, n
   if (role !== 'super_admin') {
     return c.json({ error: 'forbidden', message: 'Super admin access required' }, 403);
   }
-  await next();
+  return next();
 });

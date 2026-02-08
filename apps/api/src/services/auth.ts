@@ -1,7 +1,6 @@
 /**
  * Authentication service — user creation, JWT signing/verification
  */
-import type { Env } from '../env.js';
 import type { JWTPayload, User } from '../types.js';
 import { hashPassword, verifyPassword } from './crypto.js';
 
@@ -69,7 +68,7 @@ export async function signAccessToken(
     iat: now,
     exp: now + ACCESS_TOKEN_TTL,
   };
-  return signJWT(payload, secret);
+  return signJWT(payload as unknown as Record<string, unknown>, secret);
 }
 
 export async function signRefreshToken(

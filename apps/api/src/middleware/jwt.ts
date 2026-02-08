@@ -38,5 +38,5 @@ export const requireAuth = createMiddleware<{ Bindings: Env }>(async (c, next) =
   c.set('userRole', payload.role);
   c.set('jwtPayload', payload);
 
-  await next();
+  return next();
 });

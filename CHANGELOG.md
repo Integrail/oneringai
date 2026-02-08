@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`@everworker/oneringai/shared` Subpath Export** — New lightweight subpath export containing only pure data constants and types (Vendor, MODEL_REGISTRY, SERVICE_DEFINITIONS) with zero Node.js dependencies. Safe for Cloudflare Workers, Deno, and browser environments.
+
+- **`apps/api/` — Generic Extensible API Proxy** — New Cloudflare Worker (Hono) serving as a centralized API proxy for OneRingAI clients (Hosea, Amos). Full implementation includes:
+  - **Auth system** — Signup, signin, JWT access/refresh tokens, PBKDF2 password hashing via Web Crypto
+  - **Centralized model registry** — D1-backed model registry seeded from library `MODEL_REGISTRY`, with admin CRUD and pricing management
+  - **Service registry** — Layered resolution (custom_services → service_overrides → library SERVICE_DEFINITIONS)
+  - **Encrypted credential storage** — AES-GCM 256-bit encryption for user API keys
+  - **Generic proxy** — Forwards requests to any configured service with auth injection, supports both buffered and SSE streaming responses
+  - **Usage metering** — DB-driven pricing with platform token rates, vendor cost multipliers, or flat per-request costs. Automatic token deduction with full audit trail
+  - **Billing endpoints** — Balance, subscription, transaction, and usage history
+  - **Admin system** — Full admin API for user management (suspend/activate), token grants/adjustments, subscription plan changes, model registry CRUD, pricing management (per-model and bulk), service override configuration, platform key management, analytics dashboard, and audit log
+  - **Integration tests** — Auth, admin, metering, and credential tests using `@cloudflare/vitest-pool-workers`
+
 - **IMediaStorage Interface & FileMediaStorage** — Pluggable media storage following Clean Architecture.
   - New domain interface `IMediaStorage` with full CRUD: `save()`, `read()`, `delete()`, `exists()`, optional `list()`, `getPath()`
   - New infrastructure implementation `FileMediaStorage` (replaces `FileMediaOutputHandler`)
