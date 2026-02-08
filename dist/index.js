@@ -45151,13 +45151,20 @@ __export(tools_exports, {
   ToolRegistry: () => ToolRegistry,
   bash: () => bash,
   createBashTool: () => createBashTool,
+  createCreatePRTool: () => createCreatePRTool,
   createEditFileTool: () => createEditFileTool,
   createExecuteJavaScriptTool: () => createExecuteJavaScriptTool,
+  createGetPRTool: () => createGetPRTool,
+  createGitHubReadFileTool: () => createGitHubReadFileTool,
   createGlobTool: () => createGlobTool,
   createGrepTool: () => createGrepTool,
   createImageGenerationTool: () => createImageGenerationTool,
   createListDirectoryTool: () => createListDirectoryTool,
+  createPRCommentsTool: () => createPRCommentsTool,
+  createPRFilesTool: () => createPRFilesTool,
   createReadFileTool: () => createReadFileTool,
+  createSearchCodeTool: () => createSearchCodeTool,
+  createSearchFilesTool: () => createSearchFilesTool,
   createSpeechToTextTool: () => createSpeechToTextTool,
   createTextToSpeechTool: () => createTextToSpeechTool,
   createVideoTools: () => createVideoTools,
@@ -45181,7 +45188,9 @@ __export(tools_exports, {
   jsonManipulator: () => jsonManipulator,
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
+  parseRepository: () => parseRepository,
   readFile: () => readFile4,
+  resolveRepository: () => resolveRepository,
   setMediaOutputHandler: () => setMediaOutputHandler,
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
@@ -48725,6 +48734,851 @@ function registerMultimediaTools() {
 // src/tools/multimedia/index.ts
 registerMultimediaTools();
 
+// src/tools/github/types.ts
+function parseRepository(input) {
+  if (!input || input.trim().length === 0) {
+    throw new Error("Repository cannot be empty");
+  }
+  const trimmed = input.trim();
+  try {
+    const url2 = new URL(trimmed);
+    if (url2.hostname === "github.com" || url2.hostname === "www.github.com") {
+      const segments = url2.pathname.split("/").filter(Boolean);
+      if (segments.length >= 2) {
+        return { owner: segments[0], repo: segments[1].replace(/\.git$/, "") };
+      }
+    }
+  } catch {
+  }
+  const parts = trimmed.split("/");
+  if (parts.length === 2 && parts[0].length > 0 && parts[1].length > 0) {
+    return { owner: parts[0], repo: parts[1] };
+  }
+  throw new Error(
+    `Invalid repository format: "${input}". Expected "owner/repo" or "https://github.com/owner/repo"`
+  );
+}
+function resolveRepository(repository, connector) {
+  const repoStr = repository ?? connector.getOptions().defaultRepository;
+  if (!repoStr) {
+    return {
+      success: false,
+      error: 'No repository specified. Provide a "repository" parameter (e.g., "owner/repo") or configure defaultRepository on the connector.'
+    };
+  }
+  try {
+    return { success: true, repo: parseRepository(repoStr) };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+var GitHubAPIError = class extends Error {
+  constructor(status, statusText, body) {
+    const msg = typeof body === "object" && body !== null && "message" in body ? body.message : statusText;
+    super(`GitHub API error ${status}: ${msg}`);
+    this.status = status;
+    this.statusText = statusText;
+    this.body = body;
+    this.name = "GitHubAPIError";
+  }
+};
+async function githubFetch(connector, endpoint, options) {
+  let url2 = endpoint;
+  if (options?.queryParams && Object.keys(options.queryParams).length > 0) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(options.queryParams)) {
+      params.append(key, String(value));
+    }
+    url2 += (url2.includes("?") ? "&" : "?") + params.toString();
+  }
+  const headers = {
+    "Accept": options?.accept ?? "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+  if (options?.body) {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await connector.fetch(
+    url2,
+    {
+      method: options?.method ?? "GET",
+      headers,
+      body: options?.body ? JSON.stringify(options.body) : void 0
+    },
+    options?.userId
+  );
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  if (!response.ok) {
+    throw new GitHubAPIError(response.status, response.statusText, data);
+  }
+  return data;
+}
+
+// src/tools/github/searchFiles.ts
+function matchGlobPattern2(pattern, filePath) {
+  let regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "{{GLOBSTAR}}").replace(/\*/g, "[^/]*").replace(/\?/g, ".").replace(/\{\{GLOBSTAR\}\}/g, ".*");
+  regexPattern = "^" + regexPattern + "$";
+  try {
+    const regex = new RegExp(regexPattern);
+    return regex.test(filePath);
+  } catch {
+    return false;
+  }
+}
+function createSearchFilesTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "search_files",
+        description: `Search for files by name/path pattern in a GitHub repository.
+
+USAGE:
+- Supports glob patterns like "**/*.ts", "src/**/*.tsx"
+- Returns matching file paths sorted alphabetically
+- Uses the repository's file tree for fast matching
+
+PATTERN SYNTAX:
+- * matches any characters except /
+- ** matches any characters including /
+- ? matches a single character
+
+EXAMPLES:
+- Find all TypeScript files: { "pattern": "**/*.ts" }
+- Find files in src: { "pattern": "src/**/*.{ts,tsx}" }
+- Find package.json: { "pattern": "**/package.json" }
+- Search specific branch: { "pattern": "**/*.ts", "ref": "develop" }`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            pattern: {
+              type: "string",
+              description: 'Glob pattern to match files (e.g., "**/*.ts", "src/**/*.tsx")'
+            },
+            ref: {
+              type: "string",
+              description: "Branch, tag, or commit SHA. Defaults to the repository's default branch."
+            }
+          },
+          required: ["pattern"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [args.pattern];
+      if (args.repository) parts.push(`in ${args.repository}`);
+      if (args.ref) parts.push(`@${args.ref}`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Search files in a GitHub repository via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        let ref = args.ref;
+        if (!ref) {
+          const repoInfo = await githubFetch(
+            connector,
+            `/repos/${owner}/${repo}`,
+            { userId }
+          );
+          ref = repoInfo.default_branch;
+        }
+        const tree = await githubFetch(
+          connector,
+          `/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`,
+          { userId }
+        );
+        const matching = tree.tree.filter(
+          (entry) => entry.type === "blob" && matchGlobPattern2(args.pattern, entry.path)
+        ).map((entry) => ({
+          path: entry.path,
+          size: entry.size ?? 0,
+          type: entry.type
+        })).sort((a, b) => a.path.localeCompare(b.path));
+        return {
+          success: true,
+          files: matching,
+          count: matching.length,
+          truncated: tree.truncated
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to search files: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/searchCode.ts
+function createSearchCodeTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "search_code",
+        description: `Search for code content across a GitHub repository.
+
+USAGE:
+- Search by keyword, function name, class name, or any text
+- Filter by language, path, or file extension
+- Returns matching files with text fragments showing context
+
+RATE LIMITS:
+- GitHub's code search API is limited to 30 requests per minute
+- Results may be incomplete for very large repositories
+
+EXAMPLES:
+- Find function: { "query": "function handleAuth", "language": "typescript" }
+- Find imports: { "query": "import React", "extension": "tsx" }
+- Search in path: { "query": "TODO", "path": "src/utils" }
+- Limit results: { "query": "console.log", "limit": 10 }`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            query: {
+              type: "string",
+              description: "Search query \u2014 keyword, function name, or any text to find in code"
+            },
+            language: {
+              type: "string",
+              description: 'Filter by programming language (e.g., "typescript", "python", "go")'
+            },
+            path: {
+              type: "string",
+              description: 'Filter by file path prefix (e.g., "src/", "lib/utils")'
+            },
+            extension: {
+              type: "string",
+              description: 'Filter by file extension without dot (e.g., "ts", "py", "go")'
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results (default: 30, max: 100)"
+            }
+          },
+          required: ["query"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [`"${args.query}"`];
+      if (args.language) parts.push(`lang:${args.language}`);
+      if (args.repository) parts.push(`in ${args.repository}`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Search code in a GitHub repository via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        const qualifiers = [`repo:${owner}/${repo}`];
+        if (args.language) qualifiers.push(`language:${args.language}`);
+        if (args.path) qualifiers.push(`path:${args.path}`);
+        if (args.extension) qualifiers.push(`extension:${args.extension}`);
+        const q = `${args.query} ${qualifiers.join(" ")}`;
+        const perPage = Math.min(args.limit ?? 30, 100);
+        const result = await githubFetch(
+          connector,
+          `/search/code`,
+          {
+            userId,
+            // Request text-match fragments
+            accept: "application/vnd.github.text-match+json",
+            queryParams: { q, per_page: perPage }
+          }
+        );
+        const matches = result.items.map((item) => ({
+          file: item.path,
+          fragment: item.text_matches?.[0]?.fragment
+        }));
+        return {
+          success: true,
+          matches,
+          count: result.total_count,
+          truncated: result.incomplete_results || result.total_count > perPage
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to search code: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/readFile.ts
+function createGitHubReadFileTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "read_file",
+        description: `Read file content from a GitHub repository.
+
+USAGE:
+- Reads a file and returns content with line numbers
+- Supports line range selection with offset/limit for large files
+- By default reads up to 2000 lines from the beginning
+
+EXAMPLES:
+- Read entire file: { "path": "src/index.ts" }
+- Read specific branch: { "path": "README.md", "ref": "develop" }
+- Read lines 100-200: { "path": "src/app.ts", "offset": 100, "limit": 100 }
+- Specific repo: { "repository": "owner/repo", "path": "package.json" }
+
+NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (>5MB) may be truncated.`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            path: {
+              type: "string",
+              description: 'File path within the repository (e.g., "src/index.ts")'
+            },
+            ref: {
+              type: "string",
+              description: "Branch, tag, or commit SHA. Defaults to the repository's default branch."
+            },
+            offset: {
+              type: "number",
+              description: "Line number to start reading from (1-indexed). Only provide if the file is too large."
+            },
+            limit: {
+              type: "number",
+              description: "Number of lines to read (default: 2000). Only provide if the file is too large."
+            }
+          },
+          required: ["path"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [args.path];
+      if (args.repository) parts.push(`in ${args.repository}`);
+      if (args.ref) parts.push(`@${args.ref}`);
+      if (args.offset && args.limit) parts.push(`[lines ${args.offset}-${args.offset + args.limit}]`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Read a file from a GitHub repository via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        let fileContent;
+        let fileSha;
+        let fileSize;
+        const refParam = args.ref ? `?ref=${encodeURIComponent(args.ref)}` : "";
+        const contentResp = await githubFetch(
+          connector,
+          `/repos/${owner}/${repo}/contents/${args.path}${refParam}`,
+          { userId }
+        );
+        if (contentResp.type !== "file") {
+          return {
+            success: false,
+            error: `Path is not a file: ${args.path} (type: ${contentResp.type}). Use search_files to explore the repository.`,
+            path: args.path
+          };
+        }
+        fileSha = contentResp.sha;
+        fileSize = contentResp.size;
+        if (contentResp.content && contentResp.encoding === "base64") {
+          fileContent = Buffer.from(contentResp.content, "base64").toString("utf-8");
+        } else if (contentResp.git_url) {
+          const blob = await githubFetch(
+            connector,
+            contentResp.git_url,
+            { userId }
+          );
+          fileContent = Buffer.from(blob.content, "base64").toString("utf-8");
+          fileSize = blob.size;
+        } else {
+          return {
+            success: false,
+            error: `Cannot read file content: ${args.path} (no content or git_url in response)`,
+            path: args.path
+          };
+        }
+        const offset = args.offset ?? 1;
+        const limit = args.limit ?? 2e3;
+        const allLines = fileContent.split("\n");
+        const totalLines = allLines.length;
+        const startIndex = Math.max(0, offset - 1);
+        const endIndex = Math.min(totalLines, startIndex + limit);
+        const selectedLines = allLines.slice(startIndex, endIndex);
+        const lineNumberWidth = String(endIndex).length;
+        const formattedLines = selectedLines.map((line, i) => {
+          const lineNum = startIndex + i + 1;
+          const paddedNum = String(lineNum).padStart(lineNumberWidth, " ");
+          const truncatedLine = line.length > 2e3 ? line.substring(0, 2e3) + "..." : line;
+          return `${paddedNum}	${truncatedLine}`;
+        });
+        const truncated = endIndex < totalLines;
+        const result = formattedLines.join("\n");
+        return {
+          success: true,
+          content: result,
+          path: args.path,
+          size: fileSize,
+          lines: totalLines,
+          truncated,
+          sha: fileSha
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to read file: ${error instanceof Error ? error.message : String(error)}`,
+          path: args.path
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/getPR.ts
+function createGetPRTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "get_pr",
+        description: `Get full details of a pull request from a GitHub repository.
+
+Returns: title, description, state, author, labels, reviewers, merge status, branches, file stats, and more.
+
+EXAMPLES:
+- Get PR: { "pull_number": 123 }
+- Specific repo: { "repository": "owner/repo", "pull_number": 456 }`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            pull_number: {
+              type: "number",
+              description: "Pull request number"
+            }
+          },
+          required: ["pull_number"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [`#${args.pull_number}`];
+      if (args.repository) parts.push(`in ${args.repository}`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Get pull request details from GitHub via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        const pr = await githubFetch(
+          connector,
+          `/repos/${owner}/${repo}/pulls/${args.pull_number}`,
+          { userId }
+        );
+        return {
+          success: true,
+          data: {
+            number: pr.number,
+            title: pr.title,
+            body: pr.body,
+            state: pr.state,
+            draft: pr.draft,
+            author: pr.user.login,
+            labels: pr.labels.map((l) => l.name),
+            reviewers: pr.requested_reviewers.map((r) => r.login),
+            mergeable: pr.mergeable,
+            head: pr.head.ref,
+            base: pr.base.ref,
+            url: pr.html_url,
+            created_at: pr.created_at,
+            updated_at: pr.updated_at,
+            additions: pr.additions,
+            deletions: pr.deletions,
+            changed_files: pr.changed_files
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to get PR: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/prFiles.ts
+function createPRFilesTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "pr_files",
+        description: `Get the files changed in a pull request with diffs.
+
+Returns: filename, status (added/modified/removed/renamed), additions, deletions, and patch (diff) content for each file.
+
+EXAMPLES:
+- Get files: { "pull_number": 123 }
+- Specific repo: { "repository": "owner/repo", "pull_number": 456 }
+
+NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent for binary files.`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            pull_number: {
+              type: "number",
+              description: "Pull request number"
+            }
+          },
+          required: ["pull_number"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [`files for #${args.pull_number}`];
+      if (args.repository) parts.push(`in ${args.repository}`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Get PR changed files from GitHub via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        const files = await githubFetch(
+          connector,
+          `/repos/${owner}/${repo}/pulls/${args.pull_number}/files`,
+          {
+            userId,
+            queryParams: { per_page: 100 }
+          }
+        );
+        return {
+          success: true,
+          files: files.map((f) => ({
+            filename: f.filename,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+            changes: f.changes,
+            patch: f.patch
+          })),
+          count: files.length
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to get PR files: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/prComments.ts
+function createPRCommentsTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "pr_comments",
+        description: `Get all comments and reviews on a pull request.
+
+Returns a unified list of:
+- **review_comment**: Line-level comments on specific code (includes file path and line number)
+- **review**: Full reviews (approve/request changes/comment)
+- **comment**: General comments on the PR (issue-level)
+
+All entries are sorted by creation date (oldest first).
+
+EXAMPLES:
+- Get comments: { "pull_number": 123 }
+- Specific repo: { "repository": "owner/repo", "pull_number": 456 }`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            pull_number: {
+              type: "number",
+              description: "Pull request number"
+            }
+          },
+          required: ["pull_number"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [`comments for #${args.pull_number}`];
+      if (args.repository) parts.push(`in ${args.repository}`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Get PR comments and reviews from GitHub via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        const basePath = `/repos/${owner}/${repo}`;
+        const queryOpts = { userId, queryParams: { per_page: 100 } };
+        const [reviewComments, reviews, issueComments] = await Promise.all([
+          githubFetch(
+            connector,
+            `${basePath}/pulls/${args.pull_number}/comments`,
+            queryOpts
+          ),
+          githubFetch(
+            connector,
+            `${basePath}/pulls/${args.pull_number}/reviews`,
+            queryOpts
+          ),
+          githubFetch(
+            connector,
+            `${basePath}/issues/${args.pull_number}/comments`,
+            queryOpts
+          )
+        ]);
+        const allComments = [];
+        for (const rc of reviewComments) {
+          allComments.push({
+            id: rc.id,
+            type: "review_comment",
+            author: rc.user.login,
+            body: rc.body,
+            created_at: rc.created_at,
+            path: rc.path,
+            line: rc.line ?? rc.original_line ?? void 0
+          });
+        }
+        for (const r of reviews) {
+          if (!r.body && r.state === "APPROVED") continue;
+          allComments.push({
+            id: r.id,
+            type: "review",
+            author: r.user.login,
+            body: r.body || `[${r.state}]`,
+            created_at: r.submitted_at,
+            state: r.state
+          });
+        }
+        for (const ic of issueComments) {
+          allComments.push({
+            id: ic.id,
+            type: "comment",
+            author: ic.user.login,
+            body: ic.body,
+            created_at: ic.created_at
+          });
+        }
+        allComments.sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return {
+          success: true,
+          comments: allComments,
+          count: allComments.length
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to get PR comments: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/createPR.ts
+function createCreatePRTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "create_pr",
+        description: `Create a pull request on a GitHub repository.
+
+USAGE:
+- Specify source branch (head) and target branch (base)
+- Optionally create as draft
+
+EXAMPLES:
+- Create PR: { "title": "Add feature", "head": "feature-branch", "base": "main" }
+- Draft PR: { "title": "WIP: Refactor", "head": "refactor", "base": "develop", "draft": true }
+- With body: { "title": "Fix bug #42", "body": "Fixes the login issue\\n\\n## Changes\\n- Fixed auth flow", "head": "fix/42", "base": "main" }`,
+        parameters: {
+          type: "object",
+          properties: {
+            repository: {
+              type: "string",
+              description: 'Repository in "owner/repo" format or full GitHub URL. Optional if connector has a default repository.'
+            },
+            title: {
+              type: "string",
+              description: "Pull request title"
+            },
+            body: {
+              type: "string",
+              description: "Pull request description/body (Markdown supported)"
+            },
+            head: {
+              type: "string",
+              description: "Source branch name (the branch with your changes)"
+            },
+            base: {
+              type: "string",
+              description: 'Target branch name (the branch you want to merge into, e.g., "main")'
+            },
+            draft: {
+              type: "boolean",
+              description: "Create as a draft pull request (default: false)"
+            }
+          },
+          required: ["title", "head", "base"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [args.title];
+      if (args.repository) parts.push(`in ${args.repository}`);
+      return parts.join(" ");
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Create a pull request on GitHub via ${connector.displayName}`
+    },
+    execute: async (args) => {
+      const resolved = resolveRepository(args.repository, connector);
+      if (!resolved.success) {
+        return { success: false, error: resolved.error };
+      }
+      const { owner, repo } = resolved.repo;
+      try {
+        const pr = await githubFetch(
+          connector,
+          `/repos/${owner}/${repo}/pulls`,
+          {
+            method: "POST",
+            userId,
+            body: {
+              title: args.title,
+              body: args.body,
+              head: args.head,
+              base: args.base,
+              draft: args.draft ?? false
+            }
+          }
+        );
+        return {
+          success: true,
+          data: {
+            number: pr.number,
+            url: pr.html_url,
+            state: pr.state,
+            title: pr.title
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to create PR: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/github/register.ts
+function registerGitHubTools() {
+  ConnectorTools.registerService("github", (connector, userId) => {
+    return [
+      createSearchFilesTool(connector, userId),
+      createSearchCodeTool(connector, userId),
+      createGitHubReadFileTool(connector, userId),
+      createGetPRTool(connector, userId),
+      createPRFilesTool(connector, userId),
+      createPRCommentsTool(connector, userId),
+      createCreatePRTool(connector, userId)
+    ];
+  });
+}
+
+// src/tools/github/index.ts
+registerGitHubTools();
+
 // src/tools/registry.generated.ts
 var toolRegistry = [
   {
@@ -49204,6 +50058,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaOutputHandler, FilePersistentInstructionsStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaOutputHandler, FilePersistentInstructionsStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, parseRepository, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

@@ -30,6 +30,11 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Storage and Persistence
    - Use Cases and Best Practices
 10. [Tools & Function Calling](#tools--function-calling)
+    - Built-in Tools Overview (27+ tools across 7 categories)
+    - Developer Tools (Filesystem & Shell)
+    - Web Tools (webFetch, webFetchJS, webSearch, webScrape)
+    - JSON Tool
+    - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
 11. [Dynamic Tool Management](#dynamic-tool-management)
 12. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
 13. [Multimodal (Vision)](#multimodal-vision)
@@ -3049,7 +3054,24 @@ const myTool: ToolFunction = {
 };
 ```
 
-### Built-in Tools
+### Built-in Tools Overview
+
+The library ships with 27+ built-in tools across 7 categories:
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Memory** | `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list` | Working memory for agents (auto-registered when feature enabled) |
+| **In-Context Memory** | `context_set`, `context_delete`, `context_list` | Key-value store visible directly in context (auto-registered) |
+| **Persistent Instructions** | `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear` | Cross-session agent instructions (auto-registered) |
+| **Filesystem** | `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory` | Local file operations |
+| **Shell** | `bash` | Shell command execution with safety guards |
+| **Web** | `webFetch`, `webFetchJS`, `webSearch`, `webScrape` | Web content retrieval, search, and scraping |
+| **Code** | `executeJavaScript` | Sandboxed JavaScript execution |
+| **JSON** | `jsonManipulator` | JSON object manipulation (add, delete, replace fields) |
+| **GitHub** | `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (auto-registered for GitHub connectors) |
+| **Multimedia** | `generate_image`, `generate_video`, `text_to_speech`, `speech_to_text` | Media generation (auto-registered for AI vendor connectors) |
+
+Memory, In-Context Memory, and Persistent Instructions tools are documented in their respective sections above. Multimedia tools are documented in the Audio, Image, and Video sections. The rest are documented below.
 
 #### Memory Tools
 
@@ -3330,6 +3352,324 @@ interface ShellToolConfig {
 3. **Prefer grep over bash grep** - Better output formatting and safety
 4. **Set working directory** - Restrict operations to project directory
 5. **Configure blockedDirectories** - Prevent accidental access to sensitive directories
+
+### Web Tools
+
+Tools for fetching web content, searching the web, and scraping pages. These are standalone tools (not connector-dependent).
+
+#### webFetch
+
+Fetch and process web content. Converts HTML to markdown for easy consumption by LLMs.
+
+```typescript
+import { webFetch } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webFetch],
+});
+
+await agent.run('Fetch https://example.com and summarize it');
+```
+
+**Parameters:**
+- `url` (required) — URL to fetch
+- `prompt` — What to extract from the page
+- `format` — Output format: `"markdown"` (default) or `"text"`
+
+#### webFetchJS
+
+Fetch web pages with JavaScript rendering (for SPAs and dynamic content). Requires a headless browser.
+
+```typescript
+import { webFetchJS } from '@everworker/oneringai';
+```
+
+**Parameters:** Same as `webFetch`, but renders JavaScript before extracting content.
+
+#### webSearch
+
+Web search via configured search providers. Requires a search provider connector (Serper, Brave, Tavily, or RapidAPI). See the [Web Search](#web-search) section for full setup.
+
+```typescript
+import { webSearch } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webSearch],
+});
+
+await agent.run('Search for the latest Node.js release');
+```
+
+**Parameters:**
+- `query` (required) — Search query
+- `num_results` — Number of results (default: 10)
+- `search_provider` — Provider connector name
+
+#### webScrape
+
+Web scraping via ScrapeProvider (ZenRows). See the [Web Scraping](#web-scraping) section for full setup.
+
+```typescript
+import { webScrape } from '@everworker/oneringai';
+```
+
+**Parameters:**
+- `url` (required) — URL to scrape
+- `include_markdown` — Convert to markdown
+- `include_links` — Extract links
+- `include_screenshot` — Capture screenshot
+
+### JSON Tool
+
+#### jsonManipulator
+
+Manipulate JSON objects — add, delete, or replace fields.
+
+```typescript
+import { jsonManipulator } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [jsonManipulator],
+});
+
+await agent.run('Add a "version" field set to "2.0" to this JSON: {"name": "app"}');
+```
+
+**Parameters:**
+- `json` (required) — JSON string to manipulate
+- `operation` (required) — `"add"`, `"delete"`, or `"replace"`
+- `path` (required) — JSON path (dot notation, e.g., `"config.debug"`)
+- `value` — Value for add/replace operations
+
+### GitHub Connector Tools
+
+When a GitHub connector is configured, `ConnectorTools.for('github')` automatically includes 7 dedicated tools alongside the generic API tool. These mirror the local filesystem tools for remote GitHub repositories.
+
+#### Quick Start
+
+```typescript
+import { Connector, ConnectorTools, Services, Agent } from '@everworker/oneringai';
+
+// Create a GitHub connector
+Connector.create({
+  name: 'github',
+  serviceType: Services.Github,
+  auth: { type: 'api_key', apiKey: process.env.GITHUB_TOKEN! },
+  baseURL: 'https://api.github.com',
+  options: {
+    defaultRepository: 'myorg/myrepo', // Optional: default repo for all tools
+  },
+});
+
+// Get all GitHub tools (generic API + 7 dedicated tools)
+const tools = ConnectorTools.for('github');
+
+// Use with an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: tools,
+});
+
+// Agent can now search files, read code, analyze PRs, and create PRs
+await agent.run('Find all TypeScript files in src/ and show me the main entry point');
+await agent.run('Show me PR #42 and summarize the changes');
+```
+
+#### Repository Resolution
+
+All GitHub tools accept an optional `repository` parameter. Resolution order:
+
+1. **Explicit parameter**: `{ "repository": "owner/repo" }` or `{ "repository": "https://github.com/owner/repo" }`
+2. **Connector default**: `connector.options.defaultRepository`
+3. **Error**: If neither is available
+
+This means you can configure a default repo once on the connector and all tools use it automatically.
+
+#### search_files
+
+Search for files by glob pattern in a repository. Mirrors the local `glob` tool.
+
+```typescript
+// Find TypeScript files
+{ "pattern": "**/*.ts" }
+
+// Search in specific path
+{ "pattern": "src/components/**/*.tsx", "repository": "facebook/react" }
+
+// Search specific branch
+{ "pattern": "**/*.test.ts", "ref": "develop" }
+```
+
+**Parameters:**
+- `repository` — Repository in `"owner/repo"` format or GitHub URL (optional if connector has default)
+- `pattern` (required) — Glob pattern (`**/*.ts`, `src/**/*.tsx`, etc.)
+- `ref` — Branch, tag, or commit SHA (defaults to default branch)
+
+**Returns:** `{ files: [{ path, size, type }], count, truncated }`
+
+#### search_code
+
+Search code content across a repository. Mirrors the local `grep` tool.
+
+```typescript
+// Find function usage
+{ "query": "handleAuth", "language": "typescript" }
+
+// Search in specific path
+{ "query": "TODO", "path": "src/utils", "extension": "ts" }
+```
+
+**Parameters:**
+- `repository` — Repository (optional)
+- `query` (required) — Search term
+- `language` — Filter by language (`"typescript"`, `"python"`, etc.)
+- `path` — Filter by path prefix (`"src/"`)
+- `extension` — Filter by extension (`"ts"`, `"py"`)
+- `limit` — Max results (default: 30, max: 100)
+
+**Returns:** `{ matches: [{ file, fragment }], count, truncated }`
+
+> **Note:** GitHub's code search API is rate-limited to 30 requests per minute.
+
+#### read_file (GitHub)
+
+Read file content from a repository with line range support. Mirrors the local `read_file` tool.
+
+```typescript
+// Read entire file
+{ "path": "src/index.ts" }
+
+// Read specific lines
+{ "path": "src/app.ts", "offset": 100, "limit": 50 }
+
+// Read from specific branch
+{ "path": "README.md", "ref": "develop" }
+```
+
+**Parameters:**
+- `repository` — Repository (optional)
+- `path` (required) — File path within the repo
+- `ref` — Branch, tag, or SHA
+- `offset` — Start line (1-indexed)
+- `limit` — Number of lines (default: 2000)
+
+**Returns:** `{ content: "1\tline one\n2\tline two...", lines, size, truncated, sha }`
+
+Output is formatted with line numbers matching the local `read_file` format. Files larger than 1MB are automatically fetched via the Git Blob API.
+
+#### get_pr
+
+Get full details of a pull request.
+
+```typescript
+{ "pull_number": 42 }
+{ "pull_number": 42, "repository": "owner/repo" }
+```
+
+**Parameters:**
+- `repository` — Repository (optional)
+- `pull_number` (required) — PR number
+
+**Returns:** `{ data: { number, title, body, state, draft, author, labels, reviewers, mergeable, head, base, url, created_at, updated_at, additions, deletions, changed_files } }`
+
+#### pr_files
+
+Get files changed in a PR with diffs.
+
+```typescript
+{ "pull_number": 42 }
+```
+
+**Parameters:**
+- `repository` — Repository (optional)
+- `pull_number` (required) — PR number
+
+**Returns:** `{ files: [{ filename, status, additions, deletions, changes, patch }], count }`
+
+The `status` field is one of: `added`, `modified`, `removed`, `renamed`. The `patch` field contains the unified diff.
+
+#### pr_comments
+
+Get all comments and reviews on a PR, merged from three GitHub API endpoints into a unified format.
+
+```typescript
+{ "pull_number": 42 }
+```
+
+**Parameters:**
+- `repository` — Repository (optional)
+- `pull_number` (required) — PR number
+
+**Returns:** `{ comments: [{ id, type, author, body, created_at, path?, line?, state? }], count }`
+
+Comment types:
+- `review_comment` — Line-level comments on code (includes `path` and `line`)
+- `review` — Full reviews (approve/request changes/comment, includes `state`)
+- `comment` — General PR comments
+
+All entries are sorted by creation date (oldest first).
+
+#### create_pr
+
+Create a pull request.
+
+```typescript
+// Basic PR
+{ "title": "Add feature", "head": "feature-branch", "base": "main" }
+
+// Draft PR with description
+{
+  "title": "WIP: Refactor auth",
+  "body": "## Changes\n- Refactored auth flow\n- Added tests",
+  "head": "refactor/auth",
+  "base": "main",
+  "draft": true
+}
+```
+
+**Parameters:**
+- `repository` — Repository (optional)
+- `title` (required) — PR title
+- `body` — PR description (Markdown supported)
+- `head` (required) — Source branch name
+- `base` (required) — Target branch name
+- `draft` — Create as draft (default: false)
+
+**Returns:** `{ data: { number, url, state, title } }`
+
+> **Permission:** This tool has `riskLevel: 'medium'` since it creates external state.
+
+#### Using Individual GitHub Tool Factories
+
+You can also create GitHub tools individually for custom setups:
+
+```typescript
+import {
+  createSearchFilesTool,
+  createSearchCodeTool,
+  createGitHubReadFileTool,
+  createGetPRTool,
+  createPRFilesTool,
+  createPRCommentsTool,
+  createCreatePRTool,
+  parseRepository,
+} from '@everworker/oneringai';
+
+// Create individual tools from a connector
+const connector = Connector.get('github');
+const searchFiles = createSearchFilesTool(connector);
+const readFile = createGitHubReadFileTool(connector);
+
+// Use parseRepository for URL resolution
+const { owner, repo } = parseRepository('https://github.com/facebook/react');
+```
 
 ---
 
@@ -6333,7 +6673,11 @@ All tools generated by `ConnectorTools.for()` are prefixed with the connector na
 | Tool type | Naming pattern | Example |
 |-----------|---------------|---------|
 | Generic API | `{connectorName}_api` | `github_api`, `slack_api` |
-| Service-specific | `{connectorName}_{toolName}` | `google_generate_image`, `main-openai_text_to_speech` |
+| Service-specific | `{connectorName}_{toolName}` | `github_search_files`, `google_generate_image`, `main-openai_text_to_speech` |
+
+**Services with built-in tools:**
+- **GitHub** — 7 tools: `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` (see [GitHub Connector Tools](#github-connector-tools))
+- **AI Vendors** (OpenAI, Google, Grok) — Multimedia tools: `generate_image`, `generate_video`, `text_to_speech`, `speech_to_text`
 
 This ensures that tools from different vendors (e.g., `google_generate_image` vs `main-openai_generate_image`) never collide, and are clearly identified by connector in UIs and agent configs.
 
@@ -6350,12 +6694,22 @@ Every connector with a `baseURL` gets a generic API tool that allows the agent t
   description: 'Make API requests to api.github.com',
   parameters: {
     method: { enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-    endpoint: { type: 'string' },          // e.g., '/repos/owner/repo'
-    queryParams: { type: 'object' },       // Optional query parameters
-    body: { type: 'object' },              // Optional request body
-    headers: { type: 'object' },           // Optional headers (auth protected)
+    endpoint: { type: 'string' },          // API path, e.g., '/repos/owner/repo'
+    body: { type: 'object' },              // JSON request body (POST/PUT/PATCH)
+    queryParams: { type: 'object' },       // URL query parameters (GET filtering/pagination)
+    headers: { type: 'object' },           // Additional headers (auth headers are protected)
   }
 }
+```
+
+**Important:** For `POST`/`PUT`/`PATCH` requests, data must be passed in the `body` parameter as a JSON object — **not** as query string parameters in the endpoint URL. The body is sent as `application/json`. For example, to post a Slack message:
+
+```typescript
+// Correct: data in body
+{ method: 'POST', endpoint: '/chat.postMessage', body: { channel: 'C123', text: 'Hello!' } }
+
+// Wrong: data in query string — many APIs will reject this
+{ method: 'POST', endpoint: '/chat.postMessage?channel=C123&text=Hello!' }
 ```
 
 **Security:** Authorization headers cannot be overridden by the agent.

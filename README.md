@@ -973,7 +973,8 @@ Connector.create({
 });
 
 // Generate tools from the connector
-// Tools are prefixed with connector name: github_api, github_list_repos, etc.
+// GitHub connectors get 7 dedicated tools + generic API automatically:
+// search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr
 const tools = ConnectorTools.for('github');
 
 // Use with an agent
@@ -983,12 +984,13 @@ const agent = Agent.create({
   tools: tools,
 });
 
-await agent.run('List all open issues in owner/repo');
+await agent.run('Find all TypeScript files in src/ and show me the entry point');
+await agent.run('Show me PR #42 and summarize the review comments');
 ```
 
 **Supported Services (35+):**
 - **Communication**: Slack, Discord, Microsoft Teams, Twilio
-- **Development**: GitHub, GitLab, Jira, Linear, Bitbucket
+- **Development**: GitHub *(7 built-in tools)*, GitLab, Jira, Linear, Bitbucket
 - **Productivity**: Notion, Asana, Monday, Airtable, Trello
 - **CRM**: Salesforce, HubSpot, Zendesk, Intercom
 - **Payments**: Stripe, PayPal, Square

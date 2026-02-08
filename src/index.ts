@@ -840,6 +840,31 @@ export type {
   MediaOutputResult,
 } from './tools/index.js';
 
+// GitHub connector tools (auto-registered with ConnectorTools for GitHub service)
+export {
+  createSearchFilesTool,
+  createSearchCodeTool,
+  createGitHubReadFileTool,
+  createGetPRTool,
+  createPRFilesTool,
+  createPRCommentsTool,
+  createCreatePRTool,
+  parseRepository,
+  resolveRepository,
+} from './tools/index.js';
+
+export type {
+  GitHubRepository,
+  GitHubSearchFilesResult,
+  GitHubSearchCodeResult,
+  GitHubReadFileResult,
+  GitHubGetPRResult,
+  GitHubPRFilesResult,
+  GitHubPRCommentsResult,
+  GitHubPRCommentEntry,
+  GitHubCreatePRResult,
+} from './tools/index.js';
+
 // ============ Built-in Agents ============
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub Connector Tools** — First external service connector tools. When a GitHub connector is registered, `ConnectorTools.for('github')` automatically returns 7 dedicated tools:
+  - `search_files` — Search files by glob pattern in a repository (mirrors local `glob`)
+  - `search_code` — Search code content across a repository (mirrors local `grep`)
+  - `read_file` — Read file content with line ranges from a repository (mirrors local `read_file`)
+  - `get_pr` — Get full pull request details (title, state, author, labels, reviewers, merge status)
+  - `pr_files` — Get files changed in a PR with diffs
+  - `pr_comments` — Get all comments and reviews on a PR (merges review comments, reviews, issue comments)
+  - `create_pr` — Create a pull request
+  - Shared utilities: `parseRepository()` accepts `"owner/repo"` or full GitHub URLs, `resolveRepository()` with connector `defaultRepository` fallback
+  - All tools auto-register via side-effect import following the multimedia tools pattern
+
+### Fixed
+
+- **Generic API tool POST body handling** — Improved tool parameter descriptions to explicitly instruct LLMs to use the `body` parameter for POST/PUT/PATCH data instead of embedding request data as query string parameters in the endpoint URL. Previously, LLMs would often call e.g. `POST /chat.postMessage?channel=C123&text=hello` instead of using `body: { channel: "C123", text: "hello" }`, causing APIs like Slack to reject the request with "missing required field". The `describeCall` output now also includes truncated body content for easier debugging.
+
 ### Breaking Changes
 
 - **Persistent Instructions Plugin - Granular KVP API** — `PersistentInstructionsPluginNextGen`

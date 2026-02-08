@@ -139,6 +139,36 @@ export type {
 } from './multimedia/index.js';
 
 // ============================================================================
+// GitHub Tools (Auto-registered with ConnectorTools for GitHub service)
+// ============================================================================
+
+export {
+  // Tool factories
+  createSearchFilesTool,
+  createSearchCodeTool,
+  createGitHubReadFileTool,
+  createGetPRTool,
+  createPRFilesTool,
+  createPRCommentsTool,
+  createCreatePRTool,
+  // Utilities
+  parseRepository,
+  resolveRepository,
+} from './github/index.js';
+
+export type {
+  GitHubRepository,
+  GitHubSearchFilesResult,
+  GitHubSearchCodeResult,
+  GitHubReadFileResult,
+  GitHubGetPRResult,
+  GitHubPRFilesResult,
+  GitHubPRCommentsResult,
+  GitHubPRCommentEntry,
+  GitHubCreatePRResult,
+} from './github/index.js';
+
+// ============================================================================
 // Convenience: All Developer Tools Bundle
 // ============================================================================
 
