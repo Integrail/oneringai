@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-07
+**Generated:** 2026-02-08
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -11,24 +11,24 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 
 ## Table of Contents
 
-- [Core](#core) (8 items)
+- [Core](#core) (9 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (9 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (22 items)
 - [Video Generation](#video-generation) (18 items)
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (18 items)
-- [Tools & Function Calling](#tools-function-calling) (81 items)
+- [Session Management](#session-management) (21 items)
+- [Tools & Function Calling](#tools-function-calling) (89 items)
 - [Streaming](#streaming) (15 items)
 - [Model Registry](#model-registry) (9 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
 - [Utilities](#utilities) (6 items)
-- [Interfaces](#interfaces) (37 items)
+- [Interfaces](#interfaces) (42 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (180 items)
+- [Other](#other) (187 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:120`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:129`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -858,6 +858,12 @@ When provided (as AgentContextNextGen instance or config), Agent will:
 - Support session persistence via context
 
 Pass an AgentContextNextGen instance or AgentContextNextGenConfig to enable. |
+| `toolExecutionTimeout?` | `toolExecutionTimeout?: number;` | Hard timeout in milliseconds for any single tool execution.
+Acts as a safety net: if a tool's own timeout mechanism fails
+(e.g. a spawned child process doesn't exit), this will force-resolve
+with an error. Default: 0 (disabled - relies on each tool's own timeout).
+
+Example: `toolExecutionTimeout: 300000` (5 minutes hard cap per tool call) |
 | `toolTimeout?` | `toolTimeout?: number;` | - |
 | `hooks?` | `hooks?: HookConfig;` | - |
 | `historyMode?` | `historyMode?: HistoryMode;` | - |
@@ -920,12 +926,26 @@ type Vendor = (typeof Vendor)[keyof typeof Vendor]
 
 ### createProvider `function`
 
-📍 [`src/core/createProvider.ts:23`](src/core/createProvider.ts)
+📍 [`src/core/createProvider.ts:67`](src/core/createProvider.ts)
 
 Create a text provider from a connector
 
 ```typescript
 export function createProvider(connector: Connector): ITextProvider
+```
+
+---
+
+### getVendorDefaultBaseURL `function`
+
+📍 [`src/core/createProvider.ts:60`](src/core/createProvider.ts)
+
+Get the default API base URL for a vendor.
+For OpenAI/Anthropic reads from the installed SDK at runtime.
+Returns undefined for Custom or unknown vendors.
+
+```typescript
+export function getVendorDefaultBaseURL(vendor: string): string | undefined
 ```
 
 ---
@@ -2653,12 +2673,13 @@ export function calculateImageCost(
 
 ### createImageGenerationTool `function`
 
-📍 [`src/tools/multimedia/imageGeneration.ts:35`](src/tools/multimedia/imageGeneration.ts)
+📍 [`src/tools/multimedia/imageGeneration.ts:36`](src/tools/multimedia/imageGeneration.ts)
 
 ```typescript
 export function createImageGenerationTool(
   connector: Connector,
-  outputHandler?: IMediaOutputHandler
+  storage?: IMediaStorage,
+  userId?: string
 ): ToolFunction&lt;GenerateImageArgs, GenerateImageResult&gt;
 ```
 
@@ -3889,12 +3910,13 @@ export function createVideoProvider(connector: Connector): IVideoProvider
 
 ### createVideoTools `function`
 
-📍 [`src/tools/multimedia/videoGeneration.ts:48`](src/tools/multimedia/videoGeneration.ts)
+📍 [`src/tools/multimedia/videoGeneration.ts:49`](src/tools/multimedia/videoGeneration.ts)
 
 ```typescript
 export function createVideoTools(
   connector: Connector,
-  outputHandler?: IMediaOutputHandler
+  storage?: IMediaStorage,
+  userId?: string
 ): ToolFunction[]
 ```
 
@@ -8910,6 +8932,105 @@ async rebuildIndex(): Promise&lt;void&gt;
 
 ---
 
+### FileMediaStorage `class`
+
+📍 [`src/infrastructure/storage/FileMediaStorage.ts:47`](src/infrastructure/storage/FileMediaStorage.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config?: FileMediaStorageConfig)
+```
+
+**Parameters:**
+- `config`: `FileMediaStorageConfig | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `save()`
+
+```typescript
+async save(data: Buffer, metadata: MediaStorageMetadata): Promise&lt;MediaStorageResult&gt;
+```
+
+**Parameters:**
+- `data`: `Buffer&lt;ArrayBufferLike&gt;`
+- `metadata`: `MediaStorageMetadata`
+
+**Returns:** `Promise&lt;MediaStorageResult&gt;`
+
+#### `read()`
+
+```typescript
+async read(location: string): Promise&lt;Buffer | null&gt;
+```
+
+**Parameters:**
+- `location`: `string`
+
+**Returns:** `Promise&lt;Buffer&lt;ArrayBufferLike&gt; | null&gt;`
+
+#### `delete()`
+
+```typescript
+async delete(location: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `location`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+```typescript
+async exists(location: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `location`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `list()`
+
+```typescript
+async list(options?: MediaStorageListOptions): Promise&lt;MediaStorageEntry[]&gt;
+```
+
+**Parameters:**
+- `options`: `MediaStorageListOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;MediaStorageEntry[]&gt;`
+
+#### `getPath()`
+
+```typescript
+getPath(): string
+```
+
+**Returns:** `string`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `outputDir` | `outputDir: string` | - |
+| `initialized` | `initialized: boolean` | - |
+
+</details>
+
+---
+
 ### FilePersistentInstructionsStorage `class`
 
 📍 [`src/infrastructure/storage/FilePersistentInstructionsStorage.ts:79`](src/infrastructure/storage/FilePersistentInstructionsStorage.ts)
@@ -9208,6 +9329,21 @@ Configuration for FileContextStorage
 
 ---
 
+### FileMediaStorageConfig `interface`
+
+📍 [`src/infrastructure/storage/FileMediaStorage.ts:42`](src/infrastructure/storage/FileMediaStorage.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `outputDir?` | `outputDir?: string;` | Directory to store media files. Defaults to `os.tmpdir()/oneringai-media/` |
+
+</details>
+
+---
+
 ### FilePersistentInstructionsStorageConfig `interface`
 
 📍 [`src/infrastructure/storage/FilePersistentInstructionsStorage.ts:24`](src/infrastructure/storage/FilePersistentInstructionsStorage.ts)
@@ -9337,6 +9473,18 @@ await ctx.save('session-001', { title: 'My Session' });
 
 // Load session
 await ctx.load('session-001');
+```
+
+---
+
+### createFileMediaStorage `function`
+
+📍 [`src/infrastructure/storage/FileMediaStorage.ts:178`](src/infrastructure/storage/FileMediaStorage.ts)
+
+Factory function for creating FileMediaStorage instances
+
+```typescript
+export function createFileMediaStorage(config?: FileMediaStorageConfig): FileMediaStorage
 ```
 
 ---
@@ -9788,7 +9936,7 @@ async execute(tool: ToolFunction, args: unknown): Promise&lt;unknown&gt;
 
 ### ToolManager `class`
 
-📍 [`src/core/ToolManager.ts:129`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:142`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -9796,8 +9944,11 @@ async execute(tool: ToolFunction, args: unknown): Promise&lt;unknown&gt;
 #### `constructor`
 
 ```typescript
-constructor()
+constructor(config?: ToolManagerConfig)
 ```
+
+**Parameters:**
+- `config`: `ToolManagerConfig | undefined` *(optional)*
 
 </details>
 
@@ -11750,6 +11901,7 @@ Simple and clean - only what tools actually need.
 |----------|------|-------------|
 | `agentId?` | `agentId?: string;` | Agent ID (for logging/tracing) |
 | `taskId?` | `taskId?: string;` | Task ID (if running in TaskAgent) |
+| `userId?` | `userId?: string;` | User ID — set by host app via agent.tools.setToolContext() for per-user operations |
 | `memory?` | `memory?: WorkingMemoryAccess;` | Working memory access (if agent has memory feature enabled) |
 | `signal?` | `signal?: AbortSignal;` | Abort signal for cancellation |
 
@@ -11862,6 +12014,26 @@ The returned string replaces definition.function.description when sending to LLM
 The static description in definition.function.description serves as a fallback. |
 | `describeCall?` | `describeCall?: (args: TArgs) =&gt; string;` | Returns a human-readable description of a tool call.
 Used for logging, UI display, and debugging. |
+
+</details>
+
+---
+
+### ToolManagerConfig `interface`
+
+📍 [`src/core/ToolManager.ts:132`](src/core/ToolManager.ts)
+
+Configuration for ToolManager
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolExecutionTimeout?` | `toolExecutionTimeout?: number;` | Hard timeout in milliseconds for any single tool execution.
+Acts as a safety net: if a tool's own timeout mechanism fails
+(e.g. child process doesn't exit), this will force-resolve with an error.
+Default: 0 (disabled - relies on tool's own timeout) |
 
 </details>
 
@@ -12218,6 +12390,21 @@ export function createBashTool(config: ShellToolConfig =
 
 ---
 
+### createCreatePRTool `function`
+
+📍 [`src/tools/github/createPR.ts:44`](src/tools/github/createPR.ts)
+
+Create a GitHub create_pr tool
+
+```typescript
+export function createCreatePRTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;CreatePRArgs, GitHubCreatePRResult&gt;
+```
+
+---
+
 ### createEditFileTool `function`
 
 📍 [`src/tools/filesystem/editFile.ts:42`](src/tools/filesystem/editFile.ts)
@@ -12243,6 +12430,36 @@ after the tool is created.
 
 ```typescript
 export function createExecuteJavaScriptTool(): ToolFunction&lt;ExecuteJSArgs, ExecuteJSResult&gt;
+```
+
+---
+
+### createGetPRTool `function`
+
+📍 [`src/tools/github/getPR.ts:29`](src/tools/github/getPR.ts)
+
+Create a GitHub get_pr tool
+
+```typescript
+export function createGetPRTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;GetPRArgs, GitHubGetPRResult&gt;
+```
+
+---
+
+### createGitHubReadFileTool `function`
+
+📍 [`src/tools/github/readFile.ts:40`](src/tools/github/readFile.ts)
+
+Create a GitHub read_file tool
+
+```typescript
+export function createGitHubReadFileTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;GitHubReadFileArgs, GitHubReadFileResult&gt;
 ```
 
 ---
@@ -12283,6 +12500,36 @@ export function createListDirectoryTool(config: FilesystemToolConfig =
 
 ---
 
+### createPRCommentsTool `function`
+
+📍 [`src/tools/github/prComments.ts:33`](src/tools/github/prComments.ts)
+
+Create a GitHub pr_comments tool
+
+```typescript
+export function createPRCommentsTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;PRCommentsArgs, GitHubPRCommentsResult&gt;
+```
+
+---
+
+### createPRFilesTool `function`
+
+📍 [`src/tools/github/prFiles.ts:29`](src/tools/github/prFiles.ts)
+
+Create a GitHub pr_files tool
+
+```typescript
+export function createPRFilesTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;PRFilesArgs, GitHubPRFilesResult&gt;
+```
+
+---
+
 ### createReadFileTool `function`
 
 📍 [`src/tools/filesystem/readFile.ts:40`](src/tools/filesystem/readFile.ts)
@@ -12295,13 +12542,45 @@ export function createReadFileTool(config: FilesystemToolConfig =
 
 ---
 
+### createSearchCodeTool `function`
+
+📍 [`src/tools/github/searchCode.ts:42`](src/tools/github/searchCode.ts)
+
+Create a GitHub search_code tool
+
+```typescript
+export function createSearchCodeTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;SearchCodeArgs, GitHubSearchCodeResult&gt;
+```
+
+---
+
+### createSearchFilesTool `function`
+
+📍 [`src/tools/github/searchFiles.ts:56`](src/tools/github/searchFiles.ts)
+
+Create a GitHub search_files tool
+
+```typescript
+export function createSearchFilesTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;SearchFilesArgs, GitHubSearchFilesResult&gt;
+```
+
+---
+
 ### createSpeechToTextTool `function`
 
-📍 [`src/tools/multimedia/speechToText.ts:29`](src/tools/multimedia/speechToText.ts)
+📍 [`src/tools/multimedia/speechToText.ts:31`](src/tools/multimedia/speechToText.ts)
 
 ```typescript
 export function createSpeechToTextTool(
-  connector: Connector
+  connector: Connector,
+  storage?: IMediaStorage,
+  _userId?: string
 ): ToolFunction&lt;SpeechToTextArgs, SpeechToTextResult&gt;
 ```
 
@@ -12309,12 +12588,13 @@ export function createSpeechToTextTool(
 
 ### createTextToSpeechTool `function`
 
-📍 [`src/tools/multimedia/textToSpeech.ts:31`](src/tools/multimedia/textToSpeech.ts)
+📍 [`src/tools/multimedia/textToSpeech.ts:32`](src/tools/multimedia/textToSpeech.ts)
 
 ```typescript
 export function createTextToSpeechTool(
   connector: Connector,
-  outputHandler?: IMediaOutputHandler
+  storage?: IMediaStorage,
+  userId?: string
 ): ToolFunction&lt;TextToSpeechArgs, TextToSpeechResult&gt;
 ```
 
@@ -12388,7 +12668,7 @@ export function getAllBuiltInTools(): ToolFunction[]
 
 ### getConnectorTools `function`
 
-📍 [`src/connectors/vendors/helpers.ts:249`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:259`](src/connectors/vendors/helpers.ts)
 
 Get all tools for a connector (delegates to ConnectorTools)
 
@@ -14856,7 +15136,7 @@ Defines a single authentication method (e.g., API key, OAuth user flow)
 
 ### CreateConnectorOptions `interface`
 
-📍 [`src/connectors/vendors/types.ts:138`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:141`](src/connectors/vendors/types.ts)
 
 Options for creating a connector from a template
 
@@ -15001,6 +15281,7 @@ Supports multiple OAuth flows
 | `audience?` | `audience?: string;` | - |
 | `refreshBeforeExpiry?` | `refreshBeforeExpiry?: number;` | - |
 | `storageKey?` | `storageKey?: string;` | - |
+| `extra?` | `extra?: Record&lt;string, string&gt;;` | Vendor-specific extra credentials |
 
 </details>
 
@@ -15078,7 +15359,7 @@ All implementations must encrypt tokens at rest
 
 ### VendorInfo `interface`
 
-📍 [`src/connectors/vendors/helpers.ts:256`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:266`](src/connectors/vendors/helpers.ts)
 
 Get vendor template information for display
 
@@ -15127,7 +15408,7 @@ Vendor logo information
 
 ### VendorRegistryEntry `interface`
 
-📍 [`src/connectors/vendors/types.ts:105`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:108`](src/connectors/vendors/types.ts)
 
 Registry entry for a vendor (generated at build time)
 
@@ -15150,7 +15431,7 @@ Registry entry for a vendor (generated at build time)
 
 ### VendorTemplate `interface`
 
-📍 [`src/connectors/vendors/types.ts:73`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:76`](src/connectors/vendors/types.ts)
 
 Vendor template definition
 Complete configuration for a vendor's supported authentication methods
@@ -15201,6 +15482,9 @@ type AuthTemplateField = | 'apiKey'
   | 'accessKeyId'
   | 'secretAccessKey'
   | 'applicationKey'
+  // Vendor-specific extra fields (stored in auth.extra)
+  | 'appToken'
+  | 'signingSecret'
 ```
 
 ---
@@ -15217,7 +15501,7 @@ type OAuthFlow = 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 's
 
 ### TemplateCredentials `type`
 
-📍 [`src/connectors/vendors/types.ts:131`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:134`](src/connectors/vendors/types.ts)
 
 Credentials provided by user when creating connector from template
 
@@ -15348,7 +15632,7 @@ const bobRepos = await bobFetch('/user/repos');
 
 ### createConnectorFromTemplate `function`
 
-📍 [`src/connectors/vendors/helpers.ts:192`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:202`](src/connectors/vendors/helpers.ts)
 
 Create a Connector from a vendor template
 
@@ -15414,7 +15698,7 @@ export function getAllVendorTemplates(): VendorTemplate[]
 
 ### getCredentialsSetupURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:333`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:343`](src/connectors/vendors/helpers.ts)
 
 Get credentials setup URL for a vendor
 
@@ -15426,7 +15710,7 @@ export function getCredentialsSetupURL(vendorId: string): string | undefined
 
 ### getDocsURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:341`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:351`](src/connectors/vendors/helpers.ts)
 
 Get docs URL for a vendor
 
@@ -15465,7 +15749,7 @@ export function getVendorColor(vendorId: string): string | undefined
 
 ### getVendorInfo `function`
 
-📍 [`src/connectors/vendors/helpers.ts:274`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:284`](src/connectors/vendors/helpers.ts)
 
 Get vendor information suitable for display
 
@@ -15559,7 +15843,7 @@ export function listVendorIds(): string[]
 
 ### listVendors `function`
 
-📍 [`src/connectors/vendors/helpers.ts:297`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:307`](src/connectors/vendors/helpers.ts)
 
 List all vendors with basic info
 
@@ -15571,7 +15855,7 @@ export function listVendors(): VendorInfo[]
 
 ### listVendorsByAuthType `function`
 
-📍 [`src/connectors/vendors/helpers.ts:324`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:334`](src/connectors/vendors/helpers.ts)
 
 List vendors that support a specific auth type
 
@@ -15583,7 +15867,7 @@ export function listVendorsByAuthType(authType: 'api_key' | 'oauth'): VendorInfo
 
 ### listVendorsByCategory `function`
 
-📍 [`src/connectors/vendors/helpers.ts:317`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:327`](src/connectors/vendors/helpers.ts)
 
 List vendors by category
 
@@ -18903,6 +19187,99 @@ destroy(): void;
 
 ---
 
+### IMediaStorage `interface`
+
+📍 [`src/domain/interfaces/IMediaStorage.ts:86`](src/domain/interfaces/IMediaStorage.ts)
+
+Storage interface for multimedia outputs
+
+Implementations:
+- FileMediaStorage: File-based storage (default, uses local filesystem)
+- (Custom) S3MediaStorage, GCSMediaStorage, etc.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `save()`
+
+Save media data to storage
+
+```typescript
+save(data: Buffer, metadata: MediaStorageMetadata): Promise&lt;MediaStorageResult&gt;;
+```
+
+**Parameters:**
+- `data`: `Buffer&lt;ArrayBufferLike&gt;`
+- `metadata`: `MediaStorageMetadata`
+
+**Returns:** `Promise&lt;MediaStorageResult&gt;`
+
+#### `read()`
+
+Read media data from storage
+
+```typescript
+read(location: string): Promise&lt;Buffer | null&gt;;
+```
+
+**Parameters:**
+- `location`: `string`
+
+**Returns:** `Promise&lt;Buffer&lt;ArrayBufferLike&gt; | null&gt;`
+
+#### `delete()`
+
+Delete media from storage
+
+```typescript
+delete(location: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `location`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+Check if media exists in storage
+
+```typescript
+exists(location: string): Promise&lt;boolean&gt;;
+```
+
+**Parameters:**
+- `location`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `list()?`
+
+List media files in storage (optional)
+
+```typescript
+list?(options?: MediaStorageListOptions): Promise&lt;MediaStorageEntry[]&gt;;
+```
+
+**Parameters:**
+- `options`: `MediaStorageListOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;MediaStorageEntry[]&gt;`
+
+#### `getPath()`
+
+Get the storage path/location (for display/debugging)
+
+```typescript
+getPath(): string;
+```
+
+**Returns:** `string`
+
+</details>
+
+---
+
 ### InstructionEntry `interface`
 
 📍 [`src/domain/interfaces/IPersistentInstructionsStorage.ts:15`](src/domain/interfaces/IPersistentInstructionsStorage.ts)
@@ -19158,6 +19535,94 @@ listVoices?(): Promise&lt;IVoiceInfo[]&gt;;
 ```
 
 **Returns:** `Promise&lt;IVoiceInfo[]&gt;`
+
+</details>
+
+---
+
+### MediaStorageEntry `interface`
+
+📍 [`src/domain/interfaces/IMediaStorage.ts:50`](src/domain/interfaces/IMediaStorage.ts)
+
+Entry returned by list()
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `location` | `location: string;` | Location of the file |
+| `mimeType` | `mimeType: string;` | MIME type |
+| `size` | `size: number;` | File size in bytes |
+| `type?` | `type?: 'image' | 'video' | 'audio';` | Media type (image, video, audio) |
+| `createdAt` | `createdAt: Date;` | When the file was created |
+
+</details>
+
+---
+
+### MediaStorageListOptions `interface`
+
+📍 [`src/domain/interfaces/IMediaStorage.ts:66`](src/domain/interfaces/IMediaStorage.ts)
+
+Options for listing media files
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type?` | `type?: 'image' | 'video' | 'audio';` | Filter by media type |
+| `limit?` | `limit?: number;` | Maximum number of results |
+| `offset?` | `offset?: number;` | Offset for pagination |
+
+</details>
+
+---
+
+### MediaStorageMetadata `interface`
+
+📍 [`src/domain/interfaces/IMediaStorage.ts:18`](src/domain/interfaces/IMediaStorage.ts)
+
+IMediaStorage - Storage interface for multimedia outputs (images, video, audio)
+
+Provides CRUD operations for media files produced by generation tools.
+Implementations can use filesystem, S3, GCS, or any other storage backend.
+
+This follows Clean Architecture - the interface is in domain layer,
+implementations are in infrastructure layer.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'image' | 'video' | 'audio';` | Type of media being saved |
+| `format` | `format: string;` | File format (png, mp4, mp3, etc.) |
+| `model` | `model: string;` | Model used for generation |
+| `vendor` | `vendor: string;` | Vendor that produced the output |
+| `index?` | `index?: number;` | Index for multi-image results |
+| `suggestedFilename?` | `suggestedFilename?: string;` | Suggested filename (without path) |
+| `userId?` | `userId?: string;` | User ID — set by tool when userId is known, for per-user storage organization |
+
+</details>
+
+---
+
+### MediaStorageResult `interface`
+
+📍 [`src/domain/interfaces/IMediaStorage.ts:38`](src/domain/interfaces/IMediaStorage.ts)
+
+Result of a save operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `location` | `location: string;` | Location of the saved file (file path, URL, S3 key - depends on implementation) |
+| `mimeType` | `mimeType: string;` | MIME type of the saved file |
+| `size` | `size: number;` | File size in bytes |
 
 </details>
 
@@ -20829,53 +21294,6 @@ getSummary()
 
 ---
 
-### FileMediaOutputHandler `class`
-
-📍 [`src/tools/multimedia/FileMediaOutputHandler.ts:31`](src/tools/multimedia/FileMediaOutputHandler.ts)
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-constructor(outputDir?: string)
-```
-
-**Parameters:**
-- `outputDir`: `string | undefined` *(optional)*
-
-</details>
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `save()`
-
-```typescript
-async save(data: Buffer, metadata: MediaOutputMetadata): Promise&lt;MediaOutputResult&gt;
-```
-
-**Parameters:**
-- `data`: `Buffer&lt;ArrayBufferLike&gt;`
-- `metadata`: `MediaOutputMetadata`
-
-**Returns:** `Promise&lt;MediaOutputResult&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `outputDir` | `outputDir: string` | - |
-| `initialized` | `initialized: boolean` | - |
-
-</details>
-
----
-
 ### HookManager `class`
 
 📍 [`src/capabilities/agents/HookManager.ts:14`](src/capabilities/agents/HookManager.ts)
@@ -22288,6 +22706,10 @@ If provided, overrides the `strategy` option. |
 | `tools?` | `tools?: ToolFunction[];` | Initial tools to register |
 | `storage?` | `storage?: IContextStorageFromDomain;` | Storage for session persistence |
 | `plugins?` | `plugins?: PluginConfigs;` | Plugin-specific configurations (used with features flags) |
+| `toolExecutionTimeout?` | `toolExecutionTimeout?: number;` | Hard timeout in milliseconds for any single tool execution.
+Acts as a safety net: if a tool's own timeout mechanism fails
+(e.g. a child process doesn't exit), this will force-resolve with an error.
+Default: 0 (disabled - relies on each tool's own timeout) |
 
 </details>
 
@@ -22396,7 +22818,7 @@ Full agent state - everything needed to resume
 
 ### APIKeyConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:65`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:68`](src/domain/entities/Connector.ts)
 
 Static API key authentication
 For services like OpenAI, Anthropic, many SaaS APIs
@@ -22410,6 +22832,8 @@ For services like OpenAI, Anthropic, many SaaS APIs
 | `apiKey` | `apiKey: string;` | - |
 | `headerName?` | `headerName?: string;` | - |
 | `headerPrefix?` | `headerPrefix?: string;` | - |
+| `extra?` | `extra?: Record&lt;string, string&gt;;` | Vendor-specific extra credentials beyond the primary API key.
+E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' } |
 
 </details>
 
@@ -22585,7 +23009,7 @@ Result of a bash command execution
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:663`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:671`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -22671,7 +23095,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:630`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:638`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -22691,7 +23115,7 @@ Result of compact() operation.
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:92`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:104`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -22760,7 +23184,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:189`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:201`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -22782,7 +23206,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:647`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:655`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -22835,7 +23259,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:580`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:588`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -22919,7 +23343,7 @@ Configuration for DefaultCompactionStrategy
 
 ### DirectCallOptions `interface`
 
-📍 [`src/core/BaseAgent.ts:231`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:239`](src/core/BaseAgent.ts)
 
 Options for direct LLM calls (bypassing AgentContext).
 
@@ -23040,6 +23464,222 @@ Options for fetch operations
 | `maxSize?` | `maxSize?: number;` | Maximum content size to fetch (bytes) |
 | `timeoutMs?` | `timeoutMs?: number;` | Timeout in milliseconds |
 | `sourceOptions?` | `sourceOptions?: Record&lt;string, unknown&gt;;` | Source-specific options |
+
+</details>
+
+---
+
+### GitHubCreatePRResult `interface`
+
+📍 [`src/tools/github/types.ts:291`](src/tools/github/types.ts)
+
+Result from create_pr tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `data?` | `data?: {
+    number: number;
+    url: string;
+    state: string;
+    title: string;
+  };` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GitHubGetPRResult `interface`
+
+📍 [`src/tools/github/types.ts:223`](src/tools/github/types.ts)
+
+Result from get_pr tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `data?` | `data?: {
+    number: number;
+    title: string;
+    body: string | null;
+    state: string;
+    author: string;
+    labels: string[];
+    reviewers: string[];
+    mergeable: boolean | null;
+    head: string;
+    base: string;
+    url: string;
+    created_at: string;
+    updated_at: string;
+    additions: number;
+    deletions: number;
+    changed_files: number;
+    draft: boolean;
+  };` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GitHubPRCommentEntry `interface`
+
+📍 [`src/tools/github/types.ts:267`](src/tools/github/types.ts)
+
+A unified comment/review entry
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: number;` | - |
+| `type` | `type: 'review' | 'comment' | 'review_comment';` | - |
+| `author` | `author: string;` | - |
+| `body` | `body: string;` | - |
+| `created_at` | `created_at: string;` | - |
+| `path?` | `path?: string;` | - |
+| `line?` | `line?: number;` | - |
+| `state?` | `state?: string;` | - |
+
+</details>
+
+---
+
+### GitHubPRCommentsResult `interface`
+
+📍 [`src/tools/github/types.ts:281`](src/tools/github/types.ts)
+
+Result from pr_comments tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `comments?` | `comments?: GitHubPRCommentEntry[];` | - |
+| `count?` | `count?: number;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GitHubPRFilesResult `interface`
+
+📍 [`src/tools/github/types.ts:250`](src/tools/github/types.ts)
+
+Result from pr_files tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `files?` | `files?: {
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch?: string;
+  }[];` | - |
+| `count?` | `count?: number;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GitHubReadFileResult `interface`
+
+📍 [`src/tools/github/types.ts:209`](src/tools/github/types.ts)
+
+Result from read_file tool (GitHub variant)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `content?` | `content?: string;` | - |
+| `path?` | `path?: string;` | - |
+| `size?` | `size?: number;` | - |
+| `lines?` | `lines?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `sha?` | `sha?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GitHubRepository `interface`
+
+📍 [`src/tools/github/types.ts:17`](src/tools/github/types.ts)
+
+Parsed GitHub repository reference
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `owner` | `owner: string;` | - |
+| `repo` | `repo: string;` | - |
+
+</details>
+
+---
+
+### GitHubSearchCodeResult `interface`
+
+📍 [`src/tools/github/types.ts:198`](src/tools/github/types.ts)
+
+Result from search_code tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `matches?` | `matches?: { file: string; fragment?: string }[];` | - |
+| `count?` | `count?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GitHubSearchFilesResult `interface`
+
+📍 [`src/tools/github/types.ts:187`](src/tools/github/types.ts)
+
+Result from search_files tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `files?` | `files?: { path: string; size: number; type: string }[];` | - |
+| `count?` | `count?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `error?` | `error?: string;` | - |
 
 </details>
 
@@ -23188,7 +23828,7 @@ Base interface for all capability providers
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:718`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:726`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -23560,31 +24200,6 @@ restoreState(state: unknown): void;
 
 ---
 
-### IMediaOutputHandler `interface`
-
-📍 [`src/tools/multimedia/IMediaOutputHandler.ts:32`](src/tools/multimedia/IMediaOutputHandler.ts)
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `save()`
-
-Save media data to storage
-
-```typescript
-save(data: Buffer, metadata: MediaOutputMetadata): Promise&lt;MediaOutputResult&gt;;
-```
-
-**Parameters:**
-- `data`: `Buffer&lt;ArrayBufferLike&gt;`
-- `metadata`: `MediaOutputMetadata`
-
-**Returns:** `Promise&lt;MediaOutputResult&gt;`
-
-</details>
-
----
-
 ### InContextEntry `interface`
 
 📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:28`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
@@ -23895,7 +24510,7 @@ Eliminates duplication across TTS model registries
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:76`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:85`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -23914,6 +24529,7 @@ For service accounts (Google, Salesforce)
 | `issuer?` | `issuer?: string;` | - |
 | `subject?` | `subject?: string;` | - |
 | `audience?` | `audience?: string;` | - |
+| `extra?` | `extra?: Record&lt;string, string&gt;;` | Vendor-specific extra credentials |
 
 </details>
 
@@ -24176,48 +24792,6 @@ MCP server configuration
 | `connectorBindings?` | `connectorBindings?: Record&lt;string, string&gt;;` | Map environment variable keys to connector names for runtime auth resolution.
 When connecting, the connector's token will be injected into the env var.
 Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
-
-</details>
-
----
-
-### MediaOutputMetadata `interface`
-
-📍 [`src/tools/multimedia/IMediaOutputHandler.ts:8`](src/tools/multimedia/IMediaOutputHandler.ts)
-
-Interface for handling multimedia output storage
-
-Allows library consumers to plug in custom storage backends (S3, GCS, etc.)
-Default implementation: FileMediaOutputHandler (local filesystem)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `type` | `type: 'image' | 'video' | 'audio';` | Type of media being saved |
-| `format` | `format: string;` | File format (png, mp4, mp3, etc.) |
-| `model` | `model: string;` | Model used for generation |
-| `vendor` | `vendor: string;` | Vendor that produced the output |
-| `index?` | `index?: number;` | Index for multi-image results |
-| `suggestedFilename?` | `suggestedFilename?: string;` | Suggested filename (without path) |
-
-</details>
-
----
-
-### MediaOutputResult `interface`
-
-📍 [`src/tools/multimedia/IMediaOutputHandler.ts:23`](src/tools/multimedia/IMediaOutputHandler.ts)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `location` | `location: string;` | Location of the saved file (file path, URL, S3 key - depends on handler) |
-| `mimeType` | `mimeType: string;` | MIME type of the saved file |
-| `size` | `size: number;` | File size in bytes |
 
 </details>
 
@@ -25582,7 +26156,7 @@ export function getAllServiceIds(): string[]
 
 ### getBackgroundOutput `function`
 
-📍 [`src/tools/shell/bash.ts:285`](src/tools/shell/bash.ts)
+📍 [`src/tools/shell/bash.ts:327`](src/tools/shell/bash.ts)
 
 Get output from a background process
 
@@ -25592,14 +26166,14 @@ export function getBackgroundOutput(bgId: string):
 
 ---
 
-### getMediaOutputHandler `function`
+### getMediaStorage `function`
 
 📍 [`src/tools/multimedia/config.ts:24`](src/tools/multimedia/config.ts)
 
-Get the global media output handler (creates default FileMediaOutputHandler on first access)
+Get the global media storage (creates default FileMediaStorage on first access)
 
 ```typescript
-export function getMediaOutputHandler(): IMediaOutputHandler
+export function getMediaStorage(): IMediaStorage
 ```
 
 ---
@@ -25695,7 +26269,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### killBackgroundProcess `function`
 
-📍 [`src/tools/shell/bash.ts:301`](src/tools/shell/bash.ts)
+📍 [`src/tools/shell/bash.ts:343`](src/tools/shell/bash.ts)
 
 Kill a background process
 
@@ -25714,6 +26288,22 @@ Useful for tools that want to show what's available or support fallback chains
 
 ```typescript
 export function listConnectorsByServiceTypes(serviceTypes: string[]): string[]
+```
+
+---
+
+### parseRepository `function`
+
+📍 [`src/tools/github/types.ts:31`](src/tools/github/types.ts)
+
+Parse a repository string into owner and repo.
+
+Accepts:
+- "owner/repo" format
+- Full GitHub URLs: "https://github.com/owner/repo", "https://github.com/owner/repo/..."
+
+```typescript
+export function parseRepository(input: string): GitHubRepository
 ```
 
 ---
@@ -25747,16 +26337,35 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ---
 
-### setMediaOutputHandler `function`
+### resolveRepository `function`
+
+📍 [`src/tools/github/types.ts:71`](src/tools/github/types.ts)
+
+Resolve a repository from tool args or connector default.
+
+Priority:
+1. Explicit `repository` parameter
+2. `connector.getOptions().defaultRepository`
+
+```typescript
+export function resolveRepository(
+  repository: string | undefined,
+  connector: Connector
+):
+```
+
+---
+
+### setMediaStorage `function`
 
 📍 [`src/tools/multimedia/config.ts:36`](src/tools/multimedia/config.ts)
 
-Set a custom global media output handler
+Set a custom global media storage
 
 Call this before agent creation to use custom storage (S3, GCS, etc.)
 
 ```typescript
-export function setMediaOutputHandler(handler: IMediaOutputHandler): void
+export function setMediaStorage(storage: IMediaStorage): void
 ```
 
 ---
@@ -25802,7 +26411,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:553`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:561`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
