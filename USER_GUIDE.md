@@ -439,9 +439,10 @@ console.log(agent.context.userId);  // 'user-456'
 ```
 
 **What userId enables:**
-- **Tool context** — Every `tool.execute(args, context)` receives `context.userId`
+- **Tool context** — Every `tool.execute(args, context)` receives `context.userId` automatically
+- **Authenticated API calls** — All ConnectorTools (generic API, GitHub, etc.) use userId for per-user OAuth tokens at execution time
+- **Connector registry** — `context.connectorRegistry` is scoped to the user when an access policy is set
 - **Session metadata** — `userId` is automatically included when saving sessions
-- **OAuth tokens** — ConnectorTools created with userId use per-user OAuth tokens
 - **Per-user storage** — Multimedia tools organize output by userId when set
 
 **Setting userId at different levels:**
@@ -3218,16 +3219,22 @@ const myTool: ToolFunction = {
     },
   },
   execute: async (args, context) => {
-    // Identity context (auto-populated from agent config):
+    // Identity (auto-populated from agent config):
     console.log(context?.agentId);  // Agent identifier
-    console.log(context?.userId);   // User ID (if set via agent.userId or config)
+    console.log(context?.userId);   // User ID (set via agent.userId or config)
 
-    // Working memory access (when workingMemory feature is enabled):
+    // Connector registry (scoped to agent's userId + connectors allowlist):
+    if (context?.connectorRegistry) {
+      const names = context.connectorRegistry.list();  // Available connector names
+      const gh = context.connectorRegistry.get('github'); // Get connector instance
+    }
+
+    // Working memory (when workingMemory feature is enabled):
     if (context?.memory) {
       const data = await context.memory.get('some_key');
     }
 
-    // Cancellation support:
+    // Cancellation:
     if (context?.signal?.aborted) {
       return { error: 'Cancelled' };
     }
@@ -6993,6 +7000,10 @@ import { ConnectorTools } from '@everworker/oneringai';
 // Get all tools for a connector (generic API + any registered service tools)
 const tools = ConnectorTools.for('github');
 const tools = ConnectorTools.for(connector);  // Can pass instance too
+
+// userId is automatic — all generated tools read it from ToolContext at execution time.
+// No need to pass userId to ConnectorTools.for().
+// Just set it on the agent: Agent.create({ userId: 'user-123', tools })
 
 // With scoped registry (access control)
 const registry = Connector.scoped({ tenantId: 'acme' });

@@ -9,7 +9,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubReadFileResult,
   type GitHubContentResponse,
@@ -104,7 +104,8 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
       approvalMessage: `Read a file from a GitHub repository via ${connector.displayName}`,
     },
 
-    execute: async (args: GitHubReadFileArgs): Promise<GitHubReadFileResult> => {
+    execute: async (args: GitHubReadFileArgs, context?: ToolContext): Promise<GitHubReadFileResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -121,7 +122,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
         const contentResp = await githubFetch<GitHubContentResponse>(
           connector,
           `/repos/${owner}/${repo}/contents/${args.path}${refParam}`,
-          { userId }
+          { userId: effectiveUserId }
         );
 
         if (contentResp.type !== 'file') {
@@ -143,7 +144,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
           const blob = await githubFetch<GitHubBlobResponse>(
             connector,
             contentResp.git_url,
-            { userId }
+            { userId: effectiveUserId }
           );
           fileContent = Buffer.from(blob.content, 'base64').toString('utf-8');
           fileSize = blob.size;

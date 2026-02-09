@@ -49,7 +49,7 @@ export function registerMultimediaTools(storage?: IMediaStorage): void {
         tools.push(createTextToSpeechTool(connector, handler, userId));
       }
       if (capabilities.includes('stt')) {
-        tools.push(createSpeechToTextTool(connector, handler, userId));
+        tools.push(createSpeechToTextTool(connector, handler));
       }
 
       return tools;

@@ -5,7 +5,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubGetPRResult,
   type GitHubPRResponse,
@@ -72,7 +72,8 @@ EXAMPLES:
       approvalMessage: `Get pull request details from GitHub via ${connector.displayName}`,
     },
 
-    execute: async (args: GetPRArgs): Promise<GitHubGetPRResult> => {
+    execute: async (args: GetPRArgs, context?: ToolContext): Promise<GitHubGetPRResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -83,7 +84,7 @@ EXAMPLES:
         const pr = await githubFetch<GitHubPRResponse>(
           connector,
           `/repos/${owner}/${repo}/pulls/${args.pull_number}`,
-          { userId }
+          { userId: effectiveUserId }
         );
 
         return {

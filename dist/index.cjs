@@ -42237,7 +42237,8 @@ var ConnectorTools = class {
           }
         }
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
+        const effectiveUserId = context?.userId ?? userId;
         let url2 = args.endpoint;
         if (args.queryParams && Object.keys(args.queryParams).length > 0) {
           const params = new URLSearchParams();
@@ -42270,7 +42271,7 @@ var ConnectorTools = class {
               },
               body: bodyStr
             },
-            userId
+            effectiveUserId
           );
           const text = await response.text();
           let data;
@@ -47263,7 +47264,7 @@ The tool returns a result object with:
 // src/tools/web/createWebSearchTool.ts
 init_Logger();
 var searchLogger = exports.logger.child({ component: "webSearch" });
-function createWebSearchTool(connector, _userId) {
+function createWebSearchTool(connector) {
   return {
     definition: {
       type: "function",
@@ -47723,7 +47724,7 @@ function stripBase64DataUris(content) {
   cleaned = cleaned.replace(/data:(?:image|font|application)\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g, "[base64-data-removed]");
   return cleaned;
 }
-function createWebScrapeTool(connector, _userId) {
+function createWebScrapeTool(connector) {
   async function tryNative(args, startTime, attemptedMethods) {
     attemptedMethods.push("native");
     scrapeLogger.debug({ url: args.url }, "Trying native fetch");
@@ -47927,12 +47928,12 @@ var SEARCH_SERVICE_TYPES = ["serper", "brave-search", "tavily", "rapidapi-search
 var SCRAPE_SERVICE_TYPES = ["zenrows", "jina-reader", "firecrawl", "scrapingbee"];
 function registerWebTools() {
   for (const st of SEARCH_SERVICE_TYPES) {
-    ConnectorTools.registerService(st, (connector, userId) => [
+    ConnectorTools.registerService(st, (connector) => [
       createWebSearchTool(connector)
     ]);
   }
   for (const st of SCRAPE_SERVICE_TYPES) {
-    ConnectorTools.registerService(st, (connector, userId) => [
+    ConnectorTools.registerService(st, (connector) => [
       createWebScrapeTool(connector)
     ]);
   }
@@ -48617,7 +48618,7 @@ function createTextToSpeechTool(connector, storage, userId) {
 }
 
 // src/tools/multimedia/speechToText.ts
-function createSpeechToTextTool(connector, storage, _userId) {
+function createSpeechToTextTool(connector, storage) {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();
   const vendorModels = vendor ? getSTTModelsByVendor(vendor) : [];
@@ -48878,7 +48879,8 @@ EXAMPLES:
       riskLevel: "low",
       approvalMessage: `Search files in a GitHub repository via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -48890,14 +48892,14 @@ EXAMPLES:
           const repoInfo = await githubFetch(
             connector,
             `/repos/${owner}/${repo}`,
-            { userId }
+            { userId: effectiveUserId }
           );
           ref = repoInfo.default_branch;
         }
         const tree = await githubFetch(
           connector,
           `/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`,
-          { userId }
+          { userId: effectiveUserId }
         );
         const matching = tree.tree.filter(
           (entry) => entry.type === "blob" && matchGlobPattern2(args.pattern, entry.path)
@@ -48988,7 +48990,8 @@ EXAMPLES:
       riskLevel: "low",
       approvalMessage: `Search code in a GitHub repository via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -49005,7 +49008,7 @@ EXAMPLES:
           connector,
           `/search/code`,
           {
-            userId,
+            userId: effectiveUserId,
             // Request text-match fragments
             accept: "application/vnd.github.text-match+json",
             queryParams: { q, per_page: perPage }
@@ -49092,7 +49095,8 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
       riskLevel: "low",
       approvalMessage: `Read a file from a GitHub repository via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -49106,7 +49110,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
         const contentResp = await githubFetch(
           connector,
           `/repos/${owner}/${repo}/contents/${args.path}${refParam}`,
-          { userId }
+          { userId: effectiveUserId }
         );
         if (contentResp.type !== "file") {
           return {
@@ -49123,7 +49127,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
           const blob = await githubFetch(
             connector,
             contentResp.git_url,
-            { userId }
+            { userId: effectiveUserId }
           );
           fileContent = Buffer.from(blob.content, "base64").toString("utf-8");
           fileSize = blob.size;
@@ -49210,7 +49214,8 @@ EXAMPLES:
       riskLevel: "low",
       approvalMessage: `Get pull request details from GitHub via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -49220,7 +49225,7 @@ EXAMPLES:
         const pr = await githubFetch(
           connector,
           `/repos/${owner}/${repo}/pulls/${args.pull_number}`,
-          { userId }
+          { userId: effectiveUserId }
         );
         return {
           success: true,
@@ -49296,7 +49301,8 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
       riskLevel: "low",
       approvalMessage: `Get PR changed files from GitHub via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -49307,7 +49313,7 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
           connector,
           `/repos/${owner}/${repo}/pulls/${args.pull_number}/files`,
           {
-            userId,
+            userId: effectiveUserId,
             queryParams: { per_page: 100 }
           }
         );
@@ -49378,7 +49384,8 @@ EXAMPLES:
       riskLevel: "low",
       approvalMessage: `Get PR comments and reviews from GitHub via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -49386,7 +49393,7 @@ EXAMPLES:
       const { owner, repo } = resolved.repo;
       try {
         const basePath = `/repos/${owner}/${repo}`;
-        const queryOpts = { userId, queryParams: { per_page: 100 } };
+        const queryOpts = { userId: effectiveUserId, queryParams: { per_page: 100 } };
         const [reviewComments, reviews, issueComments] = await Promise.all([
           githubFetch(
             connector,
@@ -49513,7 +49520,8 @@ EXAMPLES:
       riskLevel: "medium",
       approvalMessage: `Create a pull request on GitHub via ${connector.displayName}`
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -49525,7 +49533,7 @@ EXAMPLES:
           `/repos/${owner}/${repo}/pulls`,
           {
             method: "POST",
-            userId,
+            userId: effectiveUserId,
             body: {
               title: args.title,
               body: args.body,

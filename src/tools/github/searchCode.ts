@@ -10,7 +10,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubSearchCodeResult,
   type GitHubSearchCodeResponse,
@@ -111,7 +111,8 @@ EXAMPLES:
       approvalMessage: `Search code in a GitHub repository via ${connector.displayName}`,
     },
 
-    execute: async (args: SearchCodeArgs): Promise<GitHubSearchCodeResult> => {
+    execute: async (args: SearchCodeArgs, context?: ToolContext): Promise<GitHubSearchCodeResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -132,7 +133,7 @@ EXAMPLES:
           connector,
           `/search/code`,
           {
-            userId,
+            userId: effectiveUserId,
             // Request text-match fragments
             accept: 'application/vnd.github.text-match+json',
             queryParams: { q, per_page: perPage },

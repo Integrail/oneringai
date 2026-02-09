@@ -27,15 +27,15 @@ const SCRAPE_SERVICE_TYPES = ['zenrows', 'jina-reader', 'firecrawl', 'scrapingbe
 export function registerWebTools(): void {
   // Register search tool for each search service type
   for (const st of SEARCH_SERVICE_TYPES) {
-    ConnectorTools.registerService(st, (connector: Connector, userId?: string) => [
-      createWebSearchTool(connector, userId),
+    ConnectorTools.registerService(st, (connector: Connector) => [
+      createWebSearchTool(connector),
     ]);
   }
 
   // Register scrape tool for each scrape service type
   for (const st of SCRAPE_SERVICE_TYPES) {
-    ConnectorTools.registerService(st, (connector: Connector, userId?: string) => [
-      createWebScrapeTool(connector, userId),
+    ConnectorTools.registerService(st, (connector: Connector) => [
+      createWebScrapeTool(connector),
     ]);
   }
 }

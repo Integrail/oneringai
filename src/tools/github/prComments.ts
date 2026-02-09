@@ -6,7 +6,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubPRCommentsResult,
   type GitHubPRCommentEntry,
@@ -81,7 +81,8 @@ EXAMPLES:
       approvalMessage: `Get PR comments and reviews from GitHub via ${connector.displayName}`,
     },
 
-    execute: async (args: PRCommentsArgs): Promise<GitHubPRCommentsResult> => {
+    execute: async (args: PRCommentsArgs, context?: ToolContext): Promise<GitHubPRCommentsResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -90,7 +91,7 @@ EXAMPLES:
 
       try {
         const basePath = `/repos/${owner}/${repo}`;
-        const queryOpts = { userId, queryParams: { per_page: 100 } as Record<string, string | number | boolean> };
+        const queryOpts = { userId: effectiveUserId, queryParams: { per_page: 100 } as Record<string, string | number | boolean> };
 
         // Fetch all three types in parallel
         const [reviewComments, reviews, issueComments] = await Promise.all([

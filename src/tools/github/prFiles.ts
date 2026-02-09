@@ -5,7 +5,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubPRFilesResult,
   type GitHubPRFileEntry,
@@ -74,7 +74,8 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
       approvalMessage: `Get PR changed files from GitHub via ${connector.displayName}`,
     },
 
-    execute: async (args: PRFilesArgs): Promise<GitHubPRFilesResult> => {
+    execute: async (args: PRFilesArgs, context?: ToolContext): Promise<GitHubPRFilesResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -86,7 +87,7 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
           connector,
           `/repos/${owner}/${repo}/pulls/${args.pull_number}/files`,
           {
-            userId,
+            userId: effectiveUserId,
             queryParams: { per_page: 100 },
           }
         );

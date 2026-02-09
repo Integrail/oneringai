@@ -13,7 +13,7 @@
 
 import { Connector } from '../../core/Connector.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
-import { ToolFunction, ToolPermissionConfig } from '../../domain/entities/Tool.js';
+import { ToolFunction, ToolPermissionConfig, ToolContext } from '../../domain/entities/Tool.js';
 import { detectServiceFromURL } from '../../domain/entities/Services.js';
 import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
 
@@ -99,8 +99,12 @@ function detectAPIError(data: unknown): string | null {
 }
 
 /**
- * Factory function type for creating service-specific tools
- * Takes a Connector and returns an array of tools that use it
+ * Factory function type for creating service-specific tools.
+ * Takes a Connector and returns an array of tools that use it.
+ *
+ * The `userId` parameter is a legacy fallback — tools should prefer reading
+ * userId from ToolContext at execution time (auto-populated by Agent).
+ * Factory userId is used as fallback when ToolContext is not available.
  */
 export type ServiceToolFactory = (connector: Connector, userId?: string) => ToolFunction[];
 
@@ -498,7 +502,8 @@ export class ConnectorTools {
         },
       },
 
-      execute: async (args: GenericAPICallArgs): Promise<GenericAPICallResult> => {
+      execute: async (args: GenericAPICallArgs, context?: ToolContext): Promise<GenericAPICallResult> => {
+        const effectiveUserId = context?.userId ?? userId;
         let url = args.endpoint;
 
         // Add query params if provided
@@ -538,7 +543,7 @@ export class ConnectorTools {
               },
               body: bodyStr,
             },
-            userId
+            effectiveUserId
           );
 
           // Try to parse as JSON

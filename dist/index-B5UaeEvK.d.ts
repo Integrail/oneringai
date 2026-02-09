@@ -268,7 +268,7 @@ interface ToolContext {
     agentId?: string;
     /** Task ID (if running in TaskAgent) */
     taskId?: string;
-    /** User ID — set by host app via agent.tools.setToolContext() for per-user operations */
+    /** User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). */
     userId?: string;
     /** Connector registry scoped to this agent's allowed connectors and userId */
     connectorRegistry?: IConnectorRegistry;

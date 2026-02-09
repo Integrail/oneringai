@@ -100,11 +100,9 @@ interface WebScrapeResult {
  * Create a web_scrape tool bound to a specific connector.
  *
  * @param connector - Connector instance providing auth for the scrape API
- * @param userId - Optional user ID for multi-user OAuth
  */
 export function createWebScrapeTool(
   connector: Connector,
-  _userId?: string
 ): ToolFunction<WebScrapeArgs, WebScrapeResult> {
 
   // ============ Internal Helpers ============

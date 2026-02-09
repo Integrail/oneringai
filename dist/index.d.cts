@@ -1,7 +1,7 @@
 import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, c as IProvider, d as ConnectorFetchOptions, P as ProviderCapabilities, e as ITokenStorage, S as StoredToken$1, f as ConnectorConfig, g as ConnectorAuth, h as ConnectorConfigResult } from './IProvider-c4QCbPjn.cjs';
 export { A as APIKeyConnectorAuth, k as DEFAULT_BASE_DELAY_MS, D as DEFAULT_CONNECTOR_TIMEOUT, l as DEFAULT_MAX_DELAY_MS, i as DEFAULT_MAX_RETRIES, j as DEFAULT_RETRYABLE_STATUSES, J as JWTConnectorAuth, O as OAuthConnectorAuth } from './IProvider-c4QCbPjn.cjs';
-import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-CzERJpg2.cjs';
-export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-CzERJpg2.cjs';
+import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-MJ14lkui.cjs';
+export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-MJ14lkui.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 export { a as VENDORS, i as isVendor } from './Vendor-DYh_bzwo.cjs';
@@ -9476,8 +9476,12 @@ declare class ProviderErrorMapper {
  */
 
 /**
- * Factory function type for creating service-specific tools
- * Takes a Connector and returns an array of tools that use it
+ * Factory function type for creating service-specific tools.
+ * Takes a Connector and returns an array of tools that use it.
+ *
+ * The `userId` parameter is a legacy fallback — tools should prefer reading
+ * userId from ToolContext at execution time (auto-populated by Agent).
+ * Factory userId is used as fallback when ToolContext is not available.
  */
 type ServiceToolFactory = (connector: Connector, userId?: string) => ToolFunction[];
 /**
@@ -11504,9 +11508,8 @@ interface WebSearchResult {
  * Create a web_search tool bound to a specific connector.
  *
  * @param connector - Connector instance providing auth for the search API
- * @param userId - Optional user ID for multi-user OAuth
  */
-declare function createWebSearchTool(connector: Connector, _userId?: string): ToolFunction<WebSearchArgs, WebSearchResult>;
+declare function createWebSearchTool(connector: Connector): ToolFunction<WebSearchArgs, WebSearchResult>;
 
 /**
  * Web Scrape Tool Factory
@@ -11575,9 +11578,8 @@ interface WebScrapeResult {
  * Create a web_scrape tool bound to a specific connector.
  *
  * @param connector - Connector instance providing auth for the scrape API
- * @param userId - Optional user ID for multi-user OAuth
  */
-declare function createWebScrapeTool(connector: Connector, _userId?: string): ToolFunction<WebScrapeArgs, WebScrapeResult>;
+declare function createWebScrapeTool(connector: Connector): ToolFunction<WebScrapeArgs, WebScrapeResult>;
 
 /**
  * JavaScript Execution Tool
@@ -11748,7 +11750,7 @@ interface SpeechToTextResult {
     durationSeconds?: number;
     error?: string;
 }
-declare function createSpeechToTextTool(connector: Connector, storage?: IMediaStorage, _userId?: string): ToolFunction<SpeechToTextArgs, SpeechToTextResult>;
+declare function createSpeechToTextTool(connector: Connector, storage?: IMediaStorage): ToolFunction<SpeechToTextArgs, SpeechToTextResult>;
 
 /**
  * GitHub Tools - Shared Types and Helpers
@@ -12089,7 +12091,7 @@ declare function createCreatePRTool(connector: Connector, userId?: string): Tool
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-09T20:09:16.369Z
+ * Generated at: 2026-02-09T20:20:39.760Z
  *
  * To regenerate: npm run generate:tools
  */

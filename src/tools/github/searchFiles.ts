@@ -8,7 +8,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubSearchFilesResult,
   type GitHubTreeResponse,
@@ -114,7 +114,8 @@ EXAMPLES:
       approvalMessage: `Search files in a GitHub repository via ${connector.displayName}`,
     },
 
-    execute: async (args: SearchFilesArgs): Promise<GitHubSearchFilesResult> => {
+    execute: async (args: SearchFilesArgs, context?: ToolContext): Promise<GitHubSearchFilesResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -128,7 +129,7 @@ EXAMPLES:
           const repoInfo = await githubFetch<GitHubRepoResponse>(
             connector,
             `/repos/${owner}/${repo}`,
-            { userId }
+            { userId: effectiveUserId }
           );
           ref = repoInfo.default_branch;
         }
@@ -137,7 +138,7 @@ EXAMPLES:
         const tree = await githubFetch<GitHubTreeResponse>(
           connector,
           `/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`,
-          { userId }
+          { userId: effectiveUserId }
         );
 
         // Filter by glob pattern (only blobs, not trees)

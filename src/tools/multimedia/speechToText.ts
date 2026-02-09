@@ -31,7 +31,6 @@ interface SpeechToTextResult {
 export function createSpeechToTextTool(
   connector: Connector,
   storage?: IMediaStorage,
-  _userId?: string
 ): ToolFunction<SpeechToTextArgs, SpeechToTextResult> {
   const vendor = connector.vendor;
   const handler = storage ?? getMediaStorage();

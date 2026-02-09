@@ -5,7 +5,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GitHubCreatePRResult,
   resolveRepository,
@@ -106,7 +106,8 @@ EXAMPLES:
       approvalMessage: `Create a pull request on GitHub via ${connector.displayName}`,
     },
 
-    execute: async (args: CreatePRArgs): Promise<GitHubCreatePRResult> => {
+    execute: async (args: CreatePRArgs, context?: ToolContext): Promise<GitHubCreatePRResult> => {
+      const effectiveUserId = context?.userId ?? userId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -119,7 +120,7 @@ EXAMPLES:
           `/repos/${owner}/${repo}/pulls`,
           {
             method: 'POST',
-            userId,
+            userId: effectiveUserId,
             body: {
               title: args.title,
               body: args.body,

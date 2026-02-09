@@ -45,11 +45,9 @@ interface WebSearchResult {
  * Create a web_search tool bound to a specific connector.
  *
  * @param connector - Connector instance providing auth for the search API
- * @param userId - Optional user ID for multi-user OAuth
  */
 export function createWebSearchTool(
   connector: Connector,
-  _userId?: string
 ): ToolFunction<WebSearchArgs, WebSearchResult> {
   return {
     definition: {

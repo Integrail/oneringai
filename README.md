@@ -986,10 +986,11 @@ Connector.create({
 // search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr
 const tools = ConnectorTools.for('github');
 
-// Use with an agent
+// Use with an agent — userId flows to all tools automatically
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
+  userId: 'user-123',  // All tool API calls use this user's OAuth tokens
   tools: tools,
 });
 
