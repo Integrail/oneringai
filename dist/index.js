@@ -18413,6 +18413,9 @@ var BasePluginNextGen = class {
   }
 };
 
+// src/core/context-nextgen/AgentContextNextGen.ts
+init_Connector();
+
 // src/domain/entities/Memory.ts
 function isTaskAwareScope(scope) {
   return typeof scope === "object" && scope !== null && "type" in scope;
@@ -20986,6 +20989,10 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
   _sessionId = null;
   /** Agent ID */
   _agentId;
+  /** User ID for multi-user scenarios */
+  _userId;
+  /** Allowed connector names (when agent is restricted to a subset) */
+  _allowedConnectors;
   /** Storage backend */
   _storage;
   /** Destroyed flag */
@@ -21022,6 +21029,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
     };
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
+    this._userId = config.userId;
+    this._allowedConnectors = config.connectors;
     this._storage = config.storage;
     this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
     this._tools = new ToolManager(
@@ -21033,6 +21042,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
       }
     }
     this.initializePlugins(config.plugins);
+    this.syncToolContext();
   }
   /**
    * Initialize plugins based on feature flags.
@@ -21077,6 +21087,62 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
       );
     }
   }
+  /**
+   * Sync identity fields and connector registry to ToolContext.
+   * Merges with existing ToolContext to preserve other fields (memory, signal, taskId).
+   *
+   * Connector registry resolution order:
+   * 1. If `connectors` (allowed names) is set → filtered view of global registry
+   * 2. If access policy + userId → scoped view via Connector.scoped()
+   * 3. Otherwise → full global registry
+   */
+  syncToolContext() {
+    const existing = this._tools.getToolContext();
+    this._tools.setToolContext({
+      ...existing,
+      agentId: this._agentId,
+      userId: this._userId,
+      connectorRegistry: this.buildConnectorRegistry()
+    });
+  }
+  /**
+   * Build the connector registry appropriate for this agent's config.
+   */
+  buildConnectorRegistry() {
+    if (this._allowedConnectors?.length) {
+      const allowedSet = new Set(this._allowedConnectors);
+      const base = this._userId && Connector.getAccessPolicy() ? Connector.scoped({ userId: this._userId }) : Connector.asRegistry();
+      return {
+        get: (name) => {
+          if (!allowedSet.has(name)) {
+            const available = this._allowedConnectors.filter((n) => base.has(n)).join(", ") || "none";
+            throw new Error(`Connector '${name}' not found. Available: ${available}`);
+          }
+          return base.get(name);
+        },
+        has: (name) => allowedSet.has(name) && base.has(name),
+        list: () => base.list().filter((n) => allowedSet.has(n)),
+        listAll: () => base.listAll().filter((c) => allowedSet.has(c.name)),
+        size: () => base.listAll().filter((c) => allowedSet.has(c.name)).length,
+        getDescriptionsForTools: () => {
+          const connectors = base.listAll().filter((c) => allowedSet.has(c.name));
+          if (connectors.length === 0) return "No connectors registered yet.";
+          return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || "No description"}`).join("\n");
+        },
+        getInfo: () => {
+          const info = {};
+          for (const c of base.listAll().filter((c2) => allowedSet.has(c2.name))) {
+            info[c.name] = { displayName: c.displayName, description: c.config.description || "", baseURL: c.baseURL };
+          }
+          return info;
+        }
+      };
+    }
+    if (this._userId && Connector.getAccessPolicy()) {
+      return Connector.scoped({ userId: this._userId });
+    }
+    return Connector.asRegistry();
+  }
   // ============================================================================
   // Public Properties
   // ============================================================================
@@ -21091,6 +21157,24 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
   /** Get the agent ID */
   get agentId() {
     return this._agentId;
+  }
+  /** Get the current user ID */
+  get userId() {
+    return this._userId;
+  }
+  /** Set user ID. Automatically updates ToolContext for all tool executions. */
+  set userId(value) {
+    this._userId = value;
+    this.syncToolContext();
+  }
+  /** Get the allowed connector names (undefined = all visible connectors) */
+  get connectors() {
+    return this._allowedConnectors;
+  }
+  /** Set allowed connector names. Updates ToolContext.connectorRegistry. */
+  set connectors(value) {
+    this._allowedConnectors = value;
+    this.syncToolContext();
   }
   /** Get/set system prompt */
   get systemPrompt() {
@@ -22005,6 +22089,7 @@ ${content}`);
       metadata: {
         savedAt: Date.now(),
         agentId: this._agentId,
+        userId: this._userId,
         model: this._config.model
       }
     };
@@ -24967,6 +25052,8 @@ var BaseAgent = class extends EventEmitter {
     const contextConfig = {
       model: config.model,
       agentId: config.name,
+      userId: config.userId,
+      connectors: config.connectors,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
       // Thread tool execution timeout to ToolManager
@@ -25124,6 +25211,30 @@ var BaseAgent = class extends EventEmitter {
     return this._agentContext;
   }
   /**
+   * Get the current user ID. Delegates to AgentContextNextGen.
+   */
+  get userId() {
+    return this._agentContext.userId;
+  }
+  /**
+   * Set user ID at runtime. Automatically updates ToolContext for all tool executions.
+   */
+  set userId(value) {
+    this._agentContext.userId = value;
+  }
+  /**
+   * Get the allowed connector names (undefined = all visible connectors).
+   */
+  get connectors() {
+    return this._agentContext.connectors;
+  }
+  /**
+   * Restrict this agent to a subset of connectors. Updates ToolContext.connectorRegistry.
+   */
+  set connectors(value) {
+    this._agentContext.connectors = value;
+  }
+  /**
    * Permission management. Returns ToolPermissionManager for approval control.
    */
   get permissions() {
@@ -25174,9 +25285,10 @@ var BaseAgent = class extends EventEmitter {
    * always sees up-to-date tool descriptions.
    */
   getEnabledToolDefinitions() {
+    const toolContext = this._agentContext.tools.getToolContext();
     return this._agentContext.tools.getEnabled().map((tool) => {
       if (tool.descriptionFactory) {
-        const dynamicDescription = tool.descriptionFactory();
+        const dynamicDescription = tool.descriptionFactory(toolContext);
         return {
           ...tool.definition,
           function: {
@@ -26222,6 +26334,7 @@ var Agent = class _Agent extends BaseAgent {
    * const agent = Agent.create({
    *   connector: 'openai',  // or Connector instance
    *   model: 'gpt-4',
+   *   userId: 'user-123',   // flows to all tool executions automatically
    *   instructions: 'You are a helpful assistant',
    *   tools: [myTool]
    * });
@@ -47799,77 +47912,90 @@ registerWebTools();
 
 // src/tools/code/executeJavaScript.ts
 init_Connector();
-function generateDescription() {
-  const connectors = Connector.listAll();
-  const connectorList = connectors.length > 0 ? connectors.map((c) => {
-    const authType = c.config.auth?.type || "none";
-    return `   \u2022 "${c.name}": ${c.displayName}
-     ${c.config.description || "No description"}
-     Base URL: ${c.baseURL}
-     Auth: ${authType}`;
-  }).join("\n\n") : "   No connectors registered.";
-  return `Execute JavaScript code in a secure sandbox with authenticated API access.
+var DEFAULT_TIMEOUT = 1e4;
+var DEFAULT_MAX_TIMEOUT = 3e4;
+function formatConnectorEntry(c) {
+  const parts = [];
+  const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
+  if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+  if (c.config.description) parts.push(c.config.description);
+  if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
+  const details = parts.map((p) => `     ${p}`).join("\n");
+  return `   \u2022 "${c.name}" (${c.displayName})
+${details}`;
+}
+function generateDescription(context, maxTimeout) {
+  const registry = context?.connectorRegistry ?? Connector.asRegistry();
+  const connectors = registry.listAll();
+  const connectorList = connectors.length > 0 ? connectors.map(formatConnectorEntry).join("\n\n") : "   No connectors registered.";
+  const timeoutSec = Math.round(maxTimeout / 1e3);
+  return `Execute JavaScript code in a secure sandbox with authenticated API access to external services.
 
-AVAILABLE APIS:
+Use this tool when you need to:
+- Call external APIs (GitHub, Slack, Stripe, etc.) using registered connectors
+- Process, transform, or compute data that requires programmatic logic
+- Chain multiple API calls or perform complex data manipulation
+- Do anything that plain text generation cannot accomplish
 
-1. authenticatedFetch(url, options, connectorName, userId?)
-   Makes authenticated API calls using the connector's configured auth scheme.
-   Auth headers are added automatically - DO NOT set Authorization header.
+SANDBOX API:
+
+1. authenticatedFetch(url, options, connectorName)
+   Makes authenticated HTTP requests using the connector's credentials.
+   The current user's identity (userId) is automatically included \u2014 no need to pass it.
+   Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
 
    Parameters:
-     \u2022 url: Full URL or relative path (uses connector's baseURL)
+     \u2022 url: Full URL or path relative to the connector's base URL
        - Full: "https://api.github.com/user/repos"
-       - Relative: "/user/repos" (appended to connector's baseURL)
-     \u2022 options: Standard fetch options { method, body, headers }
-     \u2022 connectorName: One of the registered connectors below
-     \u2022 userId: (optional) For multi-tenant apps with per-user tokens
+       - Relative: "/user/repos" (resolved against connector's base URL)
+     \u2022 options: Standard fetch options { method, headers, body }
+       - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
+     \u2022 connectorName: Name of a registered connector (see list below)
 
    Returns: Promise<Response>
-     \u2022 response.ok - true if status 200-299
-     \u2022 response.status - HTTP status code
-     \u2022 response.json() - parse JSON body
-     \u2022 response.text() - get text body
+     \u2022 response.ok \u2014 true if status 200-299
+     \u2022 response.status \u2014 HTTP status code
+     \u2022 await response.json() \u2014 parse JSON body
+     \u2022 await response.text() \u2014 get text body
 
-   Auth Schemes (handled automatically per connector):
-     \u2022 Bearer tokens (GitHub, Slack, Stripe)
-     \u2022 Bot tokens (Discord)
-     \u2022 Basic auth (Twilio, Zendesk)
-     \u2022 Custom headers (Shopify uses X-Shopify-Access-Token)
+2. fetch(url, options) \u2014 Standard fetch without authentication
 
-2. connectors.list() - List available connector names
-3. connectors.get(name) - Get connector info { displayName, description, baseURL }
-4. fetch(url, options) - Standard fetch (no auth)
+3. connectors.list() \u2014 Array of available connector names
+4. connectors.get(name) \u2014 Connector info: { displayName, description, baseURL, serviceType }
 
-INPUT/OUTPUT:
-   \u2022 input - data passed to your code via the "input" parameter
-   \u2022 output - SET THIS variable to return your result
+VARIABLES:
+   \u2022 input \u2014 data passed via the "input" parameter (default: {})
+   \u2022 output \u2014 SET THIS to return your result to the caller
 
-UTILITIES: console.log/error/warn, Buffer, JSON, Math, Date, Promise
+GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
 
 REGISTERED CONNECTORS:
 ${connectorList}
 
-EXAMPLE:
-(async () => {
-  const response = await authenticatedFetch(
-    '/user/repos',
-    { method: 'GET' },
-    'github'
-  );
+EXAMPLES:
 
-  if (!response.ok) {
-    throw new Error(\`API error: \${response.status}\`);
-  }
+// GET request
+const resp = await authenticatedFetch('/user/repos', { method: 'GET' }, 'github');
+const repos = await resp.json();
+output = repos.map(r => r.full_name);
 
-  const repos = await response.json();
-  console.log(\`Found \${repos.length} repositories\`);
+// POST request with JSON body
+const resp = await authenticatedFetch('/chat.postMessage', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ channel: '#general', text: 'Hello!' })
+}, 'slack');
+output = await resp.json();
 
-  output = repos;
-})();
+// Data processing (no API needed)
+const items = input.data;
+output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
 
-SECURITY: 10s timeout, no file system, no require/import.`;
+LIMITS: ${timeoutSec}s max timeout, no file system access, no require/import.`;
 }
-function createExecuteJavaScriptTool() {
+function createExecuteJavaScriptTool(options) {
+  const maxTimeout = options?.maxTimeout ?? DEFAULT_MAX_TIMEOUT;
+  const defaultTimeout = options?.defaultTimeout ?? DEFAULT_TIMEOUT;
   return {
     definition: {
       type: "function",
@@ -47882,32 +48008,40 @@ function createExecuteJavaScriptTool() {
           properties: {
             code: {
               type: "string",
-              description: 'JavaScript code to execute. MUST set the "output" variable. Wrap in async IIFE for async operations.'
+              description: 'JavaScript code to execute. Set the "output" variable with your result. Code is auto-wrapped in async IIFE \u2014 you can use await directly. For explicit async control, wrap in (async () => { ... })().'
             },
             input: {
-              description: 'Optional input data available as "input" variable in your code'
+              description: 'Optional data available as the "input" variable in your code. Can be any JSON value.'
             },
             timeout: {
               type: "number",
-              description: "Execution timeout in milliseconds (default: 10000, max: 30000)"
+              description: `Execution timeout in milliseconds. Default: ${defaultTimeout}ms, max: ${maxTimeout}ms. Increase for slow API calls or multiple sequential requests.`
             }
           },
           required: ["code"]
         }
       },
       blocking: true,
-      timeout: 35e3
-      // Tool timeout (slightly more than max code timeout)
+      timeout: maxTimeout + 5e3
+      // Tool-level timeout slightly above max code timeout
     },
-    // Dynamic description - evaluated each time tool definitions are sent to LLM
-    // This ensures the connector list is always current
-    descriptionFactory: generateDescription,
-    execute: async (args) => {
+    // Dynamic description — regenerated each time tool definitions are sent to LLM.
+    // Receives ToolContext so connector list is scoped to current userId.
+    descriptionFactory: (context) => generateDescription(context, maxTimeout),
+    execute: async (args, context) => {
       const logs = [];
       const startTime = Date.now();
       try {
-        const timeout = Math.min(args.timeout || 1e4, 3e4);
-        const result = await executeInVM(args.code, args.input, timeout, logs);
+        const timeout = Math.min(Math.max(args.timeout || defaultTimeout, 0), maxTimeout);
+        const registry = context?.connectorRegistry ?? Connector.asRegistry();
+        const result = await executeInVM(
+          args.code,
+          args.input,
+          timeout,
+          logs,
+          context?.userId,
+          registry
+        );
         return {
           success: true,
           result,
@@ -47927,31 +48061,36 @@ function createExecuteJavaScriptTool() {
   };
 }
 var executeJavaScript = createExecuteJavaScriptTool();
-async function executeInVM(code, input, timeout, logs) {
+async function executeInVM(code, input, timeout, logs, userId, registry) {
   const sandbox = {
     // Input/output
-    input: input || {},
+    input: input ?? {},
     output: null,
-    // Console (captured)
+    // Console (captured) — stringify objects for readable logs
     console: {
-      log: (...args) => logs.push(args.map((a) => String(a)).join(" ")),
-      error: (...args) => logs.push("ERROR: " + args.map((a) => String(a)).join(" ")),
-      warn: (...args) => logs.push("WARN: " + args.map((a) => String(a)).join(" "))
+      log: (...args) => logs.push(args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ")),
+      error: (...args) => logs.push("ERROR: " + args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ")),
+      warn: (...args) => logs.push("WARN: " + args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" "))
     },
-    // Authenticated fetch
-    authenticatedFetch,
-    // Standard fetch
+    // Authenticated fetch — userId auto-injected from ToolContext.
+    // Only connectors visible in the scoped registry are accessible.
+    authenticatedFetch: (url2, options, connectorName) => {
+      registry.get(connectorName);
+      return authenticatedFetch(url2, options, connectorName, userId);
+    },
+    // Standard fetch (no auth)
     fetch: globalThis.fetch,
-    // Connector info
+    // Connector info (userId-scoped)
     connectors: {
-      list: () => Connector.list(),
+      list: () => registry.list(),
       get: (name) => {
         try {
-          const connector = Connector.get(name);
+          const connector = registry.get(name);
           return {
             displayName: connector.displayName,
             description: connector.config.description || "",
-            baseURL: connector.baseURL
+            baseURL: connector.baseURL,
+            serviceType: connector.serviceType
           };
         } catch {
           return null;
@@ -47968,14 +48107,22 @@ async function executeInVM(code, input, timeout, logs) {
     clearTimeout,
     clearInterval,
     Promise,
-    // Array/Object
+    // Built-in types
     Array,
     Object,
     String,
     Number,
-    Boolean
+    Boolean,
+    RegExp,
+    Map,
+    Set,
+    Error,
+    URL,
+    URLSearchParams,
+    TextEncoder,
+    TextDecoder
   };
-  const context = vm.createContext(sandbox);
+  const vmContext = vm.createContext(sandbox);
   const wrappedCode = code.trim().startsWith("(async") ? code : `
     (async () => {
       ${code}
@@ -47983,7 +48130,7 @@ async function executeInVM(code, input, timeout, logs) {
     })()
   `;
   const script = new vm.Script(wrappedCode);
-  const resultPromise = script.runInContext(context, {
+  const resultPromise = script.runInContext(vmContext, {
     timeout,
     displayErrors: true
   });

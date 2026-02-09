@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IConnectorRegistry, c as IProvider } from './IProvider-c4QCbPjn.cjs';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -270,6 +270,8 @@ interface ToolContext {
     taskId?: string;
     /** User ID — set by host app via agent.tools.setToolContext() for per-user operations */
     userId?: string;
+    /** Connector registry scoped to this agent's allowed connectors and userId */
+    connectorRegistry?: IConnectorRegistry;
     /** Working memory access (if agent has memory feature enabled) */
     memory?: WorkingMemoryAccess;
     /** Abort signal for cancellation */
@@ -419,16 +421,17 @@ interface ToolFunction<TArgs = any, TResult = any> {
      * The returned string replaces definition.function.description when sending to LLM.
      * The static description in definition.function.description serves as a fallback.
      *
+     * @param context - Current ToolContext (includes userId, agentId, etc.)
      * @returns The current tool description
      *
      * @example
-     * // Tool with dynamic connector list:
-     * descriptionFactory: () => {
-     *   const connectors = Connector.listAll();
+     * // Tool with dynamic connector list scoped to current user:
+     * descriptionFactory: (context) => {
+     *   const connectors = getConnectorsForUser(context?.userId);
      *   return `Execute API calls. Available connectors: ${connectors.map(c => c.name).join(', ')}`;
      * }
      */
-    descriptionFactory?: () => string;
+    descriptionFactory?: (context?: ToolContext) => string;
     /**
      * Returns a human-readable description of a tool call.
      * Used for logging, UI display, and debugging.

@@ -14,6 +14,8 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 3. [Basic Text Generation](#basic-text-generation)
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
+   - Multi-User Support (`userId`)
+   - Connector Allowlist (`connectors`)
 6. [Session Persistence](#session-persistence)
 7. [Context Management](#context-management)
    - Strategy Deep Dive (Algorithmic, Custom)
@@ -406,6 +408,87 @@ agent.onCleanup(() => {
 // Destroy agent
 agent.destroy();
 ```
+
+### Multi-User Support (`userId`)
+
+For multi-user systems, set `userId` once at agent creation and it automatically flows to all tool executions via `ToolContext.userId` — no need to manually thread it through every call:
+
+```typescript
+// Set userId at creation
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'user-123',
+  tools: [myTool],
+});
+
+// All tool executions automatically receive userId in their context
+const myTool: ToolFunction = {
+  definition: { /* ... */ },
+  execute: async (args, context) => {
+    console.log(context?.userId);  // 'user-123'
+    // Use for per-user storage, OAuth tokens, audit trails, etc.
+  },
+};
+
+// Change userId at runtime (e.g., when reusing agent across users)
+agent.userId = 'user-456';
+
+// Also accessible via context
+console.log(agent.context.userId);  // 'user-456'
+```
+
+**What userId enables:**
+- **Tool context** — Every `tool.execute(args, context)` receives `context.userId`
+- **Session metadata** — `userId` is automatically included when saving sessions
+- **OAuth tokens** — ConnectorTools created with userId use per-user OAuth tokens
+- **Per-user storage** — Multimedia tools organize output by userId when set
+
+**Setting userId at different levels:**
+```typescript
+// Option 1: At agent level (recommended)
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', userId: 'user-123' });
+
+// Option 2: At context level
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { userId: 'user-123' },
+});
+
+// Option 3: At runtime
+agent.userId = 'user-123';
+```
+
+### Connector Allowlist (`connectors`)
+
+Restrict an agent to a subset of registered connectors. Only listed connectors appear in tool descriptions (e.g., `execute_javascript`) and are accessible in sandbox execution:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'user-123',
+  connectors: ['github', 'slack'],  // Only these connectors available to tools
+  tools: [executeJavaScript],
+});
+
+// Tools only see github and slack — stripe, etc. are invisible
+// This works with userId scoping: allowlist filters on top of access-policy view
+
+// Change at runtime
+agent.connectors = ['github', 'slack', 'stripe'];
+
+// Remove restriction (all visible connectors available)
+agent.connectors = undefined;
+```
+
+**How it composes with access policies:**
+1. Access policy filters connectors by userId (if set)
+2. `connectors` allowlist further restricts to named subset
+3. Result: only connectors in the allowlist AND visible to the user
+
+**Available via `ToolContext.connectorRegistry`** — tools that need connector access (like `execute_javascript`) read the pre-built, scoped registry directly from their execution context.
 
 ---
 
@@ -3135,22 +3218,18 @@ const myTool: ToolFunction = {
     },
   },
   execute: async (args, context) => {
-    // Context available when workingMemory is enabled:
+    // Identity context (auto-populated from agent config):
+    console.log(context?.agentId);  // Agent identifier
+    console.log(context?.userId);   // User ID (if set via agent.userId or config)
+
+    // Working memory access (when workingMemory feature is enabled):
     if (context?.memory) {
-      // Access working memory
-      const data = await context.memory.retrieve('some_key');
+      const data = await context.memory.get('some_key');
     }
 
-    if (context?.contextManager) {
-      // Check context budget
-      const budget = context.contextManager.getCurrentBudget();
-      console.log(`Context: ${budget?.utilizationPercent}%`);
-    }
-
-    if (context?.idempotencyCache) {
-      // Access cache stats
-      const stats = context.idempotencyCache.getStats();
-      console.log(`Cache hit rate: ${stats.hitRate}`);
+    // Cancellation support:
+    if (context?.signal?.aborted) {
+      return { error: 'Cancelled' };
     }
 
     return { result: 'done' };

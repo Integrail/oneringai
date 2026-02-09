@@ -1,11 +1,12 @@
-import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, A as AudioFormat, c as IBaseModelDescription, V as VendorOptionSchema, d as IImageProvider, e as ConnectorFetchOptions, f as ITokenStorage, S as StoredToken$1, g as ConnectorConfig, h as ConnectorAuth, i as ConnectorConfigResult } from './ImageModel-DSY7SNsq.cjs';
-export { m as APIKeyConnectorAuth, D as AspectRatio, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, j as ImageGeneration, k as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, l as SimpleGenerateOptions, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature } from './ImageModel-DSY7SNsq.cjs';
-import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-NOV01LWF.cjs';
-export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-NOV01LWF.cjs';
+import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, c as IProvider, d as ConnectorFetchOptions, P as ProviderCapabilities, e as ITokenStorage, S as StoredToken$1, f as ConnectorConfig, g as ConnectorAuth, h as ConnectorConfigResult } from './IProvider-c4QCbPjn.cjs';
+export { A as APIKeyConnectorAuth, k as DEFAULT_BASE_DELAY_MS, D as DEFAULT_CONNECTOR_TIMEOUT, l as DEFAULT_MAX_DELAY_MS, i as DEFAULT_MAX_RETRIES, j as DEFAULT_RETRYABLE_STATUSES, J as JWTConnectorAuth, O as OAuthConnectorAuth } from './IProvider-c4QCbPjn.cjs';
+import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-CzERJpg2.cjs';
+export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-CzERJpg2.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 export { a as VENDORS, i as isVendor } from './Vendor-DYh_bzwo.cjs';
-import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.cjs';
+import { A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as IImageProvider } from './ImageModel-BWN6VVS6.cjs';
+export { r as AspectRatio, d as IImageModelDescription, g as IMAGE_MODELS, h as IMAGE_MODEL_REGISTRY, s as ISourceLinks, o as ImageEditOptions, n as ImageGenerateOptions, b as ImageGeneration, c as ImageGenerationCreateOptions, e as ImageModelCapabilities, f as ImageModelPricing, q as ImageResponse, p as ImageVariationOptions, O as OutputFormat, Q as QualityLevel, S as SimpleGenerateOptions, m as calculateImageCost, k as getActiveImageModels, i as getImageModelInfo, j as getImageModelsByVendor, l as getImageModelsWithFeature } from './ImageModel-BWN6VVS6.cjs';
 import { ServiceCategory } from './shared/index.cjs';
 export { ILLMDescription, LLM_MODELS, MODEL_REGISTRY, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, ServiceDefinition, ServiceInfo, ServiceType, Services, calculateCost, detectServiceFromURL, getActiveModels, getAllServiceIds, getModelInfo, getModelsByVendor, getServiceDefinition, getServiceInfo, getServicesByCategory, isKnownService } from './shared/index.cjs';
 
@@ -1335,6 +1336,7 @@ interface SerializedContextState {
     metadata: {
         savedAt: number;
         agentId?: string;
+        userId?: string;
         model: string;
     };
     /** Agent-specific state (for TaskAgent, UniversalAgent, etc.) */
@@ -1913,6 +1915,15 @@ interface AgentContextNextGenConfig {
     features?: ContextFeatures;
     /** Agent ID (required for PersistentInstructions) */
     agentId?: string;
+    /** User ID for multi-user scenarios. Automatically flows to ToolContext for all tool executions. */
+    userId?: string;
+    /**
+     * Restrict this agent to a subset of registered connectors (by name).
+     * When set, only these connectors are visible in ToolContext.connectorRegistry
+     * and in dynamic tool descriptions (e.g., execute_javascript).
+     * When not set, all connectors visible to the current userId are available.
+     */
+    connectors?: string[];
     /** Initial tools to register */
     tools?: ToolFunction[];
     /** Storage for session persistence */
@@ -2339,6 +2350,10 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     private _sessionId;
     /** Agent ID */
     private readonly _agentId;
+    /** User ID for multi-user scenarios */
+    private _userId;
+    /** Allowed connector names (when agent is restricted to a subset) */
+    private _allowedConnectors;
     /** Storage backend */
     private readonly _storage?;
     /** Destroyed flag */
@@ -2362,12 +2377,34 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
      * @throws Error if any required plugin is missing
      */
     private validateStrategyDependencies;
+    /**
+     * Sync identity fields and connector registry to ToolContext.
+     * Merges with existing ToolContext to preserve other fields (memory, signal, taskId).
+     *
+     * Connector registry resolution order:
+     * 1. If `connectors` (allowed names) is set → filtered view of global registry
+     * 2. If access policy + userId → scoped view via Connector.scoped()
+     * 3. Otherwise → full global registry
+     */
+    private syncToolContext;
+    /**
+     * Build the connector registry appropriate for this agent's config.
+     */
+    private buildConnectorRegistry;
     /** Get the tool manager */
     get tools(): ToolManager;
     /** Get the model name */
     get model(): string;
     /** Get the agent ID */
     get agentId(): string;
+    /** Get the current user ID */
+    get userId(): string | undefined;
+    /** Set user ID. Automatically updates ToolContext for all tool executions. */
+    set userId(value: string | undefined);
+    /** Get the allowed connector names (undefined = all visible connectors) */
+    get connectors(): string[] | undefined;
+    /** Set allowed connector names. Updates ToolContext.connectorRegistry. */
+    set connectors(value: string[] | undefined);
     /** Get/set system prompt */
     get systemPrompt(): string | undefined;
     set systemPrompt(value: string | undefined);
@@ -2779,6 +2816,14 @@ interface BaseAgentConfig {
     registry?: IConnectorRegistry;
     /** Agent name (optional, auto-generated if not provided) */
     name?: string;
+    /** User ID for multi-user scenarios. Flows to ToolContext automatically for all tool executions. */
+    userId?: string;
+    /**
+     * Restrict this agent to a subset of registered connectors (by name).
+     * Only these connectors will be visible in tool descriptions and sandbox execution.
+     * When not set, all connectors visible to the current userId are available.
+     */
+    connectors?: string[];
     /** Tools available to the agent */
     tools?: ToolFunction[];
     /** Provide a pre-configured ToolManager (advanced) */
@@ -2948,6 +2993,22 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      * This is the primary way to access tools, memory, and history.
      */
     get context(): AgentContextNextGen;
+    /**
+     * Get the current user ID. Delegates to AgentContextNextGen.
+     */
+    get userId(): string | undefined;
+    /**
+     * Set user ID at runtime. Automatically updates ToolContext for all tool executions.
+     */
+    set userId(value: string | undefined);
+    /**
+     * Get the allowed connector names (undefined = all visible connectors).
+     */
+    get connectors(): string[] | undefined;
+    /**
+     * Restrict this agent to a subset of connectors. Updates ToolContext.connectorRegistry.
+     */
+    set connectors(value: string[] | undefined);
     /**
      * Permission management. Returns ToolPermissionManager for approval control.
      */
@@ -3335,6 +3396,7 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgentEvents> implements IDi
      * const agent = Agent.create({
      *   connector: 'openai',  // or Connector instance
      *   model: 'gpt-4',
+     *   userId: 'user-123',   // flows to all tool executions automatically
      *   instructions: 'You are a helpful assistant',
      *   tools: [myTool]
      * });
@@ -11519,8 +11581,14 @@ declare function createWebScrapeTool(connector: Connector, _userId?: string): To
 
 /**
  * JavaScript Execution Tool
- * Executes JavaScript in a sandboxed VM with connector integration
- * Connectors provide authenticated access to external APIs (GitHub, Microsoft, etc.)
+ * Executes JavaScript in a sandboxed VM with connector integration.
+ * Connectors provide authenticated access to external APIs (GitHub, Slack, etc.)
+ *
+ * Key features:
+ * - userId auto-injected from ToolContext into authenticatedFetch calls
+ * - Connector list always scoped to current userId via global access policy
+ * - Dynamic description regenerated at each LLM call with current connectors
+ * - Configurable timeout per invocation
  */
 
 interface ExecuteJSArgs {
@@ -11536,21 +11604,37 @@ interface ExecuteJSResult {
     executionTime: number;
 }
 /**
+ * Options for creating the execute_javascript tool.
+ */
+interface ExecuteJavaScriptToolOptions {
+    /**
+     * Maximum allowed timeout in milliseconds for code execution.
+     * The LLM can request up to this value via the `timeout` parameter.
+     * Default: 30000 (30s). Set higher for long-running API calls.
+     */
+    maxTimeout?: number;
+    /**
+     * Default timeout in milliseconds when not specified by the LLM.
+     * Default: 10000 (10s).
+     */
+    defaultTimeout?: number;
+}
+/**
  * Create an execute_javascript tool.
  *
  * The tool uses `descriptionFactory` to generate a dynamic description that
- * always reflects the currently registered connectors. This ensures the LLM
- * sees up-to-date connector information even if connectors are registered
- * after the tool is created.
+ * always reflects the connectors available to the current user. Connector
+ * visibility is determined by the global access policy (if set) scoped by
+ * the agent's userId from ToolContext.
+ *
+ * @param options - Optional configuration for timeout limits
  */
-declare function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
+declare function createExecuteJavaScriptTool(options?: ExecuteJavaScriptToolOptions): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
 /**
  * Default executeJavaScript tool instance.
  *
- * This tool uses `descriptionFactory` to generate dynamic descriptions,
- * so the connector list is always current when the tool is sent to the LLM.
- * You can use either this default instance or create new ones with
- * `createExecuteJavaScriptTool()` - both will have dynamic descriptions.
+ * Uses the global connector registry (scoped by userId at runtime).
+ * For custom timeouts, use createExecuteJavaScriptTool(options).
  */
 declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
 
@@ -12005,7 +12089,7 @@ declare function createCreatePRTool(connector: Connector, userId?: string): Tool
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-09T17:19:15.398Z
+ * Generated at: 2026-02-09T20:09:16.369Z
  *
  * To regenerate: npm run generate:tools
  */

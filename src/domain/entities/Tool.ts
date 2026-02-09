@@ -172,16 +172,17 @@ export interface ToolFunction<TArgs = any, TResult = any> {
    * The returned string replaces definition.function.description when sending to LLM.
    * The static description in definition.function.description serves as a fallback.
    *
+   * @param context - Current ToolContext (includes userId, agentId, etc.)
    * @returns The current tool description
    *
    * @example
-   * // Tool with dynamic connector list:
-   * descriptionFactory: () => {
-   *   const connectors = Connector.listAll();
+   * // Tool with dynamic connector list scoped to current user:
+   * descriptionFactory: (context) => {
+   *   const connectors = getConnectorsForUser(context?.userId);
    *   return `Execute API calls. Available connectors: ${connectors.map(c => c.name).join(', ')}`;
    * }
    */
-  descriptionFactory?: () => string;
+  descriptionFactory?: (context?: ToolContext) => string;
 
   /**
    * Returns a human-readable description of a tool call.

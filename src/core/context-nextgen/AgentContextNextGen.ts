@@ -53,6 +53,8 @@ import type {
   ConsolidationResult,
 } from './types.js';
 import type { IContextStorage, StoredContextSession } from '../../domain/interfaces/IContextStorage.js';
+import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
+import { Connector } from '../Connector.js';
 
 // Plugin imports for auto-initialization
 import {
@@ -107,7 +109,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'connectors'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -142,6 +144,12 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** Agent ID */
   private readonly _agentId: string;
+
+  /** User ID for multi-user scenarios */
+  private _userId: string | undefined;
+
+  /** Allowed connector names (when agent is restricted to a subset) */
+  private _allowedConnectors: string[] | undefined;
 
   /** Storage backend */
   private readonly _storage?: IContextStorage;
@@ -191,6 +199,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
+    this._userId = config.userId;
+    this._allowedConnectors = config.connectors;
     this._storage = config.storage;
 
     // Initialize compaction strategy
@@ -211,6 +221,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     // Auto-initialize plugins based on features config
     this.initializePlugins(config.plugins);
+
+    // Auto-populate ToolContext with identity fields (agentId, userId)
+    this.syncToolContext();
   }
 
   /**
@@ -269,6 +282,73 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     }
   }
 
+  /**
+   * Sync identity fields and connector registry to ToolContext.
+   * Merges with existing ToolContext to preserve other fields (memory, signal, taskId).
+   *
+   * Connector registry resolution order:
+   * 1. If `connectors` (allowed names) is set → filtered view of global registry
+   * 2. If access policy + userId → scoped view via Connector.scoped()
+   * 3. Otherwise → full global registry
+   */
+  private syncToolContext(): void {
+    const existing = this._tools.getToolContext();
+    this._tools.setToolContext({
+      ...existing,
+      agentId: this._agentId,
+      userId: this._userId,
+      connectorRegistry: this.buildConnectorRegistry(),
+    });
+  }
+
+  /**
+   * Build the connector registry appropriate for this agent's config.
+   */
+  private buildConnectorRegistry(): IConnectorRegistry {
+    // 1. Explicit connector subset — filter global registry by allowed names
+    if (this._allowedConnectors?.length) {
+      const allowedSet = new Set(this._allowedConnectors);
+      const base = this._userId && Connector.getAccessPolicy()
+        ? Connector.scoped({ userId: this._userId })
+        : Connector.asRegistry();
+
+      // Return a filtered view that only exposes the allowed connectors
+      return {
+        get: (name) => {
+          if (!allowedSet.has(name)) {
+            const available = this._allowedConnectors!.filter(n => base.has(n)).join(', ') || 'none';
+            throw new Error(`Connector '${name}' not found. Available: ${available}`);
+          }
+          return base.get(name);
+        },
+        has: (name) => allowedSet.has(name) && base.has(name),
+        list: () => base.list().filter(n => allowedSet.has(n)),
+        listAll: () => base.listAll().filter(c => allowedSet.has(c.name)),
+        size: () => base.listAll().filter(c => allowedSet.has(c.name)).length,
+        getDescriptionsForTools: () => {
+          const connectors = base.listAll().filter(c => allowedSet.has(c.name));
+          if (connectors.length === 0) return 'No connectors registered yet.';
+          return connectors.map(c => `  - "${c.name}": ${c.displayName} - ${c.config.description || 'No description'}`).join('\n');
+        },
+        getInfo: () => {
+          const info: Record<string, { displayName: string; description: string; baseURL: string }> = {};
+          for (const c of base.listAll().filter(c => allowedSet.has(c.name))) {
+            info[c.name] = { displayName: c.displayName, description: c.config.description || '', baseURL: c.baseURL };
+          }
+          return info;
+        },
+      };
+    }
+
+    // 2. Access policy + userId — scoped view
+    if (this._userId && Connector.getAccessPolicy()) {
+      return Connector.scoped({ userId: this._userId });
+    }
+
+    // 3. Full global registry
+    return Connector.asRegistry();
+  }
+
   // ============================================================================
   // Public Properties
   // ============================================================================
@@ -286,6 +366,28 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Get the agent ID */
   get agentId(): string {
     return this._agentId;
+  }
+
+  /** Get the current user ID */
+  get userId(): string | undefined {
+    return this._userId;
+  }
+
+  /** Set user ID. Automatically updates ToolContext for all tool executions. */
+  set userId(value: string | undefined) {
+    this._userId = value;
+    this.syncToolContext();
+  }
+
+  /** Get the allowed connector names (undefined = all visible connectors) */
+  get connectors(): string[] | undefined {
+    return this._allowedConnectors;
+  }
+
+  /** Set allowed connector names. Updates ToolContext.connectorRegistry. */
+  set connectors(value: string[] | undefined) {
+    this._allowedConnectors = value;
+    this.syncToolContext();
   }
 
   /** Get/set system prompt */
@@ -1465,6 +1567,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       metadata: {
         savedAt: Date.now(),
         agentId: this._agentId,
+        userId: this._userId,
         model: this._config.model,
       },
     };

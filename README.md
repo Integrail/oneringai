@@ -67,6 +67,8 @@
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
 - 🔌 **Tool Execution Plugins** - NEW: Pluggable pipeline for logging, analytics, UI updates, custom behavior
 - 💾 **Session Persistence** - Save and resume conversations with full state restoration
+- 👤 **Multi-User Support** - Set `userId` once, flows automatically to all tool executions and session metadata
+- 🔒 **Connector Allowlist** - Restrict agents to a named subset of connectors, composable with access policies
 - 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
 - 🤖 **Task Agents** - ⚠️ *Deprecated* - Use `Agent` with `WorkingMemoryPluginNextGen`
 - 🔬 **Research Agent** - ⚠️ *Deprecated* - Use `Agent` with search tools
@@ -359,6 +361,8 @@ const storage = createFileContextStorage('my-assistant');
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
+  userId: 'user-123',            // Flows to all tool executions automatically
+  connectors: ['github', 'slack'], // Only these connectors visible to tools
   tools: [weatherTool, emailTool],
   context: {
     features: {

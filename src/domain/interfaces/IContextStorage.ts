@@ -25,6 +25,7 @@ export interface SerializedContextState {
   metadata: {
     savedAt: number;
     agentId?: string;
+    userId?: string;
     model: string;
   };
   /** Agent-specific state (for TaskAgent, UniversalAgent, etc.) */

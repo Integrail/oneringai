@@ -537,6 +537,17 @@ export interface AgentContextNextGenConfig {
   /** Agent ID (required for PersistentInstructions) */
   agentId?: string;
 
+  /** User ID for multi-user scenarios. Automatically flows to ToolContext for all tool executions. */
+  userId?: string;
+
+  /**
+   * Restrict this agent to a subset of registered connectors (by name).
+   * When set, only these connectors are visible in ToolContext.connectorRegistry
+   * and in dynamic tool descriptions (e.g., execute_javascript).
+   * When not set, all connectors visible to the current userId are available.
+   */
+  connectors?: string[];
+
   /** Initial tools to register */
   tools?: ToolFunction[];
 

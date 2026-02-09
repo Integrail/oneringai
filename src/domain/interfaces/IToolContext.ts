@@ -12,6 +12,7 @@
  */
 
 import type { MemoryScope, MemoryPriority } from '../entities/Memory.js';
+import type { IConnectorRegistry } from './IConnectorRegistry.js';
 
 /**
  * Limited memory access for tools
@@ -77,6 +78,9 @@ export interface ToolContext {
 
   /** User ID — set by host app via agent.tools.setToolContext() for per-user operations */
   userId?: string;
+
+  /** Connector registry scoped to this agent's allowed connectors and userId */
+  connectorRegistry?: IConnectorRegistry;
 
   /** Working memory access (if agent has memory feature enabled) */
   memory?: WorkingMemoryAccess;

@@ -148,6 +148,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    * const agent = Agent.create({
    *   connector: 'openai',  // or Connector instance
    *   model: 'gpt-4',
+   *   userId: 'user-123',   // flows to all tool executions automatically
    *   instructions: 'You are a helpful assistant',
    *   tools: [myTool]
    * });

@@ -191,6 +191,16 @@ export interface BaseAgentConfig {
   /** Agent name (optional, auto-generated if not provided) */
   name?: string;
 
+  /** User ID for multi-user scenarios. Flows to ToolContext automatically for all tool executions. */
+  userId?: string;
+
+  /**
+   * Restrict this agent to a subset of registered connectors (by name).
+   * Only these connectors will be visible in tool descriptions and sandbox execution.
+   * When not set, all connectors visible to the current userId are available.
+   */
+  connectors?: string[];
+
   /** Tools available to the agent */
   tools?: ToolFunction[];
 
@@ -376,6 +386,8 @@ export abstract class BaseAgent<
     const contextConfig: AgentContextNextGenConfig = {
       model: config.model,
       agentId: config.name,
+      userId: config.userId,
+      connectors: config.connectors,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
       // Thread tool execution timeout to ToolManager
@@ -567,6 +579,34 @@ export abstract class BaseAgent<
   }
 
   /**
+   * Get the current user ID. Delegates to AgentContextNextGen.
+   */
+  get userId(): string | undefined {
+    return this._agentContext.userId;
+  }
+
+  /**
+   * Set user ID at runtime. Automatically updates ToolContext for all tool executions.
+   */
+  set userId(value: string | undefined) {
+    this._agentContext.userId = value;
+  }
+
+  /**
+   * Get the allowed connector names (undefined = all visible connectors).
+   */
+  get connectors(): string[] | undefined {
+    return this._agentContext.connectors;
+  }
+
+  /**
+   * Restrict this agent to a subset of connectors. Updates ToolContext.connectorRegistry.
+   */
+  set connectors(value: string[] | undefined) {
+    this._agentContext.connectors = value;
+  }
+
+  /**
    * Permission management. Returns ToolPermissionManager for approval control.
    */
   get permissions(): ToolPermissionManager {
@@ -625,10 +665,12 @@ export abstract class BaseAgent<
    * always sees up-to-date tool descriptions.
    */
   protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
+    const toolContext = this._agentContext.tools.getToolContext();
     return this._agentContext.tools.getEnabled().map((tool) => {
       // If tool has a descriptionFactory, use it to generate dynamic description
+      // Pass current ToolContext so descriptions can scope by userId, etc.
       if (tool.descriptionFactory) {
-        const dynamicDescription = tool.descriptionFactory();
+        const dynamicDescription = tool.descriptionFactory(toolContext);
         // Return a modified copy with the dynamic description
         return {
           ...tool.definition,
