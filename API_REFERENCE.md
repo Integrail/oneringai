@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-08
+**Generated:** 2026-02-09
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (6 items)
 - [Interfaces](#interfaces) (42 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (187 items)
+- [Other](#other) (186 items)
 
 ## Core
 
@@ -4360,7 +4360,7 @@ updateTools(tools: ToolFunction[]): void
 
 ### InContextMemoryPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:146`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:159`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -4478,7 +4478,7 @@ restoreState(state: unknown): void
 Store or update a key-value pair
 
 ```typescript
-set(key: string, description: string, value: unknown, priority?: InContextPriority): void
+set(key: string, description: string, value: unknown, priority?: InContextPriority, showInUI?: boolean): void
 ```
 
 **Parameters:**
@@ -4486,6 +4486,7 @@ set(key: string, description: string, value: unknown, priority?: InContextPriori
 - `description`: `string`
 - `value`: `unknown`
 - `priority`: `InContextPriority | undefined` *(optional)*
+- `showInUI`: `boolean | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -4536,7 +4537,7 @@ List all entries with metadata
 list(): Array&lt;
 ```
 
-**Returns:** `{ key: string; description: string; priority: InContextPriority; updatedAt: number; }[]`
+**Returns:** `{ key: string; description: string; priority: InContextPriority; updatedAt: number; showInUI: boolean; }[]`
 
 #### `clear()`
 
@@ -4557,7 +4558,7 @@ clear(): void
 |----------|------|-------------|
 | `name` | `name: "in_context_memory"` | - |
 | `entries` | `entries: Map&lt;string, InContextEntry&gt;` | - |
-| `config` | `config: Required&lt;InContextMemoryConfig&gt;` | - |
+| `config` | `config: { maxEntries: number; maxTotalTokens: number; defaultPriority: InContextPriority; showTimestamps: boolean; onEntriesChanged?: ((entries: InContextEntry[]) =&gt; void) | undefined; }` | - |
 | `estimator` | `estimator: ITokenEstimator` | - |
 
 </details>
@@ -6654,7 +6655,7 @@ getTotalSize(): Promise&lt;number&gt;;
 
 ### InContextMemoryConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:36`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:38`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -6665,6 +6666,7 @@ getTotalSize(): Promise&lt;number&gt;;
 | `maxTotalTokens?` | `maxTotalTokens?: number;` | Maximum total tokens for all entries (default: 4000) |
 | `defaultPriority?` | `defaultPriority?: InContextPriority;` | Default priority for new entries (default: 'normal') |
 | `showTimestamps?` | `showTimestamps?: boolean;` | Whether to show timestamps in output (default: false) |
+| `onEntriesChanged?` | `onEntriesChanged?: (entries: InContextEntry[]) =&gt; void;` | Callback fired when entries change. Receives all current entries. |
 
 </details>
 
@@ -6991,7 +6993,7 @@ Research plan for systematic research
 
 ### SerializedInContextMemoryState `interface`
 
-📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:47`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:51`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7237,7 +7239,7 @@ Result of task validation (returned by LLM reflection)
 
 ### WorkingMemoryAccess `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:24`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:25`](src/domain/interfaces/IToolContext.ts)
 
 Limited memory access for tools
 
@@ -9238,7 +9240,7 @@ async clearAll(): Promise&lt;void&gt;
 
 ### ContextSessionMetadata `interface`
 
-📍 [`src/domain/interfaces/IContextStorage.ts:61`](src/domain/interfaces/IContextStorage.ts)
+📍 [`src/domain/interfaces/IContextStorage.ts:62`](src/domain/interfaces/IContextStorage.ts)
 
 Session metadata (stored with session)
 
@@ -9257,7 +9259,7 @@ Session metadata (stored with session)
 
 ### ContextSessionSummary `interface`
 
-📍 [`src/domain/interfaces/IContextStorage.ts:38`](src/domain/interfaces/IContextStorage.ts)
+📍 [`src/domain/interfaces/IContextStorage.ts:39`](src/domain/interfaces/IContextStorage.ts)
 
 Session summary for listing (lightweight, no full state)
 
@@ -9400,7 +9402,7 @@ Unified agent storage interface
 
 ### StoredContextSession `interface`
 
-📍 [`src/domain/interfaces/IContextStorage.ts:78`](src/domain/interfaces/IContextStorage.ts)
+📍 [`src/domain/interfaces/IContextStorage.ts:79`](src/domain/interfaces/IContextStorage.ts)
 
 Full session state wrapper (includes metadata)
 
@@ -9495,7 +9497,7 @@ Define and execute tools for agents
 
 ### ConnectorTools `class`
 
-📍 [`src/tools/connector/ConnectorTools.ts:124`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:173`](src/tools/connector/ConnectorTools.ts)
 
 ConnectorTools - Main API for vendor-dependent tools
 
@@ -11225,7 +11227,7 @@ Extended registry entry for connector-generated tools
 
 ### ConnectorToolsOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:100`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:149`](src/tools/connector/ConnectorTools.ts)
 
 Options for ConnectorTools methods that accept a scoped registry
 
@@ -11297,7 +11299,7 @@ Default: common binary extensions |
 
 ### GenericAPICallArgs `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:79`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:128`](src/tools/connector/ConnectorTools.ts)
 
 Arguments for the generic API call tool
 
@@ -11318,7 +11320,7 @@ Arguments for the generic API call tool
 
 ### GenericAPICallResult `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:90`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:139`](src/tools/connector/ConnectorTools.ts)
 
 Result from the generic API call tool
 
@@ -11338,7 +11340,7 @@ Result from the generic API call tool
 
 ### GenericAPIToolOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:65`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:114`](src/tools/connector/ConnectorTools.ts)
 
 Options for generating the generic API tool
 
@@ -11888,7 +11890,7 @@ Tool call detected and starting
 
 ### ToolContext `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:71`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:72`](src/domain/interfaces/IToolContext.ts)
 
 Context passed to tool execute function
 
@@ -11901,7 +11903,8 @@ Simple and clean - only what tools actually need.
 |----------|------|-------------|
 | `agentId?` | `agentId?: string;` | Agent ID (for logging/tracing) |
 | `taskId?` | `taskId?: string;` | Task ID (if running in TaskAgent) |
-| `userId?` | `userId?: string;` | User ID — set by host app via agent.tools.setToolContext() for per-user operations |
+| `userId?` | `userId?: string;` | User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). |
+| `connectorRegistry?` | `connectorRegistry?: IConnectorRegistry;` | Connector registry scoped to this agent's allowed connectors and userId |
 | `memory?` | `memory?: WorkingMemoryAccess;` | Working memory access (if agent has memory feature enabled) |
 | `signal?` | `signal?: AbortSignal;` | Abort signal for cancellation |
 
@@ -12006,7 +12009,7 @@ User-provided tool function
 | `idempotency?` | `idempotency?: ToolIdempotency;` | - |
 | `output?` | `output?: ToolOutputHints;` | - |
 | `permission?` | `permission?: ToolPermissionConfig;` | Permission settings for this tool. If not set, defaults are used. |
-| `descriptionFactory?` | `descriptionFactory?: () =&gt; string;` | Dynamic description generator for the tool.
+| `descriptionFactory?` | `descriptionFactory?: (context?: ToolContext) =&gt; string;` | Dynamic description generator for the tool.
 If provided, this function is called when tool definitions are serialized for the LLM,
 allowing the description to reflect current state (e.g., available connectors).
 
@@ -12196,7 +12199,7 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistryEntry `interface`
 
-📍 [`src/tools/registry.generated.ts:30`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:27`](src/tools/registry.generated.ts)
 
 Metadata for a tool in the registry
 
@@ -12329,10 +12332,14 @@ type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number]
 
 ### ServiceToolFactory `type`
 
-📍 [`src/tools/connector/ConnectorTools.ts:60`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:109`](src/tools/connector/ConnectorTools.ts)
 
-Factory function type for creating service-specific tools
-Takes a Connector and returns an array of tools that use it
+Factory function type for creating service-specific tools.
+Takes a Connector and returns an array of tools that use it.
+
+The `userId` parameter is a legacy fallback — tools should prefer reading
+userId from ToolContext at execution time (auto-populated by Agent).
+Factory userId is used as fallback when ToolContext is not available.
 
 ```typescript
 type ServiceToolFactory = (connector: Connector, userId?: string) =&gt; ToolFunction[]
@@ -12352,7 +12359,7 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolCategory `type`
 
-📍 [`src/tools/registry.generated.ts:27`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:24`](src/tools/registry.generated.ts)
 
 Tool category for grouping
 
@@ -12419,17 +12426,19 @@ export function createEditFileTool(config: FilesystemToolConfig =
 
 ### createExecuteJavaScriptTool `function`
 
-📍 [`src/tools/code/executeJavaScript.ts:114`](src/tools/code/executeJavaScript.ts)
+📍 [`src/tools/code/executeJavaScript.ts:165`](src/tools/code/executeJavaScript.ts)
 
 Create an execute_javascript tool.
 
 The tool uses `descriptionFactory` to generate a dynamic description that
-always reflects the currently registered connectors. This ensures the LLM
-sees up-to-date connector information even if connectors are registered
-after the tool is created.
+always reflects the connectors available to the current user. Connector
+visibility is determined by the global access policy (if set) scoped by
+the agent's userId from ToolContext.
 
 ```typescript
-export function createExecuteJavaScriptTool(): ToolFunction&lt;ExecuteJSArgs, ExecuteJSResult&gt;
+export function createExecuteJavaScriptTool(
+  options?: ExecuteJavaScriptToolOptions,
+): ToolFunction&lt;ExecuteJSArgs, ExecuteJSResult&gt;
 ```
 
 ---
@@ -12580,7 +12589,6 @@ export function createSearchFilesTool(
 export function createSpeechToTextTool(
   connector: Connector,
   storage?: IMediaStorage,
-  _userId?: string
 ): ToolFunction&lt;SpeechToTextArgs, SpeechToTextResult&gt;
 ```
 
@@ -12614,7 +12622,7 @@ export function createWriteFileTool(config: FilesystemToolConfig =
 
 ### defaultDescribeCall `function`
 
-📍 [`src/domain/entities/Tool.ts:224`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:225`](src/domain/entities/Tool.ts)
 
 Default implementation for describeCall.
 Shows the first meaningful argument value.
@@ -12656,7 +12664,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:177`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:143`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -12680,7 +12688,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:192`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:158`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -12692,7 +12700,7 @@ export function getToolByName(name: string): ToolRegistryEntry | undefined
 
 ### getToolCallDescription `function`
 
-📍 [`src/domain/entities/Tool.ts:276`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:277`](src/domain/entities/Tool.ts)
 
 Get a human-readable description of a tool call.
 Uses the tool's describeCall method if available, otherwise falls back to default.
@@ -12708,7 +12716,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:202`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:168`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -12720,7 +12728,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:182`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:148`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -12732,7 +12740,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:187`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:153`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -12744,7 +12752,7 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:197`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:163`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
@@ -18029,7 +18037,7 @@ Agent definition summary for listing
 
 ### ContextStorageListOptions `interface`
 
-📍 [`src/domain/interfaces/IContextStorage.ts:174`](src/domain/interfaces/IContextStorage.ts)
+📍 [`src/domain/interfaces/IContextStorage.ts:175`](src/domain/interfaces/IContextStorage.ts)
 
 Options for listing sessions
 
@@ -18517,7 +18525,7 @@ getInfo(): Record&lt;string, { displayName: string; description: string; baseURL
 
 ### IContextStorage `interface`
 
-📍 [`src/domain/interfaces/IContextStorage.ts:110`](src/domain/interfaces/IContextStorage.ts)
+📍 [`src/domain/interfaces/IContextStorage.ts:111`](src/domain/interfaces/IContextStorage.ts)
 
 Storage interface for AgentContext persistence
 
@@ -19688,6 +19696,7 @@ This is the canonical definition - core layer re-exports this type.
 | `metadata` | `metadata: {
     savedAt: number;
     agentId?: string;
+    userId?: string;
     model: string;
   };` | Metadata |
 | `agentState?` | `agentState?: Record&lt;string, unknown&gt;;` | Agent-specific state (for TaskAgent, UniversalAgent, etc.) |
@@ -20239,7 +20248,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:104`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:106`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -22341,7 +22350,7 @@ getInfo(): Record&lt;string,
 
 ### ScrapeProvider `class`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:205`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:204`](src/capabilities/scrape/ScrapeProvider.ts)
 
 ScrapeProvider factory
 
@@ -22703,6 +22712,11 @@ Used to create strategy from StrategyRegistry if compactionStrategy not provided
 If provided, overrides the `strategy` option. |
 | `features?` | `features?: ContextFeatures;` | Feature flags |
 | `agentId?` | `agentId?: string;` | Agent ID (required for PersistentInstructions) |
+| `userId?` | `userId?: string;` | User ID for multi-user scenarios. Automatically flows to ToolContext for all tool executions. |
+| `connectors?` | `connectors?: string[];` | Restrict this agent to a subset of registered connectors (by name).
+When set, only these connectors are visible in ToolContext.connectorRegistry
+and in dynamic tool descriptions (e.g., execute_javascript).
+When not set, all connectors visible to the current userId are available. |
 | `tools?` | `tools?: ToolFunction[];` | Initial tools to register |
 | `storage?` | `storage?: IContextStorageFromDomain;` | Storage for session persistence |
 | `plugins?` | `plugins?: PluginConfigs;` | Plugin-specific configurations (used with features flags) |
@@ -23009,7 +23023,7 @@ Result of a bash command execution
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:671`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:682`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -23095,7 +23109,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:638`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:649`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -23206,7 +23220,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:655`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:666`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -23259,7 +23273,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:588`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:599`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -23343,7 +23357,7 @@ Configuration for DefaultCompactionStrategy
 
 ### DirectCallOptions `interface`
 
-📍 [`src/core/BaseAgent.ts:239`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:249`](src/core/BaseAgent.ts)
 
 Options for direct LLM calls (bypassing AgentContext).
 
@@ -23828,7 +23842,7 @@ Base interface for all capability providers
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:726`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:737`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -24214,6 +24228,7 @@ restoreState(state: unknown): void;
 | `value` | `value: unknown;` | - |
 | `updatedAt` | `updatedAt: number;` | - |
 | `priority` | `priority: InContextPriority;` | - |
+| `showInUI?` | `showInUI?: boolean;` | If true, this entry is displayed in the user's side panel UI |
 
 </details>
 
@@ -24315,7 +24330,7 @@ getCapabilities?(): SourceCapabilities;
 
 ### IScrapeProvider `interface`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:105`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:104`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Base ScrapeProvider interface
 All scraping providers must implement this interface
@@ -25126,7 +25141,7 @@ Research execution result
 
 ### ScrapeOptions `interface`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:58`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:57`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Scrape options
 
@@ -25151,7 +25166,7 @@ Scrape options
 
 ### ScrapeProviderConfig `interface`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:180`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:179`](src/capabilities/scrape/ScrapeProvider.ts)
 
 ScrapeProvider factory configuration
 
@@ -25168,7 +25183,7 @@ ScrapeProvider factory configuration
 
 ### ScrapeProviderFallbackConfig `interface`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:188`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:187`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Fallback chain configuration
 
@@ -25187,7 +25202,7 @@ Fallback chain configuration
 
 ### ScrapeResponse `interface`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:82`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:81`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Scrape response
 
@@ -25210,7 +25225,7 @@ Scrape response
 
 ### ScrapeResult `interface`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:30`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:29`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Scraped content result
 
@@ -25355,27 +25370,6 @@ Search result interface
 | `url` | `url: string;` | Direct URL to the page |
 | `snippet` | `snippet: string;` | Short description/excerpt |
 | `position` | `position: number;` | Search ranking position |
-
-</details>
-
----
-
-### SearchResult `interface`
-
-📍 [`src/tools/web/searchProviders/serper.ts:6`](src/tools/web/searchProviders/serper.ts)
-
-Serper.dev search provider
-Fast Google search results via API
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `title` | `title: string;` | - |
-| `url` | `url: string;` | - |
-| `snippet` | `snippet: string;` | - |
-| `position` | `position: number;` | - |
 
 </details>
 
@@ -26005,7 +25999,7 @@ type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 ### ScrapeFeature `type`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:130`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:129`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Features that scrape providers may support
 
@@ -26180,7 +26174,7 @@ export function getMediaStorage(): IMediaStorage
 
 ### getRegisteredScrapeProviders `function`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:171`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:170`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Get registered service types
 
@@ -26310,7 +26304,7 @@ export function parseRepository(input: string): GitHubRepository
 
 ### registerScrapeProvider `function`
 
-📍 [`src/capabilities/scrape/ScrapeProvider.ts:161`](src/capabilities/scrape/ScrapeProvider.ts)
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:160`](src/capabilities/scrape/ScrapeProvider.ts)
 
 Register a scrape provider for a service type
 Called by provider implementations to register themselves
@@ -26411,7 +26405,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:561`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:572`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -26429,7 +26423,7 @@ Default configuration values
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:62`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:66`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -26438,7 +26432,7 @@ Default configuration values
 |----------|------|-------------|
 | `maxEntries` | `20` | - |
 | `maxTotalTokens` | `4000` | - |
-| `defaultPriority` | `'normal'` | - |
+| `defaultPriority` | `'normal' as InContextPriority` | - |
 | `showTimestamps` | `false` | - |
 
 </details>
