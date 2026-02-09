@@ -2,10 +2,11 @@
  * Settings Page - App configuration
  */
 
-import React, { useState, useEffect } from 'react';
-import { Card, Form, Nav, ButtonGroup, Button, Row, Col, Badge, Spinner, Alert } from 'react-bootstrap';
-import { Monitor, Palette, Bell, Shield, Info, Code, Cloud, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, Form, Nav, ButtonGroup, Button, Row, Col, Badge, Spinner, Alert, Modal } from 'react-bootstrap';
+import { Monitor, Palette, Bell, Shield, Info, Code, Cloud, RefreshCw, CheckCircle, XCircle, Plus, Pencil, Trash2, Zap, LogIn, User, Clock } from 'lucide-react';
 import { PageHeader } from '../components/layout';
+import type { EverworkerProfile, EverworkerProfilesConfig } from '../../preload/index';
 
 type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent';
 
@@ -27,12 +28,26 @@ const defaultConfig: AppConfig = {
   },
 };
 
+function timeAgo(timestamp?: number): string {
+  if (!timestamp) return 'Never';
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export function SettingsPage(): React.ReactElement {
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [activeSection, setActiveSection] = useState('appearance');
+  const [appVersion, setAppVersion] = useState('...');
 
   useEffect(() => {
     loadConfig();
+    window.hosea.app.getVersion().then(v => setAppVersion(v));
   }, []);
 
   const loadConfig = async () => {
@@ -47,94 +62,243 @@ export function SettingsPage(): React.ReactElement {
     loadConfig();
   };
 
-  // Everworker Backend state
-  const [ewUrl, setEwUrl] = useState('');
-  const [ewToken, setEwToken] = useState('');
-  const [ewEnabled, setEwEnabled] = useState(false);
-  const [ewTesting, setEwTesting] = useState(false);
-  const [ewSyncing, setEwSyncing] = useState(false);
-  const [ewTestResult, setEwTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [ewSyncResult, setEwSyncResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [ewSaving, setEwSaving] = useState(false);
+  // ============ Everworker Multi-Profile State ============
+  const [ewProfiles, setEwProfiles] = useState<EverworkerProfilesConfig | null>(null);
+  const [ewFeedback, setEwFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
+  const [syncingProfile, setSyncingProfile] = useState(false);
+
+  // Edit/Add modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<Partial<EverworkerProfile> | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', url: '', token: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [showManualToken, setShowManualToken] = useState(false);
+
+  // Browser auth state
+  const [authInProgress, setAuthInProgress] = useState(false);
+  const [authMetadata, setAuthMetadata] = useState<{
+    tokenExpiresAt?: number;
+    tokenIssuedAt?: number;
+    userName?: string;
+    userId?: string;
+    authMethod?: 'manual' | 'browser-auth';
+  } | null>(null);
+  const [reauthProfileId, setReauthProfileId] = useState<string | null>(null);
+
+  // Delete confirmation
+  const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
+
+  const loadEWProfiles = useCallback(async () => {
+    const profiles = await window.hosea.everworker.getProfiles();
+    setEwProfiles(profiles);
+  }, []);
 
   useEffect(() => {
     if (activeSection === 'everworker') {
-      loadEWConfig();
+      loadEWProfiles();
     }
-  }, [activeSection]);
+  }, [activeSection, loadEWProfiles]);
 
-  const loadEWConfig = async () => {
-    const cfg = await window.hosea.everworker.getConfig();
-    if (cfg) {
-      setEwUrl(cfg.url);
-      setEwToken(cfg.token);
-      setEwEnabled(cfg.enabled);
-    }
-  };
-
-  const handleSaveEWConfig = async () => {
-    setEwSaving(true);
-    setEwTestResult(null);
+  const handleSwitchProfile = async (profileId: string | null) => {
+    setSwitching(true);
+    setEwFeedback(null);
     try {
-      const result = await window.hosea.everworker.setConfig({
-        url: ewUrl.replace(/\/+$/, ''), // Remove trailing slashes
-        token: ewToken,
-        enabled: ewEnabled,
-      });
+      const result = await window.hosea.everworker.switchProfile(profileId);
       if (result.success) {
-        setEwTestResult({ success: true, message: 'Configuration saved successfully.' });
+        setEwFeedback({
+          success: true,
+          message: profileId
+            ? `Switched profile: ${result.added ?? 0} connectors synced, ${result.removed ?? 0} removed.`
+            : 'Disconnected from Everworker backend.',
+        });
       } else {
-        setEwTestResult({ success: false, message: result.error || 'Failed to save configuration.' });
+        setEwFeedback({ success: false, message: result.error || 'Switch failed.' });
       }
+      await loadEWProfiles();
     } catch (error) {
-      setEwTestResult({ success: false, message: String(error) });
+      setEwFeedback({ success: false, message: String(error) });
     }
-    setEwSaving(false);
+    setSwitching(false);
   };
 
-  const handleTestEWConnection = async () => {
-    setEwTesting(true);
-    setEwTestResult(null);
+  const handleTestProfile = async (id: string) => {
+    setTestingProfileId(id);
+    setEwFeedback(null);
     try {
-      // Save first, then test
-      await window.hosea.everworker.setConfig({
-        url: ewUrl.replace(/\/+$/, ''),
-        token: ewToken,
-        enabled: true,
-      });
-      setEwEnabled(true);
-      const result = await window.hosea.everworker.testConnection();
+      const result = await window.hosea.everworker.testProfile(id);
       if (result.success) {
-        setEwTestResult({
+        setEwFeedback({
           success: true,
           message: `Connection successful! ${result.connectorCount} connector(s) available.`,
         });
       } else {
-        setEwTestResult({ success: false, message: result.error || 'Connection failed.' });
+        setEwFeedback({ success: false, message: result.error || 'Connection failed.' });
       }
     } catch (error) {
-      setEwTestResult({ success: false, message: String(error) });
+      setEwFeedback({ success: false, message: String(error) });
     }
-    setEwTesting(false);
+    setTestingProfileId(null);
   };
 
-  const handleSyncEWConnectors = async () => {
-    setEwSyncing(true);
-    setEwSyncResult(null);
+  const handleSyncActive = async () => {
+    setSyncingProfile(true);
+    setEwFeedback(null);
     try {
-      const result = await window.hosea.everworker.syncConnectors();
+      const result = await window.hosea.everworker.syncActive();
       if (result.success) {
-        setEwSyncResult({
+        setEwFeedback({
           success: true,
-          message: `Sync complete: ${result.added} added, ${result.updated ?? 0} updated, ${result.removed} removed.`,
+          message: `Sync complete: ${result.added ?? 0} added, ${result.updated ?? 0} updated, ${result.removed ?? 0} removed.`,
         });
       } else {
-        setEwSyncResult({ success: false, message: result.error || 'Sync failed.' });
+        setEwFeedback({ success: false, message: result.error || 'Sync failed.' });
+      }
+      await loadEWProfiles();
+    } catch (error) {
+      setEwFeedback({ success: false, message: String(error) });
+    }
+    setSyncingProfile(false);
+  };
+
+  const openAddModal = () => {
+    setEditingProfile(null);
+    setEditForm({ name: '', url: '', token: '' });
+    setAuthMetadata(null);
+    setShowManualToken(false);
+    setShowEditModal(true);
+  };
+
+  const openEditModal = (profile: EverworkerProfile) => {
+    setEditingProfile(profile);
+    setEditForm({ name: profile.name, url: profile.url, token: profile.token });
+    setAuthMetadata(null);
+    setShowManualToken(profile.authMethod === 'manual' || !profile.authMethod);
+    setShowEditModal(true);
+  };
+
+  const handleBrowserAuth = async () => {
+    const url = editForm.url?.trim();
+    if (!url) return;
+
+    setAuthInProgress(true);
+    setEwFeedback(null);
+    try {
+      // First check if this EW instance supports browser auth
+      const support = await window.hosea.everworker.checkAuthSupport(url);
+      if (!support.supported) {
+        setEwFeedback({
+          success: false,
+          message: 'This EverWorker instance does not support browser login yet. Please enter a token manually.',
+        });
+        setShowManualToken(true);
+        setAuthInProgress(false);
+        return;
+      }
+
+      // Open the auth window
+      const result = await window.hosea.everworker.startAuth(url);
+      if (result.success && result.token) {
+        setEditForm(f => ({ ...f, token: result.token! }));
+        setAuthMetadata({
+          tokenExpiresAt: result.expiresAt,
+          tokenIssuedAt: Date.now(),
+          userName: result.userName,
+          userId: result.userId,
+          authMethod: 'browser-auth',
+        });
+        setEwFeedback({ success: true, message: `Authenticated as ${result.userName || 'user'}` });
+      } else {
+        setEwFeedback({ success: false, message: result.error || 'Authentication failed' });
       }
     } catch (error) {
-      setEwSyncResult({ success: false, message: String(error) });
+      setEwFeedback({ success: false, message: String(error) });
     }
-    setEwSyncing(false);
+    setAuthInProgress(false);
+  };
+
+  const handleReauth = async (profile: EverworkerProfile) => {
+    setReauthProfileId(profile.id);
+    setEwFeedback(null);
+    try {
+      const support = await window.hosea.everworker.checkAuthSupport(profile.url);
+      if (!support.supported) {
+        setEwFeedback({ success: false, message: 'This EverWorker instance does not support browser login. Please edit the profile and enter a new token manually.' });
+        setReauthProfileId(null);
+        return;
+      }
+
+      const result = await window.hosea.everworker.startAuth(profile.url);
+      if (result.success && result.token) {
+        await window.hosea.everworker.updateProfile(profile.id, {
+          token: result.token,
+          tokenExpiresAt: result.expiresAt,
+          tokenIssuedAt: Date.now(),
+          userName: result.userName,
+          userId: result.userId,
+          authMethod: 'browser-auth',
+        });
+        setEwFeedback({ success: true, message: `Re-authenticated as ${result.userName || 'user'}` });
+        await loadEWProfiles();
+      } else {
+        setEwFeedback({ success: false, message: result.error || 'Re-authentication failed' });
+      }
+    } catch (error) {
+      setEwFeedback({ success: false, message: String(error) });
+    }
+    setReauthProfileId(null);
+  };
+
+  const handleSaveProfile = async () => {
+    setEditSaving(true);
+    try {
+      const profileData = {
+        ...editForm,
+        ...(authMetadata || {}),
+        // If no authMetadata and token was manually entered, mark as manual
+        ...(!authMetadata && editForm.token ? { authMethod: 'manual' as const } : {}),
+      };
+
+      if (editingProfile?.id) {
+        // Update
+        const result = await window.hosea.everworker.updateProfile(editingProfile.id, profileData);
+        if (!result.success) {
+          setEwFeedback({ success: false, message: result.error || 'Update failed.' });
+          setEditSaving(false);
+          return;
+        }
+      } else {
+        // Add
+        const result = await window.hosea.everworker.addProfile(profileData);
+        if (!result.success) {
+          setEwFeedback({ success: false, message: result.error || 'Add failed.' });
+          setEditSaving(false);
+          return;
+        }
+      }
+      setShowEditModal(false);
+      setAuthMetadata(null);
+      await loadEWProfiles();
+    } catch (error) {
+      setEwFeedback({ success: false, message: String(error) });
+    }
+    setEditSaving(false);
+  };
+
+  const handleDeleteProfile = async (id: string) => {
+    setDeletingProfileId(null);
+    try {
+      const result = await window.hosea.everworker.deleteProfile(id);
+      if (!result.success) {
+        setEwFeedback({ success: false, message: result.error || 'Delete failed.' });
+      } else {
+        setEwFeedback({ success: true, message: 'Profile deleted.' });
+      }
+      await loadEWProfiles();
+    } catch (error) {
+      setEwFeedback({ success: false, message: String(error) });
+    }
   };
 
   const sections = [
@@ -242,119 +406,187 @@ export function SettingsPage(): React.ReactElement {
               <div>
                 <h3 className="h5 mb-1">Everworker Backend</h3>
                 <p className="text-muted mb-4">
-                  Connect to an Everworker backend to use centrally managed AI connectors. API keys are stored on
-                  the server - your desktop app authenticates with a JWT token.
+                  Manage EW backend profiles for centrally managed AI connectors.
                 </p>
 
+                {/* Active profile selector + Add button */}
                 <Card className="mb-3">
                   <Card.Body>
-                    <Form.Check
-                      type="switch"
-                      id="ew-enabled"
-                      label="Enable Everworker Backend"
-                      checked={ewEnabled}
-                      onChange={(e) => setEwEnabled(e.target.checked)}
-                      className="mb-3"
-                    />
-
-                    <Form.Group className="mb-3">
-                      <Form.Label>Backend URL</Form.Label>
-                      <Form.Control
-                        type="url"
-                        placeholder="https://ew.company.com"
-                        value={ewUrl}
-                        onChange={(e) => setEwUrl(e.target.value)}
-                        disabled={!ewEnabled}
-                      />
-                      <Form.Text className="text-muted">
-                        The URL of your Everworker backend instance
-                      </Form.Text>
-                    </Form.Group>
-
-                    <Form.Group className="mb-3">
-                      <Form.Label>JWT Token</Form.Label>
-                      <Form.Control
-                        type="password"
-                        placeholder="eyJhbGciOiJ..."
-                        value={ewToken}
-                        onChange={(e) => setEwToken(e.target.value)}
-                        disabled={!ewEnabled}
-                      />
-                      <Form.Text className="text-muted">
-                        A JWT token with <code>llm:proxy</code> scope, generated from the Everworker admin panel
-                      </Form.Text>
-                    </Form.Group>
-
-                    <div className="d-flex gap-2">
-                      <Button
-                        variant="primary"
-                        onClick={handleSaveEWConfig}
-                        disabled={ewSaving || !ewUrl}
-                      >
-                        {ewSaving ? <Spinner animation="border" size="sm" className="me-2" /> : null}
-                        Save
-                      </Button>
-                      <Button
-                        variant="outline-primary"
-                        onClick={handleTestEWConnection}
-                        disabled={ewTesting || !ewUrl || !ewToken}
-                      >
-                        {ewTesting ? (
-                          <Spinner animation="border" size="sm" className="me-2" />
-                        ) : (
-                          <CheckCircle size={16} className="me-2" />
-                        )}
-                        Test Connection
-                      </Button>
-                      <Button
-                        variant="outline-secondary"
-                        onClick={handleSyncEWConnectors}
-                        disabled={ewSyncing || !ewEnabled || !ewUrl || !ewToken}
-                      >
-                        {ewSyncing ? (
-                          <Spinner animation="border" size="sm" className="me-2" />
-                        ) : (
-                          <RefreshCw size={16} className="me-2" />
-                        )}
-                        Sync Connectors
-                      </Button>
+                    <div className="d-flex align-items-center gap-3">
+                      <Form.Group className="flex-grow-1 mb-0">
+                        <Form.Label className="small text-muted mb-1">Active Profile</Form.Label>
+                        <Form.Select
+                          value={ewProfiles?.activeProfileId ?? ''}
+                          onChange={(e) => handleSwitchProfile(e.target.value || null)}
+                          disabled={switching}
+                        >
+                          <option value="">None (Disconnected)</option>
+                          {ewProfiles?.profiles.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </Form.Select>
+                      </Form.Group>
+                      <div style={{ paddingTop: 20 }}>
+                        <Button variant="outline-primary" size="sm" onClick={openAddModal}>
+                          <Plus size={16} className="me-1" />
+                          Add New
+                        </Button>
+                      </div>
                     </div>
-
-                    {ewTestResult && (
-                      <Alert
-                        variant={ewTestResult.success ? 'success' : 'danger'}
-                        className="mt-3 mb-0"
-                        dismissible
-                        onClose={() => setEwTestResult(null)}
-                      >
-                        {ewTestResult.success ? (
-                          <CheckCircle size={16} className="me-2" />
-                        ) : (
-                          <XCircle size={16} className="me-2" />
-                        )}
-                        {ewTestResult.message}
-                      </Alert>
-                    )}
-
-                    {ewSyncResult && (
-                      <Alert
-                        variant={ewSyncResult.success ? 'success' : 'danger'}
-                        className="mt-3 mb-0"
-                        dismissible
-                        onClose={() => setEwSyncResult(null)}
-                      >
-                        {ewSyncResult.success ? (
-                          <CheckCircle size={16} className="me-2" />
-                        ) : (
-                          <XCircle size={16} className="me-2" />
-                        )}
-                        {ewSyncResult.message}
-                      </Alert>
+                    {switching && (
+                      <div className="mt-2 text-muted small">
+                        <Spinner animation="border" size="sm" className="me-2" />
+                        Switching profile...
+                      </div>
                     )}
                   </Card.Body>
                 </Card>
 
-                <Card>
+                {/* Feedback alert */}
+                {ewFeedback && (
+                  <Alert
+                    variant={ewFeedback.success ? 'success' : 'danger'}
+                    className="mb-3"
+                    dismissible
+                    onClose={() => setEwFeedback(null)}
+                  >
+                    {ewFeedback.success ? (
+                      <CheckCircle size={16} className="me-2" />
+                    ) : (
+                      <XCircle size={16} className="me-2" />
+                    )}
+                    {ewFeedback.message}
+                  </Alert>
+                )}
+
+                {/* Profile cards */}
+                {ewProfiles?.profiles.map((profile) => {
+                  const isActive = ewProfiles.activeProfileId === profile.id;
+                  return (
+                    <Card key={profile.id} className={`mb-2 ${isActive ? 'border-primary' : ''}`}>
+                      <Card.Body className="py-2 px-3">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div>
+                            <div className="d-flex align-items-center gap-2 mb-1">
+                              <strong>{profile.name}</strong>
+                              {isActive && <Badge bg="primary">ACTIVE</Badge>}
+                              {profile.userName && (
+                                <span className="text-muted small d-flex align-items-center gap-1">
+                                  <User size={12} />{profile.userName}
+                                </span>
+                              )}
+                              {/* Token status badge */}
+                              {(() => {
+                                if (!profile.tokenExpiresAt) return null;
+                                const msRemaining = profile.tokenExpiresAt - Date.now();
+                                const daysRemaining = Math.max(0, Math.floor(msRemaining / (24 * 60 * 60 * 1000)));
+                                if (msRemaining <= 0) {
+                                  return <Badge bg="danger">Token expired</Badge>;
+                                }
+                                if (daysRemaining <= 3) {
+                                  return <Badge bg="warning" text="dark">Expires in {daysRemaining}d</Badge>;
+                                }
+                                return null;
+                              })()}
+                            </div>
+                            <div className="text-muted small">{profile.url}</div>
+                            <div className="text-muted small">
+                              {profile.lastSyncConnectorCount != null
+                                ? `${profile.lastSyncConnectorCount} connectors`
+                                : 'Not synced'}
+                              {' | '}
+                              Last synced: {timeAgo(profile.lastSyncedAt)}
+                            </div>
+                          </div>
+                          <div className="d-flex gap-1 flex-shrink-0">
+                            {/* Re-authenticate button for expired/expiring tokens */}
+                            {profile.tokenExpiresAt && (profile.tokenExpiresAt - Date.now() < 3 * 24 * 60 * 60 * 1000) && (
+                              <Button
+                                variant={profile.tokenExpiresAt <= Date.now() ? 'outline-danger' : 'outline-warning'}
+                                size="sm"
+                                onClick={() => handleReauth(profile)}
+                                disabled={reauthProfileId === profile.id}
+                                title="Re-authenticate"
+                              >
+                                {reauthProfileId === profile.id ? (
+                                  <Spinner animation="border" size="sm" />
+                                ) : (
+                                  <LogIn size={14} />
+                                )}
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              onClick={() => handleTestProfile(profile.id)}
+                              disabled={testingProfileId === profile.id}
+                              title="Test connection"
+                            >
+                              {testingProfileId === profile.id ? (
+                                <Spinner animation="border" size="sm" />
+                              ) : (
+                                <CheckCircle size={14} />
+                              )}
+                            </Button>
+                            {isActive && (
+                              <Button
+                                variant="outline-secondary"
+                                size="sm"
+                                onClick={handleSyncActive}
+                                disabled={syncingProfile}
+                                title="Sync connectors"
+                              >
+                                {syncingProfile ? (
+                                  <Spinner animation="border" size="sm" />
+                                ) : (
+                                  <RefreshCw size={14} />
+                                )}
+                              </Button>
+                            )}
+                            {!isActive && (
+                              <Button
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={() => handleSwitchProfile(profile.id)}
+                                disabled={switching}
+                                title="Activate"
+                              >
+                                <Zap size={14} />
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              onClick={() => openEditModal(profile)}
+                              title="Edit"
+                            >
+                              <Pencil size={14} />
+                            </Button>
+                            <Button
+                              variant="outline-danger"
+                              size="sm"
+                              onClick={() => setDeletingProfileId(profile.id)}
+                              title="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  );
+                })}
+
+                {ewProfiles && ewProfiles.profiles.length === 0 && (
+                  <Card className="mb-3">
+                    <Card.Body className="text-center text-muted py-4">
+                      No profiles configured. Click "Add New" to connect to an Everworker backend.
+                    </Card.Body>
+                  </Card>
+                )}
+
+                {/* How it works */}
+                <Card className="mt-3">
                   <Card.Body>
                     <h6 className="mb-2">How it works</h6>
                     <ul className="text-muted small mb-0">
@@ -362,10 +594,145 @@ export function SettingsPage(): React.ReactElement {
                       <li>Your desktop app connects through the EW proxy - no API keys stored locally</li>
                       <li>Both local and Everworker connectors can coexist (mixed mode)</li>
                       <li>Everworker connectors appear with a <Badge bg="info" className="ms-1">EW</Badge> badge in the connectors list</li>
+                      <li>Switching profiles immediately purges old connectors and syncs new ones</li>
                       <li>Usage is tracked per user on the backend</li>
                     </ul>
                   </Card.Body>
                 </Card>
+
+                {/* Add/Edit Profile Modal */}
+                <Modal show={showEditModal} onHide={() => { setShowEditModal(false); setAuthMetadata(null); }} centered>
+                  <Modal.Header closeButton>
+                    <Modal.Title>{editingProfile?.id ? 'Edit Profile' : 'Add Profile'}</Modal.Title>
+                  </Modal.Header>
+                  <Modal.Body>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Profile Name</Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="e.g., Production, Staging"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))}
+                      />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Backend URL</Form.Label>
+                      <Form.Control
+                        type="url"
+                        placeholder="https://ew.company.com"
+                        value={editForm.url}
+                        onChange={(e) => setEditForm(f => ({ ...f, url: e.target.value }))}
+                      />
+                    </Form.Group>
+
+                    {/* Browser auth: primary method */}
+                    {authMetadata ? (
+                      <Alert variant="success" className="mb-3">
+                        <div className="d-flex align-items-center gap-2">
+                          <CheckCircle size={16} />
+                          <span>Authenticated as <strong>{authMetadata.userName || 'user'}</strong></span>
+                        </div>
+                        {authMetadata.tokenExpiresAt && (
+                          <div className="text-muted small mt-1">
+                            <Clock size={12} className="me-1" />
+                            Token expires: {new Date(authMetadata.tokenExpiresAt).toLocaleDateString()}
+                          </div>
+                        )}
+                      </Alert>
+                    ) : (
+                      <div className="mb-3">
+                        <Button
+                          variant="primary"
+                          className="w-100"
+                          onClick={handleBrowserAuth}
+                          disabled={!editForm.url?.trim() || authInProgress}
+                        >
+                          {authInProgress ? (
+                            <>
+                              <Spinner animation="border" size="sm" className="me-2" />
+                              Waiting for login...
+                            </>
+                          ) : (
+                            <>
+                              <LogIn size={16} className="me-2" />
+                              Login to EverWorker
+                            </>
+                          )}
+                        </Button>
+                        {!editForm.url?.trim() && (
+                          <Form.Text className="text-muted">Enter a backend URL first</Form.Text>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Manual token fallback */}
+                    {!authMetadata && (
+                      <div className="mb-3">
+                        {!showManualToken ? (
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm text-muted p-0"
+                            onClick={() => setShowManualToken(true)}
+                          >
+                            Advanced: Enter token manually
+                          </button>
+                        ) : (
+                          <Form.Group>
+                            <Form.Label className="small">JWT Token</Form.Label>
+                            <Form.Control
+                              type="password"
+                              placeholder="eyJhbGciOiJ..."
+                              value={editForm.token}
+                              onChange={(e) => setEditForm(f => ({ ...f, token: e.target.value }))}
+                            />
+                            <Form.Text className="text-muted">
+                              A JWT token with <code>llm:proxy</code> scope. Generate one in EverWorker under Profile &gt; API Tokens.
+                            </Form.Text>
+                          </Form.Group>
+                        )}
+                      </div>
+                    )}
+                  </Modal.Body>
+                  <Modal.Footer>
+                    <Button variant="secondary" onClick={() => { setShowEditModal(false); setAuthMetadata(null); }}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={handleSaveProfile}
+                      disabled={editSaving || !editForm.name || !editForm.url || !editForm.token}
+                    >
+                      {editSaving ? <Spinner animation="border" size="sm" className="me-2" /> : null}
+                      {editingProfile?.id ? 'Save Changes' : 'Add Profile'}
+                    </Button>
+                  </Modal.Footer>
+                </Modal>
+
+                {/* Delete Confirmation Modal */}
+                <Modal show={!!deletingProfileId} onHide={() => setDeletingProfileId(null)} centered>
+                  <Modal.Header closeButton>
+                    <Modal.Title>Delete Profile</Modal.Title>
+                  </Modal.Header>
+                  <Modal.Body>
+                    Are you sure you want to delete this profile?
+                    {ewProfiles?.activeProfileId === deletingProfileId && (
+                      <Alert variant="warning" className="mt-2 mb-0">
+                        This is the active profile. Deleting it will disconnect and remove all synced connectors.
+                      </Alert>
+                    )}
+                  </Modal.Body>
+                  <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setDeletingProfileId(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => deletingProfileId && handleDeleteProfile(deletingProfileId)}
+                    >
+                      Delete
+                    </Button>
+                  </Modal.Footer>
+                </Modal>
               </div>
             )}
 
@@ -441,7 +808,7 @@ export function SettingsPage(): React.ReactElement {
                       H
                     </div>
                     <h4>HOSEA</h4>
-                    <p className="text-muted mb-4">Version 0.1.0</p>
+                    <p className="text-muted mb-4">Version {appVersion}</p>
 
                     <table className="table table-sm mb-0">
                       <tbody>

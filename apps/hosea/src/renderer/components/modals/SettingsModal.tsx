@@ -29,10 +29,12 @@ export function SettingsModal({
   const [config, setConfig] = useState<Config | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [activeTab, setActiveTab] = useState('general');
+  const [appVersion, setAppVersion] = useState('...');
 
   useEffect(() => {
     if (show) {
       loadSettings();
+      window.hosea.app.getVersion().then(v => setAppVersion(v));
     }
   }, [show]);
 
@@ -148,7 +150,7 @@ export function SettingsModal({
             <div className="py-3 text-center">
               <h4>HOSEA</h4>
               <p className="text-muted">Human-Oriented System for Engaging Agents</p>
-              <p>Version 0.1.0</p>
+              <p>Version {appVersion}</p>
               <hr />
               <p className="small text-muted">
                 Built with Electron, React, and @everworker/oneringai

@@ -5,6 +5,36 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 /**
+ * Everworker Backend Profile
+ */
+export interface EverworkerProfile {
+  id: string;
+  name: string;
+  url: string;
+  token: string;
+  createdAt: number;
+  updatedAt: number;
+  lastSyncedAt?: number;
+  lastSyncConnectorCount?: number;
+  /** Unix ms — when the JWT token expires */
+  tokenExpiresAt?: number;
+  /** Unix ms — when the JWT token was issued */
+  tokenIssuedAt?: number;
+  /** Display name of the authenticated EW user */
+  userName?: string;
+  /** EW user ID */
+  userId?: string;
+  /** How the token was obtained */
+  authMethod?: 'manual' | 'browser-auth';
+}
+
+export interface EverworkerProfilesConfig {
+  version: 2;
+  activeProfileId: string | null;
+  profiles: EverworkerProfile[];
+}
+
+/**
  * Task interface for plan display (matches core library Task interface)
  */
 export interface PlanTask {
@@ -102,6 +132,18 @@ export interface DynamicUIContent {
 }
 
 /**
+ * In-context memory entry for UI display
+ */
+export interface ContextEntryForUI {
+  key: string;
+  description: string;
+  value: unknown;
+  priority: string;
+  showInUI: boolean;
+  updatedAt: number;
+}
+
+/**
  * Stream chunk types for IPC communication
  */
 export type StreamChunk =
@@ -131,6 +173,8 @@ export type StreamChunk =
   | { type: 'ui:hide_sidebar' }
   | { type: 'ui:set_dynamic_content'; content: DynamicUIContent }
   | { type: 'ui:clear_dynamic_content' }
+  // In-context memory entries for UI display
+  | { type: 'ui:context_entries'; entries: ContextEntryForUI[]; pinnedKeys: string[] }
   // Browser automation events (for Dynamic UI)
   | { type: 'browser:show'; instanceId: string }
   | { type: 'browser:hide' }
@@ -225,6 +269,9 @@ export interface HoseaAPI {
     onStreamChunkInstance: (callback: (instanceId: string, chunk: StreamChunk) => void) => void;
     onStreamEndInstance: (callback: (instanceId: string) => void) => void;
     removeStreamInstanceListeners: () => void;
+    // Context entry pinning (for "Current Context" UI display)
+    pinContextKey: (agentConfigId: string, key: string, pinned: boolean) => Promise<{ success: boolean; error?: string }>;
+    getPinnedContextKeys: (agentConfigId: string) => Promise<string[]>;
   };
 
   // Connectors
@@ -254,6 +301,61 @@ export interface HoseaAPI {
     }) => Promise<{ success: boolean; error?: string }>;
     testConnection: () => Promise<{ success: boolean; connectorCount?: number; error?: string }>;
     syncConnectors: () => Promise<{ success: boolean; added: number; updated: number; removed: number; error?: string }>;
+
+    // Multi-profile API
+    getProfiles: () => Promise<EverworkerProfilesConfig>;
+    addProfile: (data: {
+      name: string;
+      url: string;
+      token: string;
+      tokenExpiresAt?: number;
+      tokenIssuedAt?: number;
+      userName?: string;
+      userId?: string;
+      authMethod?: 'manual' | 'browser-auth';
+    }) => Promise<{ success: boolean; id?: string; error?: string }>;
+    updateProfile: (id: string, updates: {
+      name?: string;
+      url?: string;
+      token?: string;
+      tokenExpiresAt?: number;
+      tokenIssuedAt?: number;
+      userName?: string;
+      userId?: string;
+      authMethod?: 'manual' | 'browser-auth';
+    }) => Promise<{ success: boolean; error?: string }>;
+    deleteProfile: (id: string) => Promise<{ success: boolean; error?: string }>;
+    switchProfile: (id: string | null) => Promise<{ success: boolean; added?: number; removed?: number; error?: string }>;
+    testProfile: (id: string) => Promise<{ success: boolean; connectorCount?: number; error?: string }>;
+    syncActive: () => Promise<{ success: boolean; added?: number; updated?: number; removed?: number; error?: string }>;
+
+    // Browser-based auth flow
+    checkAuthSupport: (url: string) => Promise<{ supported: boolean; version?: number; error?: string }>;
+    startAuth: (url: string) => Promise<{
+      success: boolean;
+      token?: string;
+      expiresAt?: number;
+      userName?: string;
+      userId?: string;
+      error?: string;
+    }>;
+    cancelAuth: () => Promise<void>;
+    getTokenStatus: (profileId?: string) => Promise<{
+      status: 'valid' | 'expiring_soon' | 'expired' | 'unknown';
+      expiresAt?: number;
+      daysRemaining?: number;
+    }>;
+
+    // Push event from main process
+    onConnectorsChanged: (callback: (data: { profileId: string | null; added: number; removed: number }) => void) => void;
+    removeConnectorsChangedListener: () => void;
+    onTokenExpiry: (callback: (data: { profileId: string; status: string; daysRemaining?: number }) => void) => void;
+    removeTokenExpiryListener: () => void;
+  };
+
+  // App info
+  app: {
+    getVersion: () => Promise<string>;
   };
 
   // Models
@@ -1167,6 +1269,9 @@ const api: HoseaAPI = {
       ipcRenderer.removeAllListeners('agent:stream-chunk');
       ipcRenderer.removeAllListeners('agent:stream-end');
     },
+    // Context entry pinning
+    pinContextKey: (agentConfigId, key, pinned) => ipcRenderer.invoke('agent:pin-context-key', agentConfigId, key, pinned),
+    getPinnedContextKeys: (agentConfigId) => ipcRenderer.invoke('agent:get-pinned-context-keys', agentConfigId),
   },
 
   connector: {
@@ -1180,6 +1285,42 @@ const api: HoseaAPI = {
     setConfig: (config) => ipcRenderer.invoke('everworker:set-config', config),
     testConnection: () => ipcRenderer.invoke('everworker:test-connection'),
     syncConnectors: () => ipcRenderer.invoke('everworker:sync-connectors'),
+
+    // Multi-profile API
+    getProfiles: () => ipcRenderer.invoke('everworker:get-profiles'),
+    addProfile: (data) => ipcRenderer.invoke('everworker:add-profile', data),
+    updateProfile: (id, updates) => ipcRenderer.invoke('everworker:update-profile', id, updates),
+    deleteProfile: (id) => ipcRenderer.invoke('everworker:delete-profile', id),
+    switchProfile: (id) => ipcRenderer.invoke('everworker:switch-profile', id),
+    testProfile: (id) => ipcRenderer.invoke('everworker:test-profile', id),
+    syncActive: () => ipcRenderer.invoke('everworker:sync-active'),
+
+    // Browser-based auth flow
+    checkAuthSupport: (url) => ipcRenderer.invoke('everworker:check-auth-support', url),
+    startAuth: (url) => ipcRenderer.invoke('everworker:start-auth', url),
+    cancelAuth: () => ipcRenderer.invoke('everworker:cancel-auth'),
+    getTokenStatus: (profileId) => ipcRenderer.invoke('everworker:token-status', profileId),
+
+    // Push event from main process
+    onConnectorsChanged: (callback) => {
+      ipcRenderer.removeAllListeners('everworker:connectors-changed');
+      ipcRenderer.on('everworker:connectors-changed', (_event, data) => callback(data));
+    },
+    removeConnectorsChangedListener: () => {
+      ipcRenderer.removeAllListeners('everworker:connectors-changed');
+    },
+    onTokenExpiry: (callback) => {
+      ipcRenderer.removeAllListeners('everworker:token-expiry');
+      ipcRenderer.on('everworker:token-expiry', (_event, data) => callback(data));
+    },
+    removeTokenExpiryListener: () => {
+      ipcRenderer.removeAllListeners('everworker:token-expiry');
+    },
+  },
+
+  // App info
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
   },
 
   model: {

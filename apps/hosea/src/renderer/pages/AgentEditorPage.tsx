@@ -19,6 +19,7 @@ import {
 import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight, Server, Wrench, RefreshCw, Cloud } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
+import { useConnectorVersion } from '../App';
 
 // Agent type - NextGen only supports 'basic' (other types deprecated)
 type AgentType = 'basic';
@@ -181,8 +182,9 @@ export function AgentEditorPage(): React.ReactElement {
   const [loadingMCPTools, setLoadingMCPTools] = useState<string | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const connectorVersion = useConnectorVersion();
 
-  // Load data on mount
+  // Load data on mount (and when connectors change via EW profile switch)
   useEffect(() => {
     async function loadData() {
       try {
@@ -243,7 +245,7 @@ export function AgentEditorPage(): React.ReactElement {
       }
     }
     loadData();
-  }, [isEditMode, agentId]);
+  }, [isEditMode, agentId, connectorVersion]);
 
   // Get models for selected connector's vendor
   const getModelsForConnector = useCallback((): ModelInfo[] => {

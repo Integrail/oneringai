@@ -2,7 +2,7 @@
  * HOSEA Main App Component
  */
 
-import React, { useState, useCallback, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useCallback, useEffect, useContext, createContext, Component, ErrorInfo, ReactNode } from 'react';
 import { Spinner, Alert, Button } from 'react-bootstrap';
 import { Sidebar } from './components/layout';
 import {
@@ -37,6 +37,13 @@ const DEFAULT_MODELS: Record<string, string> = {
   mistral: 'mistral-large-latest',
   deepseek: 'deepseek-chat',
 };
+
+// ============ Connector Version Context ============
+// Bumped when EW profile switch causes connector changes, so pages auto-refresh
+export const ConnectorVersionContext = createContext(0);
+export function useConnectorVersion(): number {
+  return useContext(ConnectorVersionContext);
+}
 
 // ============ Error Boundary ============
 // Catches React render errors and prevents app from going completely blank
@@ -130,6 +137,17 @@ function AppContent(): React.ReactElement {
   const [isInitializing, setIsInitializing] = useState(true);
   const [defaultAgentConfig, setDefaultAgentConfig] = useState<{ id: string; name: string } | null>(null);
   const initStarted = React.useRef(false);
+  const [connectorVersion, setConnectorVersion] = useState(0);
+
+  // Listen for connector changes from EW profile switches
+  useEffect(() => {
+    window.hosea.everworker.onConnectorsChanged(() => {
+      setConnectorVersion(prev => prev + 1);
+    });
+    return () => {
+      window.hosea.everworker.removeConnectorsChangedListener();
+    };
+  }, []);
 
   // App initialization flow:
   // 1. Check for active agent -> activate it
@@ -268,30 +286,32 @@ function AppContent(): React.ReactElement {
   }
 
   return (
-    <NavigationContext.Provider value={navigation}>
-      <TabProvider
-        defaultAgentConfigId={defaultAgentConfig?.id}
-        defaultAgentName={defaultAgentConfig?.name}
-      >
-        <div className="app-layout">
-          <Sidebar />
-          <main className="app-main">
-            {/* macOS drag region for window dragging */}
-            <div className="app-main__drag-region" />
-            {renderPage()}
-          </main>
-        </div>
+    <ConnectorVersionContext.Provider value={connectorVersion}>
+      <NavigationContext.Provider value={navigation}>
+        <TabProvider
+          defaultAgentConfigId={defaultAgentConfig?.id}
+          defaultAgentName={defaultAgentConfig?.name}
+        >
+          <div className="app-layout">
+            <Sidebar />
+            <main className="app-main">
+              {/* macOS drag region for window dragging */}
+              <div className="app-main__drag-region" />
+              {renderPage()}
+            </main>
+          </div>
 
-        <SetupModal
-          show={showSetup}
-          onHide={() => setShowSetup(false)}
-          onComplete={handleSetupComplete}
-        />
+          <SetupModal
+            show={showSetup}
+            onHide={() => setShowSetup(false)}
+            onComplete={handleSetupComplete}
+          />
 
-        {/* Auto-update notification */}
-        <UpdateNotification />
-      </TabProvider>
-    </NavigationContext.Provider>
+          {/* Auto-update notification */}
+          <UpdateNotification />
+        </TabProvider>
+      </NavigationContext.Provider>
+    </ConnectorVersionContext.Provider>
   );
 }
 

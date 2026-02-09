@@ -27,6 +27,7 @@ import {
   Key,
 } from 'lucide-react';
 import { PageHeader } from '../components/layout';
+import { useConnectorVersion } from '../App';
 
 interface ToolEntry {
   name: string;
@@ -142,6 +143,8 @@ export function ToolConnectorsPage(): React.ReactElement {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const connectorVersion = useConnectorVersion();
+
   const loadData = useCallback(async () => {
     try {
       const [registry, uniConns, llmConns] = await Promise.all([
@@ -161,7 +164,7 @@ export function ToolConnectorsPage(): React.ReactElement {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, connectorVersion]);
 
   // Group tools by category
   const toolsByCategory = tools.reduce(

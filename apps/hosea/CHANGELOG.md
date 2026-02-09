@@ -8,6 +8,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Browser-Based EverWorker Login** - One-click authentication replaces manual JWT token entry
+  - "Login to EverWorker" button opens a browser window to the EW login page
+  - Supports all EW auth methods (password, Microsoft SSO, OIDC, etc.) via generic `returnTo` mechanism
+  - Token (30-day, `llm:proxy` scope) is automatically generated and stored in profile after login
+  - Token status badges on profile cards: "Token expired" (red) or "Expires in Xd" (yellow)
+  - One-click re-authentication button for expired/expiring tokens
+  - Displays authenticated user name on profile cards
+  - Graceful fallback to manual token entry for older EW instances without browser auth support
+  - Version detection: checks `/api/v1/hosea-auth/status` before opening auth window
+  - Token expiry checked on app startup with push notification to renderer
+  - Expired tokens block sync attempts with clear error message
+- **Multi-Profile Everworker Backend** - Support multiple named EW backend profiles with instant switching
+  - Add, edit, delete named profiles (e.g., Production, Staging, Dev)
+  - Active profile dropdown with live switching — purges old connectors and syncs new ones immediately
+  - Per-profile test connection and sync buttons
+  - Profile cards showing connector count, last sync time, and status
+  - Auto-migration from old single `everworker-backend.json` format to new `everworker-profiles.json`
+  - Legacy API wrappers maintained for backward compatibility
+- **Live Connector Refresh** - Switching EW profiles now pushes `everworker:connectors-changed` events to the renderer
+  - LLM Connectors, Universal Connectors, Tool Connectors, Agent Editor, and Agents pages auto-refresh when connectors change
+  - Uses React Context (`ConnectorVersionContext`) for efficient re-rendering
+- **Agent Connector Availability** - Agents page now checks if each agent's connector is available
+  - Agents with unavailable connectors are grayed out (50% opacity) with a warning icon
+  - Chat button is disabled for agents whose connector is missing (e.g., after EW profile switch)
+  - Tooltip explains the issue and suggests switching EW profile or editing the agent
+  - Edit button remains enabled so users can reassign the agent to a different connector
+- **Dynamic Version Display** - About page and Settings modal now show version from `package.json` via `app.getVersion()` IPC
+  - Added `window.hosea.app.getVersion()` preload API
+  - Replaced hardcoded "Version 0.1.0" in both SettingsPage and SettingsModal
+- **Current Context Display in Dynamic UI** - In-context memory entries can now be shown in the sidebar
+  - New `showInUI` field on `InContextEntry` — agents set it via `context_set` tool to display entries in the sidebar
+  - Tool description references system prompt formatting capabilities (markdown, code blocks, diagrams, charts, etc.)
+  - New "Current Context" section in Dynamic UI tab renders entries as cards with full markdown rendering
+  - Each card shows key name, priority badge, description, and markdown-rendered value (same `MarkdownRenderer` as chat)
+  - User pin/unpin toggle per entry — pinned keys always show regardless of agent's `showInUI` setting
+  - Pinned keys persist per-agent to `~/.oneringai/agents/<id>/ui_config.json`
+  - Real-time updates via `onEntriesChanged` callback with 100ms debounce
+  - New `ui:context_entries` stream chunk type for main→renderer IPC
+  - Notification dot on Dynamic UI tab when context entries update while on another tab
+  - **Collapsible context cards** — click card header to collapse/expand, showing only the key name when collapsed
+  - **Full-view mode** — maximize button on each card fills the entire sidebar with that card's scrollable content; other cards and Dynamic UI are hidden until exiting full view
+
+### Fixed
+- **Current Context entries not appearing** - Context entries with `showInUI: true` were not reliably delivered to the renderer due to the 100ms debounce timer firing after the stream ended. Added a final flush of InContextMemory entries at the end of each `streamInstance()` call to guarantee delivery.
+
+### Changed
+- **Settings > Everworker Backend** - Complete UI redesign for multi-profile management
+  - Replaced single URL/token form with profile-based card layout
+  - Added Add/Edit modal, Delete confirmation, and per-profile action buttons (Test, Sync, Activate, Edit, Delete)
+
+### Fixed
+- **Version display** - About page now shows actual app version instead of hardcoded "0.1.0"
+
+---
+
+## [0.1.5] - 2026-02-08
+
+### Added
 - **Everworker Backend Proxy Integration** - Connect HOSEA to an Everworker backend for centrally managed AI connectors
   - API keys managed on the EW server, not stored on desktops
   - JWT-based authentication with `llm:proxy` scope

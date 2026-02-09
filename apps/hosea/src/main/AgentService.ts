@@ -97,8 +97,9 @@ interface StoredConnectorConfig {
 }
 
 /**
- * Everworker Backend configuration for proxy mode.
+ * Everworker Backend configuration for proxy mode (LEGACY).
  * Stored at ~/.everworker/hosea/everworker-backend.json
+ * @deprecated Use EverworkerProfilesConfig instead
  */
 export interface EverworkerBackendConfig {
   /** EW backend URL (e.g., 'https://ew.company.com') */
@@ -107,6 +108,46 @@ export interface EverworkerBackendConfig {
   token: string;
   /** Whether EW integration is enabled */
   enabled: boolean;
+}
+
+/**
+ * Everworker Backend Profile
+ */
+export interface EverworkerProfile {
+  id: string;
+  name: string;
+  url: string;
+  token: string;
+  createdAt: number;
+  updatedAt: number;
+  lastSyncedAt?: number;
+  lastSyncConnectorCount?: number;
+  /** Unix ms — when the JWT token expires */
+  tokenExpiresAt?: number;
+  /** Unix ms — when the JWT token was issued */
+  tokenIssuedAt?: number;
+  /** Display name of the authenticated EW user */
+  userName?: string;
+  /** EW user ID */
+  userId?: string;
+  /** How the token was obtained */
+  authMethod?: 'manual' | 'browser-auth';
+}
+
+export interface TokenStatus {
+  status: 'valid' | 'expiring_soon' | 'expired' | 'unknown';
+  expiresAt?: number;
+  daysRemaining?: number;
+}
+
+/**
+ * Multi-profile Everworker configuration.
+ * Stored at ~/.everworker/hosea/everworker-profiles.json
+ */
+export interface EverworkerProfilesConfig {
+  version: 2;
+  activeProfileId: string | null;
+  profiles: EverworkerProfile[];
 }
 
 /** Connector info returned by EW discovery endpoint */
@@ -378,7 +419,9 @@ export type StreamChunk =
   | { type: 'execution:paused'; reason: string }
   | { type: 'needs:approval'; plan: Plan }
   // Dynamic UI events (from tool execution plugins)
-  | { type: 'ui:set_dynamic_content'; content: DynamicUIContent };
+  | { type: 'ui:set_dynamic_content'; content: DynamicUIContent }
+  // In-context memory entries for UI display
+  | { type: 'ui:context_entries'; entries: Array<{ key: string; description: string; value: unknown; priority: string; showInUI: boolean; updatedAt: number }>; pinnedKeys: string[] };
 
 /**
  * HOSEA UI Capabilities System Prompt
@@ -538,8 +581,10 @@ export class AgentService {
   // Compaction event log (last N events for each instance/agent)
   private compactionLogs: Map<string, Array<{ timestamp: number; tokensToFree: number; message: string }>> = new Map();
   private readonly MAX_COMPACTION_LOG_ENTRIES = 20;
-  // Everworker backend configuration (for proxy mode)
-  private ewConfig: EverworkerBackendConfig | null = null;
+  // Everworker backend profiles (multi-profile support)
+  private ewProfiles: EverworkerProfilesConfig = { version: 2, activeProfileId: null, profiles: [] };
+  // Main window sender for push events to renderer
+  private mainWindowSender: ((channel: string, ...args: unknown[]) => void) | null = null;
 
   // ============ Conversion Helpers ============
 
@@ -708,8 +753,9 @@ export class AgentService {
       logger.debug(`  tool=${t.name}, category=${t.category}, connectorServiceTypes=${JSON.stringify(t.connectorServiceTypes)}`);
     }
 
-    await this.loadEWConfig();
-    await this.syncEWConnectors(); // Sync remote connectors if EW is configured
+    await this.loadEWProfiles();
+    this.checkTokenExpiry();
+    await this.syncActiveEWProfile(); // Sync remote connectors if EW is configured
     await this.loadAgents();
     await this.migrateAgentsToNextGen(); // Migrate existing agents to NextGen format
     await this.loadMCPServers();
@@ -794,89 +840,355 @@ export class AgentService {
     }
   }
 
-  // ============ Everworker Backend Integration ============
+  // ============ Everworker Backend Integration (Multi-Profile) ============
 
-  private async loadEWConfig(): Promise<void> {
-    const configPath = join(this.dataDir, 'everworker-backend.json');
-    if (!existsSync(configPath)) return;
-    try {
-      const content = await readFile(configPath, 'utf-8');
-      this.ewConfig = JSON.parse(content) as EverworkerBackendConfig;
-      logger.info(`[loadEWConfig] Everworker backend config loaded (enabled: ${this.ewConfig.enabled}, url: ${this.ewConfig.url})`);
-    } catch (err) {
-      logger.error(`[loadEWConfig] Failed to load EW config: ${err instanceof Error ? err.message : String(err)}`);
+  /**
+   * Set the main window sender for push events to the renderer
+   */
+  setMainWindowSender(sender: (channel: string, ...args: unknown[]) => void): void {
+    this.mainWindowSender = sender;
+  }
+
+  private notifyRenderer(channel: string, ...args: unknown[]): void {
+    if (this.mainWindowSender) {
+      this.mainWindowSender(channel, ...args);
     }
   }
 
-  private async saveEWConfig(): Promise<void> {
-    const configPath = join(this.dataDir, 'everworker-backend.json');
-    await writeFile(configPath, JSON.stringify(this.ewConfig, null, 2));
+  /**
+   * Load EW profiles with auto-migration from old format
+   */
+  private async loadEWProfiles(): Promise<void> {
+    const newPath = join(this.dataDir, 'everworker-profiles.json');
+    const oldPath = join(this.dataDir, 'everworker-backend.json');
+
+    // 1. Try new format first
+    if (existsSync(newPath)) {
+      try {
+        const content = await readFile(newPath, 'utf-8');
+        this.ewProfiles = JSON.parse(content) as EverworkerProfilesConfig;
+        logger.info(`[loadEWProfiles] Loaded ${this.ewProfiles.profiles.length} profiles (active: ${this.ewProfiles.activeProfileId})`);
+        return;
+      } catch (err) {
+        logger.error(`[loadEWProfiles] Failed to load profiles: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // 2. Auto-migrate from old format
+    if (existsSync(oldPath)) {
+      try {
+        const content = await readFile(oldPath, 'utf-8');
+        const oldConfig = JSON.parse(content) as EverworkerBackendConfig;
+        const profileId = `profile_${Date.now()}`;
+        const profile: EverworkerProfile = {
+          id: profileId,
+          name: 'Default',
+          url: oldConfig.url,
+          token: oldConfig.token,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        this.ewProfiles = {
+          version: 2,
+          activeProfileId: oldConfig.enabled ? profileId : null,
+          profiles: [profile],
+        };
+        await this.saveEWProfiles();
+
+        // Rename old file
+        const { rename } = await import('node:fs/promises');
+        await rename(oldPath, `${oldPath}.migrated`);
+        logger.info(`[loadEWProfiles] Migrated old config to profile "Default" (active: ${oldConfig.enabled})`);
+        return;
+      } catch (err) {
+        logger.error(`[loadEWProfiles] Migration failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // 3. Initialize empty
+    this.ewProfiles = { version: 2, activeProfileId: null, profiles: [] };
   }
 
-  getEWConfig(): EverworkerBackendConfig | null {
-    return this.ewConfig;
+  private async saveEWProfiles(): Promise<void> {
+    const configPath = join(this.dataDir, 'everworker-profiles.json');
+    await writeFile(configPath, JSON.stringify(this.ewProfiles, null, 2));
   }
 
-  async setEWConfig(config: EverworkerBackendConfig): Promise<{ success: boolean; error?: string }> {
+  /**
+   * Get the active EW profile, or null if disconnected
+   */
+  private getActiveEWProfile(): EverworkerProfile | null {
+    if (!this.ewProfiles.activeProfileId) return null;
+    return this.ewProfiles.profiles.find(p => p.id === this.ewProfiles.activeProfileId) ?? null;
+  }
+
+  // ---- Token Status ----
+
+  /**
+   * Check if a profile's token is expired or expiring soon.
+   */
+  getTokenStatus(profileId?: string): TokenStatus {
+    const profile = profileId
+      ? this.ewProfiles.profiles.find(p => p.id === profileId)
+      : this.getActiveEWProfile();
+
+    if (!profile) return { status: 'unknown' };
+    if (!profile.tokenExpiresAt) return { status: 'unknown' }; // Manual token
+
+    const now = Date.now();
+    const msRemaining = profile.tokenExpiresAt - now;
+    const daysRemaining = Math.max(0, Math.floor(msRemaining / (24 * 60 * 60 * 1000)));
+
+    if (msRemaining <= 0) {
+      return { status: 'expired', expiresAt: profile.tokenExpiresAt, daysRemaining: 0 };
+    }
+    if (daysRemaining <= 3) {
+      return { status: 'expiring_soon', expiresAt: profile.tokenExpiresAt, daysRemaining };
+    }
+    return { status: 'valid', expiresAt: profile.tokenExpiresAt, daysRemaining };
+  }
+
+  /**
+   * Check active profile token expiry and notify renderer if expiring/expired.
+   */
+  private checkTokenExpiry(): void {
+    const active = this.getActiveEWProfile();
+    if (!active?.tokenExpiresAt) return;
+
+    const status = this.getTokenStatus();
+    if (status.status === 'expiring_soon' || status.status === 'expired') {
+      logger.warn(`[checkTokenExpiry] Active profile "${active.name}" token ${status.status} (${status.daysRemaining}d remaining)`);
+      this.notifyRenderer('everworker:token-expiry', {
+        profileId: active.id,
+        status: status.status,
+        daysRemaining: status.daysRemaining,
+      });
+    }
+  }
+
+  // ---- Profile CRUD ----
+
+  getEWProfiles(): EverworkerProfilesConfig {
+    return this.ewProfiles;
+  }
+
+  async addEWProfile(data: {
+    name: string;
+    url: string;
+    token: string;
+    tokenExpiresAt?: number;
+    tokenIssuedAt?: number;
+    userName?: string;
+    userId?: string;
+    authMethod?: 'manual' | 'browser-auth';
+  }): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
-      this.ewConfig = config;
-      await this.saveEWConfig();
+      const id = `profile_${Date.now()}`;
+      const profile: EverworkerProfile = {
+        id,
+        name: data.name,
+        url: data.url.replace(/\/+$/, ''),
+        token: data.token,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        ...(data.tokenExpiresAt !== undefined && { tokenExpiresAt: data.tokenExpiresAt }),
+        ...(data.tokenIssuedAt !== undefined && { tokenIssuedAt: data.tokenIssuedAt }),
+        ...(data.userName !== undefined && { userName: data.userName }),
+        ...(data.userId !== undefined && { userId: data.userId }),
+        ...(data.authMethod !== undefined && { authMethod: data.authMethod }),
+      };
+      this.ewProfiles.profiles.push(profile);
+      await this.saveEWProfiles();
+      logger.info(`[addEWProfile] Added profile "${data.name}" (${id})`);
+      return { success: true, id };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  async updateEWProfile(id: string, updates: {
+    name?: string;
+    url?: string;
+    token?: string;
+    tokenExpiresAt?: number;
+    tokenIssuedAt?: number;
+    userName?: string;
+    userId?: string;
+    authMethod?: 'manual' | 'browser-auth';
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const profile = this.ewProfiles.profiles.find(p => p.id === id);
+      if (!profile) return { success: false, error: 'Profile not found' };
+
+      if (updates.name !== undefined) profile.name = updates.name;
+      if (updates.url !== undefined) profile.url = updates.url.replace(/\/+$/, '');
+      if (updates.token !== undefined) profile.token = updates.token;
+      if (updates.tokenExpiresAt !== undefined) profile.tokenExpiresAt = updates.tokenExpiresAt;
+      if (updates.tokenIssuedAt !== undefined) profile.tokenIssuedAt = updates.tokenIssuedAt;
+      if (updates.userName !== undefined) profile.userName = updates.userName;
+      if (updates.userId !== undefined) profile.userId = updates.userId;
+      if (updates.authMethod !== undefined) profile.authMethod = updates.authMethod;
+      profile.updatedAt = Date.now();
+
+      await this.saveEWProfiles();
+      logger.info(`[updateEWProfile] Updated profile "${profile.name}" (${id})`);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }
   }
 
-  async testEWConnection(): Promise<{ success: boolean; connectorCount?: number; error?: string }> {
-    if (!this.ewConfig || !this.ewConfig.enabled) {
-      return { success: false, error: 'Everworker backend not configured or disabled' };
-    }
+  async deleteEWProfile(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const url = `${this.ewConfig.url}/api/v1/proxy/connectors`;
-      logger.info(`[testEWConnection] Testing connection to ${url}`);
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.ewConfig.token}`,
-        },
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        logger.error(`[testEWConnection] HTTP ${response.status}: ${text}`);
-        return { success: false, error: `HTTP ${response.status}: ${text}` };
+      const idx = this.ewProfiles.profiles.findIndex(p => p.id === id);
+      if (idx === -1) return { success: false, error: 'Profile not found' };
+
+      const wasActive = this.ewProfiles.activeProfileId === id;
+      this.ewProfiles.profiles.splice(idx, 1);
+
+      if (wasActive) {
+        this.ewProfiles.activeProfileId = null;
+        await this.saveEWProfiles();
+        await this.purgeAllEWConnectors();
+        this.notifyRenderer('everworker:connectors-changed', { profileId: null, added: 0, removed: 0 });
+      } else {
+        await this.saveEWProfiles();
       }
-      const data = await response.json() as { connectors: EWRemoteConnector[] };
-      const count = data.connectors?.length ?? 0;
-      const names = data.connectors?.map(c => c.name) ?? [];
-      logger.info(`[testEWConnection] Success: ${count} connectors available: ${names.join(', ')}`);
-      return { success: true, connectorCount: count };
+
+      logger.info(`[deleteEWProfile] Deleted profile ${id} (wasActive: ${wasActive})`);
+      return { success: true };
     } catch (error) {
-      logger.error(`[testEWConnection] Error: ${error instanceof Error ? error.message : String(error)}`);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  // ---- Core switch + sync ----
+
+  /**
+   * Switch the active EW profile. Purges old connectors and syncs new ones live.
+   */
+  async switchEWProfile(profileId: string | null): Promise<{ success: boolean; added?: number; removed?: number; error?: string }> {
+    try {
+      // Count how many EW connectors existed before purge
+      let removedCount = 0;
+      for (const config of this.connectors.values()) {
+        if (config.source === 'everworker') removedCount++;
+      }
+      for (const config of this.universalConnectors.values()) {
+        if (config.source === 'everworker') removedCount++;
+      }
+
+      this.ewProfiles.activeProfileId = profileId;
+      await this.saveEWProfiles();
+
+      // Purge old connectors
+      await this.purgeAllEWConnectors();
+
+      let addedCount = 0;
+      if (profileId) {
+        // Sync new profile's connectors
+        const syncResult = await this.syncActiveEWProfile();
+        if (!syncResult.success) {
+          return { success: false, added: 0, removed: removedCount, error: syncResult.error };
+        }
+        addedCount = syncResult.added;
+      }
+
+      // Invalidate tool caches
+      this.oneRingToolProvider.invalidateCache();
+      this.toolCatalog.invalidateCache();
+
+      // Notify renderer
+      this.notifyRenderer('everworker:connectors-changed', { profileId, added: addedCount, removed: removedCount });
+
+      logger.info(`[switchEWProfile] Switched to profile ${profileId}: ${addedCount} added, ${removedCount} removed`);
+      return { success: true, added: addedCount, removed: removedCount };
+    } catch (error) {
       return { success: false, error: String(error) };
     }
   }
 
   /**
-   * Sync remote connectors from EW backend.
-   * Routes LLM connectors to this.connectors and non-LLM connectors to this.universalConnectors.
-   * Removes stale EW connectors that no longer exist on the server.
+   * Purge all EW-sourced connectors from memory, disk, and the library registry
    */
-  async syncEWConnectors(): Promise<{ success: boolean; added: number; updated: number; removed: number; error?: string }> {
-    if (!this.ewConfig || !this.ewConfig.enabled) {
-      return { success: true, added: 0, updated: 0, removed: 0 };
+  private async purgeAllEWConnectors(): Promise<void> {
+    const { unlink } = await import('node:fs/promises');
+
+    for (const [name, config] of [...this.connectors.entries()]) {
+      if (config.source === 'everworker') {
+        this.connectors.delete(name);
+        if (Connector.has(name)) Connector.remove(name);
+        const filePath = join(this.dataDir, 'connectors', `${name}.json`);
+        if (existsSync(filePath)) await unlink(filePath);
+      }
     }
 
+    for (const [name, config] of [...this.universalConnectors.entries()]) {
+      if (config.source === 'everworker') {
+        this.universalConnectors.delete(name);
+        if (Connector.has(name)) Connector.remove(name);
+        const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+        if (existsSync(filePath)) await unlink(filePath);
+      }
+    }
+
+    logger.debug('[purgeAllEWConnectors] All EW connectors purged');
+  }
+
+  /**
+   * Test connection for a specific profile
+   */
+  async testEWProfileConnection(id: string): Promise<{ success: boolean; connectorCount?: number; error?: string }> {
+    const profile = this.ewProfiles.profiles.find(p => p.id === id);
+    if (!profile) return { success: false, error: 'Profile not found' };
+
     try {
-      const url = `${this.ewConfig.url}/api/v1/proxy/connectors`;
+      const url = `${profile.url}/api/v1/proxy/connectors`;
+      logger.info(`[testEWProfileConnection] Testing connection to ${url}`);
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.ewConfig.token}`,
-        },
+        headers: { 'Authorization': `Bearer ${profile.token}` },
       });
       if (!response.ok) {
         const text = await response.text();
-        logger.error(`[syncEWConnectors] Discovery endpoint returned HTTP ${response.status}: ${text}`);
+        logger.error(`[testEWProfileConnection] HTTP ${response.status}: ${text}`);
+        return { success: false, error: `HTTP ${response.status}: ${text}` };
+      }
+      const data = await response.json() as { connectors: EWRemoteConnector[] };
+      const count = data.connectors?.length ?? 0;
+      logger.info(`[testEWProfileConnection] Success: ${count} connectors available`);
+      return { success: true, connectorCount: count };
+    } catch (error) {
+      logger.error(`[testEWProfileConnection] Error: ${error instanceof Error ? error.message : String(error)}`);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Sync connectors for the active EW profile.
+   * Replaces the old syncEWConnectors method.
+   */
+  async syncActiveEWProfile(): Promise<{ success: boolean; added: number; updated: number; removed: number; error?: string }> {
+    const activeProfile = this.getActiveEWProfile();
+    if (!activeProfile) {
+      return { success: true, added: 0, updated: 0, removed: 0 };
+    }
+
+    // Check token expiry before attempting sync
+    const tokenStatus = this.getTokenStatus();
+    if (tokenStatus.status === 'expired') {
+      return { success: false, added: 0, updated: 0, removed: 0, error: 'Token expired. Please re-authenticate with EverWorker.' };
+    }
+
+    try {
+      const url = `${activeProfile.url}/api/v1/proxy/connectors`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${activeProfile.token}` },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        logger.error(`[syncActiveEWProfile] Discovery endpoint returned HTTP ${response.status}: ${text}`);
         return { success: false, added: 0, updated: 0, removed: 0, error: `HTTP ${response.status}: ${text}` };
       }
 
@@ -888,9 +1200,6 @@ export class AgentService {
       let removed = 0;
 
       // ---- Phase 1: Purge ALL existing EW-sourced entries from both stores ----
-      // This ensures connectors that change classification (e.g. previously stored
-      // as LLM but now routed as universal) don't end up in both stores.
-      // Collect names first to track which ones existed before (for added vs updated count).
       const previousEWNames = new Set<string>();
       const { unlink } = await import('node:fs/promises');
 
@@ -898,13 +1207,9 @@ export class AgentService {
         if (config.source === 'everworker') {
           previousEWNames.add(name);
           this.connectors.delete(name);
-          if (Connector.has(name)) {
-            Connector.remove(name);
-          }
+          if (Connector.has(name)) Connector.remove(name);
           const filePath = join(this.dataDir, 'connectors', `${name}.json`);
-          if (existsSync(filePath)) {
-            await unlink(filePath);
-          }
+          if (existsSync(filePath)) await unlink(filePath);
         }
       }
 
@@ -912,42 +1217,31 @@ export class AgentService {
         if (config.source === 'everworker') {
           previousEWNames.add(name);
           this.universalConnectors.delete(name);
-          if (Connector.has(name)) {
-            Connector.remove(name);
-          }
+          if (Connector.has(name)) Connector.remove(name);
           const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
-          if (existsSync(filePath)) {
-            await unlink(filePath);
-          }
+          if (existsSync(filePath)) await unlink(filePath);
         }
       }
 
-      logger.debug(`[syncEWConnectors] Purged ${previousEWNames.size} previous EW entries, re-adding ${remoteConnectors.length} from server`);
+      logger.debug(`[syncActiveEWProfile] Purged ${previousEWNames.size} previous EW entries, re-adding ${remoteConnectors.length} from server`);
 
       // ---- Phase 2: Re-add all remote connectors into the correct store ----
       for (const remote of remoteConnectors) {
-        const proxyBaseURL = `${this.ewConfig.url}/api/v1/proxy/${remote.name}`;
-        // Determine if this is an LLM connector: use server-provided type, fall back to isVendor()
+        const proxyBaseURL = `${activeProfile.url}/api/v1/proxy/${remote.name}`;
         const isLLM = remote.type === 'llm' || (remote.type === undefined && isVendor(remote.vendor));
         const wasKnown = previousEWNames.has(remote.name);
 
         if (isLLM) {
-          // ---- Route to LLM connectors store ----
-
-          // Skip if there's a local connector with the same name (local takes priority)
           const localExisting = this.connectors.get(remote.name);
           if (localExisting) {
-            logger.debug(`[syncEWConnectors] Skipping LLM "${remote.name}" - local connector exists`);
+            logger.debug(`[syncActiveEWProfile] Skipping LLM "${remote.name}" - local connector exists`);
             continue;
           }
 
           const config: StoredConnectorConfig = {
             name: remote.name,
             vendor: remote.vendor,
-            auth: {
-              type: 'api_key',
-              apiKey: this.ewConfig.token,
-            },
+            auth: { type: 'api_key', apiKey: activeProfile.token },
             baseURL: proxyBaseURL,
             models: remote.models,
             source: 'everworker',
@@ -956,15 +1250,10 @@ export class AgentService {
           };
 
           this.connectors.set(remote.name, config);
-
-          // Save to disk
           const filePath = join(this.dataDir, 'connectors', `${remote.name}.json`);
           await writeFile(filePath, JSON.stringify(config, null, 2));
 
-          // Register with the library
-          if (Connector.has(remote.name)) {
-            Connector.remove(remote.name);
-          }
+          if (Connector.has(remote.name)) Connector.remove(remote.name);
           Connector.create({
             name: remote.name,
             vendor: remote.vendor as Vendor,
@@ -973,14 +1262,11 @@ export class AgentService {
           });
 
           if (wasKnown) updated++; else added++;
-          logger.debug(`[syncEWConnectors] Synced LLM connector: ${remote.name} (vendor: ${remote.vendor})`);
+          logger.debug(`[syncActiveEWProfile] Synced LLM connector: ${remote.name} (vendor: ${remote.vendor})`);
         } else {
-          // ---- Route to Universal connectors store ----
-
-          // Skip if there's a local universal connector with the same name
           const localExisting = this.universalConnectors.get(remote.name);
           if (localExisting) {
-            logger.debug(`[syncEWConnectors] Skipping universal "${remote.name}" - local connector exists`);
+            logger.debug(`[syncActiveEWProfile] Skipping universal "${remote.name}" - local connector exists`);
             continue;
           }
 
@@ -999,45 +1285,92 @@ export class AgentService {
           };
 
           this.universalConnectors.set(remote.name, config);
-
-          // Save to disk
           const filePath = join(this.dataDir, 'universal-connectors', `${remote.name}.json`);
           await writeFile(filePath, JSON.stringify(config, null, 2));
 
-          // Register with the library (use proxy baseURL + JWT as apiKey)
-          if (Connector.has(remote.name)) {
-            Connector.remove(remote.name);
-          }
+          if (Connector.has(remote.name)) Connector.remove(remote.name);
           Connector.create({
             name: remote.name,
             serviceType: remote.serviceType,
-            auth: {
-              type: 'api_key',
-              apiKey: this.ewConfig.token,
-            },
+            auth: { type: 'api_key', apiKey: activeProfile.token },
             baseURL: proxyBaseURL,
           });
 
           if (wasKnown) updated++; else added++;
-          logger.debug(`[syncEWConnectors] Synced universal connector: ${remote.name} (vendor: ${remote.vendor})`);
+          logger.debug(`[syncActiveEWProfile] Synced universal connector: ${remote.name} (vendor: ${remote.vendor})`);
         }
       }
 
-      // ---- Phase 3: Count removals (entries we purged that weren't re-added) ----
+      // ---- Phase 3: Count removals ----
       const remoteNames = new Set(remoteConnectors.map(c => c.name));
       for (const name of previousEWNames) {
         if (!remoteNames.has(name)) {
           removed++;
-          logger.info(`[syncEWConnectors] Removed EW connector no longer on server: ${name}`);
+          logger.info(`[syncActiveEWProfile] Removed EW connector no longer on server: ${name}`);
         }
       }
 
-      logger.info(`[syncEWConnectors] Sync complete: ${added} added, ${updated} updated, ${removed} removed, ${remoteConnectors.length} total remote`);
+      // Update profile sync metadata
+      activeProfile.lastSyncedAt = Date.now();
+      activeProfile.lastSyncConnectorCount = remoteConnectors.length;
+      await this.saveEWProfiles();
+
+      // Invalidate tool caches after sync
+      this.oneRingToolProvider.invalidateCache();
+      this.toolCatalog.invalidateCache();
+
+      logger.info(`[syncActiveEWProfile] Sync complete: ${added} added, ${updated} updated, ${removed} removed, ${remoteConnectors.length} total remote`);
       return { success: true, added, updated, removed };
     } catch (error) {
-      logger.error(`[syncEWConnectors] Error: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`[syncActiveEWProfile] Error: ${error instanceof Error ? error.message : String(error)}`);
       return { success: false, added: 0, updated: 0, removed: 0, error: String(error) };
     }
+  }
+
+  // ---- Legacy compatibility wrappers ----
+
+  /** @deprecated Use getEWProfiles() and getActiveEWProfile() instead */
+  getEWConfig(): EverworkerBackendConfig | null {
+    const active = this.getActiveEWProfile();
+    if (!active) return null;
+    return { url: active.url, token: active.token, enabled: true };
+  }
+
+  /** @deprecated Use addEWProfile() or updateEWProfile() + switchEWProfile() instead */
+  async setEWConfig(config: EverworkerBackendConfig): Promise<{ success: boolean; error?: string }> {
+    try {
+      // If no profiles exist, create one
+      if (this.ewProfiles.profiles.length === 0) {
+        const result = await this.addEWProfile({ name: 'Default', url: config.url, token: config.token });
+        if (result.success && config.enabled && result.id) {
+          this.ewProfiles.activeProfileId = result.id;
+          await this.saveEWProfiles();
+        }
+      } else {
+        // Update the first profile
+        const first = this.ewProfiles.profiles[0];
+        first.url = config.url.replace(/\/+$/, '');
+        first.token = config.token;
+        first.updatedAt = Date.now();
+        this.ewProfiles.activeProfileId = config.enabled ? first.id : null;
+        await this.saveEWProfiles();
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /** @deprecated Use testEWProfileConnection() instead */
+  async testEWConnection(): Promise<{ success: boolean; connectorCount?: number; error?: string }> {
+    const active = this.getActiveEWProfile();
+    if (!active) return { success: false, error: 'Everworker backend not configured or disabled' };
+    return this.testEWProfileConnection(active.id);
+  }
+
+  /** @deprecated Use syncActiveEWProfile() instead */
+  async syncEWConnectors(): Promise<{ success: boolean; added: number; updated: number; removed: number; error?: string }> {
+    return this.syncActiveEWProfile();
   }
 
   private async loadAgents(): Promise<void> {
@@ -2831,6 +3164,105 @@ export class AgentService {
     console.log('[AgentService] StreamEmitter connected - HoseaUIPlugin enabled for new instances');
   }
 
+  // ============ Context Entry Pinning ============
+
+  /**
+   * Get pinned context keys for an agent (synchronous, cached from disk).
+   */
+  getPinnedContextKeysSync(agentConfigId: string): string[] {
+    try {
+      const configPath = join(homedir(), '.oneringai', 'agents', agentConfigId, 'ui_config.json');
+      if (!existsSync(configPath)) return [];
+      const { readFileSync } = require('node:fs');
+      const data = JSON.parse(readFileSync(configPath, 'utf-8'));
+      return Array.isArray(data.pinnedContextKeys) ? data.pinnedContextKeys : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get pinned context keys for an agent (async).
+   */
+  async getPinnedContextKeys(agentConfigId: string): Promise<string[]> {
+    try {
+      const configPath = join(homedir(), '.oneringai', 'agents', agentConfigId, 'ui_config.json');
+      if (!existsSync(configPath)) return [];
+      const data = JSON.parse(await readFile(configPath, 'utf-8'));
+      return Array.isArray(data.pinnedContextKeys) ? data.pinnedContextKeys : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Pin or unpin a context key for an agent.
+   */
+  async setPinnedContextKey(agentConfigId: string, key: string, pinned: boolean): Promise<{ success: boolean; error?: string }> {
+    try {
+      const agentDir = join(homedir(), '.oneringai', 'agents', agentConfigId);
+      const configPath = join(agentDir, 'ui_config.json');
+
+      // Ensure directory exists
+      if (!existsSync(agentDir)) {
+        await mkdir(agentDir, { recursive: true });
+      }
+
+      // Load existing config
+      let config: { pinnedContextKeys: string[] } = { pinnedContextKeys: [] };
+      if (existsSync(configPath)) {
+        try {
+          config = JSON.parse(await readFile(configPath, 'utf-8'));
+          if (!Array.isArray(config.pinnedContextKeys)) {
+            config.pinnedContextKeys = [];
+          }
+        } catch {
+          config = { pinnedContextKeys: [] };
+        }
+      }
+
+      // Update
+      const keySet = new Set(config.pinnedContextKeys);
+      if (pinned) {
+        keySet.add(key);
+      } else {
+        keySet.delete(key);
+      }
+      config.pinnedContextKeys = Array.from(keySet);
+
+      // Save
+      await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+
+      // Re-emit context entries to update the renderer with new pinned state
+      // Find any active instance for this agent config and trigger re-emission
+      for (const [instanceId, instance] of this.instances) {
+        if (instance.agentConfigId === agentConfigId) {
+          const ctx = instance.agent.context as AgentContextNextGen;
+          const plugin = ctx.getPlugin<InContextMemoryPluginNextGen>('in_context_memory');
+          if (plugin && this.streamEmitter) {
+            const entries = Array.from(plugin.getContents().values());
+            this.streamEmitter(instanceId, {
+              type: 'ui:context_entries' as const,
+              entries: entries.map(e => ({
+                key: e.key,
+                description: e.description,
+                value: e.value,
+                priority: e.priority,
+                showInUI: e.showInUI ?? false,
+                updatedAt: e.updatedAt,
+              })),
+              pinnedKeys: config.pinnedContextKeys,
+            });
+          }
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   // ============ Multi-Tab Instance Management ============
 
   /**
@@ -2931,6 +3363,22 @@ export class AgentService {
             ? {
                 maxEntries: agentConfig.maxInContextEntries,
                 maxTotalTokens: agentConfig.maxInContextTokens,
+                onEntriesChanged: (entries) => {
+                  if (!this.streamEmitter) return;
+                  const pinnedKeys = this.getPinnedContextKeysSync(agentConfigId);
+                  this.streamEmitter(instanceId, {
+                    type: 'ui:context_entries' as const,
+                    entries: entries.map(e => ({
+                      key: e.key,
+                      description: e.description,
+                      value: e.value,
+                      priority: e.priority,
+                      showInUI: e.showInUI ?? false,
+                      updatedAt: e.updatedAt,
+                    })),
+                    pinnedKeys,
+                  });
+                },
               }
             : undefined,
         },
@@ -3185,6 +3633,30 @@ export class AgentService {
         yield { type: 'done' };
       } else {
         yield { type: 'error', content: 'Agent does not support streaming or run methods' };
+      }
+
+      // Flush any pending InContextMemory entries to the renderer.
+      // The onEntriesChanged debounce (100ms) may not have fired yet, so we
+      // emit a final snapshot here to guarantee the renderer receives entries.
+      const ctx = instance.agent.context as AgentContextNextGen;
+      const icmPlugin = ctx.getPlugin<InContextMemoryPluginNextGen>('in_context_memory');
+      if (icmPlugin) {
+        const allEntries = Array.from(icmPlugin.getContents().values());
+        if (allEntries.length > 0) {
+          const pinnedKeys = this.getPinnedContextKeysSync(instance.agentConfigId);
+          yield {
+            type: 'ui:context_entries',
+            entries: allEntries.map(e => ({
+              key: e.key,
+              description: e.description,
+              value: e.value,
+              priority: e.priority,
+              showInUI: e.showInUI ?? false,
+              updatedAt: e.updatedAt,
+            })),
+            pinnedKeys,
+          };
+        }
       }
     } catch (error) {
       yield { type: 'error', content: String(error) };

@@ -19351,13 +19351,18 @@ Values are immediately visible - no retrieval needed.
 - \`high\`: Keep longer. Important state.
 - \`critical\`: Never auto-evicted.
 
+**UI Display:** Set \`showInUI: true\` in context_set to display the entry in the user's side panel.
+Values shown in the UI support the same rich markdown formatting as the chat window
+(see formatting instructions above). Use this for dashboards, progress displays, and results the user should see.
+
 **Tools:** context_set, context_delete, context_list`;
 var contextSetDefinition = {
   type: "function",
   function: {
     name: "context_set",
     description: `Store or update a key-value pair in live context.
-Value appears directly in context - no retrieval needed.`,
+Value appears directly in context - no retrieval needed.
+Set showInUI to true to also display the entry in the user's side panel.`,
     parameters: {
       type: "object",
       properties: {
@@ -19368,6 +19373,10 @@ Value appears directly in context - no retrieval needed.`,
           type: "string",
           enum: ["low", "normal", "high", "critical"],
           description: 'Eviction priority. Default: "normal"'
+        },
+        showInUI: {
+          type: "boolean",
+          description: "If true, display this entry in the user's side panel with full rich markdown rendering \u2014 same capabilities as the chat window (code blocks, tables, LaTeX, Mermaid diagrams, Vega-Lite charts, mindmaps, etc. \u2014 see formatting instructions in system prompt). Use this for dashboards, status displays, and structured results the user should see. Default: false"
         }
       },
       required: ["key", "description", "value"]
@@ -19408,6 +19417,7 @@ var InContextMemoryPluginNextGen = class {
   _destroyed = false;
   _tokenCache = null;
   _instructionsTokenCache = null;
+  _notifyTimer = null;
   constructor(config = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
@@ -19448,15 +19458,18 @@ var InContextMemoryPluginNextGen = class {
       return a.updatedAt - b.updatedAt;
     });
     let freed = 0;
+    let evicted = false;
     for (const entry of evictable) {
       if (freed >= targetTokensToFree) break;
       const entryTokens = this.estimator.estimateTokens(this.formatEntry(entry));
       this.entries.delete(entry.key);
       freed += entryTokens;
+      evicted = true;
     }
     this._tokenCache = null;
     const content = await this.getContent();
     const after = content ? this.estimator.estimateTokens(content) : 0;
+    if (evicted) this.notifyEntriesChanged();
     return Math.max(0, before - after);
   }
   getTools() {
@@ -19468,6 +19481,7 @@ var InContextMemoryPluginNextGen = class {
   }
   destroy() {
     if (this._destroyed) return;
+    if (this._notifyTimer) clearTimeout(this._notifyTimer);
     this.entries.clear();
     this._destroyed = true;
     this._tokenCache = null;
@@ -19485,6 +19499,7 @@ var InContextMemoryPluginNextGen = class {
       this.entries.set(entry.key, entry);
     }
     this._tokenCache = null;
+    this.notifyEntriesChanged();
   }
   // ============================================================================
   // Entry Management
@@ -19492,19 +19507,21 @@ var InContextMemoryPluginNextGen = class {
   /**
    * Store or update a key-value pair
    */
-  set(key, description, value, priority) {
+  set(key, description, value, priority, showInUI) {
     this.assertNotDestroyed();
     const entry = {
       key,
       description,
       value,
       updatedAt: Date.now(),
-      priority: priority ?? this.config.defaultPriority
+      priority: priority ?? this.config.defaultPriority,
+      showInUI: showInUI ?? false
     };
     this.entries.set(key, entry);
     this.enforceMaxEntries();
     this.enforceTokenLimit();
     this._tokenCache = null;
+    this.notifyEntriesChanged();
   }
   /**
    * Get a value by key
@@ -19526,7 +19543,10 @@ var InContextMemoryPluginNextGen = class {
   delete(key) {
     this.assertNotDestroyed();
     const deleted = this.entries.delete(key);
-    if (deleted) this._tokenCache = null;
+    if (deleted) {
+      this._tokenCache = null;
+      this.notifyEntriesChanged();
+    }
     return deleted;
   }
   /**
@@ -19538,7 +19558,8 @@ var InContextMemoryPluginNextGen = class {
       key: e.key,
       description: e.description,
       priority: e.priority,
-      updatedAt: e.updatedAt
+      updatedAt: e.updatedAt,
+      showInUI: e.showInUI ?? false
     }));
   }
   /**
@@ -19548,6 +19569,7 @@ var InContextMemoryPluginNextGen = class {
     this.assertNotDestroyed();
     this.entries.clear();
     this._tokenCache = null;
+    this.notifyEntriesChanged();
   }
   // ============================================================================
   // Private Helpers
@@ -19611,6 +19633,20 @@ ${valueStr}
       return a.updatedAt - b.updatedAt;
     });
   }
+  /**
+   * Debounced notification when entries change.
+   * Calls config.onEntriesChanged with all current entries.
+   */
+  notifyEntriesChanged() {
+    if (!this.config.onEntriesChanged) return;
+    if (this._notifyTimer) clearTimeout(this._notifyTimer);
+    this._notifyTimer = setTimeout(() => {
+      this._notifyTimer = null;
+      if (!this._destroyed && this.config.onEntriesChanged) {
+        this.config.onEntriesChanged(Array.from(this.entries.values()));
+      }
+    }, 100);
+  }
   assertNotDestroyed() {
     if (this._destroyed) {
       throw new Error("InContextMemoryPluginNextGen is destroyed");
@@ -19627,16 +19663,18 @@ ${valueStr}
           args.key,
           args.description,
           args.value,
-          args.priority
+          args.priority,
+          args.showInUI
         );
         return {
           success: true,
           key: args.key,
-          message: `Stored "${args.key}" in live context`
+          showInUI: args.showInUI ?? false,
+          message: `Stored "${args.key}" in live context${args.showInUI ? " (visible in UI)" : ""}`
         };
       },
       permission: { scope: "always", riskLevel: "low" },
-      describeCall: (args) => `set ${args.key}`
+      describeCall: (args) => `set ${args.key}${args.showInUI ? " [UI]" : ""}`
     };
   }
   createContextDeleteTool() {

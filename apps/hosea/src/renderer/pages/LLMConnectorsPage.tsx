@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, Modal, Form, Alert, Badge, Spinner } from 'react-bootstrap';
 import { Plus, Brain, Key, Trash2, Check, Cloud, Monitor } from 'lucide-react';
 import { PageHeader } from '../components/layout';
+import { useConnectorVersion } from '../App';
 
 interface ConnectorConfig {
   name: string;
@@ -31,10 +32,11 @@ export function LLMConnectorsPage(): React.ReactElement {
     vendor: 'openai',
     apiKey: '',
   });
+  const connectorVersion = useConnectorVersion();
 
   useEffect(() => {
     loadConnectors();
-  }, []);
+  }, [connectorVersion]);
 
   const loadConnectors = async () => {
     const list = await window.hosea.connector.list();

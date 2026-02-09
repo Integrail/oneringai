@@ -1986,3 +1986,283 @@ h4.dynamic-ui__heading {
 .spinning {
   animation: spin 1s linear infinite;
 }
+
+/* ============================================
+   Context Display Panel (Current Context)
+   ============================================ */
+
+.context-display-panel {
+  padding: var(--spacing-3);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+/* Maximized mode: panel fills available space */
+.context-display-panel--maximized {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  border-bottom: none;
+}
+
+/* When a context card is maximized, prevent double scrollbars on the parent */
+.sidebar-panel__content:has(.context-display-panel--maximized) {
+  overflow-y: hidden;
+}
+
+.context-display-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-700);
+  margin-bottom: var(--spacing-3);
+  flex-shrink: 0;
+}
+
+.context-display-panel__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+  border-radius: 9px;
+}
+
+.context-display-panel__exit-maximize {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.context-display-panel__exit-maximize:hover {
+  color: var(--color-gray-700);
+  background: var(--color-gray-200);
+}
+
+.context-display-panel__entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* In maximized mode, entries fill remaining space */
+.context-display-panel--maximized .context-display-panel__entries {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Entry Card */
+.context-entry-card {
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--border-radius-md);
+  background: var(--color-gray-50);
+  overflow: hidden;
+}
+
+.context-entry-card--pinned {
+  border-color: var(--color-primary-light);
+  background: #fff8f9;
+}
+
+/* Collapsed: no border-bottom on header since body is hidden */
+.context-entry-card--collapsed .context-entry-card__header {
+  border-bottom: none;
+}
+
+/* Maximized card: fill all available space */
+.context-entry-card--maximized {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.context-entry-card--maximized .context-entry-card__value {
+  flex: 1;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.context-entry-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-bottom: 1px solid var(--color-gray-100);
+  background: white;
+  cursor: pointer;
+  user-select: none;
+}
+
+.context-entry-card__header:hover {
+  background: var(--color-gray-50);
+}
+
+.context-entry-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.context-entry-card__collapse-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+}
+
+.context-entry-card__key {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-entry-card__priority {
+  font-size: var(--font-size-xs);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: var(--font-weight-medium);
+  flex-shrink: 0;
+}
+
+.context-entry-card__priority--low {
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+}
+
+.context-entry-card__priority--normal {
+  color: var(--color-info);
+  background: #e0f2fe;
+}
+
+.context-entry-card__priority--high {
+  color: var(--color-warning);
+  background: #fef3c7;
+}
+
+.context-entry-card__priority--critical {
+  color: var(--color-danger);
+  background: #fee2e2;
+}
+
+/* Card action buttons container */
+.context-entry-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Generic action button (maximize/minimize) */
+.context-entry-card__action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+
+.context-entry-card__action-btn:hover {
+  color: var(--color-gray-600);
+  background: var(--color-gray-100);
+}
+
+.context-entry-card__action-btn--active {
+  color: var(--color-primary);
+}
+
+.context-entry-card__action-btn--active:hover {
+  color: var(--color-primary-hover);
+  background: var(--color-primary-light);
+}
+
+.context-entry-card__pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.context-entry-card__pin:hover {
+  color: var(--color-gray-600);
+  background: var(--color-gray-100);
+}
+
+.context-entry-card__pin--active {
+  color: var(--color-primary);
+}
+
+.context-entry-card__pin--active:hover {
+  color: var(--color-primary-hover);
+  background: var(--color-primary-light);
+}
+
+.context-entry-card__description {
+  padding: var(--spacing-1) var(--spacing-3) 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+}
+
+.context-entry-card__value {
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  overflow: auto;
+  max-height: 400px;
+}
+
+/* Tighten markdown spacing inside cards */
+.context-entry-card__value .markdown-content {
+  font-size: var(--font-size-sm);
+}
+
+.context-entry-card__value .markdown-content > *:first-child {
+  margin-top: 0;
+}
+
+.context-entry-card__value .markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+.context-entry-card__value .markdown-content p {
+  margin: 0 0 var(--spacing-2);
+}
+
+.context-entry-card__value .markdown-content pre {
+  margin: var(--spacing-2) 0;
+  font-size: var(--font-size-xs);
+}

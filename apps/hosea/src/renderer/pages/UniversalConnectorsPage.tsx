@@ -15,6 +15,7 @@ import {
   prefetchVendorLogos,
 } from '../components/connectors';
 import { useNavigation } from '../hooks/useNavigation';
+import { useConnectorVersion } from '../App';
 
 interface StoredUniversalConnector {
   name: string;
@@ -69,6 +70,8 @@ export function UniversalConnectorsPage(): React.ReactElement {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingConnector, setDeletingConnector] = useState<StoredUniversalConnector | null>(null);
 
+  const connectorVersion = useConnectorVersion();
+
   // Load connectors and vendor info
   const loadConnectors = useCallback(async () => {
     try {
@@ -91,7 +94,7 @@ export function UniversalConnectorsPage(): React.ReactElement {
 
   useEffect(() => {
     loadConnectors();
-  }, [loadConnectors]);
+  }, [loadConnectors, connectorVersion]);
 
   // Handlers
   const handleAddConnector = () => {

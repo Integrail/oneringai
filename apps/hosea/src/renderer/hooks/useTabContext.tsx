@@ -7,7 +7,7 @@
 
 import React, { useState, useCallback, createContext, useContext, useEffect, useRef } from 'react';
 import type { ToolCallInfo } from '../components/ToolCallDisplay';
-import type { Plan, StreamChunk, DynamicUIContent } from '../../preload/index';
+import type { Plan, StreamChunk, DynamicUIContent, ContextEntryForUI } from '../../preload/index';
 
 // Sidebar tab type
 export type SidebarTab = 'look_inside' | 'dynamic_ui';
@@ -44,6 +44,9 @@ export interface TabState {
   // Dynamic UI content for this tab
   dynamicUIContent: DynamicUIContent | null;
   hasDynamicUIUpdate: boolean;
+  // In-context memory entries visible in UI
+  contextEntries: ContextEntryForUI[];
+  pinnedContextKeys: string[];
 }
 
 // Sidebar state interface
@@ -78,6 +81,7 @@ export interface TabContextValue {
   // Dynamic UI
   clearDynamicUIUpdate: () => void;
   sendDynamicUIAction: (action: string, elementId?: string, value?: unknown) => void;
+  pinContextKey: (key: string, pinned: boolean) => Promise<void>;
 
   // State helpers
   isMaxTabsReached: boolean;
@@ -282,6 +286,13 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           updatedTab.dynamicUIContent = null;
           updatedTab.hasDynamicUIUpdate = false;
         }
+        // In-context memory entries update
+        else if (chunk.type === 'ui:context_entries') {
+          updatedTab.contextEntries = chunk.entries;
+          updatedTab.pinnedContextKeys = chunk.pinnedKeys;
+          // Show notification dot if sidebar not showing dynamic_ui
+          updatedTab.hasDynamicUIUpdate = true;
+        }
 
         newTabs.set(tab.instanceId, updatedTab);
         return newTabs;
@@ -364,7 +375,20 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         createdAt: Date.now(),
         dynamicUIContent: null,
         hasDynamicUIUpdate: false,
+        contextEntries: [],
+        pinnedContextKeys: [],
       };
+
+      // Load pinned context keys for this agent
+      window.hosea.agent.getPinnedContextKeys(agentConfigId).then(pinnedKeys => {
+        setTabs(prev => {
+          const tab = prev.get(instanceId);
+          if (!tab) return prev;
+          const newTabs = new Map(prev);
+          newTabs.set(instanceId, { ...tab, pinnedContextKeys: pinnedKeys });
+          return newTabs;
+        });
+      }).catch(() => { /* ignore errors loading pinned keys */ });
 
       // Update status from instance
       const statusResult = await window.hosea.agent.statusInstance(instanceId);
@@ -564,6 +588,27 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     sendMessage(`[UI Action] ${actionMessage}`);
   }, [sendMessage]);
 
+  // Pin/unpin a context key for the active tab's agent
+  const pinContextKey = useCallback(async (key: string, pinned: boolean): Promise<void> => {
+    const tab = activeTabId ? tabs.get(activeTabId) : null;
+    if (!tab) return;
+
+    // Optimistic update
+    setTabs(prevTabs => {
+      const currentTab = prevTabs.get(tab.instanceId);
+      if (!currentTab) return prevTabs;
+      const newTabs = new Map(prevTabs);
+      const updatedPinned = pinned
+        ? [...currentTab.pinnedContextKeys.filter(k => k !== key), key]
+        : currentTab.pinnedContextKeys.filter(k => k !== key);
+      newTabs.set(tab.instanceId, { ...currentTab, pinnedContextKeys: updatedPinned });
+      return newTabs;
+    });
+
+    // Persist to disk (also triggers re-emission of entries with updated pinnedKeys)
+    await window.hosea.agent.pinContextKey(tab.agentConfigId, key, pinned);
+  }, [activeTabId, tabs]);
+
   const value: TabContextValue = {
     tabs,
     activeTabId,
@@ -583,6 +628,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     // Dynamic UI
     clearDynamicUIUpdate,
     sendDynamicUIAction,
+    pinContextKey,
     isMaxTabsReached: tabs.size >= MAX_TABS,
     tabCount: tabs.size,
   };

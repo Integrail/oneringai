@@ -31,6 +31,8 @@ export interface InContextEntry {
   value: unknown;
   updatedAt: number;
   priority: InContextPriority;
+  /** If true, this entry is displayed in the user's side panel UI */
+  showInUI?: boolean;
 }
 
 export interface InContextMemoryConfig {
@@ -42,6 +44,8 @@ export interface InContextMemoryConfig {
   defaultPriority?: InContextPriority;
   /** Whether to show timestamps in output (default: false) */
   showTimestamps?: boolean;
+  /** Callback fired when entries change. Receives all current entries. */
+  onEntriesChanged?: (entries: InContextEntry[]) => void;
 }
 
 export interface SerializedInContextMemoryState {
@@ -59,10 +63,10 @@ const PRIORITY_VALUES: Record<InContextPriority, number> = {
   critical: 4,
 };
 
-const DEFAULT_CONFIG: Required<InContextMemoryConfig> = {
+const DEFAULT_CONFIG = {
   maxEntries: 20,
   maxTotalTokens: 4000,
-  defaultPriority: 'normal',
+  defaultPriority: 'normal' as InContextPriority,
   showTimestamps: false,
 };
 
@@ -82,6 +86,10 @@ Values are immediately visible - no retrieval needed.
 - \`high\`: Keep longer. Important state.
 - \`critical\`: Never auto-evicted.
 
+**UI Display:** Set \`showInUI: true\` in context_set to display the entry in the user's side panel.
+Values shown in the UI support the same rich markdown formatting as the chat window
+(see formatting instructions above). Use this for dashboards, progress displays, and results the user should see.
+
 **Tools:** context_set, context_delete, context_list`;
 
 // ============================================================================
@@ -93,7 +101,8 @@ const contextSetDefinition = {
   function: {
     name: 'context_set',
     description: `Store or update a key-value pair in live context.
-Value appears directly in context - no retrieval needed.`,
+Value appears directly in context - no retrieval needed.
+Set showInUI to true to also display the entry in the user's side panel.`,
     parameters: {
       type: 'object',
       properties: {
@@ -104,6 +113,10 @@ Value appears directly in context - no retrieval needed.`,
           type: 'string',
           enum: ['low', 'normal', 'high', 'critical'],
           description: 'Eviction priority. Default: "normal"',
+        },
+        showInUI: {
+          type: 'boolean',
+          description: 'If true, display this entry in the user\'s side panel with full rich markdown rendering — same capabilities as the chat window (code blocks, tables, LaTeX, Mermaid diagrams, Vega-Lite charts, mindmaps, etc. — see formatting instructions in system prompt). Use this for dashboards, status displays, and structured results the user should see. Default: false',
         },
       },
       required: ['key', 'description', 'value'],
@@ -147,12 +160,19 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
   readonly name = 'in_context_memory';
 
   private entries: Map<string, InContextEntry> = new Map();
-  private config: Required<InContextMemoryConfig>;
+  private config: {
+    maxEntries: number;
+    maxTotalTokens: number;
+    defaultPriority: InContextPriority;
+    showTimestamps: boolean;
+    onEntriesChanged?: (entries: InContextEntry[]) => void;
+  };
   private estimator: ITokenEstimator = simpleTokenEstimator;
 
   private _destroyed = false;
   private _tokenCache: number | null = null;
   private _instructionsTokenCache: number | null = null;
+  private _notifyTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: InContextMemoryConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -209,16 +229,20 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
       });
 
     let freed = 0;
+    let evicted = false;
     for (const entry of evictable) {
       if (freed >= targetTokensToFree) break;
       const entryTokens = this.estimator.estimateTokens(this.formatEntry(entry));
       this.entries.delete(entry.key);
       freed += entryTokens;
+      evicted = true;
     }
 
     this._tokenCache = null;
     const content = await this.getContent();
     const after = content ? this.estimator.estimateTokens(content) : 0;
+
+    if (evicted) this.notifyEntriesChanged();
 
     return Math.max(0, before - after);
   }
@@ -233,6 +257,7 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
 
   destroy(): void {
     if (this._destroyed) return;
+    if (this._notifyTimer) clearTimeout(this._notifyTimer);
     this.entries.clear();
     this._destroyed = true;
     this._tokenCache = null;
@@ -253,6 +278,7 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
       this.entries.set(entry.key, entry);
     }
     this._tokenCache = null;
+    this.notifyEntriesChanged();
   }
 
   // ============================================================================
@@ -262,7 +288,7 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
   /**
    * Store or update a key-value pair
    */
-  set(key: string, description: string, value: unknown, priority?: InContextPriority): void {
+  set(key: string, description: string, value: unknown, priority?: InContextPriority, showInUI?: boolean): void {
     this.assertNotDestroyed();
 
     const entry: InContextEntry = {
@@ -271,12 +297,14 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
       value,
       updatedAt: Date.now(),
       priority: priority ?? this.config.defaultPriority,
+      showInUI: showInUI ?? false,
     };
 
     this.entries.set(key, entry);
     this.enforceMaxEntries();
     this.enforceTokenLimit();
     this._tokenCache = null;
+    this.notifyEntriesChanged();
   }
 
   /**
@@ -301,20 +329,24 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
   delete(key: string): boolean {
     this.assertNotDestroyed();
     const deleted = this.entries.delete(key);
-    if (deleted) this._tokenCache = null;
+    if (deleted) {
+      this._tokenCache = null;
+      this.notifyEntriesChanged();
+    }
     return deleted;
   }
 
   /**
    * List all entries with metadata
    */
-  list(): Array<{ key: string; description: string; priority: InContextPriority; updatedAt: number }> {
+  list(): Array<{ key: string; description: string; priority: InContextPriority; updatedAt: number; showInUI: boolean }> {
     this.assertNotDestroyed();
     return Array.from(this.entries.values()).map(e => ({
       key: e.key,
       description: e.description,
       priority: e.priority,
       updatedAt: e.updatedAt,
+      showInUI: e.showInUI ?? false,
     }));
   }
 
@@ -325,6 +357,7 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
     this.assertNotDestroyed();
     this.entries.clear();
     this._tokenCache = null;
+    this.notifyEntriesChanged();
   }
 
   // ============================================================================
@@ -410,6 +443,22 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
       });
   }
 
+  /**
+   * Debounced notification when entries change.
+   * Calls config.onEntriesChanged with all current entries.
+   */
+  private notifyEntriesChanged(): void {
+    if (!this.config.onEntriesChanged) return;
+
+    if (this._notifyTimer) clearTimeout(this._notifyTimer);
+    this._notifyTimer = setTimeout(() => {
+      this._notifyTimer = null;
+      if (!this._destroyed && this.config.onEntriesChanged) {
+        this.config.onEntriesChanged(Array.from(this.entries.values()));
+      }
+    }, 100);
+  }
+
   private assertNotDestroyed(): void {
     if (this._destroyed) {
       throw new Error('InContextMemoryPluginNextGen is destroyed');
@@ -428,16 +477,18 @@ export class InContextMemoryPluginNextGen implements IContextPluginNextGen {
           args.key as string,
           args.description as string,
           args.value,
-          args.priority as InContextPriority | undefined
+          args.priority as InContextPriority | undefined,
+          args.showInUI as boolean | undefined
         );
         return {
           success: true,
           key: args.key,
-          message: `Stored "${args.key}" in live context`,
+          showInUI: args.showInUI ?? false,
+          message: `Stored "${args.key}" in live context${args.showInUI ? ' (visible in UI)' : ''}`,
         };
       },
       permission: { scope: 'always', riskLevel: 'low' },
-      describeCall: (args) => `set ${args.key}`,
+      describeCall: (args) => `set ${args.key}${args.showInUI ? ' [UI]' : ''}`,
     };
   }
 

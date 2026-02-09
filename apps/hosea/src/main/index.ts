@@ -11,6 +11,7 @@ import { homedir, tmpdir } from 'node:os';
 import { AgentService } from './AgentService.js';
 import { BrowserService } from './BrowserService.js';
 import { AutoUpdaterService } from './AutoUpdaterService.js';
+import { EWAuthService } from './EWAuthService.js';
 import type { Rectangle } from './browser/types.js';
 
 /**
@@ -32,6 +33,7 @@ const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'develo
 let mainWindow: BrowserWindow | null = null;
 let agentService: AgentService | null = null;
 let browserService: BrowserService | null = null;
+const ewAuthService = new EWAuthService();
 let autoUpdaterService: AutoUpdaterService | null = null;
 
 async function createWindow(): Promise<void> {
@@ -105,6 +107,11 @@ async function setupIPC(): Promise<void> {
   // This is called when browser tools execute and need to show the browser view
   agentService.setStreamEmitter((instanceId, chunk) => {
     mainWindow?.webContents.send('agent:stream-chunk', instanceId, chunk);
+  });
+
+  // Set up main window sender for push events (e.g., connector changes)
+  agentService.setMainWindowSender((channel, ...args) => {
+    mainWindow?.webContents.send(channel, ...args);
   });
 
   // ============ Proactive Overlay Detection ============
@@ -209,6 +216,15 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('agent:list-instances', async () => {
     return agentService!.listInstances();
+  });
+
+  // Context entry pinning
+  ipcMain.handle('agent:pin-context-key', async (_event, agentConfigId: string, key: string, pinned: boolean) => {
+    return agentService!.setPinnedContextKey(agentConfigId, key, pinned);
+  });
+
+  ipcMain.handle('agent:get-pinned-context-keys', async (_event, agentConfigId: string) => {
+    return agentService!.getPinnedContextKeys(agentConfigId);
   });
 
   // Connector operations
@@ -412,6 +428,52 @@ async function setupIPC(): Promise<void> {
     return agentService!.syncEWConnectors();
   });
 
+  // Everworker Multi-Profile operations
+  ipcMain.handle('everworker:get-profiles', async () => {
+    return agentService!.getEWProfiles();
+  });
+
+  ipcMain.handle('everworker:add-profile', async (_event, data: { name: string; url: string; token: string }) => {
+    return agentService!.addEWProfile(data);
+  });
+
+  ipcMain.handle('everworker:update-profile', async (_event, id: string, updates: { name?: string; url?: string; token?: string }) => {
+    return agentService!.updateEWProfile(id, updates);
+  });
+
+  ipcMain.handle('everworker:delete-profile', async (_event, id: string) => {
+    return agentService!.deleteEWProfile(id);
+  });
+
+  ipcMain.handle('everworker:switch-profile', async (_event, id: string | null) => {
+    return agentService!.switchEWProfile(id);
+  });
+
+  ipcMain.handle('everworker:test-profile', async (_event, id: string) => {
+    return agentService!.testEWProfileConnection(id);
+  });
+
+  ipcMain.handle('everworker:sync-active', async () => {
+    return agentService!.syncActiveEWProfile();
+  });
+
+  // EW Browser Auth
+  ipcMain.handle('everworker:check-auth-support', async (_event, url: string) => {
+    return ewAuthService.checkAuthSupport(url);
+  });
+
+  ipcMain.handle('everworker:start-auth', async (_event, url: string) => {
+    return ewAuthService.authenticate({ ewUrl: url, parentWindow: mainWindow });
+  });
+
+  ipcMain.handle('everworker:cancel-auth', async () => {
+    ewAuthService.cancel();
+  });
+
+  ipcMain.handle('everworker:token-status', async (_event, profileId?: string) => {
+    return agentService!.getTokenStatus(profileId);
+  });
+
   // Config operations
   ipcMain.handle('config:get', async () => {
     return agentService!.getConfig();
@@ -419,6 +481,11 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('config:set', async (_event, key: string, value: unknown) => {
     return agentService!.setConfig(key, value);
+  });
+
+  // App version
+  ipcMain.handle('app:get-version', () => {
+    return app.getVersion();
   });
 
   // Log level operations

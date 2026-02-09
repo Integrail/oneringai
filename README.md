@@ -71,7 +71,7 @@
 - 🤖 **Task Agents** - ⚠️ *Deprecated* - Use `Agent` with `WorkingMemoryPluginNextGen`
 - 🔬 **Research Agent** - ⚠️ *Deprecated* - Use `Agent` with search tools
 - 🎯 **Context Management** - Algorithmic compaction with tool-result-to-memory offloading
-- 📌 **InContextMemory** - NEW: Live key-value storage directly in LLM context for instant access
+- 📌 **InContextMemory** - Live key-value storage directly in LLM context with optional UI display (`showInUI`)
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
@@ -711,6 +711,9 @@ const plugin = ctx.getPlugin('in_context_memory');
 plugin.set('current_state', 'Task processing state', { step: 2, status: 'active' });
 plugin.set('user_prefs', 'User preferences', { verbose: true }, 'high');
 
+// Store data with UI display - shown in the host app's sidebar panel
+plugin.set('dashboard', 'Progress dashboard', '## Progress\n- [x] Step 1\n- [ ] Step 2', 'normal', true);
+
 // LLM can use context_set/context_delete/context_list tools
 // Or access directly via plugin API
 const state = plugin.get('current_state');  // { step: 2, status: 'active' }
@@ -720,7 +723,9 @@ const state = plugin.get('current_state');  // { step: 2, status: 'active' }
 - **WorkingMemory**: External storage + index → requires `memory_retrieve()` for values
 - **InContextMemory**: Full values in context → instant access, no retrieval needed
 
-**Use cases:** Session state, user preferences, counters, flags, small accumulated results.
+**UI Display (`showInUI`):** Entries with `showInUI: true` are displayed in the host application's sidebar panel with full markdown rendering (code blocks, tables, charts, diagrams, etc.). The LLM sets this via the `context_set` tool. Users can also pin specific entries to always display them regardless of the agent's setting. See the [User Guide](./USER_GUIDE.md#ui-display-showInUI) for details.
+
+**Use cases:** Session state, user preferences, counters, flags, small accumulated results, live dashboards.
 
 ### 9. Persistent Instructions
 

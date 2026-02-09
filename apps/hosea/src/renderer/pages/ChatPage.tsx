@@ -368,6 +368,7 @@ function ChatPageContent(): React.ReactElement {
     setSidebarTab,
     setSidebarWidth,
     sendDynamicUIAction,
+    pinContextKey,
   } = useTabContext();
 
   // New tab modal
@@ -442,6 +443,9 @@ function ChatPageContent(): React.ReactElement {
         dynamicUIContent={activeTab?.dynamicUIContent || null}
         hasDynamicUIUpdate={activeTab?.hasDynamicUIUpdate}
         onDynamicUIAction={handleDynamicUIAction}
+        contextEntries={activeTab?.contextEntries || []}
+        pinnedContextKeys={activeTab?.pinnedContextKeys || []}
+        onPinContextKey={(key, pinned) => pinContextKey(key, pinned)}
       />
 
       {/* New Tab Modal */}

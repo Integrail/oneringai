@@ -7,7 +7,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Zap, Layout } from 'lucide-react';
 import { InternalsContent } from './InternalsContent';
 import { DynamicUIPanel } from './DynamicUIPanel';
-import type { DynamicUIContent } from '../../preload/index';
+import { ContextDisplayPanel } from './ContextDisplayPanel';
+import type { DynamicUIContent, ContextEntryForUI } from '../../preload/index';
 import type { SidebarTab } from '../hooks/useTabContext';
 
 interface SidebarPanelProps {
@@ -25,6 +26,12 @@ interface SidebarPanelProps {
   hasDynamicUIUpdate?: boolean;
   /** Callback when dynamic UI action is triggered */
   onDynamicUIAction?: (action: string, elementId?: string, value?: unknown) => void;
+  /** In-context memory entries for Current Context display */
+  contextEntries?: ContextEntryForUI[];
+  /** User-pinned context keys */
+  pinnedContextKeys?: string[];
+  /** Callback when user pins/unpins a context key */
+  onPinContextKey?: (key: string, pinned: boolean) => void;
 }
 
 const MIN_WIDTH = 280;
@@ -44,6 +51,9 @@ export function SidebarPanel({
   dynamicUIContent,
   hasDynamicUIUpdate,
   onDynamicUIAction,
+  contextEntries,
+  pinnedContextKeys,
+  onPinContextKey,
 }: SidebarPanelProps): React.ReactElement | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -99,6 +109,8 @@ export function SidebarPanel({
     };
   }, [onWidthChange]);
 
+  const [contextMaximized, setContextMaximized] = useState(false);
+
   if (!isOpen) return null;
 
   return (
@@ -148,10 +160,22 @@ export function SidebarPanel({
         {activeTab === 'look_inside' ? (
           <InternalsContent instanceId={instanceId} />
         ) : (
-          <DynamicUIPanel
-            content={dynamicUIContent}
-            onAction={onDynamicUIAction}
-          />
+          <>
+            {contextEntries && pinnedContextKeys && onPinContextKey && (
+              <ContextDisplayPanel
+                entries={contextEntries}
+                pinnedKeys={pinnedContextKeys}
+                onPinToggle={onPinContextKey}
+                onMaximizedChange={setContextMaximized}
+              />
+            )}
+            {!contextMaximized && (
+              <DynamicUIPanel
+                content={dynamicUIContent}
+                onAction={onDynamicUIAction}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

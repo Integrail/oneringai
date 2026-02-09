@@ -9,7 +9,7 @@
  * - Serialization/deserialization
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { InContextMemoryPluginNextGen } from '@/core/context-nextgen/plugins/InContextMemoryPluginNextGen.js';
 import type { InContextMemoryConfig } from '@/core/context-nextgen/plugins/InContextMemoryPluginNextGen.js';
 
@@ -417,6 +417,25 @@ describe('InContextMemoryPluginNextGen', () => {
       expect(plugin.get('tool_test')).toEqual({ fromTool: true });
     });
 
+    it('should execute context_set tool with showInUI', async () => {
+      const tools = plugin.getTools();
+      const setTool = tools.find(t => t.definition.function.name === 'context_set')!;
+
+      const result = await setTool.execute({
+        key: 'ui_entry',
+        description: 'Visible in UI',
+        value: '## Dashboard\n- Task 1 done',
+        showInUI: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.showInUI).toBe(true);
+
+      const entries = plugin.list();
+      const entry = entries.find(e => e.key === 'ui_entry');
+      expect(entry?.showInUI).toBe(true);
+    });
+
     it('should execute context_delete tool', async () => {
       plugin.set('to_delete', 'Will be deleted', {});
 
@@ -436,6 +455,163 @@ describe('InContextMemoryPluginNextGen', () => {
 
       const result = await listTool.execute({});
       expect(result.entries).toHaveLength(2);
+    });
+  });
+
+  describe('showInUI', () => {
+    it('should default showInUI to false', () => {
+      plugin.set('key', 'Description', { value: 1 });
+
+      const entries = plugin.list();
+      expect(entries[0]?.showInUI).toBe(false);
+    });
+
+    it('should store showInUI when set to true', () => {
+      plugin.set('visible', 'Visible entry', '## Status', 'normal', true);
+
+      const entries = plugin.list();
+      const entry = entries.find(e => e.key === 'visible');
+      expect(entry?.showInUI).toBe(true);
+    });
+
+    it('should store showInUI when set to false explicitly', () => {
+      plugin.set('hidden', 'Hidden entry', 'data', 'normal', false);
+
+      const entries = plugin.list();
+      expect(entries[0]?.showInUI).toBe(false);
+    });
+
+    it('should preserve showInUI in serialization', () => {
+      plugin.set('visible', 'Visible', 'data', 'high', true);
+      plugin.set('hidden', 'Hidden', 'data', 'normal', false);
+
+      const state = plugin.getState();
+
+      const newPlugin = new InContextMemoryPluginNextGen();
+      newPlugin.restoreState(state);
+
+      const entries = newPlugin.list();
+      expect(entries.find(e => e.key === 'visible')?.showInUI).toBe(true);
+      expect(entries.find(e => e.key === 'hidden')?.showInUI).toBe(false);
+
+      newPlugin.destroy();
+    });
+
+    it('should include showInUI in context_set tool definition', () => {
+      const tools = plugin.getTools();
+      const setTool = tools.find(t => t.definition.function.name === 'context_set')!;
+      const params = setTool.definition.function.parameters as { properties: Record<string, unknown> };
+      expect(params.properties).toHaveProperty('showInUI');
+    });
+
+    it('should mention showInUI in instructions', () => {
+      const instructions = plugin.getInstructions();
+      expect(instructions).toContain('showInUI');
+      expect(instructions).toContain('side panel');
+    });
+  });
+
+  describe('onEntriesChanged callback', () => {
+    it('should call onEntriesChanged on set', async () => {
+      const onChange = vi.fn();
+      const p = new InContextMemoryPluginNextGen({ onEntriesChanged: onChange });
+
+      p.set('key', 'Desc', 'value');
+
+      // Debounced — wait for it
+      await new Promise(r => setTimeout(r, 150));
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ key: 'key', value: 'value' }),
+        ])
+      );
+
+      p.destroy();
+    });
+
+    it('should call onEntriesChanged on delete', async () => {
+      const onChange = vi.fn();
+      const p = new InContextMemoryPluginNextGen({ onEntriesChanged: onChange });
+
+      p.set('key', 'Desc', 'value');
+      await new Promise(r => setTimeout(r, 150));
+      onChange.mockClear();
+
+      p.delete('key');
+      await new Promise(r => setTimeout(r, 150));
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith([]);
+
+      p.destroy();
+    });
+
+    it('should call onEntriesChanged on clear', async () => {
+      const onChange = vi.fn();
+      const p = new InContextMemoryPluginNextGen({ onEntriesChanged: onChange });
+
+      p.set('key1', 'Desc', 'val1');
+      p.set('key2', 'Desc', 'val2');
+      await new Promise(r => setTimeout(r, 150));
+      onChange.mockClear();
+
+      p.clear();
+      await new Promise(r => setTimeout(r, 150));
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith([]);
+
+      p.destroy();
+    });
+
+    it('should call onEntriesChanged on restoreState', async () => {
+      const onChange = vi.fn();
+      const p = new InContextMemoryPluginNextGen({ onEntriesChanged: onChange });
+
+      p.restoreState({
+        entries: [
+          { key: 'restored', description: 'Restored entry', value: 'data', updatedAt: Date.now(), priority: 'normal', showInUI: true },
+        ],
+      });
+
+      await new Promise(r => setTimeout(r, 150));
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ key: 'restored', showInUI: true }),
+        ])
+      );
+
+      p.destroy();
+    });
+
+    it('should debounce rapid changes', async () => {
+      const onChange = vi.fn();
+      const p = new InContextMemoryPluginNextGen({ onEntriesChanged: onChange });
+
+      // Rapid-fire 5 sets
+      for (let i = 0; i < 5; i++) {
+        p.set(`key${i}`, 'Desc', `val${i}`);
+      }
+
+      await new Promise(r => setTimeout(r, 150));
+
+      // Should only fire once due to debounce
+      expect(onChange).toHaveBeenCalledTimes(1);
+      // Should include all 5 entries
+      expect(onChange.mock.calls[0][0]).toHaveLength(5);
+
+      p.destroy();
+    });
+
+    it('should not call callback when not configured', async () => {
+      // Default plugin has no callback — should not throw
+      plugin.set('key', 'Desc', 'value');
+      await new Promise(r => setTimeout(r, 150));
+      // No error = pass
     });
   });
 });

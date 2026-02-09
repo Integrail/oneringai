@@ -23,6 +23,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Setup and Configuration
    - Priority-Based Eviction
    - Tools (context_set, context_delete, context_list)
+   - UI Display (`showInUI`) and User Pinning
    - Use Cases and Best Practices
 9. [Persistent Instructions](#persistent-instructions)
    - Setup and Configuration
@@ -1872,7 +1873,8 @@ await memoryPlugin.storeFindings('data.findings', 'Key findings', findings);
 | **Storage** | External (in-memory or file) | Directly in LLM context |
 | **Context visibility** | Index only (keys + descriptions) | Full values visible |
 | **Access pattern** | Requires `memory_retrieve()` call | Immediate - no retrieval needed |
-| **Best for** | Large data, rarely accessed info | Small state, frequently updated |
+| **UI display** | No | Yes — `showInUI` flag renders entries in host app sidebar |
+| **Best for** | Large data, rarely accessed info | Small state, frequently updated, live dashboards |
 | **Default capacity** | 25MB | 20 entries, 4000 tokens |
 
 ### Quick Setup
@@ -1931,6 +1933,9 @@ interface InContextMemoryConfig {
 
   /** Header text for the context section (default: '## Live Context') */
   headerText?: string;
+
+  /** Callback fired when entries change (set/delete/clear/restore). Debounced at 100ms. */
+  onEntriesChanged?: (entries: InContextEntry[]) => void;
 }
 ```
 
@@ -1950,7 +1955,8 @@ Store or update a key-value pair in the live context:
     "key": "current_state",
     "description": "Processing state for current task",
     "value": { "step": 3, "status": "active", "errors": [] },
-    "priority": "high"  // optional: low, normal, high, critical
+    "priority": "high",    // optional: low, normal, high, critical
+    "showInUI": true        // optional: display in host app sidebar (default: false)
   }
 }
 ```
@@ -1982,8 +1988,8 @@ List all entries with metadata:
 }
 // Returns: {
 //   "entries": [
-//     { "key": "current_state", "description": "...", "priority": "high", "updatedAt": "2026-01-30T..." },
-//     { "key": "user_prefs", "description": "...", "priority": "normal", "updatedAt": "2026-01-30T..." }
+//     { "key": "current_state", "description": "...", "priority": "high", "showInUI": true, "updatedAt": "2026-01-30T..." },
+//     { "key": "user_prefs", "description": "...", "priority": "normal", "showInUI": false, "updatedAt": "2026-01-30T..." }
 //   ],
 //   "count": 2
 // }
@@ -2001,6 +2007,9 @@ plugin.set('state', 'Current state', { step: 1 });
 plugin.set('prefs', 'User preferences', { verbose: true }, 'high');
 plugin.set('temp', 'Temporary data', 'xyz', 'low');
 
+// Store with UI display (5th argument)
+plugin.set('dashboard', 'Live dashboard', '## Status\n- OK', 'normal', true);
+
 // Retrieve
 const state = plugin.get('state');        // { step: 1 }
 const missing = plugin.get('nonexistent'); // undefined
@@ -2015,7 +2024,7 @@ plugin.delete('missing'); // false (didn't exist)
 
 // List all entries
 const entries = plugin.list();
-// [{ key: 'state', description: '...', priority: 'normal', updatedAt: 1706... }, ...]
+// [{ key: 'state', description: '...', priority: 'normal', showInUI: false, updatedAt: 1706... }, ...]
 
 // Get entry count
 console.log(plugin.size);  // 2
@@ -2071,6 +2080,100 @@ User preferences for this session
 
 The LLM can read this section directly without making any tool calls.
 
+### UI Display (`showInUI`)
+
+Each InContextMemory entry has an optional `showInUI` boolean flag. When set to `true`, the entry is displayed in the host application's UI (e.g., HOSEA's "Dynamic UI" sidebar panel) with full rich markdown rendering — the same rendering capabilities as the chat window (code blocks, tables, LaTeX math, Mermaid diagrams, Vega-Lite charts, mindmaps, etc.).
+
+This enables agents to create **live dashboards**, **progress displays**, and **structured results** that the user can see at a glance without scrolling through chat history.
+
+#### How It Works
+
+1. **Agent sets `showInUI: true`** via the `context_set` tool (or the direct `set()` API)
+2. **Host app receives updates** via the `onEntriesChanged` callback (debounced at 100ms)
+3. **Entries render as cards** in the sidebar with markdown-rendered values
+4. **Users can pin entries** to always show them, overriding the agent's `showInUI` setting
+
+#### Via Tool (LLM)
+
+```typescript
+// Agent creates a visible dashboard entry
+{
+  "name": "context_set",
+  "arguments": {
+    "key": "progress",
+    "description": "Task progress dashboard",
+    "value": "## Research Progress\n\n| Topic | Status |\n|-------|--------|\n| API Design | Done |\n| Implementation | In Progress |\n\n**Next:** Write tests",
+    "priority": "high",
+    "showInUI": true
+  }
+}
+```
+
+#### Via Direct API
+
+```typescript
+// Show a progress dashboard in the UI
+plugin.set(
+  'progress',
+  'Task progress',
+  '## Progress\n- [x] Step 1: Research\n- [x] Step 2: Design\n- [ ] Step 3: Implement',
+  'high',
+  true  // showInUI
+);
+
+// Update it later (showInUI persists with the entry)
+plugin.set('progress', 'Task progress',
+  '## Progress\n- [x] Step 1\n- [x] Step 2\n- [x] Step 3: Implement',
+  'high',
+  true
+);
+
+// Hide from UI
+plugin.set('progress', 'Task progress', value, 'high', false);
+```
+
+#### Real-Time Updates with `onEntriesChanged`
+
+Host applications can subscribe to entry changes to update their UI in real time:
+
+```typescript
+const plugin = new InContextMemoryPluginNextGen({
+  maxEntries: 20,
+  onEntriesChanged: (entries) => {
+    // Called whenever entries are set, deleted, cleared, or restored
+    // Debounced at 100ms to avoid excessive updates during batch operations
+    const visibleEntries = entries.filter(e => e.showInUI);
+    updateSidebarUI(visibleEntries);
+  },
+});
+```
+
+The callback fires on: `set()`, `delete()`, `clear()`, `restoreState()`, and `compact()`.
+
+#### User Pinning
+
+Users can **pin** specific entries to always show them in the UI, regardless of the agent's `showInUI` setting. This is useful when:
+
+- An agent stores useful state but doesn't mark it as `showInUI`
+- The user wants to monitor a specific key during a session
+- The agent sets `showInUI: false` on an entry the user still wants to see
+
+Pinned keys are persisted per-agent (in HOSEA: `~/.oneringai/agents/<agentId>/ui_config.json`), so they survive app restarts.
+
+#### Rendering
+
+Displayed entries support the **same rich markdown** as the chat window:
+
+- **Code blocks** with syntax highlighting
+- **Tables** with alignment
+- **LaTeX math** (`$inline$` and `$$block$$`)
+- **Mermaid diagrams** (flowcharts, sequence diagrams, etc.)
+- **Vega-Lite charts** (bar, line, pie, etc.)
+- **Markmap mindmaps**
+- **Checklists**, **blockquotes**, **images**, and more
+
+Values that are objects or arrays are automatically rendered as formatted JSON code blocks. Primitive values (numbers, booleans) are rendered as plain text.
+
 ### Session Persistence
 
 InContextMemoryPluginNextGen supports full state serialization for session persistence:
@@ -2107,6 +2210,7 @@ await newCtx.deserialize(ctxState);  // Plugins are restored automatically
 - **Counters and flags** (iteration count, feature flags)
 - **Small accumulated results** (running totals, collected IDs)
 - **Control variables** (abort flags, mode switches)
+- **Live dashboards** (with `showInUI: true`) — progress trackers, status displays, structured results
 
 **Not ideal for (use WorkingMemory instead):**
 - Large data (documents, API responses, search results)
@@ -3108,9 +3212,9 @@ const agent = Agent.create({
 });
 
 // The LLM can use these tools automatically:
-// - context_set: Store/update entry (appears directly in context)
+// - context_set: Store/update entry (appears directly in context; set showInUI: true to display in sidebar)
 // - context_delete: Remove entry
-// - context_list: List all entries
+// - context_list: List all entries (includes showInUI status)
 ```
 
 #### Context Budget
