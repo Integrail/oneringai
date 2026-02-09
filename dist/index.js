@@ -45319,7 +45319,6 @@ __export(tools_exports, {
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
-  webFetchJS: () => webFetchJS,
   webScrape: () => webScrape,
   webSearch: () => webSearch,
   writeFile: () => writeFile5
@@ -47118,7 +47117,7 @@ function detectContentQuality(html, text, $) {
   }
   let suggestion;
   if (requiresJS && score < 50) {
-    suggestion = "Content quality is low. This appears to be a JavaScript-rendered site. Use the web_fetch_js tool for better results.";
+    suggestion = "Content quality is low. This appears to be a JavaScript-rendered site. Use the web_scrape tool for better results.";
   } else if (score < 30) {
     suggestion = "Content extraction failed or page has errors. Check the URL and try again.";
   }
@@ -47227,7 +47226,7 @@ The tool analyzes the fetched content and returns a quality score (0-100):
 - 50-79: Moderate quality, some content extracted
 - 0-49: Low quality, likely needs JavaScript or has errors
 
-If the quality score is low or requiresJS is true, the tool will suggest using 'web_fetch_js' instead.
+If the quality score is low or requiresJS is true, the tool will suggest using 'web_scrape' instead for better results.
 
 RETURNS:
 {
@@ -47385,208 +47384,6 @@ With custom user agent:
         contentType: "error",
         qualityScore: 0,
         requiresJS: false,
-        error: error.message
-      };
-    }
-  }
-};
-
-// src/tools/web/webFetchJS.ts
-var puppeteerModule = null;
-var browserInstance = null;
-async function loadPuppeteer() {
-  if (!puppeteerModule) {
-    try {
-      puppeteerModule = await import('puppeteer');
-    } catch (error) {
-      throw new Error("Puppeteer not installed");
-    }
-  }
-  return puppeteerModule;
-}
-async function getBrowser() {
-  if (!browserInstance) {
-    const puppeteer = await loadPuppeteer();
-    browserInstance = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-    });
-    process.on("exit", async () => {
-      if (browserInstance) {
-        await browserInstance.close();
-      }
-    });
-  }
-  return browserInstance;
-}
-var webFetchJS = {
-  definition: {
-    type: "function",
-    function: {
-      name: "web_fetch_js",
-      description: `Fetch and extract content from JavaScript-rendered websites using a headless browser (Puppeteer).
-
-USE THIS TOOL WHEN:
-- The web_fetch tool returned a low quality score (<50)
-- The web_fetch tool suggested using JavaScript rendering
-- You know the website is built with React/Vue/Angular/Next.js
-- Content loads dynamically via JavaScript
-- The page requires interaction (though this tool doesn't support interaction yet)
-
-HOW IT WORKS:
-- Launches a headless Chrome browser
-- Navigates to the URL
-- Waits for JavaScript to execute and content to load
-- Extracts the rendered HTML and text content
-- Optionally captures a screenshot
-
-CAPABILITIES:
-- Executes all JavaScript on the page
-- Waits for network to be idle (all resources loaded)
-- Can wait for specific CSS selectors to appear
-- Handles React, Vue, Angular, Next.js, and other SPAs
-- Returns content after full JavaScript execution
-
-LIMITATIONS:
-- Slower than web_fetch (typically 3-10 seconds vs <1 second)
-- Uses more system resources (runs a full browser)
-- May still fail on sites with aggressive bot detection
-- Requires puppeteer to be installed (npm install puppeteer)
-
-PERFORMANCE:
-- First call: Slower (launches browser ~1-2s)
-- Subsequent calls: Faster (reuses browser instance)
-
-RETURNS:
-{
-  success: boolean,
-  url: string,
-  title: string,
-  content: string,         // Clean markdown (converted via Readability + Turndown)
-  screenshot: string,      // Base64 PNG screenshot (if requested)
-  loadTime: number,        // Time taken in milliseconds
-  excerpt: string,         // Short summary excerpt (if extracted)
-  byline: string,          // Author info (if extracted)
-  wasTruncated: boolean,   // True if content was truncated
-  error: string           // Error message if failed
-}
-
-EXAMPLES:
-Basic usage:
-{
-  url: "https://react-app.com/page"
-}
-
-Wait for specific content:
-{
-  url: "https://app.com/dashboard",
-  waitForSelector: "#main-content",  // Wait for this element
-  timeout: 20000
-}
-
-With screenshot:
-{
-  url: "https://site.com",
-  takeScreenshot: true
-}`,
-      parameters: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "The URL to fetch. Must start with http:// or https://"
-          },
-          waitForSelector: {
-            type: "string",
-            description: 'Optional CSS selector to wait for before extracting content. Example: "#main-content" or ".article-body"'
-          },
-          timeout: {
-            type: "number",
-            description: "Max wait time in milliseconds (default: 15000)"
-          },
-          takeScreenshot: {
-            type: "boolean",
-            description: "Whether to capture a screenshot of the page (default: false). Screenshot returned as base64 PNG."
-          }
-        },
-        required: ["url"]
-      }
-    },
-    blocking: true,
-    timeout: 3e4
-    // Allow extra time for browser operations
-  },
-  execute: async (args) => {
-    let page = null;
-    try {
-      const browser = await getBrowser();
-      page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 800 });
-      await page.setUserAgent(
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      );
-      const startTime = Date.now();
-      await page.goto(args.url, {
-        waitUntil: "networkidle2",
-        // Wait until network is mostly idle
-        timeout: args.timeout || 15e3
-      });
-      if (args.waitForSelector) {
-        await page.waitForSelector(args.waitForSelector, {
-          timeout: args.timeout || 15e3
-        });
-      }
-      const html = await page.content();
-      const browserTitle = await page.title();
-      const loadTime = Date.now() - startTime;
-      let screenshot;
-      if (args.takeScreenshot) {
-        const buffer = await page.screenshot({
-          type: "png",
-          fullPage: false
-          // Just viewport
-        });
-        screenshot = buffer.toString("base64");
-      }
-      await page.close();
-      const mdResult = await htmlToMarkdown(html, args.url);
-      const title = browserTitle || mdResult.title || "Untitled";
-      return {
-        success: true,
-        url: args.url,
-        title,
-        content: mdResult.markdown,
-        screenshot,
-        loadTime,
-        excerpt: mdResult.excerpt,
-        byline: mdResult.byline,
-        wasReadabilityUsed: mdResult.wasReadabilityUsed,
-        wasTruncated: mdResult.wasTruncated
-      };
-    } catch (error) {
-      if (page) {
-        try {
-          await page.close();
-        } catch {
-        }
-      }
-      if (error.message === "Puppeteer not installed") {
-        return {
-          success: false,
-          url: args.url,
-          title: "",
-          content: "",
-          loadTime: 0,
-          error: "Puppeteer is not installed",
-          suggestion: "Install Puppeteer with: npm install puppeteer (note: downloads ~50MB Chrome binary)"
-        };
-      }
-      return {
-        success: false,
-        url: args.url,
-        title: "",
-        content: "",
-        loadTime: 0,
         error: error.message
       };
     }
@@ -47843,8 +47640,7 @@ var webScrape = {
 
 Automatically tries multiple methods in sequence:
 1. Native fetch - Fast (~1s), works for blogs/docs/articles
-2. JS rendering - Handles React/Vue/Angular SPAs
-3. External API - Handles bot protection, CAPTCHAs (if configured)
+2. External API - Handles bot protection, CAPTCHAs, SPAs (if configured)
 
 RETURNS:
 {
@@ -47934,16 +47730,11 @@ For JS-heavy sites:
     if (native.success && (native.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
       return native;
     }
-    const js = await tryJS(args, startTime, attemptedMethods);
-    if (js.success && (js.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
-      return js;
-    }
     const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
     if (connector) {
       const api = await tryAPI(connector.name, args, startTime, attemptedMethods);
       if (api.success) return api;
     }
-    if (js.success) return js;
     if (native.success) return native;
     return {
       success: false,
@@ -47986,42 +47777,6 @@ async function tryNative(args, startTime, attemptedMethods) {
       success: false,
       url: args.url,
       method: "native",
-      title: "",
-      content: "",
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: error.message
-    };
-  }
-}
-async function tryJS(args, startTime, attemptedMethods) {
-  attemptedMethods.push("js");
-  scrapeLogger.debug({ url: args.url }, "Trying JS rendering");
-  try {
-    const result = await webFetchJS.execute({
-      url: args.url,
-      timeout: args.timeout || 15e3,
-      waitForSelector: args.waitForSelector
-    });
-    const cleanContent = stripBase64DataUris(result.content);
-    return {
-      success: result.success,
-      url: args.url,
-      finalUrl: args.url,
-      method: "js",
-      title: result.title,
-      content: cleanContent,
-      // JS method already returns markdown-like content — no separate markdown field needed
-      qualityScore: result.success ? 80 : 0,
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: result.error
-    };
-  } catch (error) {
-    return {
-      success: false,
-      url: args.url,
-      method: "js",
       title: "",
       content: "",
       durationMs: Date.now() - startTime,
@@ -49766,15 +49521,6 @@ var toolRegistry = [
     category: "web",
     description: "Fetch and extract text content from a web page URL.",
     tool: webFetch,
-    safeByDefault: true
-  },
-  {
-    name: "web_fetch_js",
-    exportName: "webFetchJS",
-    displayName: "Web Fetch Js",
-    category: "web",
-    description: "Fetch and extract content from JavaScript-rendered websites using a headless browser (Puppeteer).",
-    tool: webFetchJS,
     safeByDefault: true
   },
   {

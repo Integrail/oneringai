@@ -99,19 +99,19 @@ export function ConnectorCard({
         <div className="connector-card__title">
           <div className="connector-card__name">
             {displayName}
-            <Badge bg={statusConfig.variant} className="connector-card__status ms-2">
+            <Badge bg={statusConfig.variant} className="connector-card__status">
               {statusConfig.icon}
               <span className="ms-1">{statusConfig.label}</span>
             </Badge>
             {connector.source === 'everworker' ? (
-              <Badge bg="info" className="ms-2 d-inline-flex align-items-center gap-1">
+              <Badge bg="info" className="connector-card__status">
                 <Cloud size={10} />
-                EW
+                <span className="ms-1">EW</span>
               </Badge>
             ) : connector.source === 'local' ? (
-              <Badge bg="secondary" className="ms-2 d-inline-flex align-items-center gap-1">
+              <Badge bg="secondary" className="connector-card__status">
                 <Monitor size={10} />
-                Local
+                <span className="ms-1">Local</span>
               </Badge>
             ) : null}
           </div>

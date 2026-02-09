@@ -59,7 +59,7 @@ await agent.run('Delete the email field from {"name": "John", "email": "j@ex.com
 - Smart content quality detection (0-100 score)
 - Detects JavaScript-rendered sites
 - Detects error pages, paywalls, bot blocks
-- Suggests fallback to `webFetchJS` if needed
+- Suggests fallback to `webScrape` if needed
 
 **Use For**:
 - Static websites (blogs, documentation)
@@ -81,41 +81,7 @@ await agent.run('Fetch content from https://example.com/article');
 
 ---
 
-### 3. Web Fetch JS
-
-**Tool**: `tools.webFetchJS`
-
-**Purpose**: Fetch content from JavaScript-rendered websites
-
-**Features**:
-- Uses Puppeteer (headless Chrome)
-- Executes JavaScript and waits for content
-- Handles React, Vue, Angular, Next.js sites
-- Optional screenshot capture
-
-**Use For**:
-- Single Page Applications (SPAs)
-- JavaScript-heavy sites
-- When `webFetch` returns low quality score
-
-**Speed**: ~3-10 seconds
-
-**Requires**: `npm install puppeteer` (optional)
-
-**Example**:
-```typescript
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-4',
-  tools: [tools.webFetch, tools.webFetchJS]
-});
-
-await agent.run('Get content from https://react-app.com (use JS rendering if needed)');
-```
-
----
-
-### 4. Web Search
+### 3. Web Search
 
 **Tool**: `tools.webSearch`
 
@@ -294,7 +260,6 @@ const agent = Agent.create({
   tools: [
     tools.webSearch,
     tools.webFetch,
-    tools.webFetchJS,
     tools.executeJavaScript,
     tools.jsonManipulator
   ]
@@ -309,7 +274,6 @@ const agent = Agent.create({
 |------|---------|-------|-------|--------------|
 | `jsonManipulator` | Manipulate JSON | Instant | No | None |
 | `webFetch` | Fetch static sites | ~1s | No | cheerio |
-| `webFetchJS` | Fetch JS sites | ~3-10s | No | puppeteer (optional) |
 | `webSearch` | Search the web | ~1-3s | No | API key required |
 | `executeJavaScript` | Run JS code | Variable | **Yes** | vm (built-in) |
 
@@ -317,7 +281,7 @@ const agent = Agent.create({
 
 ## Security Notes
 
-### webFetch / webFetchJS
+### webFetch
 - Fetches external content
 - May be blocked by bot protection
 - Rate limits apply

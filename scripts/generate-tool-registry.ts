@@ -51,7 +51,6 @@ const SAFE_TOOLS = new Set([
   'grep',
   'list_directory',
   'web_fetch',
-  'web_fetch_js',
   'web_search',
   'web_scrape',
   'json_manipulate',

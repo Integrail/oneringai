@@ -160,8 +160,5 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  },
-  "optionalDependencies": {
-    "puppeteer": "^24.34.0"
   }
 }

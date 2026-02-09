@@ -14,13 +14,6 @@ vi.mock('../../../../src/tools/web/webFetch.js', () => ({
   },
 }));
 
-// Mock webFetchJS
-vi.mock('../../../../src/tools/web/webFetchJS.js', () => ({
-  webFetchJS: {
-    execute: vi.fn(),
-  },
-}));
-
 // Mock ScrapeProvider
 vi.mock('../../../../src/capabilities/scrape/index.js', () => ({
   ScrapeProvider: {
@@ -35,7 +28,6 @@ vi.mock('../../../../src/capabilities/shared/index.js', () => ({
 }));
 
 import { webFetch } from '../../../../src/tools/web/webFetch.js';
-import { webFetchJS } from '../../../../src/tools/web/webFetchJS.js';
 import { ScrapeProvider } from '../../../../src/capabilities/scrape/index.js';
 import { findConnectorByServiceTypes } from '../../../../src/capabilities/shared/index.js';
 
@@ -148,46 +140,21 @@ describe('webScrape', () => {
       expect(result.content).toBe('Native content');
       expect(result.qualityScore).toBe(80);
       expect(result.attemptedMethods).toEqual(['native']);
-      expect(webFetchJS.execute).not.toHaveBeenCalled();
     });
 
-    it('should fall back to JS when native quality is low', async () => {
+    it('should fall back to API when native quality is low', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Poor Native',
         content: '',
         qualityScore: 30,
       });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Page',
-        content: 'Good JS content',
-      });
-
-      const result = await webScrape.execute({ url: 'https://example.com' });
-
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('js');
-      expect(result.attemptedMethods).toContain('native');
-      expect(result.attemptedMethods).toContain('js');
-    });
-
-    it('should fall back to API when native and JS quality is low', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 20,
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Page',
-        content: 'JS content',
-      });
 
       const mockProvider = {
         scrape: vi.fn().mockResolvedValue({
           success: true,
           provider: 'zenrows',
-          result: { title: 'API', content: 'API content' },
+          result: { title: 'API Page', content: 'API content', markdown: 'API markdown' },
         }),
       };
       (ScrapeProvider.create as any).mockReturnValue(mockProvider);
@@ -195,15 +162,13 @@ describe('webScrape', () => {
 
       const result = await webScrape.execute({ url: 'https://example.com' });
 
-      // JS method returns default 80 quality, which is >= 50 threshold
-      // So it should stop at JS
       expect(result.success).toBe(true);
-      expect(result.method).toBe('js');
+      expect(result.attemptedMethods).toContain('native');
+      expect(result.attemptedMethods.some((m: string) => m.startsWith('api:'))).toBe(true);
     });
 
     it('should return failure when all methods fail', async () => {
       (webFetch.execute as any).mockResolvedValue({ success: false });
-      (webFetchJS.execute as any).mockResolvedValue({ success: false });
       (findConnectorByServiceTypes as any).mockReturnValue(null);
 
       const result = await webScrape.execute({ url: 'https://example.com' });
@@ -212,30 +177,24 @@ describe('webScrape', () => {
       expect(result.error).toContain('All scraping methods failed');
     });
 
-    it('should return best result if all methods below threshold', async () => {
+    it('should return native result if below threshold but no API available', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Native Low',
         content: 'Some content',
         qualityScore: 40,
       });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Better',
-        content: 'Better content',
-      });
       (findConnectorByServiceTypes as any).mockReturnValue(null);
 
       const result = await webScrape.execute({ url: 'https://example.com' });
 
-      // JS returns with default 80 quality which is above 50 threshold
       expect(result.success).toBe(true);
-      expect(result.method).toBe('js');
+      expect(result.method).toBe('native');
     });
   });
 
   // ============================================================================
-  // Markdown Content Tests (New)
+  // Markdown Content Tests
   // ============================================================================
 
   describe('markdown content', () => {
@@ -261,28 +220,6 @@ describe('webScrape', () => {
       expect(result.markdown).toBeUndefined();
     });
 
-    it('should return markdown in content field from JS fetch (no duplicate markdown field)', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 30,
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Page',
-        content: '## JS Content\n\nRendered text',
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        includeMarkdown: true,
-      });
-
-      expect(result.success).toBe(true);
-      // JS fetch already returns markdown-like content in the content field
-      expect(result.content).toContain('## JS Content');
-      expect(result.markdown).toBeUndefined();
-    });
-
     it('should not include markdown when not requested', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
@@ -297,35 +234,6 @@ describe('webScrape', () => {
       });
 
       expect(result.markdown).toBeUndefined();
-    });
-  });
-
-  // ============================================================================
-  // waitForSelector Tests
-  // ============================================================================
-
-  describe('waitForSelector', () => {
-    it('should pass waitForSelector to webFetchJS', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 30,
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Test',
-        content: 'Content',
-      });
-
-      await webScrape.execute({
-        url: 'https://example.com',
-        waitForSelector: '.content-loaded',
-      });
-
-      expect(webFetchJS.execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          waitForSelector: '.content-loaded',
-        })
-      );
     });
   });
 
@@ -358,23 +266,6 @@ describe('webScrape', () => {
       expect(result.success).toBe(false);
       expect(result.durationMs).toBeDefined();
     });
-
-    it('should track total time across multiple attempts', async () => {
-      (webFetch.execute as any).mockImplementation(async () => {
-        await new Promise(r => setTimeout(r, 10));
-        return { success: true, qualityScore: 20 };
-      });
-      (webFetchJS.execute as any).mockImplementation(async () => {
-        await new Promise(r => setTimeout(r, 10));
-        return { success: true, title: 'Test', content: 'Content' };
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-      });
-
-      expect(result.durationMs).toBeGreaterThanOrEqual(20);
-    });
   });
 
   // ============================================================================
@@ -402,29 +293,6 @@ describe('webScrape', () => {
       );
     });
 
-    it('should pass timeout to JS fetch', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 30,
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Test',
-        content: 'Content',
-      });
-
-      await webScrape.execute({
-        url: 'https://example.com',
-        timeout: 20000,
-      });
-
-      expect(webFetchJS.execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          timeout: 20000,
-        })
-      );
-    });
-
     it('should use default timeout for native (10s)', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
@@ -438,26 +306,6 @@ describe('webScrape', () => {
       expect(webFetch.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           timeout: 10000,
-        })
-      );
-    });
-
-    it('should use default timeout for JS (15s)', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 30,
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-      });
-
-      await webScrape.execute({
-        url: 'https://example.com',
-      });
-
-      expect(webFetchJS.execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          timeout: 15000,
         })
       );
     });
@@ -481,7 +329,6 @@ describe('webScrape', () => {
   describe('error handling', () => {
     it('should handle native fetch exception', async () => {
       (webFetch.execute as any).mockRejectedValue(new Error('Connection refused'));
-      (webFetchJS.execute as any).mockResolvedValue({ success: false });
       (findConnectorByServiceTypes as any).mockReturnValue(null);
 
       const result = await webScrape.execute({
@@ -490,31 +337,10 @@ describe('webScrape', () => {
 
       expect(result.success).toBe(false);
       expect(result.attemptedMethods).toContain('native');
-    });
-
-    it('should handle JS fetch exception and still fail gracefully', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: false,
-        error: 'Native failed',
-      });
-      (webFetchJS.execute as any).mockRejectedValue(new Error('Browser crashed'));
-      (findConnectorByServiceTypes as any).mockReturnValue(null);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.attemptedMethods).toContain('native');
-      expect(result.attemptedMethods).toContain('js');
     });
 
     it('should handle API provider exception', async () => {
       (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 30,
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
         success: true,
         qualityScore: 30,
       });
@@ -527,9 +353,9 @@ describe('webScrape', () => {
         url: 'https://example.com',
       });
 
-      // JS returns default 80 quality, so it succeeds before API
+      // Native returned success=true, so best result is native
       expect(result.success).toBe(true);
-      expect(result.method).toBe('js');
+      expect(result.method).toBe('native');
     });
   });
 
@@ -545,18 +371,15 @@ describe('webScrape', () => {
         content: '',
         qualityScore: 10,
       });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Empty',
-        content: 'Rendered content',
-      });
+      (findConnectorByServiceTypes as any).mockReturnValue(null);
 
       const result = await webScrape.execute({
         url: 'https://example.com',
       });
 
-      // Should fall back due to low quality
-      expect(result.method).toBe('js');
+      // Low quality but native is the only method, so returns native result
+      expect(result.success).toBe(true);
+      expect(result.method).toBe('native');
     });
 
     it('should handle undefined title gracefully', async () => {
@@ -576,7 +399,6 @@ describe('webScrape', () => {
 
     it('should track all attempted methods in order', async () => {
       (webFetch.execute as any).mockResolvedValue({ success: false });
-      (webFetchJS.execute as any).mockResolvedValue({ success: false });
       (findConnectorByServiceTypes as any).mockReturnValue({ name: 'my-zenrows' });
 
       const mockProvider = {
@@ -589,8 +411,7 @@ describe('webScrape', () => {
       });
 
       expect(result.attemptedMethods[0]).toBe('native');
-      expect(result.attemptedMethods[1]).toBe('js');
-      expect(result.attemptedMethods[2]).toContain('api:');
+      expect(result.attemptedMethods[1]).toContain('api:');
     });
   });
 });

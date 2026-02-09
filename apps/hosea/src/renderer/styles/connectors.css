@@ -348,7 +348,7 @@
 
 .connector-card__name {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.5rem;
   font-weight: 600;
   font-size: 1rem;

@@ -16,7 +16,7 @@ import {
   Alert,
   Collapse,
 } from 'react-bootstrap';
-import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight, Server, Wrench, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight, Server, Wrench, RefreshCw, Cloud } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -65,6 +65,7 @@ interface UniversalConnector {
   displayName?: string;
   baseURL?: string;
   status: 'active' | 'error' | 'untested';
+  source?: 'local' | 'everworker';
 }
 
 interface MCPServerInfo {
@@ -335,6 +336,18 @@ export function AgentEditorPage(): React.ReactElement {
       allOperationalToolNames: operationalNames,
     };
   }, [availableTools, isToolOperational]);
+
+  // Map connector names to their source (local vs everworker)
+  const connectorSourceMap = useMemo(() => {
+    const map = new Map<string, 'local' | 'everworker'>();
+    for (const c of connectors) {
+      if (c.source) map.set(c.name, c.source);
+    }
+    for (const uc of universalConnectors) {
+      if (uc.source) map.set(uc.name, uc.source);
+    }
+    return map;
+  }, [connectors, universalConnectors]);
 
   // Track expanded sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
@@ -919,6 +932,12 @@ export function AgentEditorPage(): React.ReactElement {
                               className="ms-2 me-2"
                             />
                             <strong>{connectorName}</strong>
+                            {connectorSourceMap.get(connectorName) === 'everworker' && (
+                              <Badge bg="info" className="ms-2 d-inline-flex align-items-center gap-1" style={{ fontSize: '0.65rem' }}>
+                                <Cloud size={10} />
+                                EW
+                              </Badge>
+                            )}
                             {serviceType && (
                               <Badge bg="info" className="ms-2" style={{ fontSize: '0.65rem' }}>
                                 {serviceType}

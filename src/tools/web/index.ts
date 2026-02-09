@@ -3,7 +3,6 @@
  */
 
 export { webFetch } from './webFetch.js';
-export { webFetchJS } from './webFetchJS.js';
 export { webSearch } from './webSearch.js';
 export { webScrape } from './webScrape.js';
 

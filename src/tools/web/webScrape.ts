@@ -15,7 +15,6 @@ import { ScrapeProvider } from '../../capabilities/scrape/index.js';
 import { findConnectorByServiceTypes } from '../../capabilities/shared/index.js';
 import type { ScrapeOptions, ScrapeResponse, ScrapeResult } from '../../capabilities/scrape/index.js';
 import { webFetch } from './webFetch.js';
-import { webFetchJS } from './webFetchJS.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
 
 const scrapeLogger = logger.child({ component: 'webScrape' });
@@ -80,7 +79,7 @@ interface WebScrapeResult {
   url: string;
   /** Final URL after redirects */
   finalUrl?: string;
-  /** Method used: 'native', 'js', or external provider name */
+  /** Method used: 'native' or external provider name */
   method: string;
   /** Page title */
   title: string;
@@ -115,8 +114,7 @@ export const webScrape: ToolFunction<WebScrapeArgs, WebScrapeResult> = {
 
 Automatically tries multiple methods in sequence:
 1. Native fetch - Fast (~1s), works for blogs/docs/articles
-2. JS rendering - Handles React/Vue/Angular SPAs
-3. External API - Handles bot protection, CAPTCHAs (if configured)
+2. External API - Handles bot protection, CAPTCHAs, SPAs (if configured)
 
 RETURNS:
 {
@@ -207,7 +205,7 @@ For JS-heavy sites:
       };
     }
 
-    // Automatic fallback chain: native -> JS -> API
+    // Automatic fallback chain: native -> API
 
     // 1. Try native fetch first
     const native = await tryNative(args, startTime, attemptedMethods);
@@ -215,13 +213,7 @@ For JS-heavy sites:
       return native;
     }
 
-    // 2. Try JS rendering
-    const js = await tryJS(args, startTime, attemptedMethods);
-    if (js.success && (js.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
-      return js;
-    }
-
-    // 3. Try external API if available
+    // 2. Try external API if available
     const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
     if (connector) {
       const api = await tryAPI(connector.name, args, startTime, attemptedMethods);
@@ -229,7 +221,6 @@ For JS-heavy sites:
     }
 
     // Return best result we got
-    if (js.success) return js;
     if (native.success) return native;
 
     return {
@@ -294,50 +285,6 @@ async function tryNative(
   }
 }
 
-async function tryJS(
-  args: WebScrapeArgs,
-  startTime: number,
-  attemptedMethods: string[]
-): Promise<WebScrapeResult> {
-  attemptedMethods.push('js');
-  scrapeLogger.debug({ url: args.url }, 'Trying JS rendering');
-
-  try {
-    const result = await webFetchJS.execute({
-      url: args.url,
-      timeout: args.timeout || 15000,
-      waitForSelector: args.waitForSelector,
-    });
-
-    // Strip base64 data URIs to prevent context overflow
-    const cleanContent = stripBase64DataUris(result.content);
-
-    return {
-      success: result.success,
-      url: args.url,
-      finalUrl: args.url,
-      method: 'js',
-      title: result.title,
-      content: cleanContent,
-      // JS method already returns markdown-like content — no separate markdown field needed
-      qualityScore: result.success ? 80 : 0,
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: result.error,
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      url: args.url,
-      method: 'js',
-      title: '',
-      content: '',
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: error.message,
-    };
-  }
-}
 
 async function tryAPI(
   connectorName: string,

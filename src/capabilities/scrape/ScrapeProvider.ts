@@ -15,8 +15,7 @@
  * FALLBACK STRATEGY:
  * The webScrape tool uses this provider with a fallback chain:
  * 1. Try native fetch (webFetch) - fastest, free
- * 2. Try JS rendering (webFetchJS) - handles SPAs
- * 3. Try external API provider - handles bot protection, etc.
+ * 2. Try external API provider - handles bot protection, SPAs, etc.
  */
 
 import { Connector } from '../../core/Connector.js';

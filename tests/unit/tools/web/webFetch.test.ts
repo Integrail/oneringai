@@ -183,7 +183,7 @@ describe('webFetch', () => {
       (detectContentQuality as any).mockReturnValue({
         score: 40,
         requiresJS: true,
-        suggestion: 'Use web_fetch_js for JavaScript-rendered content',
+        suggestion: 'Use web_scrape for JavaScript-rendered content',
         issues: ['No main content found', 'React app detected'],
       });
 
@@ -197,7 +197,7 @@ describe('webFetch', () => {
 
       expect(result.qualityScore).toBe(40);
       expect(result.requiresJS).toBe(true);
-      expect(result.suggestedAction).toBe('Use web_fetch_js for JavaScript-rendered content');
+      expect(result.suggestedAction).toBe('Use web_scrape for JavaScript-rendered content');
       expect(result.issues).toContain('No main content found');
     });
   });

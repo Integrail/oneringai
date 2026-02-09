@@ -4,7 +4,6 @@
  * Demonstrates using web tools together:
  * - web_search - Find relevant URLs
  * - web_fetch - Get content from static sites
- * - web_fetch_js - Get content from JS-rendered sites (if Puppeteer installed)
  * - json_manipulate - Structure the findings
  */
 
@@ -38,16 +37,6 @@ async function main() {
 
   // Create agent with web tools
   const webTools: ToolFunction[] = [tools.webFetch, tools.webSearch, tools.jsonManipulator];
-
-  // Add Puppeteer tool if available
-  try {
-    require.resolve('puppeteer');
-    webTools.push(tools.webFetchJS);
-    console.log('✅ Puppeteer detected - JavaScript rendering available\n');
-  } catch {
-    console.log('ℹ️  Puppeteer not installed - JavaScript rendering unavailable');
-    console.log('   Install with: npm install puppeteer\n');
-  }
 
   const agent = Agent.create({
     connector: 'openai',
@@ -116,7 +105,6 @@ Return the JSON object.
   console.log('💡 Available Tools:');
   console.log('  • web_search  - Find URLs with search APIs');
   console.log('  • web_fetch   - Get content from static sites');
-  console.log('  • web_fetch_js - Get content from JavaScript sites (requires Puppeteer)');
   console.log('  • json_manipulate - Structure the findings');
   console.log('');
 

@@ -95,7 +95,7 @@ export { jsonManipulator } from './json/jsonManipulator.js';
 // Web Tools
 // ============================================================================
 
-export { webFetch, webFetchJS, webSearch, webScrape } from './web/index.js';
+export { webFetch, webSearch, webScrape } from './web/index.js';
 
 // Re-export search result type
 export type { SearchResult } from './web/searchProviders/serper.js';

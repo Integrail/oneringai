@@ -32,7 +32,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 10. [Tools & Function Calling](#tools--function-calling)
     - Built-in Tools Overview (27+ tools across 7 categories)
     - Developer Tools (Filesystem & Shell)
-    - Web Tools (webFetch, webFetchJS, webSearch, webScrape)
+    - Web Tools (webFetch, webSearch, webScrape)
     - JSON Tool
     - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
 11. [Dynamic Tool Management](#dynamic-tool-management)
@@ -3069,7 +3069,7 @@ The library ships with 27+ built-in tools across 7 categories:
 | **Persistent Instructions** | `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear` | Cross-session agent instructions (auto-registered) |
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory` | Local file operations |
 | **Shell** | `bash` | Shell command execution with safety guards |
-| **Web** | `webFetch`, `webFetchJS`, `webSearch`, `webScrape` | Web content retrieval, search, and scraping |
+| **Web** | `webFetch`, `webSearch`, `webScrape` | Web content retrieval, search, and scraping |
 | **Code** | `executeJavaScript` | Sandboxed JavaScript execution |
 | **JSON** | `jsonManipulator` | JSON object manipulation (add, delete, replace fields) |
 | **GitHub** | `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (auto-registered for GitHub connectors) |
@@ -3381,16 +3381,6 @@ await agent.run('Fetch https://example.com and summarize it');
 - `url` (required) — URL to fetch
 - `prompt` — What to extract from the page
 - `format` — Output format: `"markdown"` (default) or `"text"`
-
-#### webFetchJS
-
-Fetch web pages with JavaScript rendering (for SPAs and dynamic content). Requires a headless browser.
-
-```typescript
-import { webFetchJS } from '@everworker/oneringai';
-```
-
-**Parameters:** Same as `webFetch`, but renders JavaScript before extracting content.
 
 #### webSearch
 

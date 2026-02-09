@@ -275,6 +275,5 @@ export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
   web_fetch: 6,
   web_search: 6,
   web_scrape: 6,
-  web_fetch_js: 6,
 };
 
