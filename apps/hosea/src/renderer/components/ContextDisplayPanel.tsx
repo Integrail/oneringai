@@ -114,7 +114,7 @@ export function ContextDisplayPanel({
             isPinned={pinnedSet.has(entry.key)}
             isCollapsed={collapsedKeys.has(entry.key)}
             isMaximized={maximizedKey === entry.key}
-            showMaximize={visibleEntries.length > 1}
+            showMaximize={true}
             onPinToggle={handlePinToggle}
             onCollapseToggle={handleCollapseToggle}
             onMaximizeToggle={handleMaximizeToggle}
