@@ -86,6 +86,8 @@
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
+> **v0.2.0 — Multi-User Support:** Set `userId` once on an agent and it automatically flows to all tool executions, OAuth token retrieval, session metadata, and connector scoping. Combine with `connectors` allowlist and access policies for complete multi-tenant isolation. See [Multi-User Support](#multi-user-support-userid) and [Connector Allowlist](#connector-allowlist-connectors) in the User Guide.
+
 ## Quick Start
 
 ### Installation
@@ -1313,4 +1315,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.1.4 | **Last Updated:** 2026-02-08 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.2.0 | **Last Updated:** 2026-02-09 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
