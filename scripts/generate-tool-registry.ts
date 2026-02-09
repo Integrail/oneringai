@@ -51,16 +51,12 @@ const SAFE_TOOLS = new Set([
   'grep',
   'list_directory',
   'web_fetch',
-  'web_search',
-  'web_scrape',
   'json_manipulate',
   'json_manipulator',
 ]);
 
 // Tools that require a connector
 const CONNECTOR_REQUIREMENTS: Record<string, string[]> = {
-  web_search: ['serper', 'brave-search', 'tavily', 'rapidapi-websearch'],
-  web_scrape: ['zenrows'],
 };
 
 function toDisplayName(name: string): string {

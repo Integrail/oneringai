@@ -32,7 +32,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 10. [Tools & Function Calling](#tools--function-calling)
     - Built-in Tools Overview (27+ tools across 7 categories)
     - Developer Tools (Filesystem & Shell)
-    - Web Tools (webFetch, webSearch, webScrape)
+    - Web Tools (webFetch, web_search via ConnectorTools, web_scrape via ConnectorTools)
     - JSON Tool
     - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
 11. [Dynamic Tool Management](#dynamic-tool-management)
@@ -2563,7 +2563,6 @@ const agent = Agent.create({
         bash: 8,          // Keep shell output longer
         grep: 8,          // Keep search results longer
         web_fetch: 3,     // Short retention (can re-fetch)
-        web_search: 3,    // Short retention
       },
 
       // Key prefix for evicted results in memory
@@ -2587,8 +2586,6 @@ Different tools have different default retention values based on typical usage p
 | `memory_retrieve` | 5 iterations | Retrieved data may be re-used |
 | `list_directory` | 5 iterations | Directory listings for navigation |
 | `web_fetch` | 3 iterations | Can re-fetch if needed |
-| `web_search` | 3 iterations | Can re-search if needed |
-| `web_scrape` | 3 iterations | Can re-scrape if needed |
 | (other tools) | 3 iterations | Default retention |
 
 ### Evicted Results Storage
@@ -2728,7 +2725,6 @@ const agent = Agent.create({
     toolResultEviction: {
       toolRetention: {
         web_fetch: 2,      // Very short for web content
-        web_search: 2,
         read_file: 15,     // Keep file content much longer
         grep: 12,
       },
@@ -3069,7 +3065,7 @@ The library ships with 27+ built-in tools across 7 categories:
 | **Persistent Instructions** | `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear` | Cross-session agent instructions (auto-registered) |
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory` | Local file operations |
 | **Shell** | `bash` | Shell command execution with safety guards |
-| **Web** | `webFetch`, `webSearch`, `webScrape` | Web content retrieval, search, and scraping |
+| **Web** | `webFetch` (built-in), `web_search` / `web_scrape` (ConnectorTools) | Web content retrieval, search, and scraping |
 | **Code** | `executeJavaScript` | Sandboxed JavaScript execution |
 | **JSON** | `jsonManipulator` | JSON object manipulation (add, delete, replace fields) |
 | **GitHub** | `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (auto-registered for GitHub connectors) |
@@ -3382,17 +3378,30 @@ await agent.run('Fetch https://example.com and summarize it');
 - `prompt` — What to extract from the page
 - `format` — Output format: `"markdown"` (default) or `"text"`
 
-#### webSearch
+#### web_search (ConnectorTools)
 
-Web search via configured search providers. Requires a search provider connector (Serper, Brave, Tavily, or RapidAPI). See the [Web Search](#web-search) section for full setup.
+Web search via ConnectorTools pattern. Create a connector with a search service type, then use `ConnectorTools.for()` to get the tools.
+
+**Supported service types:** `serper`, `brave-search`, `tavily`, `rapidapi-search`
 
 ```typescript
-import { webSearch } from '@everworker/oneringai';
+import { Connector, ConnectorTools, Agent, tools } from '@everworker/oneringai';
+
+// Create a search connector
+Connector.create({
+  name: 'serper',
+  serviceType: 'serper',
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Get search tools from the connector
+const searchTools = ConnectorTools.for('serper');
 
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [webSearch],
+  tools: [tools.webFetch, ...searchTools],
 });
 
 await agent.run('Search for the latest Node.js release');
@@ -3400,22 +3409,36 @@ await agent.run('Search for the latest Node.js release');
 
 **Parameters:**
 - `query` (required) — Search query
-- `num_results` — Number of results (default: 10)
-- `search_provider` — Provider connector name
+- `numResults` — Number of results (default: 10)
+- `country` — Country/region code (e.g., "us", "gb")
+- `language` — Language code (e.g., "en", "fr")
 
-#### webScrape
+#### web_scrape (ConnectorTools)
 
-Web scraping via ScrapeProvider (ZenRows). See the [Web Scraping](#web-scraping) section for full setup.
+Web scraping via ConnectorTools pattern. Tries native fetch first, falls back to the bound scrape provider.
+
+**Supported service types:** `zenrows`, `jina-reader`, `firecrawl`, `scrapingbee`
 
 ```typescript
-import { webScrape } from '@everworker/oneringai';
+import { Connector, ConnectorTools } from '@everworker/oneringai';
+
+Connector.create({
+  name: 'zenrows',
+  serviceType: 'zenrows',
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com',
+});
+
+const scrapeTools = ConnectorTools.for('zenrows');
 ```
 
 **Parameters:**
 - `url` (required) — URL to scrape
-- `include_markdown` — Convert to markdown
-- `include_links` — Extract links
-- `include_screenshot` — Capture screenshot
+- `includeMarkdown` — Convert to markdown
+- `includeLinks` — Extract links
+- `includeHtml` — Include raw HTML
+- `waitForSelector` — CSS selector to wait for
+- `timeout` — Timeout in milliseconds
 
 ### JSON Tool
 
@@ -6269,21 +6292,30 @@ const results = await search.search('query', {
 - Advanced filtering options
 - Various pricing plans
 
-### Using with Agent (webSearch Tool)
+### Using with Agent (ConnectorTools)
 
-The webSearch tool is available for agents:
+Search tools are registered via ConnectorTools. Create a connector, then get the tools:
 
 ```typescript
-import { Agent, webSearch } from '@everworker/oneringai';
+import { Agent, Connector, ConnectorTools, tools } from '@everworker/oneringai';
 
-// Create agent with webSearch tool
+// Create a search connector
+Connector.create({
+  name: 'serper',
+  serviceType: 'serper',
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Get search tools from the connector
+const searchTools = ConnectorTools.for('serper');
+
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [webSearch],
+  tools: [tools.webFetch, ...searchTools],
 });
 
-// Agent automatically uses available search connectors
 const response = await agent.run(
   'Search for the latest AI news from 2026 and summarize the top 3 results'
 );
@@ -6295,8 +6327,7 @@ const response = await agent.run(
 - `country` - Country/region code (e.g., 'us', 'gb')
 - `language` - Language code (e.g., 'en', 'fr')
 
-**Note:** The tool automatically detects available search connectors by serviceType.
-No need to specify which connector to use - just configure your connector and the tool finds it.
+**Note:** Tools are prefixed with the connector name (e.g., `serper_web_search`).
 
 ### Multiple Keys (Failover)
 
@@ -6472,35 +6503,42 @@ const result = await scraper.scrape('https://protected-site.com', {
 });
 ```
 
-### Using webScrape Tool with Agent
+### Using web_scrape Tool with Agent (ConnectorTools)
 
-The webScrape tool provides guaranteed URL reading with automatic fallback:
+The web_scrape tool is available via ConnectorTools. It tries native fetch first, then falls back to the bound scrape provider:
 
 ```typescript
-import { Agent, webScrape } from '@everworker/oneringai';
+import { Agent, Connector, ConnectorTools, tools } from '@everworker/oneringai';
+
+// Create scrape connector
+Connector.create({
+  name: 'zenrows',
+  serviceType: 'zenrows',
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com',
+});
+
+const scrapeTools = ConnectorTools.for('zenrows');
 
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [webScrape],
+  tools: [tools.webFetch, ...scrapeTools],
 });
 
-// Agent uses automatic fallback: native → JS → API
+// Agent uses automatic fallback: native → API
 await agent.run('Scrape https://example.com and summarize');
 ```
 
 ### Tool Parameters
 
-```typescript
-await webScrape.execute({
-  url: 'https://example.com',
-  timeout: 30000,             // Optional timeout in milliseconds
-  includeHtml: false,         // Include raw HTML
-  includeMarkdown: true,      // Convert to markdown (recommended for LLMs)
-  includeLinks: true,         // Extract links
-  waitForSelector: '.main',   // Wait for selector (for JS-heavy sites)
-});
-```
+The `web_scrape` tool accepts:
+- `url` (required) — URL to scrape
+- `timeout` — Timeout in milliseconds (default: 30000)
+- `includeHtml` — Include raw HTML (default: false)
+- `includeMarkdown` — Convert to markdown (recommended for LLMs)
+- `includeLinks` — Extract links
+- `waitForSelector` — Wait for CSS selector (for JS-heavy sites)
 
 **Note:** The tool automatically detects available scrape connectors by serviceType.
 Scraping strategy is handled internally - the tool will use the best available method.

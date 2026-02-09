@@ -380,4 +380,223 @@ describe('ConnectorTools', () => {
       expect(tool.describeCall?.({ method: 'GET', endpoint: '/users' })).toBe('GET /users');
     });
   });
+
+  describe('Generic API Tool Execution', () => {
+    // Mock global fetch for tool execution tests
+    const mockFetch = vi.fn();
+
+    beforeEach(() => {
+      vi.stubGlobal('fetch', mockFetch);
+      mockFetch.mockReset();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    function createTestConnector() {
+      Connector.create({
+        name: 'slack-test',
+        serviceType: 'slack',
+        auth: { type: 'api_key', apiKey: 'xoxb-test-token' },
+        baseURL: 'https://slack.com/api',
+      });
+    }
+
+    describe('Body Normalization', () => {
+      it('should handle body as a proper object (normal case)', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify({ ok: true }), { status: 200 })
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'POST',
+          endpoint: '/chat.postMessage',
+          body: { channel: 'C123', text: 'hello' },
+        });
+
+        expect(result.success).toBe(true);
+        const fetchCall = mockFetch.mock.calls[0];
+        const sentBody = JSON.parse(fetchCall[1].body);
+        expect(sentBody.channel).toBe('C123');
+        expect(sentBody.text).toBe('hello');
+      });
+
+      it('should handle body as a stringified JSON string (LLM bug)', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify({ ok: true }), { status: 200 })
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        // LLM sends body as a string instead of an object
+        const result = await tool.execute({
+          method: 'POST',
+          endpoint: '/chat.postMessage',
+          body: '{"channel": "C123", "text": "hello"}' as any,
+        });
+
+        expect(result.success).toBe(true);
+        const fetchCall = mockFetch.mock.calls[0];
+        const sentBody = JSON.parse(fetchCall[1].body);
+        // Should be properly parsed, NOT double-serialized
+        expect(sentBody.channel).toBe('C123');
+        expect(sentBody.text).toBe('hello');
+      });
+
+      it('should handle body as a non-JSON string (sent as-is)', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify({ ok: true }), { status: 200 })
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'POST',
+          endpoint: '/some-endpoint',
+          body: 'plain text body' as any,
+        });
+
+        expect(result.success).toBe(true);
+        const fetchCall = mockFetch.mock.calls[0];
+        // Plain string gets JSON-stringified (wrapped in quotes)
+        expect(fetchCall[1].body).toBe('"plain text body"');
+      });
+
+      it('should handle missing body gracefully', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify({ data: [] }), { status: 200 })
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'GET',
+          endpoint: '/channels.list',
+        });
+
+        expect(result.success).toBe(true);
+        const fetchCall = mockFetch.mock.calls[0];
+        expect(fetchCall[1].body).toBeUndefined();
+      });
+    });
+
+    describe('API Error Detection', () => {
+      it('should detect Slack-style API errors (ok: false)', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ ok: false, error: 'channel_not_found' }),
+            { status: 200 }
+          )
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'POST',
+          endpoint: '/chat.postMessage',
+          body: { channel: 'C_INVALID', text: 'test' },
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('channel_not_found');
+        expect(result.status).toBe(200);
+        expect(result.data).toBeUndefined();
+      });
+
+      it('should detect success:false pattern', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ success: false, message: 'invalid_form_data' }),
+            { status: 200 }
+          )
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'POST',
+          endpoint: '/api/endpoint',
+          body: { data: 'test' },
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('invalid_form_data');
+      });
+
+      it('should detect nested error.message pattern', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { message: 'Not authorized', code: 401 } }),
+            { status: 200 }
+          )
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'GET',
+          endpoint: '/api/data',
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Not authorized');
+      });
+
+      it('should report success for Slack ok:true responses', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ ok: true, ts: '1234567890.123456', channel: 'C123' }),
+            { status: 200 }
+          )
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'POST',
+          endpoint: '/chat.postMessage',
+          body: { channel: 'C123', text: 'hello' },
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.data).toEqual({ ok: true, ts: '1234567890.123456', channel: 'C123' });
+      });
+
+      it('should still detect HTTP-level errors', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response('Unauthorized', { status: 401 })
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'GET',
+          endpoint: '/users.list',
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.status).toBe(401);
+        expect(result.error).toBe('Unauthorized');
+      });
+
+      it('should handle non-JSON success responses', async () => {
+        createTestConnector();
+        mockFetch.mockResolvedValueOnce(
+          new Response('OK', { status: 200 })
+        );
+
+        const tool = ConnectorTools.genericAPI('slack-test');
+        const result = await tool.execute({
+          method: 'GET',
+          endpoint: '/health',
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.data).toBe('OK');
+      });
+    });
+  });
 });

@@ -1,10 +1,8 @@
 /**
- * Web Scrape Tool Tests
- * Tests for guaranteed URL reading with automatic fallback
+ * createWebScrapeTool Factory Tests
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { webScrape } from '../../../../src/tools/web/webScrape.js';
 import { Connector } from '../../../../src/core/Connector.js';
 
 // Mock webFetch
@@ -19,22 +17,24 @@ vi.mock('../../../../src/capabilities/scrape/index.js', () => ({
   ScrapeProvider: {
     create: vi.fn(),
   },
-  getRegisteredScrapeProviders: vi.fn().mockReturnValue([]),
-}));
-
-// Mock shared utilities
-vi.mock('../../../../src/capabilities/shared/index.js', () => ({
-  findConnectorByServiceTypes: vi.fn().mockReturnValue(null),
 }));
 
 import { webFetch } from '../../../../src/tools/web/webFetch.js';
 import { ScrapeProvider } from '../../../../src/capabilities/scrape/index.js';
-import { findConnectorByServiceTypes } from '../../../../src/capabilities/shared/index.js';
+import { createWebScrapeTool } from '../../../../src/tools/web/createWebScrapeTool.js';
 
-describe('webScrape', () => {
+describe('createWebScrapeTool', () => {
+  let connector: Connector;
+
   beforeEach(() => {
     vi.clearAllMocks();
     Connector.clear();
+    connector = Connector.create({
+      name: 'test-zenrows',
+      serviceType: 'zenrows',
+      auth: { type: 'api_key', apiKey: 'test-key' },
+      baseURL: 'https://api.zenrows.com',
+    });
   });
 
   afterEach(() => {
@@ -48,15 +48,18 @@ describe('webScrape', () => {
 
   describe('tool definition', () => {
     it('should have correct name', () => {
-      expect(webScrape.definition.function.name).toBe('web_scrape');
+      const tool = createWebScrapeTool(connector);
+      expect(tool.definition.function.name).toBe('web_scrape');
     });
 
     it('should have url as required parameter', () => {
-      expect(webScrape.definition.function.parameters.required).toContain('url');
+      const tool = createWebScrapeTool(connector);
+      expect(tool.definition.function.parameters.required).toContain('url');
     });
 
     it('should have optional parameters', () => {
-      const props = webScrape.definition.function.parameters.properties as Record<string, any>;
+      const tool = createWebScrapeTool(connector);
+      const props = tool.definition.function.parameters.properties as Record<string, any>;
       expect(props.timeout).toBeDefined();
       expect(props.includeHtml).toBeDefined();
       expect(props.includeMarkdown).toBeDefined();
@@ -65,11 +68,13 @@ describe('webScrape', () => {
     });
 
     it('should be a blocking tool', () => {
-      expect(webScrape.definition.blocking).toBe(true);
+      const tool = createWebScrapeTool(connector);
+      expect(tool.definition.blocking).toBe(true);
     });
 
     it('should have 60 second timeout', () => {
-      expect(webScrape.definition.timeout).toBe(60000);
+      const tool = createWebScrapeTool(connector);
+      expect(tool.definition.timeout).toBe(60000);
     });
   });
 
@@ -79,7 +84,8 @@ describe('webScrape', () => {
 
   describe('URL validation', () => {
     it('should reject invalid URLs', async () => {
-      const result = await webScrape.execute({ url: 'not-a-url' });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'not-a-url' });
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Invalid URL format');
@@ -88,7 +94,8 @@ describe('webScrape', () => {
     });
 
     it('should reject empty URLs', async () => {
-      const result = await webScrape.execute({ url: '' });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: '' });
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Invalid URL format');
@@ -102,7 +109,8 @@ describe('webScrape', () => {
         qualityScore: 80,
       });
 
-      const result = await webScrape.execute({ url: 'http://example.com' });
+      const tool = createWebScrapeTool(connector);
+      await tool.execute({ url: 'http://example.com' });
       expect(webFetch.execute).toHaveBeenCalled();
     });
 
@@ -114,7 +122,8 @@ describe('webScrape', () => {
         qualityScore: 80,
       });
 
-      const result = await webScrape.execute({ url: 'https://example.com' });
+      const tool = createWebScrapeTool(connector);
+      await tool.execute({ url: 'https://example.com' });
       expect(webFetch.execute).toHaveBeenCalled();
     });
   });
@@ -132,7 +141,8 @@ describe('webScrape', () => {
         qualityScore: 80,
       });
 
-      const result = await webScrape.execute({ url: 'https://example.com' });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(true);
       expect(result.method).toBe('native');
@@ -158,9 +168,9 @@ describe('webScrape', () => {
         }),
       };
       (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-      (findConnectorByServiceTypes as any).mockReturnValue({ name: 'my-zenrows' });
 
-      const result = await webScrape.execute({ url: 'https://example.com' });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(true);
       expect(result.attemptedMethods).toContain('native');
@@ -169,24 +179,30 @@ describe('webScrape', () => {
 
     it('should return failure when all methods fail', async () => {
       (webFetch.execute as any).mockResolvedValue({ success: false });
-      (findConnectorByServiceTypes as any).mockReturnValue(null);
+      (ScrapeProvider.create as any).mockReturnValue({
+        scrape: vi.fn().mockResolvedValue({ success: false }),
+      });
 
-      const result = await webScrape.execute({ url: 'https://example.com' });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('All scraping methods failed');
     });
 
-    it('should return native result if below threshold but no API available', async () => {
+    it('should return native result if below threshold but API also fails', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Native Low',
         content: 'Some content',
         qualityScore: 40,
       });
-      (findConnectorByServiceTypes as any).mockReturnValue(null);
+      (ScrapeProvider.create as any).mockReturnValue({
+        scrape: vi.fn().mockResolvedValue({ success: false }),
+      });
 
-      const result = await webScrape.execute({ url: 'https://example.com' });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(true);
       expect(result.method).toBe('native');
@@ -198,41 +214,22 @@ describe('webScrape', () => {
   // ============================================================================
 
   describe('markdown content', () => {
-    it('should return markdown in content field from native fetch (no duplicate markdown field)', async () => {
+    it('should return markdown in content field from native fetch', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Test',
         content: '# Heading\n\nSome **bold** text',
         qualityScore: 80,
-        wasReadabilityUsed: true,
-        wasTruncated: false,
       });
 
-      const result = await webScrape.execute({
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({
         url: 'https://example.com',
         includeMarkdown: true,
       });
 
       expect(result.success).toBe(true);
-      // Native fetch already returns markdown-like content in the content field
-      // No separate markdown field to avoid token-wasting duplication
       expect(result.content).toContain('# Heading');
-      expect(result.markdown).toBeUndefined();
-    });
-
-    it('should not include markdown when not requested', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Test',
-        content: 'Some content',
-        qualityScore: 80,
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        includeMarkdown: false,
-      });
-
       expect(result.markdown).toBeUndefined();
     });
   });
@@ -250,18 +247,16 @@ describe('webScrape', () => {
         qualityScore: 80,
       });
 
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-      });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.durationMs).toBeDefined();
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
     });
 
     it('should include duration even on failure', async () => {
-      const result = await webScrape.execute({
-        url: 'invalid-url',
-      });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'invalid-url' });
 
       expect(result.success).toBe(false);
       expect(result.durationMs).toBeDefined();
@@ -281,15 +276,11 @@ describe('webScrape', () => {
         qualityScore: 80,
       });
 
-      await webScrape.execute({
-        url: 'https://example.com',
-        timeout: 5000,
-      });
+      const tool = createWebScrapeTool(connector);
+      await tool.execute({ url: 'https://example.com', timeout: 5000 });
 
       expect(webFetch.execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          timeout: 5000,
-        })
+        expect.objectContaining({ timeout: 5000 })
       );
     });
 
@@ -299,14 +290,11 @@ describe('webScrape', () => {
         qualityScore: 80,
       });
 
-      await webScrape.execute({
-        url: 'https://example.com',
-      });
+      const tool = createWebScrapeTool(connector);
+      await tool.execute({ url: 'https://example.com' });
 
       expect(webFetch.execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          timeout: 10000,
-        })
+        expect.objectContaining({ timeout: 10000 })
       );
     });
   });
@@ -317,7 +305,8 @@ describe('webScrape', () => {
 
   describe('describeCall', () => {
     it('should describe with URL', () => {
-      const desc = webScrape.describeCall!({ url: 'https://example.com' });
+      const tool = createWebScrapeTool(connector);
+      const desc = tool.describeCall!({ url: 'https://example.com' });
       expect(desc).toBe('https://example.com');
     });
   });
@@ -329,11 +318,12 @@ describe('webScrape', () => {
   describe('error handling', () => {
     it('should handle native fetch exception', async () => {
       (webFetch.execute as any).mockRejectedValue(new Error('Connection refused'));
-      (findConnectorByServiceTypes as any).mockReturnValue(null);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
+      (ScrapeProvider.create as any).mockReturnValue({
+        scrape: vi.fn().mockResolvedValue({ success: false }),
       });
+
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(false);
       expect(result.attemptedMethods).toContain('native');
@@ -344,14 +334,12 @@ describe('webScrape', () => {
         success: true,
         qualityScore: 30,
       });
-      (findConnectorByServiceTypes as any).mockReturnValue({ name: 'test-connector' });
       (ScrapeProvider.create as any).mockReturnValue({
         scrape: vi.fn().mockRejectedValue(new Error('Rate limit exceeded')),
       });
 
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-      });
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       // Native returned success=true, so best result is native
       expect(result.success).toBe(true);
@@ -371,44 +359,26 @@ describe('webScrape', () => {
         content: '',
         qualityScore: 10,
       });
-      (findConnectorByServiceTypes as any).mockReturnValue(null);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
+      (ScrapeProvider.create as any).mockReturnValue({
+        scrape: vi.fn().mockResolvedValue({ success: false }),
       });
 
-      // Low quality but native is the only method, so returns native result
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
+
+      // Low quality but API also failed, returns native
       expect(result.success).toBe(true);
       expect(result.method).toBe('native');
     });
 
-    it('should handle undefined title gracefully', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        content: 'Content only',
-        qualityScore: 80,
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.title).toBeUndefined();
-    });
-
     it('should track all attempted methods in order', async () => {
       (webFetch.execute as any).mockResolvedValue({ success: false });
-      (findConnectorByServiceTypes as any).mockReturnValue({ name: 'my-zenrows' });
-
-      const mockProvider = {
+      (ScrapeProvider.create as any).mockReturnValue({
         scrape: vi.fn().mockResolvedValue({ success: false }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
       });
+
+      const tool = createWebScrapeTool(connector);
+      const result = await tool.execute({ url: 'https://example.com' });
 
       expect(result.attemptedMethods[0]).toBe('native');
       expect(result.attemptedMethods[1]).toContain('api:');

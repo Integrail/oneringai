@@ -59,7 +59,7 @@ await agent.run('Delete the email field from {"name": "John", "email": "j@ex.com
 - Smart content quality detection (0-100 score)
 - Detects JavaScript-rendered sites
 - Detects error pages, paywalls, bot blocks
-- Suggests fallback to `webScrape` if needed
+- Suggests using a scraping service connector if needed
 
 **Use For**:
 - Static websites (blogs, documentation)
@@ -81,39 +81,70 @@ await agent.run('Fetch content from https://example.com/article');
 
 ---
 
-### 3. Web Search
+### 3. Web Search (ConnectorTools)
 
-**Tool**: `tools.webSearch`
+**Factory**: `createWebSearchTool(connector)`
 
-**Purpose**: Search the web using multiple providers
+**Purpose**: Search the web using a search service connector
 
-**Providers**:
-- **Serper.dev** (default) - Google results, 2,500 free queries
+**Providers** (via ConnectorTools):
+- **Serper.dev** - Google results, 2,500 free queries
 - **Brave** - Independent index, privacy-focused
 - **Tavily** - AI-optimized results
+- **RapidAPI** - Multiple search APIs
 
 **Returns**: URLs, titles, snippets
 
-**Requires**: API key for chosen provider (set in `.env`)
+**Requires**: A connector with a search service type
 
 **Example**:
 ```typescript
+import { Connector, Agent, Vendor, ConnectorTools, tools } from '@everworker/oneringai';
+
+// Create a search connector
+Connector.create({
+  name: 'serper',
+  serviceType: 'serper',
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Get search tools from the connector
+const searchTools = ConnectorTools.for('serper');
+
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [tools.webSearch, tools.webFetch]
+  tools: [tools.webFetch, ...searchTools]
 });
 
 await agent.run('Search for TypeScript documentation and summarize it');
-// Agent will search, get URLs, fetch content, then summarize
 ```
 
-**Setup**:
-```bash
-# Add to .env (choose one or more)
-SERPER_API_KEY=your-key-here
-BRAVE_API_KEY=your-key-here
-TAVILY_API_KEY=your-key-here
+### 4. Web Scrape (ConnectorTools)
+
+**Factory**: `createWebScrapeTool(connector)`
+
+**Purpose**: Scrape web pages with automatic native fallback
+
+**Providers** (via ConnectorTools):
+- **ZenRows** - Full browser rendering
+- **Jina Reader** - AI-optimized extraction
+- **Firecrawl** - Crawling and scraping
+- **ScrapingBee** - Browser-based scraping
+
+**Requires**: A connector with a scrape service type
+
+**Example**:
+```typescript
+Connector.create({
+  name: 'zenrows',
+  serviceType: 'zenrows',
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com',
+});
+
+const scrapeTools = ConnectorTools.for('zenrows');
 ```
 
 ---
@@ -229,11 +260,12 @@ Tools work great together:
 
 ### Research Workflow
 ```typescript
+const searchTools = ConnectorTools.for('serper');
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [
-    tools.webSearch,      // Find URLs
+    ...searchTools,       // Find URLs (via ConnectorTools)
     tools.webFetch,       // Get content
     tools.jsonManipulator // Structure findings
   ]
@@ -254,12 +286,15 @@ const agent = Agent.create({
 
 ### Complete Web Agent
 ```typescript
+const searchTools = ConnectorTools.for('serper');
+const scrapeTools = ConnectorTools.for('zenrows');
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   tools: [
-    tools.webSearch,
-    tools.webFetch,
+    ...searchTools,            // Search via connector
+    ...scrapeTools,            // Scrape via connector
+    tools.webFetch,            // Simple fetch (built-in)
     tools.executeJavaScript,
     tools.jsonManipulator
   ]
@@ -274,7 +309,8 @@ const agent = Agent.create({
 |------|---------|-------|-------|--------------|
 | `jsonManipulator` | Manipulate JSON | Instant | No | None |
 | `webFetch` | Fetch static sites | ~1s | No | cheerio |
-| `webSearch` | Search the web | ~1-3s | No | API key required |
+| `web_search` (ConnectorTools) | Search the web | ~1-3s | No | Search connector |
+| `web_scrape` (ConnectorTools) | Scrape JS sites | ~2-10s | No | Scrape connector |
 | `executeJavaScript` | Run JS code | Variable | **Yes** | vm (built-in) |
 
 ---
@@ -465,6 +501,6 @@ for (const tool of ToolRegistry.getAllTools()) {
 
 ---
 
-**Version**: 0.3.0
-**Total Tools**: 13 (Filesystem: 6, Shell: 1, Web: 4, Code: 1, JSON: 1)
+**Version**: 0.4.0
+**Total Tools**: 10 built-in (Filesystem: 6, Shell: 1, Web: 1, Code: 1, JSON: 1) + ConnectorTools (web search, web scrape, multimedia, GitHub)
 **All tools**: Type-safe, well-documented, production-ready

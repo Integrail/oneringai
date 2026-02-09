@@ -54,6 +54,51 @@ function filterProtectedHeaders(headers?: Record<string, string>): Record<string
 }
 
 /**
+ * Normalize a body value that may be a string (from LLM) into a proper object.
+ * LLMs sometimes send `body` as a stringified JSON string instead of a JSON object,
+ * which would cause double-serialization when passed through safeStringify().
+ */
+function normalizeBody(body: unknown): unknown {
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch {
+      // Not valid JSON — return as-is (will be sent as a raw string)
+      return body;
+    }
+  }
+  return body;
+}
+
+/**
+ * Detect API-level errors from response data.
+ * Many APIs (Slack, Twilio, etc.) return HTTP 200 with error info in the body.
+ */
+function detectAPIError(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const obj = data as Record<string, unknown>;
+
+  // Pattern 1: { ok: false, error: "..." } (Slack, some others)
+  if (obj.ok === false && typeof obj.error === 'string') {
+    return obj.error;
+  }
+
+  // Pattern 2: { success: false, error/message: "..." }
+  if (obj.success === false) {
+    if (typeof obj.error === 'string') return obj.error;
+    if (typeof obj.message === 'string') return obj.message;
+  }
+
+  // Pattern 3: { error: { message: "..." } } (common REST pattern)
+  if (obj.error && typeof obj.error === 'object') {
+    const err = obj.error as Record<string, unknown>;
+    if (typeof err.message === 'string') return err.message;
+  }
+
+  return null;
+}
+
+/**
  * Factory function type for creating service-specific tools
  * Takes a Connector and returns an array of tools that use it
  */
@@ -437,7 +482,7 @@ export class ConnectorTools {
               },
               body: {
                 type: 'object',
-                description: 'JSON request body for POST/PUT/PATCH requests. ALWAYS use this for sending data (e.g., {"channel": "C123", "text": "hello"}) instead of query string parameters.',
+                description: 'JSON request body for POST/PUT/PATCH requests. MUST be a JSON object (NOT a string). Example: {"channel": "C123", "text": "hello"}. Do NOT stringify this — pass it as a raw JSON object. Do NOT use query string parameters for POST data.',
               },
               queryParams: {
                 type: 'object',
@@ -468,11 +513,12 @@ export class ConnectorTools {
         // Filter out protected headers (security: prevent auth header override)
         const safeHeaders = filterProtectedHeaders(args.headers);
 
-        // Safely stringify body (handles circular references)
+        // Normalize and stringify body (handles LLM sending stringified JSON)
         let bodyStr: string | undefined;
         if (args.body) {
           try {
-            bodyStr = safeStringify(args.body);
+            const normalized = normalizeBody(args.body);
+            bodyStr = safeStringify(normalized);
           } catch (e) {
             return {
               success: false,
@@ -505,11 +551,18 @@ export class ConnectorTools {
             data = text;
           }
 
+          // Check for API-level errors (many APIs return 200 with error in body)
+          const apiError = detectAPIError(data);
+
           return {
-            success: response.ok,
+            success: response.ok && !apiError,
             status: response.status,
-            data: response.ok ? data : undefined,
-            error: response.ok ? undefined : typeof data === 'string' ? data : safeStringify(data),
+            data: (response.ok && !apiError) ? data : undefined,
+            error: apiError
+              ? apiError
+              : response.ok
+                ? undefined
+                : typeof data === 'string' ? data : safeStringify(data),
           };
         } catch (error) {
           return {

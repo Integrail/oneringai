@@ -2003,7 +2003,14 @@ var init_Connector = __esm({
         }
         const startTime = Date.now();
         this.requestCount++;
-        const url2 = endpoint.startsWith("http") ? endpoint : `${this.baseURL}${endpoint}`;
+        let url2;
+        if (endpoint.startsWith("http")) {
+          url2 = endpoint;
+        } else {
+          const base = (this.baseURL ?? "").replace(/\/+$/, "");
+          const path6 = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+          url2 = `${base}${path6}`;
+        }
         const timeout = options?.timeout ?? this.config.timeout ?? DEFAULT_CONNECTOR_TIMEOUT;
         if (this.config.logging?.enabled) {
           this.logRequest(url2, options);
@@ -41754,6 +41761,32 @@ function filterProtectedHeaders(headers) {
   }
   return filtered;
 }
+function normalizeBody(body) {
+  if (typeof body === "string") {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return body;
+    }
+  }
+  return body;
+}
+function detectAPIError(data) {
+  if (!data || typeof data !== "object") return null;
+  const obj = data;
+  if (obj.ok === false && typeof obj.error === "string") {
+    return obj.error;
+  }
+  if (obj.success === false) {
+    if (typeof obj.error === "string") return obj.error;
+    if (typeof obj.message === "string") return obj.message;
+  }
+  if (obj.error && typeof obj.error === "object") {
+    const err = obj.error;
+    if (typeof err.message === "string") return err.message;
+  }
+  return null;
+}
 var ConnectorTools = class {
   /** Registry of service-specific tool factories */
   static factories = /* @__PURE__ */ new Map();
@@ -42007,7 +42040,7 @@ var ConnectorTools = class {
               },
               body: {
                 type: "object",
-                description: 'JSON request body for POST/PUT/PATCH requests. ALWAYS use this for sending data (e.g., {"channel": "C123", "text": "hello"}) instead of query string parameters.'
+                description: 'JSON request body for POST/PUT/PATCH requests. MUST be a JSON object (NOT a string). Example: {"channel": "C123", "text": "hello"}. Do NOT stringify this \u2014 pass it as a raw JSON object. Do NOT use query string parameters for POST data.'
               },
               queryParams: {
                 type: "object",
@@ -42035,7 +42068,8 @@ var ConnectorTools = class {
         let bodyStr;
         if (args.body) {
           try {
-            bodyStr = safeStringify2(args.body);
+            const normalized = normalizeBody(args.body);
+            bodyStr = safeStringify2(normalized);
           } catch (e) {
             return {
               success: false,
@@ -42063,11 +42097,12 @@ var ConnectorTools = class {
           } catch {
             data = text;
           }
+          const apiError = detectAPIError(data);
           return {
-            success: response.ok,
+            success: response.ok && !apiError,
             status: response.status,
-            data: response.ok ? data : void 0,
-            error: response.ok ? void 0 : typeof data === "string" ? data : safeStringify2(data)
+            data: response.ok && !apiError ? data : void 0,
+            error: apiError ? apiError : response.ok ? void 0 : typeof data === "string" ? data : safeStringify2(data)
           };
         } catch (error) {
           return {
@@ -45290,6 +45325,8 @@ __export(tools_exports, {
   createSpeechToTextTool: () => createSpeechToTextTool,
   createTextToSpeechTool: () => createTextToSpeechTool,
   createVideoTools: () => createVideoTools,
+  createWebScrapeTool: () => createWebScrapeTool,
+  createWebSearchTool: () => createWebSearchTool,
   createWriteFileTool: () => createWriteFileTool,
   developerTools: () => developerTools,
   editFile: () => editFile,
@@ -45319,8 +45356,6 @@ __export(tools_exports, {
   toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
-  webScrape: () => webScrape,
-  webSearch: () => webSearch,
   writeFile: () => writeFile5
 });
 var DEFAULT_FILESYSTEM_CONFIG = {
@@ -47043,6 +47078,111 @@ The tool returns a result object with:
   }
 };
 
+// src/tools/web/createWebSearchTool.ts
+init_Logger();
+var searchLogger = logger.child({ component: "webSearch" });
+function createWebSearchTool(connector, _userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "web_search",
+        description: `Search the web and get relevant results with snippets.
+
+RETURNS:
+An array of search results, each containing:
+- title: Page title
+- url: Direct URL to the page
+- snippet: Short description/excerpt from the page
+- position: Search ranking position (1, 2, 3...)
+
+USE CASES:
+- Find current information on any topic
+- Research multiple sources
+- Discover relevant websites
+- Find URLs to fetch with web_fetch tool
+
+WORKFLOW PATTERN:
+1. Use web_search to find relevant URLs
+2. Use web_fetch to get full content from top results
+3. Process and summarize the information
+
+EXAMPLE:
+{
+  "query": "latest AI developments 2026",
+  "numResults": 5
+}`,
+        parameters: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "The search query string. Be specific for better results."
+            },
+            numResults: {
+              type: "number",
+              description: "Number of results to return (default: 10, max: 100)."
+            },
+            country: {
+              type: "string",
+              description: 'Country/region code for localized results (e.g., "us", "gb", "de")'
+            },
+            language: {
+              type: "string",
+              description: 'Language code for results (e.g., "en", "fr", "de")'
+            }
+          },
+          required: ["query"]
+        }
+      },
+      blocking: true,
+      timeout: 15e3
+    },
+    execute: async (args) => {
+      const numResults = args.numResults || 10;
+      searchLogger.debug({ connectorName: connector.name }, "Executing search with connector");
+      try {
+        const searchProvider = SearchProvider.create({ connector: connector.name });
+        const response = await searchProvider.search(args.query, {
+          numResults,
+          country: args.country,
+          language: args.language
+        });
+        if (response.success) {
+          searchLogger.debug({
+            provider: response.provider,
+            count: response.count
+          }, "Search completed successfully");
+        } else {
+          searchLogger.warn({
+            provider: response.provider,
+            error: response.error
+          }, "Search failed");
+        }
+        return {
+          success: response.success,
+          query: response.query,
+          provider: response.provider,
+          results: response.results,
+          count: response.count,
+          error: response.error
+        };
+      } catch (error) {
+        searchLogger.error({ error: error.message, connectorName: connector.name }, "Search threw exception");
+        return {
+          success: false,
+          query: args.query,
+          provider: connector.name,
+          results: [],
+          count: 0,
+          error: error.message || "Unknown error"
+        };
+      }
+    },
+    describeCall: (args) => `"${args.query}"${args.numResults ? ` (${args.numResults} results)` : ""}`
+  };
+}
+
 // src/tools/web/contentDetector.ts
 function detectContentQuality(html, text, $) {
   const issues = [];
@@ -47117,7 +47257,7 @@ function detectContentQuality(html, text, $) {
   }
   let suggestion;
   if (requiresJS && score < 50) {
-    suggestion = "Content quality is low. This appears to be a JavaScript-rendered site. Use the web_scrape tool for better results.";
+    suggestion = "Content quality is low. This appears to be a JavaScript-rendered site. Use a scraping service connector for better results.";
   } else if (score < 30) {
     suggestion = "Content extraction failed or page has errors. Check the URL and try again.";
   }
@@ -47226,7 +47366,7 @@ The tool analyzes the fetched content and returns a quality score (0-100):
 - 50-79: Moderate quality, some content extracted
 - 0-49: Low quality, likely needs JavaScript or has errors
 
-If the quality score is low or requiresJS is true, the tool will suggest using 'web_scrape' instead for better results.
+If the quality score is low or requiresJS is true, consider using a scraping service connector for better results.
 
 RETURNS:
 {
@@ -47390,238 +47530,10 @@ With custom user agent:
   }
 };
 
-// src/tools/web/webSearch.ts
-init_Logger();
-
-// src/tools/web/searchProviders/serper.ts
-async function searchWithSerper(query, numResults, apiKey) {
-  const response = await fetch("https://google.serper.dev/search", {
-    method: "POST",
-    headers: {
-      "X-API-KEY": apiKey,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      q: query,
-      num: numResults
-    })
-  });
-  if (!response.ok) {
-    throw new Error(`Serper API error: ${response.status} ${response.statusText}`);
-  }
-  const data = await response.json();
-  if (!data.organic || !Array.isArray(data.organic)) {
-    throw new Error("Invalid response from Serper API");
-  }
-  return data.organic.slice(0, numResults).map((result, index) => ({
-    title: result.title || "Untitled",
-    url: result.link || "",
-    snippet: result.snippet || "",
-    position: index + 1
-  }));
-}
-
-// src/tools/web/searchProviders/brave.ts
-async function searchWithBrave(query, numResults, apiKey) {
-  const url2 = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${numResults}`;
-  const response = await fetch(url2, {
-    headers: {
-      "X-Subscription-Token": apiKey,
-      Accept: "application/json"
-    }
-  });
-  if (!response.ok) {
-    throw new Error(`Brave API error: ${response.status} ${response.statusText}`);
-  }
-  const data = await response.json();
-  if (!data.web?.results || !Array.isArray(data.web.results)) {
-    throw new Error("Invalid response from Brave API");
-  }
-  return data.web.results.slice(0, numResults).map((result, index) => ({
-    title: result.title || "Untitled",
-    url: result.url || "",
-    snippet: result.description || "",
-    position: index + 1
-  }));
-}
-
-// src/tools/web/searchProviders/tavily.ts
-async function searchWithTavily(query, numResults, apiKey) {
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      max_results: numResults,
-      search_depth: "basic",
-      // 'basic' or 'advanced'
-      include_answer: false,
-      include_raw_content: false
-    })
-  });
-  if (!response.ok) {
-    throw new Error(`Tavily API error: ${response.status} ${response.statusText}`);
-  }
-  const data = await response.json();
-  if (!data.results || !Array.isArray(data.results)) {
-    throw new Error("Invalid response from Tavily API");
-  }
-  return data.results.slice(0, numResults).map((result, index) => ({
-    title: result.title || "Untitled",
-    url: result.url || "",
-    snippet: result.content || "",
-    position: index + 1
-  }));
-}
-
-// src/tools/web/webSearch.ts
-var searchLogger = logger.child({ component: "webSearch" });
-var SEARCH_SERVICE_TYPES = ["serper", "brave-search", "tavily", "rapidapi-search"];
-var webSearch = {
-  definition: {
-    type: "function",
-    function: {
-      name: "web_search",
-      description: `Search the web and get relevant results with snippets.
-
-RETURNS:
-An array of search results, each containing:
-- title: Page title
-- url: Direct URL to the page
-- snippet: Short description/excerpt from the page
-- position: Search ranking position (1, 2, 3...)
-
-USE CASES:
-- Find current information on any topic
-- Research multiple sources
-- Discover relevant websites
-- Find URLs to fetch with web_fetch tool
-
-WORKFLOW PATTERN:
-1. Use web_search to find relevant URLs
-2. Use web_fetch to get full content from top results
-3. Process and summarize the information
-
-EXAMPLE:
-{
-  "query": "latest AI developments 2026",
-  "numResults": 5
-}`,
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "The search query string. Be specific for better results."
-          },
-          numResults: {
-            type: "number",
-            description: "Number of results to return (default: 10, max: 100)."
-          },
-          country: {
-            type: "string",
-            description: 'Country/region code for localized results (e.g., "us", "gb", "de")'
-          },
-          language: {
-            type: "string",
-            description: 'Language code for results (e.g., "en", "fr", "de")'
-          }
-        },
-        required: ["query"]
-      }
-    },
-    blocking: true,
-    timeout: 15e3
-  },
-  execute: async (args) => {
-    const numResults = args.numResults || 10;
-    const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
-    if (connector) {
-      return await executeWithConnector(connector.name, args, numResults);
-    }
-    return await executeWithEnvVar(args, numResults);
-  },
-  describeCall: (args) => `"${args.query}"${args.numResults ? ` (${args.numResults} results)` : ""}`
-};
-async function executeWithConnector(connectorName, args, numResults) {
-  searchLogger.debug({ connectorName }, "Executing search with connector");
-  try {
-    const searchProvider = SearchProvider.create({ connector: connectorName });
-    const response = await searchProvider.search(args.query, {
-      numResults,
-      country: args.country,
-      language: args.language
-    });
-    if (response.success) {
-      searchLogger.debug({
-        provider: response.provider,
-        count: response.count
-      }, "Search completed successfully");
-    } else {
-      searchLogger.warn({
-        provider: response.provider,
-        error: response.error
-      }, "Search failed");
-    }
-    return {
-      success: response.success,
-      query: response.query,
-      provider: response.provider,
-      results: response.results,
-      count: response.count,
-      error: response.error
-    };
-  } catch (error) {
-    searchLogger.error({ error: error.message, connectorName }, "Search threw exception");
-    return {
-      success: false,
-      query: args.query,
-      provider: connectorName,
-      results: [],
-      count: 0,
-      error: error.message || "Unknown error"
-    };
-  }
-}
-async function executeWithEnvVar(args, numResults) {
-  const providers = [
-    { name: "serper", key: process.env.SERPER_API_KEY, fn: searchWithSerper },
-    { name: "brave", key: process.env.BRAVE_API_KEY, fn: searchWithBrave },
-    { name: "tavily", key: process.env.TAVILY_API_KEY, fn: searchWithTavily }
-  ];
-  for (const provider of providers) {
-    if (provider.key) {
-      searchLogger.debug({ provider: provider.name }, "Using environment variable fallback");
-      try {
-        const results = await provider.fn(args.query, numResults, provider.key);
-        return {
-          success: true,
-          query: args.query,
-          provider: provider.name,
-          results,
-          count: results.length
-        };
-      } catch (error) {
-        searchLogger.warn({ provider: provider.name, error: error.message }, "Provider failed, trying next");
-      }
-    }
-  }
-  return {
-    success: false,
-    query: args.query,
-    provider: "none",
-    results: [],
-    count: 0,
-    error: "No search provider configured. Set up a search connector (serper, brave-search, tavily) or set SERPER_API_KEY, BRAVE_API_KEY, or TAVILY_API_KEY environment variable."
-  };
-}
-
-// src/tools/web/webScrape.ts
+// src/tools/web/createWebScrapeTool.ts
 init_Logger();
 var scrapeLogger = logger.child({ component: "webScrape" });
+var DEFAULT_MIN_QUALITY = 50;
 function stripBase64DataUris(content) {
   if (!content) return content;
   let cleaned = content.replace(/!\[[^\]]*\]\(data:[^)]+\)/g, "[image removed]");
@@ -47629,14 +47541,94 @@ function stripBase64DataUris(content) {
   cleaned = cleaned.replace(/data:(?:image|font|application)\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g, "[base64-data-removed]");
   return cleaned;
 }
-var SCRAPE_SERVICE_TYPES = ["zenrows", "jina-reader", "firecrawl", "scrapingbee"];
-var DEFAULT_MIN_QUALITY = 50;
-var webScrape = {
-  definition: {
-    type: "function",
-    function: {
-      name: "web_scrape",
-      description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
+function createWebScrapeTool(connector, _userId) {
+  async function tryNative(args, startTime, attemptedMethods) {
+    attemptedMethods.push("native");
+    scrapeLogger.debug({ url: args.url }, "Trying native fetch");
+    try {
+      const result = await webFetch.execute({
+        url: args.url,
+        timeout: args.timeout || 1e4
+      });
+      const cleanContent = stripBase64DataUris(result.content);
+      return {
+        success: result.success,
+        url: args.url,
+        finalUrl: args.url,
+        method: "native",
+        title: result.title,
+        content: cleanContent,
+        qualityScore: result.qualityScore,
+        durationMs: Date.now() - startTime,
+        attemptedMethods,
+        error: result.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        url: args.url,
+        method: "native",
+        title: "",
+        content: "",
+        durationMs: Date.now() - startTime,
+        attemptedMethods,
+        error: error.message
+      };
+    }
+  }
+  async function tryAPI(args, startTime, attemptedMethods) {
+    attemptedMethods.push(`api:${connector.name}`);
+    scrapeLogger.debug({ url: args.url, connectorName: connector.name }, "Trying external API");
+    try {
+      const provider = ScrapeProvider.create({ connector: connector.name });
+      const options = {
+        timeout: args.timeout,
+        waitForSelector: args.waitForSelector,
+        includeHtml: args.includeHtml,
+        includeMarkdown: args.includeMarkdown,
+        includeLinks: args.includeLinks
+      };
+      const result = await provider.scrape(args.url, options);
+      const rawContent = result.result?.content || "";
+      const rawMarkdown = result.result?.markdown;
+      const cleanContent = stripBase64DataUris(rawContent);
+      const cleanMarkdown = rawMarkdown ? stripBase64DataUris(rawMarkdown) : void 0;
+      const isDuplicate = !!cleanMarkdown && cleanContent === cleanMarkdown;
+      return {
+        success: result.success,
+        url: args.url,
+        finalUrl: result.finalUrl,
+        method: result.provider,
+        title: result.result?.title || "",
+        content: cleanContent,
+        html: result.result?.html,
+        markdown: isDuplicate ? void 0 : cleanMarkdown,
+        metadata: result.result?.metadata,
+        links: result.result?.links,
+        qualityScore: result.success ? 90 : 0,
+        durationMs: Date.now() - startTime,
+        attemptedMethods,
+        error: result.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        url: args.url,
+        method: "api",
+        title: "",
+        content: "",
+        durationMs: Date.now() - startTime,
+        attemptedMethods,
+        error: error.message
+      };
+    }
+  }
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "web_scrape",
+        description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
 
 Automatically tries multiple methods in sequence:
 1. Native fetch - Fast (~1s), works for blogs/docs/articles
@@ -47675,46 +47667,64 @@ For JS-heavy sites:
   "url": "https://spa-app.com",
   "waitForSelector": ".main-content"
 }`,
-      parameters: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "URL to scrape. Must start with http:// or https://"
+        parameters: {
+          type: "object",
+          properties: {
+            url: {
+              type: "string",
+              description: "URL to scrape. Must start with http:// or https://"
+            },
+            timeout: {
+              type: "number",
+              description: "Timeout in milliseconds (default: 30000)"
+            },
+            includeHtml: {
+              type: "boolean",
+              description: "Include raw HTML in response (default: false)"
+            },
+            includeMarkdown: {
+              type: "boolean",
+              description: "Include markdown conversion (default: false)"
+            },
+            includeLinks: {
+              type: "boolean",
+              description: "Extract and include links (default: false)"
+            },
+            waitForSelector: {
+              type: "string",
+              description: "CSS selector to wait for before scraping (for JS-heavy sites)"
+            }
           },
-          timeout: {
-            type: "number",
-            description: "Timeout in milliseconds (default: 30000)"
-          },
-          includeHtml: {
-            type: "boolean",
-            description: "Include raw HTML in response (default: false)"
-          },
-          includeMarkdown: {
-            type: "boolean",
-            description: "Include markdown conversion (default: false)"
-          },
-          includeLinks: {
-            type: "boolean",
-            description: "Extract and include links (default: false)"
-          },
-          waitForSelector: {
-            type: "string",
-            description: "CSS selector to wait for before scraping (for JS-heavy sites)"
-          }
-        },
-        required: ["url"]
-      }
+          required: ["url"]
+        }
+      },
+      blocking: true,
+      timeout: 6e4
     },
-    blocking: true,
-    timeout: 6e4
-  },
-  execute: async (args) => {
-    const startTime = Date.now();
-    const attemptedMethods = [];
-    try {
-      new URL(args.url);
-    } catch {
+    execute: async (args) => {
+      const startTime = Date.now();
+      const attemptedMethods = [];
+      try {
+        new URL(args.url);
+      } catch {
+        return {
+          success: false,
+          url: args.url,
+          method: "none",
+          title: "",
+          content: "",
+          durationMs: Date.now() - startTime,
+          attemptedMethods: [],
+          error: "Invalid URL format"
+        };
+      }
+      const native = await tryNative(args, startTime, attemptedMethods);
+      if (native.success && (native.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
+        return native;
+      }
+      const api = await tryAPI(args, startTime, attemptedMethods);
+      if (api.success) return api;
+      if (native.success) return native;
       return {
         success: false,
         url: args.url,
@@ -47722,117 +47732,32 @@ For JS-heavy sites:
         title: "",
         content: "",
         durationMs: Date.now() - startTime,
-        attemptedMethods: [],
-        error: "Invalid URL format"
+        attemptedMethods,
+        error: "All scraping methods failed. Site may have bot protection."
       };
-    }
-    const native = await tryNative(args, startTime, attemptedMethods);
-    if (native.success && (native.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
-      return native;
-    }
-    const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
-    if (connector) {
-      const api = await tryAPI(connector.name, args, startTime, attemptedMethods);
-      if (api.success) return api;
-    }
-    if (native.success) return native;
-    return {
-      success: false,
-      url: args.url,
-      method: "none",
-      title: "",
-      content: "",
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: "All scraping methods failed. Site may have bot protection."
-    };
-  },
-  describeCall: (args) => args.url
-};
-async function tryNative(args, startTime, attemptedMethods) {
-  attemptedMethods.push("native");
-  scrapeLogger.debug({ url: args.url }, "Trying native fetch");
-  try {
-    const result = await webFetch.execute({
-      url: args.url,
-      timeout: args.timeout || 1e4
-    });
-    const cleanContent = stripBase64DataUris(result.content);
-    return {
-      success: result.success,
-      url: args.url,
-      finalUrl: args.url,
-      method: "native",
-      title: result.title,
-      content: cleanContent,
-      // Native method already returns markdown-like content — no separate markdown field needed
-      // (would just duplicate content and waste tokens)
-      qualityScore: result.qualityScore,
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: result.error
-    };
-  } catch (error) {
-    return {
-      success: false,
-      url: args.url,
-      method: "native",
-      title: "",
-      content: "",
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: error.message
-    };
+    },
+    describeCall: (args) => args.url
+  };
+}
+
+// src/tools/web/register.ts
+var SEARCH_SERVICE_TYPES = ["serper", "brave-search", "tavily", "rapidapi-search"];
+var SCRAPE_SERVICE_TYPES = ["zenrows", "jina-reader", "firecrawl", "scrapingbee"];
+function registerWebTools() {
+  for (const st of SEARCH_SERVICE_TYPES) {
+    ConnectorTools.registerService(st, (connector, userId) => [
+      createWebSearchTool(connector)
+    ]);
+  }
+  for (const st of SCRAPE_SERVICE_TYPES) {
+    ConnectorTools.registerService(st, (connector, userId) => [
+      createWebScrapeTool(connector)
+    ]);
   }
 }
-async function tryAPI(connectorName, args, startTime, attemptedMethods) {
-  attemptedMethods.push(`api:${connectorName}`);
-  scrapeLogger.debug({ url: args.url, connectorName }, "Trying external API");
-  try {
-    const provider = ScrapeProvider.create({ connector: connectorName });
-    const options = {
-      timeout: args.timeout,
-      waitForSelector: args.waitForSelector,
-      includeHtml: args.includeHtml,
-      includeMarkdown: args.includeMarkdown,
-      includeLinks: args.includeLinks
-    };
-    const result = await provider.scrape(args.url, options);
-    const rawContent = result.result?.content || "";
-    const rawMarkdown = result.result?.markdown;
-    const cleanContent = stripBase64DataUris(rawContent);
-    const cleanMarkdown = rawMarkdown ? stripBase64DataUris(rawMarkdown) : void 0;
-    const isDuplicate = !!cleanMarkdown && cleanContent === cleanMarkdown;
-    return {
-      success: result.success,
-      url: args.url,
-      finalUrl: result.finalUrl,
-      method: result.provider,
-      title: result.result?.title || "",
-      content: cleanContent,
-      html: result.result?.html,
-      // Keep raw HTML as-is (only used if explicitly requested)
-      markdown: isDuplicate ? void 0 : cleanMarkdown,
-      metadata: result.result?.metadata,
-      links: result.result?.links,
-      qualityScore: result.success ? 90 : 0,
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: result.error
-    };
-  } catch (error) {
-    return {
-      success: false,
-      url: args.url,
-      method: "api",
-      title: "",
-      content: "",
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: error.message
-    };
-  }
-}
+
+// src/tools/web/index.ts
+registerWebTools();
 
 // src/tools/code/executeJavaScript.ts
 init_Connector();
@@ -49522,28 +49447,6 @@ var toolRegistry = [
     description: "Fetch and extract text content from a web page URL.",
     tool: webFetch,
     safeByDefault: true
-  },
-  {
-    name: "web_scrape",
-    exportName: "webScrape",
-    displayName: "Web Scrape",
-    category: "web",
-    description: "Scrape any URL with automatic fallback - guaranteed to work on most sites.",
-    tool: webScrape,
-    safeByDefault: true,
-    requiresConnector: true,
-    connectorServiceTypes: ["zenrows"]
-  },
-  {
-    name: "web_search",
-    exportName: "webSearch",
-    displayName: "Web Search",
-    category: "web",
-    description: "Search the web and get relevant results with snippets.",
-    tool: webSearch,
-    safeByDefault: true,
-    requiresConnector: true,
-    connectorServiceTypes: ["serper", "brave-search", "tavily", "rapidapi-websearch"]
   }
 ];
 function getAllBuiltInTools() {

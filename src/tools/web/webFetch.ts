@@ -55,7 +55,7 @@ The tool analyzes the fetched content and returns a quality score (0-100):
 - 50-79: Moderate quality, some content extracted
 - 0-49: Low quality, likely needs JavaScript or has errors
 
-If the quality score is low or requiresJS is true, the tool will suggest using 'web_scrape' instead for better results.
+If the quality score is low or requiresJS is true, consider using a scraping service connector for better results.
 
 RETURNS:
 {

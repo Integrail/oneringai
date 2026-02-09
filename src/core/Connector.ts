@@ -438,8 +438,15 @@ export class Connector {
     const startTime = Date.now();
     this.requestCount++;
 
-    // Resolve URL
-    const url = endpoint.startsWith('http') ? endpoint : `${this.baseURL}${endpoint}`;
+    // Resolve URL (ensure proper slash between baseURL and relative endpoint)
+    let url: string;
+    if (endpoint.startsWith('http')) {
+      url = endpoint;
+    } else {
+      const base = (this.baseURL ?? '').replace(/\/+$/, '');
+      const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+      url = `${base}${path}`;
+    }
 
     // Get timeout
     const timeout = options?.timeout ?? this.config.timeout ?? DEFAULT_CONNECTOR_TIMEOUT;

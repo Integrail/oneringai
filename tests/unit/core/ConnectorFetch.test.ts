@@ -108,6 +108,98 @@ describe('Connector Fetch', () => {
     });
   });
 
+  describe('URL Path Joining', () => {
+    it('should handle endpoint without leading slash', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+      Connector.create({
+        name: 'test',
+        auth: { type: 'api_key', apiKey: 'key' },
+        baseURL: 'https://slack.com/api',
+      });
+
+      const connector = Connector.get('test');
+      await connector.fetch('chat.postMessage');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://slack.com/api/chat.postMessage',
+        expect.any(Object)
+      );
+    });
+
+    it('should handle endpoint with leading slash', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+      Connector.create({
+        name: 'test',
+        auth: { type: 'api_key', apiKey: 'key' },
+        baseURL: 'https://slack.com/api',
+      });
+
+      const connector = Connector.get('test');
+      await connector.fetch('/chat.postMessage');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://slack.com/api/chat.postMessage',
+        expect.any(Object)
+      );
+    });
+
+    it('should handle baseURL with trailing slash', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+      Connector.create({
+        name: 'test',
+        auth: { type: 'api_key', apiKey: 'key' },
+        baseURL: 'https://slack.com/api/',
+      });
+
+      const connector = Connector.get('test');
+      await connector.fetch('chat.postMessage');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://slack.com/api/chat.postMessage',
+        expect.any(Object)
+      );
+    });
+
+    it('should handle both baseURL trailing slash and endpoint leading slash', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+      Connector.create({
+        name: 'test',
+        auth: { type: 'api_key', apiKey: 'key' },
+        baseURL: 'https://slack.com/api/',
+      });
+
+      const connector = Connector.get('test');
+      await connector.fetch('/chat.postMessage');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://slack.com/api/chat.postMessage',
+        expect.any(Object)
+      );
+    });
+
+    it('should pass through absolute URLs unchanged', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+      Connector.create({
+        name: 'test',
+        auth: { type: 'api_key', apiKey: 'key' },
+        baseURL: 'https://api.example.com',
+      });
+
+      const connector = Connector.get('test');
+      await connector.fetch('https://other.api.com/v2/endpoint');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://other.api.com/v2/endpoint',
+        expect.any(Object)
+      );
+    });
+  });
+
   describe('Timeout', () => {
     it('should timeout after configured timeout', async () => {
       // Mock fetch that respects AbortController signal

@@ -273,7 +273,5 @@ export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
 
   // Short retention - web content can be re-fetched
   web_fetch: 6,
-  web_search: 6,
-  web_scrape: 6,
 };
 

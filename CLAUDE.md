@@ -234,7 +234,7 @@ src/
 ├── tools/
 │   ├── filesystem/             # readFile, writeFile, editFile, glob, grep, listDirectory
 │   ├── shell/                  # bash
-│   ├── web/                    # webFetch, webSearch, webScrape
+│   ├── web/                    # webFetch, createWebSearchTool, createWebScrapeTool (ConnectorTools)
 │   ├── connector/              # ConnectorTools (generic API from connector)
 │   ├── code/                   # executeJavaScript
 │   └── json/                   # jsonManipulator

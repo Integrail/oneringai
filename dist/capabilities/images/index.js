@@ -1806,7 +1806,14 @@ var Connector = class _Connector {
     }
     const startTime = Date.now();
     this.requestCount++;
-    const url = endpoint.startsWith("http") ? endpoint : `${this.baseURL}${endpoint}`;
+    let url;
+    if (endpoint.startsWith("http")) {
+      url = endpoint;
+    } else {
+      const base = (this.baseURL ?? "").replace(/\/+$/, "");
+      const path2 = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+      url = `${base}${path2}`;
+    }
     const timeout = options?.timeout ?? this.config.timeout ?? DEFAULT_CONNECTOR_TIMEOUT;
     if (this.config.logging?.enabled) {
       this.logRequest(url, options);

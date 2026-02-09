@@ -21,7 +21,6 @@
  *     tools.bash,
  *     // Web tools
  *     tools.webFetch,
- *     tools.webSearch,
  *   ]
  * });
  * ```
@@ -95,10 +94,10 @@ export { jsonManipulator } from './json/jsonManipulator.js';
 // Web Tools
 // ============================================================================
 
-export { webFetch, webSearch, webScrape } from './web/index.js';
+export { webFetch, createWebSearchTool, createWebScrapeTool } from './web/index.js';
 
-// Re-export search result type
-export type { SearchResult } from './web/searchProviders/serper.js';
+// Re-export search result type from capabilities (canonical location)
+export type { SearchResult } from './web/index.js';
 
 // ============================================================================
 // Code Execution Tools

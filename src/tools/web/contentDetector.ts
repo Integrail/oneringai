@@ -116,7 +116,7 @@ export function detectContentQuality(
   let suggestion: string | undefined;
   if (requiresJS && score < 50) {
     suggestion =
-      'Content quality is low. This appears to be a JavaScript-rendered site. Use the web_scrape tool for better results.';
+      'Content quality is low. This appears to be a JavaScript-rendered site. Use a scraping service connector for better results.';
   } else if (score < 30) {
     suggestion = 'Content extraction failed or page has errors. Check the URL and try again.';
   }
