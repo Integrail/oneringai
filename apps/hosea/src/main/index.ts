@@ -91,11 +91,25 @@ function safeHandler<T>(
   };
 }
 
+/**
+ * Wrap an IPC handler that requires heavy initialization (Phase 2).
+ * Awaits agentService.whenReady() before executing the handler.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readyHandler<F extends (...args: any[]) => Promise<any>>(handler: F): F {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (async (...args: any[]) => {
+    await agentService!.whenReady();
+    return handler(...args);
+  }) as F;
+}
+
 async function setupIPC(): Promise<void> {
-  // Initialize agent service with proper data directory
+  // Initialize agent service with fast essential init only (dirs + config + log level)
+  // Heavy initialization (connectors, tools, agents) is deferred to after window shows
   const dataDir = getDataDir();
   console.log('HOSEA data directory:', dataDir);
-  agentService = await AgentService.create(dataDir, isDev);
+  agentService = await AgentService.createFast(dataDir, isDev);
 
   // Initialize browser service (pass null window for now, set later when window is created)
   browserService = new BrowserService(null);
@@ -134,16 +148,16 @@ async function setupIPC(): Promise<void> {
     });
   });
 
-  // Agent operations
-  ipcMain.handle('agent:initialize', async (_event, connectorName: string, model: string) => {
+  // Agent operations (require heavy init)
+  ipcMain.handle('agent:initialize', readyHandler(async (_event, connectorName: string, model: string) => {
     return agentService!.initialize(connectorName, model);
-  });
+  }));
 
-  ipcMain.handle('agent:send', async (_event, message: string) => {
+  ipcMain.handle('agent:send', readyHandler(async (_event, message: string) => {
     return agentService!.send(message);
-  });
+  }));
 
-  ipcMain.handle('agent:stream', async (_event, message: string) => {
+  ipcMain.handle('agent:stream', readyHandler(async (_event, message: string) => {
     // For streaming, we send chunks via the main window
     try {
       const stream = agentService!.stream(message);
@@ -157,34 +171,34 @@ async function setupIPC(): Promise<void> {
       mainWindow?.webContents.send('agent:stream-end');
       return { success: false, error: String(error) };
     }
-  });
+  }));
 
-  ipcMain.handle('agent:cancel', async () => {
+  ipcMain.handle('agent:cancel', readyHandler(async () => {
     return agentService!.cancel();
-  });
+  }));
 
   ipcMain.handle('agent:status', async () => {
     return agentService!.getStatus();
   });
 
-  ipcMain.handle('agent:approve-plan', async (_event, planId: string) => {
+  ipcMain.handle('agent:approve-plan', readyHandler(async (_event, planId: string) => {
     return agentService!.approvePlan(planId);
-  });
+  }));
 
-  ipcMain.handle('agent:reject-plan', async (_event, planId: string, reason?: string) => {
+  ipcMain.handle('agent:reject-plan', readyHandler(async (_event, planId: string, reason?: string) => {
     return agentService!.rejectPlan(planId, reason);
-  });
+  }));
 
-  // Multi-tab instance operations
-  ipcMain.handle('agent:create-instance', async (_event, agentConfigId: string) => {
+  // Multi-tab instance operations (require heavy init)
+  ipcMain.handle('agent:create-instance', readyHandler(async (_event, agentConfigId: string) => {
     return agentService!.createInstance(agentConfigId);
-  });
+  }));
 
-  ipcMain.handle('agent:destroy-instance', async (_event, instanceId: string) => {
+  ipcMain.handle('agent:destroy-instance', readyHandler(async (_event, instanceId: string) => {
     return agentService!.destroyInstance(instanceId);
-  });
+  }));
 
-  ipcMain.handle('agent:stream-instance', async (_event, instanceId: string, message: string) => {
+  ipcMain.handle('agent:stream-instance', readyHandler(async (_event, instanceId: string, message: string) => {
     // For streaming, we send chunks via the main window with instanceId
     try {
       const stream = agentService!.streamInstance(instanceId, message);
@@ -204,11 +218,11 @@ async function setupIPC(): Promise<void> {
       mainWindow?.webContents.send('agent:stream-end', instanceId);
       return { success: false, error: errorMessage };
     }
-  });
+  }));
 
-  ipcMain.handle('agent:cancel-instance', async (_event, instanceId: string) => {
+  ipcMain.handle('agent:cancel-instance', readyHandler(async (_event, instanceId: string) => {
     return agentService!.cancelInstance(instanceId);
-  });
+  }));
 
   ipcMain.handle('agent:status-instance', async (_event, instanceId: string) => {
     return agentService!.getInstanceStatus(instanceId);
@@ -218,27 +232,27 @@ async function setupIPC(): Promise<void> {
     return agentService!.listInstances();
   });
 
-  // Context entry pinning
-  ipcMain.handle('agent:pin-context-key', async (_event, agentConfigId: string, key: string, pinned: boolean) => {
+  // Context entry pinning (require heavy init)
+  ipcMain.handle('agent:pin-context-key', readyHandler(async (_event, agentConfigId: string, key: string, pinned: boolean) => {
     return agentService!.setPinnedContextKey(agentConfigId, key, pinned);
-  });
+  }));
 
   ipcMain.handle('agent:get-pinned-context-keys', async (_event, agentConfigId: string) => {
     return agentService!.getPinnedContextKeys(agentConfigId);
   });
 
-  // Connector operations
+  // Connector operations (list is safe before heavy init, add/delete require it)
   ipcMain.handle('connector:list', async () => {
     return agentService!.listConnectors();
   });
 
-  ipcMain.handle('connector:add', async (_event, config: unknown) => {
+  ipcMain.handle('connector:add', readyHandler(async (_event, config: unknown) => {
     return agentService!.addConnector(config);
-  });
+  }));
 
-  ipcMain.handle('connector:delete', async (_event, name: string) => {
+  ipcMain.handle('connector:delete', readyHandler(async (_event, name: string) => {
     return agentService!.deleteConnector(name);
-  });
+  }));
 
   // Model operations
   ipcMain.handle('model:list', async () => {
@@ -258,31 +272,31 @@ async function setupIPC(): Promise<void> {
     return agentService!.getStrategies();
   });
 
-  // Session operations
-  ipcMain.handle('session:save', async () => {
+  // Session operations (require heavy init)
+  ipcMain.handle('session:save', readyHandler(async () => {
     return agentService!.saveSession();
-  });
+  }));
 
-  ipcMain.handle('session:load', async (_event, sessionId: string) => {
+  ipcMain.handle('session:load', readyHandler(async (_event, sessionId: string) => {
     return agentService!.loadSession(sessionId);
-  });
+  }));
 
-  ipcMain.handle('session:list', async () => {
+  ipcMain.handle('session:list', readyHandler(async () => {
     return agentService!.listSessions();
-  });
+  }));
 
-  ipcMain.handle('session:new', async () => {
+  ipcMain.handle('session:new', readyHandler(async () => {
     return agentService!.newSession();
-  });
+  }));
 
   // Tool operations
   ipcMain.handle('tool:list', async () => {
     return agentService!.listTools();
   });
 
-  ipcMain.handle('tool:toggle', async (_event, toolName: string, enabled: boolean) => {
+  ipcMain.handle('tool:toggle', readyHandler(async (_event, toolName: string, enabled: boolean) => {
     return agentService!.toggleTool(toolName, enabled);
-  });
+  }));
 
   ipcMain.handle('tool:registry', async () => {
     return agentService!.getAvailableTools();
@@ -301,29 +315,29 @@ async function setupIPC(): Promise<void> {
     return agentService!.getAgent(id);
   });
 
-  ipcMain.handle('agent-config:create', async (_event, config: unknown) => {
+  ipcMain.handle('agent-config:create', readyHandler(async (_event, config: unknown) => {
     return agentService!.createAgent(config as any);
-  });
+  }));
 
-  ipcMain.handle('agent-config:update', async (_event, id: string, updates: unknown) => {
+  ipcMain.handle('agent-config:update', readyHandler(async (_event, id: string, updates: unknown) => {
     return agentService!.updateAgent(id, updates as any);
-  });
+  }));
 
-  ipcMain.handle('agent-config:delete', async (_event, id: string) => {
+  ipcMain.handle('agent-config:delete', readyHandler(async (_event, id: string) => {
     return agentService!.deleteAgent(id);
-  });
+  }));
 
-  ipcMain.handle('agent-config:set-active', async (_event, id: string) => {
+  ipcMain.handle('agent-config:set-active', readyHandler(async (_event, id: string) => {
     return agentService!.setActiveAgent(id);
-  });
+  }));
 
   ipcMain.handle('agent-config:get-active', async () => {
     return agentService!.getActiveAgent();
   });
 
-  ipcMain.handle('agent-config:create-default', async (_event, connectorName: string, model: string) => {
+  ipcMain.handle('agent-config:create-default', readyHandler(async (_event, connectorName: string, model: string) => {
     return agentService!.createDefaultAgent(connectorName, model);
-  });
+  }));
 
   // Universal Connector operations (vendor templates)
   ipcMain.handle('universal-connector:list-vendors', async () => {
@@ -350,29 +364,29 @@ async function setupIPC(): Promise<void> {
     return agentService!.getVendorsByCategory(category);
   });
 
-  ipcMain.handle('universal-connector:list', async () => {
+  ipcMain.handle('universal-connector:list', readyHandler(async () => {
     return agentService!.listUniversalConnectors();
-  });
+  }));
 
-  ipcMain.handle('universal-connector:get', async (_event, name: string) => {
+  ipcMain.handle('universal-connector:get', readyHandler(async (_event, name: string) => {
     return agentService!.getUniversalConnector(name);
-  });
+  }));
 
-  ipcMain.handle('universal-connector:create', async (_event, config: unknown) => {
+  ipcMain.handle('universal-connector:create', readyHandler(async (_event, config: unknown) => {
     return agentService!.createUniversalConnector(config as any);
-  });
+  }));
 
-  ipcMain.handle('universal-connector:update', async (_event, name: string, updates: unknown) => {
+  ipcMain.handle('universal-connector:update', readyHandler(async (_event, name: string, updates: unknown) => {
     return agentService!.updateUniversalConnector(name, updates as any);
-  });
+  }));
 
-  ipcMain.handle('universal-connector:delete', async (_event, name: string) => {
+  ipcMain.handle('universal-connector:delete', readyHandler(async (_event, name: string) => {
     return agentService!.deleteUniversalConnector(name);
-  });
+  }));
 
-  ipcMain.handle('universal-connector:test-connection', async (_event, name: string) => {
+  ipcMain.handle('universal-connector:test-connection', readyHandler(async (_event, name: string) => {
     return agentService!.testUniversalConnection(name);
-  });
+  }));
 
   // MCP Server operations
   ipcMain.handle('mcp-server:list', async () => {
@@ -383,79 +397,79 @@ async function setupIPC(): Promise<void> {
     return agentService!.getMCPServer(name);
   });
 
-  ipcMain.handle('mcp-server:create', async (_event, config: unknown) => {
+  ipcMain.handle('mcp-server:create', readyHandler(async (_event, config: unknown) => {
     return agentService!.createMCPServer(config as any);
-  });
+  }));
 
-  ipcMain.handle('mcp-server:update', async (_event, name: string, updates: unknown) => {
+  ipcMain.handle('mcp-server:update', readyHandler(async (_event, name: string, updates: unknown) => {
     return agentService!.updateMCPServer(name, updates as any);
-  });
+  }));
 
-  ipcMain.handle('mcp-server:delete', async (_event, name: string) => {
+  ipcMain.handle('mcp-server:delete', readyHandler(async (_event, name: string) => {
     return agentService!.deleteMCPServer(name);
-  });
+  }));
 
-  ipcMain.handle('mcp-server:connect', async (_event, name: string) => {
+  ipcMain.handle('mcp-server:connect', readyHandler(async (_event, name: string) => {
     return agentService!.connectMCPServer(name);
-  });
+  }));
 
-  ipcMain.handle('mcp-server:disconnect', async (_event, name: string) => {
+  ipcMain.handle('mcp-server:disconnect', readyHandler(async (_event, name: string) => {
     return agentService!.disconnectMCPServer(name);
-  });
+  }));
 
   ipcMain.handle('mcp-server:get-tools', async (_event, name: string) => {
     return agentService!.getMCPServerTools(name);
   });
 
-  ipcMain.handle('mcp-server:refresh-tools', async (_event, name: string) => {
+  ipcMain.handle('mcp-server:refresh-tools', readyHandler(async (_event, name: string) => {
     return agentService!.refreshMCPServerTools(name);
-  });
+  }));
 
-  // Everworker Backend operations
-  ipcMain.handle('everworker:get-config', async () => {
+  // Everworker Backend operations (require heavy init)
+  ipcMain.handle('everworker:get-config', readyHandler(async () => {
     return agentService!.getEWConfig();
-  });
+  }));
 
-  ipcMain.handle('everworker:set-config', async (_event, config: unknown) => {
+  ipcMain.handle('everworker:set-config', readyHandler(async (_event, config: unknown) => {
     return agentService!.setEWConfig(config as any);
-  });
+  }));
 
-  ipcMain.handle('everworker:test-connection', async () => {
+  ipcMain.handle('everworker:test-connection', readyHandler(async () => {
     return agentService!.testEWConnection();
-  });
+  }));
 
-  ipcMain.handle('everworker:sync-connectors', async () => {
+  ipcMain.handle('everworker:sync-connectors', readyHandler(async () => {
     return agentService!.syncEWConnectors();
-  });
+  }));
 
-  // Everworker Multi-Profile operations
-  ipcMain.handle('everworker:get-profiles', async () => {
+  // Everworker Multi-Profile operations (require heavy init)
+  ipcMain.handle('everworker:get-profiles', readyHandler(async () => {
     return agentService!.getEWProfiles();
-  });
+  }));
 
-  ipcMain.handle('everworker:add-profile', async (_event, data: { name: string; url: string; token: string }) => {
+  ipcMain.handle('everworker:add-profile', readyHandler(async (_event, data: { name: string; url: string; token: string }) => {
     return agentService!.addEWProfile(data);
-  });
+  }));
 
-  ipcMain.handle('everworker:update-profile', async (_event, id: string, updates: { name?: string; url?: string; token?: string }) => {
+  ipcMain.handle('everworker:update-profile', readyHandler(async (_event, id: string, updates: { name?: string; url?: string; token?: string }) => {
     return agentService!.updateEWProfile(id, updates);
-  });
+  }));
 
-  ipcMain.handle('everworker:delete-profile', async (_event, id: string) => {
+  ipcMain.handle('everworker:delete-profile', readyHandler(async (_event, id: string) => {
     return agentService!.deleteEWProfile(id);
-  });
+  }));
 
-  ipcMain.handle('everworker:switch-profile', async (_event, id: string | null) => {
+  ipcMain.handle('everworker:switch-profile', readyHandler(async (_event, id: string | null) => {
     return agentService!.switchEWProfile(id);
-  });
+  }));
 
-  ipcMain.handle('everworker:test-profile', async (_event, id: string) => {
+  ipcMain.handle('everworker:test-profile', readyHandler(async (_event, id: string) => {
     return agentService!.testEWProfileConnection(id);
-  });
+  }));
 
-  ipcMain.handle('everworker:sync-active', async () => {
+  ipcMain.handle('everworker:sync-active', readyHandler(async () => {
     return agentService!.syncActiveEWProfile();
-  });
+  }));
 
   // EW Browser Auth
   ipcMain.handle('everworker:check-auth-support', async (_event, url: string) => {
@@ -527,27 +541,27 @@ async function setupIPC(): Promise<void> {
     return agentService!.getMemoryValue(keyOrInstanceId);
   });
 
-  ipcMain.handle('internals:force-compact', async (_event, instanceId?: string) => {
+  ipcMain.handle('internals:force-compact', readyHandler(async (_event, instanceId?: string) => {
     if (instanceId) {
       return agentService!.forceCompactionForInstance(instanceId);
     }
     return agentService!.forceCompaction();
-  });
+  }));
 
-  // Multimedia - Image Generation
-  ipcMain.handle('multimedia:get-available-image-models', async () => {
+  // Multimedia - Image Generation (require heavy init for connector access)
+  ipcMain.handle('multimedia:get-available-image-models', readyHandler(async () => {
     return agentService!.getAvailableImageModels();
-  });
+  }));
 
-  ipcMain.handle('multimedia:get-image-model-capabilities', async (_event, modelName: string) => {
+  ipcMain.handle('multimedia:get-image-model-capabilities', readyHandler(async (_event, modelName: string) => {
     return agentService!.getImageModelCapabilities(modelName);
-  });
+  }));
 
-  ipcMain.handle('multimedia:calculate-image-cost', async (_event, modelName: string, imageCount: number, quality: string) => {
+  ipcMain.handle('multimedia:calculate-image-cost', readyHandler(async (_event, modelName: string, imageCount: number, quality: string) => {
     return agentService!.calculateImageCost(modelName, imageCount, quality as 'standard' | 'hd');
-  });
+  }));
 
-  ipcMain.handle('multimedia:generate-image', async (_event, options: unknown) => {
+  ipcMain.handle('multimedia:generate-image', readyHandler(async (_event, options: unknown) => {
     return agentService!.generateImage(options as {
       model: string;
       prompt: string;
@@ -557,22 +571,22 @@ async function setupIPC(): Promise<void> {
       n?: number;
       [key: string]: unknown;
     });
-  });
+  }));
 
-  // Multimedia - Video Generation
-  ipcMain.handle('multimedia:get-available-video-models', async () => {
+  // Multimedia - Video Generation (require heavy init)
+  ipcMain.handle('multimedia:get-available-video-models', readyHandler(async () => {
     return agentService!.getAvailableVideoModels();
-  });
+  }));
 
-  ipcMain.handle('multimedia:get-video-model-capabilities', async (_event, modelName: string) => {
+  ipcMain.handle('multimedia:get-video-model-capabilities', readyHandler(async (_event, modelName: string) => {
     return agentService!.getVideoModelCapabilities(modelName);
-  });
+  }));
 
-  ipcMain.handle('multimedia:calculate-video-cost', async (_event, modelName: string, durationSeconds: number) => {
+  ipcMain.handle('multimedia:calculate-video-cost', readyHandler(async (_event, modelName: string, durationSeconds: number) => {
     return agentService!.calculateVideoCost(modelName, durationSeconds);
-  });
+  }));
 
-  ipcMain.handle('multimedia:generate-video', async (_event, options: unknown) => {
+  ipcMain.handle('multimedia:generate-video', readyHandler(async (_event, options: unknown) => {
     return agentService!.generateVideo(options as {
       model: string;
       prompt: string;
@@ -583,34 +597,34 @@ async function setupIPC(): Promise<void> {
       seed?: number;
       vendorOptions?: Record<string, unknown>;
     });
-  });
+  }));
 
-  ipcMain.handle('multimedia:get-video-status', async (_event, jobId: string) => {
+  ipcMain.handle('multimedia:get-video-status', readyHandler(async (_event, jobId: string) => {
     return agentService!.getVideoStatus(jobId);
-  });
+  }));
 
-  ipcMain.handle('multimedia:download-video', async (_event, jobId: string) => {
+  ipcMain.handle('multimedia:download-video', readyHandler(async (_event, jobId: string) => {
     return agentService!.downloadVideo(jobId);
-  });
+  }));
 
-  ipcMain.handle('multimedia:cancel-video-job', async (_event, jobId: string) => {
+  ipcMain.handle('multimedia:cancel-video-job', readyHandler(async (_event, jobId: string) => {
     return agentService!.cancelVideoJob(jobId);
-  });
+  }));
 
-  // Multimedia - TTS
-  ipcMain.handle('multimedia:get-available-tts-models', async () => {
+  // Multimedia - TTS (require heavy init)
+  ipcMain.handle('multimedia:get-available-tts-models', readyHandler(async () => {
     return agentService!.getAvailableTTSModels();
-  });
+  }));
 
-  ipcMain.handle('multimedia:get-tts-model-capabilities', async (_event, modelName: string) => {
+  ipcMain.handle('multimedia:get-tts-model-capabilities', readyHandler(async (_event, modelName: string) => {
     return agentService!.getTTSModelCapabilities(modelName);
-  });
+  }));
 
-  ipcMain.handle('multimedia:calculate-tts-cost', async (_event, modelName: string, charCount: number) => {
+  ipcMain.handle('multimedia:calculate-tts-cost', readyHandler(async (_event, modelName: string, charCount: number) => {
     return agentService!.calculateTTSCost(modelName, charCount);
-  });
+  }));
 
-  ipcMain.handle('multimedia:synthesize-speech', async (_event, options: unknown) => {
+  ipcMain.handle('multimedia:synthesize-speech', readyHandler(async (_event, options: unknown) => {
     return agentService!.synthesizeSpeech(options as {
       model: string;
       text: string;
@@ -619,7 +633,7 @@ async function setupIPC(): Promise<void> {
       speed?: number;
       vendorOptions?: Record<string, unknown>;
     });
-  });
+  }));
 
   // Dialog operations
   ipcMain.handle('dialog:show-open-dialog', async (_event, options: {
@@ -913,7 +927,13 @@ app.whenReady().then(async () => {
     return net.fetch(`file://${filePath}`);
   });
 
+  // Phase 1: Fast essential init + IPC handler registration
   await setupIPC();
+
+  // Add service readiness query handler
+  ipcMain.handle('service:is-ready', () => agentService!.isReady);
+
+  // Show window immediately (before heavy initialization)
   await createWindow();
 
   // Set main window reference on browser service after window is created
@@ -929,6 +949,14 @@ app.whenReady().then(async () => {
 
   // Create application menu
   createAppMenu();
+
+  // Phase 2: Heavy initialization in background (connectors, tools, agents)
+  // Window is already visible showing "Starting HOSEA..." spinner
+  agentService!.initializeHeavy().then(() => {
+    // Notify renderer that service is fully ready
+    mainWindow?.webContents.send('service:ready');
+    console.log('[HOSEA] Service fully initialized, notified renderer');
+  });
 
   app.on('activate', async () => {
     // macOS: re-create window when dock icon is clicked

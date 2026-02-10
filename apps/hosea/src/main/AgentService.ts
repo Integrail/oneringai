@@ -585,6 +585,10 @@ export class AgentService {
   private ewProfiles: EverworkerProfilesConfig = { version: 2, activeProfileId: null, profiles: [] };
   // Main window sender for push events to renderer
   private mainWindowSender: ((channel: string, ...args: unknown[]) => void) | null = null;
+  // Readiness tracking for non-blocking startup
+  private _isReady = false;
+  private _readyPromise: Promise<void>;
+  private _readyResolve!: () => void;
 
   // ============ Conversion Helpers ============
 
@@ -708,10 +712,25 @@ export class AgentService {
     // Register Browser tools provider (tools will be available once BrowserService is set)
     this.browserToolProvider = new BrowserToolProvider();
     this.toolCatalog.registerProvider(this.browserToolProvider);
+
+    // Create the ready promise for deferred initialization
+    this._readyPromise = new Promise<void>((resolve) => {
+      this._readyResolve = resolve;
+    });
+  }
+
+  /** Whether heavy (Phase 2) initialization is complete */
+  get isReady(): boolean {
+    return this._isReady;
+  }
+
+  /** Promise that resolves when heavy initialization completes */
+  whenReady(): Promise<void> {
+    return this._readyPromise;
   }
 
   /**
-   * Factory method to create and initialize AgentService
+   * Factory method to create and initialize AgentService (full blocking init)
    * This ensures all async initialization completes before the service is used
    */
   static async create(dataDir: string, isDev: boolean = false): Promise<AgentService> {
@@ -721,45 +740,81 @@ export class AgentService {
   }
 
   /**
-   * Async initialization - loads all config, connectors, and agents
+   * Factory method for non-blocking initialization.
+   * Returns immediately after Phase 1 (essential init: dirs, config, log level).
+   * Call initializeHeavy() separately to complete Phase 2.
+   */
+  static async createFast(dataDir: string, isDev: boolean = false): Promise<AgentService> {
+    const service = new AgentService(dataDir, isDev);
+    await service.initializeEssentials();
+    return service;
+  }
+
+  /**
+   * Full initialization (blocking) - used by AgentService.create()
    */
   private async initializeService(): Promise<void> {
+    await this.initializeEssentials();
+    await this.initializeHeavy();
+  }
+
+  /**
+   * Phase 1: Essential initialization (fast, ~100ms)
+   * Only does what's needed before the window can appear.
+   */
+  private async initializeEssentials(): Promise<void> {
     await this.ensureDirectories();
     await this.loadConfig();
-    await this.loadConnectors();
-    await this.loadUniversalConnectors();
-    await this.migrateAPIConnectorsToUniversal();
-
-    // Refresh tool catalog now that all connectors are registered with the library.
-    // ConnectorTools.discoverAll() can now find vendor connectors and generate multimedia tools.
-    logger.debug('[initializeService] Invalidating tool caches after connector loading...');
-    logger.debug(`[initializeService] Connector.list() = ${JSON.stringify(Connector.list())}`);
-
-    // Check what ConnectorTools.discoverAll() returns BEFORE cache invalidation
-    const discoveredBefore = ConnectorTools.discoverAll();
-    logger.debug(`[initializeService] ConnectorTools.discoverAll() BEFORE invalidation: ${discoveredBefore.size} connectors`);
-    for (const [name, tools] of discoveredBefore) {
-      logger.debug(`  connector=${name}: ${tools.length} tools [${tools.map(t => t.definition.function.name).join(', ')}]`);
-    }
-
-    this.oneRingToolProvider.invalidateCache();
-    this.toolCatalog.invalidateCache();
-
-    // Now check what ToolRegistry returns after invalidation
-    const allTools = ToolRegistry.getAllTools();
-    const connectorTools = allTools.filter(t => 'connectorName' in t);
-    logger.info(`[initializeService] After cache invalidation: ToolRegistry has ${allTools.length} total tools (${connectorTools.length} connector tools)`);
-    for (const t of connectorTools) {
-      logger.debug(`  tool=${t.name}, category=${t.category}, connectorServiceTypes=${JSON.stringify(t.connectorServiceTypes)}`);
-    }
-
-    await this.loadEWProfiles();
-    this.checkTokenExpiry();
-    await this.syncActiveEWProfile(); // Sync remote connectors if EW is configured
-    await this.loadAgents();
-    await this.migrateAgentsToNextGen(); // Migrate existing agents to NextGen format
-    await this.loadMCPServers();
     this.initializeLogLevel();
+  }
+
+  /**
+   * Phase 2: Heavy initialization (slow, ~20s)
+   * Loads connectors, discovers tools, syncs profiles, loads agents.
+   * Can be called after the window is visible.
+   */
+  async initializeHeavy(): Promise<void> {
+    try {
+      await this.loadConnectors();
+      await this.loadUniversalConnectors();
+      await this.migrateAPIConnectorsToUniversal();
+
+      // Refresh tool catalog now that all connectors are registered with the library.
+      logger.debug('[initializeHeavy] Invalidating tool caches after connector loading...');
+      logger.debug(`[initializeHeavy] Connector.list() = ${JSON.stringify(Connector.list())}`);
+
+      const discoveredBefore = ConnectorTools.discoverAll();
+      logger.debug(`[initializeHeavy] ConnectorTools.discoverAll() BEFORE invalidation: ${discoveredBefore.size} connectors`);
+      for (const [name, tools] of discoveredBefore) {
+        logger.debug(`  connector=${name}: ${tools.length} tools [${tools.map(t => t.definition.function.name).join(', ')}]`);
+      }
+
+      this.oneRingToolProvider.invalidateCache();
+      this.toolCatalog.invalidateCache();
+
+      const allTools = ToolRegistry.getAllTools();
+      const connectorTools = allTools.filter(t => 'connectorName' in t);
+      logger.info(`[initializeHeavy] After cache invalidation: ToolRegistry has ${allTools.length} total tools (${connectorTools.length} connector tools)`);
+      for (const t of connectorTools) {
+        logger.debug(`  tool=${t.name}, category=${t.category}, connectorServiceTypes=${JSON.stringify(t.connectorServiceTypes)}`);
+      }
+
+      await this.loadEWProfiles();
+      this.checkTokenExpiry();
+      await this.syncActiveEWProfile();
+      await this.loadAgents();
+      await this.migrateAgentsToNextGen();
+      await this.loadMCPServers();
+
+      this._isReady = true;
+      this._readyResolve();
+      logger.info('[AgentService] Heavy initialization complete - service is ready');
+    } catch (error) {
+      // Still resolve the promise to prevent callers from hanging forever
+      this._isReady = true;
+      this._readyResolve();
+      logger.error(`[AgentService] Heavy initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**

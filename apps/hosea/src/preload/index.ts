@@ -231,6 +231,13 @@ export interface BrowserBounds {
 
 // Types for the exposed API
 export interface HoseaAPI {
+  // Service readiness (non-blocking startup)
+  service: {
+    isReady: () => Promise<boolean>;
+    onReady: (callback: () => void) => void;
+    removeReadyListener: () => void;
+  };
+
   // Agent
   agent: {
     // Legacy single-agent methods (for backwards compatibility)
@@ -1225,6 +1232,17 @@ export interface HoseaAPI {
 
 // Expose to renderer
 const api: HoseaAPI = {
+  service: {
+    isReady: () => ipcRenderer.invoke('service:is-ready'),
+    onReady: (callback) => {
+      ipcRenderer.removeAllListeners('service:ready');
+      ipcRenderer.on('service:ready', () => callback());
+    },
+    removeReadyListener: () => {
+      ipcRenderer.removeAllListeners('service:ready');
+    },
+  },
+
   agent: {
     // Legacy single-agent methods
     initialize: (connectorName, model) => ipcRenderer.invoke('agent:initialize', connectorName, model),

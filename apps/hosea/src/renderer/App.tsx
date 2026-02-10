@@ -138,6 +138,18 @@ function AppContent(): React.ReactElement {
   const [defaultAgentConfig, setDefaultAgentConfig] = useState<{ id: string; name: string } | null>(null);
   const initStarted = React.useRef(false);
   const [connectorVersion, setConnectorVersion] = useState(0);
+  const [serviceReady, setServiceReady] = useState(false);
+
+  // Listen for service readiness (non-blocking startup)
+  useEffect(() => {
+    window.hosea.service.isReady().then((ready) => {
+      if (ready) setServiceReady(true);
+    });
+    window.hosea.service.onReady(() => setServiceReady(true));
+    return () => {
+      window.hosea.service.removeReadyListener();
+    };
+  }, []);
 
   // Listen for connector changes from EW profile switches
   useEffect(() => {
@@ -149,12 +161,15 @@ function AppContent(): React.ReactElement {
     };
   }, []);
 
-  // App initialization flow:
+  // App initialization flow (waits for service to be ready):
   // 1. Check for active agent -> activate it
   // 2. Check for any agents -> activate the most recent one
   // 3. Check for connectors -> auto-create a default agent
   // 4. No connectors -> show setup modal
   useEffect(() => {
+    // Wait for heavy initialization to complete before running app init
+    if (!serviceReady) return;
+
     const initializeApp = async () => {
       // Prevent double execution (React StrictMode in dev)
       if (initStarted.current) return;
@@ -223,7 +238,7 @@ function AppContent(): React.ReactElement {
     };
 
     initializeApp();
-  }, []);
+  }, [serviceReady]);
 
   // Called when setup modal completes (creates connector + default agent)
   const handleSetupComplete = useCallback(async () => {
