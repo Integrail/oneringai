@@ -24,9 +24,9 @@
     "preversion": "npm run build && npm run typecheck",
     "version": "git add -A",
     "postversion": "git push && git push --tags",
-    "release:patch": "npm version patch -m 'hosea: Release %s'",
-    "release:minor": "npm version minor -m 'hosea: Release %s'",
-    "release:major": "npm version major -m 'hosea: Release %s'"
+    "release:patch": "npm --tag-version-prefix='hosea-v' version patch -m 'hosea: Release %s'",
+    "release:minor": "npm --tag-version-prefix='hosea-v' version minor -m 'hosea: Release %s'",
+    "release:major": "npm --tag-version-prefix='hosea-v' version major -m 'hosea: Release %s'"
   },
   "dependencies": {
     "@everworker/oneringai": "file:../..",
