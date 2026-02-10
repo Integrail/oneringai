@@ -3418,12 +3418,12 @@ export class AgentService {
             ? {
                 maxEntries: agentConfig.maxInContextEntries,
                 maxTotalTokens: agentConfig.maxInContextTokens,
-                onEntriesChanged: (entries) => {
+                onEntriesChanged: (entries: any[]) => {
                   if (!this.streamEmitter) return;
                   const pinnedKeys = this.getPinnedContextKeysSync(agentConfigId);
                   this.streamEmitter(instanceId, {
                     type: 'ui:context_entries' as const,
-                    entries: entries.map(e => ({
+                    entries: entries.map((e: any) => ({
                       key: e.key,
                       description: e.description,
                       value: e.value,
