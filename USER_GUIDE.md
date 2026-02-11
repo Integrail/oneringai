@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.2.0
-**Last Updated:** 2026-02-09
+**Version:** 0.2.1
+**Last Updated:** 2026-02-11
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 

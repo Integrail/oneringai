@@ -1468,4 +1468,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.2.0 | **Last Updated:** 2026-02-09 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.2.1 | **Last Updated:** 2026-02-11 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
