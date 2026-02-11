@@ -49202,6 +49202,10 @@ For JS-heavy sites:
       const api = await tryAPI(args, startTime, attemptedMethods);
       if (api.success) return api;
       if (native.success) return native;
+      const errors = [];
+      if (native.error) errors.push(`native: ${native.error}`);
+      if (api.error) errors.push(`api(${connector.name}): ${api.error}`);
+      const detail = errors.length > 0 ? errors.join(" | ") : "Unknown failure";
       return {
         success: false,
         url: args.url,
@@ -49210,7 +49214,7 @@ For JS-heavy sites:
         content: "",
         durationMs: Date.now() - startTime,
         attemptedMethods,
-        error: "All scraping methods failed. Site may have bot protection."
+        error: `All scraping methods failed. ${detail}`
       };
     },
     describeCall: (args) => args.url
