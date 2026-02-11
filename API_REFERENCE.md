@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-09
+**Generated:** 2026-02-11
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -14,21 +14,21 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Core](#core) (9 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (9 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
-- [Image Generation](#image-generation) (22 items)
+- [Image Generation](#image-generation) (24 items)
 - [Video Generation](#video-generation) (18 items)
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (21 items)
-- [Tools & Function Calling](#tools-function-calling) (89 items)
+- [Tools & Function Calling](#tools-function-calling) (102 items)
 - [Streaming](#streaming) (15 items)
 - [Model Registry](#model-registry) (9 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
-- [Utilities](#utilities) (6 items)
+- [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (42 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (186 items)
+- [Other](#other) (233 items)
 
 ## Core
 
@@ -2361,6 +2361,26 @@ getConnector(): Connector
 
 ---
 
+### DocumentImagePiece `interface`
+
+📍 [`src/capabilities/documents/types.ts:43`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'image';` | - |
+| `base64` | `base64: string;` | - |
+| `mimeType` | `mimeType: string;` | - |
+| `width?` | `width?: number;` | - |
+| `height?` | `height?: number;` | - |
+| `metadata` | `metadata: PieceMetadata;` | - |
+
+</details>
+
+---
+
 ### IImageModelDescription `interface`
 
 📍 [`src/domain/entities/ImageModel.ts:93`](src/domain/entities/ImageModel.ts)
@@ -2455,6 +2475,25 @@ listModels?(): Promise&lt;string[]&gt;;
 | `size?` | `size?: string;` | - |
 | `n?` | `n?: number;` | - |
 | `response_format?` | `response_format?: 'url' | 'b64_json';` | - |
+
+</details>
+
+---
+
+### ImageFilterOptions `interface`
+
+📍 [`src/capabilities/documents/types.ts:108`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `minWidth?` | `minWidth?: number;` | Skip images narrower than this (default: 50px) |
+| `minHeight?` | `minHeight?: number;` | Skip images shorter than this (default: 50px) |
+| `minSizeBytes?` | `minSizeBytes?: number;` | Skip images smaller than this in bytes (default: 1024) |
+| `maxImages?` | `maxImages?: number;` | Maximum images to keep (default: 50 at extraction, 20 at content conversion) |
+| `excludePatterns?` | `excludePatterns?: RegExp[];` | Exclude images whose filename/label matches these patterns |
 
 </details>
 
@@ -7873,6 +7912,25 @@ estimateDataTokens(data: unknown, contentType: TokenContentType = 'mixed'): numb
 
 **Returns:** `number`
 
+#### `estimateImageTokens()`
+
+Estimate tokens for an image using tile-based model (matches OpenAI pricing).
+
+- detail='low': 85 tokens
+- detail='high' with known dimensions: 85 + 170 per 512×512 tile
+- Unknown dimensions: 1000 tokens (conservative default)
+
+```typescript
+estimateImageTokens(width?: number, height?: number, detail?: string): number
+```
+
+**Parameters:**
+- `width`: `number | undefined` *(optional)*
+- `height`: `number | undefined` *(optional)*
+- `detail`: `string | undefined` *(optional)*
+
+**Returns:** `number`
+
 </details>
 
 ---
@@ -8100,7 +8158,7 @@ Context manager configuration
 
 ### IContextCompactor `interface`
 
-📍 [`src/core/context/types.ts:176`](src/core/context/types.ts)
+📍 [`src/core/context/types.ts:184`](src/core/context/types.ts)
 
 Abstract interface for compaction strategies
 
@@ -8184,7 +8242,7 @@ Core types for context management system
 
 ### IContextStrategy `interface`
 
-📍 [`src/core/context/types.ts:202`](src/core/context/types.ts)
+📍 [`src/core/context/types.ts:210`](src/core/context/types.ts)
 
 Context management strategy - defines the overall approach to managing context
 
@@ -8319,6 +8377,21 @@ estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
 **Parameters:**
 - `data`: `unknown`
 - `contentType`: `TokenContentType | undefined` *(optional)*
+
+**Returns:** `number`
+
+#### `estimateImageTokens()?`
+
+Estimate tokens for an image.
+
+```typescript
+estimateImageTokens?(width?: number, height?: number, detail?: string): number;
+```
+
+**Parameters:**
+- `width`: `number | undefined` *(optional)*
+- `height`: `number | undefined` *(optional)*
+- `detail`: `string | undefined` *(optional)*
 
 **Returns:** `number`
 
@@ -8896,6 +8969,16 @@ getPath(): string
 
 **Returns:** `string`
 
+#### `getLocation()`
+
+Get a human-readable storage location string (for display/debugging)
+
+```typescript
+getLocation(): string
+```
+
+**Returns:** `string`
+
 #### `getAgentId()`
 
 Get the agent ID
@@ -9450,7 +9533,7 @@ export function createFileAgentDefinitionStorage(
 
 ### createFileContextStorage `function`
 
-📍 [`src/infrastructure/storage/FileContextStorage.ts:488`](src/infrastructure/storage/FileContextStorage.ts)
+📍 [`src/infrastructure/storage/FileContextStorage.ts:496`](src/infrastructure/storage/FileContextStorage.ts)
 
 Create a FileContextStorage for the given agent
 
@@ -11242,9 +11325,29 @@ Options for ConnectorTools methods that accept a scoped registry
 
 ---
 
+### DesktopToolConfig `interface`
+
+📍 [`src/tools/desktop/types.ts:91`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `driver?` | `driver?: IDesktopDriver;` | Custom driver implementation (defaults to NutTreeDriver) |
+| `humanDelay?` | `humanDelay?: [number, number];` | Human-like delay range in ms added between actions.
+Set to [0, 0] for instant actions.
+Default: [50, 150] |
+| `humanizeMovement?` | `humanizeMovement?: boolean;` | Whether to humanize mouse movements (curved path vs instant teleport).
+Default: false |
+
+</details>
+
+---
+
 ### FilesystemToolConfig `interface`
 
-📍 [`src/tools/filesystem/types.ts:13`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:14`](src/tools/filesystem/types.ts)
 
 Configuration for filesystem tools
 
@@ -11269,6 +11372,8 @@ Default: 1000 |
 Default: false |
 | `excludeExtensions?` | `excludeExtensions?: string[];` | File extensions to exclude from search.
 Default: common binary extensions |
+| `documentReaderConfig?` | `documentReaderConfig?: DocumentReaderConfig;` | Document reader config for non-text file formats (PDF, DOCX, XLSX, etc.).
+When set, read_file will automatically convert binary document formats to markdown. |
 
 </details>
 
@@ -12199,7 +12304,7 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistryEntry `interface`
 
-📍 [`src/tools/registry.generated.ts:27`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:38`](src/tools/registry.generated.ts)
 
 Metadata for a tool in the registry
 
@@ -12256,6 +12361,9 @@ Metadata for a tool in the registry
 | `tool_use_id` | `tool_use_id: string;` | - |
 | `content` | `content: string | any;` | - |
 | `error?` | `error?: string;` | - |
+| `__images?` | `__images?: Array&lt;{ base64: string; mediaType: string }&gt;;` | Images extracted from tool results via the __images convention.
+Stored separately from `content` so they don't inflate text-based token counts.
+Provider converters read this field to inject native multimodal image blocks. |
 
 </details>
 
@@ -12330,6 +12438,16 @@ type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number]
 
 ---
 
+### DesktopToolName `type`
+
+📍 [`src/tools/desktop/types.ts:277`](src/tools/desktop/types.ts)
+
+```typescript
+type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
+```
+
+---
+
 ### ServiceToolFactory `type`
 
 📍 [`src/tools/connector/ConnectorTools.ts:109`](src/tools/connector/ConnectorTools.ts)
@@ -12359,12 +12477,12 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolCategory `type`
 
-📍 [`src/tools/registry.generated.ts:24`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:35`](src/tools/registry.generated.ts)
 
 Tool category for grouping
 
 ```typescript
-type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'other'
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other'
 ```
 
 ---
@@ -12408,6 +12526,116 @@ export function createCreatePRTool(
   connector: Connector,
   userId?: string
 ): ToolFunction&lt;CreatePRArgs, GitHubCreatePRResult&gt;
+```
+
+---
+
+### createDesktopGetCursorTool `function`
+
+📍 [`src/tools/desktop/getCursor.ts:11`](src/tools/desktop/getCursor.ts)
+
+```typescript
+export function createDesktopGetCursorTool(config?: DesktopToolConfig): ToolFunction&lt;Record&lt;string, never&gt;, DesktopGetCursorResult&gt;
+```
+
+---
+
+### createDesktopGetScreenSizeTool `function`
+
+📍 [`src/tools/desktop/getScreenSize.ts:11`](src/tools/desktop/getScreenSize.ts)
+
+```typescript
+export function createDesktopGetScreenSizeTool(config?: DesktopToolConfig): ToolFunction&lt;Record&lt;string, never&gt;, DesktopGetScreenSizeResult&gt;
+```
+
+---
+
+### createDesktopKeyboardKeyTool `function`
+
+📍 [`src/tools/desktop/keyboardKey.ts:12`](src/tools/desktop/keyboardKey.ts)
+
+```typescript
+export function createDesktopKeyboardKeyTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopKeyboardKeyArgs, DesktopKeyboardKeyResult&gt;
+```
+
+---
+
+### createDesktopKeyboardTypeTool `function`
+
+📍 [`src/tools/desktop/keyboardType.ts:12`](src/tools/desktop/keyboardType.ts)
+
+```typescript
+export function createDesktopKeyboardTypeTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopKeyboardTypeArgs, DesktopKeyboardTypeResult&gt;
+```
+
+---
+
+### createDesktopMouseClickTool `function`
+
+📍 [`src/tools/desktop/mouseClick.ts:13`](src/tools/desktop/mouseClick.ts)
+
+```typescript
+export function createDesktopMouseClickTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopMouseClickArgs, DesktopMouseClickResult&gt;
+```
+
+---
+
+### createDesktopMouseDragTool `function`
+
+📍 [`src/tools/desktop/mouseDrag.ts:12`](src/tools/desktop/mouseDrag.ts)
+
+```typescript
+export function createDesktopMouseDragTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopMouseDragArgs, DesktopMouseDragResult&gt;
+```
+
+---
+
+### createDesktopMouseMoveTool `function`
+
+📍 [`src/tools/desktop/mouseMove.ts:13`](src/tools/desktop/mouseMove.ts)
+
+```typescript
+export function createDesktopMouseMoveTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopMouseMoveArgs, DesktopMouseMoveResult&gt;
+```
+
+---
+
+### createDesktopMouseScrollTool `function`
+
+📍 [`src/tools/desktop/mouseScroll.ts:12`](src/tools/desktop/mouseScroll.ts)
+
+```typescript
+export function createDesktopMouseScrollTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopMouseScrollArgs, DesktopMouseScrollResult&gt;
+```
+
+---
+
+### createDesktopScreenshotTool `function`
+
+📍 [`src/tools/desktop/screenshot.ts:12`](src/tools/desktop/screenshot.ts)
+
+```typescript
+export function createDesktopScreenshotTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopScreenshotArgs, DesktopScreenshotResult&gt;
+```
+
+---
+
+### createDesktopWindowFocusTool `function`
+
+📍 [`src/tools/desktop/windowFocus.ts:11`](src/tools/desktop/windowFocus.ts)
+
+```typescript
+export function createDesktopWindowFocusTool(config?: DesktopToolConfig): ToolFunction&lt;DesktopWindowFocusArgs, DesktopWindowFocusResult&gt;
+```
+
+---
+
+### createDesktopWindowListTool `function`
+
+📍 [`src/tools/desktop/windowList.ts:11`](src/tools/desktop/windowList.ts)
+
+```typescript
+export function createDesktopWindowListTool(config?: DesktopToolConfig): ToolFunction&lt;Record&lt;string, never&gt;, DesktopWindowListResult&gt;
 ```
 
 ---
@@ -12475,7 +12703,7 @@ export function createGitHubReadFileTool(
 
 ### createGlobTool `function`
 
-📍 [`src/tools/filesystem/glob.ts:123`](src/tools/filesystem/glob.ts)
+📍 [`src/tools/filesystem/glob.ts:126`](src/tools/filesystem/glob.ts)
 
 Create a Glob tool with the given configuration
 
@@ -12487,7 +12715,7 @@ export function createGlobTool(config: FilesystemToolConfig =
 
 ### createGrepTool `function`
 
-📍 [`src/tools/filesystem/grep.ts:191`](src/tools/filesystem/grep.ts)
+📍 [`src/tools/filesystem/grep.ts:193`](src/tools/filesystem/grep.ts)
 
 Create a Grep tool with the given configuration
 
@@ -12499,7 +12727,7 @@ export function createGrepTool(config: FilesystemToolConfig =
 
 ### createListDirectoryTool `function`
 
-📍 [`src/tools/filesystem/listDirectory.ts:137`](src/tools/filesystem/listDirectory.ts)
+📍 [`src/tools/filesystem/listDirectory.ts:139`](src/tools/filesystem/listDirectory.ts)
 
 Create a List Directory tool with the given configuration
 
@@ -12541,7 +12769,7 @@ export function createPRFilesTool(
 
 ### createReadFileTool `function`
 
-📍 [`src/tools/filesystem/readFile.ts:40`](src/tools/filesystem/readFile.ts)
+📍 [`src/tools/filesystem/readFile.ts:43`](src/tools/filesystem/readFile.ts)
 
 Create a Read File tool with the given configuration
 
@@ -12664,7 +12892,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:143`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:253`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -12688,7 +12916,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:158`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:268`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -12716,7 +12944,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:168`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:278`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -12728,7 +12956,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:148`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:258`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -12740,7 +12968,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:153`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:263`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -12752,7 +12980,7 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:163`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:273`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
@@ -17104,7 +17332,7 @@ constructor(
 
 ### ContextOverflowError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:291`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:331`](src/domain/errors/AIErrors.ts)
 
 Error thrown when context cannot be reduced to fit within limits
 after all graceful degradation levels have been exhausted.
@@ -17669,7 +17897,7 @@ constructor(
 
 ### ContextOverflowBudget `interface`
 
-📍 [`src/domain/errors/AIErrors.ts:279`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:319`](src/domain/errors/AIErrors.ts)
 
 Detailed budget information for context overflow diagnosis
 
@@ -17894,6 +18122,25 @@ export function createTextMessage(text: string, role: MessageRole = MessageRole.
 
 ---
 
+### documentToContent `function`
+
+📍 [`src/utils/documentContentBridge.ts:26`](src/utils/documentContentBridge.ts)
+
+Convert a DocumentResult to Content[] for LLM input.
+
+- Text pieces → InputTextContent
+- Image pieces → InputImageContent (with data URI)
+- Adjacent text pieces merged by default
+- Additional image filtering applied
+
+```typescript
+export function documentToContent(
+  result: DocumentResult,
+  options: DocumentToContentOptions =
+```
+
+---
+
 ### extractJSON `function`
 
 📍 [`src/utils/jsonExtractor.ts:49`](src/utils/jsonExtractor.ts)
@@ -17969,6 +18216,34 @@ const score = extractNumber(llmResponse, [/(\d{1,3})%?\s*complete/i], 50);
 
 ---
 
+### readDocumentAsContent `function`
+
+📍 [`src/utils/documentContentBridge.ts:116`](src/utils/documentContentBridge.ts)
+
+One-call convenience: read a document and convert to Content[] for LLM input.
+
+```typescript
+export async function readDocumentAsContent(
+  source: DocumentSource | string,
+  options: DocumentReadOptions & DocumentToContentOptions =
+```
+
+**Example:**
+
+```typescript
+const content = await readDocumentAsContent('/path/to/doc.pdf', {
+  imageFilter: { minWidth: 100, minHeight: 100 },
+  imageDetail: 'auto',
+});
+
+agent.run([
+  { type: 'input_text', text: 'Analyze this document:' },
+  ...content,
+]);
+```
+
+---
+
 ## Interfaces
 
 TypeScript interfaces for extensibility
@@ -18037,7 +18312,7 @@ Agent definition summary for listing
 
 ### ContextStorageListOptions `interface`
 
-📍 [`src/domain/interfaces/IContextStorage.ts:175`](src/domain/interfaces/IContextStorage.ts)
+📍 [`src/domain/interfaces/IContextStorage.ts:183`](src/domain/interfaces/IContextStorage.ts)
 
 Options for listing sessions
 
@@ -18626,10 +18901,22 @@ updateMetadata?(
 
 #### `getPath()`
 
-Get the storage path/location (for display/debugging)
+Get the storage path (for display/debugging)
 
 ```typescript
 getPath(): string;
+```
+
+**Returns:** `string`
+
+#### `getLocation()?`
+
+Get a human-readable storage location string (for display/debugging).
+Examples: file path, MongoDB URI, Redis key prefix, S3 bucket, etc.
+Falls back to getPath() if not implemented.
+
+```typescript
+getLocation?(): string;
 ```
 
 **Returns:** `string`
@@ -20698,7 +20985,7 @@ destroy(): void
 
 ### BasePluginNextGen `class`
 
-📍 [`src/core/context-nextgen/BasePluginNextGen.ts:135`](src/core/context-nextgen/BasePluginNextGen.ts)
+📍 [`src/core/context-nextgen/BasePluginNextGen.ts:150`](src/core/context-nextgen/BasePluginNextGen.ts)
 
 Base class for NextGen context plugins.
 
@@ -21130,6 +21417,99 @@ async consolidate(_context: CompactionContext): Promise&lt;ConsolidationResult&g
 
 ---
 
+### DocumentReader `class`
+
+📍 [`src/capabilities/documents/DocumentReader.ts:37`](src/capabilities/documents/DocumentReader.ts)
+
+Main document reader class.
+
+**Example:**
+
+```typescript
+const reader = DocumentReader.create();
+const result = await reader.read('/path/to/doc.pdf');
+console.log(result.pieces); // DocumentPiece[]
+```
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+private constructor(config: DocumentReaderConfig =
+```
+
+**Parameters:**
+- `config`: `DocumentReaderConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create a new DocumentReader instance
+
+```typescript
+static create(config: DocumentReaderConfig =
+```
+
+**Parameters:**
+- `config`: `DocumentReaderConfig` *(optional)* (default: `{}`)
+
+**Returns:** `DocumentReader`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `registerHandler()`
+
+Register a custom format handler
+
+```typescript
+registerHandler(family: DocumentFamily, handler: IFormatHandler): void
+```
+
+**Parameters:**
+- `family`: `DocumentFamily`
+- `handler`: `IFormatHandler`
+
+**Returns:** `void`
+
+#### `read()`
+
+Read a document from any source
+
+```typescript
+async read(
+    source: DocumentSource | string,
+    options: DocumentReadOptions =
+```
+
+**Parameters:**
+- `source`: `string | DocumentSource`
+- `options`: `DocumentReadOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;DocumentResult&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `handlers` | `handlers: Map&lt;DocumentFamily, IFormatHandler&gt;` | - |
+| `config` | `config: DocumentReaderConfig` | - |
+
+</details>
+
+---
+
 ### ExecutionContext `class`
 
 📍 [`src/capabilities/agents/ExecutionContext.ts:76`](src/capabilities/agents/ExecutionContext.ts)
@@ -21298,6 +21678,111 @@ getSummary()
 | `iterationSummaries` | `iterationSummaries: IterationSummary[]` | - |
 | `metrics` | `metrics: ExecutionMetrics` | - |
 | `auditTrail` | `auditTrail: AuditEntry[]` | - |
+
+</details>
+
+---
+
+### FormatDetector `class`
+
+📍 [`src/capabilities/documents/FormatDetector.ts:68`](src/capabilities/documents/FormatDetector.ts)
+
+Static utility for detecting document formats
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static detect()`
+
+Detect format from filename and optional buffer
+
+```typescript
+static detect(filename: string, _buffer?: Buffer | Uint8Array): FormatDetectionResult
+```
+
+**Parameters:**
+- `filename`: `string`
+- `_buffer`: `Buffer&lt;ArrayBufferLike&gt; | Uint8Array&lt;ArrayBufferLike&gt; | undefined` *(optional)*
+
+**Returns:** `FormatDetectionResult`
+
+#### `static isDocumentFormat()`
+
+Check if an extension is a supported document format
+Used by readFile to detect when to use DocumentReader
+
+```typescript
+static isDocumentFormat(ext: string): boolean
+```
+
+**Parameters:**
+- `ext`: `string`
+
+**Returns:** `boolean`
+
+#### `static isBinaryDocumentFormat()`
+
+Check if an extension is a binary document format
+(i.e., cannot be read as UTF-8)
+
+```typescript
+static isBinaryDocumentFormat(ext: string): boolean
+```
+
+**Parameters:**
+- `ext`: `string`
+
+**Returns:** `boolean`
+
+#### `static isDocumentMimeType()`
+
+Check if a Content-Type header indicates a document format
+Used by webFetch to detect downloadable documents
+
+```typescript
+static isDocumentMimeType(contentType: string): boolean
+```
+
+**Parameters:**
+- `contentType`: `string`
+
+**Returns:** `boolean`
+
+#### `static detectFromMimeType()`
+
+Detect format from Content-Type header
+
+```typescript
+static detectFromMimeType(contentType: string): FormatDetectionResult | null
+```
+
+**Parameters:**
+- `contentType`: `string`
+
+**Returns:** `FormatDetectionResult | null`
+
+#### `static getSupportedExtensions()`
+
+Get all supported document extensions
+
+```typescript
+static getSupportedExtensions(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `static getExtension()`
+
+Get the normalized extension from a filename
+
+```typescript
+static getExtension(filename: string): string
+```
+
+**Parameters:**
+- `filename`: `string`
+
+**Returns:** `string`
 
 </details>
 
@@ -21926,6 +22411,149 @@ static clear(): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `clients` | `clients: Map&lt;string, IMCPClient&gt;` | - |
+
+</details>
+
+---
+
+### NutTreeDriver `class`
+
+📍 [`src/tools/desktop/driver/NutTreeDriver.ts:133`](src/tools/desktop/driver/NutTreeDriver.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `initialize()`
+
+```typescript
+async initialize(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `screenshot()`
+
+```typescript
+async screenshot(region?:
+```
+
+**Parameters:**
+- `region`: `{ x: number; y: number; width: number; height: number; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;DesktopScreenshot&gt;`
+
+#### `getScreenSize()`
+
+```typescript
+async getScreenSize(): Promise&lt;DesktopScreenSize&gt;
+```
+
+**Returns:** `Promise&lt;DesktopScreenSize&gt;`
+
+#### `mouseMove()`
+
+```typescript
+async mouseMove(x: number, y: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `x`: `number`
+- `y`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `mouseClick()`
+
+```typescript
+async mouseClick(x: number, y: number, button: MouseButton, clickCount: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `x`: `number`
+- `y`: `number`
+- `button`: `MouseButton`
+- `clickCount`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `mouseDrag()`
+
+```typescript
+async mouseDrag(startX: number, startY: number, endX: number, endY: number, button: MouseButton): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `startX`: `number`
+- `startY`: `number`
+- `endX`: `number`
+- `endY`: `number`
+- `button`: `MouseButton`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `mouseScroll()`
+
+```typescript
+async mouseScroll(deltaX: number, deltaY: number, x?: number, y?: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `deltaX`: `number`
+- `deltaY`: `number`
+- `x`: `number | undefined` *(optional)*
+- `y`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getCursorPosition()`
+
+```typescript
+async getCursorPosition(): Promise&lt;DesktopPoint&gt;
+```
+
+**Returns:** `Promise&lt;DesktopPoint&gt;`
+
+#### `keyboardType()`
+
+```typescript
+async keyboardType(text: string, delay?: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `text`: `string`
+- `delay`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `keyboardKey()`
+
+```typescript
+async keyboardKey(keys: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `keys`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getWindowList()`
+
+```typescript
+async getWindowList(): Promise&lt;DesktopWindow[]&gt;
+```
+
+**Returns:** `Promise&lt;DesktopWindow[]&gt;`
+
+#### `focusWindow()`
+
+```typescript
+async focusWindow(windowId: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `windowId`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
 
 </details>
 
@@ -22693,7 +23321,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:509`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:523`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -23023,7 +23651,7 @@ Result of a bash command execution
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:682`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:696`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -23109,7 +23737,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:649`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:663`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -23220,7 +23848,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:666`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:680`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -23239,7 +23867,7 @@ Result of consolidate() operation.
 
 ### ContextBudget `interface`
 
-📍 [`src/core/context-nextgen/types.ts:361`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:375`](src/core/context-nextgen/types.ts)
 
 Token budget breakdown - clear and simple
 
@@ -23273,7 +23901,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:599`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:613`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -23302,7 +23930,7 @@ Events emitted by AgentContextNextGen
 
 ### ContextFeatures `interface`
 
-📍 [`src/core/context-nextgen/types.ts:456`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:470`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins
 
@@ -23355,6 +23983,402 @@ Configuration for DefaultCompactionStrategy
 
 ---
 
+### DesktopGetCursorResult `interface`
+
+📍 [`src/tools/desktop/types.ts:203`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `x?` | `x?: number;` | - |
+| `y?` | `y?: number;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopGetScreenSizeResult `interface`
+
+📍 [`src/tools/desktop/types.ts:232`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `physicalWidth?` | `physicalWidth?: number;` | - |
+| `physicalHeight?` | `physicalHeight?: number;` | - |
+| `logicalWidth?` | `logicalWidth?: number;` | - |
+| `logicalHeight?` | `logicalHeight?: number;` | - |
+| `scaleFactor?` | `scaleFactor?: number;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopKeyboardKeyArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:222`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `keys` | `keys: string;` | - |
+
+</details>
+
+---
+
+### DesktopKeyboardKeyResult `interface`
+
+📍 [`src/tools/desktop/types.ts:226`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopKeyboardTypeArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:211`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `text` | `text: string;` | - |
+| `delay?` | `delay?: number;` | - |
+
+</details>
+
+---
+
+### DesktopKeyboardTypeResult `interface`
+
+📍 [`src/tools/desktop/types.ts:216`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopMouseClickArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:159`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `x?` | `x?: number;` | - |
+| `y?` | `y?: number;` | - |
+| `button?` | `button?: MouseButton;` | - |
+| `clickCount?` | `clickCount?: number;` | - |
+
+</details>
+
+---
+
+### DesktopMouseClickResult `interface`
+
+📍 [`src/tools/desktop/types.ts:166`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `x?` | `x?: number;` | - |
+| `y?` | `y?: number;` | - |
+| `button?` | `button?: MouseButton;` | - |
+| `clickCount?` | `clickCount?: number;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopMouseDragArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:176`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `startX` | `startX: number;` | - |
+| `startY` | `startY: number;` | - |
+| `endX` | `endX: number;` | - |
+| `endY` | `endY: number;` | - |
+| `button?` | `button?: MouseButton;` | - |
+
+</details>
+
+---
+
+### DesktopMouseDragResult `interface`
+
+📍 [`src/tools/desktop/types.ts:184`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopMouseMoveArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:146`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `x` | `x: number;` | - |
+| `y` | `y: number;` | - |
+
+</details>
+
+---
+
+### DesktopMouseMoveResult `interface`
+
+📍 [`src/tools/desktop/types.ts:151`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `x?` | `x?: number;` | - |
+| `y?` | `y?: number;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopMouseScrollArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:190`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `deltaX?` | `deltaX?: number;` | - |
+| `deltaY?` | `deltaY?: number;` | - |
+| `x?` | `x?: number;` | - |
+| `y?` | `y?: number;` | - |
+
+</details>
+
+---
+
+### DesktopMouseScrollResult `interface`
+
+📍 [`src/tools/desktop/types.ts:197`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopPoint `interface`
+
+📍 [`src/tools/desktop/types.ts:15`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `x` | `x: number;` | - |
+| `y` | `y: number;` | - |
+
+</details>
+
+---
+
+### DesktopScreenshot `interface`
+
+📍 [`src/tools/desktop/types.ts:33`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `base64` | `base64: string;` | Base64-encoded PNG image data |
+| `width` | `width: number;` | Width in physical pixels |
+| `height` | `height: number;` | Height in physical pixels |
+
+</details>
+
+---
+
+### DesktopScreenshotArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:130`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `region?` | `region?: { x: number; y: number; width: number; height: number };` | - |
+
+</details>
+
+---
+
+### DesktopScreenshotResult `interface`
+
+📍 [`src/tools/desktop/types.ts:134`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `width?` | `width?: number;` | - |
+| `height?` | `height?: number;` | - |
+| `base64?` | `base64?: string;` | Base64 PNG for text summary |
+| `__images?` | `__images?: Array&lt;{ base64: string; mediaType: string }&gt;;` | Image array for multimodal provider handling |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopScreenSize `interface`
+
+📍 [`src/tools/desktop/types.ts:20`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `physicalWidth` | `physicalWidth: number;` | Physical pixel width (screenshot space) |
+| `physicalHeight` | `physicalHeight: number;` | Physical pixel height (screenshot space) |
+| `logicalWidth` | `logicalWidth: number;` | Logical OS width |
+| `logicalHeight` | `logicalHeight: number;` | Logical OS height |
+| `scaleFactor` | `scaleFactor: number;` | Scale factor (physical / logical), e.g. 2.0 on Retina |
+
+</details>
+
+---
+
+### DesktopWindow `interface`
+
+📍 [`src/tools/desktop/types.ts:42`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: number;` | Window identifier (platform-specific) |
+| `title` | `title: string;` | Window title |
+| `appName?` | `appName?: string;` | Application name |
+| `bounds?` | `bounds?: { x: number; y: number; width: number; height: number };` | Window bounds in physical pixel coords |
+
+</details>
+
+---
+
+### DesktopWindowFocusArgs `interface`
+
+📍 [`src/tools/desktop/types.ts:250`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `windowId` | `windowId: number;` | - |
+
+</details>
+
+---
+
+### DesktopWindowFocusResult `interface`
+
+📍 [`src/tools/desktop/types.ts:254`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### DesktopWindowListResult `interface`
+
+📍 [`src/tools/desktop/types.ts:243`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `windows?` | `windows?: DesktopWindow[];` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
 ### DirectCallOptions `interface`
 
 📍 [`src/core/BaseAgent.ts:249`](src/core/BaseAgent.ts)
@@ -23380,9 +24404,134 @@ Options for direct LLM calls (bypassing AgentContext).
 
 ---
 
+### DocumentMetadata `interface`
+
+📍 [`src/capabilities/documents/types.ts:56`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `filename` | `filename: string;` | - |
+| `format` | `format: DocumentFormat;` | - |
+| `family` | `family: DocumentFamily;` | - |
+| `mimeType` | `mimeType: string;` | - |
+| `totalPieces` | `totalPieces: number;` | - |
+| `totalTextPieces` | `totalTextPieces: number;` | - |
+| `totalImagePieces` | `totalImagePieces: number;` | - |
+| `totalSizeBytes` | `totalSizeBytes: number;` | - |
+| `estimatedTokens` | `estimatedTokens: number;` | - |
+| `processingTimeMs` | `processingTimeMs: number;` | - |
+| `formatSpecific?` | `formatSpecific?: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
+### DocumentReaderConfig `interface`
+
+📍 [`src/capabilities/documents/types.ts:179`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `defaults?` | `defaults?: DocumentReadOptions;` | Default options for all read() calls |
+| `handlers?` | `handlers?: Map&lt;DocumentFamily, IFormatHandler&gt;;` | Custom format handlers (override built-in) |
+| `maxDownloadSizeBytes?` | `maxDownloadSizeBytes?: number;` | Maximum download size for URL sources (default: 50MB) |
+| `downloadTimeoutMs?` | `downloadTimeoutMs?: number;` | Download timeout for URL sources (default: 60000ms) |
+
+</details>
+
+---
+
+### DocumentReadOptions `interface`
+
+📍 [`src/capabilities/documents/types.ts:151`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxTokens?` | `maxTokens?: number;` | Maximum estimated tokens in output (default: 100000) |
+| `maxOutputBytes?` | `maxOutputBytes?: number;` | Maximum output size in bytes (default: 5MB) |
+| `extractImages?` | `extractImages?: boolean;` | Extract images from documents (default: true) |
+| `imageDetail?` | `imageDetail?: 'auto' | 'low' | 'high';` | Image detail level for LLM (default: 'auto') |
+| `imageFilter?` | `imageFilter?: ImageFilterOptions;` | Image filtering options |
+| `pages?` | `pages?: number[] | string[];` | Specific pages/sheets to read (format-dependent) |
+| `transformers?` | `transformers?: IDocumentTransformer[];` | Additional transformers to apply |
+| `skipDefaultTransformers?` | `skipDefaultTransformers?: boolean;` | Skip built-in transformers (default: false) |
+| `formatOptions?` | `formatOptions?: {
+    excel?: ExcelFormatOptions;
+    pdf?: PDFFormatOptions;
+    html?: HTMLFormatOptions;
+    office?: OfficeFormatOptions;
+  };` | Format-specific options |
+
+</details>
+
+---
+
+### DocumentResult `interface`
+
+📍 [`src/capabilities/documents/types.ts:70`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `pieces` | `pieces: DocumentPiece[];` | - |
+| `metadata` | `metadata: DocumentMetadata;` | - |
+| `error?` | `error?: string;` | - |
+| `warnings` | `warnings: string[];` | - |
+
+</details>
+
+---
+
+### DocumentTextPiece `interface`
+
+📍 [`src/capabilities/documents/types.ts:37`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'text';` | - |
+| `content` | `content: string;` | - |
+| `metadata` | `metadata: PieceMetadata;` | - |
+
+</details>
+
+---
+
+### DocumentToContentOptions `interface`
+
+📍 [`src/capabilities/documents/types.ts:228`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `imageDetail?` | `imageDetail?: 'auto' | 'low' | 'high';` | Image detail for LLM content (default: 'auto') |
+| `imageFilter?` | `imageFilter?: ImageFilterOptions;` | Additional image filtering at content conversion time |
+| `maxImages?` | `maxImages?: number;` | Maximum images in content output (default: 20) |
+| `mergeAdjacentText?` | `mergeAdjacentText?: boolean;` | Merge adjacent text pieces into one (default: true) |
+
+</details>
+
+---
+
 ### EditFileResult `interface`
 
-📍 [`src/tools/filesystem/types.ts:107`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:118`](src/tools/filesystem/types.ts)
 
 Result of a file edit operation
 
@@ -23478,6 +24627,24 @@ Options for fetch operations
 | `maxSize?` | `maxSize?: number;` | Maximum content size to fetch (bytes) |
 | `timeoutMs?` | `timeoutMs?: number;` | Timeout in milliseconds |
 | `sourceOptions?` | `sourceOptions?: Record&lt;string, unknown&gt;;` | Source-specific options |
+
+</details>
+
+---
+
+### FormatDetectionResult `interface`
+
+📍 [`src/capabilities/documents/types.ts:219`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `format` | `format: DocumentFormat;` | - |
+| `family` | `family: DocumentFamily;` | - |
+| `mimeType` | `mimeType: string;` | - |
+| `confidence` | `confidence: 'high' | 'medium' | 'low';` | - |
 
 </details>
 
@@ -23701,7 +24868,7 @@ Result from search_files tool
 
 ### GlobResult `interface`
 
-📍 [`src/tools/filesystem/types.ts:118`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:129`](src/tools/filesystem/types.ts)
 
 Result of a glob operation
 
@@ -23722,7 +24889,7 @@ Result of a glob operation
 
 ### GrepMatch `interface`
 
-📍 [`src/tools/filesystem/types.ts:129`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:140`](src/tools/filesystem/types.ts)
 
 A single grep match
 
@@ -23746,7 +24913,7 @@ A single grep match
 
 ### GrepResult `interface`
 
-📍 [`src/tools/filesystem/types.ts:143`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:154`](src/tools/filesystem/types.ts)
 
 Result of a grep operation
 
@@ -23842,7 +25009,7 @@ Base interface for all capability providers
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:737`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:751`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -23913,7 +25080,7 @@ If any required plugin is missing, an error is thrown. |
 
 ### IContextPluginNextGen `interface`
 
-📍 [`src/core/context-nextgen/types.ts:129`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:143`](src/core/context-nextgen/types.ts)
 
 Context plugin interface for NextGen context management.
 
@@ -24214,6 +25381,235 @@ restoreState(state: unknown): void;
 
 ---
 
+### IDesktopDriver `interface`
+
+📍 [`src/tools/desktop/types.ts:57`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `initialize()`
+
+Initialize the driver (dynamic import, permission checks, scale detection)
+
+```typescript
+initialize(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `screenshot()`
+
+```typescript
+screenshot(region?: { x: number; y: number; width: number; height: number }): Promise&lt;DesktopScreenshot&gt;;
+```
+
+**Parameters:**
+- `region`: `{ x: number; y: number; width: number; height: number; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;DesktopScreenshot&gt;`
+
+#### `getScreenSize()`
+
+```typescript
+getScreenSize(): Promise&lt;DesktopScreenSize&gt;;
+```
+
+**Returns:** `Promise&lt;DesktopScreenSize&gt;`
+
+#### `mouseMove()`
+
+```typescript
+mouseMove(x: number, y: number): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `x`: `number`
+- `y`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `mouseClick()`
+
+```typescript
+mouseClick(x: number, y: number, button: MouseButton, clickCount: number): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `x`: `number`
+- `y`: `number`
+- `button`: `MouseButton`
+- `clickCount`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `mouseDrag()`
+
+```typescript
+mouseDrag(startX: number, startY: number, endX: number, endY: number, button: MouseButton): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `startX`: `number`
+- `startY`: `number`
+- `endX`: `number`
+- `endY`: `number`
+- `button`: `MouseButton`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `mouseScroll()`
+
+```typescript
+mouseScroll(deltaX: number, deltaY: number, x?: number, y?: number): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `deltaX`: `number`
+- `deltaY`: `number`
+- `x`: `number | undefined` *(optional)*
+- `y`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getCursorPosition()`
+
+```typescript
+getCursorPosition(): Promise&lt;DesktopPoint&gt;;
+```
+
+**Returns:** `Promise&lt;DesktopPoint&gt;`
+
+#### `keyboardType()`
+
+```typescript
+keyboardType(text: string, delay?: number): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `text`: `string`
+- `delay`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `keyboardKey()`
+
+```typescript
+keyboardKey(keys: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `keys`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getWindowList()`
+
+```typescript
+getWindowList(): Promise&lt;DesktopWindow[]&gt;;
+```
+
+**Returns:** `Promise&lt;DesktopWindow[]&gt;`
+
+#### `focusWindow()`
+
+```typescript
+focusWindow(windowId: number): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `windowId`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isInitialized` | `readonly isInitialized: boolean;` | Whether the driver is initialized |
+| `scaleFactor` | `readonly scaleFactor: number;` | Current scale factor (physical / logical) |
+
+</details>
+
+---
+
+### IDocumentTransformer `interface`
+
+📍 [`src/capabilities/documents/types.ts:199`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `transform()`
+
+```typescript
+transform(pieces: DocumentPiece[], context: TransformerContext): Promise&lt;DocumentPiece[]&gt;;
+```
+
+**Parameters:**
+- `pieces`: `DocumentPiece[]`
+- `context`: `TransformerContext`
+
+**Returns:** `Promise&lt;DocumentPiece[]&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | - |
+| `appliesTo` | `readonly appliesTo: DocumentFormat[];` | - |
+| `priority?` | `readonly priority?: number;` | - |
+
+</details>
+
+---
+
+### IFormatHandler `interface`
+
+📍 [`src/capabilities/documents/types.ts:206`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `handle()`
+
+```typescript
+handle(
+    buffer: Buffer,
+    filename: string,
+    format: DocumentFormat,
+    options: DocumentReadOptions
+  ): Promise&lt;DocumentPiece[]&gt;;
+```
+
+**Parameters:**
+- `buffer`: `Buffer&lt;ArrayBufferLike&gt;`
+- `filename`: `string`
+- `format`: `DocumentFormat`
+- `options`: `DocumentReadOptions`
+
+**Returns:** `Promise&lt;DocumentPiece[]&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | - |
+| `supportedFormats` | `readonly supportedFormats: DocumentFormat[];` | - |
+
+</details>
+
+---
+
 ### InContextEntry `interface`
 
 📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:28`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
@@ -24490,6 +25886,26 @@ estimateDataTokens(data: unknown): number;
 
 **Parameters:**
 - `data`: `unknown`
+
+**Returns:** `number`
+
+#### `estimateImageTokens()?`
+
+Estimate tokens for an image. Provider-specific implementations can override.
+
+Default heuristic (matches OpenAI's image token pricing):
+- detail='low': 85 tokens
+- detail='high' with known dimensions: 85 + 170 * ceil(w/512) * ceil(h/512)
+- Unknown dimensions: ~1000 tokens (conservative default)
+
+```typescript
+estimateImageTokens?(width?: number, height?: number, detail?: string): number;
+```
+
+**Parameters:**
+- `width`: `number | undefined` *(optional)*
+- `height`: `number | undefined` *(optional)*
+- `detail`: `string | undefined` *(optional)*
 
 **Returns:** `number`
 
@@ -24849,7 +26265,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### OversizedInputResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:429`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:443`](src/core/context-nextgen/types.ts)
 
 Result of handling oversized current input
 
@@ -24931,9 +26347,30 @@ Result of checking if a tool needs approval
 
 ---
 
+### PieceMetadata `interface`
+
+📍 [`src/capabilities/documents/types.ts:27`](src/capabilities/documents/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sourceFilename` | `sourceFilename: string;` | - |
+| `format` | `format: DocumentFormat;` | - |
+| `index` | `index: number;` | - |
+| `section?` | `section?: string;` | - |
+| `sizeBytes` | `sizeBytes: number;` | - |
+| `estimatedTokens` | `estimatedTokens: number;` | - |
+| `label?` | `label?: string;` | - |
+
+</details>
+
+---
+
 ### PluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:485`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:499`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -24982,7 +26419,7 @@ Contains all information about the current tool execution.
 
 ### PreparedContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:408`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:422`](src/core/context-nextgen/types.ts)
 
 Result of prepare() - ready for LLM call
 
@@ -25002,7 +26439,7 @@ Result of prepare() - ready for LLM call
 
 ### ReadFileResult `interface`
 
-📍 [`src/tools/filesystem/types.ts:82`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:93`](src/tools/filesystem/types.ts)
 
 Result of a file read operation
 
@@ -25616,7 +27053,7 @@ Used to describe vendor-specific options that fall outside semantic options
 
 ### WriteFileResult `interface`
 
-📍 [`src/tools/filesystem/types.ts:96`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:107`](src/tools/filesystem/types.ts)
 
 Result of a file write operation
 
@@ -25795,7 +27232,7 @@ type ConnectorAuth = | OAuthConnectorAuth
 
 ### Content `type`
 
-📍 [`src/domain/entities/Content.ts:56`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:62`](src/domain/entities/Content.ts)
 
 ```typescript
 type Content = | InputTextContent
@@ -25804,6 +27241,60 @@ type Content = | InputTextContent
   | OutputTextContent
   | ToolUseContent
   | ToolResultContent
+```
+
+---
+
+### DocumentFamily `type`
+
+📍 [`src/capabilities/documents/types.ts:17`](src/capabilities/documents/types.ts)
+
+```typescript
+type DocumentFamily = | 'office'
+  | 'spreadsheet'
+  | 'pdf'
+  | 'html'
+  | 'text'
+  | 'image'
+```
+
+---
+
+### DocumentFormat `type`
+
+📍 [`src/capabilities/documents/types.ts:9`](src/capabilities/documents/types.ts)
+
+Document Reader Types
+
+Core types for the universal file-to-LLM-content converter.
+
+```typescript
+type DocumentFormat = | 'docx' | 'pptx' | 'odt' | 'odp' | 'ods' | 'rtf'
+  | 'xlsx' | 'csv'
+  | 'pdf'
+  | 'html'
+  | 'txt' | 'md' | 'json' | 'xml' | 'yaml' | 'yml'
+  | 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp' | 'svg'
+```
+
+---
+
+### DocumentPiece `type`
+
+📍 [`src/capabilities/documents/types.ts:52`](src/capabilities/documents/types.ts)
+
+```typescript
+type DocumentPiece = DocumentTextPiece | DocumentImagePiece
+```
+
+---
+
+### DocumentSource `type`
+
+📍 [`src/capabilities/documents/types.ts:104`](src/capabilities/documents/types.ts)
+
+```typescript
+type DocumentSource = FileSource | URLSource | BufferSource | BlobSource
 ```
 
 ---
@@ -25906,6 +27397,22 @@ Hook that can modify data
 
 ```typescript
 type ModifyingHook = Hook&lt;TContext, TModification&gt;
+```
+
+---
+
+### MouseButton `type`
+
+📍 [`src/tools/desktop/types.ts:13`](src/tools/desktop/types.ts)
+
+Desktop Automation Tools - Types
+
+Interfaces and types for OS-level desktop automation (screenshot, mouse, keyboard, windows).
+All coordinates are in PHYSICAL pixel space (screenshot space).
+The driver converts to logical OS coords internally using scaleFactor.
+
+```typescript
+type MouseButton = 'left' | 'right' | 'middle'
 ```
 
 ---
@@ -26150,12 +27657,25 @@ export function getAllServiceIds(): string[]
 
 ### getBackgroundOutput `function`
 
-📍 [`src/tools/shell/bash.ts:327`](src/tools/shell/bash.ts)
+📍 [`src/tools/shell/bash.ts:331`](src/tools/shell/bash.ts)
 
 Get output from a background process
 
 ```typescript
 export function getBackgroundOutput(bgId: string):
+```
+
+---
+
+### getDesktopDriver `function`
+
+📍 [`src/tools/desktop/getDriver.ts:18`](src/tools/desktop/getDriver.ts)
+
+Get (or create) the desktop driver instance.
+If config.driver is provided, uses that instead of the default.
+
+```typescript
+export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;IDesktopDriver&gt;
 ```
 
 ---
@@ -26236,7 +27756,7 @@ export function isBlockedCommand(
 
 ### isExcludedExtension `function`
 
-📍 [`src/tools/filesystem/types.ts:242`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:264`](src/tools/filesystem/types.ts)
 
 Check if a file extension should be excluded
 
@@ -26263,7 +27783,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### killBackgroundProcess `function`
 
-📍 [`src/tools/shell/bash.ts:343`](src/tools/shell/bash.ts)
+📍 [`src/tools/shell/bash.ts:347`](src/tools/shell/bash.ts)
 
 Kill a background process
 
@@ -26282,6 +27802,31 @@ Useful for tools that want to show what's available or support fallback chains
 
 ```typescript
 export function listConnectorsByServiceTypes(serviceTypes: string[]): string[]
+```
+
+---
+
+### mergeTextPieces `function`
+
+📍 [`src/capabilities/documents/DocumentReader.ts:390`](src/capabilities/documents/DocumentReader.ts)
+
+Merge text pieces into a single markdown string
+
+```typescript
+export function mergeTextPieces(pieces: DocumentPiece[]): string
+```
+
+---
+
+### parseKeyCombo `function`
+
+📍 [`src/tools/desktop/driver/NutTreeDriver.ts:70`](src/tools/desktop/driver/NutTreeDriver.ts)
+
+Parse a key combo string like "ctrl+c", "cmd+shift+s", "enter"
+Returns nut-tree Key enum values.
+
+```typescript
+export function parseKeyCombo(keys: string, KeyEnum: Record&lt;string, any&gt;): any[]
 ```
 
 ---
@@ -26314,6 +27859,18 @@ export function registerScrapeProvider(
   serviceType: string,
   providerClass: ProviderConstructor
 ): void
+```
+
+---
+
+### resetDefaultDriver `function`
+
+📍 [`src/tools/desktop/getDriver.ts:42`](src/tools/desktop/getDriver.ts)
+
+Reset the default driver (for testing).
+
+```typescript
+export function resetDefaultDriver(): void
 ```
 
 ---
@@ -26379,7 +27936,7 @@ export function toConnectorOptions(options: ExtendedFetchOptions): ConnectorFetc
 
 ### validatePath `function`
 
-📍 [`src/tools/filesystem/types.ts:156`](src/tools/filesystem/types.ts)
+📍 [`src/tools/filesystem/types.ts:176`](src/tools/filesystem/types.ts)
 
 Validate and resolve a path within allowed boundaries
 
@@ -26405,7 +27962,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:572`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:586`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -26439,9 +27996,26 @@ Default configuration values
 
 ---
 
+### DEFAULT_DESKTOP_CONFIG `const`
+
+📍 [`src/tools/desktop/types.ts:109`](src/tools/desktop/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `driver` | `null as unknown as IDesktopDriver` | - |
+| `humanDelay` | `[50, 150]` | - |
+| `humanizeMovement` | `false` | - |
+
+</details>
+
+---
+
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:470`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:484`](src/core/context-nextgen/types.ts)
 
 Default feature configuration
 
@@ -26460,9 +28034,7 @@ Default feature configuration
 
 ### DEFAULT_FILESYSTEM_CONFIG `const`
 
-📍 [`src/tools/filesystem/types.ts:62`](src/tools/filesystem/types.ts)
-
-Default configuration
+📍 [`src/tools/filesystem/types.ts:72`](src/tools/filesystem/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -26480,7 +28052,8 @@ Default configuration
     '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp',
     '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    // Note: .pdf, .docx, .xlsx, .pptx are NOT excluded — DocumentReader handles them
+    '.doc', '.xls', '.ppt', // Legacy Office formats not yet supported
     '.woff', '.woff2', '.ttf', '.eot', '.otf',
   ]` | - |
 
