@@ -18714,6 +18714,14 @@ var simpleTokenEstimator = {
   estimateDataTokens(data) {
     const text = typeof data === "string" ? data : JSON.stringify(data);
     return this.estimateTokens(text);
+  },
+  estimateImageTokens(width, height, detail) {
+    if (detail === "low") return 85;
+    if (width && height) {
+      const tiles = Math.ceil(width / 512) * Math.ceil(height / 512);
+      return 85 + 170 * tiles;
+    }
+    return 1e3;
   }
 };
 var BasePluginNextGen = class {
@@ -21961,12 +21969,26 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
       return "";
     }
     const id = this.generateId();
-    const contentArray = results.map((r) => ({
-      type: "tool_result" /* TOOL_RESULT */,
-      tool_use_id: r.tool_use_id,
-      content: typeof r.content === "string" ? r.content : JSON.stringify(r.content),
-      error: r.error
-    }));
+    const contentArray = results.map((r) => {
+      let contentStr;
+      let images;
+      if (typeof r.content === "string") {
+        contentStr = r.content;
+      } else if (r.content && Array.isArray(r.content.__images) && r.content.__images.length > 0) {
+        images = r.content.__images;
+        const { __images: _, base64: __, ...rest } = r.content;
+        contentStr = JSON.stringify(rest);
+      } else {
+        contentStr = JSON.stringify(r.content);
+      }
+      return {
+        type: "tool_result" /* TOOL_RESULT */,
+        tool_use_id: r.tool_use_id,
+        content: contentStr,
+        error: r.error,
+        ...images ? { __images: images } : {}
+      };
+    });
     const message = {
       type: "message",
       id,
@@ -22227,11 +22249,28 @@ ${content}`);
         total += this._estimator.estimateDataTokens(c.input || {});
       } else if (c.type === "tool_result" /* TOOL_RESULT */) {
         total += this._estimator.estimateTokens(c.content || "");
+        const images = c.__images;
+        if (images?.length) {
+          for (const _img of images) {
+            total += this._estimateImageTokens();
+          }
+        }
       } else if (c.type === "input_image_url" /* INPUT_IMAGE_URL */) {
-        total += 200;
+        const imgContent = c;
+        const detail = imgContent.image_url?.detail;
+        total += this._estimateImageTokens(void 0, void 0, detail);
       }
     }
     return total;
+  }
+  /**
+   * Estimate tokens for a single image, using the estimator's image method if available.
+   */
+  _estimateImageTokens(width, height, detail) {
+    if (this._estimator.estimateImageTokens) {
+      return this._estimator.estimateImageTokens(width, height, detail);
+    }
+    return 1e3;
   }
   // ============================================================================
   // Compaction
@@ -22465,7 +22504,8 @@ ${content}`);
       if (c.type === "tool_result" /* TOOL_RESULT */) {
         const toolResult = c;
         const content = toolResult.content || "";
-        if (this.isBinaryContent(content)) {
+        const images = toolResult.__images;
+        if (!images?.length && this.isBinaryContent(content)) {
           truncatedContent.push({
             type: "tool_result" /* TOOL_RESULT */,
             tool_use_id: toolResult.tool_use_id,
@@ -22482,7 +22522,9 @@ ${content}`);
               tool_use_id: toolResult.tool_use_id,
               content: `${truncated}
 
-[TRUNCATED: Original output was ${Math.round(content.length / 1024)}KB. Only first ${Math.round(availableChars / 1024)}KB shown. Consider using more targeted queries.]`
+[TRUNCATED: Original output was ${Math.round(content.length / 1024)}KB. Only first ${Math.round(availableChars / 1024)}KB shown. Consider using more targeted queries.]`,
+              // Preserve images even when text is truncated — they're handled natively by providers
+              ...images ? { __images: images } : {}
             });
             totalCharsUsed += truncated.length + 150;
           } else if (availableChars > 0) {
@@ -22493,7 +22535,9 @@ ${content}`);
               type: "tool_result" /* TOOL_RESULT */,
               tool_use_id: toolResult.tool_use_id,
               content: "[Output too large - skipped due to context limits. Try a more targeted query.]",
-              error: "Output too large"
+              error: "Output too large",
+              // Preserve images even when text is dropped
+              ...images ? { __images: images } : {}
             });
             totalCharsUsed += 100;
           }
@@ -23022,14 +23066,41 @@ var OpenAIResponsesConverter = class {
                 arguments: content.arguments
               });
               break;
-            case "tool_result":
-              const output = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
+            case "tool_result": {
+              const contentImages = content.__images;
+              let outputText;
+              let images;
+              if (contentImages?.length) {
+                outputText = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
+                images = contentImages;
+              } else {
+                const rawOutput = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
+                const extracted = this.extractImagesFromOutput(rawOutput);
+                outputText = extracted.text;
+                images = extracted.images;
+              }
               items.push({
                 type: "function_call_output",
                 call_id: content.tool_use_id,
-                output
+                output: outputText
               });
+              if (images.length > 0) {
+                const imageContent = images.map((img) => ({
+                  type: "input_image",
+                  image_url: `data:${img.mediaType};base64,${img.base64}`
+                }));
+                items.push({
+                  type: "message",
+                  role: "user",
+                  content: [
+                    { type: "input_text", text: "[Screenshot from tool result]" },
+                    ...imageContent
+                  ],
+                  status: "completed"
+                });
+              }
               break;
+            }
           }
         }
         if (messageContent.length > 0) {
@@ -23196,6 +23267,22 @@ var OpenAIResponsesConverter = class {
         type: "text"
       }
     };
+  }
+  /**
+   * Extract __images from a JSON tool result and return cleaned text + images.
+   * Used by the __images convention for multimodal tool results.
+   */
+  extractImagesFromOutput(output) {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed && Array.isArray(parsed.__images) && parsed.__images.length > 0) {
+        const images = parsed.__images;
+        const { __images: _, base64: __, ...rest } = parsed;
+        return { text: JSON.stringify(rest), images };
+      }
+    } catch {
+    }
+    return { text: output, images: [] };
   }
 };
 
@@ -24002,6 +24089,7 @@ var AnthropicConverter = class extends BaseConverter {
   /**
    * Convert tool result to Anthropic block
    * Anthropic requires non-empty content when is_error is true
+   * Supports __images convention: tool results with __images get multimodal content
    */
   convertToolResultToAnthropicBlock(resultContent) {
     const isError = !!resultContent.error;
@@ -24014,12 +24102,62 @@ var AnthropicConverter = class extends BaseConverter {
     if (isError && !toolResultContent) {
       toolResultContent = resultContent.error || "Tool execution failed";
     }
+    const images = resultContent.__images?.length ? resultContent.__images : this.extractImages(toolResultContent);
+    if (images) {
+      const textContent = resultContent.__images?.length ? toolResultContent : this.stripImagesFromContent(toolResultContent);
+      const contentBlocks = [];
+      if (textContent.trim()) {
+        contentBlocks.push({ type: "text", text: textContent });
+      }
+      for (const img of images) {
+        contentBlocks.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: img.mediaType || "image/png",
+            data: img.base64
+          }
+        });
+      }
+      return {
+        type: "tool_result",
+        tool_use_id: resultContent.tool_use_id,
+        content: contentBlocks.length > 0 ? contentBlocks : textContent,
+        is_error: isError
+      };
+    }
     return {
       type: "tool_result",
       tool_use_id: resultContent.tool_use_id,
       content: toolResultContent,
       is_error: isError
     };
+  }
+  /**
+   * Extract __images from a JSON-stringified tool result content.
+   * Returns null if no images found.
+   */
+  extractImages(content) {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.__images) && parsed.__images.length > 0) {
+        return parsed.__images;
+      }
+    } catch {
+    }
+    return null;
+  }
+  /**
+   * Strip __images and base64 fields from JSON content to reduce token usage in text.
+   */
+  stripImagesFromContent(content) {
+    try {
+      const parsed = JSON.parse(content);
+      const { __images: _, base64: __, ...rest } = parsed;
+      return JSON.stringify(rest);
+    } catch {
+      return content;
+    }
   }
   /**
    * Convert our Tool[] -> Anthropic tools
@@ -24748,18 +24886,38 @@ var GoogleConverter = class {
           }
           parts.push(functionCallPart);
           break;
-        case "tool_result" /* TOOL_RESULT */:
+        case "tool_result" /* TOOL_RESULT */: {
           const functionName = this.toolCallMapping.get(c.tool_use_id) || this.extractToolName(c.tool_use_id);
+          const contentImages = c.__images;
+          let resultText;
+          let resultImages;
+          if (contentImages?.length) {
+            resultText = typeof c.content === "string" ? c.content : JSON.stringify(c.content);
+            resultImages = contentImages;
+          } else {
+            const resultStr = typeof c.content === "string" ? c.content : JSON.stringify(c.content);
+            const extracted = this.extractImagesFromResult(resultStr);
+            resultText = extracted.text;
+            resultImages = extracted.images;
+          }
           parts.push({
             functionResponse: {
               name: functionName,
-              // Use actual function name from mapping
               response: {
-                result: typeof c.content === "string" ? c.content : c.content
+                result: resultText
               }
             }
           });
+          for (const img of resultImages) {
+            parts.push({
+              inlineData: {
+                mimeType: img.mediaType || "image/png",
+                data: img.base64
+              }
+            });
+          }
           break;
+        }
       }
     }
     return parts;
@@ -24894,6 +25052,22 @@ var GoogleConverter = class {
    */
   reset() {
     this.clearMappings();
+  }
+  /**
+   * Extract __images from a JSON tool result and return cleaned text + images.
+   * Used by the __images convention for multimodal tool results.
+   */
+  extractImagesFromResult(content) {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.__images) && parsed.__images.length > 0) {
+        const images = parsed.__images;
+        const { __images: _, base64: __, ...rest } = parsed;
+        return { text: JSON.stringify(rest), images };
+      }
+    } catch {
+    }
+    return { text: content, images: [] };
   }
 };
 var GoogleStreamConverter = class {
@@ -41531,6 +41705,21 @@ var ApproximateTokenEstimator = class {
       return 100;
     }
   }
+  /**
+   * Estimate tokens for an image using tile-based model (matches OpenAI pricing).
+   *
+   * - detail='low': 85 tokens
+   * - detail='high' with known dimensions: 85 + 170 per 512×512 tile
+   * - Unknown dimensions: 1000 tokens (conservative default)
+   */
+  estimateImageTokens(width, height, detail) {
+    if (detail === "low") return 85;
+    if (width && height) {
+      const tiles = Math.ceil(width / 512) * Math.ceil(height / 512);
+      return 85 + 170 * tiles;
+    }
+    return 1e3;
+  }
 };
 
 // src/infrastructure/context/estimators/index.ts
@@ -46492,15 +46681,30 @@ function extractNumber(text, patterns = [
 var tools_exports = {};
 __export(tools_exports, {
   ConnectorTools: () => ConnectorTools,
+  DEFAULT_DESKTOP_CONFIG: () => DEFAULT_DESKTOP_CONFIG,
   DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
   DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
+  DESKTOP_TOOL_NAMES: () => DESKTOP_TOOL_NAMES,
   DocumentReader: () => DocumentReader,
   FileMediaOutputHandler: () => FileMediaStorage,
   FormatDetector: () => FormatDetector,
+  NutTreeDriver: () => NutTreeDriver,
   ToolRegistry: () => ToolRegistry,
+  applyHumanDelay: () => applyHumanDelay,
   bash: () => bash,
   createBashTool: () => createBashTool,
   createCreatePRTool: () => createCreatePRTool,
+  createDesktopGetCursorTool: () => createDesktopGetCursorTool,
+  createDesktopGetScreenSizeTool: () => createDesktopGetScreenSizeTool,
+  createDesktopKeyboardKeyTool: () => createDesktopKeyboardKeyTool,
+  createDesktopKeyboardTypeTool: () => createDesktopKeyboardTypeTool,
+  createDesktopMouseClickTool: () => createDesktopMouseClickTool,
+  createDesktopMouseDragTool: () => createDesktopMouseDragTool,
+  createDesktopMouseMoveTool: () => createDesktopMouseMoveTool,
+  createDesktopMouseScrollTool: () => createDesktopMouseScrollTool,
+  createDesktopScreenshotTool: () => createDesktopScreenshotTool,
+  createDesktopWindowFocusTool: () => createDesktopWindowFocusTool,
+  createDesktopWindowListTool: () => createDesktopWindowListTool,
   createEditFileTool: () => createEditFileTool,
   createExecuteJavaScriptTool: () => createExecuteJavaScriptTool,
   createGetPRTool: () => createGetPRTool,
@@ -46520,12 +46724,25 @@ __export(tools_exports, {
   createWebScrapeTool: () => createWebScrapeTool,
   createWebSearchTool: () => createWebSearchTool,
   createWriteFileTool: () => createWriteFileTool,
+  desktopGetCursor: () => desktopGetCursor,
+  desktopGetScreenSize: () => desktopGetScreenSize,
+  desktopKeyboardKey: () => desktopKeyboardKey,
+  desktopKeyboardType: () => desktopKeyboardType,
+  desktopMouseClick: () => desktopMouseClick,
+  desktopMouseDrag: () => desktopMouseDrag,
+  desktopMouseMove: () => desktopMouseMove,
+  desktopMouseScroll: () => desktopMouseScroll,
+  desktopScreenshot: () => desktopScreenshot,
+  desktopTools: () => desktopTools,
+  desktopWindowFocus: () => desktopWindowFocus,
+  desktopWindowList: () => desktopWindowList,
   developerTools: () => developerTools,
   editFile: () => editFile,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
+  getDesktopDriver: () => getDesktopDriver,
   getMediaOutputHandler: () => getMediaOutputHandler,
   getMediaStorage: () => getMediaStorage,
   getToolByName: () => getToolByName,
@@ -46541,8 +46758,10 @@ __export(tools_exports, {
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   mergeTextPieces: () => mergeTextPieces,
+  parseKeyCombo: () => parseKeyCombo,
   parseRepository: () => parseRepository,
   readFile: () => readFile5,
+  resetDefaultDriver: () => resetDefaultDriver,
   resolveRepository: () => resolveRepository,
   setMediaOutputHandler: () => setMediaOutputHandler,
   setMediaStorage: () => setMediaStorage,
@@ -50623,6 +50842,819 @@ function registerGitHubTools() {
 // src/tools/github/index.ts
 registerGitHubTools();
 
+// src/tools/desktop/types.ts
+var DEFAULT_DESKTOP_CONFIG = {
+  driver: null,
+  // Lazy-initialized
+  humanDelay: [50, 150],
+  humanizeMovement: false
+};
+async function applyHumanDelay(config) {
+  const [min, max] = config.humanDelay ?? DEFAULT_DESKTOP_CONFIG.humanDelay;
+  if (min === 0 && max === 0) return;
+  const delay = min + Math.random() * (max - min);
+  await new Promise((resolve4) => setTimeout(resolve4, delay));
+}
+var DESKTOP_TOOL_NAMES = [
+  "desktop_screenshot",
+  "desktop_mouse_move",
+  "desktop_mouse_click",
+  "desktop_mouse_drag",
+  "desktop_mouse_scroll",
+  "desktop_get_cursor",
+  "desktop_keyboard_type",
+  "desktop_keyboard_key",
+  "desktop_get_screen_size",
+  "desktop_window_list",
+  "desktop_window_focus"
+];
+
+// src/tools/desktop/driver/NutTreeDriver.ts
+var KEY_MAP = {
+  // Modifiers
+  ctrl: "LeftControl",
+  control: "LeftControl",
+  cmd: "LeftCmd",
+  command: "LeftCmd",
+  meta: "LeftCmd",
+  super: "LeftCmd",
+  alt: "LeftAlt",
+  option: "LeftAlt",
+  shift: "LeftShift",
+  // Navigation
+  enter: "Return",
+  return: "Return",
+  tab: "Tab",
+  escape: "Escape",
+  esc: "Escape",
+  backspace: "Backspace",
+  delete: "Delete",
+  space: "Space",
+  // Arrow keys
+  up: "Up",
+  down: "Down",
+  left: "Left",
+  right: "Right",
+  // Function keys
+  f1: "F1",
+  f2: "F2",
+  f3: "F3",
+  f4: "F4",
+  f5: "F5",
+  f6: "F6",
+  f7: "F7",
+  f8: "F8",
+  f9: "F9",
+  f10: "F10",
+  f11: "F11",
+  f12: "F12",
+  // Other
+  home: "Home",
+  end: "End",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+  insert: "Insert",
+  printscreen: "Print",
+  capslock: "CapsLock",
+  numlock: "NumLock",
+  scrolllock: "ScrollLock"
+};
+function parseKeyCombo(keys, KeyEnum) {
+  const parts = keys.toLowerCase().split("+").map((k) => k.trim());
+  const result = [];
+  for (const part of parts) {
+    const mapped = KEY_MAP[part];
+    if (mapped && KeyEnum[mapped] !== void 0) {
+      result.push(KeyEnum[mapped]);
+      continue;
+    }
+    if (part.length === 1) {
+      const upper = part.toUpperCase();
+      if (KeyEnum[upper] !== void 0) {
+        result.push(KeyEnum[upper]);
+        continue;
+      }
+    }
+    const pascal = part.charAt(0).toUpperCase() + part.slice(1);
+    if (KeyEnum[pascal] !== void 0) {
+      result.push(KeyEnum[pascal]);
+      continue;
+    }
+    if (KeyEnum[part] !== void 0) {
+      result.push(KeyEnum[part]);
+      continue;
+    }
+    throw new Error(`Unknown key: "${part}". Available modifiers: ctrl, cmd, alt, shift. Common keys: enter, tab, escape, space, up, down, left, right, f1-f12, a-z, 0-9`);
+  }
+  return result;
+}
+async function encodeRGBAToPNG(data, width, height) {
+  const { PNG } = await import('pngjs');
+  const png = new PNG({ width, height });
+  const sourceBuffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  sourceBuffer.copy(png.data, 0, 0, width * height * 4);
+  return PNG.sync.write(png);
+}
+var NutTreeDriver = class {
+  _isInitialized = false;
+  _scaleFactor = 1;
+  // Lazy-loaded nut-tree modules
+  _nut = null;
+  // Cache of Window objects keyed by windowHandle, populated by getWindowList()
+  _windowCache = /* @__PURE__ */ new Map();
+  get isInitialized() {
+    return this._isInitialized;
+  }
+  get scaleFactor() {
+    return this._scaleFactor;
+  }
+  async initialize() {
+    if (this._isInitialized) return;
+    try {
+      this._nut = await import('@nut-tree-fork/nut-js');
+    } catch {
+      throw new Error(
+        "@nut-tree-fork/nut-js is not installed. Install it to use desktop automation tools:\n  npm install @nut-tree-fork/nut-js"
+      );
+    }
+    try {
+      const { mouse, keyboard } = this._nut;
+      if (mouse.config) {
+        mouse.config.mouseSpeed = 1e4;
+        mouse.config.autoDelayMs = 0;
+      }
+      if (keyboard.config) {
+        keyboard.config.autoDelayMs = 0;
+      }
+    } catch {
+    }
+    try {
+      const { screen } = this._nut;
+      const logicalWidth = await screen.width();
+      const screenshotImage = await screen.grab();
+      const physicalWidth = screenshotImage.width;
+      this._scaleFactor = physicalWidth / logicalWidth;
+    } catch (err) {
+      if (err.message?.includes("permission") || err.message?.includes("accessibility")) {
+        throw new Error(
+          "Desktop automation requires accessibility permissions.\nOn macOS: System Settings \u2192 Privacy & Security \u2192 Accessibility \u2192 Enable your terminal app."
+        );
+      }
+      this._scaleFactor = 1;
+    }
+    this._isInitialized = true;
+  }
+  assertInitialized() {
+    if (!this._isInitialized) {
+      throw new Error("NutTreeDriver not initialized. Call initialize() first.");
+    }
+  }
+  /** Convert physical (screenshot) coords to logical (OS) coords */
+  toLogical(x, y) {
+    return {
+      x: Math.round(x / this._scaleFactor),
+      y: Math.round(y / this._scaleFactor)
+    };
+  }
+  /** Convert logical (OS) coords to physical (screenshot) coords */
+  toPhysical(x, y) {
+    return {
+      x: Math.round(x * this._scaleFactor),
+      y: Math.round(y * this._scaleFactor)
+    };
+  }
+  // ===== Screen =====
+  async screenshot(region) {
+    this.assertInitialized();
+    const { screen } = this._nut;
+    let image;
+    if (region) {
+      const { Region } = this._nut;
+      const logTopLeft = this.toLogical(region.x, region.y);
+      const logicalWidth = Math.round(region.width / this._scaleFactor);
+      const logicalHeight = Math.round(region.height / this._scaleFactor);
+      const nutRegion = new Region(logTopLeft.x, logTopLeft.y, logicalWidth, logicalHeight);
+      image = await screen.grabRegion(nutRegion);
+    } else {
+      image = await screen.grab();
+    }
+    const pngBuffer = await encodeRGBAToPNG(image.data, image.width, image.height);
+    const base64 = pngBuffer.toString("base64");
+    return {
+      base64,
+      width: image.width,
+      height: image.height
+    };
+  }
+  async getScreenSize() {
+    this.assertInitialized();
+    const { screen } = this._nut;
+    const logicalWidth = await screen.width();
+    const logicalHeight = await screen.height();
+    return {
+      physicalWidth: Math.round(logicalWidth * this._scaleFactor),
+      physicalHeight: Math.round(logicalHeight * this._scaleFactor),
+      logicalWidth,
+      logicalHeight,
+      scaleFactor: this._scaleFactor
+    };
+  }
+  // ===== Mouse =====
+  async mouseMove(x, y) {
+    this.assertInitialized();
+    const { mouse, straightTo, Point } = this._nut;
+    const logical = this.toLogical(x, y);
+    await mouse.move(straightTo(new Point(logical.x, logical.y)));
+  }
+  async mouseClick(x, y, button, clickCount) {
+    this.assertInitialized();
+    const { mouse, straightTo, Point, Button } = this._nut;
+    const nutButton = button === "right" ? Button.RIGHT : button === "middle" ? Button.MIDDLE : Button.LEFT;
+    const logical = this.toLogical(x, y);
+    await mouse.move(straightTo(new Point(logical.x, logical.y)));
+    for (let i = 0; i < clickCount; i++) {
+      await mouse.click(nutButton);
+    }
+  }
+  async mouseDrag(startX, startY, endX, endY, button) {
+    this.assertInitialized();
+    const { mouse, straightTo, Point, Button } = this._nut;
+    const nutButton = button === "right" ? Button.RIGHT : button === "middle" ? Button.MIDDLE : Button.LEFT;
+    const logicalStart = this.toLogical(startX, startY);
+    const logicalEnd = this.toLogical(endX, endY);
+    await mouse.move(straightTo(new Point(logicalStart.x, logicalStart.y)));
+    await mouse.pressButton(nutButton);
+    await mouse.move(straightTo(new Point(logicalEnd.x, logicalEnd.y)));
+    await mouse.releaseButton(nutButton);
+  }
+  async mouseScroll(deltaX, deltaY, x, y) {
+    this.assertInitialized();
+    const { mouse, straightTo, Point } = this._nut;
+    if (x !== void 0 && y !== void 0) {
+      const logical = this.toLogical(x, y);
+      await mouse.move(straightTo(new Point(logical.x, logical.y)));
+    }
+    if (deltaY !== 0) {
+      if (deltaY > 0) {
+        await mouse.scrollDown(Math.abs(deltaY));
+      } else {
+        await mouse.scrollUp(Math.abs(deltaY));
+      }
+    }
+    if (deltaX !== 0) {
+      if (deltaX > 0) {
+        await mouse.scrollRight(Math.abs(deltaX));
+      } else {
+        await mouse.scrollLeft(Math.abs(deltaX));
+      }
+    }
+  }
+  async getCursorPosition() {
+    this.assertInitialized();
+    const { mouse } = this._nut;
+    const pos = await mouse.getPosition();
+    return this.toPhysical(pos.x, pos.y);
+  }
+  // ===== Keyboard =====
+  async keyboardType(text, delay) {
+    this.assertInitialized();
+    const { keyboard } = this._nut;
+    const prevDelay = keyboard.config.autoDelayMs;
+    if (delay !== void 0) {
+      keyboard.config.autoDelayMs = delay;
+    }
+    try {
+      await keyboard.type(text);
+    } finally {
+      if (delay !== void 0) {
+        keyboard.config.autoDelayMs = prevDelay;
+      }
+    }
+  }
+  async keyboardKey(keys) {
+    this.assertInitialized();
+    const { keyboard, Key } = this._nut;
+    const parsedKeys = parseKeyCombo(keys, Key);
+    if (parsedKeys.length === 1) {
+      await keyboard.pressKey(parsedKeys[0]);
+      await keyboard.releaseKey(parsedKeys[0]);
+    } else {
+      for (const key of parsedKeys) {
+        await keyboard.pressKey(key);
+      }
+      for (const key of [...parsedKeys].reverse()) {
+        await keyboard.releaseKey(key);
+      }
+    }
+  }
+  // ===== Windows =====
+  async getWindowList() {
+    this.assertInitialized();
+    const { getWindows } = this._nut;
+    try {
+      const windows = await getWindows();
+      const result = [];
+      this._windowCache.clear();
+      for (const win of windows) {
+        try {
+          const handle = win.windowHandle;
+          if (handle === void 0 || handle === null) continue;
+          const title = await win.title;
+          const region = await win.region;
+          this._windowCache.set(handle, win);
+          result.push({
+            id: handle,
+            title: title || "",
+            bounds: region ? {
+              x: Math.round(region.left * this._scaleFactor),
+              y: Math.round(region.top * this._scaleFactor),
+              width: Math.round(region.width * this._scaleFactor),
+              height: Math.round(region.height * this._scaleFactor)
+            } : void 0
+          });
+        } catch {
+        }
+      }
+      return result;
+    } catch {
+      return [];
+    }
+  }
+  async focusWindow(windowId) {
+    this.assertInitialized();
+    let target = this._windowCache.get(windowId);
+    if (!target) {
+      const { getWindows } = this._nut;
+      const windows = await getWindows();
+      target = windows.find((w) => w.windowHandle === windowId);
+    }
+    if (!target) {
+      throw new Error(`Window with ID ${windowId} not found. Call desktop_window_list first to get current window IDs.`);
+    }
+    await target.focus();
+  }
+};
+
+// src/tools/desktop/getDriver.ts
+var defaultDriver = null;
+async function getDesktopDriver(config) {
+  if (config?.driver) {
+    if (!config.driver.isInitialized) {
+      await config.driver.initialize();
+    }
+    return config.driver;
+  }
+  if (!defaultDriver) {
+    defaultDriver = new NutTreeDriver();
+  }
+  if (!defaultDriver.isInitialized) {
+    await defaultDriver.initialize();
+  }
+  return defaultDriver;
+}
+function resetDefaultDriver() {
+  defaultDriver = null;
+}
+
+// src/tools/desktop/screenshot.ts
+function createDesktopScreenshotTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_screenshot",
+        description: `Take a screenshot of the entire screen or a specific region. Returns the screenshot image for visual analysis. Use this to see what's on screen before performing actions. IMPORTANT: If you capture a region, element positions in the image are relative to the region's top-left corner. To click an element at image position (ix, iy), you must use screen coordinates (ix + region.x, iy + region.y). Prefer full-screen screenshots to avoid coordinate offset errors.`,
+        parameters: {
+          type: "object",
+          properties: {
+            region: {
+              type: "object",
+              description: "Optional region to capture (in physical pixel coordinates). Omit to capture full screen.",
+              properties: {
+                x: { type: "number", description: "Left edge X coordinate" },
+                y: { type: "number", description: "Top edge Y coordinate" },
+                width: { type: "number", description: "Width in pixels" },
+                height: { type: "number", description: "Height in pixels" }
+              },
+              required: ["x", "y", "width", "height"]
+            }
+          },
+          required: []
+        }
+      }
+    },
+    describeCall: (args) => {
+      if (args.region) {
+        return `region (${args.region.x},${args.region.y}) ${args.region.width}x${args.region.height}`;
+      }
+      return "full screen";
+    },
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        const screenshot = await driver.screenshot(args.region);
+        return {
+          success: true,
+          width: screenshot.width,
+          height: screenshot.height,
+          base64: screenshot.base64,
+          __images: [{ base64: screenshot.base64, mediaType: "image/png" }],
+          // Include region info so the agent can compute screen coordinates:
+          // screen_x = image_x + regionOffsetX, screen_y = image_y + regionOffsetY
+          ...args.region ? { regionOffsetX: args.region.x, regionOffsetY: args.region.y } : {}
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopScreenshot = createDesktopScreenshotTool();
+
+// src/tools/desktop/mouseMove.ts
+function createDesktopMouseMoveTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_mouse_move",
+        description: `Move the mouse cursor to the specified (x, y) position. Coordinates are in screenshot pixel space (full screen). Returns the actual cursor position after the move for verification.`,
+        parameters: {
+          type: "object",
+          properties: {
+            x: { type: "number", description: "X coordinate (in screenshot pixels)" },
+            y: { type: "number", description: "Y coordinate (in screenshot pixels)" }
+          },
+          required: ["x", "y"]
+        }
+      }
+    },
+    describeCall: (args) => `(${args.x}, ${args.y})`,
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        await driver.mouseMove(args.x, args.y);
+        await applyHumanDelay(config ?? {});
+        const actual = await driver.getCursorPosition();
+        return { success: true, x: actual.x, y: actual.y };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopMouseMove = createDesktopMouseMoveTool();
+
+// src/tools/desktop/mouseClick.ts
+function createDesktopMouseClickTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_mouse_click",
+        description: `Click the mouse at the specified position or at the current cursor position. Supports left/right/middle button and single/double/triple click.`,
+        parameters: {
+          type: "object",
+          properties: {
+            x: { type: "number", description: "X coordinate to click (in screenshot pixels). Omit to click at current position." },
+            y: { type: "number", description: "Y coordinate to click (in screenshot pixels). Omit to click at current position." },
+            button: {
+              type: "string",
+              enum: ["left", "right", "middle"],
+              description: 'Mouse button to click. Default: "left"'
+            },
+            clickCount: {
+              type: "number",
+              description: "Number of clicks (1=single, 2=double, 3=triple). Default: 1"
+            }
+          },
+          required: []
+        }
+      }
+    },
+    describeCall: (args) => {
+      const pos = args.x !== void 0 ? `(${args.x}, ${args.y})` : "current position";
+      const btn = args.button && args.button !== "left" ? ` ${args.button}` : "";
+      const count = args.clickCount && args.clickCount > 1 ? ` x${args.clickCount}` : "";
+      return `${pos}${btn}${count}`;
+    },
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        const button = args.button ?? "left";
+        const clickCount = args.clickCount ?? 1;
+        if (args.x !== void 0 && args.y !== void 0) {
+          await driver.mouseClick(args.x, args.y, button, clickCount);
+        } else {
+          const pos = await driver.getCursorPosition();
+          await driver.mouseClick(pos.x, pos.y, button, clickCount);
+        }
+        await applyHumanDelay(config ?? {});
+        const actual = await driver.getCursorPosition();
+        return { success: true, x: actual.x, y: actual.y, button, clickCount };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopMouseClick = createDesktopMouseClickTool();
+
+// src/tools/desktop/mouseDrag.ts
+function createDesktopMouseDragTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_mouse_drag",
+        description: `Drag the mouse from one position to another. Presses the button at the start position, moves to the end position, then releases.`,
+        parameters: {
+          type: "object",
+          properties: {
+            startX: { type: "number", description: "Start X coordinate (in screenshot pixels)" },
+            startY: { type: "number", description: "Start Y coordinate (in screenshot pixels)" },
+            endX: { type: "number", description: "End X coordinate (in screenshot pixels)" },
+            endY: { type: "number", description: "End Y coordinate (in screenshot pixels)" },
+            button: {
+              type: "string",
+              enum: ["left", "right", "middle"],
+              description: 'Mouse button to use for dragging. Default: "left"'
+            }
+          },
+          required: ["startX", "startY", "endX", "endY"]
+        }
+      }
+    },
+    describeCall: (args) => `(${args.startX},${args.startY}) \u2192 (${args.endX},${args.endY})`,
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        await driver.mouseDrag(args.startX, args.startY, args.endX, args.endY, args.button ?? "left");
+        await applyHumanDelay(config ?? {});
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopMouseDrag = createDesktopMouseDragTool();
+
+// src/tools/desktop/mouseScroll.ts
+function createDesktopMouseScrollTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_mouse_scroll",
+        description: `Scroll the mouse wheel. Positive deltaY scrolls down, negative scrolls up. Positive deltaX scrolls right, negative scrolls left. Optionally specify position to scroll at.`,
+        parameters: {
+          type: "object",
+          properties: {
+            deltaX: { type: "number", description: "Horizontal scroll amount. Positive=right, negative=left. Default: 0" },
+            deltaY: { type: "number", description: "Vertical scroll amount. Positive=down, negative=up. Default: 0" },
+            x: { type: "number", description: "X coordinate to scroll at (in screenshot pixels). Omit to scroll at current position." },
+            y: { type: "number", description: "Y coordinate to scroll at (in screenshot pixels). Omit to scroll at current position." }
+          },
+          required: []
+        }
+      }
+    },
+    describeCall: (args) => {
+      const parts = [];
+      if (args.deltaY) parts.push(args.deltaY > 0 ? `down ${args.deltaY}` : `up ${Math.abs(args.deltaY)}`);
+      if (args.deltaX) parts.push(args.deltaX > 0 ? `right ${args.deltaX}` : `left ${Math.abs(args.deltaX)}`);
+      if (args.x !== void 0) parts.push(`at (${args.x},${args.y})`);
+      return parts.join(", ") || "no-op";
+    },
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        await driver.mouseScroll(args.deltaX ?? 0, args.deltaY ?? 0, args.x, args.y);
+        await applyHumanDelay(config ?? {});
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopMouseScroll = createDesktopMouseScrollTool();
+
+// src/tools/desktop/getCursor.ts
+function createDesktopGetCursorTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_get_cursor",
+        description: `Get the current mouse cursor position in screenshot pixel coordinates.`,
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    describeCall: () => "get cursor position",
+    execute: async () => {
+      try {
+        const driver = await getDesktopDriver(config);
+        const pos = await driver.getCursorPosition();
+        return { success: true, x: pos.x, y: pos.y };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopGetCursor = createDesktopGetCursorTool();
+
+// src/tools/desktop/keyboardType.ts
+function createDesktopKeyboardTypeTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_keyboard_type",
+        description: `Type text using the keyboard. Each character is typed as a keypress. Use this for entering text into focused input fields.`,
+        parameters: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "The text to type" },
+            delay: { type: "number", description: "Delay in ms between each keystroke. Default: uses system default." }
+          },
+          required: ["text"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const preview = args.text.length > 30 ? args.text.slice(0, 27) + "..." : args.text;
+      return `"${preview}"`;
+    },
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        await driver.keyboardType(args.text, args.delay);
+        await applyHumanDelay(config ?? {});
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopKeyboardType = createDesktopKeyboardTypeTool();
+
+// src/tools/desktop/keyboardKey.ts
+function createDesktopKeyboardKeyTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_keyboard_key",
+        description: `Press a keyboard shortcut or special key. Use "+" to combine keys (e.g., "ctrl+c", "cmd+shift+s", "enter", "tab", "escape"). Modifiers: ctrl, cmd/command, alt/option, shift. Special keys: enter, tab, escape, backspace, delete, space, up, down, left, right, f1-f12, home, end, pageup, pagedown.`,
+        parameters: {
+          type: "object",
+          properties: {
+            keys: {
+              type: "string",
+              description: 'Key combo string (e.g., "ctrl+c", "enter", "cmd+shift+s")'
+            }
+          },
+          required: ["keys"]
+        }
+      }
+    },
+    describeCall: (args) => args.keys,
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        await driver.keyboardKey(args.keys);
+        await applyHumanDelay(config ?? {});
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopKeyboardKey = createDesktopKeyboardKeyTool();
+
+// src/tools/desktop/getScreenSize.ts
+function createDesktopGetScreenSizeTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_get_screen_size",
+        description: `Get the screen dimensions. Returns physical pixel size (screenshot space), logical size (OS coordinates), and the scale factor (e.g., 2.0 on Retina displays). All desktop tool coordinates use physical pixel space.`,
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    describeCall: () => "get screen size",
+    execute: async () => {
+      try {
+        const driver = await getDesktopDriver(config);
+        const size = await driver.getScreenSize();
+        return {
+          success: true,
+          physicalWidth: size.physicalWidth,
+          physicalHeight: size.physicalHeight,
+          logicalWidth: size.logicalWidth,
+          logicalHeight: size.logicalHeight,
+          scaleFactor: size.scaleFactor
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopGetScreenSize = createDesktopGetScreenSizeTool();
+
+// src/tools/desktop/windowList.ts
+function createDesktopWindowListTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_window_list",
+        description: `List all visible windows on the desktop. Returns window IDs, titles, application names, and bounds. Use the window ID with desktop_window_focus to bring a window to the foreground.`,
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    describeCall: () => "list windows",
+    execute: async () => {
+      try {
+        const driver = await getDesktopDriver(config);
+        const windows = await driver.getWindowList();
+        return { success: true, windows };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopWindowList = createDesktopWindowListTool();
+
+// src/tools/desktop/windowFocus.ts
+function createDesktopWindowFocusTool(config) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "desktop_window_focus",
+        description: `Focus (bring to front) a window by its ID. Use desktop_window_list to get available window IDs.`,
+        parameters: {
+          type: "object",
+          properties: {
+            windowId: {
+              type: "number",
+              description: "The window ID from desktop_window_list"
+            }
+          },
+          required: ["windowId"]
+        }
+      }
+    },
+    describeCall: (args) => `window ${args.windowId}`,
+    execute: async (args) => {
+      try {
+        const driver = await getDesktopDriver(config);
+        await driver.focusWindow(args.windowId);
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+}
+var desktopWindowFocus = createDesktopWindowFocusTool();
+
+// src/tools/desktop/index.ts
+var desktopTools = [
+  desktopScreenshot,
+  desktopMouseMove,
+  desktopMouseClick,
+  desktopMouseDrag,
+  desktopMouseScroll,
+  desktopGetCursor,
+  desktopKeyboardType,
+  desktopKeyboardKey,
+  desktopGetScreenSize,
+  desktopWindowList,
+  desktopWindowFocus
+];
+
 // src/tools/registry.generated.ts
 var toolRegistry = [
   {
@@ -50632,6 +51664,105 @@ var toolRegistry = [
     category: "code",
     description: "Execute JavaScript code in a secure sandbox with authenticated API access via connectors.",
     tool: executeJavaScript,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_get_cursor",
+    exportName: "desktopGetCursor",
+    displayName: "Desktop Get Cursor",
+    category: "desktop",
+    description: "Get the current mouse cursor position in screenshot pixel coordinates.",
+    tool: desktopGetCursor,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_get_screen_size",
+    exportName: "desktopGetScreenSize",
+    displayName: "Desktop Get Screen Size",
+    category: "desktop",
+    description: "Get the screen dimensions. Returns physical pixel size (screenshot space), logical size (OS coordinates), and the scale factor (e.g., 2.0 on Retina displays). All desktop tool coordinates use physical",
+    tool: desktopGetScreenSize,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_keyboard_key",
+    exportName: "desktopKeyboardKey",
+    displayName: "Desktop Keyboard Key",
+    category: "desktop",
+    description: 'Press a keyboard shortcut or special key. Use "+" to combine keys (e.g., "ctrl+c", "cmd+shift+s", "enter", "tab", "escape"). Modifiers: ctrl, cmd/command, alt/option, shift. Special keys: enter, tab, ',
+    tool: desktopKeyboardKey,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_keyboard_type",
+    exportName: "desktopKeyboardType",
+    displayName: "Desktop Keyboard Type",
+    category: "desktop",
+    description: "Type text using the keyboard. Each character is typed as a keypress. Use this for entering text into focused input fields.",
+    tool: desktopKeyboardType,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_mouse_click",
+    exportName: "desktopMouseClick",
+    displayName: "Desktop Mouse Click",
+    category: "desktop",
+    description: "Click the mouse at the specified position or at the current cursor position. Supports left/right/middle button and single/double/triple click.",
+    tool: desktopMouseClick,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_mouse_drag",
+    exportName: "desktopMouseDrag",
+    displayName: "Desktop Mouse Drag",
+    category: "desktop",
+    description: "Drag the mouse from one position to another. Presses the button at the start position, moves to the end position, then releases.",
+    tool: desktopMouseDrag,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_mouse_move",
+    exportName: "desktopMouseMove",
+    displayName: "Desktop Mouse Move",
+    category: "desktop",
+    description: "Move the mouse cursor to the specified (x, y) position. Coordinates are in screenshot pixel space (full screen). Returns the actual cursor position after the move for verification.",
+    tool: desktopMouseMove,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_mouse_scroll",
+    exportName: "desktopMouseScroll",
+    displayName: "Desktop Mouse Scroll",
+    category: "desktop",
+    description: "Scroll the mouse wheel. Positive deltaY scrolls down, negative scrolls up. Positive deltaX scrolls right, negative scrolls left. Optionally specify position to scroll at.",
+    tool: desktopMouseScroll,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_screenshot",
+    exportName: "desktopScreenshot",
+    displayName: "Desktop Screenshot",
+    category: "desktop",
+    description: "Take a screenshot of the entire screen or a specific region. Returns the screenshot image for visual analysis. Use this to see what's on screen before performing actions. IMPORTANT: If you capture a r",
+    tool: desktopScreenshot,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_window_focus",
+    exportName: "desktopWindowFocus",
+    displayName: "Desktop Window Focus",
+    category: "desktop",
+    description: "Focus (bring to front) a window by its ID. Use desktop_window_list to get available window IDs.",
+    tool: desktopWindowFocus,
+    safeByDefault: false
+  },
+  {
+    name: "desktop_window_list",
+    exportName: "desktopWindowList",
+    displayName: "Desktop Window List",
+    category: "desktop",
+    description: "List all visible windows on the desktop. Returns window IDs, titles, application names, and bounds. Use the window ID with desktop_window_focus to bring a window to the foreground.",
+    tool: desktopWindowList,
     safeByDefault: false
   },
   {
@@ -51071,6 +52202,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

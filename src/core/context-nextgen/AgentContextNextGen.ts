@@ -692,12 +692,31 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     }
 
     const id = this.generateId();
-    const contentArray: Content[] = results.map(r => ({
-      type: ContentType.TOOL_RESULT,
-      tool_use_id: r.tool_use_id,
-      content: typeof r.content === 'string' ? r.content : JSON.stringify(r.content),
-      error: r.error,
-    }));
+    const contentArray: Content[] = results.map(r => {
+      let contentStr: string;
+      let images: Array<{ base64: string; mediaType: string }> | undefined;
+
+      if (typeof r.content === 'string') {
+        contentStr = r.content;
+      } else if (r.content && Array.isArray(r.content.__images) && r.content.__images.length > 0) {
+        // __images convention: separate images from text content.
+        // Images are stored on the Content object and handled natively by provider converters.
+        // This prevents base64 data from inflating text-based token counts.
+        images = r.content.__images;
+        const { __images: _, base64: __, ...rest } = r.content;
+        contentStr = JSON.stringify(rest);
+      } else {
+        contentStr = JSON.stringify(r.content);
+      }
+
+      return {
+        type: ContentType.TOOL_RESULT,
+        tool_use_id: r.tool_use_id,
+        content: contentStr,
+        error: r.error,
+        ...(images ? { __images: images } : {}),
+      } as Content;
+    });
 
     const message: Message = {
       type: 'message',
@@ -1048,13 +1067,34 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         total += this._estimator.estimateTokens((c as any).name || '');
         total += this._estimator.estimateDataTokens((c as any).input || {});
       } else if (c.type === ContentType.TOOL_RESULT) {
+        // Count text content tokens (images already stripped from content string)
         total += this._estimator.estimateTokens((c as any).content || '');
+        // Count attached images separately using image-aware estimation
+        const images = (c as any).__images as Array<{ base64: string; mediaType: string }> | undefined;
+        if (images?.length) {
+          for (const _img of images) {
+            total += this._estimateImageTokens();
+          }
+        }
       } else if (c.type === ContentType.INPUT_IMAGE_URL) {
-        total += 200; // Approximate for images
+        const imgContent = c as any;
+        const detail = imgContent.image_url?.detail;
+        total += this._estimateImageTokens(undefined, undefined, detail);
       }
     }
 
     return total;
+  }
+
+  /**
+   * Estimate tokens for a single image, using the estimator's image method if available.
+   */
+  private _estimateImageTokens(width?: number, height?: number, detail?: string): number {
+    if (this._estimator.estimateImageTokens) {
+      return this._estimator.estimateImageTokens(width, height, detail);
+    }
+    // Fallback for estimators that don't implement estimateImageTokens
+    return 1000;
   }
 
   // ============================================================================
@@ -1353,9 +1393,11 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       if (c.type === ContentType.TOOL_RESULT) {
         const toolResult = c as any;
         const content = toolResult.content || '';
+        const images = toolResult.__images as Array<{ base64: string; mediaType: string }> | undefined;
 
         // Check if content is binary (base64, etc.)
-        if (this.isBinaryContent(content)) {
+        // Skip this check if images are already extracted via __images convention
+        if (!images?.length && this.isBinaryContent(content)) {
           // Reject binary content
           truncatedContent.push({
             type: ContentType.TOOL_RESULT,
@@ -1365,7 +1407,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
           });
           totalCharsUsed += 100;
         } else {
-          // Truncate text/JSON content
+          // Truncate text/JSON content (images are stored separately and don't count as chars)
           const availableChars = maxChars - totalCharsUsed - 200; // Reserve for warning
           if (content.length > availableChars && availableChars > 0) {
             const truncated = content.slice(0, availableChars);
@@ -1373,18 +1415,22 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
               type: ContentType.TOOL_RESULT,
               tool_use_id: toolResult.tool_use_id,
               content: `${truncated}\n\n[TRUNCATED: Original output was ${Math.round(content.length / 1024)}KB. Only first ${Math.round(availableChars / 1024)}KB shown. Consider using more targeted queries.]`,
+              // Preserve images even when text is truncated — they're handled natively by providers
+              ...(images ? { __images: images } : {}),
             });
             totalCharsUsed += truncated.length + 150;
           } else if (availableChars > 0) {
             truncatedContent.push(c);
             totalCharsUsed += content.length;
           } else {
-            // No space left
+            // No space left for text, but still preserve images if present
             truncatedContent.push({
               type: ContentType.TOOL_RESULT,
               tool_use_id: toolResult.tool_use_id,
               content: '[Output too large - skipped due to context limits. Try a more targeted query.]',
               error: 'Output too large',
+              // Preserve images even when text is dropped
+              ...(images ? { __images: images } : {}),
             });
             totalCharsUsed += 100;
           }

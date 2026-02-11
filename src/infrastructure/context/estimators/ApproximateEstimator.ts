@@ -48,4 +48,22 @@ export class ApproximateTokenEstimator implements ITokenEstimator {
       return 100;
     }
   }
+
+  /**
+   * Estimate tokens for an image using tile-based model (matches OpenAI pricing).
+   *
+   * - detail='low': 85 tokens
+   * - detail='high' with known dimensions: 85 + 170 per 512×512 tile
+   * - Unknown dimensions: 1000 tokens (conservative default)
+   */
+  estimateImageTokens(width?: number, height?: number, detail?: string): number {
+    if (detail === 'low') return 85;
+
+    if (width && height) {
+      const tiles = Math.ceil(width / 512) * Math.ceil(height / 512);
+      return 85 + 170 * tiles;
+    }
+
+    return 1000;
+  }
 }

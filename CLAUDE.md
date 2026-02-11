@@ -235,6 +235,7 @@ src/
 │   ├── filesystem/             # readFile, writeFile, editFile, glob, grep, listDirectory
 │   ├── shell/                  # bash
 │   ├── web/                    # webFetch, createWebSearchTool, createWebScrapeTool (ConnectorTools)
+│   ├── desktop/                # 11 desktop_* tools: screenshot, mouse, keyboard, window (requires @nut-tree-fork/nut-js)
 │   ├── connector/              # ConnectorTools (generic API from connector)
 │   ├── code/                   # executeJavaScript
 │   └── json/                   # jsonManipulator
@@ -295,7 +296,7 @@ Custom strategies can be registered via `StrategyRegistry.register(MyStrategy)`.
 
 Default allowlist (no approval needed): `read_file`, `glob`, `grep`, `list_directory`, `memory_*`, `context_set`, `context_delete`, `context_list`, `context_stats`, `instructions_*`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`
 
-Require approval: `write_file`, `edit_file`, `bash`, `web_*`, `execute_javascript`, custom tools
+Require approval: `write_file`, `edit_file`, `bash`, `web_*`, `desktop_*`, `execute_javascript`, custom tools
 
 ## Working Memory Scopes
 

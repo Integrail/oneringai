@@ -81,17 +81,55 @@ export class OpenAIResponsesConverter {
               } as ResponsesAPI.ResponseFunctionToolCall);
               break;
 
-            case 'tool_result':
-              // Tool result becomes a function_call_output item
-              const output = typeof content.content === 'string'
-                ? content.content
-                : JSON.stringify(content.content);
+            case 'tool_result': {
+              // Read images from Content object first (set by addToolResults),
+              // fall back to JSON extraction for backward compat
+              const contentImages = (content as any).__images as Array<{ base64: string; mediaType: string }> | undefined;
+
+              let outputText: string;
+              let images: Array<{ base64: string; mediaType: string }>;
+
+              if (contentImages?.length) {
+                // Images already extracted at context layer — use text content as-is
+                outputText = typeof content.content === 'string'
+                  ? content.content
+                  : JSON.stringify(content.content);
+                images = contentImages;
+              } else {
+                // Fallback: try extracting from raw JSON output
+                const rawOutput = typeof content.content === 'string'
+                  ? content.content
+                  : JSON.stringify(content.content);
+                const extracted = this.extractImagesFromOutput(rawOutput);
+                outputText = extracted.text;
+                images = extracted.images;
+              }
+
               items.push({
                 type: 'function_call_output',
                 call_id: content.tool_use_id,
-                output,
-              } as any); // function_call_output is in ResponseInputItem namespace
+                output: outputText,
+              } as any);
+
+              // OpenAI function_call_output only supports text.
+              // Inject a follow-up user message with the image(s) so the model can see them.
+              if (images.length > 0) {
+                const imageContent: any[] = images.map((img) => ({
+                  type: 'input_image',
+                  image_url: `data:${img.mediaType};base64,${img.base64}`,
+                }));
+                items.push({
+                  type: 'message',
+                  role: 'user',
+                  content: [
+                    { type: 'input_text', text: '[Screenshot from tool result]' },
+                    ...imageContent,
+                  ],
+                  status: 'completed' as const,
+                } as any);
+              }
               break;
+            }
           }
         }
 
@@ -303,5 +341,26 @@ export class OpenAIResponsesConverter {
         type: 'text',
       },
     } as ResponsesAPI.ResponseTextConfig;
+  }
+
+  /**
+   * Extract __images from a JSON tool result and return cleaned text + images.
+   * Used by the __images convention for multimodal tool results.
+   */
+  private extractImagesFromOutput(output: string): {
+    text: string;
+    images: Array<{ base64: string; mediaType: string }>;
+  } {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed && Array.isArray(parsed.__images) && parsed.__images.length > 0) {
+        const images = parsed.__images;
+        const { __images: _, base64: __, ...rest } = parsed;
+        return { text: JSON.stringify(rest), images };
+      }
+    } catch {
+      // Not JSON or no __images
+    }
+    return { text: output, images: [] };
   }
 }

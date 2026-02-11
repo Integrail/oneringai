@@ -136,6 +136,14 @@ export interface ITokenEstimator {
    * Estimate tokens for structured data
    */
   estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
+
+  /**
+   * Estimate tokens for an image.
+   * @param width - Image width in pixels (if known)
+   * @param height - Image height in pixels (if known)
+   * @param detail - Image detail level: 'low', 'high', or 'auto'
+   */
+  estimateImageTokens?(width?: number, height?: number, detail?: string): number;
 }
 
 /**

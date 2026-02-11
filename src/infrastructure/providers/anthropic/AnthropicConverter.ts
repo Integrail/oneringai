@@ -182,6 +182,7 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
             tool_use_id: string;
             content: string | unknown;
             error?: string;
+            __images?: Array<{ base64: string; mediaType: string }>;
           };
           blocks.push(this.convertToolResultToAnthropicBlock(resultContent));
           break;
@@ -241,11 +242,13 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
   /**
    * Convert tool result to Anthropic block
    * Anthropic requires non-empty content when is_error is true
+   * Supports __images convention: tool results with __images get multimodal content
    */
   private convertToolResultToAnthropicBlock(resultContent: {
     tool_use_id: string;
     content: string | unknown;
     error?: string;
+    __images?: Array<{ base64: string; mediaType: string }>;
   }): Anthropic.ToolResultBlockParam {
     const isError = !!resultContent.error;
     let toolResultContent: string;
@@ -262,12 +265,77 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       toolResultContent = resultContent.error || 'Tool execution failed';
     }
 
+    // Read images from Content object first (set by addToolResults),
+    // fall back to JSON extraction for backward compat
+    const images = resultContent.__images?.length
+      ? resultContent.__images
+      : this.extractImages(toolResultContent);
+
+    if (images) {
+      // Strip __images and base64 from text to save tokens (needed for JSON fallback path)
+      const textContent = resultContent.__images?.length
+        ? toolResultContent  // Already stripped at context layer
+        : this.stripImagesFromContent(toolResultContent);
+      const contentBlocks: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
+
+      if (textContent.trim()) {
+        contentBlocks.push({ type: 'text', text: textContent });
+      }
+
+      for (const img of images) {
+        contentBlocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: (img.mediaType || 'image/png') as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+            data: img.base64,
+          },
+        } as any);
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: resultContent.tool_use_id,
+        content: contentBlocks.length > 0 ? contentBlocks : textContent,
+        is_error: isError,
+      } as any;
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: resultContent.tool_use_id,
       content: toolResultContent,
       is_error: isError,
     };
+  }
+
+  /**
+   * Extract __images from a JSON-stringified tool result content.
+   * Returns null if no images found.
+   */
+  private extractImages(content: string): Array<{ base64: string; mediaType: string }> | null {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.__images) && parsed.__images.length > 0) {
+        return parsed.__images;
+      }
+    } catch {
+      // Not JSON or no __images
+    }
+    return null;
+  }
+
+  /**
+   * Strip __images and base64 fields from JSON content to reduce token usage in text.
+   */
+  private stripImagesFromContent(content: string): string {
+    try {
+      const parsed = JSON.parse(content);
+      const { __images: _, base64: __, ...rest } = parsed;
+      return JSON.stringify(rest);
+    } catch {
+      return content;
+    }
   }
 
   /**

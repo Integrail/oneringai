@@ -138,6 +138,7 @@
     "jsdom": "^27.0.1",
     "officeparser": "^6.0.4",
     "openai": "^6.16.0",
+    "pngjs": "^7.0.0",
     "readline-async": "^0.1.0",
     "simple-icons": "^16.7.0",
     "turndown": "^7.2.2",
@@ -148,6 +149,7 @@
     "@faker-js/faker": "^9.9.0",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^20.11.0",
+    "@types/pngjs": "^6.0.5",
     "@types/turndown": "^5.0.6",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.56.0",
@@ -156,6 +158,14 @@
     "tsx": "^4.21.0",
     "typescript": "^5.3.3",
     "vitest": "^1.2.0"
+  },
+  "peerDependencies": {
+    "@nut-tree-fork/nut-js": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nut-tree-fork/nut-js": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=18.0.0"

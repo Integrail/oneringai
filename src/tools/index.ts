@@ -175,6 +175,77 @@ export type {
 } from './github/index.js';
 
 // ============================================================================
+// Desktop Automation Tools
+// ============================================================================
+
+export {
+  // Tools
+  desktopScreenshot,
+  desktopMouseMove,
+  desktopMouseClick,
+  desktopMouseDrag,
+  desktopMouseScroll,
+  desktopGetCursor,
+  desktopKeyboardType,
+  desktopKeyboardKey,
+  desktopGetScreenSize,
+  desktopWindowList,
+  desktopWindowFocus,
+  desktopTools,
+  // Factory functions
+  createDesktopScreenshotTool,
+  createDesktopMouseMoveTool,
+  createDesktopMouseClickTool,
+  createDesktopMouseDragTool,
+  createDesktopMouseScrollTool,
+  createDesktopGetCursorTool,
+  createDesktopKeyboardTypeTool,
+  createDesktopKeyboardKeyTool,
+  createDesktopGetScreenSizeTool,
+  createDesktopWindowListTool,
+  createDesktopWindowFocusTool,
+  // Driver
+  NutTreeDriver,
+  parseKeyCombo,
+  getDesktopDriver,
+  resetDefaultDriver,
+  // Config
+  DEFAULT_DESKTOP_CONFIG,
+  DESKTOP_TOOL_NAMES,
+  applyHumanDelay,
+} from './desktop/index.js';
+
+export type {
+  IDesktopDriver,
+  DesktopToolConfig,
+  DesktopPoint,
+  DesktopScreenSize,
+  DesktopScreenshot,
+  DesktopWindow,
+  MouseButton,
+  DesktopToolName,
+  DesktopScreenshotArgs,
+  DesktopScreenshotResult,
+  DesktopMouseMoveArgs,
+  DesktopMouseMoveResult,
+  DesktopMouseClickArgs,
+  DesktopMouseClickResult,
+  DesktopMouseDragArgs,
+  DesktopMouseDragResult,
+  DesktopMouseScrollArgs,
+  DesktopMouseScrollResult,
+  DesktopGetCursorResult,
+  DesktopKeyboardTypeArgs,
+  DesktopKeyboardTypeResult,
+  DesktopKeyboardKeyArgs,
+  DesktopKeyboardKeyResult,
+  DesktopGetScreenSizeResult,
+  DesktopWindowListResult,
+  DesktopWindowFocusArgs,
+  DesktopWindowFocusResult,
+} from './desktop/index.js';
+
+// ============================================================================
 // Document Reader (used by filesystem and web tools)
 // ============================================================================
 

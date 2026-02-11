@@ -1,7 +1,7 @@
 import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, c as IProvider, d as ConnectorFetchOptions, P as ProviderCapabilities, e as ITokenStorage, S as StoredToken$1, f as ConnectorConfig, g as ConnectorAuth, h as ConnectorConfigResult } from './IProvider-c4QCbPjn.cjs';
 export { A as APIKeyConnectorAuth, k as DEFAULT_BASE_DELAY_MS, D as DEFAULT_CONNECTOR_TIMEOUT, l as DEFAULT_MAX_DELAY_MS, i as DEFAULT_MAX_RETRIES, j as DEFAULT_RETRYABLE_STATUSES, J as JWTConnectorAuth, O as OAuthConnectorAuth } from './IProvider-c4QCbPjn.cjs';
-import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-MJ14lkui.cjs';
-export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-MJ14lkui.cjs';
+import { T as Tool, a as ToolFunction, b as ToolContext, c as ToolPermissionConfig$1, d as ToolCall, I as InputItem, M as MemoryEntry, e as MemoryScope, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as StaleEntryInfo, o as PriorityContext, p as MemoryIndex, q as TaskStatusForMemory, r as WorkingMemoryAccess, s as TokenUsage, t as StreamEventType, u as TextGenerateOptions, v as ModelCapabilities, w as MessageRole } from './index-D62LXWdW.cjs';
+export { aD as AfterToolContext, av as AgentEventName, ay as AgenticLoopEventName, ax as AgenticLoopEvents, aG as ApprovalResult, aE as ApproveToolContext, aC as BeforeToolContext, a8 as BuiltInTool, a3 as CompactionItem, Y as ContentType, D as DEFAULT_MEMORY_CONFIG, am as ErrorEvent, aw as ExecutionConfig, aA as Hook, au as HookManager, az as HookName, _ as InputImageContent, Z as InputTextContent, ak as IterationCompleteEvent, aa as JSONSchema, X as MEMORY_PRIORITY_VALUES, x as MemoryEntryInput, y as MemoryIndexEntry, a2 as Message, aB as ModifyingHook, $ as OutputTextContent, ad as OutputTextDeltaEvent, ae as OutputTextDoneEvent, a4 as ReasoningItem, al as ResponseCompleteEvent, ab as ResponseCreatedEvent, ac as ResponseInProgressEvent, B as SimpleScope, z as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, af as ToolCallStartEvent, a5 as ToolCallState, a9 as ToolExecutionContext, aj as ToolExecutionDoneEvent, ai as ToolExecutionStartEvent, aF as ToolModification, a1 as ToolResultContent, a0 as ToolUseContent, V as calculateEntrySize, a6 as defaultDescribeCall, J as forPlan, G as forTasks, a7 as getToolCallDescription, at as isErrorEvent, ao as isOutputTextDelta, as as isResponseComplete, Q as isSimpleScope, an as isStreamEvent, R as isTaskAwareScope, U as isTerminalMemoryStatus, aq as isToolCallArgumentsDelta, ar as isToolCallArgumentsDone, ap as isToolCallStart, K as scopeEquals, N as scopeMatches } from './index-D62LXWdW.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 export { a as VENDORS, i as isVendor } from './Vendor-DYh_bzwo.cjs';
@@ -1487,6 +1487,19 @@ interface ITokenEstimator$1 {
     estimateTokens(text: string): number;
     /** Estimate tokens for arbitrary data (will be JSON stringified) */
     estimateDataTokens(data: unknown): number;
+    /**
+     * Estimate tokens for an image. Provider-specific implementations can override.
+     *
+     * Default heuristic (matches OpenAI's image token pricing):
+     * - detail='low': 85 tokens
+     * - detail='high' with known dimensions: 85 + 170 * ceil(w/512) * ceil(h/512)
+     * - Unknown dimensions: ~1000 tokens (conservative default)
+     *
+     * @param width - Image width in pixels (if known)
+     * @param height - Image height in pixels (if known)
+     * @param detail - Image detail level: 'low', 'high', or 'auto' (default 'auto')
+     */
+    estimateImageTokens?(width?: number, height?: number, detail?: string): number;
 }
 /**
  * Context plugin interface for NextGen context management.
@@ -2565,6 +2578,10 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
      * Estimate tokens for a single InputItem.
      */
     private estimateItemTokens;
+    /**
+     * Estimate tokens for a single image, using the estimator's image method if available.
+     */
+    private _estimateImageTokens;
     /**
      * Run compaction to free up tokens.
      * Delegates to the current compaction strategy.
@@ -8455,6 +8472,13 @@ interface ITokenEstimator {
      * Estimate tokens for structured data
      */
     estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
+    /**
+     * Estimate tokens for an image.
+     * @param width - Image width in pixels (if known)
+     * @param height - Image height in pixels (if known)
+     * @param detail - Image detail level: 'low', 'high', or 'auto'
+     */
+    estimateImageTokens?(width?: number, height?: number, detail?: string): number;
 }
 /**
  * Abstract interface for compaction strategies
@@ -8644,6 +8668,14 @@ declare class ApproximateTokenEstimator implements ITokenEstimator {
      * Estimate tokens for structured data (always uses 'mixed' estimation)
      */
     estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
+    /**
+     * Estimate tokens for an image using tile-based model (matches OpenAI pricing).
+     *
+     * - detail='low': 85 tokens
+     * - detail='high' with known dimensions: 85 + 170 per 512×512 tile
+     * - Unknown dimensions: 1000 tokens (conservative default)
+     */
+    estimateImageTokens(width?: number, height?: number, detail?: string): number;
 }
 
 /**
@@ -12431,16 +12463,390 @@ interface CreatePRArgs {
 declare function createCreatePRTool(connector: Connector, userId?: string): ToolFunction<CreatePRArgs, GitHubCreatePRResult>;
 
 /**
+ * Desktop Automation Tools - Types
+ *
+ * Interfaces and types for OS-level desktop automation (screenshot, mouse, keyboard, windows).
+ * All coordinates are in PHYSICAL pixel space (screenshot space).
+ * The driver converts to logical OS coords internally using scaleFactor.
+ */
+type MouseButton = 'left' | 'right' | 'middle';
+interface DesktopPoint {
+    x: number;
+    y: number;
+}
+interface DesktopScreenSize {
+    /** Physical pixel width (screenshot space) */
+    physicalWidth: number;
+    /** Physical pixel height (screenshot space) */
+    physicalHeight: number;
+    /** Logical OS width */
+    logicalWidth: number;
+    /** Logical OS height */
+    logicalHeight: number;
+    /** Scale factor (physical / logical), e.g. 2.0 on Retina */
+    scaleFactor: number;
+}
+interface DesktopScreenshot {
+    /** Base64-encoded PNG image data */
+    base64: string;
+    /** Width in physical pixels */
+    width: number;
+    /** Height in physical pixels */
+    height: number;
+}
+interface DesktopWindow {
+    /** Window identifier (platform-specific) */
+    id: number;
+    /** Window title */
+    title: string;
+    /** Application name */
+    appName?: string;
+    /** Window bounds in physical pixel coords */
+    bounds?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
+}
+interface IDesktopDriver {
+    /** Initialize the driver (dynamic import, permission checks, scale detection) */
+    initialize(): Promise<void>;
+    /** Whether the driver is initialized */
+    readonly isInitialized: boolean;
+    /** Current scale factor (physical / logical) */
+    readonly scaleFactor: number;
+    screenshot(region?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    }): Promise<DesktopScreenshot>;
+    getScreenSize(): Promise<DesktopScreenSize>;
+    mouseMove(x: number, y: number): Promise<void>;
+    mouseClick(x: number, y: number, button: MouseButton, clickCount: number): Promise<void>;
+    mouseDrag(startX: number, startY: number, endX: number, endY: number, button: MouseButton): Promise<void>;
+    mouseScroll(deltaX: number, deltaY: number, x?: number, y?: number): Promise<void>;
+    getCursorPosition(): Promise<DesktopPoint>;
+    keyboardType(text: string, delay?: number): Promise<void>;
+    keyboardKey(keys: string): Promise<void>;
+    getWindowList(): Promise<DesktopWindow[]>;
+    focusWindow(windowId: number): Promise<void>;
+}
+interface DesktopToolConfig {
+    /** Custom driver implementation (defaults to NutTreeDriver) */
+    driver?: IDesktopDriver;
+    /**
+     * Human-like delay range in ms added between actions.
+     * Set to [0, 0] for instant actions.
+     * Default: [50, 150]
+     */
+    humanDelay?: [number, number];
+    /**
+     * Whether to humanize mouse movements (curved path vs instant teleport).
+     * Default: false
+     */
+    humanizeMovement?: boolean;
+}
+declare const DEFAULT_DESKTOP_CONFIG: Required<DesktopToolConfig>;
+/**
+ * Apply a random human-like delay based on config.
+ */
+declare function applyHumanDelay(config: DesktopToolConfig): Promise<void>;
+interface DesktopScreenshotArgs {
+    region?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
+}
+interface DesktopScreenshotResult {
+    success: boolean;
+    width?: number;
+    height?: number;
+    /** Base64 PNG for text summary */
+    base64?: string;
+    /** Image array for multimodal provider handling */
+    __images?: Array<{
+        base64: string;
+        mediaType: string;
+    }>;
+    error?: string;
+}
+interface DesktopMouseMoveArgs {
+    x: number;
+    y: number;
+}
+interface DesktopMouseMoveResult {
+    success: boolean;
+    x?: number;
+    y?: number;
+    error?: string;
+}
+interface DesktopMouseClickArgs {
+    x?: number;
+    y?: number;
+    button?: MouseButton;
+    clickCount?: number;
+}
+interface DesktopMouseClickResult {
+    success: boolean;
+    x?: number;
+    y?: number;
+    button?: MouseButton;
+    clickCount?: number;
+    error?: string;
+}
+interface DesktopMouseDragArgs {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    button?: MouseButton;
+}
+interface DesktopMouseDragResult {
+    success: boolean;
+    error?: string;
+}
+interface DesktopMouseScrollArgs {
+    deltaX?: number;
+    deltaY?: number;
+    x?: number;
+    y?: number;
+}
+interface DesktopMouseScrollResult {
+    success: boolean;
+    error?: string;
+}
+interface DesktopGetCursorResult {
+    success: boolean;
+    x?: number;
+    y?: number;
+    error?: string;
+}
+interface DesktopKeyboardTypeArgs {
+    text: string;
+    delay?: number;
+}
+interface DesktopKeyboardTypeResult {
+    success: boolean;
+    error?: string;
+}
+interface DesktopKeyboardKeyArgs {
+    keys: string;
+}
+interface DesktopKeyboardKeyResult {
+    success: boolean;
+    error?: string;
+}
+interface DesktopGetScreenSizeResult {
+    success: boolean;
+    physicalWidth?: number;
+    physicalHeight?: number;
+    logicalWidth?: number;
+    logicalHeight?: number;
+    scaleFactor?: number;
+    error?: string;
+}
+interface DesktopWindowListResult {
+    success: boolean;
+    windows?: DesktopWindow[];
+    error?: string;
+}
+interface DesktopWindowFocusArgs {
+    windowId: number;
+}
+interface DesktopWindowFocusResult {
+    success: boolean;
+    error?: string;
+}
+declare const DESKTOP_TOOL_NAMES: readonly ["desktop_screenshot", "desktop_mouse_move", "desktop_mouse_click", "desktop_mouse_drag", "desktop_mouse_scroll", "desktop_get_cursor", "desktop_keyboard_type", "desktop_keyboard_key", "desktop_get_screen_size", "desktop_window_list", "desktop_window_focus"];
+type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number];
+
+/**
+ * NutTreeDriver - Desktop automation driver using @nut-tree-fork/nut-js
+ *
+ * Handles:
+ * - Dynamic import of @nut-tree-fork/nut-js (optional peer dep)
+ * - Scale factor detection for Retina/HiDPI displays
+ * - Coordinate conversion: physical pixels (screenshot space) ↔ logical OS coords
+ * - PNG encoding of raw RGBA screenshots
+ */
+
+/**
+ * Parse a key combo string like "ctrl+c", "cmd+shift+s", "enter"
+ * Returns nut-tree Key enum values.
+ */
+declare function parseKeyCombo(keys: string, KeyEnum: Record<string, any>): any[];
+declare class NutTreeDriver implements IDesktopDriver {
+    private _isInitialized;
+    private _scaleFactor;
+    private _nut;
+    private _windowCache;
+    get isInitialized(): boolean;
+    get scaleFactor(): number;
+    initialize(): Promise<void>;
+    private assertInitialized;
+    /** Convert physical (screenshot) coords to logical (OS) coords */
+    private toLogical;
+    /** Convert logical (OS) coords to physical (screenshot) coords */
+    private toPhysical;
+    screenshot(region?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    }): Promise<DesktopScreenshot>;
+    getScreenSize(): Promise<DesktopScreenSize>;
+    mouseMove(x: number, y: number): Promise<void>;
+    mouseClick(x: number, y: number, button: MouseButton, clickCount: number): Promise<void>;
+    mouseDrag(startX: number, startY: number, endX: number, endY: number, button: MouseButton): Promise<void>;
+    mouseScroll(deltaX: number, deltaY: number, x?: number, y?: number): Promise<void>;
+    getCursorPosition(): Promise<DesktopPoint>;
+    keyboardType(text: string, delay?: number): Promise<void>;
+    keyboardKey(keys: string): Promise<void>;
+    getWindowList(): Promise<DesktopWindow[]>;
+    focusWindow(windowId: number): Promise<void>;
+}
+
+/**
+ * Lazy singleton driver accessor for desktop tools.
+ *
+ * First call initializes the driver (dynamic import + scale detection).
+ * Subsequent calls reuse the same instance.
+ */
+
+/**
+ * Get (or create) the desktop driver instance.
+ * If config.driver is provided, uses that instead of the default.
+ */
+declare function getDesktopDriver(config?: DesktopToolConfig): Promise<IDesktopDriver>;
+/**
+ * Reset the default driver (for testing).
+ */
+declare function resetDefaultDriver(): void;
+
+/**
+ * Desktop Screenshot Tool
+ *
+ * Captures a screenshot of the entire screen or a specific region.
+ * Returns base64 PNG with __images convention for multimodal provider handling.
+ */
+
+declare function createDesktopScreenshotTool(config?: DesktopToolConfig): ToolFunction<DesktopScreenshotArgs, DesktopScreenshotResult>;
+declare const desktopScreenshot: ToolFunction<DesktopScreenshotArgs, DesktopScreenshotResult>;
+
+/**
+ * Desktop Mouse Move Tool
+ *
+ * Moves the mouse cursor to a specific position on screen.
+ * Coordinates are in physical pixel space (same as screenshot pixels).
+ */
+
+declare function createDesktopMouseMoveTool(config?: DesktopToolConfig): ToolFunction<DesktopMouseMoveArgs, DesktopMouseMoveResult>;
+declare const desktopMouseMove: ToolFunction<DesktopMouseMoveArgs, DesktopMouseMoveResult>;
+
+/**
+ * Desktop Mouse Click Tool
+ *
+ * Clicks at the current cursor position or at specified coordinates.
+ * If x/y are provided, moves to that position first, then clicks.
+ */
+
+declare function createDesktopMouseClickTool(config?: DesktopToolConfig): ToolFunction<DesktopMouseClickArgs, DesktopMouseClickResult>;
+declare const desktopMouseClick: ToolFunction<DesktopMouseClickArgs, DesktopMouseClickResult>;
+
+/**
+ * Desktop Mouse Drag Tool
+ *
+ * Drags from one position to another (press, move, release).
+ */
+
+declare function createDesktopMouseDragTool(config?: DesktopToolConfig): ToolFunction<DesktopMouseDragArgs, DesktopMouseDragResult>;
+declare const desktopMouseDrag: ToolFunction<DesktopMouseDragArgs, DesktopMouseDragResult>;
+
+/**
+ * Desktop Mouse Scroll Tool
+ *
+ * Scrolls the mouse wheel at the current position or at specified coordinates.
+ */
+
+declare function createDesktopMouseScrollTool(config?: DesktopToolConfig): ToolFunction<DesktopMouseScrollArgs, DesktopMouseScrollResult>;
+declare const desktopMouseScroll: ToolFunction<DesktopMouseScrollArgs, DesktopMouseScrollResult>;
+
+/**
+ * Desktop Get Cursor Tool
+ *
+ * Returns the current cursor position in physical pixel (screenshot) coordinates.
+ */
+
+declare function createDesktopGetCursorTool(config?: DesktopToolConfig): ToolFunction<Record<string, never>, DesktopGetCursorResult>;
+declare const desktopGetCursor: ToolFunction<Record<string, never>, DesktopGetCursorResult>;
+
+/**
+ * Desktop Keyboard Type Tool
+ *
+ * Types text as if from a physical keyboard.
+ */
+
+declare function createDesktopKeyboardTypeTool(config?: DesktopToolConfig): ToolFunction<DesktopKeyboardTypeArgs, DesktopKeyboardTypeResult>;
+declare const desktopKeyboardType: ToolFunction<DesktopKeyboardTypeArgs, DesktopKeyboardTypeResult>;
+
+/**
+ * Desktop Keyboard Key Tool
+ *
+ * Presses keyboard shortcuts or special keys (e.g., "ctrl+c", "enter", "cmd+shift+s").
+ */
+
+declare function createDesktopKeyboardKeyTool(config?: DesktopToolConfig): ToolFunction<DesktopKeyboardKeyArgs, DesktopKeyboardKeyResult>;
+declare const desktopKeyboardKey: ToolFunction<DesktopKeyboardKeyArgs, DesktopKeyboardKeyResult>;
+
+/**
+ * Desktop Get Screen Size Tool
+ *
+ * Returns the screen dimensions (physical, logical, and scale factor).
+ */
+
+declare function createDesktopGetScreenSizeTool(config?: DesktopToolConfig): ToolFunction<Record<string, never>, DesktopGetScreenSizeResult>;
+declare const desktopGetScreenSize: ToolFunction<Record<string, never>, DesktopGetScreenSizeResult>;
+
+/**
+ * Desktop Window List Tool
+ *
+ * Lists all visible windows with their IDs, titles, and bounds.
+ */
+
+declare function createDesktopWindowListTool(config?: DesktopToolConfig): ToolFunction<Record<string, never>, DesktopWindowListResult>;
+declare const desktopWindowList: ToolFunction<Record<string, never>, DesktopWindowListResult>;
+
+/**
+ * Desktop Window Focus Tool
+ *
+ * Brings a specific window to the foreground by its window ID.
+ */
+
+declare function createDesktopWindowFocusTool(config?: DesktopToolConfig): ToolFunction<DesktopWindowFocusArgs, DesktopWindowFocusResult>;
+declare const desktopWindowFocus: ToolFunction<DesktopWindowFocusArgs, DesktopWindowFocusResult>;
+
+/**
+ * A bundle of all desktop automation tools.
+ * Includes: screenshot, mouse (move, click, drag, scroll, getCursor),
+ * keyboard (type, key), screen info, and window management.
+ */
+declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreenshotResult> | ToolFunction<DesktopMouseMoveArgs, DesktopMouseMoveResult> | ToolFunction<DesktopMouseClickArgs, DesktopMouseClickResult> | ToolFunction<DesktopMouseDragArgs, DesktopMouseDragResult> | ToolFunction<DesktopMouseScrollArgs, DesktopMouseScrollResult> | ToolFunction<Record<string, never>, DesktopGetCursorResult> | ToolFunction<DesktopKeyboardTypeArgs, DesktopKeyboardTypeResult> | ToolFunction<DesktopKeyboardKeyArgs, DesktopKeyboardKeyResult> | ToolFunction<Record<string, never>, DesktopGetScreenSizeResult> | ToolFunction<Record<string, never>, DesktopWindowListResult> | ToolFunction<DesktopWindowFocusArgs, DesktopWindowFocusResult>)[];
+
+/**
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-11T13:24:17.061Z
+ * Generated at: 2026-02-11T15:30:27.906Z
  *
  * To regenerate: npm run generate:tools
  */
 
 /** Tool category for grouping */
-type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'other';
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other';
 /** Metadata for a tool in the registry */
 interface ToolRegistryEntry {
     /** Tool name (matches definition.function.name) */
@@ -12612,8 +13018,35 @@ type index_BashResult = BashResult;
 type index_ConnectorToolEntry = ConnectorToolEntry;
 type index_ConnectorTools = ConnectorTools;
 declare const index_ConnectorTools: typeof ConnectorTools;
+declare const index_DEFAULT_DESKTOP_CONFIG: typeof DEFAULT_DESKTOP_CONFIG;
 declare const index_DEFAULT_FILESYSTEM_CONFIG: typeof DEFAULT_FILESYSTEM_CONFIG;
 declare const index_DEFAULT_SHELL_CONFIG: typeof DEFAULT_SHELL_CONFIG;
+declare const index_DESKTOP_TOOL_NAMES: typeof DESKTOP_TOOL_NAMES;
+type index_DesktopGetCursorResult = DesktopGetCursorResult;
+type index_DesktopGetScreenSizeResult = DesktopGetScreenSizeResult;
+type index_DesktopKeyboardKeyArgs = DesktopKeyboardKeyArgs;
+type index_DesktopKeyboardKeyResult = DesktopKeyboardKeyResult;
+type index_DesktopKeyboardTypeArgs = DesktopKeyboardTypeArgs;
+type index_DesktopKeyboardTypeResult = DesktopKeyboardTypeResult;
+type index_DesktopMouseClickArgs = DesktopMouseClickArgs;
+type index_DesktopMouseClickResult = DesktopMouseClickResult;
+type index_DesktopMouseDragArgs = DesktopMouseDragArgs;
+type index_DesktopMouseDragResult = DesktopMouseDragResult;
+type index_DesktopMouseMoveArgs = DesktopMouseMoveArgs;
+type index_DesktopMouseMoveResult = DesktopMouseMoveResult;
+type index_DesktopMouseScrollArgs = DesktopMouseScrollArgs;
+type index_DesktopMouseScrollResult = DesktopMouseScrollResult;
+type index_DesktopPoint = DesktopPoint;
+type index_DesktopScreenSize = DesktopScreenSize;
+type index_DesktopScreenshot = DesktopScreenshot;
+type index_DesktopScreenshotArgs = DesktopScreenshotArgs;
+type index_DesktopScreenshotResult = DesktopScreenshotResult;
+type index_DesktopToolConfig = DesktopToolConfig;
+type index_DesktopToolName = DesktopToolName;
+type index_DesktopWindow = DesktopWindow;
+type index_DesktopWindowFocusArgs = DesktopWindowFocusArgs;
+type index_DesktopWindowFocusResult = DesktopWindowFocusResult;
+type index_DesktopWindowListResult = DesktopWindowListResult;
 type index_DocumentFamily = DocumentFamily;
 type index_DocumentFormat = DocumentFormat;
 type index_DocumentImagePiece = DocumentImagePiece;
@@ -12647,9 +13080,13 @@ type index_GitHubSearchFilesResult = GitHubSearchFilesResult;
 type index_GlobResult = GlobResult;
 type index_GrepMatch = GrepMatch;
 type index_GrepResult = GrepResult;
+type index_IDesktopDriver = IDesktopDriver;
 type index_IDocumentTransformer = IDocumentTransformer;
 type index_IFormatHandler = IFormatHandler;
 type index_ImageFilterOptions = ImageFilterOptions;
+type index_MouseButton = MouseButton;
+type index_NutTreeDriver = NutTreeDriver;
+declare const index_NutTreeDriver: typeof NutTreeDriver;
 type index_ReadFileResult = ReadFileResult;
 type index_SearchResult = SearchResult;
 type index_ServiceToolFactory = ServiceToolFactory;
@@ -12659,9 +13096,21 @@ type index_ToolRegistry = ToolRegistry;
 declare const index_ToolRegistry: typeof ToolRegistry;
 type index_ToolRegistryEntry = ToolRegistryEntry;
 type index_WriteFileResult = WriteFileResult;
+declare const index_applyHumanDelay: typeof applyHumanDelay;
 declare const index_bash: typeof bash;
 declare const index_createBashTool: typeof createBashTool;
 declare const index_createCreatePRTool: typeof createCreatePRTool;
+declare const index_createDesktopGetCursorTool: typeof createDesktopGetCursorTool;
+declare const index_createDesktopGetScreenSizeTool: typeof createDesktopGetScreenSizeTool;
+declare const index_createDesktopKeyboardKeyTool: typeof createDesktopKeyboardKeyTool;
+declare const index_createDesktopKeyboardTypeTool: typeof createDesktopKeyboardTypeTool;
+declare const index_createDesktopMouseClickTool: typeof createDesktopMouseClickTool;
+declare const index_createDesktopMouseDragTool: typeof createDesktopMouseDragTool;
+declare const index_createDesktopMouseMoveTool: typeof createDesktopMouseMoveTool;
+declare const index_createDesktopMouseScrollTool: typeof createDesktopMouseScrollTool;
+declare const index_createDesktopScreenshotTool: typeof createDesktopScreenshotTool;
+declare const index_createDesktopWindowFocusTool: typeof createDesktopWindowFocusTool;
+declare const index_createDesktopWindowListTool: typeof createDesktopWindowListTool;
 declare const index_createEditFileTool: typeof createEditFileTool;
 declare const index_createExecuteJavaScriptTool: typeof createExecuteJavaScriptTool;
 declare const index_createGetPRTool: typeof createGetPRTool;
@@ -12681,12 +13130,25 @@ declare const index_createVideoTools: typeof createVideoTools;
 declare const index_createWebScrapeTool: typeof createWebScrapeTool;
 declare const index_createWebSearchTool: typeof createWebSearchTool;
 declare const index_createWriteFileTool: typeof createWriteFileTool;
+declare const index_desktopGetCursor: typeof desktopGetCursor;
+declare const index_desktopGetScreenSize: typeof desktopGetScreenSize;
+declare const index_desktopKeyboardKey: typeof desktopKeyboardKey;
+declare const index_desktopKeyboardType: typeof desktopKeyboardType;
+declare const index_desktopMouseClick: typeof desktopMouseClick;
+declare const index_desktopMouseDrag: typeof desktopMouseDrag;
+declare const index_desktopMouseMove: typeof desktopMouseMove;
+declare const index_desktopMouseScroll: typeof desktopMouseScroll;
+declare const index_desktopScreenshot: typeof desktopScreenshot;
+declare const index_desktopTools: typeof desktopTools;
+declare const index_desktopWindowFocus: typeof desktopWindowFocus;
+declare const index_desktopWindowList: typeof desktopWindowList;
 declare const index_developerTools: typeof developerTools;
 declare const index_editFile: typeof editFile;
 declare const index_executeJavaScript: typeof executeJavaScript;
 declare const index_expandTilde: typeof expandTilde;
 declare const index_getAllBuiltInTools: typeof getAllBuiltInTools;
 declare const index_getBackgroundOutput: typeof getBackgroundOutput;
+declare const index_getDesktopDriver: typeof getDesktopDriver;
 declare const index_getMediaOutputHandler: typeof getMediaOutputHandler;
 declare const index_getMediaStorage: typeof getMediaStorage;
 declare const index_getToolByName: typeof getToolByName;
@@ -12702,8 +13164,10 @@ declare const index_jsonManipulator: typeof jsonManipulator;
 declare const index_killBackgroundProcess: typeof killBackgroundProcess;
 declare const index_listDirectory: typeof listDirectory;
 declare const index_mergeTextPieces: typeof mergeTextPieces;
+declare const index_parseKeyCombo: typeof parseKeyCombo;
 declare const index_parseRepository: typeof parseRepository;
 declare const index_readFile: typeof readFile;
+declare const index_resetDefaultDriver: typeof resetDefaultDriver;
 declare const index_resolveRepository: typeof resolveRepository;
 declare const index_setMediaOutputHandler: typeof setMediaOutputHandler;
 declare const index_setMediaStorage: typeof setMediaStorage;
@@ -12712,7 +13176,7 @@ declare const index_validatePath: typeof validatePath;
 declare const index_webFetch: typeof webFetch;
 declare const index_writeFile: typeof writeFile;
 declare namespace index {
-  export { type index_BashResult as BashResult, type index_ConnectorToolEntry as ConnectorToolEntry, index_ConnectorTools as ConnectorTools, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, type index_DocumentFamily as DocumentFamily, type index_DocumentFormat as DocumentFormat, type index_DocumentImagePiece as DocumentImagePiece, type index_DocumentMetadata as DocumentMetadata, type index_DocumentPiece as DocumentPiece, type index_DocumentReadOptions as DocumentReadOptions, index_DocumentReader as DocumentReader, type index_DocumentReaderConfig as DocumentReaderConfig, type index_DocumentResult as DocumentResult, type index_DocumentSource as DocumentSource, type index_DocumentTextPiece as DocumentTextPiece, type index_DocumentToContentOptions as DocumentToContentOptions, type index_EditFileResult as EditFileResult, FileMediaStorage as FileMediaOutputHandler, type index_FilesystemToolConfig as FilesystemToolConfig, type index_FormatDetectionResult as FormatDetectionResult, index_FormatDetector as FormatDetector, type index_GenericAPICallArgs as GenericAPICallArgs, type index_GenericAPICallResult as GenericAPICallResult, type index_GenericAPIToolOptions as GenericAPIToolOptions, type index_GitHubCreatePRResult as GitHubCreatePRResult, type index_GitHubGetPRResult as GitHubGetPRResult, type index_GitHubPRCommentEntry as GitHubPRCommentEntry, type index_GitHubPRCommentsResult as GitHubPRCommentsResult, type index_GitHubPRFilesResult as GitHubPRFilesResult, type index_GitHubReadFileResult as GitHubReadFileResult, type index_GitHubRepository as GitHubRepository, type index_GitHubSearchCodeResult as GitHubSearchCodeResult, type index_GitHubSearchFilesResult as GitHubSearchFilesResult, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type index_IDocumentTransformer as IDocumentTransformer, type index_IFormatHandler as IFormatHandler, type IMediaStorage as IMediaOutputHandler, type index_ImageFilterOptions as ImageFilterOptions, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type index_ReadFileResult as ReadFileResult, type index_SearchResult as SearchResult, type index_ServiceToolFactory as ServiceToolFactory, type index_ShellToolConfig as ShellToolConfig, type index_ToolCategory as ToolCategory, index_ToolRegistry as ToolRegistry, type index_ToolRegistryEntry as ToolRegistryEntry, type index_WriteFileResult as WriteFileResult, index_bash as bash, index_createBashTool as createBashTool, index_createCreatePRTool as createCreatePRTool, index_createEditFileTool as createEditFileTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createGetPRTool as createGetPRTool, index_createGitHubReadFileTool as createGitHubReadFileTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createImageGenerationTool as createImageGenerationTool, index_createListDirectoryTool as createListDirectoryTool, index_createPRCommentsTool as createPRCommentsTool, index_createPRFilesTool as createPRFilesTool, index_createReadFileTool as createReadFileTool, index_createSearchCodeTool as createSearchCodeTool, index_createSearchFilesTool as createSearchFilesTool, index_createSpeechToTextTool as createSpeechToTextTool, index_createTextToSpeechTool as createTextToSpeechTool, index_createVideoTools as createVideoTools, index_createWebScrapeTool as createWebScrapeTool, index_createWebSearchTool as createWebSearchTool, index_createWriteFileTool as createWriteFileTool, index_developerTools as developerTools, index_editFile as editFile, index_executeJavaScript as executeJavaScript, index_expandTilde as expandTilde, index_getAllBuiltInTools as getAllBuiltInTools, index_getBackgroundOutput as getBackgroundOutput, index_getMediaOutputHandler as getMediaOutputHandler, index_getMediaStorage as getMediaStorage, index_getToolByName as getToolByName, index_getToolCategories as getToolCategories, index_getToolRegistry as getToolRegistry, index_getToolsByCategory as getToolsByCategory, index_getToolsRequiringConnector as getToolsRequiringConnector, index_glob as glob, index_grep as grep, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_mergeTextPieces as mergeTextPieces, index_parseRepository as parseRepository, index_readFile as readFile, index_resolveRepository as resolveRepository, index_setMediaOutputHandler as setMediaOutputHandler, index_setMediaStorage as setMediaStorage, index_toolRegistry as toolRegistry, index_validatePath as validatePath, index_webFetch as webFetch, index_writeFile as writeFile };
+  export { type index_BashResult as BashResult, type index_ConnectorToolEntry as ConnectorToolEntry, index_ConnectorTools as ConnectorTools, index_DEFAULT_DESKTOP_CONFIG as DEFAULT_DESKTOP_CONFIG, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, index_DESKTOP_TOOL_NAMES as DESKTOP_TOOL_NAMES, type index_DesktopGetCursorResult as DesktopGetCursorResult, type index_DesktopGetScreenSizeResult as DesktopGetScreenSizeResult, type index_DesktopKeyboardKeyArgs as DesktopKeyboardKeyArgs, type index_DesktopKeyboardKeyResult as DesktopKeyboardKeyResult, type index_DesktopKeyboardTypeArgs as DesktopKeyboardTypeArgs, type index_DesktopKeyboardTypeResult as DesktopKeyboardTypeResult, type index_DesktopMouseClickArgs as DesktopMouseClickArgs, type index_DesktopMouseClickResult as DesktopMouseClickResult, type index_DesktopMouseDragArgs as DesktopMouseDragArgs, type index_DesktopMouseDragResult as DesktopMouseDragResult, type index_DesktopMouseMoveArgs as DesktopMouseMoveArgs, type index_DesktopMouseMoveResult as DesktopMouseMoveResult, type index_DesktopMouseScrollArgs as DesktopMouseScrollArgs, type index_DesktopMouseScrollResult as DesktopMouseScrollResult, type index_DesktopPoint as DesktopPoint, type index_DesktopScreenSize as DesktopScreenSize, type index_DesktopScreenshot as DesktopScreenshot, type index_DesktopScreenshotArgs as DesktopScreenshotArgs, type index_DesktopScreenshotResult as DesktopScreenshotResult, type index_DesktopToolConfig as DesktopToolConfig, type index_DesktopToolName as DesktopToolName, type index_DesktopWindow as DesktopWindow, type index_DesktopWindowFocusArgs as DesktopWindowFocusArgs, type index_DesktopWindowFocusResult as DesktopWindowFocusResult, type index_DesktopWindowListResult as DesktopWindowListResult, type index_DocumentFamily as DocumentFamily, type index_DocumentFormat as DocumentFormat, type index_DocumentImagePiece as DocumentImagePiece, type index_DocumentMetadata as DocumentMetadata, type index_DocumentPiece as DocumentPiece, type index_DocumentReadOptions as DocumentReadOptions, index_DocumentReader as DocumentReader, type index_DocumentReaderConfig as DocumentReaderConfig, type index_DocumentResult as DocumentResult, type index_DocumentSource as DocumentSource, type index_DocumentTextPiece as DocumentTextPiece, type index_DocumentToContentOptions as DocumentToContentOptions, type index_EditFileResult as EditFileResult, FileMediaStorage as FileMediaOutputHandler, type index_FilesystemToolConfig as FilesystemToolConfig, type index_FormatDetectionResult as FormatDetectionResult, index_FormatDetector as FormatDetector, type index_GenericAPICallArgs as GenericAPICallArgs, type index_GenericAPICallResult as GenericAPICallResult, type index_GenericAPIToolOptions as GenericAPIToolOptions, type index_GitHubCreatePRResult as GitHubCreatePRResult, type index_GitHubGetPRResult as GitHubGetPRResult, type index_GitHubPRCommentEntry as GitHubPRCommentEntry, type index_GitHubPRCommentsResult as GitHubPRCommentsResult, type index_GitHubPRFilesResult as GitHubPRFilesResult, type index_GitHubReadFileResult as GitHubReadFileResult, type index_GitHubRepository as GitHubRepository, type index_GitHubSearchCodeResult as GitHubSearchCodeResult, type index_GitHubSearchFilesResult as GitHubSearchFilesResult, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type index_IDesktopDriver as IDesktopDriver, type index_IDocumentTransformer as IDocumentTransformer, type index_IFormatHandler as IFormatHandler, type IMediaStorage as IMediaOutputHandler, type index_ImageFilterOptions as ImageFilterOptions, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type index_MouseButton as MouseButton, index_NutTreeDriver as NutTreeDriver, type index_ReadFileResult as ReadFileResult, type index_SearchResult as SearchResult, type index_ServiceToolFactory as ServiceToolFactory, type index_ShellToolConfig as ShellToolConfig, type index_ToolCategory as ToolCategory, index_ToolRegistry as ToolRegistry, type index_ToolRegistryEntry as ToolRegistryEntry, type index_WriteFileResult as WriteFileResult, index_applyHumanDelay as applyHumanDelay, index_bash as bash, index_createBashTool as createBashTool, index_createCreatePRTool as createCreatePRTool, index_createDesktopGetCursorTool as createDesktopGetCursorTool, index_createDesktopGetScreenSizeTool as createDesktopGetScreenSizeTool, index_createDesktopKeyboardKeyTool as createDesktopKeyboardKeyTool, index_createDesktopKeyboardTypeTool as createDesktopKeyboardTypeTool, index_createDesktopMouseClickTool as createDesktopMouseClickTool, index_createDesktopMouseDragTool as createDesktopMouseDragTool, index_createDesktopMouseMoveTool as createDesktopMouseMoveTool, index_createDesktopMouseScrollTool as createDesktopMouseScrollTool, index_createDesktopScreenshotTool as createDesktopScreenshotTool, index_createDesktopWindowFocusTool as createDesktopWindowFocusTool, index_createDesktopWindowListTool as createDesktopWindowListTool, index_createEditFileTool as createEditFileTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createGetPRTool as createGetPRTool, index_createGitHubReadFileTool as createGitHubReadFileTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createImageGenerationTool as createImageGenerationTool, index_createListDirectoryTool as createListDirectoryTool, index_createPRCommentsTool as createPRCommentsTool, index_createPRFilesTool as createPRFilesTool, index_createReadFileTool as createReadFileTool, index_createSearchCodeTool as createSearchCodeTool, index_createSearchFilesTool as createSearchFilesTool, index_createSpeechToTextTool as createSpeechToTextTool, index_createTextToSpeechTool as createTextToSpeechTool, index_createVideoTools as createVideoTools, index_createWebScrapeTool as createWebScrapeTool, index_createWebSearchTool as createWebSearchTool, index_createWriteFileTool as createWriteFileTool, index_desktopGetCursor as desktopGetCursor, index_desktopGetScreenSize as desktopGetScreenSize, index_desktopKeyboardKey as desktopKeyboardKey, index_desktopKeyboardType as desktopKeyboardType, index_desktopMouseClick as desktopMouseClick, index_desktopMouseDrag as desktopMouseDrag, index_desktopMouseMove as desktopMouseMove, index_desktopMouseScroll as desktopMouseScroll, index_desktopScreenshot as desktopScreenshot, index_desktopTools as desktopTools, index_desktopWindowFocus as desktopWindowFocus, index_desktopWindowList as desktopWindowList, index_developerTools as developerTools, index_editFile as editFile, index_executeJavaScript as executeJavaScript, index_expandTilde as expandTilde, index_getAllBuiltInTools as getAllBuiltInTools, index_getBackgroundOutput as getBackgroundOutput, index_getDesktopDriver as getDesktopDriver, index_getMediaOutputHandler as getMediaOutputHandler, index_getMediaStorage as getMediaStorage, index_getToolByName as getToolByName, index_getToolCategories as getToolCategories, index_getToolRegistry as getToolRegistry, index_getToolsByCategory as getToolsByCategory, index_getToolsRequiringConnector as getToolsRequiringConnector, index_glob as glob, index_grep as grep, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_mergeTextPieces as mergeTextPieces, index_parseKeyCombo as parseKeyCombo, index_parseRepository as parseRepository, index_readFile as readFile, index_resetDefaultDriver as resetDefaultDriver, index_resolveRepository as resolveRepository, index_setMediaOutputHandler as setMediaOutputHandler, index_setMediaStorage as setMediaStorage, index_toolRegistry as toolRegistry, index_validatePath as validatePath, index_webFetch as webFetch, index_writeFile as writeFile };
 }
 
 /**
@@ -12767,4 +13231,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, detectDependencyCycle, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DesktopGetCursorResult, type DesktopGetScreenSizeResult, type DesktopKeyboardKeyArgs, type DesktopKeyboardKeyResult, type DesktopKeyboardTypeArgs, type DesktopKeyboardTypeResult, type DesktopMouseClickArgs, type DesktopMouseClickResult, type DesktopMouseDragArgs, type DesktopMouseDragResult, type DesktopMouseMoveArgs, type DesktopMouseMoveResult, type DesktopMouseScrollArgs, type DesktopMouseScrollResult, type DesktopPoint, type DesktopScreenSize, type DesktopScreenshot, type DesktopScreenshotArgs, type DesktopScreenshotResult, type DesktopToolConfig, type DesktopToolName, type DesktopWindow, type DesktopWindowFocusArgs, type DesktopWindowFocusResult, type DesktopWindowListResult, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDesktopDriver, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type MouseButton, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, NutTreeDriver, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

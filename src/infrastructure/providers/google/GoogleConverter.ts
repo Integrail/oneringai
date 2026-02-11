@@ -235,19 +235,48 @@ export class GoogleConverter {
           parts.push(functionCallPart);
           break;
 
-        case ContentType.TOOL_RESULT:
+        case ContentType.TOOL_RESULT: {
           // Google uses functionResponse - look up the actual function name
           const functionName = this.toolCallMapping.get(c.tool_use_id) || this.extractToolName(c.tool_use_id);
 
+          // Read images from Content object first (set by addToolResults),
+          // fall back to JSON extraction for backward compat
+          const contentImages = (c as any).__images as Array<{ base64: string; mediaType: string }> | undefined;
+          let resultText: string;
+          let resultImages: Array<{ base64: string; mediaType: string }>;
+
+          if (contentImages?.length) {
+            // Images already extracted at context layer
+            resultText = typeof c.content === 'string' ? c.content : JSON.stringify(c.content);
+            resultImages = contentImages;
+          } else {
+            // Fallback: try extracting from raw JSON
+            const resultStr = typeof c.content === 'string' ? c.content : JSON.stringify(c.content);
+            const extracted = this.extractImagesFromResult(resultStr);
+            resultText = extracted.text;
+            resultImages = extracted.images;
+          }
+
           parts.push({
             functionResponse: {
-              name: functionName, // Use actual function name from mapping
+              name: functionName,
               response: {
-                result: typeof c.content === 'string' ? c.content : c.content,
+                result: resultText,
               },
             },
           });
+
+          // Add images as inline data parts after the function response
+          for (const img of resultImages) {
+            parts.push({
+              inlineData: {
+                mimeType: img.mediaType || 'image/png',
+                data: img.base64,
+              },
+            } as any);
+          }
           break;
+        }
       }
     }
 
@@ -414,5 +443,26 @@ export class GoogleConverter {
    */
   reset(): void {
     this.clearMappings();
+  }
+
+  /**
+   * Extract __images from a JSON tool result and return cleaned text + images.
+   * Used by the __images convention for multimodal tool results.
+   */
+  private extractImagesFromResult(content: string): {
+    text: string;
+    images: Array<{ base64: string; mediaType: string }>;
+  } {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.__images) && parsed.__images.length > 0) {
+        const images = parsed.__images;
+        const { __images: _, base64: __, ...rest } = parsed;
+        return { text: JSON.stringify(rest), images };
+      }
+    } catch {
+      // Not JSON or no __images
+    }
+    return { text: content, images: [] };
   }
 }

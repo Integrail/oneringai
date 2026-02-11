@@ -22,6 +22,20 @@ export interface ITokenEstimator {
 
   /** Estimate tokens for arbitrary data (will be JSON stringified) */
   estimateDataTokens(data: unknown): number;
+
+  /**
+   * Estimate tokens for an image. Provider-specific implementations can override.
+   *
+   * Default heuristic (matches OpenAI's image token pricing):
+   * - detail='low': 85 tokens
+   * - detail='high' with known dimensions: 85 + 170 * ceil(w/512) * ceil(h/512)
+   * - Unknown dimensions: ~1000 tokens (conservative default)
+   *
+   * @param width - Image width in pixels (if known)
+   * @param height - Image height in pixels (if known)
+   * @param detail - Image detail level: 'low', 'high', or 'auto' (default 'auto')
+   */
+  estimateImageTokens?(width?: number, height?: number, detail?: string): number;
 }
 
 // ============================================================================

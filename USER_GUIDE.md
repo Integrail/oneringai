@@ -3247,7 +3247,7 @@ const myTool: ToolFunction = {
 
 ### Built-in Tools Overview
 
-The library ships with 27+ built-in tools across 7 categories:
+The library ships with 38+ built-in tools across 8 categories:
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -3257,12 +3257,13 @@ The library ships with 27+ built-in tools across 7 categories:
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory` | Local file operations |
 | **Shell** | `bash` | Shell command execution with safety guards |
 | **Web** | `webFetch` (built-in), `web_search` / `web_scrape` (ConnectorTools) | Web content retrieval, search, and scraping |
+| **Desktop** | `desktop_screenshot`, `desktop_mouse_*`, `desktop_keyboard_*`, `desktop_window_*`, `desktop_get_*` | OS-level desktop automation (11 tools, requires `@nut-tree-fork/nut-js`) |
 | **Code** | `executeJavaScript` | Sandboxed JavaScript execution |
 | **JSON** | `jsonManipulator` | JSON object manipulation (add, delete, replace fields) |
 | **GitHub** | `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (auto-registered for GitHub connectors) |
 | **Multimedia** | `generate_image`, `generate_video`, `text_to_speech`, `speech_to_text` | Media generation (auto-registered for AI vendor connectors) |
 
-Memory, In-Context Memory, and Persistent Instructions tools are documented in their respective sections above. Multimedia tools are documented in the Audio, Image, and Video sections. The rest are documented below.
+Memory, In-Context Memory, and Persistent Instructions tools are documented in their respective sections above. Multimedia tools are documented in the Audio, Image, and Video sections. Desktop tools are documented in the Desktop Automation Tools section below. The rest are documented below.
 
 #### Memory Tools
 
@@ -3548,6 +3549,110 @@ interface ShellToolConfig {
 3. **Prefer grep over bash grep** - Better output formatting and safety
 4. **Set working directory** - Restrict operations to project directory
 5. **Configure blockedDirectories** - Prevent accidental access to sensitive directories
+
+### Desktop Automation Tools
+
+OS-level desktop automation for "computer use" agent loops. Enables agents to see and interact with the desktop: take screenshots, move the mouse, click, type, press keyboard shortcuts, and manage windows.
+
+#### Quick Start
+
+```typescript
+import { desktopTools, Agent, Connector, Vendor } from '@everworker/oneringai';
+
+// Setup
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: desktopTools,
+});
+
+// The agent loop: screenshot → vision model → tool calls → repeat
+await agent.run('Take a screenshot, then open the Calculator app and compute 42 * 17');
+```
+
+#### Prerequisites
+
+Desktop tools require `@nut-tree-fork/nut-js` as an optional peer dependency:
+
+```bash
+npm install @nut-tree-fork/nut-js
+```
+
+On macOS, you must grant accessibility permissions to your terminal app:
+**System Settings → Privacy & Security → Accessibility → Enable your terminal/IDE**.
+
+#### Available Tools
+
+| Tool | Args | Description |
+|------|------|-------------|
+| `desktop_screenshot` | `region?` | Capture full screen or a specific region. Returns image to vision model via `__images` convention. |
+| `desktop_mouse_move` | `x, y` | Move the cursor to a position (in screenshot pixel coords). |
+| `desktop_mouse_click` | `x?, y?, button?, clickCount?` | Click at position or current location. Supports left/right/middle, single/double/triple. |
+| `desktop_mouse_drag` | `startX, startY, endX, endY, button?` | Drag from start to end position. |
+| `desktop_mouse_scroll` | `deltaX?, deltaY?, x?, y?` | Scroll wheel. Positive deltaY = down, negative = up. |
+| `desktop_get_cursor` | (none) | Get current cursor position in screenshot coords. |
+| `desktop_keyboard_type` | `text, delay?` | Type text as keyboard input. |
+| `desktop_keyboard_key` | `keys` | Press key combo (e.g., `"ctrl+c"`, `"cmd+shift+s"`, `"enter"`). |
+| `desktop_get_screen_size` | (none) | Get physical/logical dimensions and scale factor. |
+| `desktop_window_list` | (none) | List visible windows with IDs, titles, and bounds. |
+| `desktop_window_focus` | `windowId` | Bring a window to the foreground. |
+
+#### Coordinate System
+
+All coordinates use **physical pixel space** (screenshot space). This means the coordinates you see in a screenshot image are the exact coordinates you pass to mouse tools. The driver handles Retina/HiDPI scaling internally.
+
+```
+Screenshot pixels (2560×1600 on Retina) ← Tools accept these coords
+         ↕ driver divides by scaleFactor
+OS logical coords (1280×800)             ← nut-tree operates here
+```
+
+#### Configuration
+
+```typescript
+import { createDesktopScreenshotTool, createDesktopMouseClickTool } from '@everworker/oneringai';
+
+// Custom config for individual tools
+const screenshot = createDesktopScreenshotTool({
+  humanDelay: [0, 0],        // No delay (instant actions)
+  humanizeMovement: false,    // Straight-line mouse movement
+});
+
+// Or provide a custom driver implementation
+import type { IDesktopDriver } from '@everworker/oneringai';
+
+const myDriver: IDesktopDriver = { /* custom implementation */ };
+const click = createDesktopMouseClickTool({ driver: myDriver });
+```
+
+#### The `__images` Convention
+
+The `desktop_screenshot` tool returns an `__images` array in its result. This is automatically handled by all provider converters:
+
+- **Anthropic**: Image blocks inside `tool_result` content
+- **OpenAI**: Follow-up user message with `input_image`
+- **Google**: `inlineData` parts alongside `functionResponse`
+
+The base64 image data is stripped from the text content to save tokens — only the image blocks are sent to the vision model.
+
+#### Key Combo Syntax
+
+The `desktop_keyboard_key` tool accepts key combo strings with `+` as separator:
+
+- **Modifiers**: `ctrl`, `cmd`/`command`/`meta`, `alt`/`option`, `shift`
+- **Special keys**: `enter`, `tab`, `escape`, `backspace`, `delete`, `space`
+- **Arrow keys**: `up`, `down`, `left`, `right`
+- **Function keys**: `f1` through `f12`
+- **Navigation**: `home`, `end`, `pageup`, `pagedown`
+- **Letters/digits**: `a`-`z`, `0`-`9`
+
+Examples: `"ctrl+c"`, `"cmd+shift+s"`, `"alt+tab"`, `"enter"`, `"f5"`
 
 ### Document Reader
 

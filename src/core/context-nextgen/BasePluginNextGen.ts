@@ -38,6 +38,21 @@ export const simpleTokenEstimator: ITokenEstimator = {
     const text = typeof data === 'string' ? data : JSON.stringify(data);
     return this.estimateTokens(text);
   },
+
+  estimateImageTokens(width?: number, height?: number, detail?: string): number {
+    // Low detail images are always ~85 tokens (OpenAI pricing model)
+    if (detail === 'low') return 85;
+
+    // If dimensions known, use tile-based estimation (OpenAI model):
+    // 85 base + 170 per 512x512 tile
+    if (width && height) {
+      const tiles = Math.ceil(width / 512) * Math.ceil(height / 512);
+      return 85 + 170 * tiles;
+    }
+
+    // Unknown dimensions — conservative default
+    return 1000;
+  },
 };
 
 /**

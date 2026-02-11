@@ -20,7 +20,7 @@ const ROOT = join(__dirname, '..');
 const TOOLS_DIR = join(ROOT, 'src/tools');
 const OUTPUT_FILE = join(TOOLS_DIR, 'registry.generated.ts');
 
-type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'other';
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other';
 
 interface ToolMetadata {
   name: string;
@@ -42,6 +42,7 @@ const dirToCategory: Record<string, ToolCategory> = {
   code: 'code',
   json: 'json',
   connector: 'connector',
+  desktop: 'desktop',
 };
 
 // Tools that are safe by default (read-only or low risk)
@@ -275,7 +276,7 @@ import type { ToolFunction } from '../domain/entities/Tool.js';
 ${imports}
 
 /** Tool category for grouping */
-export type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'other';
+export type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other';
 
 /** Metadata for a tool in the registry */
 export interface ToolRegistryEntry {

@@ -23,3 +23,4 @@ export {
   BrowserToolProvider,
   type BrowserToolCreationContext,
 } from './providers/BrowserToolProvider.js';
+export { DesktopToolProvider } from './providers/DesktopToolProvider.js';

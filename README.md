@@ -78,6 +78,7 @@
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
+- 🖥️ **Desktop Automation** - NEW: OS-level computer use — screenshot, mouse, keyboard, and window control for vision-driven agent loops
 - 📄 **Document Reader** - NEW: Universal file-to-text converter — PDF, DOCX, XLSX, PPTX, CSV, HTML, images auto-converted to markdown
 - 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
 - 👁️ **Vision Support** - Analyze images with AI across all providers
@@ -1014,7 +1015,43 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 16. Document Reader (NEW)
+### 16. Desktop Automation Tools (NEW)
+
+OS-level desktop automation for building "computer use" agents — screenshot the screen, send to a vision model, receive tool calls (click, type, etc.), execute them, repeat:
+
+```typescript
+import { desktopTools } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: desktopTools, // All 11 desktop tools
+});
+
+// Agent can now see and interact with the desktop:
+await agent.run('Take a screenshot and describe what you see');
+await agent.run('Open Safari and search for "weather forecast"');
+```
+
+**Available Tools:**
+- **desktop_screenshot** - Capture full screen or region (returns image to vision model)
+- **desktop_mouse_move** - Move cursor to position
+- **desktop_mouse_click** - Click (left/right/middle, single/double/triple)
+- **desktop_mouse_drag** - Drag from one position to another
+- **desktop_mouse_scroll** - Scroll wheel (vertical and horizontal)
+- **desktop_get_cursor** - Get current cursor position
+- **desktop_keyboard_type** - Type text
+- **desktop_keyboard_key** - Press shortcuts (e.g., `ctrl+c`, `cmd+shift+s`, `enter`)
+- **desktop_get_screen_size** - Get screen dimensions and scale factor
+- **desktop_window_list** - List visible windows
+- **desktop_window_focus** - Bring a window to the foreground
+
+**Key Design:**
+- All coordinates are in **physical pixel space** (same as screenshot pixels) — no manual Retina scaling needed
+- Screenshots use the `__images` convention for automatic multimodal handling across all providers (Anthropic, OpenAI, Google)
+- Requires `@nut-tree-fork/nut-js` as an optional peer dependency: `npm install @nut-tree-fork/nut-js`
+
+### 17. Document Reader (NEW)
 
 Universal file-to-LLM-content converter. Reads arbitrary document formats and produces clean markdown text with optional image extraction:
 
@@ -1079,7 +1116,7 @@ await agent.run([
 
 See the [User Guide](./USER_GUIDE.md#document-reader) for complete API reference and configuration options.
 
-### 17. External API Integration
+### 18. External API Integration
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 

@@ -51,6 +51,12 @@ export interface ToolResultContent extends BaseContent {
   tool_use_id: string;
   content: string | any;
   error?: string;
+  /**
+   * Images extracted from tool results via the __images convention.
+   * Stored separately from `content` so they don't inflate text-based token counts.
+   * Provider converters read this field to inject native multimodal image blocks.
+   */
+  __images?: Array<{ base64: string; mediaType: string }>;
 }
 
 export type Content =
