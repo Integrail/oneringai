@@ -27,7 +27,8 @@
   - [13. Streaming](#13-streaming)
   - [14. OAuth for External APIs](#14-oauth-for-external-apis)
   - [15. Developer Tools](#15-developer-tools)
-  - [16. External API Integration](#16-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+  - [16. Document Reader](#16-document-reader-new) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
+  - [17. External API Integration](#17-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -77,6 +78,7 @@
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
+- 📄 **Document Reader** - NEW: Universal file-to-text converter — PDF, DOCX, XLSX, PPTX, CSV, HTML, images auto-converted to markdown
 - 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
@@ -253,6 +255,55 @@ const veoJob = await googleVideo.generate({
   duration: 8,
 });
 ```
+
+### Document Reader (NEW)
+
+Read any document format — agents automatically get markdown text from PDFs, Word docs, spreadsheets, and more:
+
+```typescript
+import { Agent, developerTools } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: developerTools,
+});
+
+// read_file auto-converts binary documents to markdown
+await agent.run('Read /path/to/report.pdf and summarize the key findings');
+await agent.run('Read /path/to/data.xlsx and describe the trends');
+await agent.run('Read /path/to/presentation.pptx and list all slides');
+```
+
+**Programmatic usage:**
+
+```typescript
+import { DocumentReader, readDocumentAsContent } from '@everworker/oneringai';
+
+// Read any file to markdown pieces
+const reader = DocumentReader.create();
+const result = await reader.read('/path/to/report.pdf');
+console.log(result.pieces); // DocumentPiece[] (text + images)
+
+// One-call conversion to LLM Content[] (for multimodal input)
+const content = await readDocumentAsContent('/path/to/slides.pptx', {
+  imageFilter: { minWidth: 100, minHeight: 100 },
+  imageDetail: 'auto',
+});
+
+const response = await agent.run([
+  { type: 'input_text', text: 'Analyze this document:' },
+  ...content,
+]);
+```
+
+**Supported Formats:**
+- **Office**: DOCX, PPTX, ODT, ODP, ODS, RTF (via `officeparser`)
+- **Spreadsheets**: XLSX, CSV (via `exceljs`)
+- **PDF** (via `unpdf`)
+- **HTML** (via Readability + Turndown)
+- **Text**: TXT, MD, JSON, XML, YAML
+- **Images**: PNG, JPG, GIF, WEBP, SVG (pass-through as base64)
 
 ### Web Search
 
@@ -963,7 +1014,72 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 16. External API Integration
+### 16. Document Reader (NEW)
+
+Universal file-to-LLM-content converter. Reads arbitrary document formats and produces clean markdown text with optional image extraction:
+
+```typescript
+import { DocumentReader, mergeTextPieces } from '@everworker/oneringai';
+
+const reader = DocumentReader.create({
+  defaults: {
+    maxTokens: 50_000,
+    extractImages: true,
+    imageFilter: { minWidth: 100, minHeight: 100 },
+  },
+});
+
+// Read from file path, URL, Buffer, or Blob
+const result = await reader.read('/path/to/report.pdf');
+const result = await reader.read('https://example.com/doc.xlsx');
+const result = await reader.read({ type: 'buffer', buffer: myBuffer, filename: 'doc.docx' });
+
+// Get merged markdown text
+const markdown = mergeTextPieces(result.pieces);
+
+// Metadata
+console.log(result.metadata.format);          // 'pdf'
+console.log(result.metadata.estimatedTokens); // 12500
+console.log(result.metadata.processingTimeMs); // 234
+```
+
+**Automatic Integration — No Code Changes Needed:**
+- **`read_file` tool** — Agents calling `read_file` on a PDF, DOCX, or XLSX get markdown text automatically
+- **`web_fetch` tool** — Documents downloaded from URLs are auto-converted to markdown
+
+**Content Bridge for Multimodal Input:**
+
+```typescript
+import { readDocumentAsContent } from '@everworker/oneringai';
+
+// Convert document directly to Content[] for LLM input
+const content = await readDocumentAsContent('/path/to/slides.pptx', {
+  extractImages: true,
+  imageDetail: 'auto',
+  maxImages: 20,
+});
+
+// Use in agent.run() with text + images
+await agent.run([
+  { type: 'input_text', text: 'Analyze this presentation:' },
+  ...content,
+]);
+```
+
+**Pluggable Architecture:**
+- 6 built-in format handlers (Office, Excel, PDF, HTML, Text, Image)
+- 3 default transformers (header, table formatting, truncation)
+- Custom handlers and transformers via `DocumentReader.create({ handlers, ... })`
+- All heavy dependencies lazy-loaded (officeparser, exceljs, unpdf)
+
+**Image Filtering:**
+- Configurable min dimensions, min size, max count, pattern exclusions
+- Automatically removes junk images (logos, icons, tiny backgrounds)
+- Applied both at extraction time and at content conversion time
+
+See the [User Guide](./USER_GUIDE.md#document-reader) for complete API reference and configuration options.
+
+### 17. External API Integration
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 

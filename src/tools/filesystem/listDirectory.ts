@@ -17,8 +17,10 @@ import { join, relative } from 'node:path';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import {
   type FilesystemToolConfig,
+  type FilesystemToolConfigDefaults,
   DEFAULT_FILESYSTEM_CONFIG,
   validatePath,
+  toForwardSlash,
 } from './types.js';
 
 /**
@@ -63,7 +65,7 @@ export interface ListDirectoryResult {
 async function listDir(
   dir: string,
   baseDir: string,
-  config: Required<FilesystemToolConfig>,
+  config: FilesystemToolConfigDefaults,
   recursive: boolean,
   filter?: 'files' | 'directories',
   maxDepth: number = 3,
@@ -81,7 +83,7 @@ async function listDir(
       if (entries.length >= config.maxResults) break;
 
       const fullPath = join(dir, entry.name);
-      const relativePath = relative(baseDir, fullPath);
+      const relativePath = toForwardSlash(relative(baseDir, fullPath));
 
       // Check if directory is blocked
       if (entry.isDirectory() && config.blockedDirectories.includes(entry.name)) {

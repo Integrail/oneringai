@@ -1,0 +1,25 @@
+{
+  "name": "@everworker/convert",
+  "version": "0.1.0",
+  "description": "CLI document converter — reads any file format, outputs markdown + image metadata",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "convert": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@everworker/oneringai": "file:../.."
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

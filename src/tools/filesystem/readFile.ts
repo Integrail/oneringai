@@ -14,6 +14,7 @@
 
 import { readFile as fsReadFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { extname } from 'node:path';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import {
   type FilesystemToolConfig,
@@ -21,6 +22,8 @@ import {
   DEFAULT_FILESYSTEM_CONFIG,
   validatePath,
 } from './types.js';
+import { FormatDetector } from '../../capabilities/documents/FormatDetector.js';
+import { DocumentReader, mergeTextPieces } from '../../capabilities/documents/DocumentReader.js';
 
 /**
  * Arguments for the read file tool
@@ -45,7 +48,7 @@ export function createReadFileTool(config: FilesystemToolConfig = {}): ToolFunct
       type: 'function',
       function: {
         name: 'read_file',
-        description: `Read content from a file on the local filesystem.
+        description: `Read content from a file on the local filesystem. Supports text files AND binary document formats — PDF, DOCX, PPTX, XLSX, ODS, ODT, ODP, and images (PNG, JPG, GIF, WEBP) are automatically converted to markdown text.
 
 USAGE:
 - The file_path parameter must be an absolute path, not a relative path
@@ -54,20 +57,34 @@ USAGE:
 - Any lines longer than 2000 characters will be truncated
 - Results are returned with line numbers starting at 1
 
+DOCUMENT SUPPORT:
+- PDF files: extracted as markdown text with per-page sections
+- Word documents (.docx): converted to markdown preserving headings, lists, tables
+- PowerPoint (.pptx): extracted slide-by-slide as markdown
+- Excel (.xlsx) / CSV / ODS: tables converted to markdown tables
+- OpenDocument (.odt, .odp, .ods): converted like their MS Office equivalents
+- Images (.png, .jpg, .gif, .webp): described as image metadata
+- Binary documents are auto-detected by extension — just pass the file path
+
 WHEN TO USE:
 - To read source code files before making edits
 - To understand file contents and structure
 - To read configuration files
 - To examine log files or data files
+- To read PDF, Word, Excel, PowerPoint, or other document files as text
 
 IMPORTANT:
 - Always read a file before attempting to edit it
 - Use offset/limit for very large files to read in chunks
 - The tool will return an error if the file doesn't exist
+- offset/limit are ignored for binary document formats (full document is always returned)
 
 EXAMPLES:
 - Read entire file: { "file_path": "/path/to/file.ts" }
-- Read lines 100-200: { "file_path": "/path/to/file.ts", "offset": 100, "limit": 100 }`,
+- Read lines 100-200: { "file_path": "/path/to/file.ts", "offset": 100, "limit": 100 }
+- Read a PDF: { "file_path": "/path/to/report.pdf" }
+- Read an Excel file: { "file_path": "/path/to/data.xlsx" }
+- Read a Word doc: { "file_path": "/path/to/document.docx" }`,
         parameters: {
           type: 'object',
           properties: {
@@ -138,6 +155,37 @@ EXAMPLES:
             path: file_path,
             size: stats.size,
           };
+        }
+
+        // Check if this is a binary document format that needs DocumentReader
+        const ext = extname(resolvedPath).toLowerCase();
+        if (FormatDetector.isBinaryDocumentFormat(ext)) {
+          try {
+            const reader = DocumentReader.create(mergedConfig.documentReaderConfig);
+            const result = await reader.read(
+              { type: 'file', path: resolvedPath },
+              {
+                extractImages: false,
+                ...mergedConfig.documentReaderConfig?.defaults,
+              }
+            );
+
+            if (result.success) {
+              const content = mergeTextPieces(result.pieces);
+              return {
+                success: true,
+                content,
+                lines: content.split('\n').length,
+                truncated: false,
+                encoding: 'document',
+                size: stats.size,
+                path: file_path,
+              };
+            }
+            // Fall through to UTF-8 attempt if document reader fails
+          } catch {
+            // Fall through to UTF-8 attempt
+          }
         }
 
         // Read file content

@@ -6,6 +6,8 @@ import { load } from 'cheerio';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { detectContentQuality } from './contentDetector.js';
 import { htmlToMarkdown } from './htmlToMarkdown.js';
+import { FormatDetector } from '../../capabilities/documents/FormatDetector.js';
+import { DocumentReader, mergeTextPieces } from '../../capabilities/documents/DocumentReader.js';
 
 interface WebFetchArgs {
   url: string;
@@ -18,7 +20,7 @@ interface WebFetchResult {
   url: string;
   title: string;
   content: string;
-  contentType: 'html' | 'json' | 'text' | 'error';
+  contentType: 'html' | 'json' | 'text' | 'document' | 'error';
   qualityScore: number;
   requiresJS: boolean;
   suggestedAction?: string;
@@ -29,6 +31,8 @@ interface WebFetchResult {
   byline?: string;
   wasReadabilityUsed?: boolean;
   wasTruncated?: boolean;
+  // Document metadata (when contentType is 'document')
+  documentMetadata?: Record<string, unknown>;
 }
 
 export const webFetch: ToolFunction<WebFetchArgs, WebFetchResult> = {
@@ -36,12 +40,21 @@ export const webFetch: ToolFunction<WebFetchArgs, WebFetchResult> = {
     type: 'function',
     function: {
       name: 'web_fetch',
-      description: `Fetch and extract text content from a web page URL.
+      description: `Fetch and extract content from a URL — works with web pages AND document files (PDF, DOCX, XLSX, PPTX, etc.). Document URLs are automatically detected and converted to markdown text.
 
-IMPORTANT: This tool performs a simple HTTP fetch and HTML parsing. It works well for:
+WEB PAGES:
+This tool performs HTTP fetch and HTML parsing. It works well for:
 - Static websites (blogs, documentation, articles)
 - Server-rendered HTML pages
 - Content that doesn't require JavaScript
+
+DOCUMENT URLs:
+When the URL points to a document file (detected via Content-Type header or URL extension), the document is automatically downloaded and converted to markdown:
+- PDF files: extracted as markdown with per-page sections
+- Word (.docx), PowerPoint (.pptx): converted to structured markdown
+- Excel (.xlsx), CSV, ODS: tables converted to markdown tables
+- OpenDocument formats (.odt, .odp, .ods): converted like MS Office equivalents
+- Returns contentType: "document" and includes documentMetadata in the result
 
 LIMITATIONS:
 - Cannot execute JavaScript
@@ -62,8 +75,8 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,          // Clean markdown (converted from HTML via Readability + Turndown)
-  contentType: string,      // 'html' | 'json' | 'text' | 'error'
+  content: string,          // Clean markdown (converted from HTML or document)
+  contentType: string,      // 'html' | 'json' | 'text' | 'document' | 'error'
   qualityScore: number,     // 0-100 (quality of extraction)
   requiresJS: boolean,      // True if site likely needs JavaScript
   suggestedAction: string,  // Suggestion if quality is low
@@ -71,20 +84,24 @@ RETURNS:
   excerpt: string,          // Short summary excerpt (if extracted)
   byline: string,           // Author info (if extracted)
   wasTruncated: boolean,    // True if content was truncated
+  documentMetadata: object, // Document metadata (format, pages, etc.) — only for document URLs
   error: string             // Error message if failed
 }
 
-EXAMPLE:
-To fetch a blog post:
+EXAMPLES:
+Fetch a blog post:
 {
   url: "https://example.com/blog/article"
 }
 
-With custom user agent:
+Fetch a PDF document:
 {
-  url: "https://example.com/page",
-  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
-  timeout: 15000
+  url: "https://example.com/reports/q4-2025.pdf"
+}
+
+Fetch an Excel spreadsheet:
+{
+  url: "https://example.com/data/metrics.xlsx"
 }`,
 
       parameters: {
@@ -161,6 +178,56 @@ With custom user agent:
 
       // Get content type
       const contentType = response.headers.get('content-type') || '';
+
+      // Handle document formats (PDF, DOCX, XLSX, etc.)
+      const urlExt = (() => {
+        try {
+          const pathname = new URL(args.url).pathname;
+          const ext = pathname.split('.').pop()?.toLowerCase();
+          return ext ? `.${ext}` : '';
+        } catch { return ''; }
+      })();
+
+      if (FormatDetector.isDocumentMimeType(contentType) || FormatDetector.isBinaryDocumentFormat(urlExt)) {
+        try {
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+
+          // Extract filename from URL or Content-Disposition
+          const disposition = response.headers.get('content-disposition');
+          let filename = 'document';
+          if (disposition) {
+            const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/);
+            if (match?.[2]) filename = match[2];
+          } else {
+            try {
+              const basename = new URL(args.url).pathname.split('/').pop();
+              if (basename && basename.includes('.')) filename = basename;
+            } catch { /* ignore */ }
+          }
+
+          const reader = DocumentReader.create();
+          const result = await reader.read(
+            { type: 'buffer', buffer, filename },
+            { extractImages: false }
+          );
+
+          if (result.success) {
+            return {
+              success: true,
+              url: args.url,
+              title: `Document: ${filename}`,
+              content: mergeTextPieces(result.pieces),
+              contentType: 'document',
+              qualityScore: 100,
+              requiresJS: false,
+              documentMetadata: result.metadata as unknown as Record<string, unknown>,
+            };
+          }
+        } catch {
+          // Fall through to regular handling
+        }
+      }
 
       // Handle JSON responses
       if (contentType.includes('application/json')) {

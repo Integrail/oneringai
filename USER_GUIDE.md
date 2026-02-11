@@ -35,6 +35,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 10. [Tools & Function Calling](#tools--function-calling)
     - Built-in Tools Overview (27+ tools across 7 categories)
     - Developer Tools (Filesystem & Shell)
+    - [Document Reader](#document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
     - Web Tools (webFetch, web_search via ConnectorTools, web_scrape via ConnectorTools)
     - JSON Tool
     - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
@@ -3397,15 +3398,20 @@ const bash = createBashTool({
 
 ##### read_file
 
-Read file contents with line numbers.
+Read file contents with line numbers. Automatically converts binary document formats (PDF, DOCX, XLSX, PPTX, ODT, ODP, ODS, RTF, PNG, JPG, GIF, WEBP) to markdown text via [Document Reader](#document-reader).
 
 ```typescript
+// Text files — returns content with line numbers
 read_file({
   file_path: '/path/to/file.ts',
   offset: 50,    // Start at line 50 (optional)
   limit: 100,    // Read 100 lines (optional)
 });
 // Returns: { success: true, content: "1\tconst x = 1;...", lines: 100 }
+
+// Binary documents — auto-converted to markdown
+read_file({ file_path: '/path/to/report.pdf' });
+// Returns: { success: true, content: "# Document: report.pdf\n...", encoding: 'document' }
 ```
 
 ##### write_file
@@ -3543,13 +3549,351 @@ interface ShellToolConfig {
 4. **Set working directory** - Restrict operations to project directory
 5. **Configure blockedDirectories** - Prevent accidental access to sensitive directories
 
+### Document Reader
+
+Universal file-to-LLM-content converter. Reads arbitrary document formats (Office, PDF, spreadsheets, HTML, text, images) from any source and produces clean markdown text with optional image extraction.
+
+#### How It Works
+
+The Document Reader is integrated at three levels:
+
+1. **`read_file` tool** — Agents calling `read_file` on binary documents (PDF, DOCX, XLSX, PPTX, etc.) automatically get markdown text. No code changes needed.
+2. **`web_fetch` tool** — Documents downloaded from URLs (detected via Content-Type or extension) are auto-converted to markdown.
+3. **Programmatic API** — `DocumentReader.read()` and `readDocumentAsContent()` for direct use in application code.
+
+#### Supported Formats
+
+| Format | Extensions | Handler | Library |
+|--------|-----------|---------|---------|
+| **Office** | .docx, .pptx, .odt, .odp, .ods, .rtf | OfficeHandler | officeparser (lazy-loaded) |
+| **Spreadsheet** | .xlsx, .csv | ExcelHandler | exceljs (lazy-loaded) |
+| **PDF** | .pdf | PDFHandler | unpdf (lazy-loaded) |
+| **HTML** | .html, .htm | HTMLHandler | Readability + Turndown (built-in) |
+| **Text** | .txt, .md, .json, .xml, .yaml, .yml | TextHandler | none |
+| **Image** | .png, .jpg, .jpeg, .gif, .webp, .svg | ImageHandler | none |
+
+All heavy dependencies are **lazy-loaded** via dynamic `import()` — they are only loaded when a document of that type is first read, keeping startup fast.
+
+#### Quick Start — Agent with read_file
+
+The simplest way to use Document Reader is through agents with developer tools:
+
+```typescript
+import { Agent, developerTools } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: developerTools,
+});
+
+// read_file auto-detects binary formats and converts to markdown
+await agent.run('Read /path/to/quarterly-report.pdf and summarize it');
+await agent.run('Read /path/to/sales-data.xlsx and identify the top performers');
+await agent.run('Read /path/to/onboarding.pptx and list the key steps');
+await agent.run('Read /path/to/contract.docx and highlight important clauses');
+```
+
+The `read_file` tool automatically detects binary document formats (PDF, DOCX, XLSX, PPTX, ODT, ODP, ODS, RTF, PNG, JPG, GIF, WEBP) and converts them to markdown. Text files (.txt, .md, .json, .xml, .yaml, .csv, .html) continue to be read as UTF-8 text as before.
+
+#### Quick Start — web_fetch with Documents
+
+The `web_fetch` tool auto-detects document Content-Types and URL extensions:
+
+```typescript
+import { Agent, webFetch } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webFetch],
+});
+
+// web_fetch detects PDF content-type and converts to markdown
+await agent.run('Fetch https://example.com/annual-report.pdf and summarize it');
+```
+
+When `web_fetch` detects a document MIME type (`application/pdf`, Office MIME types, etc.) or a document URL extension (`.pdf`, `.docx`, `.xlsx`), it downloads the file and converts it to markdown using DocumentReader. The result has `contentType: 'document'` in the response.
+
+#### Programmatic Usage — DocumentReader
+
+For application code (outside of tool context):
+
+```typescript
+import { DocumentReader, mergeTextPieces } from '@everworker/oneringai';
+
+// Create reader with defaults
+const reader = DocumentReader.create({
+  defaults: {
+    maxTokens: 50_000,
+    extractImages: true,
+    imageFilter: { minWidth: 100, minHeight: 100 },
+  },
+});
+
+// Read from different sources
+const result = await reader.read('/path/to/report.pdf');
+const result = await reader.read('https://example.com/doc.xlsx');
+const result = await reader.read({ type: 'buffer', buffer: uploadedBuffer, filename: 'doc.docx' });
+const result = await reader.read({ type: 'blob', blob: fileBlob, filename: 'slides.pptx' });
+
+// Get merged text
+const markdown = mergeTextPieces(result.pieces);
+console.log(markdown);
+
+// Access individual pieces
+for (const piece of result.pieces) {
+  if (piece.type === 'text') {
+    console.log(`[${piece.metadata.section}] ${piece.content.substring(0, 100)}...`);
+  } else {
+    console.log(`[Image] ${piece.mimeType} (${piece.metadata.sizeBytes} bytes)`);
+  }
+}
+
+// Metadata
+console.log(result.metadata.format);           // 'pdf'
+console.log(result.metadata.family);           // 'pdf'
+console.log(result.metadata.estimatedTokens);  // 12500
+console.log(result.metadata.totalPieces);      // 15
+console.log(result.metadata.totalImagePieces); // 3
+console.log(result.metadata.processingTimeMs); // 234
+```
+
+#### Content Bridge — readDocumentAsContent()
+
+For multimodal LLM input (text + images), use the content bridge:
+
+```typescript
+import { readDocumentAsContent, documentToContent } from '@everworker/oneringai';
+
+// One-call convenience: read + filter + convert to Content[]
+const content = await readDocumentAsContent('/path/to/slides.pptx', {
+  extractImages: true,
+  imageDetail: 'auto',
+  imageFilter: { minWidth: 100, minHeight: 100 },
+  maxImages: 20,
+  mergeAdjacentText: true,
+});
+
+// Use with agent
+const response = await agent.run([
+  { type: 'input_text', text: 'Analyze this presentation:' },
+  ...content,
+]);
+
+// Or use documentToContent() for two-step conversion
+const reader = DocumentReader.create();
+const result = await reader.read('/path/to/doc.pdf');
+const content = documentToContent(result, {
+  imageDetail: 'low',
+  maxImages: 10,
+});
+```
+
+**Output Content types:**
+- `DocumentTextPiece` → `InputTextContent { type: 'input_text', text }`
+- `DocumentImagePiece` → `InputImageContent { type: 'input_image_url', image_url: { url: 'data:...' } }`
+
+#### Read Options
+
+All options are configurable at two levels — reader creation time (defaults) and per-call:
+
+```typescript
+const reader = DocumentReader.create({
+  defaults: {
+    maxTokens: 100_000,         // Max estimated tokens in output
+    maxOutputBytes: 5_242_880,  // Max output size (5MB)
+    extractImages: true,        // Extract images from documents
+    imageDetail: 'auto',        // Image detail for LLM ('auto', 'low', 'high')
+    imageFilter: {
+      minWidth: 50,             // Skip images narrower than this
+      minHeight: 50,            // Skip images shorter than this
+      minSizeBytes: 1024,       // Skip images smaller than this
+      maxImages: 50,            // Max images to keep
+      excludePatterns: [/logo/i, /icon/i],  // Exclude by label pattern
+    },
+    formatOptions: {
+      excel: {
+        maxRows: 1000,          // Max rows per sheet
+        maxColumns: 50,         // Max columns per sheet
+        tableFormat: 'markdown', // 'markdown', 'csv', or 'json'
+        includeFormulas: false,
+      },
+      pdf: {
+        includeMetadata: true,  // Include title, author, page count
+      },
+      html: {
+        maxLength: 50_000,      // Max HTML length to process
+      },
+      office: {
+        includeSpeakerNotes: true, // Include PPTX speaker notes
+      },
+    },
+  },
+  maxDownloadSizeBytes: 50_000_000, // Max file size for URL sources (50MB)
+  downloadTimeoutMs: 60_000,        // Download timeout for URL sources
+});
+
+// Per-call override
+const result = await reader.read('/path/to/large.pdf', {
+  maxTokens: 200_000,       // Override just for this call
+  extractImages: false,      // Text-only for this call
+  pages: [1, 2, 3],         // Only read specific pages
+});
+```
+
+#### Format-Specific Behavior
+
+**PPTX/ODP (Presentations):**
+- Split into per-slide pieces with `### Slide N` headers
+- Speaker notes included by default (configurable)
+- Images extracted from slides as separate pieces
+
+**XLSX (Spreadsheets):**
+- Each sheet becomes a separate piece with `## Sheet: Name` header
+- Three table output formats: `markdown` (default), `csv`, `json`
+- Typed cell values (dates, numbers, formulas)
+- Row/column limits configurable
+
+**PDF:**
+- Per-page text pieces with `Page N` sections
+- Document metadata (title, author, pages) included as first piece
+- Image extraction supported
+
+**CSV:**
+- Auto-detected as spreadsheet family
+- Converted to markdown table by default
+
+**Images:**
+- Pass-through as base64 image pieces
+- SVG files produce both an image piece and a text piece (SVG source)
+
+**JSON/XML/YAML:**
+- Wrapped in fenced code blocks with language tags
+
+#### Transformer Pipeline
+
+Documents pass through a configurable transformer pipeline after extraction:
+
+| Transformer | Priority | Applies To | Description |
+|-------------|----------|-----------|-------------|
+| `documentHeaderTransformer` | 10 | All | Prepends `# Document: filename` with format and size |
+| `tableFormattingTransformer` | 50 | xlsx, csv | Normalizes markdown table column alignment |
+| `truncationTransformer` | 1000 | All | Enforces maxTokens limit, truncates at paragraph boundaries |
+
+**Custom transformers:**
+
+```typescript
+import type { IDocumentTransformer } from '@everworker/oneringai';
+
+const myTransformer: IDocumentTransformer = {
+  name: 'addWatermark',
+  appliesTo: [],  // empty = all formats
+  priority: 20,
+  async transform(pieces, context) {
+    // Add a watermark to each text piece
+    return pieces.map(p => p.type === 'text'
+      ? { ...p, content: p.content + '\n\n_Processed by MyApp_' }
+      : p
+    );
+  },
+};
+
+const result = await reader.read('/path/to/doc.pdf', {
+  transformers: [myTransformer],
+});
+```
+
+#### Custom Format Handlers
+
+Replace or extend built-in handlers:
+
+```typescript
+import type { IFormatHandler } from '@everworker/oneringai';
+
+const customPDFHandler: IFormatHandler = {
+  name: 'MyPDFHandler',
+  supportedFormats: ['pdf'],
+  async handle(buffer, filename, format, options) {
+    // Custom PDF parsing logic
+    return [{ type: 'text', content: '...', metadata: { ... } }];
+  },
+};
+
+const reader = DocumentReader.create();
+reader.registerHandler('pdf', customPDFHandler);
+```
+
+#### Image Filtering
+
+Image filtering removes small/junk images (logos, icons, backgrounds) at two stages:
+
+1. **Extraction time** — Applied in `DocumentReader.read()` after the format handler runs
+2. **Content conversion time** — Applied in `documentToContent()` / `readDocumentAsContent()`
+
+```typescript
+// Extraction-time filtering (in DocumentReader)
+const result = await reader.read('/path/to/slides.pptx', {
+  imageFilter: {
+    minWidth: 100,       // Skip images narrower than 100px
+    minHeight: 100,      // Skip images shorter than 100px
+    minSizeBytes: 2048,  // Skip images smaller than 2KB
+    maxImages: 30,       // Keep at most 30 images
+    excludePatterns: [/logo/i, /background/i],
+  },
+});
+
+// Content-conversion-time filtering (additional pass)
+const content = documentToContent(result, {
+  imageFilter: { minWidth: 200 },  // Stricter for LLM input
+  maxImages: 10,                    // Fewer images for LLM
+  imageDetail: 'low',               // Low detail saves tokens
+});
+```
+
+#### Error Handling
+
+```typescript
+import { DocumentReadError, UnsupportedFormatError } from '@everworker/oneringai';
+
+try {
+  const result = await reader.read('/path/to/file.xyz');
+} catch (error) {
+  if (error instanceof UnsupportedFormatError) {
+    console.log(`Format not supported: ${error.format}`);
+  } else if (error instanceof DocumentReadError) {
+    console.log(`Read failed: ${error.message}`);
+    console.log(`Source: ${error.source}`);
+  }
+}
+```
+
+#### Constants Reference
+
+All defaults are defined in `DOCUMENT_DEFAULTS` and can be overridden:
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_OUTPUT_TOKENS` | 100,000 | Max estimated tokens in output |
+| `MAX_OUTPUT_BYTES` | 5MB | Max output size in bytes |
+| `MAX_DOWNLOAD_SIZE_BYTES` | 50MB | Max download size for URL sources |
+| `DOWNLOAD_TIMEOUT_MS` | 60,000 | Download timeout for URL sources |
+| `MAX_EXTRACTED_IMAGES` | 50 | Max images extracted from a single document |
+| `MAX_EXCEL_ROWS` | 1,000 | Max rows per Excel sheet |
+| `MAX_EXCEL_COLUMNS` | 50 | Max columns per Excel sheet |
+| `MAX_HTML_LENGTH` | 50,000 | Max HTML content length |
+| `CHARS_PER_TOKEN` | 4 | Chars per token estimate |
+| `IMAGE_FILTER.MIN_WIDTH` | 50 | Default minimum image width |
+| `IMAGE_FILTER.MIN_HEIGHT` | 50 | Default minimum image height |
+| `IMAGE_FILTER.MIN_SIZE_BYTES` | 1,024 | Default minimum image size |
+
 ### Web Tools
 
 Tools for fetching web content, searching the web, and scraping pages. These are standalone tools (not connector-dependent).
 
 #### webFetch
 
-Fetch and process web content. Converts HTML to markdown for easy consumption by LLMs.
+Fetch and process web content. Converts HTML to markdown for easy consumption by LLMs. Also auto-detects document formats (PDF, DOCX, XLSX, etc.) by Content-Type or URL extension and converts them to markdown via [Document Reader](#document-reader).
 
 ```typescript
 import { webFetch } from '@everworker/oneringai';

@@ -1443,9 +1443,16 @@ interface IContextStorage {
      */
     updateMetadata?(sessionId: string, metadata: Partial<ContextSessionMetadata>): Promise<void>;
     /**
-     * Get the storage path/location (for display/debugging)
+     * Get the storage path (for display/debugging)
+     * @deprecated Use getLocation() instead - getPath() assumes filesystem storage
      */
     getPath(): string;
+    /**
+     * Get a human-readable storage location string (for display/debugging).
+     * Examples: file path, MongoDB URI, Redis key prefix, S3 bucket, etc.
+     * Falls back to getPath() if not implemented.
+     */
+    getLocation?(): string;
 }
 /**
  * Options for listing sessions
@@ -6561,6 +6568,328 @@ declare class ScrapeProvider {
 }
 
 /**
+ * Document Reader Types
+ *
+ * Core types for the universal file-to-LLM-content converter.
+ */
+type DocumentFormat = 'docx' | 'pptx' | 'odt' | 'odp' | 'ods' | 'rtf' | 'xlsx' | 'csv' | 'pdf' | 'html' | 'txt' | 'md' | 'json' | 'xml' | 'yaml' | 'yml' | 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp' | 'svg';
+type DocumentFamily = 'office' | 'spreadsheet' | 'pdf' | 'html' | 'text' | 'image';
+interface PieceMetadata {
+    sourceFilename: string;
+    format: DocumentFormat;
+    index: number;
+    section?: string;
+    sizeBytes: number;
+    estimatedTokens: number;
+    label?: string;
+}
+interface DocumentTextPiece {
+    type: 'text';
+    content: string;
+    metadata: PieceMetadata;
+}
+interface DocumentImagePiece {
+    type: 'image';
+    base64: string;
+    mimeType: string;
+    width?: number;
+    height?: number;
+    metadata: PieceMetadata;
+}
+type DocumentPiece = DocumentTextPiece | DocumentImagePiece;
+interface DocumentMetadata {
+    filename: string;
+    format: DocumentFormat;
+    family: DocumentFamily;
+    mimeType: string;
+    totalPieces: number;
+    totalTextPieces: number;
+    totalImagePieces: number;
+    totalSizeBytes: number;
+    estimatedTokens: number;
+    processingTimeMs: number;
+    formatSpecific?: Record<string, unknown>;
+}
+interface DocumentResult {
+    success: boolean;
+    pieces: DocumentPiece[];
+    metadata: DocumentMetadata;
+    error?: string;
+    warnings: string[];
+}
+interface FileSource {
+    type: 'file';
+    path: string;
+}
+interface URLSource {
+    type: 'url';
+    url: string;
+    headers?: Record<string, string>;
+}
+interface BufferSource {
+    type: 'buffer';
+    buffer: Buffer | Uint8Array;
+    filename: string;
+    mimeType?: string;
+}
+interface BlobSource {
+    type: 'blob';
+    blob: Blob;
+    filename: string;
+}
+type DocumentSource = FileSource | URLSource | BufferSource | BlobSource;
+interface ImageFilterOptions {
+    /** Skip images narrower than this (default: 50px) */
+    minWidth?: number;
+    /** Skip images shorter than this (default: 50px) */
+    minHeight?: number;
+    /** Skip images smaller than this in bytes (default: 1024) */
+    minSizeBytes?: number;
+    /** Maximum images to keep (default: 50 at extraction, 20 at content conversion) */
+    maxImages?: number;
+    /** Exclude images whose filename/label matches these patterns */
+    excludePatterns?: RegExp[];
+}
+interface ExcelFormatOptions {
+    /** Maximum rows per sheet (default: 1000) */
+    maxRows?: number;
+    /** Maximum columns per sheet (default: 50) */
+    maxColumns?: number;
+    /** Table output format (default: 'markdown') */
+    tableFormat?: 'markdown' | 'csv' | 'json';
+    /** Include formulas as comments (default: false) */
+    includeFormulas?: boolean;
+}
+interface PDFFormatOptions {
+    /** Include PDF metadata in output (default: true) */
+    includeMetadata?: boolean;
+}
+interface HTMLFormatOptions {
+    /** Maximum HTML length to process (default: 50000) */
+    maxLength?: number;
+}
+interface OfficeFormatOptions {
+    /** Include speaker notes for PPTX (default: true) */
+    includeSpeakerNotes?: boolean;
+}
+interface DocumentReadOptions {
+    /** Maximum estimated tokens in output (default: 100000) */
+    maxTokens?: number;
+    /** Maximum output size in bytes (default: 5MB) */
+    maxOutputBytes?: number;
+    /** Extract images from documents (default: true) */
+    extractImages?: boolean;
+    /** Image detail level for LLM (default: 'auto') */
+    imageDetail?: 'auto' | 'low' | 'high';
+    /** Image filtering options */
+    imageFilter?: ImageFilterOptions;
+    /** Specific pages/sheets to read (format-dependent) */
+    pages?: number[] | string[];
+    /** Additional transformers to apply */
+    transformers?: IDocumentTransformer[];
+    /** Skip built-in transformers (default: false) */
+    skipDefaultTransformers?: boolean;
+    /** Format-specific options */
+    formatOptions?: {
+        excel?: ExcelFormatOptions;
+        pdf?: PDFFormatOptions;
+        html?: HTMLFormatOptions;
+        office?: OfficeFormatOptions;
+    };
+}
+interface DocumentReaderConfig {
+    /** Default options for all read() calls */
+    defaults?: DocumentReadOptions;
+    /** Custom format handlers (override built-in) */
+    handlers?: Map<DocumentFamily, IFormatHandler>;
+    /** Maximum download size for URL sources (default: 50MB) */
+    maxDownloadSizeBytes?: number;
+    /** Download timeout for URL sources (default: 60000ms) */
+    downloadTimeoutMs?: number;
+}
+interface TransformerContext {
+    filename: string;
+    format: DocumentFormat;
+    family: DocumentFamily;
+    options: DocumentReadOptions;
+}
+interface IDocumentTransformer {
+    readonly name: string;
+    readonly appliesTo: DocumentFormat[];
+    readonly priority?: number;
+    transform(pieces: DocumentPiece[], context: TransformerContext): Promise<DocumentPiece[]>;
+}
+interface IFormatHandler {
+    readonly name: string;
+    readonly supportedFormats: DocumentFormat[];
+    handle(buffer: Buffer, filename: string, format: DocumentFormat, options: DocumentReadOptions): Promise<DocumentPiece[]>;
+}
+interface FormatDetectionResult {
+    format: DocumentFormat;
+    family: DocumentFamily;
+    mimeType: string;
+    confidence: 'high' | 'medium' | 'low';
+}
+interface DocumentToContentOptions {
+    /** Image detail for LLM content (default: 'auto') */
+    imageDetail?: 'auto' | 'low' | 'high';
+    /** Additional image filtering at content conversion time */
+    imageFilter?: ImageFilterOptions;
+    /** Maximum images in content output (default: 20) */
+    maxImages?: number;
+    /** Merge adjacent text pieces into one (default: true) */
+    mergeAdjacentText?: boolean;
+}
+
+/**
+ * Document Reader
+ *
+ * Universal file-to-LLM-content converter.
+ * Reads arbitrary formats and produces DocumentPiece arrays.
+ */
+
+/**
+ * Main document reader class.
+ *
+ * @example
+ * ```typescript
+ * const reader = DocumentReader.create();
+ * const result = await reader.read('/path/to/doc.pdf');
+ * console.log(result.pieces); // DocumentPiece[]
+ * ```
+ */
+declare class DocumentReader {
+    private handlers;
+    private config;
+    private constructor();
+    /**
+     * Create a new DocumentReader instance
+     */
+    static create(config?: DocumentReaderConfig): DocumentReader;
+    /**
+     * Register all default format handlers (lazy-loaded)
+     */
+    private registerDefaultHandlers;
+    /**
+     * Register a custom format handler
+     */
+    registerHandler(family: DocumentFamily, handler: IFormatHandler): void;
+    /**
+     * Read a document from any source
+     */
+    read(source: DocumentSource | string, options?: DocumentReadOptions): Promise<DocumentResult>;
+    /**
+     * Parse a string source (auto-detect path vs URL)
+     */
+    private parseStringSource;
+    /**
+     * Resolve any source to a buffer and filename
+     */
+    private resolveSource;
+    /**
+     * Extract filename from URL and response headers
+     */
+    private extractFilenameFromURL;
+    /**
+     * Get the handler for a format family, loading defaults lazily
+     */
+    private getHandler;
+    /**
+     * Filter images based on options
+     */
+    private filterImages;
+    /**
+     * Run the transformer pipeline
+     */
+    private runTransformers;
+    /**
+     * Assemble metadata from pieces
+     */
+    private assembleMetadata;
+}
+/**
+ * Merge text pieces into a single markdown string
+ */
+declare function mergeTextPieces(pieces: DocumentPiece[]): string;
+
+/**
+ * Format Detector
+ *
+ * Detects document format from filename extension and optional magic bytes.
+ */
+
+/**
+ * Static utility for detecting document formats
+ */
+declare class FormatDetector {
+    /**
+     * Detect format from filename and optional buffer
+     */
+    static detect(filename: string, _buffer?: Buffer | Uint8Array): FormatDetectionResult;
+    /**
+     * Check if an extension is a supported document format
+     * Used by readFile to detect when to use DocumentReader
+     */
+    static isDocumentFormat(ext: string): boolean;
+    /**
+     * Check if an extension is a binary document format
+     * (i.e., cannot be read as UTF-8)
+     */
+    static isBinaryDocumentFormat(ext: string): boolean;
+    /**
+     * Check if a Content-Type header indicates a document format
+     * Used by webFetch to detect downloadable documents
+     */
+    static isDocumentMimeType(contentType: string): boolean;
+    /**
+     * Detect format from Content-Type header
+     */
+    static detectFromMimeType(contentType: string): FormatDetectionResult | null;
+    /**
+     * Get all supported document extensions
+     */
+    static getSupportedExtensions(): string[];
+    /**
+     * Get the normalized extension from a filename
+     */
+    static getExtension(filename: string): string;
+}
+
+/**
+ * Document Content Bridge
+ *
+ * Converts DocumentResult → Content[] for LLM consumption.
+ * Provides readDocumentAsContent() as a one-call convenience.
+ */
+
+/**
+ * Convert a DocumentResult to Content[] for LLM input.
+ *
+ * - Text pieces → InputTextContent
+ * - Image pieces → InputImageContent (with data URI)
+ * - Adjacent text pieces merged by default
+ * - Additional image filtering applied
+ */
+declare function documentToContent(result: DocumentResult, options?: DocumentToContentOptions): Content[];
+/**
+ * One-call convenience: read a document and convert to Content[] for LLM input.
+ *
+ * @example
+ * ```typescript
+ * const content = await readDocumentAsContent('/path/to/doc.pdf', {
+ *   imageFilter: { minWidth: 100, minHeight: 100 },
+ *   imageDetail: 'auto',
+ * });
+ *
+ * agent.run([
+ *   { type: 'input_text', text: 'Analyze this document:' },
+ *   ...content,
+ * ]);
+ * ```
+ */
+declare function readDocumentAsContent(source: DocumentSource | string, options?: DocumentReadOptions & DocumentToContentOptions): Promise<Content[]>;
+
+/**
  * IMediaStorage - Storage interface for multimedia outputs (images, video, audio)
  *
  * Provides CRUD operations for media files produced by generation tools.
@@ -8644,8 +8973,13 @@ declare class FileContextStorage implements IContextStorage {
     updateMetadata(sessionId: string, metadata: Partial<ContextSessionMetadata>): Promise<void>;
     /**
      * Get the storage path (for display/debugging)
+     * @deprecated Use getLocation() instead
      */
     getPath(): string;
+    /**
+     * Get a human-readable storage location string (for display/debugging)
+     */
+    getLocation(): string;
     /**
      * Get the agent ID
      */
@@ -11058,6 +11392,7 @@ declare const bash: ToolFunction<BashArgs, BashResult>;
  *
  * Common types and configuration for filesystem operations.
  */
+
 /**
  * Configuration for filesystem tools
  */
@@ -11099,11 +11434,18 @@ interface FilesystemToolConfig {
      * Default: common binary extensions
      */
     excludeExtensions?: string[];
+    /**
+     * Document reader config for non-text file formats (PDF, DOCX, XLSX, etc.).
+     * When set, read_file will automatically convert binary document formats to markdown.
+     */
+    documentReaderConfig?: DocumentReaderConfig;
 }
 /**
  * Default configuration
  */
-declare const DEFAULT_FILESYSTEM_CONFIG: Required<FilesystemToolConfig>;
+/** FilesystemToolConfig with all base fields required (documentReaderConfig remains optional) */
+type FilesystemToolConfigDefaults = Required<Omit<FilesystemToolConfig, 'documentReaderConfig'>> & Pick<FilesystemToolConfig, 'documentReaderConfig'>;
+declare const DEFAULT_FILESYSTEM_CONFIG: FilesystemToolConfigDefaults;
 /**
  * Result of a file read operation
  */
@@ -11458,7 +11800,7 @@ interface WebFetchResult {
     url: string;
     title: string;
     content: string;
-    contentType: 'html' | 'json' | 'text' | 'error';
+    contentType: 'html' | 'json' | 'text' | 'document' | 'error';
     qualityScore: number;
     requiresJS: boolean;
     suggestedAction?: string;
@@ -11468,6 +11810,7 @@ interface WebFetchResult {
     byline?: string;
     wasReadabilityUsed?: boolean;
     wasTruncated?: boolean;
+    documentMetadata?: Record<string, unknown>;
 }
 declare const webFetch: ToolFunction<WebFetchArgs, WebFetchResult>;
 
@@ -12091,7 +12434,7 @@ declare function createCreatePRTool(connector: Connector, userId?: string): Tool
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-10T13:12:21.395Z
+ * Generated at: 2026-02-11T13:24:17.061Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -12271,8 +12614,24 @@ type index_ConnectorTools = ConnectorTools;
 declare const index_ConnectorTools: typeof ConnectorTools;
 declare const index_DEFAULT_FILESYSTEM_CONFIG: typeof DEFAULT_FILESYSTEM_CONFIG;
 declare const index_DEFAULT_SHELL_CONFIG: typeof DEFAULT_SHELL_CONFIG;
+type index_DocumentFamily = DocumentFamily;
+type index_DocumentFormat = DocumentFormat;
+type index_DocumentImagePiece = DocumentImagePiece;
+type index_DocumentMetadata = DocumentMetadata;
+type index_DocumentPiece = DocumentPiece;
+type index_DocumentReadOptions = DocumentReadOptions;
+type index_DocumentReader = DocumentReader;
+declare const index_DocumentReader: typeof DocumentReader;
+type index_DocumentReaderConfig = DocumentReaderConfig;
+type index_DocumentResult = DocumentResult;
+type index_DocumentSource = DocumentSource;
+type index_DocumentTextPiece = DocumentTextPiece;
+type index_DocumentToContentOptions = DocumentToContentOptions;
 type index_EditFileResult = EditFileResult;
 type index_FilesystemToolConfig = FilesystemToolConfig;
+type index_FormatDetectionResult = FormatDetectionResult;
+type index_FormatDetector = FormatDetector;
+declare const index_FormatDetector: typeof FormatDetector;
 type index_GenericAPICallArgs = GenericAPICallArgs;
 type index_GenericAPICallResult = GenericAPICallResult;
 type index_GenericAPIToolOptions = GenericAPIToolOptions;
@@ -12288,6 +12647,9 @@ type index_GitHubSearchFilesResult = GitHubSearchFilesResult;
 type index_GlobResult = GlobResult;
 type index_GrepMatch = GrepMatch;
 type index_GrepResult = GrepResult;
+type index_IDocumentTransformer = IDocumentTransformer;
+type index_IFormatHandler = IFormatHandler;
+type index_ImageFilterOptions = ImageFilterOptions;
 type index_ReadFileResult = ReadFileResult;
 type index_SearchResult = SearchResult;
 type index_ServiceToolFactory = ServiceToolFactory;
@@ -12339,6 +12701,7 @@ declare const index_isExcludedExtension: typeof isExcludedExtension;
 declare const index_jsonManipulator: typeof jsonManipulator;
 declare const index_killBackgroundProcess: typeof killBackgroundProcess;
 declare const index_listDirectory: typeof listDirectory;
+declare const index_mergeTextPieces: typeof mergeTextPieces;
 declare const index_parseRepository: typeof parseRepository;
 declare const index_readFile: typeof readFile;
 declare const index_resolveRepository: typeof resolveRepository;
@@ -12349,7 +12712,7 @@ declare const index_validatePath: typeof validatePath;
 declare const index_webFetch: typeof webFetch;
 declare const index_writeFile: typeof writeFile;
 declare namespace index {
-  export { type index_BashResult as BashResult, type index_ConnectorToolEntry as ConnectorToolEntry, index_ConnectorTools as ConnectorTools, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, type index_EditFileResult as EditFileResult, FileMediaStorage as FileMediaOutputHandler, type index_FilesystemToolConfig as FilesystemToolConfig, type index_GenericAPICallArgs as GenericAPICallArgs, type index_GenericAPICallResult as GenericAPICallResult, type index_GenericAPIToolOptions as GenericAPIToolOptions, type index_GitHubCreatePRResult as GitHubCreatePRResult, type index_GitHubGetPRResult as GitHubGetPRResult, type index_GitHubPRCommentEntry as GitHubPRCommentEntry, type index_GitHubPRCommentsResult as GitHubPRCommentsResult, type index_GitHubPRFilesResult as GitHubPRFilesResult, type index_GitHubReadFileResult as GitHubReadFileResult, type index_GitHubRepository as GitHubRepository, type index_GitHubSearchCodeResult as GitHubSearchCodeResult, type index_GitHubSearchFilesResult as GitHubSearchFilesResult, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type IMediaStorage as IMediaOutputHandler, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type index_ReadFileResult as ReadFileResult, type index_SearchResult as SearchResult, type index_ServiceToolFactory as ServiceToolFactory, type index_ShellToolConfig as ShellToolConfig, type index_ToolCategory as ToolCategory, index_ToolRegistry as ToolRegistry, type index_ToolRegistryEntry as ToolRegistryEntry, type index_WriteFileResult as WriteFileResult, index_bash as bash, index_createBashTool as createBashTool, index_createCreatePRTool as createCreatePRTool, index_createEditFileTool as createEditFileTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createGetPRTool as createGetPRTool, index_createGitHubReadFileTool as createGitHubReadFileTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createImageGenerationTool as createImageGenerationTool, index_createListDirectoryTool as createListDirectoryTool, index_createPRCommentsTool as createPRCommentsTool, index_createPRFilesTool as createPRFilesTool, index_createReadFileTool as createReadFileTool, index_createSearchCodeTool as createSearchCodeTool, index_createSearchFilesTool as createSearchFilesTool, index_createSpeechToTextTool as createSpeechToTextTool, index_createTextToSpeechTool as createTextToSpeechTool, index_createVideoTools as createVideoTools, index_createWebScrapeTool as createWebScrapeTool, index_createWebSearchTool as createWebSearchTool, index_createWriteFileTool as createWriteFileTool, index_developerTools as developerTools, index_editFile as editFile, index_executeJavaScript as executeJavaScript, index_expandTilde as expandTilde, index_getAllBuiltInTools as getAllBuiltInTools, index_getBackgroundOutput as getBackgroundOutput, index_getMediaOutputHandler as getMediaOutputHandler, index_getMediaStorage as getMediaStorage, index_getToolByName as getToolByName, index_getToolCategories as getToolCategories, index_getToolRegistry as getToolRegistry, index_getToolsByCategory as getToolsByCategory, index_getToolsRequiringConnector as getToolsRequiringConnector, index_glob as glob, index_grep as grep, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_parseRepository as parseRepository, index_readFile as readFile, index_resolveRepository as resolveRepository, index_setMediaOutputHandler as setMediaOutputHandler, index_setMediaStorage as setMediaStorage, index_toolRegistry as toolRegistry, index_validatePath as validatePath, index_webFetch as webFetch, index_writeFile as writeFile };
+  export { type index_BashResult as BashResult, type index_ConnectorToolEntry as ConnectorToolEntry, index_ConnectorTools as ConnectorTools, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, type index_DocumentFamily as DocumentFamily, type index_DocumentFormat as DocumentFormat, type index_DocumentImagePiece as DocumentImagePiece, type index_DocumentMetadata as DocumentMetadata, type index_DocumentPiece as DocumentPiece, type index_DocumentReadOptions as DocumentReadOptions, index_DocumentReader as DocumentReader, type index_DocumentReaderConfig as DocumentReaderConfig, type index_DocumentResult as DocumentResult, type index_DocumentSource as DocumentSource, type index_DocumentTextPiece as DocumentTextPiece, type index_DocumentToContentOptions as DocumentToContentOptions, type index_EditFileResult as EditFileResult, FileMediaStorage as FileMediaOutputHandler, type index_FilesystemToolConfig as FilesystemToolConfig, type index_FormatDetectionResult as FormatDetectionResult, index_FormatDetector as FormatDetector, type index_GenericAPICallArgs as GenericAPICallArgs, type index_GenericAPICallResult as GenericAPICallResult, type index_GenericAPIToolOptions as GenericAPIToolOptions, type index_GitHubCreatePRResult as GitHubCreatePRResult, type index_GitHubGetPRResult as GitHubGetPRResult, type index_GitHubPRCommentEntry as GitHubPRCommentEntry, type index_GitHubPRCommentsResult as GitHubPRCommentsResult, type index_GitHubPRFilesResult as GitHubPRFilesResult, type index_GitHubReadFileResult as GitHubReadFileResult, type index_GitHubRepository as GitHubRepository, type index_GitHubSearchCodeResult as GitHubSearchCodeResult, type index_GitHubSearchFilesResult as GitHubSearchFilesResult, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type index_IDocumentTransformer as IDocumentTransformer, type index_IFormatHandler as IFormatHandler, type IMediaStorage as IMediaOutputHandler, type index_ImageFilterOptions as ImageFilterOptions, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type index_ReadFileResult as ReadFileResult, type index_SearchResult as SearchResult, type index_ServiceToolFactory as ServiceToolFactory, type index_ShellToolConfig as ShellToolConfig, type index_ToolCategory as ToolCategory, index_ToolRegistry as ToolRegistry, type index_ToolRegistryEntry as ToolRegistryEntry, type index_WriteFileResult as WriteFileResult, index_bash as bash, index_createBashTool as createBashTool, index_createCreatePRTool as createCreatePRTool, index_createEditFileTool as createEditFileTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createGetPRTool as createGetPRTool, index_createGitHubReadFileTool as createGitHubReadFileTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createImageGenerationTool as createImageGenerationTool, index_createListDirectoryTool as createListDirectoryTool, index_createPRCommentsTool as createPRCommentsTool, index_createPRFilesTool as createPRFilesTool, index_createReadFileTool as createReadFileTool, index_createSearchCodeTool as createSearchCodeTool, index_createSearchFilesTool as createSearchFilesTool, index_createSpeechToTextTool as createSpeechToTextTool, index_createTextToSpeechTool as createTextToSpeechTool, index_createVideoTools as createVideoTools, index_createWebScrapeTool as createWebScrapeTool, index_createWebSearchTool as createWebSearchTool, index_createWriteFileTool as createWriteFileTool, index_developerTools as developerTools, index_editFile as editFile, index_executeJavaScript as executeJavaScript, index_expandTilde as expandTilde, index_getAllBuiltInTools as getAllBuiltInTools, index_getBackgroundOutput as getBackgroundOutput, index_getMediaOutputHandler as getMediaOutputHandler, index_getMediaStorage as getMediaStorage, index_getToolByName as getToolByName, index_getToolCategories as getToolCategories, index_getToolRegistry as getToolRegistry, index_getToolsByCategory as getToolsByCategory, index_getToolsRequiringConnector as getToolsRequiringConnector, index_glob as glob, index_grep as grep, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_mergeTextPieces as mergeTextPieces, index_parseRepository as parseRepository, index_readFile as readFile, index_resolveRepository as resolveRepository, index_setMediaOutputHandler as setMediaOutputHandler, index_setMediaStorage as setMediaStorage, index_toolRegistry as toolRegistry, index_validatePath as validatePath, index_webFetch as webFetch, index_writeFile as writeFile };
 }
 
 /**
@@ -12404,4 +12767,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, detectDependencyCycle, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, parseRepository, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, detectDependencyCycle, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isExcludedExtension, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

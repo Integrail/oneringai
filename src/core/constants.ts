@@ -223,6 +223,53 @@ export const TOOL_RETENTION_MULTIPLIERS: Record<StrategyName, number> = {
   'rolling-window': 1.2,
 };
 
+// ============ Document Reader Defaults ============
+
+/**
+ * Document reader configuration
+ */
+export const DOCUMENT_DEFAULTS = {
+  /** Maximum estimated tokens in output */
+  MAX_OUTPUT_TOKENS: 100_000,
+
+  /** Maximum output size in bytes (5MB) */
+  MAX_OUTPUT_BYTES: 5 * 1024 * 1024,
+
+  /** Maximum download size for URL sources (50MB) */
+  MAX_DOWNLOAD_SIZE_BYTES: 50 * 1024 * 1024,
+
+  /** Download timeout for URL sources */
+  DOWNLOAD_TIMEOUT_MS: 60_000,
+
+  /** Maximum extracted images from a single document */
+  MAX_EXTRACTED_IMAGES: 50,
+
+  /** Maximum Excel rows per sheet */
+  MAX_EXCEL_ROWS: 1_000,
+
+  /** Maximum Excel columns per sheet */
+  MAX_EXCEL_COLUMNS: 50,
+
+  /** Maximum HTML content length */
+  MAX_HTML_LENGTH: 50_000,
+
+  /** Characters per token estimate */
+  CHARS_PER_TOKEN: 4,
+
+  /** Estimated tokens for an image with auto detail */
+  IMAGE_TOKENS_AUTO: 765,
+
+  /** Estimated tokens for an image with low detail */
+  IMAGE_TOKENS_LOW: 85,
+
+  /** Image filter defaults */
+  IMAGE_FILTER: {
+    MIN_WIDTH: 50,
+    MIN_HEIGHT: 50,
+    MIN_SIZE_BYTES: 1024,
+  },
+} as const;
+
 // ============ Tool Result Eviction Defaults ============
 
 /**

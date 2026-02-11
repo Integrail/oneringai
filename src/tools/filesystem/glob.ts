@@ -18,9 +18,11 @@ import { join, relative } from 'node:path';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import {
   type FilesystemToolConfig,
+  type FilesystemToolConfigDefaults,
   type GlobResult,
   DEFAULT_FILESYSTEM_CONFIG,
   validatePath,
+  toForwardSlash,
 } from './types.js';
 
 /**
@@ -68,7 +70,7 @@ async function findFiles(
   dir: string,
   pattern: string,
   baseDir: string,
-  config: Required<FilesystemToolConfig>,
+  config: FilesystemToolConfigDefaults,
   results: { path: string; mtime: number }[] = [],
   depth: number = 0
 ): Promise<{ path: string; mtime: number }[]> {
@@ -84,7 +86,8 @@ async function findFiles(
       if (results.length >= config.maxResults) break;
 
       const fullPath = join(dir, entry.name);
-      const relativePath = relative(baseDir, fullPath);
+      // Normalize to forward slashes for consistent cross-platform pattern matching
+      const relativePath = toForwardSlash(relative(baseDir, fullPath));
 
       // Check if directory is blocked
       if (entry.isDirectory()) {

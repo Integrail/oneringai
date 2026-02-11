@@ -306,8 +306,16 @@ export class FileContextStorage implements IContextStorage {
 
   /**
    * Get the storage path (for display/debugging)
+   * @deprecated Use getLocation() instead
    */
   getPath(): string {
+    return this.sessionsDirectory;
+  }
+
+  /**
+   * Get a human-readable storage location string (for display/debugging)
+   */
+  getLocation(): string {
     return this.sessionsDirectory;
   }
 

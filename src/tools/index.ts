@@ -175,6 +175,34 @@ export type {
 } from './github/index.js';
 
 // ============================================================================
+// Document Reader (used by filesystem and web tools)
+// ============================================================================
+
+export {
+  DocumentReader,
+  FormatDetector,
+  mergeTextPieces,
+} from '../capabilities/documents/index.js';
+
+export type {
+  DocumentFormat,
+  DocumentFamily,
+  DocumentPiece,
+  DocumentTextPiece,
+  DocumentImagePiece,
+  DocumentResult,
+  DocumentMetadata,
+  DocumentSource,
+  DocumentReadOptions,
+  DocumentReaderConfig,
+  ImageFilterOptions,
+  IDocumentTransformer,
+  IFormatHandler,
+  FormatDetectionResult,
+  DocumentToContentOptions,
+} from '../capabilities/documents/index.js';
+
+// ============================================================================
 // Convenience: All Developer Tools Bundle
 // ============================================================================
 

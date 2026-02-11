@@ -119,6 +119,28 @@ export type {
   ScrapeProviderFallbackConfig,
 } from './capabilities/scrape/index.js';
 
+// Document Reader Capability
+export { DocumentReader, FormatDetector, mergeTextPieces } from './capabilities/documents/index.js';
+export type {
+  DocumentFormat,
+  DocumentFamily,
+  DocumentPiece,
+  DocumentTextPiece,
+  DocumentImagePiece,
+  PieceMetadata,
+  DocumentResult,
+  DocumentMetadata,
+  DocumentSource,
+  DocumentReadOptions,
+  DocumentReaderConfig,
+  ImageFilterOptions,
+  IDocumentTransformer,
+  IFormatHandler,
+  FormatDetectionResult,
+  DocumentToContentOptions,
+} from './capabilities/documents/index.js';
+export { documentToContent, readDocumentAsContent } from './utils/documentContentBridge.js';
+
 // Shared Capability Utilities
 export {
   buildQueryString,

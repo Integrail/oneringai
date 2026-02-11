@@ -164,9 +164,17 @@ export interface IContextStorage {
   ): Promise<void>;
 
   /**
-   * Get the storage path/location (for display/debugging)
+   * Get the storage path (for display/debugging)
+   * @deprecated Use getLocation() instead - getPath() assumes filesystem storage
    */
   getPath(): string;
+
+  /**
+   * Get a human-readable storage location string (for display/debugging).
+   * Examples: file path, MongoDB URI, Redis key prefix, S3 bucket, etc.
+   * Falls back to getPath() if not implemented.
+   */
+  getLocation?(): string;
 }
 
 /**

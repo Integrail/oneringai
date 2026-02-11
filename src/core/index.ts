@@ -105,6 +105,7 @@ export {
   SAFETY_CAPS,
   TOOL_RETENTION_MULTIPLIERS,
   STRATEGY_THRESHOLDS,
+  DOCUMENT_DEFAULTS,
 } from './constants.js';
 export type { StrategyName } from './constants.js';
 

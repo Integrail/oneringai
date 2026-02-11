@@ -34,6 +34,7 @@
 // Types
 export type {
   FilesystemToolConfig,
+  FilesystemToolConfigDefaults,
   ReadFileResult,
   WriteFileResult,
   EditFileResult,
@@ -47,6 +48,7 @@ export {
   validatePath,
   isExcludedExtension,
   expandTilde,
+  toForwardSlash,
 } from './types.js';
 
 // Read File Tool

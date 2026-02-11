@@ -4,8 +4,9 @@
  * Common types and configuration for filesystem operations.
  */
 
-import { resolve, normalize, isAbsolute } from 'node:path';
+import { resolve, normalize, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
+import type { DocumentReaderConfig } from '../../capabilities/documents/types.js';
 
 /**
  * Configuration for filesystem tools
@@ -54,12 +55,21 @@ export interface FilesystemToolConfig {
    * Default: common binary extensions
    */
   excludeExtensions?: string[];
+
+  /**
+   * Document reader config for non-text file formats (PDF, DOCX, XLSX, etc.).
+   * When set, read_file will automatically convert binary document formats to markdown.
+   */
+  documentReaderConfig?: DocumentReaderConfig;
 }
 
 /**
  * Default configuration
  */
-export const DEFAULT_FILESYSTEM_CONFIG: Required<FilesystemToolConfig> = {
+/** FilesystemToolConfig with all base fields required (documentReaderConfig remains optional) */
+export type FilesystemToolConfigDefaults = Required<Omit<FilesystemToolConfig, 'documentReaderConfig'>> & Pick<FilesystemToolConfig, 'documentReaderConfig'>;
+
+export const DEFAULT_FILESYSTEM_CONFIG: FilesystemToolConfigDefaults = {
   workingDirectory: process.cwd(),
   allowedDirectories: [],
   blockedDirectories: ['node_modules', '.git', '.svn', '.hg', '__pycache__', '.cache'],
@@ -71,7 +81,8 @@ export const DEFAULT_FILESYSTEM_CONFIG: Required<FilesystemToolConfig> = {
     '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp',
     '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    // Note: .pdf, .docx, .xlsx, .pptx are NOT excluded — DocumentReader handles them
+    '.doc', '.xls', '.ppt', // Legacy Office formats not yet supported
     '.woff', '.woff2', '.ttf', '.eot', '.otf',
   ],
 };
@@ -151,6 +162,15 @@ export interface GrepResult {
 }
 
 /**
+ * Normalize a path to use forward slashes (for consistent cross-platform behavior).
+ * On Windows, path.relative() and path.resolve() return backslash-separated paths,
+ * which breaks glob pattern matching and directory filtering.
+ */
+export function toForwardSlash(p: string): string {
+  return sep === '\\' ? p.replace(/\\/g, '/') : p;
+}
+
+/**
  * Validate and resolve a path within allowed boundaries
  */
 export function validatePath(
@@ -178,7 +198,9 @@ export function validatePath(
   }
 
   // Check blocked directories - check if any path segment matches a blocked directory name
-  const pathSegments = resolvedPath.split('/').filter(Boolean);
+  // Use forward slashes for consistent matching across platforms
+  const normalizedResolved = toForwardSlash(resolvedPath);
+  const pathSegments = normalizedResolved.split('/').filter(Boolean);
   for (const blocked of blockedDirs) {
     // If blocked is a simple name (no slashes), check path segments
     if (!blocked.includes('/')) {
@@ -191,8 +213,8 @@ export function validatePath(
       }
     } else {
       // If blocked is a path, resolve it and check prefix
-      const blockedPath = isAbsolute(blocked) ? blocked : resolve(workingDir, blocked);
-      if (resolvedPath.startsWith(blockedPath + '/') || resolvedPath === blockedPath) {
+      const blockedPath = toForwardSlash(isAbsolute(blocked) ? blocked : resolve(workingDir, blocked));
+      if (normalizedResolved.startsWith(blockedPath + '/') || normalizedResolved === blockedPath) {
         return {
           valid: false,
           resolvedPath,
@@ -206,8 +228,8 @@ export function validatePath(
   if (allowedDirs.length > 0) {
     let isAllowed = false;
     for (const allowed of allowedDirs) {
-      const allowedPath = isAbsolute(allowed) ? allowed : resolve(workingDir, allowed);
-      if (resolvedPath.startsWith(allowedPath + '/') || resolvedPath === allowedPath) {
+      const allowedPath = toForwardSlash(isAbsolute(allowed) ? allowed : resolve(workingDir, allowed));
+      if (normalizedResolved.startsWith(allowedPath + '/') || normalizedResolved === allowedPath) {
         isAllowed = true;
         break;
       }

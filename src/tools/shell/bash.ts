@@ -58,6 +58,8 @@ export function createBashTool(config: ShellToolConfig = {}): ToolFunction<BashA
         name: 'bash',
         description: `Execute shell commands with optional timeout.
 
+SHELL: This tool uses ${mergedConfig.shell}${process.platform === 'win32' ? ' (Windows). Use Windows command syntax (dir, type, del, etc.), NOT Unix commands (ls, cat, rm, etc.). Use \\ as path separator or quote paths with forward slashes.' : ' (Unix). Use standard Unix command syntax.'}
+
 USAGE:
 - Execute any shell command
 - Working directory persists between commands
@@ -74,9 +76,11 @@ For file operations, prefer dedicated tools:
 
 BEST PRACTICES:
 - Always quote file paths with spaces: cd "/path with spaces"
-- Use absolute paths when possible
+- Use absolute paths when possible${process.platform === 'win32' ? `
 - Chain dependent commands with &&: git add . && git commit -m "msg"
-- Use ; only when you don't care if earlier commands fail
+- Use PowerShell syntax if cmd.exe is insufficient` : `
+- Chain dependent commands with &&: git add . && git commit -m "msg"
+- Use ; only when you don't care if earlier commands fail`}
 - Avoid interactive commands (no -i flags)
 
 GIT SAFETY:

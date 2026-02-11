@@ -19,11 +19,13 @@ import { join, relative, extname } from 'node:path';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import {
   type FilesystemToolConfig,
+  type FilesystemToolConfigDefaults,
   type GrepResult,
   type GrepMatch,
   DEFAULT_FILESYSTEM_CONFIG,
   validatePath,
   isExcludedExtension,
+  toForwardSlash,
 } from './types.js';
 
 /**
@@ -84,7 +86,7 @@ const FILE_TYPE_MAP: Record<string, string[]> = {
 async function findFilesToSearch(
   dir: string,
   baseDir: string,
-  config: Required<FilesystemToolConfig>,
+  config: FilesystemToolConfigDefaults,
   globPattern?: string,
   fileType?: string,
   files: string[] = [],
@@ -366,7 +368,7 @@ WHEN TO USE:
 
           if (matches.length > 0) {
             filesMatched++;
-            const relativePath = relative(resolvedPath, file) || file;
+            const relativePath = toForwardSlash(relative(resolvedPath, file)) || file;
 
             // Update match data with relative paths
             for (const match of matches) {

@@ -5,7 +5,9 @@ import * as fs16 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path2 from 'path';
-import { join, resolve, dirname, relative, isAbsolute, normalize, extname } from 'path';
+import { join, resolve, extname, dirname, relative, isAbsolute, normalize, sep } from 'path';
+import TurndownService from 'turndown';
+import { Readability } from '@mozilla/readability';
 import * as os2 from 'os';
 import { homedir } from 'os';
 import OpenAI3 from 'openai';
@@ -14,6 +16,7 @@ import { GoogleGenAI } from '@google/genai';
 import 'zod/v3';
 import * as z4mini from 'zod/v4-mini';
 import * as z from 'zod/v4';
+import spawn$1 from 'cross-spawn';
 import process2 from 'process';
 import { PassThrough } from 'stream';
 import * as fs15 from 'fs/promises';
@@ -22,8 +25,6 @@ import * as simpleIcons from 'simple-icons';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { load } from 'cheerio';
-import TurndownService from 'turndown';
-import { Readability } from '@mozilla/readability';
 import * as vm from 'vm';
 
 var __create = Object.create;
@@ -2226,6 +2227,66 @@ var init_Connector = __esm({
           storage: _Connector.defaultStorage,
           storageKey: this.name
         });
+      }
+    };
+  }
+});
+
+// src/core/constants.ts
+var AGENT_DEFAULTS, TOKEN_ESTIMATION, DOCUMENT_DEFAULTS;
+var init_constants = __esm({
+  "src/core/constants.ts"() {
+    AGENT_DEFAULTS = {
+      /** Default maximum iterations for agentic loop */
+      MAX_ITERATIONS: 50,
+      /** Default temperature for LLM calls */
+      DEFAULT_TEMPERATURE: 0.7,
+      /** Message injected when max iterations is reached */
+      MAX_ITERATIONS_MESSAGE: `You have reached the maximum iteration limit for this execution. Please:
+1. Summarize what you have accomplished so far
+2. Explain what remains to be done (if anything)
+3. Ask the user if they would like you to continue
+
+Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`
+    };
+    TOKEN_ESTIMATION = {
+      /** Characters per token for code */
+      CODE_CHARS_PER_TOKEN: 3,
+      /** Characters per token for prose */
+      PROSE_CHARS_PER_TOKEN: 4,
+      /** Characters per token for mixed content */
+      MIXED_CHARS_PER_TOKEN: 3.5,
+      /** Default characters per token */
+      DEFAULT_CHARS_PER_TOKEN: 4
+    };
+    DOCUMENT_DEFAULTS = {
+      /** Maximum estimated tokens in output */
+      MAX_OUTPUT_TOKENS: 1e5,
+      /** Maximum output size in bytes (5MB) */
+      MAX_OUTPUT_BYTES: 5 * 1024 * 1024,
+      /** Maximum download size for URL sources (50MB) */
+      MAX_DOWNLOAD_SIZE_BYTES: 50 * 1024 * 1024,
+      /** Download timeout for URL sources */
+      DOWNLOAD_TIMEOUT_MS: 6e4,
+      /** Maximum extracted images from a single document */
+      MAX_EXTRACTED_IMAGES: 50,
+      /** Maximum Excel rows per sheet */
+      MAX_EXCEL_ROWS: 1e3,
+      /** Maximum Excel columns per sheet */
+      MAX_EXCEL_COLUMNS: 50,
+      /** Maximum HTML content length */
+      MAX_HTML_LENGTH: 5e4,
+      /** Characters per token estimate */
+      CHARS_PER_TOKEN: 4,
+      /** Estimated tokens for an image with auto detail */
+      IMAGE_TOKENS_AUTO: 765,
+      /** Estimated tokens for an image with low detail */
+      IMAGE_TOKENS_LOW: 85,
+      /** Image filter defaults */
+      IMAGE_FILTER: {
+        MIN_WIDTH: 50,
+        MIN_HEIGHT: 50,
+        MIN_SIZE_BYTES: 1024
       }
     };
   }
@@ -14544,491 +14605,961 @@ var require_dist = __commonJS({
   }
 });
 
-// node_modules/isexe/windows.js
-var require_windows = __commonJS({
-  "node_modules/isexe/windows.js"(exports$1, module) {
-    module.exports = isexe;
-    isexe.sync = sync;
-    var fs17 = __require("fs");
-    function checkPathExt(path6, options) {
-      var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
-      if (!pathext) {
-        return true;
+// src/capabilities/documents/handlers/TextHandler.ts
+var CODE_FENCE_FORMATS, TextHandler;
+var init_TextHandler = __esm({
+  "src/capabilities/documents/handlers/TextHandler.ts"() {
+    init_constants();
+    CODE_FENCE_FORMATS = {
+      json: "json",
+      xml: "xml",
+      yaml: "yaml",
+      yml: "yaml"
+    };
+    TextHandler = class {
+      name = "TextHandler";
+      supportedFormats = ["txt", "md", "json", "xml", "yaml", "yml"];
+      async handle(buffer, filename, format, _options) {
+        const text = buffer.toString("utf-8");
+        const fenceLanguage = CODE_FENCE_FORMATS[format];
+        const content = fenceLanguage ? `\`\`\`${fenceLanguage}
+${text}
+\`\`\`` : text;
+        const sizeBytes = Buffer.byteLength(content, "utf-8");
+        return [
+          {
+            type: "text",
+            content,
+            metadata: {
+              sourceFilename: filename,
+              format,
+              index: 0,
+              sizeBytes,
+              estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+            }
+          }
+        ];
       }
-      pathext = pathext.split(";");
-      if (pathext.indexOf("") !== -1) {
-        return true;
-      }
-      for (var i = 0; i < pathext.length; i++) {
-        var p = pathext[i].toLowerCase();
-        if (p && path6.substr(-p.length).toLowerCase() === p) {
-          return true;
+    };
+  }
+});
+
+// src/capabilities/documents/handlers/ImageHandler.ts
+var MIME_TYPES, ImageHandler;
+var init_ImageHandler = __esm({
+  "src/capabilities/documents/handlers/ImageHandler.ts"() {
+    init_constants();
+    MIME_TYPES = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      svg: "image/svg+xml"
+    };
+    ImageHandler = class {
+      name = "ImageHandler";
+      supportedFormats = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+      async handle(buffer, filename, format, _options) {
+        const pieces = [];
+        const mimeType = MIME_TYPES[format] || "application/octet-stream";
+        pieces.push({
+          type: "image",
+          base64: buffer.toString("base64"),
+          mimeType,
+          metadata: {
+            sourceFilename: filename,
+            format,
+            index: 0,
+            sizeBytes: buffer.length,
+            estimatedTokens: DOCUMENT_DEFAULTS.IMAGE_TOKENS_AUTO,
+            label: filename
+          }
+        });
+        if (format === "svg") {
+          const svgText = buffer.toString("utf-8");
+          const sizeBytes = Buffer.byteLength(svgText, "utf-8");
+          pieces.push({
+            type: "text",
+            content: `\`\`\`svg
+${svgText}
+\`\`\``,
+            metadata: {
+              sourceFilename: filename,
+              format,
+              index: 1,
+              section: "SVG source",
+              sizeBytes,
+              estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+            }
+          });
         }
+        return pieces;
       }
-      return false;
-    }
-    function checkStat(stat6, path6, options) {
-      if (!stat6.isSymbolicLink() && !stat6.isFile()) {
-        return false;
-      }
-      return checkPathExt(path6, options);
-    }
-    function isexe(path6, options, cb) {
-      fs17.stat(path6, function(er, stat6) {
-        cb(er, er ? false : checkStat(stat6, path6, options));
-      });
-    }
-    function sync(path6, options) {
-      return checkStat(fs17.statSync(path6), path6, options);
-    }
+    };
   }
 });
-
-// node_modules/isexe/mode.js
-var require_mode = __commonJS({
-  "node_modules/isexe/mode.js"(exports$1, module) {
-    module.exports = isexe;
-    isexe.sync = sync;
-    var fs17 = __require("fs");
-    function isexe(path6, options, cb) {
-      fs17.stat(path6, function(er, stat6) {
-        cb(er, er ? false : checkStat(stat6, options));
-      });
-    }
-    function sync(path6, options) {
-      return checkStat(fs17.statSync(path6), options);
-    }
-    function checkStat(stat6, options) {
-      return stat6.isFile() && checkMode(stat6, options);
-    }
-    function checkMode(stat6, options) {
-      var mod = stat6.mode;
-      var uid = stat6.uid;
-      var gid = stat6.gid;
-      var myUid = options.uid !== void 0 ? options.uid : process.getuid && process.getuid();
-      var myGid = options.gid !== void 0 ? options.gid : process.getgid && process.getgid();
-      var u = parseInt("100", 8);
-      var g = parseInt("010", 8);
-      var o = parseInt("001", 8);
-      var ug = u | g;
-      var ret = mod & o || mod & g && gid === myGid || mod & u && uid === myUid || mod & ug && myUid === 0;
-      return ret;
-    }
+async function getJSDOM() {
+  if (!JSDOM) {
+    const jsdom = await import('jsdom');
+    JSDOM = jsdom.JSDOM;
   }
-});
-
-// node_modules/isexe/index.js
-var require_isexe = __commonJS({
-  "node_modules/isexe/index.js"(exports$1, module) {
-    __require("fs");
-    var core;
-    if (process.platform === "win32" || global.TESTING_WINDOWS) {
-      core = require_windows();
+  return JSDOM;
+}
+async function htmlToMarkdown(html, url2, maxLength = 5e4) {
+  const JSDOMClass = await getJSDOM();
+  const dom = new JSDOMClass(html, { url: url2 });
+  const document = dom.window.document;
+  let title = document.title || "";
+  let byline;
+  let excerpt;
+  let contentHtml = html;
+  let wasReadabilityUsed = false;
+  try {
+    const clonedDoc = document.cloneNode(true);
+    const reader = new Readability(clonedDoc);
+    const article = reader.parse();
+    if (article && article.content && article.content.length > 100) {
+      contentHtml = article.content;
+      title = article.title || title;
+      byline = article.byline || void 0;
+      excerpt = article.excerpt || void 0;
+      wasReadabilityUsed = true;
+    }
+  } catch {
+  }
+  const turndown = new TurndownService({
+    headingStyle: "atx",
+    codeBlockStyle: "fenced",
+    bulletListMarker: "-",
+    emDelimiter: "_"
+  });
+  turndown.remove(["script", "style", "nav", "footer", "aside", "iframe", "noscript"]);
+  turndown.addRule("pre", {
+    filter: ["pre"],
+    replacement: (content, node) => {
+      const element = node;
+      const code = element.querySelector?.("code");
+      const lang = code?.className?.match(/language-(\w+)/)?.[1] || "";
+      const text = code?.textContent || content;
+      return `
+\`\`\`${lang}
+${text}
+\`\`\`
+`;
+    }
+  });
+  let markdown = turndown.turndown(contentHtml);
+  markdown = markdown.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "").replace(/[ \t]+$/gm, "");
+  let wasTruncated = false;
+  if (markdown.length > maxLength) {
+    const truncateAt = markdown.lastIndexOf("\n\n", maxLength);
+    if (truncateAt > maxLength * 0.5) {
+      markdown = markdown.slice(0, truncateAt) + "\n\n...[content truncated]";
     } else {
-      core = require_mode();
+      markdown = markdown.slice(0, maxLength) + "...[truncated]";
     }
-    module.exports = isexe;
-    isexe.sync = sync;
-    function isexe(path6, options, cb) {
-      if (typeof options === "function") {
-        cb = options;
-        options = {};
+    wasTruncated = true;
+  }
+  return {
+    markdown,
+    title,
+    byline,
+    excerpt,
+    wasReadabilityUsed,
+    wasTruncated
+  };
+}
+var JSDOM;
+var init_htmlToMarkdown = __esm({
+  "src/tools/web/htmlToMarkdown.ts"() {
+    JSDOM = null;
+  }
+});
+
+// src/capabilities/documents/handlers/HTMLHandler.ts
+var HTMLHandler;
+var init_HTMLHandler = __esm({
+  "src/capabilities/documents/handlers/HTMLHandler.ts"() {
+    init_constants();
+    init_htmlToMarkdown();
+    HTMLHandler = class {
+      name = "HTMLHandler";
+      supportedFormats = ["html"];
+      async handle(buffer, filename, format, options) {
+        const html = buffer.toString("utf-8");
+        const maxLength = options.formatOptions?.html?.maxLength ?? DOCUMENT_DEFAULTS.MAX_HTML_LENGTH;
+        const result = await htmlToMarkdown(html, `file://${filename}`, maxLength);
+        const content = result.markdown;
+        const sizeBytes = Buffer.byteLength(content, "utf-8");
+        return [
+          {
+            type: "text",
+            content,
+            metadata: {
+              sourceFilename: filename,
+              format,
+              index: 0,
+              sizeBytes,
+              estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN),
+              label: result.title || void 0
+            }
+          }
+        ];
       }
-      if (!cb) {
-        if (typeof Promise !== "function") {
-          throw new TypeError("callback not provided");
+    };
+  }
+});
+
+// src/capabilities/documents/handlers/OfficeHandler.ts
+async function getParseOffice() {
+  if (!parseOffice) {
+    const mod = await import('officeparser');
+    parseOffice = mod.parseOffice;
+  }
+  return parseOffice;
+}
+var parseOffice, OfficeHandler;
+var init_OfficeHandler = __esm({
+  "src/capabilities/documents/handlers/OfficeHandler.ts"() {
+    init_constants();
+    parseOffice = null;
+    OfficeHandler = class {
+      name = "OfficeHandler";
+      supportedFormats = ["docx", "pptx", "odt", "odp", "ods", "rtf"];
+      async handle(buffer, filename, format, options) {
+        const parse = await getParseOffice();
+        const extractImages = options.extractImages !== false;
+        const includeSpeakerNotes = options.formatOptions?.office?.includeSpeakerNotes !== false;
+        const ast = await parse(buffer, {
+          extractAttachments: extractImages,
+          ignoreNotes: !includeSpeakerNotes
+        });
+        const pieces = [];
+        let pieceIndex = 0;
+        const content = ast.content || [];
+        const markdown = this.astToMarkdown(content, format);
+        if (format === "pptx" || format === "odp") {
+          const slides = this.splitBySlides(content);
+          for (let i = 0; i < slides.length; i++) {
+            const slideContent = this.astToMarkdown(slides[i] ?? [], format);
+            if (slideContent.trim()) {
+              const sizeBytes = Buffer.byteLength(slideContent, "utf-8");
+              pieces.push({
+                type: "text",
+                content: slideContent,
+                metadata: {
+                  sourceFilename: filename,
+                  format,
+                  index: pieceIndex++,
+                  section: `Slide ${i + 1}`,
+                  sizeBytes,
+                  estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+                }
+              });
+            }
+          }
+        } else {
+          if (markdown.trim()) {
+            const sizeBytes = Buffer.byteLength(markdown, "utf-8");
+            pieces.push({
+              type: "text",
+              content: markdown,
+              metadata: {
+                sourceFilename: filename,
+                format,
+                index: pieceIndex++,
+                sizeBytes,
+                estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+              }
+            });
+          }
         }
-        return new Promise(function(resolve4, reject) {
-          isexe(path6, options || {}, function(er, is) {
-            if (er) {
-              reject(er);
-            } else {
-              resolve4(is);
+        if (extractImages && ast.attachments?.length > 0) {
+          for (const attachment of ast.attachments) {
+            if (attachment.type === "image" && attachment.data) {
+              const imageData = attachment.data;
+              const sizeBytes = Math.ceil(imageData.length * 0.75);
+              pieces.push({
+                type: "image",
+                base64: imageData,
+                mimeType: attachment.mimeType || "image/png",
+                metadata: {
+                  sourceFilename: filename,
+                  format,
+                  index: pieceIndex++,
+                  sizeBytes,
+                  estimatedTokens: DOCUMENT_DEFAULTS.IMAGE_TOKENS_AUTO,
+                  label: attachment.altText || attachment.name || void 0
+                }
+              });
+            }
+          }
+        }
+        return pieces;
+      }
+      /**
+       * Split AST content into slide groups
+       */
+      splitBySlides(content) {
+        const slides = [];
+        let currentSlide = [];
+        for (const node of content) {
+          if (node.type === "slide") {
+            if (currentSlide.length > 0) {
+              slides.push(currentSlide);
+            }
+            currentSlide = [node];
+          } else {
+            currentSlide.push(node);
+          }
+        }
+        if (currentSlide.length > 0) {
+          slides.push(currentSlide);
+        }
+        if (slides.length === 0 && content.length > 0) {
+          slides.push(content);
+        }
+        return slides;
+      }
+      /**
+       * Convert AST nodes to markdown
+       */
+      astToMarkdown(nodes, format) {
+        const parts = [];
+        for (const node of nodes) {
+          const md = this.nodeToMarkdown(node, format);
+          if (md) parts.push(md);
+        }
+        return parts.join("\n\n");
+      }
+      /**
+       * Convert a single AST node to markdown
+       */
+      nodeToMarkdown(node, format) {
+        if (!node) return "";
+        switch (node.type) {
+          case "heading": {
+            const level = node.metadata?.level || 1;
+            const prefix = "#".repeat(Math.min(level, 6));
+            return `${prefix} ${node.text || ""}`;
+          }
+          case "paragraph":
+            return this.formatText(node);
+          case "text":
+            return this.formatText(node);
+          case "list": {
+            const items = node.children || [];
+            return items.map((item, i) => {
+              const indent = "  ".repeat(node.metadata?.indentation || 0);
+              const prefix = node.metadata?.listType === "ordered" ? `${i + 1}.` : "-";
+              return `${indent}${prefix} ${item.text || this.getNodeText(item)}`;
+            }).join("\n");
+          }
+          case "table": {
+            return this.tableToMarkdown(node);
+          }
+          case "slide": {
+            const slideNum = node.metadata?.slideNumber || "";
+            const childContent = node.children ? node.children.map((c) => this.nodeToMarkdown(c, format)).filter(Boolean).join("\n\n") : node.text || "";
+            return slideNum ? `### Slide ${slideNum}
+
+${childContent}` : childContent;
+          }
+          case "note":
+            return `> **Note:** ${node.text || this.getNodeText(node)}`;
+          case "sheet": {
+            const sheetName = node.metadata?.sheetName || "Sheet";
+            const childContent = node.children ? node.children.map((c) => this.nodeToMarkdown(c, format)).filter(Boolean).join("\n") : "";
+            return `## Sheet: ${sheetName}
+
+${childContent}`;
+          }
+          case "page": {
+            const pageNum = node.metadata?.pageNumber || "";
+            const childContent = node.children ? node.children.map((c) => this.nodeToMarkdown(c, format)).filter(Boolean).join("\n\n") : node.text || "";
+            return pageNum ? `--- Page ${pageNum} ---
+
+${childContent}` : childContent;
+          }
+          case "image":
+            return `[Image: ${node.metadata?.altText || node.metadata?.attachmentName || "embedded image"}]`;
+          case "chart":
+            return `[Chart: ${node.metadata?.attachmentName || "embedded chart"}]`;
+          default:
+            return node.text || this.getNodeText(node);
+        }
+      }
+      /**
+       * Get text from a node recursively
+       */
+      getNodeText(node) {
+        if (node.text) return node.text;
+        if (node.children) {
+          return node.children.map((c) => this.getNodeText(c)).join("");
+        }
+        return "";
+      }
+      /**
+       * Format text with markdown formatting
+       */
+      formatText(node) {
+        if (!node.children || node.children.length === 0) {
+          return node.text || "";
+        }
+        return node.children.map((child) => {
+          let text = child.text || this.getNodeText(child);
+          if (!text) return "";
+          const fmt = child.formatting;
+          if (fmt) {
+            if (fmt.bold) text = `**${text}**`;
+            if (fmt.italic) text = `_${text}_`;
+            if (fmt.strikethrough) text = `~~${text}~~`;
+          }
+          if (child.metadata?.link && child.metadata?.linkType === "external") {
+            text = `[${text}](${child.metadata.link})`;
+          }
+          return text;
+        }).join("");
+      }
+      /**
+       * Convert table node to markdown table
+       */
+      tableToMarkdown(node) {
+        if (!node.children || node.children.length === 0) return "";
+        const rows = [];
+        for (const row of node.children) {
+          if (row.type === "row" && row.children) {
+            rows.push(row.children.map((cell) => {
+              const text = cell.text || this.getNodeText(cell);
+              return text.replace(/\|/g, "\\|").trim();
+            }));
+          }
+        }
+        if (rows.length === 0) return "";
+        const maxCols = Math.max(...rows.map((r) => r.length));
+        const normalizedRows = rows.map((r) => {
+          while (r.length < maxCols) r.push("");
+          return r;
+        });
+        const firstRow = normalizedRows[0] ?? [];
+        const header = `| ${firstRow.join(" | ")} |`;
+        const separator = `| ${firstRow.map(() => "---").join(" | ")} |`;
+        const body = normalizedRows.slice(1).map((r) => `| ${r.join(" | ")} |`).join("\n");
+        return body ? `${header}
+${separator}
+${body}` : `${header}
+${separator}`;
+      }
+    };
+  }
+});
+
+// src/capabilities/documents/handlers/ExcelHandler.ts
+async function getExcelJS() {
+  if (!ExcelJS) {
+    ExcelJS = await import('exceljs');
+  }
+  return ExcelJS;
+}
+var ExcelJS, ExcelHandler;
+var init_ExcelHandler = __esm({
+  "src/capabilities/documents/handlers/ExcelHandler.ts"() {
+    init_constants();
+    ExcelJS = null;
+    ExcelHandler = class {
+      name = "ExcelHandler";
+      supportedFormats = ["xlsx", "csv"];
+      async handle(buffer, filename, format, options) {
+        const exceljs = await getExcelJS();
+        const Workbook = exceljs.Workbook || exceljs.default?.Workbook;
+        const excelOpts = {
+          maxRows: options.formatOptions?.excel?.maxRows ?? DOCUMENT_DEFAULTS.MAX_EXCEL_ROWS,
+          maxColumns: options.formatOptions?.excel?.maxColumns ?? DOCUMENT_DEFAULTS.MAX_EXCEL_COLUMNS,
+          tableFormat: options.formatOptions?.excel?.tableFormat ?? "markdown",
+          includeFormulas: options.formatOptions?.excel?.includeFormulas ?? false
+        };
+        const workbook = new Workbook();
+        if (format === "csv") {
+          await workbook.csv.read(
+            new (await import('stream')).Readable({
+              read() {
+                this.push(buffer);
+                this.push(null);
+              }
+            })
+          );
+        } else {
+          await workbook.xlsx.load(buffer);
+        }
+        const pieces = [];
+        let pieceIndex = 0;
+        const requestedSheets = options.pages;
+        workbook.eachSheet((worksheet, sheetId) => {
+          if (requestedSheets && requestedSheets.length > 0) {
+            const isRequested = requestedSheets.some((p) => {
+              if (typeof p === "number") return sheetId === p;
+              return worksheet.name === p || String(sheetId) === p;
+            });
+            if (!isRequested) return;
+          }
+          const content = this.sheetToContent(worksheet, excelOpts);
+          if (!content.trim()) return;
+          const sheetContent = format === "csv" ? content : `## Sheet: ${worksheet.name}
+
+${content}`;
+          const sizeBytes = Buffer.byteLength(sheetContent, "utf-8");
+          pieces.push({
+            type: "text",
+            content: sheetContent,
+            metadata: {
+              sourceFilename: filename,
+              format,
+              index: pieceIndex++,
+              section: format === "csv" ? void 0 : worksheet.name,
+              sizeBytes,
+              estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
             }
           });
         });
+        return pieces;
       }
-      core(path6, options || {}, function(er, is) {
-        if (er) {
-          if (er.code === "EACCES" || options && options.ignoreErrors) {
-            er = null;
-            is = false;
-          }
-        }
-        cb(er, is);
-      });
-    }
-    function sync(path6, options) {
-      try {
-        return core.sync(path6, options || {});
-      } catch (er) {
-        if (options && options.ignoreErrors || er.code === "EACCES") {
-          return false;
-        } else {
-          throw er;
+      /**
+       * Convert a worksheet to the configured format
+       */
+      sheetToContent(worksheet, opts) {
+        switch (opts.tableFormat) {
+          case "csv":
+            return this.sheetToCSV(worksheet, opts);
+          case "json":
+            return this.sheetToJSON(worksheet, opts);
+          default:
+            return this.sheetToMarkdownTable(worksheet, opts);
         }
       }
-    }
-  }
-});
-
-// node_modules/which/which.js
-var require_which = __commonJS({
-  "node_modules/which/which.js"(exports$1, module) {
-    var isWindows = process.platform === "win32" || process.env.OSTYPE === "cygwin" || process.env.OSTYPE === "msys";
-    var path6 = __require("path");
-    var COLON = isWindows ? ";" : ":";
-    var isexe = require_isexe();
-    var getNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: "ENOENT" });
-    var getPathInfo = (cmd, opt) => {
-      const colon = opt.colon || COLON;
-      const pathEnv = cmd.match(/\//) || isWindows && cmd.match(/\\/) ? [""] : [
-        // windows always checks the cwd first
-        ...isWindows ? [process.cwd()] : [],
-        ...(opt.path || process.env.PATH || /* istanbul ignore next: very unusual */
-        "").split(colon)
-      ];
-      const pathExtExe = isWindows ? opt.pathExt || process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM" : "";
-      const pathExt = isWindows ? pathExtExe.split(colon) : [""];
-      if (isWindows) {
-        if (cmd.indexOf(".") !== -1 && pathExt[0] !== "")
-          pathExt.unshift("");
-      }
-      return {
-        pathEnv,
-        pathExt,
-        pathExtExe
-      };
-    };
-    var which = (cmd, opt, cb) => {
-      if (typeof opt === "function") {
-        cb = opt;
-        opt = {};
-      }
-      if (!opt)
-        opt = {};
-      const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
-      const found = [];
-      const step = (i) => new Promise((resolve4, reject) => {
-        if (i === pathEnv.length)
-          return opt.all && found.length ? resolve4(found) : reject(getNotFoundError(cmd));
-        const ppRaw = pathEnv[i];
-        const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path6.join(pathPart, cmd);
-        const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
-        resolve4(subStep(p, i, 0));
-      });
-      const subStep = (p, i, ii) => new Promise((resolve4, reject) => {
-        if (ii === pathExt.length)
-          return resolve4(step(i + 1));
-        const ext = pathExt[ii];
-        isexe(p + ext, { pathExt: pathExtExe }, (er, is) => {
-          if (!er && is) {
-            if (opt.all)
-              found.push(p + ext);
-            else
-              return resolve4(p + ext);
-          }
-          return resolve4(subStep(p, i, ii + 1));
+      /**
+       * Convert worksheet to markdown table
+       */
+      sheetToMarkdownTable(worksheet, opts) {
+        const rows = this.extractRows(worksheet, opts);
+        if (rows.length === 0) return "";
+        const maxCols = Math.min(
+          Math.max(...rows.map((r) => r.length)),
+          opts.maxColumns
+        );
+        const normalizedRows = rows.map((r) => {
+          const truncated = r.slice(0, maxCols);
+          while (truncated.length < maxCols) truncated.push("");
+          return truncated;
         });
-      });
-      return cb ? step(0).then((res) => cb(null, res), cb) : step(0);
-    };
-    var whichSync = (cmd, opt) => {
-      opt = opt || {};
-      const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
-      const found = [];
-      for (let i = 0; i < pathEnv.length; i++) {
-        const ppRaw = pathEnv[i];
-        const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path6.join(pathPart, cmd);
-        const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
-        for (let j = 0; j < pathExt.length; j++) {
-          const cur = p + pathExt[j];
-          try {
-            const is = isexe.sync(cur, { pathExt: pathExtExe });
-            if (is) {
-              if (opt.all)
-                found.push(cur);
-              else
-                return cur;
+        const firstRow = normalizedRows[0] ?? [];
+        const header = `| ${firstRow.join(" | ")} |`;
+        const separator = `| ${firstRow.map(() => "---").join(" | ")} |`;
+        const body = normalizedRows.slice(1).map((r) => `| ${r.join(" | ")} |`).join("\n");
+        let result = `${header}
+${separator}`;
+        if (body) result += `
+${body}`;
+        if (worksheet.rowCount > opts.maxRows) {
+          result += `
+
+_...truncated (${worksheet.rowCount - opts.maxRows} more rows)_`;
+        }
+        return result;
+      }
+      /**
+       * Convert worksheet to CSV
+       */
+      sheetToCSV(worksheet, opts) {
+        const rows = this.extractRows(worksheet, opts);
+        return rows.map(
+          (row) => row.slice(0, opts.maxColumns).map((cell) => {
+            if (cell.includes(",") || cell.includes('"') || cell.includes("\n")) {
+              return `"${cell.replace(/"/g, '""')}"`;
             }
-          } catch (ex) {
-          }
-        }
+            return cell;
+          }).join(",")
+        ).join("\n");
       }
-      if (opt.all && found.length)
-        return found;
-      if (opt.nothrow)
-        return null;
-      throw getNotFoundError(cmd);
-    };
-    module.exports = which;
-    which.sync = whichSync;
-  }
-});
-
-// node_modules/path-key/index.js
-var require_path_key = __commonJS({
-  "node_modules/path-key/index.js"(exports$1, module) {
-    var pathKey = (options = {}) => {
-      const environment = options.env || process.env;
-      const platform2 = options.platform || process.platform;
-      if (platform2 !== "win32") {
-        return "PATH";
-      }
-      return Object.keys(environment).reverse().find((key) => key.toUpperCase() === "PATH") || "Path";
-    };
-    module.exports = pathKey;
-    module.exports.default = pathKey;
-  }
-});
-
-// node_modules/cross-spawn/lib/util/resolveCommand.js
-var require_resolveCommand = __commonJS({
-  "node_modules/cross-spawn/lib/util/resolveCommand.js"(exports$1, module) {
-    var path6 = __require("path");
-    var which = require_which();
-    var getPathKey = require_path_key();
-    function resolveCommandAttempt(parsed, withoutPathExt) {
-      const env = parsed.options.env || process.env;
-      const cwd = process.cwd();
-      const hasCustomCwd = parsed.options.cwd != null;
-      const shouldSwitchCwd = hasCustomCwd && process.chdir !== void 0 && !process.chdir.disabled;
-      if (shouldSwitchCwd) {
-        try {
-          process.chdir(parsed.options.cwd);
-        } catch (err) {
-        }
-      }
-      let resolved;
-      try {
-        resolved = which.sync(parsed.command, {
-          path: env[getPathKey({ env })],
-          pathExt: withoutPathExt ? path6.delimiter : void 0
+      /**
+       * Convert worksheet to JSON
+       */
+      sheetToJSON(worksheet, opts) {
+        const rows = this.extractRows(worksheet, opts);
+        if (rows.length < 2) return "[]";
+        const headers = (rows[0] ?? []).slice(0, opts.maxColumns);
+        const data = rows.slice(1).map((row) => {
+          const obj = {};
+          headers.forEach((header, i) => {
+            if (header && i < row.length) {
+              obj[header] = row[i] ?? "";
+            }
+          });
+          return obj;
         });
-      } catch (e) {
-      } finally {
-        if (shouldSwitchCwd) {
-          process.chdir(cwd);
+        return "```json\n" + JSON.stringify(data, null, 2) + "\n```";
+      }
+      /**
+       * Extract rows from worksheet as string arrays
+       */
+      extractRows(worksheet, opts) {
+        const rows = [];
+        let rowCount = 0;
+        worksheet.eachRow({ includeEmpty: false }, (row) => {
+          if (rowCount >= opts.maxRows) return;
+          rowCount++;
+          const cells = [];
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            if (colNumber > opts.maxColumns) return;
+            let value = "";
+            if (opts.includeFormulas && cell.formula) {
+              value = `${this.getCellValue(cell)} (=${cell.formula})`;
+            } else {
+              value = this.getCellValue(cell);
+            }
+            while (cells.length < colNumber - 1) cells.push("");
+            cells.push(value);
+          });
+          rows.push(cells);
+        });
+        return rows;
+      }
+      /**
+       * Get cell value as string
+       */
+      getCellValue(cell) {
+        if (cell.value === null || cell.value === void 0) return "";
+        if (typeof cell.value === "object") {
+          if (cell.value.richText) {
+            return cell.value.richText.map((rt) => rt.text || "").join("");
+          }
+          if (cell.value.hyperlink) {
+            return cell.value.text || cell.value.hyperlink;
+          }
+          if ("result" in cell.value) {
+            return String(cell.value.result ?? "");
+          }
+          if (cell.value instanceof Date) {
+            return cell.value.toISOString().split("T")[0];
+          }
+          return String(cell.value);
         }
+        return String(cell.value).replace(/\|/g, "\\|");
       }
-      if (resolved) {
-        resolved = path6.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
-      }
-      return resolved;
-    }
-    function resolveCommand(parsed) {
-      return resolveCommandAttempt(parsed) || resolveCommandAttempt(parsed, true);
-    }
-    module.exports = resolveCommand;
-  }
-});
-
-// node_modules/cross-spawn/lib/util/escape.js
-var require_escape = __commonJS({
-  "node_modules/cross-spawn/lib/util/escape.js"(exports$1, module) {
-    var metaCharsRegExp = /([()\][%!^"`<>&|;, *?])/g;
-    function escapeCommand(arg) {
-      arg = arg.replace(metaCharsRegExp, "^$1");
-      return arg;
-    }
-    function escapeArgument(arg, doubleEscapeMetaChars) {
-      arg = `${arg}`;
-      arg = arg.replace(/(?=(\\+?)?)\1"/g, '$1$1\\"');
-      arg = arg.replace(/(?=(\\+?)?)\1$/, "$1$1");
-      arg = `"${arg}"`;
-      arg = arg.replace(metaCharsRegExp, "^$1");
-      if (doubleEscapeMetaChars) {
-        arg = arg.replace(metaCharsRegExp, "^$1");
-      }
-      return arg;
-    }
-    module.exports.command = escapeCommand;
-    module.exports.argument = escapeArgument;
-  }
-});
-
-// node_modules/shebang-regex/index.js
-var require_shebang_regex = __commonJS({
-  "node_modules/shebang-regex/index.js"(exports$1, module) {
-    module.exports = /^#!(.*)/;
-  }
-});
-
-// node_modules/shebang-command/index.js
-var require_shebang_command = __commonJS({
-  "node_modules/shebang-command/index.js"(exports$1, module) {
-    var shebangRegex = require_shebang_regex();
-    module.exports = (string3 = "") => {
-      const match = string3.match(shebangRegex);
-      if (!match) {
-        return null;
-      }
-      const [path6, argument] = match[0].replace(/#! ?/, "").split(" ");
-      const binary = path6.split("/").pop();
-      if (binary === "env") {
-        return argument;
-      }
-      return argument ? `${binary} ${argument}` : binary;
     };
   }
 });
 
-// node_modules/cross-spawn/lib/util/readShebang.js
-var require_readShebang = __commonJS({
-  "node_modules/cross-spawn/lib/util/readShebang.js"(exports$1, module) {
-    var fs17 = __require("fs");
-    var shebangCommand = require_shebang_command();
-    function readShebang(command) {
-      const size = 150;
-      const buffer = Buffer.alloc(size);
-      let fd;
-      try {
-        fd = fs17.openSync(command, "r");
-        fs17.readSync(fd, buffer, 0, size, 0);
-        fs17.closeSync(fd);
-      } catch (e) {
-      }
-      return shebangCommand(buffer.toString());
-    }
-    module.exports = readShebang;
+// src/capabilities/documents/handlers/PDFHandler.ts
+async function getUnpdf() {
+  if (!unpdfModule) {
+    const mod = await import('unpdf');
+    unpdfModule = {
+      extractText: mod.extractText,
+      extractImages: mod.extractImages,
+      getMeta: mod.getMeta
+    };
   }
-});
-
-// node_modules/cross-spawn/lib/parse.js
-var require_parse = __commonJS({
-  "node_modules/cross-spawn/lib/parse.js"(exports$1, module) {
-    var path6 = __require("path");
-    var resolveCommand = require_resolveCommand();
-    var escape2 = require_escape();
-    var readShebang = require_readShebang();
-    var isWin = process.platform === "win32";
-    var isExecutableRegExp = /\.(?:com|exe)$/i;
-    var isCmdShimRegExp = /node_modules[\\/].bin[\\/][^\\/]+\.cmd$/i;
-    function detectShebang(parsed) {
-      parsed.file = resolveCommand(parsed);
-      const shebang = parsed.file && readShebang(parsed.file);
-      if (shebang) {
-        parsed.args.unshift(parsed.file);
-        parsed.command = shebang;
-        return resolveCommand(parsed);
-      }
-      return parsed.file;
-    }
-    function parseNonShell(parsed) {
-      if (!isWin) {
-        return parsed;
-      }
-      const commandFile = detectShebang(parsed);
-      const needsShell = !isExecutableRegExp.test(commandFile);
-      if (parsed.options.forceShell || needsShell) {
-        const needsDoubleEscapeMetaChars = isCmdShimRegExp.test(commandFile);
-        parsed.command = path6.normalize(parsed.command);
-        parsed.command = escape2.command(parsed.command);
-        parsed.args = parsed.args.map((arg) => escape2.argument(arg, needsDoubleEscapeMetaChars));
-        const shellCommand = [parsed.command].concat(parsed.args).join(" ");
-        parsed.args = ["/d", "/s", "/c", `"${shellCommand}"`];
-        parsed.command = process.env.comspec || "cmd.exe";
-        parsed.options.windowsVerbatimArguments = true;
-      }
-      return parsed;
-    }
-    function parse(command, args, options) {
-      if (args && !Array.isArray(args)) {
-        options = args;
-        args = null;
-      }
-      args = args ? args.slice(0) : [];
-      options = Object.assign({}, options);
-      const parsed = {
-        command,
-        args,
-        options,
-        file: void 0,
-        original: {
-          command,
-          args
-        }
-      };
-      return options.shell ? parsed : parseNonShell(parsed);
-    }
-    module.exports = parse;
-  }
-});
-
-// node_modules/cross-spawn/lib/enoent.js
-var require_enoent = __commonJS({
-  "node_modules/cross-spawn/lib/enoent.js"(exports$1, module) {
-    var isWin = process.platform === "win32";
-    function notFoundError(original, syscall) {
-      return Object.assign(new Error(`${syscall} ${original.command} ENOENT`), {
-        code: "ENOENT",
-        errno: "ENOENT",
-        syscall: `${syscall} ${original.command}`,
-        path: original.command,
-        spawnargs: original.args
-      });
-    }
-    function hookChildProcess(cp, parsed) {
-      if (!isWin) {
-        return;
-      }
-      const originalEmit = cp.emit;
-      cp.emit = function(name, arg1) {
-        if (name === "exit") {
-          const err = verifyENOENT(arg1, parsed);
-          if (err) {
-            return originalEmit.call(cp, "error", err);
+  return unpdfModule;
+}
+var unpdfModule, PDFHandler;
+var init_PDFHandler = __esm({
+  "src/capabilities/documents/handlers/PDFHandler.ts"() {
+    init_constants();
+    unpdfModule = null;
+    PDFHandler = class {
+      name = "PDFHandler";
+      supportedFormats = ["pdf"];
+      async handle(buffer, filename, format, options) {
+        const unpdf = await getUnpdf();
+        const pieces = [];
+        let pieceIndex = 0;
+        let metadata = {};
+        const includeMetadata = options.formatOptions?.pdf?.includeMetadata !== false;
+        if (includeMetadata) {
+          try {
+            metadata = await unpdf.getMeta(buffer);
+          } catch {
           }
         }
-        return originalEmit.apply(cp, arguments);
-      };
-    }
-    function verifyENOENT(status, parsed) {
-      if (isWin && status === 1 && !parsed.file) {
-        return notFoundError(parsed.original, "spawn");
+        const textResult = await unpdf.extractText(buffer, { mergePages: false });
+        const pages = textResult?.pages || textResult?.text ? Array.isArray(textResult.text) ? textResult.text : [textResult.text] : [];
+        const requestedPages = options.pages;
+        const pageEntries = pages.map((text, i) => ({ text, pageNum: i + 1 }));
+        const filteredPages = requestedPages && requestedPages.length > 0 ? pageEntries.filter(
+          (p) => requestedPages.some((rp) => {
+            const num = typeof rp === "string" ? parseInt(rp, 10) : rp;
+            return num === p.pageNum;
+          })
+        ) : pageEntries;
+        if (includeMetadata && metadata?.info) {
+          const metaParts = [];
+          if (metadata.info.Title) metaParts.push(`**Title:** ${metadata.info.Title}`);
+          if (metadata.info.Author) metaParts.push(`**Author:** ${metadata.info.Author}`);
+          if (metadata.info.Subject) metaParts.push(`**Subject:** ${metadata.info.Subject}`);
+          if (metadata.info.Creator) metaParts.push(`**Creator:** ${metadata.info.Creator}`);
+          if (pages.length) metaParts.push(`**Pages:** ${pages.length}`);
+          if (metaParts.length > 0) {
+            const metaContent = metaParts.join("\n");
+            const sizeBytes = Buffer.byteLength(metaContent, "utf-8");
+            pieces.push({
+              type: "text",
+              content: metaContent,
+              metadata: {
+                sourceFilename: filename,
+                format,
+                index: pieceIndex++,
+                section: "Metadata",
+                sizeBytes,
+                estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+              }
+            });
+          }
+        }
+        for (const page of filteredPages) {
+          const text = page.text.trim();
+          if (!text) continue;
+          const sizeBytes = Buffer.byteLength(text, "utf-8");
+          pieces.push({
+            type: "text",
+            content: text,
+            metadata: {
+              sourceFilename: filename,
+              format,
+              index: pieceIndex++,
+              section: `Page ${page.pageNum}`,
+              sizeBytes,
+              estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+            }
+          });
+        }
+        if (options.extractImages !== false) {
+          try {
+            const imagesResult = await unpdf.extractImages(buffer, {});
+            const images = imagesResult?.images || [];
+            for (const img of images) {
+              if (!img.data) continue;
+              const base64 = typeof img.data === "string" ? img.data : Buffer.from(img.data).toString("base64");
+              const sizeBytes = Math.ceil(base64.length * 0.75);
+              pieces.push({
+                type: "image",
+                base64,
+                mimeType: img.mimeType || "image/png",
+                width: img.width,
+                height: img.height,
+                metadata: {
+                  sourceFilename: filename,
+                  format,
+                  index: pieceIndex++,
+                  sizeBytes,
+                  estimatedTokens: DOCUMENT_DEFAULTS.IMAGE_TOKENS_AUTO,
+                  label: img.name || void 0
+                }
+              });
+            }
+          } catch {
+          }
+        }
+        return pieces;
       }
-      return null;
-    }
-    function verifyENOENTSync(status, parsed) {
-      if (isWin && status === 1 && !parsed.file) {
-        return notFoundError(parsed.original, "spawnSync");
-      }
-      return null;
-    }
-    module.exports = {
-      hookChildProcess,
-      verifyENOENT,
-      verifyENOENTSync,
-      notFoundError
     };
   }
 });
 
-// node_modules/cross-spawn/index.js
-var require_cross_spawn = __commonJS({
-  "node_modules/cross-spawn/index.js"(exports$1, module) {
-    var cp = __require("child_process");
-    var parse = require_parse();
-    var enoent = require_enoent();
-    function spawn3(command, args, options) {
-      const parsed = parse(command, args, options);
-      const spawned = cp.spawn(parsed.command, parsed.args, parsed.options);
-      enoent.hookChildProcess(spawned, parsed);
-      return spawned;
+// src/capabilities/documents/handlers/index.ts
+var handlers_exports = {};
+__export(handlers_exports, {
+  ExcelHandler: () => ExcelHandler,
+  HTMLHandler: () => HTMLHandler,
+  ImageHandler: () => ImageHandler,
+  OfficeHandler: () => OfficeHandler,
+  PDFHandler: () => PDFHandler,
+  TextHandler: () => TextHandler,
+  getDefaultHandlers: () => getDefaultHandlers
+});
+function getDefaultHandlers() {
+  return /* @__PURE__ */ new Map([
+    ["text", new TextHandler()],
+    ["image", new ImageHandler()],
+    ["html", new HTMLHandler()],
+    ["office", new OfficeHandler()],
+    ["spreadsheet", new ExcelHandler()],
+    ["pdf", new PDFHandler()]
+  ]);
+}
+var init_handlers = __esm({
+  "src/capabilities/documents/handlers/index.ts"() {
+    init_TextHandler();
+    init_ImageHandler();
+    init_HTMLHandler();
+    init_OfficeHandler();
+    init_ExcelHandler();
+    init_PDFHandler();
+    init_TextHandler();
+    init_ImageHandler();
+    init_HTMLHandler();
+    init_OfficeHandler();
+    init_ExcelHandler();
+    init_PDFHandler();
+  }
+});
+
+// src/capabilities/documents/transformers/DefaultTransformers.ts
+function normalizeTable(table) {
+  const lines = table.trim().split("\n");
+  if (lines.length < 2) return table;
+  const rows = lines.map(
+    (line) => line.split("|").slice(1, -1).map((cell) => cell.trim())
+  );
+  const colCount = Math.max(...rows.map((r) => r.length));
+  const colWidths = new Array(colCount).fill(3);
+  for (const row of rows) {
+    for (let i = 0; i < row.length; i++) {
+      const cell = row[i] ?? "";
+      if (cell.match(/^[-:]+$/)) continue;
+      colWidths[i] = Math.max(colWidths[i] ?? 3, cell.length);
     }
-    function spawnSync(command, args, options) {
-      const parsed = parse(command, args, options);
-      const result = cp.spawnSync(parsed.command, parsed.args, parsed.options);
-      result.error = result.error || enoent.verifyENOENTSync(result.status, parsed);
-      return result;
+  }
+  const result = rows.map((row, rowIndex) => {
+    const cells = [];
+    for (let i = 0; i < colCount; i++) {
+      const cell = row[i] || "";
+      if (rowIndex === 1) {
+        cells.push("-".repeat(colWidths[i]));
+      } else {
+        cells.push(cell.padEnd(colWidths[i]));
+      }
     }
-    module.exports = spawn3;
-    module.exports.spawn = spawn3;
-    module.exports.sync = spawnSync;
-    module.exports._parse = parse;
-    module.exports._enoent = enoent;
+    return `| ${cells.join(" | ")} |`;
+  });
+  return result.join("\n");
+}
+function getDefaultTransformers() {
+  return [
+    documentHeaderTransformer,
+    tableFormattingTransformer,
+    truncationTransformer
+  ];
+}
+var documentHeaderTransformer, tableFormattingTransformer, truncationTransformer;
+var init_DefaultTransformers = __esm({
+  "src/capabilities/documents/transformers/DefaultTransformers.ts"() {
+    init_constants();
+    documentHeaderTransformer = {
+      name: "documentHeaderTransformer",
+      appliesTo: [],
+      // applies to all formats
+      priority: 10,
+      async transform(pieces, context) {
+        if (pieces.length === 0) return pieces;
+        const totalSize = pieces.reduce((sum, p) => sum + p.metadata.sizeBytes, 0);
+        const sizeStr = totalSize > 1024 * 1024 ? `${(totalSize / 1024 / 1024).toFixed(1)}MB` : `${(totalSize / 1024).toFixed(1)}KB`;
+        const header = `# Document: ${context.filename}
+_Format: ${context.format.toUpperCase()} | Size: ${sizeStr}_`;
+        const headerBytes = Buffer.byteLength(header, "utf-8");
+        const headerPiece = {
+          type: "text",
+          content: header,
+          metadata: {
+            sourceFilename: context.filename,
+            format: context.format,
+            index: -1,
+            // will be re-indexed
+            section: "Header",
+            sizeBytes: headerBytes,
+            estimatedTokens: Math.ceil(headerBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+          }
+        };
+        const result = [headerPiece, ...pieces];
+        result.forEach((p, i) => {
+          p.metadata.index = i;
+        });
+        return result;
+      }
+    };
+    tableFormattingTransformer = {
+      name: "tableFormattingTransformer",
+      appliesTo: ["xlsx", "csv"],
+      priority: 50,
+      async transform(pieces, _context) {
+        return pieces.map((piece) => {
+          if (piece.type !== "text") return piece;
+          let content = piece.content;
+          content = content.replace(
+            /(\|[^\n]+\|\n\|[\s\-:|]+\|\n(?:\|[^\n]+\|\n?)*)/g,
+            (table) => normalizeTable(table)
+          );
+          if (content === piece.content) return piece;
+          const sizeBytes = Buffer.byteLength(content, "utf-8");
+          return {
+            ...piece,
+            content,
+            metadata: {
+              ...piece.metadata,
+              sizeBytes,
+              estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+            }
+          };
+        });
+      }
+    };
+    truncationTransformer = {
+      name: "truncationTransformer",
+      appliesTo: [],
+      // applies to all formats
+      priority: 1e3,
+      // runs last
+      async transform(pieces, context) {
+        const maxTokens = context.options.maxTokens ?? DOCUMENT_DEFAULTS.MAX_OUTPUT_TOKENS;
+        const maxBytes = context.options.maxOutputBytes ?? DOCUMENT_DEFAULTS.MAX_OUTPUT_BYTES;
+        let totalTokens = 0;
+        let totalBytes = 0;
+        const result = [];
+        for (const piece of pieces) {
+          totalTokens += piece.metadata.estimatedTokens;
+          totalBytes += piece.metadata.sizeBytes;
+          if (totalTokens > maxTokens || totalBytes > maxBytes) {
+            if (piece.type === "text") {
+              const remainingTokens = maxTokens - (totalTokens - piece.metadata.estimatedTokens);
+              const remainingChars = remainingTokens * DOCUMENT_DEFAULTS.CHARS_PER_TOKEN;
+              if (remainingChars > 100) {
+                const content = piece.content;
+                const truncateAt = content.lastIndexOf("\n\n", remainingChars);
+                const cutPoint = truncateAt > remainingChars * 0.3 ? truncateAt : remainingChars;
+                const truncated = content.slice(0, cutPoint) + "\n\n..._[content truncated]_";
+                const sizeBytes = Buffer.byteLength(truncated, "utf-8");
+                result.push({
+                  ...piece,
+                  content: truncated,
+                  metadata: {
+                    ...piece.metadata,
+                    sizeBytes,
+                    estimatedTokens: Math.ceil(sizeBytes / DOCUMENT_DEFAULTS.CHARS_PER_TOKEN)
+                  }
+                });
+              }
+            }
+            break;
+          }
+          result.push(piece);
+        }
+        return result;
+      }
+    };
+  }
+});
+
+// src/capabilities/documents/transformers/index.ts
+var transformers_exports = {};
+__export(transformers_exports, {
+  documentHeaderTransformer: () => documentHeaderTransformer,
+  getDefaultTransformers: () => getDefaultTransformers,
+  tableFormattingTransformer: () => tableFormattingTransformer,
+  truncationTransformer: () => truncationTransformer
+});
+var init_transformers = __esm({
+  "src/capabilities/documents/transformers/index.ts"() {
+    init_DefaultTransformers();
   }
 });
 
@@ -15741,6 +16272,32 @@ var ParallelTasksError = class _ParallelTasksError extends AIError {
    */
   getFailedTaskIds() {
     return this.failures.map((f) => f.taskId);
+  }
+};
+var DocumentReadError = class _DocumentReadError extends AIError {
+  constructor(source, message, originalError) {
+    super(
+      `Failed to read document '${source}': ${message}`,
+      "DOCUMENT_READ_ERROR",
+      500,
+      originalError
+    );
+    this.source = source;
+    this.name = "DocumentReadError";
+    Object.setPrototypeOf(this, _DocumentReadError.prototype);
+  }
+};
+var UnsupportedFormatError = class _UnsupportedFormatError extends AIError {
+  constructor(format, family) {
+    super(
+      `Unsupported document format: '${format}'${family ? ` (family: ${family})` : ""}`,
+      "UNSUPPORTED_FORMAT",
+      400
+    );
+    this.format = format;
+    this.family = family;
+    this.name = "UnsupportedFormatError";
+    Object.setPrototypeOf(this, _UnsupportedFormatError.prototype);
   }
 };
 var ContextOverflowError = class _ContextOverflowError extends AIError {
@@ -18146,24 +18703,9 @@ var ContentType = /* @__PURE__ */ ((ContentType2) => {
   ContentType2["TOOL_RESULT"] = "tool_result";
   return ContentType2;
 })(ContentType || {});
-var AGENT_DEFAULTS = {
-  /** Default maximum iterations for agentic loop */
-  MAX_ITERATIONS: 50,
-  /** Default temperature for LLM calls */
-  DEFAULT_TEMPERATURE: 0.7,
-  /** Message injected when max iterations is reached */
-  MAX_ITERATIONS_MESSAGE: `You have reached the maximum iteration limit for this execution. Please:
-1. Summarize what you have accomplished so far
-2. Explain what remains to be done (if anything)
-3. Ask the user if they would like you to continue
-
-Do NOT use any tools in this response - just provide a clear summary and ask for confirmation to proceed.`
-};
-var TOKEN_ESTIMATION = {
-  /** Characters per token for mixed content */
-  MIXED_CHARS_PER_TOKEN: 3.5};
 
 // src/core/context-nextgen/BasePluginNextGen.ts
+init_constants();
 var simpleTokenEstimator = {
   estimateTokens(text) {
     if (!text || text.length === 0) return 0;
@@ -26315,6 +26857,7 @@ function assertNotDestroyed(obj, operation) {
 
 // src/core/Agent.ts
 init_Metrics();
+init_constants();
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
   hookManager;
@@ -27522,6 +28065,9 @@ var Agent = class _Agent extends BaseAgent {
     this._logger.debug("Agent destroyed");
   }
 };
+
+// src/core/index.ts
+init_constants();
 (class {
   static DEFAULT_PATHS = [
     "./oneringai.config.json",
@@ -30931,9 +31477,6 @@ var Client = class extends Protocol {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js
-var import_cross_spawn = __toESM(require_cross_spawn());
-
 // node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
 var ReadBuffer = class {
   append(chunk) {
@@ -31011,7 +31554,7 @@ var StdioClientTransport = class {
       throw new Error("StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.");
     }
     return new Promise((resolve4, reject) => {
-      this._process = (0, import_cross_spawn.default)(this._serverParams.command, this._serverParams.args ?? [], {
+      this._process = spawn$1(this._serverParams.command, this._serverParams.args ?? [], {
         // merge default env with server env because mcp server needs some env vars
         env: {
           ...getDefaultEnvironment(),
@@ -38560,6 +39103,494 @@ var ZenRowsProvider = class {
 };
 registerScrapeProvider("zenrows", ZenRowsProvider);
 
+// src/capabilities/documents/DocumentReader.ts
+init_constants();
+
+// src/capabilities/documents/FormatDetector.ts
+var EXTENSION_MAP = {
+  // Office
+  ".docx": { format: "docx", family: "office", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  ".pptx": { format: "pptx", family: "office", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
+  ".odt": { format: "odt", family: "office", mimeType: "application/vnd.oasis.opendocument.text" },
+  ".odp": { format: "odp", family: "office", mimeType: "application/vnd.oasis.opendocument.presentation" },
+  ".ods": { format: "ods", family: "office", mimeType: "application/vnd.oasis.opendocument.spreadsheet" },
+  ".rtf": { format: "rtf", family: "office", mimeType: "application/rtf" },
+  // Spreadsheet
+  ".xlsx": { format: "xlsx", family: "spreadsheet", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  ".csv": { format: "csv", family: "spreadsheet", mimeType: "text/csv" },
+  // PDF
+  ".pdf": { format: "pdf", family: "pdf", mimeType: "application/pdf" },
+  // HTML
+  ".html": { format: "html", family: "html", mimeType: "text/html" },
+  ".htm": { format: "html", family: "html", mimeType: "text/html" },
+  // Text
+  ".txt": { format: "txt", family: "text", mimeType: "text/plain" },
+  ".md": { format: "md", family: "text", mimeType: "text/markdown" },
+  ".json": { format: "json", family: "text", mimeType: "application/json" },
+  ".xml": { format: "xml", family: "text", mimeType: "application/xml" },
+  ".yaml": { format: "yaml", family: "text", mimeType: "application/yaml" },
+  ".yml": { format: "yml", family: "text", mimeType: "application/yaml" },
+  // Image
+  ".png": { format: "png", family: "image", mimeType: "image/png" },
+  ".jpg": { format: "jpg", family: "image", mimeType: "image/jpeg" },
+  ".jpeg": { format: "jpeg", family: "image", mimeType: "image/jpeg" },
+  ".gif": { format: "gif", family: "image", mimeType: "image/gif" },
+  ".webp": { format: "webp", family: "image", mimeType: "image/webp" },
+  ".svg": { format: "svg", family: "image", mimeType: "image/svg+xml" }
+};
+var MIME_MAP = {
+  "application/pdf": { format: "pdf", family: "pdf" },
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { format: "docx", family: "office" },
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": { format: "pptx", family: "office" },
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { format: "xlsx", family: "spreadsheet" },
+  "application/vnd.oasis.opendocument.text": { format: "odt", family: "office" },
+  "application/vnd.oasis.opendocument.presentation": { format: "odp", family: "office" },
+  "application/vnd.oasis.opendocument.spreadsheet": { format: "ods", family: "office" },
+  "application/rtf": { format: "rtf", family: "office" },
+  "text/rtf": { format: "rtf", family: "office" },
+  "text/csv": { format: "csv", family: "spreadsheet" },
+  "application/csv": { format: "csv", family: "spreadsheet" }
+};
+var BINARY_DOCUMENT_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".docx",
+  ".pptx",
+  ".xlsx",
+  ".odt",
+  ".odp",
+  ".ods",
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp"
+]);
+var FormatDetector = class _FormatDetector {
+  /**
+   * Detect format from filename and optional buffer
+   */
+  static detect(filename, _buffer) {
+    const ext = _FormatDetector.getExtension(filename);
+    const entry = EXTENSION_MAP[ext];
+    if (!entry) {
+      return {
+        format: "txt",
+        family: "text",
+        mimeType: "text/plain",
+        confidence: "low"
+      };
+    }
+    return {
+      format: entry.format,
+      family: entry.family,
+      mimeType: entry.mimeType,
+      confidence: "high"
+    };
+  }
+  /**
+   * Check if an extension is a supported document format
+   * Used by readFile to detect when to use DocumentReader
+   */
+  static isDocumentFormat(ext) {
+    const normalizedExt = ext.startsWith(".") ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
+    return normalizedExt in EXTENSION_MAP;
+  }
+  /**
+   * Check if an extension is a binary document format
+   * (i.e., cannot be read as UTF-8)
+   */
+  static isBinaryDocumentFormat(ext) {
+    const normalizedExt = ext.startsWith(".") ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
+    return BINARY_DOCUMENT_EXTENSIONS.has(normalizedExt);
+  }
+  /**
+   * Check if a Content-Type header indicates a document format
+   * Used by webFetch to detect downloadable documents
+   */
+  static isDocumentMimeType(contentType) {
+    const mime = (contentType.split(";")[0] ?? "").trim().toLowerCase();
+    return mime in MIME_MAP;
+  }
+  /**
+   * Detect format from Content-Type header
+   */
+  static detectFromMimeType(contentType) {
+    const mime = (contentType.split(";")[0] ?? "").trim().toLowerCase();
+    const entry = MIME_MAP[mime];
+    if (!entry) return null;
+    const extEntry = Object.values(EXTENSION_MAP).find(
+      (e) => e.format === entry.format
+    );
+    return {
+      format: entry.format,
+      family: entry.family,
+      mimeType: extEntry?.mimeType || mime,
+      confidence: "high"
+    };
+  }
+  /**
+   * Get all supported document extensions
+   */
+  static getSupportedExtensions() {
+    return Object.keys(EXTENSION_MAP);
+  }
+  /**
+   * Get the normalized extension from a filename
+   */
+  static getExtension(filename) {
+    const lastDot = filename.lastIndexOf(".");
+    if (lastDot === -1 || lastDot === filename.length - 1) return "";
+    return filename.slice(lastDot).toLowerCase();
+  }
+};
+
+// src/capabilities/documents/DocumentReader.ts
+var DocumentReader = class _DocumentReader {
+  handlers;
+  config;
+  constructor(config = {}) {
+    this.config = config;
+    this.handlers = config.handlers ? new Map(config.handlers) : /* @__PURE__ */ new Map();
+  }
+  /**
+   * Create a new DocumentReader instance
+   */
+  static create(config = {}) {
+    const reader = new _DocumentReader(config);
+    reader.registerDefaultHandlers();
+    return reader;
+  }
+  /**
+   * Register all default format handlers (lazy-loaded)
+   */
+  registerDefaultHandlers() {
+  }
+  /**
+   * Register a custom format handler
+   */
+  registerHandler(family, handler) {
+    this.handlers.set(family, handler);
+  }
+  /**
+   * Read a document from any source
+   */
+  async read(source, options = {}) {
+    const startTime = Date.now();
+    const warnings = [];
+    const mergedOptions = {
+      ...this.config.defaults,
+      ...options,
+      formatOptions: {
+        ...this.config.defaults?.formatOptions,
+        ...options.formatOptions
+      },
+      imageFilter: {
+        ...this.config.defaults?.imageFilter,
+        ...options.imageFilter
+      }
+    };
+    try {
+      const { buffer, filename } = await this.resolveSource(
+        typeof source === "string" ? this.parseStringSource(source) : source
+      );
+      const detection = FormatDetector.detect(filename, buffer);
+      const handler = await this.getHandler(detection.family);
+      if (!handler) {
+        throw new UnsupportedFormatError(detection.format, detection.family);
+      }
+      let pieces = await handler.handle(buffer, filename, detection.format, mergedOptions);
+      if (mergedOptions.extractImages !== false) {
+        pieces = this.filterImages(pieces, mergedOptions.imageFilter);
+      } else {
+        pieces = pieces.filter((p) => p.type !== "image");
+      }
+      const transformerContext = {
+        filename,
+        format: detection.format,
+        family: detection.family,
+        options: mergedOptions
+      };
+      pieces = await this.runTransformers(pieces, transformerContext, mergedOptions);
+      const metadata = this.assembleMetadata(pieces, filename, detection, startTime);
+      return {
+        success: true,
+        pieces,
+        metadata,
+        warnings
+      };
+    } catch (error) {
+      if (error instanceof DocumentReadError || error instanceof UnsupportedFormatError) {
+        throw error;
+      }
+      throw new DocumentReadError(
+        typeof source === "string" ? source : "path" in source ? source.path : "filename" in source ? source.filename : "unknown",
+        error instanceof Error ? error.message : String(error),
+        error instanceof Error ? error : void 0
+      );
+    }
+  }
+  /**
+   * Parse a string source (auto-detect path vs URL)
+   */
+  parseStringSource(source) {
+    if (source.startsWith("http://") || source.startsWith("https://")) {
+      return { type: "url", url: source };
+    }
+    return { type: "file", path: source };
+  }
+  /**
+   * Resolve any source to a buffer and filename
+   */
+  async resolveSource(source) {
+    switch (source.type) {
+      case "file": {
+        const buffer = await readFile(source.path);
+        const filename = source.path.split("/").pop() || source.path;
+        return { buffer, filename };
+      }
+      case "url": {
+        const maxSize = this.config.maxDownloadSizeBytes ?? DOCUMENT_DEFAULTS.MAX_DOWNLOAD_SIZE_BYTES;
+        const timeout = this.config.downloadTimeoutMs ?? DOCUMENT_DEFAULTS.DOWNLOAD_TIMEOUT_MS;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        try {
+          const response = await fetch(source.url, {
+            headers: {
+              ...source.headers,
+              "User-Agent": "OneRingAI-DocumentReader/1.0"
+            },
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          const contentLength = response.headers.get("content-length");
+          if (contentLength && parseInt(contentLength, 10) > maxSize) {
+            throw new Error(`File too large: ${contentLength} bytes (max: ${maxSize})`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          if (arrayBuffer.byteLength > maxSize) {
+            throw new Error(`Downloaded file too large: ${arrayBuffer.byteLength} bytes (max: ${maxSize})`);
+          }
+          const filename = this.extractFilenameFromURL(source.url, response);
+          return { buffer: Buffer.from(arrayBuffer), filename };
+        } catch (error) {
+          clearTimeout(timeoutId);
+          if (error.name === "AbortError") {
+            throw new Error(`Download timed out after ${timeout}ms`);
+          }
+          throw error;
+        }
+      }
+      case "buffer": {
+        const buffer = Buffer.isBuffer(source.buffer) ? source.buffer : Buffer.from(source.buffer);
+        return { buffer, filename: source.filename };
+      }
+      case "blob": {
+        const arrayBuffer = await source.blob.arrayBuffer();
+        return { buffer: Buffer.from(arrayBuffer), filename: source.filename };
+      }
+    }
+  }
+  /**
+   * Extract filename from URL and response headers
+   */
+  extractFilenameFromURL(url2, response) {
+    const disposition = response.headers.get("content-disposition");
+    if (disposition) {
+      const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/);
+      if (match?.[2]) return match[2];
+    }
+    try {
+      const pathname = new URL(url2).pathname;
+      const basename = pathname.split("/").pop();
+      if (basename && basename.includes(".")) return basename;
+    } catch {
+    }
+    return "document";
+  }
+  /**
+   * Get the handler for a format family, loading defaults lazily
+   */
+  async getHandler(family) {
+    if (this.handlers.has(family)) {
+      return this.handlers.get(family);
+    }
+    try {
+      const { getDefaultHandlers: getDefaultHandlers2 } = await Promise.resolve().then(() => (init_handlers(), handlers_exports));
+      const defaults = getDefaultHandlers2();
+      const handler = defaults.get(family);
+      if (handler) {
+        this.handlers.set(family, handler);
+        return handler;
+      }
+    } catch {
+    }
+    return null;
+  }
+  /**
+   * Filter images based on options
+   */
+  filterImages(pieces, filterOptions) {
+    const minWidth = filterOptions?.minWidth ?? DOCUMENT_DEFAULTS.IMAGE_FILTER.MIN_WIDTH;
+    const minHeight = filterOptions?.minHeight ?? DOCUMENT_DEFAULTS.IMAGE_FILTER.MIN_HEIGHT;
+    const minSizeBytes = filterOptions?.minSizeBytes ?? DOCUMENT_DEFAULTS.IMAGE_FILTER.MIN_SIZE_BYTES;
+    const maxImages = filterOptions?.maxImages ?? DOCUMENT_DEFAULTS.MAX_EXTRACTED_IMAGES;
+    const excludePatterns = filterOptions?.excludePatterns ?? [];
+    let imageCount = 0;
+    return pieces.filter((piece) => {
+      if (piece.type !== "image") return true;
+      const img = piece;
+      if (img.width !== void 0 && img.width < minWidth) return false;
+      if (img.height !== void 0 && img.height < minHeight) return false;
+      if (img.metadata.sizeBytes < minSizeBytes) return false;
+      const label = img.metadata.label || "";
+      if (excludePatterns.some((p) => p.test(label))) return false;
+      imageCount++;
+      if (imageCount > maxImages) return false;
+      return true;
+    });
+  }
+  /**
+   * Run the transformer pipeline
+   */
+  async runTransformers(pieces, context, options) {
+    const transformers = [];
+    if (!options.skipDefaultTransformers) {
+      try {
+        const { getDefaultTransformers: getDefaultTransformers2 } = await Promise.resolve().then(() => (init_transformers(), transformers_exports));
+        transformers.push(...getDefaultTransformers2());
+      } catch {
+      }
+    }
+    if (options.transformers) {
+      transformers.push(...options.transformers);
+    }
+    transformers.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    let result = pieces;
+    for (const transformer of transformers) {
+      if (transformer.appliesTo.length === 0 || transformer.appliesTo.includes(context.format)) {
+        result = await transformer.transform(result, context);
+      }
+    }
+    return result;
+  }
+  /**
+   * Assemble metadata from pieces
+   */
+  assembleMetadata(pieces, filename, detection, startTime) {
+    const textPieces = pieces.filter((p) => p.type === "text");
+    const imagePieces = pieces.filter((p) => p.type === "image");
+    const totalSizeBytes = pieces.reduce((sum, p) => sum + p.metadata.sizeBytes, 0);
+    const estimatedTokens = pieces.reduce((sum, p) => sum + p.metadata.estimatedTokens, 0);
+    return {
+      filename,
+      format: detection.format,
+      family: detection.family,
+      mimeType: detection.mimeType,
+      totalPieces: pieces.length,
+      totalTextPieces: textPieces.length,
+      totalImagePieces: imagePieces.length,
+      totalSizeBytes,
+      estimatedTokens,
+      processingTimeMs: Date.now() - startTime
+    };
+  }
+};
+function mergeTextPieces(pieces) {
+  return pieces.filter((p) => p.type === "text").map((p) => p.content).join("\n\n");
+}
+
+// src/capabilities/documents/index.ts
+init_handlers();
+init_transformers();
+
+// src/utils/documentContentBridge.ts
+function documentToContent(result, options = {}) {
+  const {
+    imageDetail = "auto",
+    imageFilter,
+    maxImages = 20,
+    mergeAdjacentText = true
+  } = options;
+  const minWidth = imageFilter?.minWidth ?? 0;
+  const minHeight = imageFilter?.minHeight ?? 0;
+  const minSizeBytes = imageFilter?.minSizeBytes ?? 0;
+  const excludePatterns = imageFilter?.excludePatterns ?? [];
+  const contents = [];
+  let imageCount = 0;
+  let pendingText = [];
+  const flushText = () => {
+    if (pendingText.length > 0) {
+      const text = {
+        type: "input_text" /* INPUT_TEXT */,
+        text: pendingText.join("\n\n")
+      };
+      contents.push(text);
+      pendingText = [];
+    }
+  };
+  for (const piece of result.pieces) {
+    if (piece.type === "text") {
+      if (mergeAdjacentText) {
+        pendingText.push(piece.content);
+      } else {
+        const text = {
+          type: "input_text" /* INPUT_TEXT */,
+          text: piece.content
+        };
+        contents.push(text);
+      }
+    } else if (piece.type === "image") {
+      if (piece.width !== void 0 && piece.width < minWidth) continue;
+      if (piece.height !== void 0 && piece.height < minHeight) continue;
+      if (piece.metadata.sizeBytes < minSizeBytes) continue;
+      const label = piece.metadata.label || "";
+      if (excludePatterns.some((p) => p.test(label))) continue;
+      imageCount++;
+      if (imageCount > maxImages) continue;
+      flushText();
+      const imageContent = {
+        type: "input_image_url" /* INPUT_IMAGE_URL */,
+        image_url: {
+          url: `data:${piece.mimeType};base64,${piece.base64}`,
+          detail: imageDetail
+        }
+      };
+      contents.push(imageContent);
+    }
+  }
+  flushText();
+  return contents;
+}
+async function readDocumentAsContent(source, options = {}) {
+  const {
+    imageDetail,
+    maxImages,
+    mergeAdjacentText,
+    // imageFilter is shared between both
+    ...readOptions
+  } = options;
+  const contentOptions = {
+    imageDetail,
+    imageFilter: options.imageFilter,
+    maxImages,
+    mergeAdjacentText
+  };
+  const reader = DocumentReader.create();
+  const result = await reader.read(source, readOptions);
+  if (!result.success) {
+    return [
+      {
+        type: "input_text" /* INPUT_TEXT */,
+        text: `[Document read error: ${result.error || "Unknown error"}]`
+      }
+    ];
+  }
+  return documentToContent(result, contentOptions);
+}
+
 // src/domain/interfaces/IContextStorage.ts
 var CONTEXT_SESSION_FORMAT_VERSION = 1;
 
@@ -40727,8 +41758,15 @@ var FileContextStorage = class {
   }
   /**
    * Get the storage path (for display/debugging)
+   * @deprecated Use getLocation() instead
    */
   getPath() {
+    return this.sessionsDirectory;
+  }
+  /**
+   * Get a human-readable storage location string (for display/debugging)
+   */
+  getLocation() {
     return this.sessionsDirectory;
   }
   /**
@@ -41102,7 +42140,7 @@ var FileAgentDefinitionStorage = class {
 function createFileAgentDefinitionStorage(config) {
   return new FileAgentDefinitionStorage(config);
 }
-var MIME_TYPES = {
+var MIME_TYPES2 = {
   png: "image/png",
   jpeg: "image/jpeg",
   jpg: "image/jpeg",
@@ -41132,7 +42170,7 @@ var FileMediaStorage = class {
     const filePath = path2.join(dir, filename);
     await fs15.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
-    const mimeType = MIME_TYPES[format] ?? "application/octet-stream";
+    const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
       location: filePath,
       mimeType,
@@ -41177,7 +42215,7 @@ var FileMediaStorage = class {
         const stat6 = await fs15.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2.extname(file).slice(1).toLowerCase();
-        const mimeType = MIME_TYPES[ext] ?? "application/octet-stream";
+        const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
         let type;
         for (const prefix of MEDIA_TYPE_PREFIXES) {
           if (file.startsWith(`${prefix}_`)) {
@@ -45456,7 +46494,9 @@ __export(tools_exports, {
   ConnectorTools: () => ConnectorTools,
   DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
   DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
+  DocumentReader: () => DocumentReader,
   FileMediaOutputHandler: () => FileMediaStorage,
+  FormatDetector: () => FormatDetector,
   ToolRegistry: () => ToolRegistry,
   bash: () => bash,
   createBashTool: () => createBashTool,
@@ -45500,6 +46540,7 @@ __export(tools_exports, {
   jsonManipulator: () => jsonManipulator,
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
+  mergeTextPieces: () => mergeTextPieces,
   parseRepository: () => parseRepository,
   readFile: () => readFile5,
   resolveRepository: () => resolveRepository,
@@ -45547,13 +46588,11 @@ var DEFAULT_FILESYSTEM_CONFIG = {
     ".avi",
     ".mov",
     ".mkv",
-    ".pdf",
+    // Note: .pdf, .docx, .xlsx, .pptx are NOT excluded — DocumentReader handles them
     ".doc",
-    ".docx",
     ".xls",
-    ".xlsx",
     ".ppt",
-    ".pptx",
+    // Legacy Office formats not yet supported
     ".woff",
     ".woff2",
     ".ttf",
@@ -45561,6 +46600,9 @@ var DEFAULT_FILESYSTEM_CONFIG = {
     ".otf"
   ]
 };
+function toForwardSlash(p) {
+  return sep === "\\" ? p.replace(/\\/g, "/") : p;
+}
 function validatePath(inputPath, config = {}) {
   const workingDir = config.workingDirectory || process.cwd();
   const allowedDirs = config.allowedDirectories || [];
@@ -45577,7 +46619,8 @@ function validatePath(inputPath, config = {}) {
   } else {
     resolvedPath = resolve(workingDir, expandedPath);
   }
-  const pathSegments = resolvedPath.split("/").filter(Boolean);
+  const normalizedResolved = toForwardSlash(resolvedPath);
+  const pathSegments = normalizedResolved.split("/").filter(Boolean);
   for (const blocked of blockedDirs) {
     if (!blocked.includes("/")) {
       if (pathSegments.includes(blocked)) {
@@ -45588,8 +46631,8 @@ function validatePath(inputPath, config = {}) {
         };
       }
     } else {
-      const blockedPath = isAbsolute(blocked) ? blocked : resolve(workingDir, blocked);
-      if (resolvedPath.startsWith(blockedPath + "/") || resolvedPath === blockedPath) {
+      const blockedPath = toForwardSlash(isAbsolute(blocked) ? blocked : resolve(workingDir, blocked));
+      if (normalizedResolved.startsWith(blockedPath + "/") || normalizedResolved === blockedPath) {
         return {
           valid: false,
           resolvedPath,
@@ -45601,8 +46644,8 @@ function validatePath(inputPath, config = {}) {
   if (allowedDirs.length > 0) {
     let isAllowed = false;
     for (const allowed of allowedDirs) {
-      const allowedPath = isAbsolute(allowed) ? allowed : resolve(workingDir, allowed);
-      if (resolvedPath.startsWith(allowedPath + "/") || resolvedPath === allowedPath) {
+      const allowedPath = toForwardSlash(isAbsolute(allowed) ? allowed : resolve(workingDir, allowed));
+      if (normalizedResolved.startsWith(allowedPath + "/") || normalizedResolved === allowedPath) {
         isAllowed = true;
         break;
       }
@@ -45636,7 +46679,7 @@ function createReadFileTool(config = {}) {
       type: "function",
       function: {
         name: "read_file",
-        description: `Read content from a file on the local filesystem.
+        description: `Read content from a file on the local filesystem. Supports text files AND binary document formats \u2014 PDF, DOCX, PPTX, XLSX, ODS, ODT, ODP, and images (PNG, JPG, GIF, WEBP) are automatically converted to markdown text.
 
 USAGE:
 - The file_path parameter must be an absolute path, not a relative path
@@ -45645,20 +46688,34 @@ USAGE:
 - Any lines longer than 2000 characters will be truncated
 - Results are returned with line numbers starting at 1
 
+DOCUMENT SUPPORT:
+- PDF files: extracted as markdown text with per-page sections
+- Word documents (.docx): converted to markdown preserving headings, lists, tables
+- PowerPoint (.pptx): extracted slide-by-slide as markdown
+- Excel (.xlsx) / CSV / ODS: tables converted to markdown tables
+- OpenDocument (.odt, .odp, .ods): converted like their MS Office equivalents
+- Images (.png, .jpg, .gif, .webp): described as image metadata
+- Binary documents are auto-detected by extension \u2014 just pass the file path
+
 WHEN TO USE:
 - To read source code files before making edits
 - To understand file contents and structure
 - To read configuration files
 - To examine log files or data files
+- To read PDF, Word, Excel, PowerPoint, or other document files as text
 
 IMPORTANT:
 - Always read a file before attempting to edit it
 - Use offset/limit for very large files to read in chunks
 - The tool will return an error if the file doesn't exist
+- offset/limit are ignored for binary document formats (full document is always returned)
 
 EXAMPLES:
 - Read entire file: { "file_path": "/path/to/file.ts" }
-- Read lines 100-200: { "file_path": "/path/to/file.ts", "offset": 100, "limit": 100 }`,
+- Read lines 100-200: { "file_path": "/path/to/file.ts", "offset": 100, "limit": 100 }
+- Read a PDF: { "file_path": "/path/to/report.pdf" }
+- Read an Excel file: { "file_path": "/path/to/data.xlsx" }
+- Read a Word doc: { "file_path": "/path/to/document.docx" }`,
         parameters: {
           type: "object",
           properties: {
@@ -45719,6 +46776,32 @@ EXAMPLES:
             path: file_path,
             size: stats.size
           };
+        }
+        const ext = extname(resolvedPath).toLowerCase();
+        if (FormatDetector.isBinaryDocumentFormat(ext)) {
+          try {
+            const reader = DocumentReader.create(mergedConfig.documentReaderConfig);
+            const result2 = await reader.read(
+              { type: "file", path: resolvedPath },
+              {
+                extractImages: false,
+                ...mergedConfig.documentReaderConfig?.defaults
+              }
+            );
+            if (result2.success) {
+              const content2 = mergeTextPieces(result2.pieces);
+              return {
+                success: true,
+                content: content2,
+                lines: content2.split("\n").length,
+                truncated: false,
+                encoding: "document",
+                size: stats.size,
+                path: file_path
+              };
+            }
+          } catch {
+          }
         }
         const content = await readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
@@ -46041,7 +47124,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
       const fullPath = join(dir, entry.name);
-      const relativePath = relative(baseDir, fullPath);
+      const relativePath = toForwardSlash(relative(baseDir, fullPath));
       if (entry.isDirectory()) {
         const isBlocked = config.blockedDirectories.some(
           (blocked) => entry.name === blocked || relativePath.includes(`/${blocked}/`) || relativePath.startsWith(`${blocked}/`)
@@ -46404,7 +47487,7 @@ WHEN TO USE:
           );
           if (matches.length > 0) {
             filesMatched++;
-            const relativePath = relative(resolvedPath, file) || file;
+            const relativePath = toForwardSlash(relative(resolvedPath, file)) || file;
             for (const match of matches) {
               match.file = relativePath;
             }
@@ -46470,7 +47553,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
       const fullPath = join(dir, entry.name);
-      const relativePath = relative(baseDir, fullPath);
+      const relativePath = toForwardSlash(relative(baseDir, fullPath));
       if (entry.isDirectory() && config.blockedDirectories.includes(entry.name)) {
         continue;
       }
@@ -46685,6 +47768,8 @@ function createBashTool(config = {}) {
         name: "bash",
         description: `Execute shell commands with optional timeout.
 
+SHELL: This tool uses ${mergedConfig.shell}${process.platform === "win32" ? " (Windows). Use Windows command syntax (dir, type, del, etc.), NOT Unix commands (ls, cat, rm, etc.). Use \\ as path separator or quote paths with forward slashes." : " (Unix). Use standard Unix command syntax."}
+
 USAGE:
 - Execute any shell command
 - Working directory persists between commands
@@ -46701,9 +47786,11 @@ For file operations, prefer dedicated tools:
 
 BEST PRACTICES:
 - Always quote file paths with spaces: cd "/path with spaces"
-- Use absolute paths when possible
+- Use absolute paths when possible${process.platform === "win32" ? `
 - Chain dependent commands with &&: git add . && git commit -m "msg"
-- Use ; only when you don't care if earlier commands fail
+- Use PowerShell syntax if cmd.exe is insufficient` : `
+- Chain dependent commands with &&: git add . && git commit -m "msg"
+- Use ; only when you don't care if earlier commands fail`}
 - Avoid interactive commands (no -i flags)
 
 GIT SAFETY:
@@ -47420,91 +48507,29 @@ function detectContentQuality(html, text, $) {
     issues
   };
 }
-var JSDOM = null;
-async function getJSDOM() {
-  if (!JSDOM) {
-    const jsdom = await import('jsdom');
-    JSDOM = jsdom.JSDOM;
-  }
-  return JSDOM;
-}
-async function htmlToMarkdown(html, url2, maxLength = 5e4) {
-  const JSDOMClass = await getJSDOM();
-  const dom = new JSDOMClass(html, { url: url2 });
-  const document = dom.window.document;
-  let title = document.title || "";
-  let byline;
-  let excerpt;
-  let contentHtml = html;
-  let wasReadabilityUsed = false;
-  try {
-    const clonedDoc = document.cloneNode(true);
-    const reader = new Readability(clonedDoc);
-    const article = reader.parse();
-    if (article && article.content && article.content.length > 100) {
-      contentHtml = article.content;
-      title = article.title || title;
-      byline = article.byline || void 0;
-      excerpt = article.excerpt || void 0;
-      wasReadabilityUsed = true;
-    }
-  } catch {
-  }
-  const turndown = new TurndownService({
-    headingStyle: "atx",
-    codeBlockStyle: "fenced",
-    bulletListMarker: "-",
-    emDelimiter: "_"
-  });
-  turndown.remove(["script", "style", "nav", "footer", "aside", "iframe", "noscript"]);
-  turndown.addRule("pre", {
-    filter: ["pre"],
-    replacement: (content, node) => {
-      const element = node;
-      const code = element.querySelector?.("code");
-      const lang = code?.className?.match(/language-(\w+)/)?.[1] || "";
-      const text = code?.textContent || content;
-      return `
-\`\`\`${lang}
-${text}
-\`\`\`
-`;
-    }
-  });
-  let markdown = turndown.turndown(contentHtml);
-  markdown = markdown.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "").replace(/[ \t]+$/gm, "");
-  let wasTruncated = false;
-  if (markdown.length > maxLength) {
-    const truncateAt = markdown.lastIndexOf("\n\n", maxLength);
-    if (truncateAt > maxLength * 0.5) {
-      markdown = markdown.slice(0, truncateAt) + "\n\n...[content truncated]";
-    } else {
-      markdown = markdown.slice(0, maxLength) + "...[truncated]";
-    }
-    wasTruncated = true;
-  }
-  return {
-    markdown,
-    title,
-    byline,
-    excerpt,
-    wasReadabilityUsed,
-    wasTruncated
-  };
-}
 
 // src/tools/web/webFetch.ts
+init_htmlToMarkdown();
 var webFetch = {
   definition: {
     type: "function",
     function: {
       name: "web_fetch",
-      description: `Fetch and extract text content from a web page URL.
+      description: `Fetch and extract content from a URL \u2014 works with web pages AND document files (PDF, DOCX, XLSX, PPTX, etc.). Document URLs are automatically detected and converted to markdown text.
 
-IMPORTANT: This tool performs a simple HTTP fetch and HTML parsing. It works well for:
+WEB PAGES:
+This tool performs HTTP fetch and HTML parsing. It works well for:
 - Static websites (blogs, documentation, articles)
 - Server-rendered HTML pages
 - Content that doesn't require JavaScript
+
+DOCUMENT URLs:
+When the URL points to a document file (detected via Content-Type header or URL extension), the document is automatically downloaded and converted to markdown:
+- PDF files: extracted as markdown with per-page sections
+- Word (.docx), PowerPoint (.pptx): converted to structured markdown
+- Excel (.xlsx), CSV, ODS: tables converted to markdown tables
+- OpenDocument formats (.odt, .odp, .ods): converted like MS Office equivalents
+- Returns contentType: "document" and includes documentMetadata in the result
 
 LIMITATIONS:
 - Cannot execute JavaScript
@@ -47525,8 +48550,8 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,          // Clean markdown (converted from HTML via Readability + Turndown)
-  contentType: string,      // 'html' | 'json' | 'text' | 'error'
+  content: string,          // Clean markdown (converted from HTML or document)
+  contentType: string,      // 'html' | 'json' | 'text' | 'document' | 'error'
   qualityScore: number,     // 0-100 (quality of extraction)
   requiresJS: boolean,      // True if site likely needs JavaScript
   suggestedAction: string,  // Suggestion if quality is low
@@ -47534,20 +48559,24 @@ RETURNS:
   excerpt: string,          // Short summary excerpt (if extracted)
   byline: string,           // Author info (if extracted)
   wasTruncated: boolean,    // True if content was truncated
+  documentMetadata: object, // Document metadata (format, pages, etc.) \u2014 only for document URLs
   error: string             // Error message if failed
 }
 
-EXAMPLE:
-To fetch a blog post:
+EXAMPLES:
+Fetch a blog post:
 {
   url: "https://example.com/blog/article"
 }
 
-With custom user agent:
+Fetch a PDF document:
 {
-  url: "https://example.com/page",
-  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
-  timeout: 15000
+  url: "https://example.com/reports/q4-2025.pdf"
+}
+
+Fetch an Excel spreadsheet:
+{
+  url: "https://example.com/data/metrics.xlsx"
 }`,
       parameters: {
         type: "object",
@@ -47611,6 +48640,51 @@ With custom user agent:
         };
       }
       const contentType = response.headers.get("content-type") || "";
+      const urlExt = (() => {
+        try {
+          const pathname = new URL(args.url).pathname;
+          const ext = pathname.split(".").pop()?.toLowerCase();
+          return ext ? `.${ext}` : "";
+        } catch {
+          return "";
+        }
+      })();
+      if (FormatDetector.isDocumentMimeType(contentType) || FormatDetector.isBinaryDocumentFormat(urlExt)) {
+        try {
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const disposition = response.headers.get("content-disposition");
+          let filename = "document";
+          if (disposition) {
+            const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/);
+            if (match?.[2]) filename = match[2];
+          } else {
+            try {
+              const basename = new URL(args.url).pathname.split("/").pop();
+              if (basename && basename.includes(".")) filename = basename;
+            } catch {
+            }
+          }
+          const reader = DocumentReader.create();
+          const result = await reader.read(
+            { type: "buffer", buffer, filename },
+            { extractImages: false }
+          );
+          if (result.success) {
+            return {
+              success: true,
+              url: args.url,
+              title: `Document: ${filename}`,
+              content: mergeTextPieces(result.pieces),
+              contentType: "document",
+              qualityScore: 100,
+              requiresJS: false,
+              documentMetadata: result.metadata
+            };
+          }
+        } catch {
+        }
+      }
       if (contentType.includes("application/json")) {
         const json = await response.json();
         return {
@@ -49601,7 +50675,7 @@ var toolRegistry = [
     exportName: "readFile",
     displayName: "Read File",
     category: "filesystem",
-    description: "Read content from a file on the local filesystem.",
+    description: "Read content from a file on the local filesystem. Supports text files AND binary document formats \u2014 PDF, DOCX, PPTX, XLSX, ODS, ODT, ODP, and images (PNG, JPG, GIF, WEBP) are automatically converted t",
     tool: readFile5,
     safeByDefault: true
   },
@@ -49637,7 +50711,7 @@ var toolRegistry = [
     exportName: "webFetch",
     displayName: "Web Fetch",
     category: "web",
-    description: "Fetch and extract text content from a web page URL.",
+    description: "Fetch and extract content from a URL \u2014 works with web pages AND document files (PDF, DOCX, XLSX, PPTX, etc.). Document URLs are automatically detected and converted to markdown text.",
     tool: webFetch,
     safeByDefault: true
   }
@@ -49997,6 +51071,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, parseRepository, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

@@ -271,6 +271,46 @@ export class ParallelTasksError extends AIError {
   }
 }
 
+// ============ Document Reader Errors ============
+
+/**
+ * Error thrown when document reading fails
+ */
+export class DocumentReadError extends AIError {
+  constructor(
+    public readonly source: string,
+    message: string,
+    originalError?: Error
+  ) {
+    super(
+      `Failed to read document '${source}': ${message}`,
+      'DOCUMENT_READ_ERROR',
+      500,
+      originalError
+    );
+    this.name = 'DocumentReadError';
+    Object.setPrototypeOf(this, DocumentReadError.prototype);
+  }
+}
+
+/**
+ * Error thrown when a document format is not supported
+ */
+export class UnsupportedFormatError extends AIError {
+  constructor(
+    public readonly format: string,
+    public readonly family?: string
+  ) {
+    super(
+      `Unsupported document format: '${format}'${family ? ` (family: ${family})` : ''}`,
+      'UNSUPPORTED_FORMAT',
+      400
+    );
+    this.name = 'UnsupportedFormatError';
+    Object.setPrototypeOf(this, UnsupportedFormatError.prototype);
+  }
+}
+
 // ============ Context Management Errors ============
 
 /**

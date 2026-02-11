@@ -14,8 +14,9 @@ export default defineConfig({
   clean: true,
   treeshake: true,
   target: 'node18',
+  platform: 'node',
   outDir: 'dist',
-  external: [],
+  external: ['cross-spawn'],
   // Bundle MCP SDK to avoid subpath import resolution issues in Meteor
   noExternal: [
     '@modelcontextprotocol/sdk',
