@@ -340,6 +340,10 @@ var init_pkce = __esm({
 });
 
 // src/connectors/oauth/flows/AuthCodePKCE.ts
+function isPublicClientError(responseBody) {
+  const lower = responseBody.toLowerCase();
+  return lower.includes("aadsts700025") || lower.includes("invalid_client") && lower.includes("public");
+}
 var AuthCodePKCEFlow;
 var init_AuthCodePKCE = __esm({
   "src/connectors/oauth/flows/AuthCodePKCE.ts"() {
@@ -435,14 +439,32 @@ var init_AuthCodePKCE = __esm({
         if (this.config.usePKCE !== false && verifierData) {
           params.append("code_verifier", verifierData.verifier);
         }
-        const response = await fetch(this.config.tokenUrl, {
+        let response = await fetch(this.config.tokenUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded"
           },
           body: params
         });
-        if (!response.ok) {
+        if (!response.ok && this.config.clientSecret) {
+          const errorText = await response.text();
+          if (isPublicClientError(errorText)) {
+            params.delete("client_secret");
+            response = await fetch(this.config.tokenUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+              },
+              body: params
+            });
+            if (!response.ok) {
+              const retryError = await response.text();
+              throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${retryError}`);
+            }
+          } else {
+            throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${errorText}`);
+          }
+        } else if (!response.ok) {
           const error = await response.text();
           throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
         }
@@ -488,14 +510,32 @@ var init_AuthCodePKCE = __esm({
         if (this.config.clientSecret) {
           params.append("client_secret", this.config.clientSecret);
         }
-        const response = await fetch(this.config.tokenUrl, {
+        let response = await fetch(this.config.tokenUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded"
           },
           body: params
         });
-        if (!response.ok) {
+        if (!response.ok && this.config.clientSecret) {
+          const errorText = await response.text();
+          if (isPublicClientError(errorText)) {
+            params.delete("client_secret");
+            response = await fetch(this.config.tokenUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+              },
+              body: params
+            });
+            if (!response.ok) {
+              const retryError = await response.text();
+              throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${retryError}`);
+            }
+          } else {
+            throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`);
+          }
+        } else if (!response.ok) {
           const error = await response.text();
           throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
         }
@@ -42928,6 +42968,23 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://api-m.paypal.com/v2",
     docsURL: "https://developer.paypal.com/docs/api/"
   },
+  {
+    id: "quickbooks",
+    name: "QuickBooks",
+    category: "payments",
+    urlPattern: /quickbooks\.api\.intuit\.com|intuit\.com.*quickbooks/i,
+    baseURL: "https://quickbooks.api.intuit.com/v3",
+    docsURL: "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account",
+    commonScopes: ["com.intuit.quickbooks.accounting"]
+  },
+  {
+    id: "ramp",
+    name: "Ramp",
+    category: "payments",
+    urlPattern: /api\.ramp\.com/i,
+    baseURL: "https://api.ramp.com/developer/v1",
+    docsURL: "https://docs.ramp.com/reference"
+  },
   // ============ Cloud Providers ============
   {
     id: "aws",
@@ -44353,7 +44410,9 @@ function getVendorInfo(vendorId) {
       name: a.name,
       type: a.type,
       description: a.description,
-      requiredFields: a.requiredFields
+      requiredFields: a.requiredFields,
+      scopes: a.scopes,
+      scopeDescriptions: a.scopeDescriptions
     }))
   };
 }
@@ -44369,7 +44428,9 @@ function listVendors() {
       name: a.name,
       type: a.type,
       description: a.description,
-      requiredFields: a.requiredFields
+      requiredFields: a.requiredFields,
+      scopes: a.scopes,
+      scopeDescriptions: a.scopeDescriptions
     }))
   }));
 }
@@ -44418,14 +44479,49 @@ var microsoftTemplate = {
       scopes: [
         "User.Read",
         "Mail.Read",
+        "Mail.ReadWrite",
         "Mail.Send",
-        "Files.ReadWrite",
         "Calendars.ReadWrite",
+        "Contacts.Read",
+        "Contacts.ReadWrite",
+        "Files.ReadWrite",
+        "Sites.Read.All",
+        "Sites.ReadWrite.All",
+        "Notes.Read",
+        "Notes.ReadWrite",
+        "Tasks.ReadWrite",
         "ChannelMessage.Send",
         "Team.ReadBasic.All",
         "Chat.ReadWrite",
+        "People.Read",
+        "Presence.Read",
+        "Directory.Read.All",
+        "BookingsAppointment.ReadWrite.All",
         "offline_access"
-      ]
+      ],
+      scopeDescriptions: {
+        "User.Read": "Read your profile",
+        "Mail.Read": "Read your email",
+        "Mail.ReadWrite": "Read and write your email",
+        "Mail.Send": "Send email on your behalf",
+        "Calendars.ReadWrite": "Read and write your calendar",
+        "Contacts.Read": "Read your contacts",
+        "Contacts.ReadWrite": "Read and write your contacts",
+        "Files.ReadWrite": "Read and write your files (OneDrive)",
+        "Sites.Read.All": "Read SharePoint sites",
+        "Sites.ReadWrite.All": "Read and write SharePoint sites",
+        "Notes.Read": "Read your OneNote notebooks",
+        "Notes.ReadWrite": "Read and write your OneNote notebooks",
+        "Tasks.ReadWrite": "Read and write your tasks (To Do / Planner)",
+        "ChannelMessage.Send": "Send messages in Teams channels",
+        "Team.ReadBasic.All": "Read Teams basic info",
+        "Chat.ReadWrite": "Read and write Teams chats",
+        "People.Read": "Read your relevant people list",
+        "Presence.Read": "Read user presence information",
+        "Directory.Read.All": "Read directory data (Azure AD)",
+        "BookingsAppointment.ReadWrite.All": "Manage Bookings appointments",
+        "offline_access": "Maintain access (refresh token)"
+      }
     },
     {
       id: "client-credentials",
@@ -44440,7 +44536,10 @@ var microsoftTemplate = {
         flow: "client_credentials",
         tokenUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token"
       },
-      scopes: ["https://graph.microsoft.com/.default"]
+      scopes: ["https://graph.microsoft.com/.default"],
+      scopeDescriptions: {
+        "https://graph.microsoft.com/.default": "All permissions granted to the app registration"
+      }
     }
   ]
 };
@@ -44474,9 +44573,24 @@ var googleTemplate = {
         "https://www.googleapis.com/auth/drive",
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send",
         "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/documents"
-      ]
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/tasks",
+        "https://www.googleapis.com/auth/admin.directory.user.readonly"
+      ],
+      scopeDescriptions: {
+        "https://www.googleapis.com/auth/drive": "Read and write Google Drive files",
+        "https://www.googleapis.com/auth/calendar": "Read and write Google Calendar",
+        "https://www.googleapis.com/auth/gmail.readonly": "Read Gmail messages",
+        "https://www.googleapis.com/auth/gmail.send": "Send Gmail messages",
+        "https://www.googleapis.com/auth/spreadsheets": "Read and write Google Sheets",
+        "https://www.googleapis.com/auth/documents": "Read and write Google Docs",
+        "https://www.googleapis.com/auth/contacts.readonly": "Read Google Contacts",
+        "https://www.googleapis.com/auth/tasks": "Read and write Google Tasks",
+        "https://www.googleapis.com/auth/admin.directory.user.readonly": "Read user directory (Admin)"
+      }
     },
     {
       id: "service-account",
@@ -44495,7 +44609,11 @@ var googleTemplate = {
       scopes: [
         "https://www.googleapis.com/auth/cloud-platform",
         "https://www.googleapis.com/auth/drive"
-      ]
+      ],
+      scopeDescriptions: {
+        "https://www.googleapis.com/auth/cloud-platform": "Full access to Google Cloud Platform",
+        "https://www.googleapis.com/auth/drive": "Read and write Google Drive files"
+      }
     }
   ]
 };
@@ -44537,7 +44655,19 @@ var slackTemplate = {
         authorizationUrl: "https://slack.com/oauth/v2/authorize",
         tokenUrl: "https://slack.com/api/oauth.v2.access"
       },
-      scopes: ["chat:write", "channels:read", "users:read", "im:write", "groups:read"]
+      scopes: ["chat:write", "channels:read", "users:read", "im:write", "groups:read", "files:read", "files:write", "reactions:read", "reactions:write", "team:read"],
+      scopeDescriptions: {
+        "chat:write": "Send messages as the app",
+        "channels:read": "View basic channel info",
+        "users:read": "View people in the workspace",
+        "im:write": "Send direct messages",
+        "groups:read": "View basic private channel info",
+        "files:read": "View files shared in channels",
+        "files:write": "Upload and manage files",
+        "reactions:read": "View emoji reactions",
+        "reactions:write": "Add and remove emoji reactions",
+        "team:read": "View workspace info"
+      }
     }
   ]
 };
@@ -44578,7 +44708,16 @@ var discordTemplate = {
         authorizationUrl: "https://discord.com/api/oauth2/authorize",
         tokenUrl: "https://discord.com/api/oauth2/token"
       },
-      scopes: ["identify", "guilds", "guilds.members.read", "messages.read"]
+      scopes: ["identify", "email", "guilds", "guilds.members.read", "messages.read", "bot", "connections"],
+      scopeDescriptions: {
+        "identify": "Access your username and avatar",
+        "email": "Access your email address",
+        "guilds": "View your server list",
+        "guilds.members.read": "Read server member info",
+        "messages.read": "Read messages in accessible channels",
+        "bot": "Add a bot to your servers",
+        "connections": "View your connected accounts"
+      }
     }
   ]
 };
@@ -44645,7 +44784,18 @@ var githubTemplate = {
         authorizationUrl: "https://github.com/login/oauth/authorize",
         tokenUrl: "https://github.com/login/oauth/access_token"
       },
-      scopes: ["repo", "read:user", "read:org", "workflow", "gist"]
+      scopes: ["repo", "read:user", "user:email", "read:org", "workflow", "gist", "notifications", "delete_repo", "admin:org"],
+      scopeDescriptions: {
+        "repo": "Full control of private repositories",
+        "read:user": "Read user profile data",
+        "user:email": "Access user email addresses",
+        "read:org": "Read org and team membership",
+        "workflow": "Update GitHub Actions workflows",
+        "gist": "Create and manage gists",
+        "notifications": "Access notifications",
+        "delete_repo": "Delete repositories",
+        "admin:org": "Full control of orgs and teams"
+      }
     },
     {
       id: "github-app",
@@ -44700,7 +44850,13 @@ var gitlabTemplate = {
         authorizationUrl: "https://gitlab.com/oauth/authorize",
         tokenUrl: "https://gitlab.com/oauth/token"
       },
-      scopes: ["api", "read_user", "read_repository", "write_repository"]
+      scopes: ["api", "read_user", "read_repository", "write_repository"],
+      scopeDescriptions: {
+        "api": "Full API access",
+        "read_user": "Read user profile",
+        "read_repository": "Read repository contents",
+        "write_repository": "Write to repositories"
+      }
     }
   ]
 };
@@ -44742,7 +44898,14 @@ var jiraTemplate = {
         authorizationUrl: "https://auth.atlassian.com/authorize",
         tokenUrl: "https://auth.atlassian.com/oauth/token"
       },
-      scopes: ["read:jira-work", "write:jira-work", "read:jira-user"]
+      scopes: ["read:jira-work", "write:jira-work", "read:jira-user", "manage:jira-project", "manage:jira-configuration"],
+      scopeDescriptions: {
+        "read:jira-work": "Read issues, projects, boards",
+        "write:jira-work": "Create and update issues",
+        "read:jira-user": "Read user information",
+        "manage:jira-project": "Manage projects and components",
+        "manage:jira-configuration": "Manage Jira settings"
+      }
     }
   ]
 };
@@ -44782,7 +44945,14 @@ var confluenceTemplate = {
         authorizationUrl: "https://auth.atlassian.com/authorize",
         tokenUrl: "https://auth.atlassian.com/oauth/token"
       },
-      scopes: ["read:confluence-content.all", "write:confluence-content", "read:confluence-space.summary"]
+      scopes: ["read:confluence-content.all", "write:confluence-content", "read:confluence-space.summary", "write:confluence-space", "read:confluence-user"],
+      scopeDescriptions: {
+        "read:confluence-content.all": "Read all pages and blog posts",
+        "write:confluence-content": "Create and update pages",
+        "read:confluence-space.summary": "Read space summaries",
+        "write:confluence-space": "Create and manage spaces",
+        "read:confluence-user": "Read user information"
+      }
     }
   ]
 };
@@ -44821,7 +44991,16 @@ var bitbucketTemplate = {
         authorizationUrl: "https://bitbucket.org/site/oauth2/authorize",
         tokenUrl: "https://bitbucket.org/site/oauth2/access_token"
       },
-      scopes: ["repository", "pullrequest", "account"]
+      scopes: ["repository", "repository:write", "pullrequest", "pullrequest:write", "account", "pipeline", "wiki"],
+      scopeDescriptions: {
+        "repository": "Read repositories",
+        "repository:write": "Write to repositories",
+        "pullrequest": "Read pull requests",
+        "pullrequest:write": "Create and update pull requests",
+        "account": "Read account information",
+        "pipeline": "Access Pipelines (CI/CD)",
+        "wiki": "Access repository wiki"
+      }
     }
   ]
 };
@@ -44861,7 +45040,12 @@ var trelloTemplate = {
         authorizationUrl: "https://trello.com/1/authorize",
         tokenUrl: "https://trello.com/1/OAuthGetAccessToken"
       },
-      scopes: ["read", "write", "account"]
+      scopes: ["read", "write", "account"],
+      scopeDescriptions: {
+        "read": "Read boards, lists, and cards",
+        "write": "Create and update boards, lists, and cards",
+        "account": "Read member information"
+      }
     }
   ]
 };
@@ -45056,7 +45240,15 @@ var salesforceTemplate = {
         authorizationUrl: "https://login.salesforce.com/services/oauth2/authorize",
         tokenUrl: "https://login.salesforce.com/services/oauth2/token"
       },
-      scopes: ["api", "refresh_token", "offline_access"]
+      scopes: ["api", "refresh_token", "offline_access", "chatter_api", "wave_api", "full"],
+      scopeDescriptions: {
+        "api": "Access and manage your data",
+        "refresh_token": "Maintain access with refresh tokens",
+        "offline_access": "Access data while you are offline",
+        "chatter_api": "Access Chatter feeds and posts",
+        "wave_api": "Access Analytics (Wave) API",
+        "full": "Full access to all data"
+      }
     },
     {
       id: "jwt-bearer",
@@ -45111,7 +45303,26 @@ var hubspotTemplate = {
         authorizationUrl: "https://app.hubspot.com/oauth/authorize",
         tokenUrl: "https://api.hubapi.com/oauth/v1/token"
       },
-      scopes: ["crm.objects.contacts.read", "crm.objects.contacts.write", "crm.objects.companies.read"]
+      scopes: [
+        "crm.objects.contacts.read",
+        "crm.objects.contacts.write",
+        "crm.objects.companies.read",
+        "crm.objects.companies.write",
+        "crm.objects.deals.read",
+        "crm.objects.deals.write",
+        "tickets",
+        "e-commerce"
+      ],
+      scopeDescriptions: {
+        "crm.objects.contacts.read": "Read contacts",
+        "crm.objects.contacts.write": "Create and update contacts",
+        "crm.objects.companies.read": "Read companies",
+        "crm.objects.companies.write": "Create and update companies",
+        "crm.objects.deals.read": "Read deals",
+        "crm.objects.deals.write": "Create and update deals",
+        "tickets": "Read and write support tickets",
+        "e-commerce": "Access e-commerce data (products, line items)"
+      }
     }
   ]
 };
@@ -45224,6 +45435,86 @@ var paypalTemplate = {
   ]
 };
 
+// src/connectors/vendors/templates/quickbooks.ts
+var quickbooksTemplate = {
+  id: "quickbooks",
+  name: "QuickBooks",
+  serviceType: "quickbooks",
+  baseURL: "https://quickbooks.api.intuit.com/v3",
+  docsURL: "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account",
+  credentialsSetupURL: "https://developer.intuit.com/app/developer/dashboard",
+  category: "payments",
+  notes: "Use sandbox URL (sandbox-quickbooks.api.intuit.com) for testing. Requires company/realm ID in API paths.",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Standard OAuth 2.0 flow for accessing QuickBooks on behalf of a user. Create an app at developer.intuit.com",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://appcenter.intuit.com/connect/oauth2",
+        tokenUrl: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+      },
+      scopes: ["com.intuit.quickbooks.accounting", "com.intuit.quickbooks.payment"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/ramp.ts
+var rampTemplate = {
+  id: "ramp",
+  name: "Ramp",
+  serviceType: "ramp",
+  baseURL: "https://api.ramp.com/developer/v1",
+  docsURL: "https://docs.ramp.com",
+  credentialsSetupURL: "https://app.ramp.com/settings/developer",
+  category: "payments",
+  authTemplates: [
+    {
+      id: "oauth-client-credentials",
+      name: "OAuth (Client Credentials)",
+      type: "oauth",
+      flow: "client_credentials",
+      description: "App-level authentication using client credentials. Create an API application in Ramp developer settings",
+      requiredFields: ["clientId", "clientSecret"],
+      defaults: {
+        type: "oauth",
+        flow: "client_credentials",
+        tokenUrl: "https://api.ramp.com/developer/v1/token"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth 2.0 authorization code flow for accessing Ramp on behalf of a user",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://app.ramp.com/v1/authorize",
+        tokenUrl: "https://api.ramp.com/developer/v1/token"
+      },
+      scopes: [
+        "transactions:read",
+        "users:read",
+        "users:write",
+        "cards:read",
+        "cards:write",
+        "departments:read",
+        "reimbursements:read"
+      ]
+    }
+  ]
+};
+
 // src/connectors/vendors/templates/aws.ts
 var awsTemplate = {
   id: "aws",
@@ -45276,7 +45567,16 @@ var dropboxTemplate = {
         tokenUrl: "https://api.dropboxapi.com/oauth2/token",
         usePKCE: true
       },
-      scopes: ["files.content.read", "files.content.write", "files.metadata.read"]
+      scopes: ["files.content.read", "files.content.write", "files.metadata.read", "files.metadata.write", "sharing.read", "sharing.write", "account_info.read"],
+      scopeDescriptions: {
+        "files.content.read": "Read file contents",
+        "files.content.write": "Upload and modify files",
+        "files.metadata.read": "Read file and folder metadata",
+        "files.metadata.write": "Modify file and folder metadata",
+        "sharing.read": "View sharing settings",
+        "sharing.write": "Manage sharing settings",
+        "account_info.read": "Read account information"
+      }
     }
   ]
 };
@@ -45304,6 +45604,13 @@ var boxTemplate = {
         flow: "authorization_code",
         authorizationUrl: "https://account.box.com/api/oauth2/authorize",
         tokenUrl: "https://api.box.com/oauth2/token"
+      },
+      scopes: ["root_readwrite", "manage_users", "manage_groups", "manage_enterprise"],
+      scopeDescriptions: {
+        "root_readwrite": "Read and write all files and folders",
+        "manage_users": "Manage enterprise users",
+        "manage_groups": "Manage enterprise groups",
+        "manage_enterprise": "Manage enterprise settings"
       }
     },
     {
@@ -45480,6 +45787,11 @@ var pagerdutyTemplate = {
         flow: "authorization_code",
         authorizationUrl: "https://app.pagerduty.com/oauth/authorize",
         tokenUrl: "https://app.pagerduty.com/oauth/token"
+      },
+      scopes: ["read", "write"],
+      scopeDescriptions: {
+        "read": "Read incidents, services, and schedules",
+        "write": "Create and update incidents and services"
       }
     }
   ]
@@ -45518,6 +45830,14 @@ var sentryTemplate = {
         flow: "authorization_code",
         authorizationUrl: "https://sentry.io/oauth/authorize/",
         tokenUrl: "https://sentry.io/oauth/token/"
+      },
+      scopes: ["project:read", "project:write", "event:read", "org:read", "member:read"],
+      scopeDescriptions: {
+        "project:read": "Read project settings",
+        "project:write": "Manage project settings",
+        "event:read": "Read error events and issues",
+        "org:read": "Read organization info",
+        "member:read": "Read org member info"
       }
     }
   ]
@@ -45715,7 +46035,13 @@ var zendeskTemplate = {
         authorizationUrl: "https://{subdomain}.zendesk.com/oauth/authorizations/new",
         tokenUrl: "https://{subdomain}.zendesk.com/oauth/tokens"
       },
-      scopes: ["read", "write", "tickets:read", "tickets:write"]
+      scopes: ["read", "write", "tickets:read", "tickets:write"],
+      scopeDescriptions: {
+        "read": "Read all resources",
+        "write": "Create and update resources",
+        "tickets:read": "Read support tickets",
+        "tickets:write": "Create and update tickets"
+      }
     }
   ]
 };
@@ -45793,7 +46119,19 @@ var shopifyTemplate = {
         authorizationUrl: "https://{subdomain}.myshopify.com/admin/oauth/authorize",
         tokenUrl: "https://{subdomain}.myshopify.com/admin/oauth/access_token"
       },
-      scopes: ["read_products", "write_products", "read_orders", "write_orders"]
+      scopes: ["read_products", "write_products", "read_orders", "write_orders", "read_customers", "write_customers", "read_inventory", "write_inventory", "read_fulfillments", "write_fulfillments"],
+      scopeDescriptions: {
+        "read_products": "Read products and collections",
+        "write_products": "Create and update products",
+        "read_orders": "Read orders and transactions",
+        "write_orders": "Create and update orders",
+        "read_customers": "Read customer information",
+        "write_customers": "Create and update customers",
+        "read_inventory": "Read inventory levels",
+        "write_inventory": "Update inventory levels",
+        "read_fulfillments": "Read fulfillment data",
+        "write_fulfillments": "Create and update fulfillments"
+      }
     }
   ]
 };
@@ -45826,6 +46164,8 @@ var allVendorTemplates = [
   // Payments
   stripeTemplate,
   paypalTemplate,
+  quickbooksTemplate,
+  rampTemplate,
   // Cloud
   awsTemplate,
   // Storage
@@ -45888,6 +46228,9 @@ var VENDOR_ICON_MAP = {
   // Payments
   stripe: "stripe",
   paypal: "paypal",
+  quickbooks: "quickbooks",
+  ramp: null,
+  // No Simple Icon available
   // Email
   sendgrid: "sendgrid",
   mailchimp: "mailchimp",
@@ -45934,6 +46277,8 @@ var FALLBACK_PLACEHOLDERS = {
   // Email (trademark removed)
   sendgrid: { color: "#1A82E2", letter: "S" },
   postmark: { color: "#FFDE00", letter: "P" },
+  // Payments (no Simple Icon available)
+  ramp: { color: "#F2C94C", letter: "R" },
   // Search (no Simple Icon available)
   serper: { color: "#4A90A4", letter: "S" },
   tavily: { color: "#7C3AED", letter: "T" },

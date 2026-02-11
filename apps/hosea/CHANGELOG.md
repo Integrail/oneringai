@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **OAuth Scope Selector** — New `ScopeSelector` component in the connector creation and edit forms. Replaces the plain-text scope input with a checkbox-based selector showing template-defined scopes with human-readable descriptions. All template scopes are pre-checked by default. Users can toggle individual scopes on/off and add custom scopes via a text input. Available in both the Create Connector page and the Edit Connector modal.
+- **Automatic OAuth Flow for Vendor Connectors** — One-click OAuth authorization for any vendor that requires OAuth (QuickBooks, GitHub OAuth, Ramp, etc.)
+  - `OAuthCallbackServer` — Temporary localhost HTTP server on port 19876 catches OAuth redirects. Users register `http://localhost:19876/oauth/callback` once with their provider.
+  - `VendorOAuthService` — Orchestrates the full OAuth dance: opens a BrowserWindow, user logs in at the vendor, callback is caught, tokens are exchanged and stored.
+  - Supports both `authorization_code` (user tokens, e.g. QuickBooks) and `client_credentials` (app tokens, e.g. Ramp) flows.
+  - Persistent token storage via encrypted `FileStorage` — tokens survive app restarts. AES-256-GCM encryption with auto-generated key.
+  - Auto-refresh: token refresh happens transparently via the core library's `AuthCodePKCEFlow`.
+  - UI: Redirect URI is shown as a read-only info box (not an editable field) during connector creation. After creation, an "Authorize" button opens the OAuth flow. Connector cards on the list page show "Authorize" for OAuth connectors that haven't been authorized yet.
+  - IPC bridge: `oauth:start-flow`, `oauth:cancel-flow`, `oauth:token-status`, `oauth:get-redirect-uri` handlers with full preload typing.
 - **Browser-Based EverWorker Login** - One-click authentication replaces manual JWT token entry
   - "Login to EverWorker" button opens a browser window to the EW login page
   - Supports all EW auth methods (password, Microsoft SSO, OIDC, etc.) via generic `returnTo` mechanism

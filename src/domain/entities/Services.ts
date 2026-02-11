@@ -237,6 +237,23 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://api-m.paypal.com/v2',
     docsURL: 'https://developer.paypal.com/docs/api/',
   },
+  {
+    id: 'quickbooks',
+    name: 'QuickBooks',
+    category: 'payments',
+    urlPattern: /quickbooks\.api\.intuit\.com|intuit\.com.*quickbooks/i,
+    baseURL: 'https://quickbooks.api.intuit.com/v3',
+    docsURL: 'https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account',
+    commonScopes: ['com.intuit.quickbooks.accounting'],
+  },
+  {
+    id: 'ramp',
+    name: 'Ramp',
+    category: 'payments',
+    urlPattern: /api\.ramp\.com/i,
+    baseURL: 'https://api.ramp.com/developer/v1',
+    docsURL: 'https://docs.ramp.com/reference',
+  },
 
   // ============ Cloud Providers ============
   {

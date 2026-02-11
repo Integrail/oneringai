@@ -47,7 +47,7 @@ const CATEGORY_ORDER: { id: string; label: string }[] = [
 export function ConnectorCatalogPage(): React.ReactElement {
   const { navigate, setData } = useNavigation();
   const [vendors, setVendors] = useState<VendorInfo[]>([]);
-  const [configuredConnectors, setConfiguredConnectors] = useState<Set<string>>(new Set());
+  const [configuredCounts, setConfiguredCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -62,7 +62,12 @@ export function ConnectorCatalogPage(): React.ReactElement {
         ]);
 
         setVendors(vendorList);
-        setConfiguredConnectors(new Set(connectorList.map(c => c.vendorId)));
+        // Count connectors per vendor (supports multiple per vendor)
+        const counts = new Map<string, number>();
+        for (const c of connectorList) {
+          counts.set(c.vendorId, (counts.get(c.vendorId) || 0) + 1);
+        }
+        setConfiguredCounts(counts);
 
         // Prefetch logos for visible vendors
         prefetchVendorLogos(vendorList.map(v => v.id));
@@ -217,7 +222,7 @@ export function ConnectorCatalogPage(): React.ReactElement {
                 category={cat.id}
                 label={cat.label}
                 vendors={vendorsByCategory.get(cat.id) || []}
-                configuredVendorIds={configuredConnectors}
+                configuredVendorCounts={configuredCounts}
                 onSelectVendor={handleSelectVendor}
                 defaultExpanded={!selectedCategory || selectedCategory === cat.id}
               />

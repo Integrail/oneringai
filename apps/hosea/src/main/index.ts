@@ -388,6 +388,20 @@ async function setupIPC(): Promise<void> {
     return agentService!.testUniversalConnection(name);
   }));
 
+  // OAuth flow operations
+  ipcMain.handle('oauth:start-flow', readyHandler(async (_event, connectorName: string) => {
+    return agentService!.startOAuthFlow(connectorName, mainWindow);
+  }));
+  ipcMain.handle('oauth:cancel-flow', async () => {
+    agentService!.cancelOAuthFlow();
+  });
+  ipcMain.handle('oauth:token-status', readyHandler(async (_event, connectorName: string) => {
+    return agentService!.getOAuthTokenStatus(connectorName);
+  }));
+  ipcMain.handle('oauth:get-redirect-uri', async () => {
+    return agentService!.getOAuthRedirectUri();
+  });
+
   // MCP Server operations
   ipcMain.handle('mcp-server:list', async () => {
     return agentService!.listMCPServers();

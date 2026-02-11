@@ -28,7 +28,15 @@ export const salesforceTemplate: VendorTemplate = {
         authorizationUrl: 'https://login.salesforce.com/services/oauth2/authorize',
         tokenUrl: 'https://login.salesforce.com/services/oauth2/token',
       },
-      scopes: ['api', 'refresh_token', 'offline_access'],
+      scopes: ['api', 'refresh_token', 'offline_access', 'chatter_api', 'wave_api', 'full'],
+      scopeDescriptions: {
+        'api': 'Access and manage your data',
+        'refresh_token': 'Maintain access with refresh tokens',
+        'offline_access': 'Access data while you are offline',
+        'chatter_api': 'Access Chatter feeds and posts',
+        'wave_api': 'Access Analytics (Wave) API',
+        'full': 'Full access to all data',
+      },
     },
     {
       id: 'jwt-bearer',

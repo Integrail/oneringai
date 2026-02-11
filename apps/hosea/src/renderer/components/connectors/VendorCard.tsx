@@ -28,8 +28,8 @@ interface VendorInfo {
 interface VendorCardProps {
   /** Vendor information */
   vendor: VendorInfo;
-  /** Whether a connector already exists for this vendor */
-  isConfigured?: boolean;
+  /** Number of connectors already configured for this vendor (0 = none) */
+  configuredCount?: number;
   /** Click handler */
   onClick?: () => void;
   /** Whether the card is in a compact mode */
@@ -57,13 +57,14 @@ const CATEGORY_CONFIG: Record<string, { label: string; variant: string }> = {
 
 export function VendorCard({
   vendor,
-  isConfigured = false,
+  configuredCount = 0,
   onClick,
   compact = false,
   selected = false,
 }: VendorCardProps): React.ReactElement {
   const categoryConfig = CATEGORY_CONFIG[vendor.category] || { label: vendor.category, variant: 'secondary' };
   const authMethodCount = vendor.authMethods.length;
+  const isConfigured = configuredCount > 0;
 
   if (compact) {
     return (
@@ -89,11 +90,11 @@ export function VendorCard({
 
   return (
     <div
-      className={`vendor-card ${onClick && !isConfigured ? 'vendor-card--clickable' : ''} ${selected ? 'vendor-card--selected' : ''} ${isConfigured ? 'vendor-card--configured' : ''}`}
-      onClick={onClick && !isConfigured ? onClick : undefined}
-      role={onClick && !isConfigured ? 'button' : undefined}
-      tabIndex={onClick && !isConfigured ? 0 : undefined}
-      onKeyDown={onClick && !isConfigured ? (e) => e.key === 'Enter' && onClick() : undefined}
+      className={`vendor-card ${onClick ? 'vendor-card--clickable' : ''} ${selected ? 'vendor-card--selected' : ''} ${isConfigured ? 'vendor-card--configured' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
     >
       <div className="vendor-card__header">
         <VendorLogo vendorId={vendor.id} size={40} />
@@ -106,7 +107,7 @@ export function VendorCard({
         {isConfigured && (
           <Badge bg="success" className="vendor-card__configured-badge">
             <Check size={12} className="me-1" />
-            Configured
+            {configuredCount === 1 ? 'Configured' : `${configuredCount} configured`}
           </Badge>
         )}
       </div>

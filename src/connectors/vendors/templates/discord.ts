@@ -39,7 +39,16 @@ export const discordTemplate: VendorTemplate = {
         authorizationUrl: 'https://discord.com/api/oauth2/authorize',
         tokenUrl: 'https://discord.com/api/oauth2/token',
       },
-      scopes: ['identify', 'guilds', 'guilds.members.read', 'messages.read'],
+      scopes: ['identify', 'email', 'guilds', 'guilds.members.read', 'messages.read', 'bot', 'connections'],
+      scopeDescriptions: {
+        'identify': 'Access your username and avatar',
+        'email': 'Access your email address',
+        'guilds': 'View your server list',
+        'guilds.members.read': 'Read server member info',
+        'messages.read': 'Read messages in accessible channels',
+        'bot': 'Add a bot to your servers',
+        'connections': 'View your connected accounts',
+      },
     },
   ],
 };

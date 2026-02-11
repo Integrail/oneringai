@@ -17,6 +17,8 @@ import {
   ExternalLink,
   Cloud,
   Monitor,
+  Shield,
+  Loader2,
 } from 'lucide-react';
 import { VendorLogo } from './VendorLogo';
 
@@ -50,6 +52,10 @@ interface ConnectorCardProps {
   testing?: boolean;
   /** Docs URL from vendor template */
   docsURL?: string;
+  /** Handler for OAuth authorization (shown only for OAuth connectors) */
+  onAuthorize?: () => void;
+  /** Whether authorization is in progress */
+  authorizing?: boolean;
 }
 
 function getStatusConfig(status: StoredUniversalConnector['status']): {
@@ -87,6 +93,8 @@ export function ConnectorCard({
   onTest,
   testing = false,
   docsURL,
+  onAuthorize,
+  authorizing = false,
 }: ConnectorCardProps): React.ReactElement {
   const statusConfig = getStatusConfig(connector.status);
   const displayName = connector.displayName || connector.vendorName;
@@ -188,6 +196,20 @@ export function ConnectorCard({
           <Edit2 size={14} className="me-1" />
           {isEW ? 'Managed' : 'Edit'}
         </Button>
+        {onAuthorize && connector.status !== 'active' && (
+          <Button
+            variant="outline-warning"
+            size="sm"
+            onClick={onAuthorize}
+            disabled={authorizing}
+          >
+            {authorizing ? (
+              <><Loader2 size={14} className="me-1 spin" />Authorizing...</>
+            ) : (
+              <><Shield size={14} className="me-1" />Authorize</>
+            )}
+          </Button>
+        )}
         <Button
           variant="outline-primary"
           size="sm"

@@ -65,6 +65,11 @@ export const pagerdutyTemplate: VendorTemplate = {
         authorizationUrl: 'https://app.pagerduty.com/oauth/authorize',
         tokenUrl: 'https://app.pagerduty.com/oauth/token',
       },
+      scopes: ['read', 'write'],
+      scopeDescriptions: {
+        'read': 'Read incidents, services, and schedules',
+        'write': 'Create and update incidents and services',
+      },
     },
   ],
 };
@@ -104,6 +109,14 @@ export const sentryTemplate: VendorTemplate = {
         flow: 'authorization_code',
         authorizationUrl: 'https://sentry.io/oauth/authorize/',
         tokenUrl: 'https://sentry.io/oauth/token/',
+      },
+      scopes: ['project:read', 'project:write', 'event:read', 'org:read', 'member:read'],
+      scopeDescriptions: {
+        'project:read': 'Read project settings',
+        'project:write': 'Manage project settings',
+        'event:read': 'Read error events and issues',
+        'org:read': 'Read organization info',
+        'member:read': 'Read org member info',
       },
     },
   ],

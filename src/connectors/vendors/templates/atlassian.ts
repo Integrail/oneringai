@@ -40,7 +40,14 @@ export const jiraTemplate: VendorTemplate = {
         authorizationUrl: 'https://auth.atlassian.com/authorize',
         tokenUrl: 'https://auth.atlassian.com/oauth/token',
       },
-      scopes: ['read:jira-work', 'write:jira-work', 'read:jira-user'],
+      scopes: ['read:jira-work', 'write:jira-work', 'read:jira-user', 'manage:jira-project', 'manage:jira-configuration'],
+      scopeDescriptions: {
+        'read:jira-work': 'Read issues, projects, boards',
+        'write:jira-work': 'Create and update issues',
+        'read:jira-user': 'Read user information',
+        'manage:jira-project': 'Manage projects and components',
+        'manage:jira-configuration': 'Manage Jira settings',
+      },
     },
   ],
 };
@@ -82,7 +89,14 @@ export const confluenceTemplate: VendorTemplate = {
         authorizationUrl: 'https://auth.atlassian.com/authorize',
         tokenUrl: 'https://auth.atlassian.com/oauth/token',
       },
-      scopes: ['read:confluence-content.all', 'write:confluence-content', 'read:confluence-space.summary'],
+      scopes: ['read:confluence-content.all', 'write:confluence-content', 'read:confluence-space.summary', 'write:confluence-space', 'read:confluence-user'],
+      scopeDescriptions: {
+        'read:confluence-content.all': 'Read all pages and blog posts',
+        'write:confluence-content': 'Create and update pages',
+        'read:confluence-space.summary': 'Read space summaries',
+        'write:confluence-space': 'Create and manage spaces',
+        'read:confluence-user': 'Read user information',
+      },
     },
   ],
 };
@@ -123,7 +137,16 @@ export const bitbucketTemplate: VendorTemplate = {
         authorizationUrl: 'https://bitbucket.org/site/oauth2/authorize',
         tokenUrl: 'https://bitbucket.org/site/oauth2/access_token',
       },
-      scopes: ['repository', 'pullrequest', 'account'],
+      scopes: ['repository', 'repository:write', 'pullrequest', 'pullrequest:write', 'account', 'pipeline', 'wiki'],
+      scopeDescriptions: {
+        'repository': 'Read repositories',
+        'repository:write': 'Write to repositories',
+        'pullrequest': 'Read pull requests',
+        'pullrequest:write': 'Create and update pull requests',
+        'account': 'Read account information',
+        'pipeline': 'Access Pipelines (CI/CD)',
+        'wiki': 'Access repository wiki',
+      },
     },
   ],
 };
@@ -166,6 +189,11 @@ export const trelloTemplate: VendorTemplate = {
         tokenUrl: 'https://trello.com/1/OAuthGetAccessToken',
       },
       scopes: ['read', 'write', 'account'],
+      scopeDescriptions: {
+        'read': 'Read boards, lists, and cards',
+        'write': 'Create and update boards, lists, and cards',
+        'account': 'Read member information',
+      },
     },
   ],
 };

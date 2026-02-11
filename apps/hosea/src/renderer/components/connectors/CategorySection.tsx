@@ -30,8 +30,8 @@ interface CategorySectionProps {
   label: string;
   /** Vendors in this category */
   vendors: VendorInfo[];
-  /** Set of vendor IDs that are already configured */
-  configuredVendorIds: Set<string>;
+  /** Map of vendor ID → number of configured connectors */
+  configuredVendorCounts: Map<string, number>;
   /** Handler when a vendor is selected */
   onSelectVendor: (vendor: VendorInfo) => void;
   /** Whether the section starts expanded */
@@ -44,14 +44,14 @@ export function CategorySection({
   category,
   label,
   vendors,
-  configuredVendorIds,
+  configuredVendorCounts,
   onSelectVendor,
   defaultExpanded = true,
   compactCards = false,
 }: CategorySectionProps): React.ReactElement {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
-  const configuredCount = vendors.filter(v => configuredVendorIds.has(v.id)).length;
+  const configuredCount = vendors.filter(v => (configuredVendorCounts.get(v.id) || 0) > 0).length;
 
   return (
     <div className="category-section">
@@ -78,7 +78,7 @@ export function CategorySection({
             <VendorCard
               key={vendor.id}
               vendor={vendor}
-              isConfigured={configuredVendorIds.has(vendor.id)}
+              configuredCount={configuredVendorCounts.get(vendor.id) || 0}
               onClick={() => onSelectVendor(vendor)}
               compact={compactCards}
             />

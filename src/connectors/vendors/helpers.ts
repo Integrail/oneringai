@@ -275,6 +275,8 @@ export interface VendorInfo {
     type: string;
     description: string;
     requiredFields: string[];
+    scopes?: string[];
+    scopeDescriptions?: Record<string, string>;
   }[];
 }
 
@@ -297,6 +299,8 @@ export function getVendorInfo(vendorId: string): VendorInfo | undefined {
       type: a.type,
       description: a.description,
       requiredFields: a.requiredFields,
+      scopes: a.scopes,
+      scopeDescriptions: a.scopeDescriptions,
     })),
   };
 }
@@ -317,6 +321,8 @@ export function listVendors(): VendorInfo[] {
       type: a.type,
       description: a.description,
       requiredFields: a.requiredFields,
+      scopes: a.scopes,
+      scopeDescriptions: a.scopeDescriptions,
     })),
   }));
 }

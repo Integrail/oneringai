@@ -39,6 +39,9 @@ export interface AuthTemplate {
 
   /** Common scopes for this auth method */
   scopes?: string[];
+
+  /** Human-readable descriptions for scopes (key = scope ID) */
+  scopeDescriptions?: Record<string, string>;
 }
 
 /**

@@ -41,6 +41,12 @@ export const gitlabTemplate: VendorTemplate = {
         tokenUrl: 'https://gitlab.com/oauth/token',
       },
       scopes: ['api', 'read_user', 'read_repository', 'write_repository'],
+      scopeDescriptions: {
+        'api': 'Full API access',
+        'read_user': 'Read user profile',
+        'read_repository': 'Read repository contents',
+        'write_repository': 'Write to repositories',
+      },
     },
   ],
 };

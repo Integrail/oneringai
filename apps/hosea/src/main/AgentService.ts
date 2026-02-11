@@ -71,6 +71,7 @@ import {
   type StrategyInfo,
   ConnectorTools,
   ToolRegistry,
+  FileStorage,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import {
@@ -80,6 +81,8 @@ import {
   type UnifiedToolEntry,
 } from './tools/index.js';
 import { HoseaUIPlugin, type DynamicUIContent } from './plugins/index.js';
+import { VendorOAuthService } from './VendorOAuthService.js';
+import { OAuthCallbackServer } from './OAuthCallbackServer.js';
 
 interface StoredConnectorConfig {
   name: string;
@@ -572,6 +575,8 @@ export class AgentService {
   private instances: Map<string, AgentInstance> = new Map();
   // Browser service reference (set by main process)
   private browserService: BrowserService | null = null;
+  // Vendor OAuth service for authorization_code and client_credentials flows
+  private vendorOAuthService = new VendorOAuthService();
   // Unified tool catalog (combines oneringai + hosea tools)
   private toolCatalog: UnifiedToolCatalog;
   private oneRingToolProvider: OneRingToolProvider;
@@ -766,6 +771,37 @@ export class AgentService {
     await this.ensureDirectories();
     await this.loadConfig();
     this.initializeLogLevel();
+    await this.initializeTokenStorage();
+  }
+
+  /**
+   * Configure persistent token storage for OAuth connectors.
+   * Generates an encryption key on first run and stores it locally.
+   * Must run before any connectors are loaded so all OAuth connectors get FileStorage.
+   */
+  private async initializeTokenStorage(): Promise<void> {
+    try {
+      const tokenDir = join(this.dataDir, 'oauth-tokens');
+      const keyFile = join(this.dataDir, '.encryption-key');
+
+      // Load or generate encryption key
+      let encryptionKey: string;
+      try {
+        encryptionKey = (await readFile(keyFile, 'utf-8')).trim();
+      } catch {
+        // First run: generate and persist key
+        const { randomBytes } = await import('node:crypto');
+        encryptionKey = randomBytes(32).toString('hex');
+        await writeFile(keyFile, encryptionKey, { mode: 0o600 });
+      }
+
+      const storage = new FileStorage({ directory: tokenDir, encryptionKey });
+      Connector.setDefaultStorage(storage);
+      logger.debug('[initializeTokenStorage] Persistent OAuth token storage configured');
+    } catch (error) {
+      logger.warn('[initializeTokenStorage] Failed to configure persistent token storage, using in-memory:', String(error));
+      // Fall back to default MemoryStorage — tokens won't persist across restarts
+    }
   }
 
   /**
@@ -831,7 +867,7 @@ export class AgentService {
   }
 
   private async ensureDirectories(): Promise<void> {
-    const dirs = ['connectors', 'api-connectors', 'universal-connectors', 'agents', 'sessions', 'logs', 'mcp-servers'];
+    const dirs = ['connectors', 'api-connectors', 'universal-connectors', 'agents', 'sessions', 'logs', 'mcp-servers', 'oauth-tokens'];
     for (const dir of dirs) {
       const path = join(this.dataDir, dir);
       if (!existsSync(path)) {
@@ -1919,6 +1955,12 @@ export class AgentService {
           const config = JSON.parse(content) as StoredUniversalConnector;
           this.universalConnectors.set(config.name, config);
 
+          // For OAuth authorization_code connectors: ensure redirectUri uses Hosea's callback
+          const authTemplate = getVendorAuthTemplate(config.vendorId, config.authMethodId);
+          if (authTemplate?.type === 'oauth' && authTemplate.flow === 'authorization_code') {
+            config.credentials.redirectUri = OAuthCallbackServer.redirectUri;
+          }
+
           // Register with the library using createConnectorFromTemplate
           if (!Connector.has(config.name)) {
             try {
@@ -2105,7 +2147,7 @@ export class AgentService {
   /**
    * Create a universal connector from vendor template
    */
-  async createUniversalConnector(input: CreateUniversalConnectorInput): Promise<{ success: boolean; error?: string }> {
+  async createUniversalConnector(input: CreateUniversalConnectorInput): Promise<{ success: boolean; error?: string; needsAuth?: boolean; flow?: string }> {
     try {
       // Validate vendor template exists
       const vendorInfo = getVendorInfo(input.vendorId);
@@ -2123,13 +2165,19 @@ export class AgentService {
         return { success: false, error: `Connector "${input.name}" already exists` };
       }
 
+      // For authorization_code OAuth: auto-set redirectUri to Hosea's callback server
+      const credentials = { ...input.credentials };
+      if (authMethod.type === 'oauth' && authMethod.flow === 'authorization_code') {
+        credentials.redirectUri = OAuthCallbackServer.redirectUri;
+      }
+
       // Create connector with library
       try {
         createConnectorFromTemplate(
           input.name,
           input.vendorId,
           input.authMethodId,
-          input.credentials,
+          credentials,
           { baseURL: input.baseURL, displayName: input.displayName }
         );
       } catch (error) {
@@ -2163,7 +2211,9 @@ export class AgentService {
       this.oneRingToolProvider.invalidateCache();
       this.toolCatalog.invalidateCache();
 
-      return { success: true };
+      // Tell the caller whether OAuth authorization is needed
+      const needsAuth = authMethod.type === 'oauth';
+      return { success: true, needsAuth, flow: authMethod.flow };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -2258,32 +2308,64 @@ export class AgentService {
   /**
    * Test a universal connector connection
    */
-  async testUniversalConnection(name: string): Promise<{ success: boolean; error?: string }> {
+  async testUniversalConnection(name: string): Promise<{ success: boolean; error?: string; needsAuth?: boolean; flow?: string }> {
     try {
       const config = this.universalConnectors.get(name);
       if (!config) {
         return { success: false, error: `Universal connector "${name}" not found` };
       }
 
-      // Get connector from library
       const connector = Connector.get(name);
       if (!connector) {
         return { success: false, error: 'Connector not registered with library' };
       }
 
-      // TODO: Implement actual connection testing per vendor
-      // For now, just update status to indicate we tried
+      const authTemplate = getVendorAuthTemplate(config.vendorId, config.authMethodId);
+
+      // For OAuth connectors: check token validity
+      if (authTemplate?.type === 'oauth') {
+        const hasValid = await connector.hasValidToken();
+        if (!hasValid) {
+          config.status = 'error';
+          config.lastTestedAt = Date.now();
+          this.universalConnectors.set(name, config);
+          const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+          await writeFile(filePath, JSON.stringify(config, null, 2));
+          return {
+            success: false,
+            error: 'No valid token. Authorization required.',
+            needsAuth: true,
+            flow: authTemplate.flow,
+          };
+        }
+
+        // Verify token is usable (triggers auto-refresh if needed)
+        try {
+          await connector.getToken();
+        } catch (err) {
+          config.status = 'error';
+          config.lastTestedAt = Date.now();
+          this.universalConnectors.set(name, config);
+          const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+          await writeFile(filePath, JSON.stringify(config, null, 2));
+          return {
+            success: false,
+            error: `Token refresh failed: ${err instanceof Error ? err.message : String(err)}`,
+            needsAuth: true,
+            flow: authTemplate.flow,
+          };
+        }
+      }
+
       config.lastTestedAt = Date.now();
       config.status = 'active';
       this.universalConnectors.set(name, config);
 
-      // Save to file
       const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
       await writeFile(filePath, JSON.stringify(config, null, 2));
 
       return { success: true };
     } catch (error) {
-      // Update status to error
       const config = this.universalConnectors.get(name);
       if (config) {
         config.status = 'error';
@@ -2292,6 +2374,97 @@ export class AgentService {
       }
       return { success: false, error: String(error) };
     }
+  }
+
+  // ============ OAuth Flow Management ============
+
+  /**
+   * Start an OAuth authorization flow for a universal connector.
+   * For authorization_code: opens BrowserWindow + callback server.
+   * For client_credentials: fetches a token directly (no UI).
+   */
+  async startOAuthFlow(
+    connectorName: string,
+    parentWindow?: import('electron').BrowserWindow | null
+  ): Promise<{ success: boolean; error?: string }> {
+    const config = this.universalConnectors.get(connectorName);
+    if (!config) {
+      return { success: false, error: `Connector "${connectorName}" not found` };
+    }
+
+    const authTemplate = getVendorAuthTemplate(config.vendorId, config.authMethodId);
+    if (!authTemplate || authTemplate.type !== 'oauth') {
+      return { success: false, error: 'This connector does not use OAuth authentication' };
+    }
+
+    let result: { success: boolean; error?: string };
+
+    if (authTemplate.flow === 'client_credentials') {
+      result = await this.vendorOAuthService.authorizeClientCredentials(connectorName);
+    } else if (authTemplate.flow === 'authorization_code') {
+      result = await this.vendorOAuthService.authorizeAuthCode({
+        connectorName,
+        parentWindow,
+      });
+    } else {
+      return { success: false, error: `Unsupported OAuth flow: ${authTemplate.flow}` };
+    }
+
+    // Update connector status
+    config.updatedAt = Date.now();
+    config.lastTestedAt = Date.now();
+    config.status = result.success ? 'active' : 'error';
+    this.universalConnectors.set(connectorName, config);
+
+    const filePath = join(this.dataDir, 'universal-connectors', `${connectorName}.json`);
+    await writeFile(filePath, JSON.stringify(config, null, 2));
+
+    return result;
+  }
+
+  /**
+   * Cancel an in-progress OAuth flow.
+   */
+  cancelOAuthFlow(): void {
+    this.vendorOAuthService.cancel();
+  }
+
+  /**
+   * Get OAuth token status for a connector.
+   */
+  async getOAuthTokenStatus(connectorName: string): Promise<{
+    hasToken: boolean;
+    isValid: boolean;
+    needsAuth: boolean;
+    flow?: string;
+    error?: string;
+  }> {
+    const config = this.universalConnectors.get(connectorName);
+    if (!config) {
+      return { hasToken: false, isValid: false, needsAuth: false, error: 'Connector not found' };
+    }
+
+    const authTemplate = getVendorAuthTemplate(config.vendorId, config.authMethodId);
+    if (!authTemplate || authTemplate.type !== 'oauth') {
+      // Not an OAuth connector — no auth needed
+      return { hasToken: false, isValid: false, needsAuth: false };
+    }
+
+    const status = await this.vendorOAuthService.checkTokenStatus(connectorName);
+    return {
+      hasToken: status.hasToken,
+      isValid: status.isValid,
+      needsAuth: !status.isValid,
+      flow: authTemplate.flow,
+      error: status.error,
+    };
+  }
+
+  /**
+   * Get the redirect URI that Hosea uses for OAuth callbacks.
+   */
+  getOAuthRedirectUri(): string {
+    return OAuthCallbackServer.redirectUri;
   }
 
   // ============ MCP Server Management ============

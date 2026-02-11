@@ -5,8 +5,9 @@
  */
 
 import React from 'react';
-import { Form, Button } from 'react-bootstrap';
-import { ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { Form, Button, Alert } from 'react-bootstrap';
+import { ExternalLink, Eye, EyeOff, Info } from 'lucide-react';
+import { ScopeSelector } from './ScopeSelector';
 
 // Field metadata for better UX
 const FIELD_CONFIG: Record<string, {
@@ -144,6 +145,16 @@ interface CredentialsFormProps {
   credentialsSetupURL?: string;
   /** Documentation URL */
   docsURL?: string;
+  /** Auth type (api_key or oauth) */
+  authType?: 'api_key' | 'oauth';
+  /** OAuth flow type */
+  oauthFlow?: string;
+  /** Hosea's OAuth redirect URI (shown as info, auto-filled for auth_code) */
+  oauthRedirectUri?: string;
+  /** Available scopes from auth template (enables ScopeSelector) */
+  availableScopes?: string[];
+  /** Scope descriptions (scope id → human-readable text) */
+  scopeDescriptions?: Record<string, string>;
 }
 
 export function CredentialsForm({
@@ -153,7 +164,17 @@ export function CredentialsForm({
   onChange,
   credentialsSetupURL,
   docsURL,
+  authType,
+  oauthFlow,
+  oauthRedirectUri,
+  availableScopes,
+  scopeDescriptions,
 }: CredentialsFormProps): React.ReactElement {
+  // For authorization_code OAuth, hide redirectUri (auto-set by Hosea) and scope (use defaults)
+  const isAuthCodeOAuth = authType === 'oauth' && oauthFlow === 'authorization_code';
+  const hiddenFields = isAuthCodeOAuth ? new Set(['redirectUri']) : new Set<string>();
+  const filteredRequired = requiredFields.filter(f => !hiddenFields.has(f));
+  const filteredOptional = optionalFields.filter(f => !hiddenFields.has(f));
   const [showSecrets, setShowSecrets] = React.useState<Set<string>>(new Set());
 
   const toggleSecretVisibility = (field: string) => {
@@ -167,6 +188,20 @@ export function CredentialsForm({
   };
 
   const renderField = (field: string, required: boolean) => {
+    // Use ScopeSelector for 'scope' field when template scopes are available
+    if (field === 'scope' && availableScopes && availableScopes.length > 0) {
+      return (
+        <Form.Group key={field} className="mb-3">
+          <ScopeSelector
+            availableScopes={availableScopes}
+            scopeDescriptions={scopeDescriptions}
+            value={values[field] || ''}
+            onChange={(val) => onChange(field, val)}
+          />
+        </Form.Group>
+      );
+    }
+
     const config = FIELD_CONFIG[field] || {
       label: field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1'),
       placeholder: `Enter ${field}`,
@@ -251,16 +286,30 @@ export function CredentialsForm({
         </div>
       )}
 
+      {/* OAuth redirect URI info (shown for authorization_code flows) */}
+      {isAuthCodeOAuth && oauthRedirectUri && (
+        <Alert variant="info" className="credentials-form__redirect-info d-flex align-items-start gap-2">
+          <Info size={16} className="mt-1 flex-shrink-0" />
+          <div>
+            <strong>Redirect URI</strong>
+            <div className="mt-1">
+              Register this redirect URI in your OAuth provider's app settings:
+            </div>
+            <code className="d-block mt-1 user-select-all">{oauthRedirectUri}</code>
+          </div>
+        </Alert>
+      )}
+
       {/* Required fields */}
-      {requiredFields.map((field) => renderField(field, true))}
+      {filteredRequired.map((field) => renderField(field, true))}
 
       {/* Optional fields */}
-      {optionalFields.length > 0 && (
+      {filteredOptional.length > 0 && (
         <div className="credentials-form__optional">
           <div className="credentials-form__optional-header">
             <span className="text-muted">Optional Settings</span>
           </div>
-          {optionalFields.map((field) => renderField(field, false))}
+          {filteredOptional.map((field) => renderField(field, false))}
         </div>
       )}
     </div>

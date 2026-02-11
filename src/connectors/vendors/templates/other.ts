@@ -79,6 +79,12 @@ export const zendeskTemplate: VendorTemplate = {
         tokenUrl: 'https://{subdomain}.zendesk.com/oauth/tokens',
       },
       scopes: ['read', 'write', 'tickets:read', 'tickets:write'],
+      scopeDescriptions: {
+        'read': 'Read all resources',
+        'write': 'Create and update resources',
+        'tickets:read': 'Read support tickets',
+        'tickets:write': 'Create and update tickets',
+      },
     },
   ],
 };
@@ -160,7 +166,19 @@ export const shopifyTemplate: VendorTemplate = {
         authorizationUrl: 'https://{subdomain}.myshopify.com/admin/oauth/authorize',
         tokenUrl: 'https://{subdomain}.myshopify.com/admin/oauth/access_token',
       },
-      scopes: ['read_products', 'write_products', 'read_orders', 'write_orders'],
+      scopes: ['read_products', 'write_products', 'read_orders', 'write_orders', 'read_customers', 'write_customers', 'read_inventory', 'write_inventory', 'read_fulfillments', 'write_fulfillments'],
+      scopeDescriptions: {
+        'read_products': 'Read products and collections',
+        'write_products': 'Create and update products',
+        'read_orders': 'Read orders and transactions',
+        'write_orders': 'Create and update orders',
+        'read_customers': 'Read customer information',
+        'write_customers': 'Create and update customers',
+        'read_inventory': 'Read inventory levels',
+        'write_inventory': 'Update inventory levels',
+        'read_fulfillments': 'Read fulfillment data',
+        'write_fulfillments': 'Create and update fulfillments',
+      },
     },
   ],
 };

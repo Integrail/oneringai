@@ -740,6 +740,8 @@ export interface HoseaAPI {
         type: string;
         description: string;
         requiredFields: string[];
+        scopes?: string[];
+        scopeDescriptions?: Record<string, string>;
       }>;
     }>>;
     getVendor: (vendorId: string) => Promise<{
@@ -754,6 +756,8 @@ export interface HoseaAPI {
         type: string;
         description: string;
         requiredFields: string[];
+        scopes?: string[];
+        scopeDescriptions?: Record<string, string>;
       }>;
     } | null>;
     getVendorTemplate: (vendorId: string) => Promise<{
@@ -772,6 +776,7 @@ export interface HoseaAPI {
         requiredFields: string[];
         optionalFields?: string[];
         scopes?: string[];
+        scopeDescriptions?: Record<string, string>;
       }>;
       category: string;
       notes?: string;
@@ -796,6 +801,8 @@ export interface HoseaAPI {
         type: string;
         description: string;
         requiredFields: string[];
+        scopes?: string[];
+        scopeDescriptions?: Record<string, string>;
       }>;
     }>>;
 
@@ -839,7 +846,7 @@ export interface HoseaAPI {
       credentials: Record<string, string>;
       displayName?: string;
       baseURL?: string;
-    }) => Promise<{ success: boolean; error?: string }>;
+    }) => Promise<{ success: boolean; error?: string; needsAuth?: boolean; flow?: string }>;
     update: (name: string, updates: {
       credentials?: Record<string, string>;
       displayName?: string;
@@ -847,7 +854,25 @@ export interface HoseaAPI {
       status?: 'active' | 'error' | 'untested';
     }) => Promise<{ success: boolean; error?: string }>;
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;
-    testConnection: (name: string) => Promise<{ success: boolean; error?: string }>;
+    testConnection: (name: string) => Promise<{ success: boolean; error?: string; needsAuth?: boolean; flow?: string }>;
+  };
+
+  // OAuth flow management
+  oauth: {
+    /** Start OAuth authorization flow for a connector */
+    startFlow: (connectorName: string) => Promise<{ success: boolean; error?: string }>;
+    /** Cancel any in-progress OAuth flow */
+    cancelFlow: () => Promise<void>;
+    /** Get token status for an OAuth connector */
+    getTokenStatus: (connectorName: string) => Promise<{
+      hasToken: boolean;
+      isValid: boolean;
+      needsAuth: boolean;
+      flow?: string;
+      error?: string;
+    }>;
+    /** Get the redirect URI to register with OAuth providers */
+    getRedirectUri: () => Promise<string>;
   };
 
   // MCP Servers (Model Context Protocol)
@@ -1396,6 +1421,13 @@ const api: HoseaAPI = {
     update: (name, updates) => ipcRenderer.invoke('universal-connector:update', name, updates),
     delete: (name) => ipcRenderer.invoke('universal-connector:delete', name),
     testConnection: (name) => ipcRenderer.invoke('universal-connector:test-connection', name),
+  },
+
+  oauth: {
+    startFlow: (connectorName: string) => ipcRenderer.invoke('oauth:start-flow', connectorName),
+    cancelFlow: () => ipcRenderer.invoke('oauth:cancel-flow'),
+    getTokenStatus: (connectorName: string) => ipcRenderer.invoke('oauth:token-status', connectorName),
+    getRedirectUri: () => ipcRenderer.invoke('oauth:get-redirect-uri') as Promise<string>,
   },
 
   mcpServer: {

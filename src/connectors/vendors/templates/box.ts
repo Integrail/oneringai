@@ -27,6 +27,13 @@ export const boxTemplate: VendorTemplate = {
         authorizationUrl: 'https://account.box.com/api/oauth2/authorize',
         tokenUrl: 'https://api.box.com/oauth2/token',
       },
+      scopes: ['root_readwrite', 'manage_users', 'manage_groups', 'manage_enterprise'],
+      scopeDescriptions: {
+        'root_readwrite': 'Read and write all files and folders',
+        'manage_users': 'Manage enterprise users',
+        'manage_groups': 'Manage enterprise groups',
+        'manage_enterprise': 'Manage enterprise settings',
+      },
     },
     {
       id: 'client-credentials',

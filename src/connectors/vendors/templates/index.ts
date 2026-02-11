@@ -33,6 +33,8 @@ export { pipedriveTemplate } from './pipedrive.js';
 // Payments
 export { stripeTemplate } from './stripe.js';
 export { paypalTemplate } from './paypal.js';
+export { quickbooksTemplate } from './quickbooks.js';
+export { rampTemplate } from './ramp.js';
 
 // Cloud
 export { awsTemplate } from './aws.js';
@@ -91,6 +93,8 @@ import { hubspotTemplate } from './hubspot.js';
 import { pipedriveTemplate } from './pipedrive.js';
 import { stripeTemplate } from './stripe.js';
 import { paypalTemplate } from './paypal.js';
+import { quickbooksTemplate } from './quickbooks.js';
+import { rampTemplate } from './ramp.js';
 import { awsTemplate } from './aws.js';
 import { dropboxTemplate } from './dropbox.js';
 import { boxTemplate } from './box.js';
@@ -138,6 +142,8 @@ export const allVendorTemplates: VendorTemplate[] = [
   // Payments
   stripeTemplate,
   paypalTemplate,
+  quickbooksTemplate,
+  rampTemplate,
 
   // Cloud
   awsTemplate,

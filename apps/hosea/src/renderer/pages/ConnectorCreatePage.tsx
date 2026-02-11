@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Form, Button, Alert, Card } from 'react-bootstrap';
-import { ArrowLeft, ExternalLink, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Save, Loader2, CheckCircle, XCircle, Shield } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import {
   VendorLogo,
@@ -46,6 +46,7 @@ interface VendorTemplate {
     requiredFields: string[];
     optionalFields?: string[];
     scopes?: string[];
+    scopeDescriptions?: Record<string, string>;
   }>;
   category: string;
   notes?: string;
@@ -85,7 +86,15 @@ export function ConnectorCreatePage(): React.ReactElement {
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [baseURL, setBaseURL] = useState('');
 
-  // Load full vendor template
+  // OAuth authorization state (post-creation)
+  const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null);
+  const [showAuthStep, setShowAuthStep] = useState(false);
+  const [createdConnectorName, setCreatedConnectorName] = useState<string | null>(null);
+  const [authFlow, setAuthFlow] = useState<string | null>(null);
+  const [authorizing, setAuthorizing] = useState(false);
+  const [authResult, setAuthResult] = useState<{ success: boolean; error?: string } | null>(null);
+
+  // Load full vendor template and redirect URI
   useEffect(() => {
     if (!selectedVendor) {
       // No vendor selected, go back to catalog
@@ -95,18 +104,36 @@ export function ConnectorCreatePage(): React.ReactElement {
 
     const loadTemplate = async () => {
       try {
-        const fullTemplate = await window.hosea.universalConnector.getVendorTemplate(selectedVendor.id);
+        const [fullTemplate, redirectUri, existingConnectors] = await Promise.all([
+          window.hosea.universalConnector.getVendorTemplate(selectedVendor.id),
+          window.hosea.oauth.getRedirectUri(),
+          window.hosea.universalConnector.list(),
+        ]);
+
         if (fullTemplate) {
           setTemplate(fullTemplate);
           setBaseURL(fullTemplate.baseURL);
-          // Generate default connector name
-          setConnectorName(selectedVendor.id);
+          // Generate unique default connector name
+          const existingNames = new Set(existingConnectors.map(c => c.name));
+          let name = selectedVendor.id;
+          if (existingNames.has(name)) {
+            let suffix = 2;
+            while (existingNames.has(`${selectedVendor.id}-${suffix}`)) {
+              suffix++;
+            }
+            name = `${selectedVendor.id}-${suffix}`;
+          }
+          setConnectorName(name);
           // Auto-select first auth method if only one
           if (fullTemplate.authTemplates.length === 1) {
             setSelectedAuthMethodId(fullTemplate.authTemplates[0].id);
           }
         } else {
           setError(`Vendor template not found: ${selectedVendor.id}`);
+        }
+
+        if (redirectUri) {
+          setOauthRedirectUri(redirectUri);
         }
       } catch (err) {
         setError(`Failed to load vendor template: ${err}`);
@@ -132,8 +159,12 @@ export function ConnectorCreatePage(): React.ReactElement {
       return;
     }
 
-    // Validate required fields
-    const missingFields = selectedAuthTemplate.requiredFields.filter(
+    // Validate required fields (skip redirectUri for auth_code — Hosea auto-sets it)
+    const isAuthCode = selectedAuthTemplate.type === 'oauth' && selectedAuthTemplate.flow === 'authorization_code';
+    const fieldsToValidate = isAuthCode
+      ? selectedAuthTemplate.requiredFields.filter(f => f !== 'redirectUri')
+      : selectedAuthTemplate.requiredFields;
+    const missingFields = fieldsToValidate.filter(
       field => !credentials[field]?.trim()
     );
     if (missingFields.length > 0) {
@@ -155,9 +186,16 @@ export function ConnectorCreatePage(): React.ReactElement {
       });
 
       if (result.success) {
-        // Clear navigation data and go to connectors page
-        setData({});
-        navigate('universal-connectors');
+        if (result.needsAuth && result.flow) {
+          // OAuth connector created — show authorization step
+          setCreatedConnectorName(connectorName.trim());
+          setAuthFlow(result.flow);
+          setShowAuthStep(true);
+        } else {
+          // API key connector — done
+          setData({});
+          navigate('universal-connectors');
+        }
       } else {
         setError(result.error || 'Failed to create connector');
       }
@@ -166,6 +204,25 @@ export function ConnectorCreatePage(): React.ReactElement {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleAuthorize = async () => {
+    if (!createdConnectorName) return;
+    setAuthorizing(true);
+    setAuthResult(null);
+    try {
+      const result = await window.hosea.oauth.startFlow(createdConnectorName);
+      setAuthResult(result);
+    } catch (err) {
+      setAuthResult({ success: false, error: String(err) });
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
+  const handleSkipAuth = () => {
+    setData({});
+    navigate('universal-connectors');
   };
 
   const handleBack = () => {
@@ -218,6 +275,73 @@ export function ConnectorCreatePage(): React.ReactElement {
       </PageHeader>
 
       <div className="page__content">
+        {showAuthStep ? (
+          /* ── OAuth Authorization Step ── */
+          <div className="connector-create-page__auth-step">
+            <Card className="connector-create-page__vendor-card mb-4">
+              <Card.Body>
+                <div className="d-flex align-items-center gap-3">
+                  <VendorLogo vendorId={template.id} size={48} />
+                  <div className="flex-1">
+                    <h4 className="mb-1">{template.name} — Connector Created</h4>
+                    <span className="text-muted">One more step: authorize access</span>
+                  </div>
+                </div>
+              </Card.Body>
+            </Card>
+
+            {authFlow === 'authorization_code' && oauthRedirectUri && (
+              <Alert variant="info" className="d-flex align-items-start gap-2">
+                <Shield size={16} className="mt-1 flex-shrink-0" />
+                <div>
+                  Make sure you have registered this redirect URI in your provider's app settings:
+                  <code className="d-block mt-1 user-select-all">{oauthRedirectUri}</code>
+                </div>
+              </Alert>
+            )}
+
+            {authResult && (
+              <Alert variant={authResult.success ? 'success' : 'danger'} className="d-flex align-items-center gap-2">
+                {authResult.success ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                {authResult.success
+                  ? 'Authorization successful! Your connector is ready to use.'
+                  : `Authorization failed: ${authResult.error}`}
+              </Alert>
+            )}
+
+            <div className="d-flex gap-3 mt-4">
+              {authResult?.success ? (
+                <Button variant="primary" onClick={handleSkipAuth}>
+                  <CheckCircle size={16} className="me-2" />
+                  Done
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="primary"
+                    onClick={handleAuthorize}
+                    disabled={authorizing}
+                  >
+                    {authorizing ? (
+                      <>
+                        <Loader2 size={16} className="me-2 spin" />
+                        Authorizing...
+                      </>
+                    ) : (
+                      <>
+                        <Shield size={16} className="me-2" />
+                        {authResult ? 'Retry Authorization' : 'Authorize'}
+                      </>
+                    )}
+                  </Button>
+                  <Button variant="outline-secondary" onClick={handleSkipAuth} disabled={authorizing}>
+                    Skip (do later)
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
         <Form onSubmit={handleSubmit}>
           {/* Vendor Info Card */}
           <Card className="connector-create-page__vendor-card mb-4">
@@ -325,6 +449,11 @@ export function ConnectorCreatePage(): React.ReactElement {
                 onChange={handleCredentialChange}
                 credentialsSetupURL={template.credentialsSetupURL}
                 docsURL={template.docsURL}
+                authType={selectedAuthTemplate.type}
+                oauthFlow={selectedAuthTemplate.flow}
+                oauthRedirectUri={oauthRedirectUri || undefined}
+                availableScopes={selectedAuthTemplate.scopes}
+                scopeDescriptions={selectedAuthTemplate.scopeDescriptions}
               />
             </div>
           )}
@@ -376,6 +505,7 @@ export function ConnectorCreatePage(): React.ReactElement {
             </Button>
           </div>
         </Form>
+        )}
       </div>
     </div>
   );

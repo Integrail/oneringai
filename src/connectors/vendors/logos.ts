@@ -65,6 +65,8 @@ export const VENDOR_ICON_MAP: Record<string, string | null> = {
   // Payments
   stripe: 'stripe',
   paypal: 'paypal',
+  quickbooks: 'quickbooks',
+  ramp: null, // No Simple Icon available
 
   // Email
   sendgrid: 'sendgrid',
@@ -121,6 +123,9 @@ const FALLBACK_PLACEHOLDERS: Record<string, { color: string; letter: string }> =
   // Email (trademark removed)
   sendgrid: { color: '#1A82E2', letter: 'S' },
   postmark: { color: '#FFDE00', letter: 'P' },
+
+  // Payments (no Simple Icon available)
+  ramp: { color: '#F2C94C', letter: 'R' },
 
   // Search (no Simple Icon available)
   serper: { color: '#4A90A4', letter: 'S' },

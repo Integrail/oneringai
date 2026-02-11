@@ -46,6 +46,8 @@ interface VendorInfo {
     type: string;
     description: string;
     requiredFields: string[];
+    scopes?: string[];
+    scopeDescriptions?: Record<string, string>;
   }>;
 }
 
@@ -56,6 +58,7 @@ export function UniversalConnectorsPage(): React.ReactElement {
   const [vendors, setVendors] = useState<Map<string, VendorInfo>>(new Map());
   const [loading, setLoading] = useState(true);
   const [testingConnector, setTestingConnector] = useState<string | null>(null);
+  const [authorizingConnector, setAuthorizingConnector] = useState<string | null>(null);
 
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -174,6 +177,26 @@ export function UniversalConnectorsPage(): React.ReactElement {
     }
   };
 
+  const handleAuthorize = async (connector: StoredUniversalConnector) => {
+    setAuthorizingConnector(connector.name);
+    try {
+      const result = await window.hosea.oauth.startFlow(connector.name);
+      if (!result.success) {
+        alert(`Authorization failed: ${result.error}`);
+      }
+      await loadConnectors();
+    } catch (error) {
+      alert(`Authorization failed: ${error}`);
+    } finally {
+      setAuthorizingConnector(null);
+    }
+  };
+
+  // Check if a connector uses OAuth (heuristic: auth method name contains "OAuth")
+  const isOAuthConnector = (connector: StoredUniversalConnector): boolean => {
+    return connector.authMethodName.toLowerCase().includes('oauth');
+  };
+
   // Get vendor info for a connector
   const getVendorInfo = (vendorId: string): VendorInfo | undefined => {
     return vendors.get(vendorId);
@@ -242,6 +265,8 @@ export function UniversalConnectorsPage(): React.ReactElement {
                   onTest={() => handleTestConnection(connector)}
                   testing={testingConnector === connector.name}
                   docsURL={vendorInfo?.docsURL}
+                  onAuthorize={isOAuthConnector(connector) ? () => handleAuthorize(connector) : undefined}
+                  authorizing={authorizingConnector === connector.name}
                 />
               );
             })}
@@ -286,15 +311,20 @@ export function UniversalConnectorsPage(): React.ReactElement {
             <hr />
 
             <h6 className="mb-3">Credentials</h6>
-            {editingConnector && (
-              <CredentialsForm
-                requiredFields={getAuthTemplate()?.requiredFields || []}
-                values={editCredentials}
-                onChange={(field, value) => setEditCredentials(prev => ({ ...prev, [field]: value }))}
-                credentialsSetupURL={vendors.get(editingConnector.vendorId)?.credentialsSetupURL}
-                docsURL={vendors.get(editingConnector.vendorId)?.docsURL}
-              />
-            )}
+            {editingConnector && (() => {
+              const authTemplate = getAuthTemplate();
+              return (
+                <CredentialsForm
+                  requiredFields={authTemplate?.requiredFields || []}
+                  values={editCredentials}
+                  onChange={(field, value) => setEditCredentials(prev => ({ ...prev, [field]: value }))}
+                  credentialsSetupURL={vendors.get(editingConnector.vendorId)?.credentialsSetupURL}
+                  docsURL={vendors.get(editingConnector.vendorId)?.docsURL}
+                  availableScopes={authTemplate?.scopes}
+                  scopeDescriptions={authTemplate?.scopeDescriptions}
+                />
+              );
+            })()}
 
             <hr />
 

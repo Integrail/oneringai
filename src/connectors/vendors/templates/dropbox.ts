@@ -28,7 +28,16 @@ export const dropboxTemplate: VendorTemplate = {
         tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
         usePKCE: true,
       },
-      scopes: ['files.content.read', 'files.content.write', 'files.metadata.read'],
+      scopes: ['files.content.read', 'files.content.write', 'files.metadata.read', 'files.metadata.write', 'sharing.read', 'sharing.write', 'account_info.read'],
+      scopeDescriptions: {
+        'files.content.read': 'Read file contents',
+        'files.content.write': 'Upload and modify files',
+        'files.metadata.read': 'Read file and folder metadata',
+        'files.metadata.write': 'Modify file and folder metadata',
+        'sharing.read': 'View sharing settings',
+        'sharing.write': 'Manage sharing settings',
+        'account_info.read': 'Read account information',
+      },
     },
   ],
 };

@@ -315,14 +315,32 @@ var AuthCodePKCEFlow = class {
     if (this.config.usePKCE !== false && verifierData) {
       params.append("code_verifier", verifierData.verifier);
     }
-    const response = await fetch(this.config.tokenUrl, {
+    let response = await fetch(this.config.tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
       },
       body: params
     });
-    if (!response.ok) {
+    if (!response.ok && this.config.clientSecret) {
+      const errorText = await response.text();
+      if (isPublicClientError(errorText)) {
+        params.delete("client_secret");
+        response = await fetch(this.config.tokenUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        });
+        if (!response.ok) {
+          const retryError = await response.text();
+          throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${retryError}`);
+        }
+      } else {
+        throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+    } else if (!response.ok) {
       const error = await response.text();
       throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
     }
@@ -368,14 +386,32 @@ var AuthCodePKCEFlow = class {
     if (this.config.clientSecret) {
       params.append("client_secret", this.config.clientSecret);
     }
-    const response = await fetch(this.config.tokenUrl, {
+    let response = await fetch(this.config.tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
       },
       body: params
     });
-    if (!response.ok) {
+    if (!response.ok && this.config.clientSecret) {
+      const errorText = await response.text();
+      if (isPublicClientError(errorText)) {
+        params.delete("client_secret");
+        response = await fetch(this.config.tokenUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        });
+        if (!response.ok) {
+          const retryError = await response.text();
+          throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${retryError}`);
+        }
+      } else {
+        throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+    } else if (!response.ok) {
       const error = await response.text();
       throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
     }
@@ -430,6 +466,10 @@ var AuthCodePKCEFlow = class {
     }
   }
 };
+function isPublicClientError(responseBody) {
+  const lower = responseBody.toLowerCase();
+  return lower.includes("aadsts700025") || lower.includes("invalid_client") && lower.includes("public");
+}
 
 // src/connectors/oauth/flows/ClientCredentials.ts
 var ClientCredentialsFlow = class {

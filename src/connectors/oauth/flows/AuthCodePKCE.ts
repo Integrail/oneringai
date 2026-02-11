@@ -131,7 +131,7 @@ export class AuthCodePKCEFlow {
       params.append('code_verifier', verifierData.verifier);
     }
 
-    const response = await fetch(this.config.tokenUrl, {
+    let response = await fetch(this.config.tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -139,7 +139,26 @@ export class AuthCodePKCEFlow {
       body: params,
     });
 
-    if (!response.ok) {
+    // If the provider rejects client_secret (public client), retry without it
+    if (!response.ok && this.config.clientSecret) {
+      const errorText = await response.text();
+      if (isPublicClientError(errorText)) {
+        params.delete('client_secret');
+        response = await fetch(this.config.tokenUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: params,
+        });
+        if (!response.ok) {
+          const retryError = await response.text();
+          throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${retryError}`);
+        }
+      } else {
+        throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+    } else if (!response.ok) {
       const error = await response.text();
       throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
     }
@@ -207,7 +226,7 @@ export class AuthCodePKCEFlow {
       params.append('client_secret', this.config.clientSecret);
     }
 
-    const response = await fetch(this.config.tokenUrl, {
+    let response = await fetch(this.config.tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -215,7 +234,26 @@ export class AuthCodePKCEFlow {
       body: params,
     });
 
-    if (!response.ok) {
+    // If the provider rejects client_secret (public client), retry without it
+    if (!response.ok && this.config.clientSecret) {
+      const errorText = await response.text();
+      if (isPublicClientError(errorText)) {
+        params.delete('client_secret');
+        response = await fetch(this.config.tokenUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: params,
+        });
+        if (!response.ok) {
+          const retryError = await response.text();
+          throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${retryError}`);
+        }
+      } else {
+        throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+    } else if (!response.ok) {
       const error = await response.text();
       throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
     }
@@ -282,4 +320,18 @@ export class AuthCodePKCEFlow {
       }
     }
   }
+}
+
+/**
+ * Detect OAuth errors indicating the app is a public client that must not
+ * present a client_secret. Covers:
+ * - Microsoft/Entra ID: AADSTS700025
+ * - Generic OAuth servers that return "invalid_client" with a hint about public clients
+ */
+function isPublicClientError(responseBody: string): boolean {
+  const lower = responseBody.toLowerCase();
+  return (
+    lower.includes('aadsts700025') ||
+    (lower.includes('invalid_client') && lower.includes('public'))
+  );
 }
