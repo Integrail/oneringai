@@ -40,8 +40,23 @@ Normally, after first run the system should ask you to configure your first LLM 
 
  1. Fill in the basic info, by selecting a connector, model, name and system instructions (see the section below for good system prompt examples that fully utilize our smart-context management system for agents)
 
-![Agents page](docs/images/03agents.png)
+![Agent Creation](docs/images/03agents.png)
 
+2. Select tools you want to make available to the agent. Tools are where the main POWER of your agents come from, but be careful not to give too many (vendors recommend giving not more than a 100, but be mindful of your context tokens). Also, some tools are EXTREMELY POWERFUL so you need to excercise caution if you are using them - e.g., `bash` tool basically allows to run ANY terminal command on your system, so it is **YOUR RESPONSIBILITY** to introduce guardrails, prompt limitations, and monitor what your agents are doing to avoid damaging your files and systems!
+
+![Agents Tools](docs/images/04agents.png)
+
+**!NB** Be sure to study which tools we have - there are a bunch coming out of box, a lot are enabled depending on the connectors you have configured and you can also add your own via the `oneringai` library itself. However, be mindful that different sets of tools are for different purposes, e.g. Browser tools implement actual in-UI browser automation but mixing them with API-based tools might not be the best idea. Having said that, feel free to experiment!
+
+3. Finally, setup the **Context Plugins**. Our agents use a very sophisticated smart context management system that is fully pluggable and extendable (again, see `oneringai` documentation), providing 3 key plugins out of box:
+
+ - **Working Memory**: allows agents to keep large pieces of information *outside* of the context with ability to easily retrieve when relevant via key-value-pair index in context. This comes extremely handy when an agent executes a lot of tool calls that return large amounts of information.
+
+ - **In Context Memory**: similar to working memory, but keeps key-value based information right in the context. The power of this plugin comes from the fact that this allows you to implement plan / task execution agents, agents that work with constantly updating "artefact" that lives in the context without the issue of "sliding window" disappearing message history etc. See also prompt templates.
+
+ - **Persistent Instructions**: this provides *updateable* instructions that get included into system prompt automatically, but the agent can manipulate them directly via special built-in tools. This basically allows you to implement *self-learning* -- the agent can update its own instructions on the fly following your requests or by its own! Experiment!
+
+![Agents Context](docs/images/05agents.png)
 
 ## License
 
