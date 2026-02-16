@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-11
+**Generated:** 2026-02-16
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -15365,6 +15365,7 @@ Defines a single authentication method (e.g., API key, OAuth user flow)
 | `optionalFields?` | `optionalFields?: AuthTemplateField[];` | Optional fields user may provide |
 | `defaults` | `defaults: Partial&lt;ConnectorAuth&gt;;` | Pre-filled OAuth URLs and defaults |
 | `scopes?` | `scopes?: string[];` | Common scopes for this auth method |
+| `scopeDescriptions?` | `scopeDescriptions?: Record&lt;string, string&gt;;` | Human-readable descriptions for scopes (key = scope ID) |
 
 </details>
 
@@ -15372,7 +15373,7 @@ Defines a single authentication method (e.g., API key, OAuth user flow)
 
 ### CreateConnectorOptions `interface`
 
-📍 [`src/connectors/vendors/types.ts:141`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:144`](src/connectors/vendors/types.ts)
 
 Options for creating a connector from a template
 
@@ -15615,6 +15616,8 @@ Get vendor template information for display
     type: string;
     description: string;
     requiredFields: string[];
+    scopes?: string[];
+    scopeDescriptions?: Record&lt;string, string&gt;;
   }[];` | - |
 
 </details>
@@ -15623,7 +15626,7 @@ Get vendor template information for display
 
 ### VendorLogo `interface`
 
-📍 [`src/connectors/vendors/logos.ts:162`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:167`](src/connectors/vendors/logos.ts)
 
 Vendor logo information
 
@@ -15644,7 +15647,7 @@ Vendor logo information
 
 ### VendorRegistryEntry `interface`
 
-📍 [`src/connectors/vendors/types.ts:108`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:111`](src/connectors/vendors/types.ts)
 
 Registry entry for a vendor (generated at build time)
 
@@ -15667,7 +15670,7 @@ Registry entry for a vendor (generated at build time)
 
 ### VendorTemplate `interface`
 
-📍 [`src/connectors/vendors/types.ts:76`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:79`](src/connectors/vendors/types.ts)
 
 Vendor template definition
 Complete configuration for a vendor's supported authentication methods
@@ -15693,7 +15696,7 @@ Complete configuration for a vendor's supported authentication methods
 
 ### AuthTemplateField `type`
 
-📍 [`src/connectors/vendors/types.ts:47`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:50`](src/connectors/vendors/types.ts)
 
 Known fields that can be required/optional in auth templates
 
@@ -15737,7 +15740,7 @@ type OAuthFlow = 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 's
 
 ### TemplateCredentials `type`
 
-📍 [`src/connectors/vendors/types.ts:134`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:137`](src/connectors/vendors/types.ts)
 
 Credentials provided by user when creating connector from template
 
@@ -15910,7 +15913,7 @@ export function generateEncryptionKey(): string
 
 ### getAllVendorLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:276`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:281`](src/connectors/vendors/logos.ts)
 
 Get all available vendor logos
 
@@ -15934,7 +15937,7 @@ export function getAllVendorTemplates(): VendorTemplate[]
 
 ### getCredentialsSetupURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:343`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:349`](src/connectors/vendors/helpers.ts)
 
 Get credentials setup URL for a vendor
 
@@ -15946,7 +15949,7 @@ export function getCredentialsSetupURL(vendorId: string): string | undefined
 
 ### getDocsURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:351`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:357`](src/connectors/vendors/helpers.ts)
 
 Get docs URL for a vendor
 
@@ -15973,7 +15976,7 @@ export function getVendorAuthTemplate(
 
 ### getVendorColor `function`
 
-📍 [`src/connectors/vendors/logos.ts:266`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:271`](src/connectors/vendors/logos.ts)
 
 Get the brand color for a vendor
 
@@ -15985,7 +15988,7 @@ export function getVendorColor(vendorId: string): string | undefined
 
 ### getVendorInfo `function`
 
-📍 [`src/connectors/vendors/helpers.ts:284`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:286`](src/connectors/vendors/helpers.ts)
 
 Get vendor information suitable for display
 
@@ -15997,7 +16000,7 @@ export function getVendorInfo(vendorId: string): VendorInfo | undefined
 
 ### getVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:205`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:210`](src/connectors/vendors/logos.ts)
 
 Get logo for a vendor
 
@@ -16019,7 +16022,7 @@ if (logo) {
 
 ### getVendorLogoCdnUrl `function`
 
-📍 [`src/connectors/vendors/logos.ts:308`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:313`](src/connectors/vendors/logos.ts)
 
 Get CDN URL for a vendor's logo
 
@@ -16031,7 +16034,7 @@ export function getVendorLogoCdnUrl(vendorId: string, color?: string): string | 
 
 ### getVendorLogoSvg `function`
 
-📍 [`src/connectors/vendors/logos.ts:248`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:253`](src/connectors/vendors/logos.ts)
 
 Get SVG content for a vendor logo
 
@@ -16055,7 +16058,7 @@ export function getVendorTemplate(vendorId: string): VendorTemplate | undefined
 
 ### hasVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:178`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:183`](src/connectors/vendors/logos.ts)
 
 Check if a vendor has a logo available
 
@@ -16079,7 +16082,7 @@ export function listVendorIds(): string[]
 
 ### listVendors `function`
 
-📍 [`src/connectors/vendors/helpers.ts:307`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:311`](src/connectors/vendors/helpers.ts)
 
 List all vendors with basic info
 
@@ -16091,7 +16094,7 @@ export function listVendors(): VendorInfo[]
 
 ### listVendorsByAuthType `function`
 
-📍 [`src/connectors/vendors/helpers.ts:334`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:340`](src/connectors/vendors/helpers.ts)
 
 List vendors that support a specific auth type
 
@@ -16103,7 +16106,7 @@ export function listVendorsByAuthType(authType: 'api_key' | 'oauth'): VendorInfo
 
 ### listVendorsByCategory `function`
 
-📍 [`src/connectors/vendors/helpers.ts:327`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:333`](src/connectors/vendors/helpers.ts)
 
 List vendors by category
 
@@ -16115,7 +16118,7 @@ export function listVendorsByCategory(category: string): VendorInfo[]
 
 ### listVendorsWithLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:292`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:297`](src/connectors/vendors/logos.ts)
 
 List vendor IDs that have logos available
 
@@ -16164,6 +16167,8 @@ Mapping from our vendor IDs to Simple Icons slugs
 | `onedrive` | `'onedrive'` | - |
 | `stripe` | `'stripe'` | - |
 | `paypal` | `'paypal'` | - |
+| `quickbooks` | `'quickbooks'` | - |
+| `ramp` | `null` | - |
 | `sendgrid` | `'sendgrid'` | - |
 | `mailchimp` | `'mailchimp'` | - |
 | `postmark` | `'postmark'` | - |
@@ -26896,7 +26901,7 @@ Complete service definition - single source of truth
 
 ### ServiceInfo `interface`
 
-📍 [`src/domain/entities/Services.ts:437`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:454`](src/domain/entities/Services.ts)
 
 Service info lookup (derived from SERVICE_DEFINITIONS)
 
@@ -27553,7 +27558,7 @@ type ServiceCategory = | 'major-vendors'
 
 ### ServiceType `type`
 
-📍 [`src/domain/entities/Services.ts:408`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:425`](src/domain/entities/Services.ts)
 
 Service type - union of all service IDs
 
@@ -27604,7 +27609,7 @@ export function buildQueryString(params: Record&lt;string, string | number | boo
 
 ### detectServiceFromURL `function`
 
-📍 [`src/domain/entities/Services.ts:486`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:503`](src/domain/entities/Services.ts)
 
 Detect service type from a URL
 
@@ -27645,7 +27650,7 @@ const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
 
 ### getAllServiceIds `function`
 
-📍 [`src/domain/entities/Services.ts:522`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:539`](src/domain/entities/Services.ts)
 
 Get all service IDs
 
@@ -27706,7 +27711,7 @@ export function getRegisteredScrapeProviders(): string[]
 
 ### getServiceDefinition `function`
 
-📍 [`src/domain/entities/Services.ts:508`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:525`](src/domain/entities/Services.ts)
 
 Get service definition by service type
 
@@ -27718,7 +27723,7 @@ export function getServiceDefinition(serviceType: string): ServiceDefinition | u
 
 ### getServiceInfo `function`
 
-📍 [`src/domain/entities/Services.ts:501`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:518`](src/domain/entities/Services.ts)
 
 Get service info by service type
 
@@ -27730,7 +27735,7 @@ export function getServiceInfo(serviceType: string): ServiceInfo | undefined
 
 ### getServicesByCategory `function`
 
-📍 [`src/domain/entities/Services.ts:515`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:532`](src/domain/entities/Services.ts)
 
 Get all services in a category
 
@@ -27771,7 +27776,7 @@ export function isExcludedExtension(
 
 ### isKnownService `function`
 
-📍 [`src/domain/entities/Services.ts:529`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:546`](src/domain/entities/Services.ts)
 
 Check if a service ID is known
 
