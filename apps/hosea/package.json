@@ -75,6 +75,7 @@
     "files": [
       "dist/**/*",
       "package.json",
+      "LICENSE",
       "node_modules/**/*",
       "!node_modules/@everworker/oneringai/apps/**/*",
       "!node_modules/@everworker/oneringai/src/**/*",
@@ -136,9 +137,11 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
+      "uninstallerIcon": "assets/icon.ico",
+      "license": "LICENSE"
     },
     "dmg": {
+      "license": "LICENSE",
       "contents": [
         {
           "x": 130,

@@ -20,6 +20,7 @@ import {
   SettingsPage,
 } from './pages';
 import { SetupModal } from './components/modals/SetupModal';
+import { LicenseAcceptanceModal } from './components/modals/LicenseAcceptanceModal';
 import { UpdateNotification } from './components/UpdateNotification';
 import {
   NavigationContext,
@@ -139,6 +140,14 @@ function AppContent(): React.ReactElement {
   const initStarted = React.useRef(false);
   const [connectorVersion, setConnectorVersion] = useState(0);
   const [serviceReady, setServiceReady] = useState(false);
+  const [licenseAccepted, setLicenseAccepted] = useState<boolean | null>(null); // null = loading
+
+  // Check license acceptance on mount
+  useEffect(() => {
+    window.hosea.license.getStatus().then((status) => {
+      setLicenseAccepted(status.accepted);
+    });
+  }, []);
 
   // Listen for service readiness (non-blocking startup)
   useEffect(() => {
@@ -289,6 +298,37 @@ function AppContent(): React.ReactElement {
         return <ChatPage />;
     }
   };
+
+  // Handle license acceptance
+  const handleLicenseAccept = useCallback(async () => {
+    await window.hosea.license.accept();
+    setLicenseAccepted(true);
+  }, []);
+
+  const handleLicenseDecline = useCallback(() => {
+    // Close the app if license is declined
+    window.close();
+  }, []);
+
+  // Show license modal if not yet accepted (blocks everything else)
+  if (licenseAccepted === null) {
+    return (
+      <div className="app-loading">
+        <Spinner animation="border" variant="primary" />
+        <p className="mt-3 text-muted">Starting HOSEA...</p>
+      </div>
+    );
+  }
+
+  if (!licenseAccepted) {
+    return (
+      <LicenseAcceptanceModal
+        show={true}
+        onAccept={handleLicenseAccept}
+        onDecline={handleLicenseDecline}
+      />
+    );
+  }
 
   // Show loading spinner while initializing
   if (isInitializing) {

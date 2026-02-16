@@ -365,6 +365,12 @@ export interface HoseaAPI {
     getVersion: () => Promise<string>;
   };
 
+  // License
+  license: {
+    getStatus: () => Promise<{ accepted: boolean; acceptedVersion: string | null; acceptedAt: number | null }>;
+    accept: () => Promise<{ success: boolean }>;
+  };
+
   // Models
   model: {
     list: () => Promise<Array<{
@@ -1364,6 +1370,12 @@ const api: HoseaAPI = {
   // App info
   app: {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
+  },
+
+  // License
+  license: {
+    getStatus: () => ipcRenderer.invoke('license:get-status'),
+    accept: () => ipcRenderer.invoke('license:accept'),
   },
 
   model: {

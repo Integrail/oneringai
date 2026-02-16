@@ -8,6 +8,7 @@ import { app, BrowserWindow, ipcMain, shell, dialog, Menu, protocol, net } from 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { AgentService } from './AgentService.js';
 import { BrowserService } from './BrowserService.js';
 import { AutoUpdaterService } from './AutoUpdaterService.js';
@@ -35,6 +36,27 @@ let agentService: AgentService | null = null;
 let browserService: BrowserService | null = null;
 const ewAuthService = new EWAuthService();
 let autoUpdaterService: AutoUpdaterService | null = null;
+
+// Simple JSON-based settings (avoids ESM-only electron-store dependency)
+function getSettingsPath(): string {
+  return join(getDataDir(), 'settings.json');
+}
+
+function readSettings(): Record<string, unknown> {
+  const p = getSettingsPath();
+  if (!existsSync(p)) return {};
+  try {
+    return JSON.parse(readFileSync(p, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function writeSettings(data: Record<string, unknown>): void {
+  const dir = getDataDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(getSettingsPath(), JSON.stringify(data, null, 2), 'utf-8');
+}
 
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
@@ -514,6 +536,24 @@ async function setupIPC(): Promise<void> {
   // App version
   ipcMain.handle('app:get-version', () => {
     return app.getVersion();
+  });
+
+  // License acceptance
+  ipcMain.handle('license:get-status', () => {
+    const settings = readSettings();
+    return {
+      accepted: settings.licenseAcceptedVersion === '2.0',
+      acceptedVersion: (settings.licenseAcceptedVersion as string) || null,
+      acceptedAt: (settings.licenseAcceptedAt as number) || null,
+    };
+  });
+
+  ipcMain.handle('license:accept', () => {
+    const settings = readSettings();
+    settings.licenseAcceptedVersion = '2.0';
+    settings.licenseAcceptedAt = Date.now();
+    writeSettings(settings);
+    return { success: true };
   });
 
   // Log level operations
