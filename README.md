@@ -55,6 +55,15 @@
 
 ---
 
+## HOSEA APP
+We realize that library alone in these times is not enough to get you excited, so we built a FREE FOREVER desktop app on top of this library to showcase its power! It's as easy to start using as cloning this library's repo, and then `cd apps/hosea` and then `npm install` and then `npm run dev`. Or watch the video first:
+
+![Watch the demo](https://img.youtube.com/vi/_LzDiuOQD8Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=_LzDiuOQD8Y)
+
+Or read the more detailed installation / setup instructions [here](https://github.com/Integrail/oneringai/blob/main/apps/hosea/README.md)
+
+Better to see once and then dig in the code! :)
+
 ## Features
 
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
