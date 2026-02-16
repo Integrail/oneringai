@@ -141,7 +141,6 @@
       "license": "LICENSE"
     },
     "dmg": {
-      "license": "LICENSE",
       "contents": [
         {
           "x": 130,
