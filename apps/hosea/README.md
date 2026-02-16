@@ -1,89 +1,34 @@
-# HOSEA
+# HOSEA by Everworker.ai
 
 **Human-Oriented System for Engaging Agents**
 
-A desktop application for interacting with AI agents powered by the `@everworker/oneringai` library.
+A desktop application for interacting with AI agents and generative AI in general powered by the `@everworker/oneringai` library. "Swiss Army Knife" of AI!
 
 ## Features
 
 - **Multi-vendor support** - Connect to OpenAI, Anthropic, Google, and more
 - **Real-time streaming** - See responses as they're generated
 - **Session management** - Save and resume conversations
-- **Tool integration** - Enable/disable agent tools
+- **Tool integration** - Enable/disable agent tools, with auto-tools provided by connectors
+- **Universal Connector** - system to connect to ANY vendor that has an API, with 40+ templates and more coming
+- **Multimedia Studio** - generate images, videos, speech, etc - depending on the connectors you added
 - **Native experience** - Electron-based desktop app for macOS, Windows, Linux
+- **And much, much more!**
 
-## Development
+## Installation
 
-### Prerequisites
+For developers, simply clone the `oneringai` repo, then `cd apps/hosea` and then `npm install` and `npm run dev` - that's it, you are set!
 
-- Node.js 18+
-- npm
+For non-developers, [go to releases](https://github.com/Integrail/oneringai/releases/), find your platform's installer and follow the usual steps.
 
-### Setup
+### Note for Mac users
+If you are using an installer, you may get "an untrusted developer" notice or something. This is Apple's fault as they are extremely slow in processing the so-called "notarization requests", but usually you just need to right click on the app once you installed it and then "open", and then allow it to run. In some cases it may forbid running it altogether, then you have to go to "System Settings", "Privacy and Security", and change the corresponding setting. Once you go through it once, the updates are automatic!
 
-```bash
-cd apps/hosea
-npm install
-```
+## Initial Setup
 
-### Running in Development
 
-```bash
-# Start both Vite dev server and Electron
-npm run dev
 
-# Then in another terminal, start Electron
-npm run electron:dev
-```
-
-### Building
-
-```bash
-# Build for production
-npm run build
-
-# Package as distributable
-npm run package
-```
-
-## Architecture
-
-```
-src/
-├── main/               # Electron main process
-│   ├── index.ts        # Window management, IPC setup
-│   └── AgentService.ts # @everworker/oneringai integration
-├── preload/
-│   └── index.ts        # Context bridge for secure IPC
-└── renderer/           # React frontend
-    ├── App.tsx         # Main app component
-    └── components/     # UI components
-        ├── Chat.tsx
-        ├── Message.tsx
-        ├── Sidebar.tsx
-        ├── SetupModal.tsx
-        └── SettingsModal.tsx
-```
-
-## IPC API
-
-The renderer communicates with the main process through the `window.hosea` API:
-
-- `hosea.agent.*` - Agent initialization, messaging, streaming
-- `hosea.connector.*` - Connector management
-- `hosea.model.*` - Model listing
-- `hosea.session.*` - Session save/load
-- `hosea.tool.*` - Tool management
-- `hosea.config.*` - Configuration
-
-## Data Storage
-
-User data is stored in `data/`:
-
-- `config.json` - App configuration
-- `connectors/` - Connector configurations (API keys)
-- `sessions/` - Saved conversation sessions
 
 ## License
 
-MIT
+See LICENSE file in the same folder
