@@ -25,7 +25,9 @@ For non-developers, [go to releases](https://github.com/Integrail/oneringai/rele
 If you are using an installer, you may get "an untrusted developer" notice or something. This is Apple's fault as they are extremely slow in processing the so-called "notarization requests", but usually you just need to right click on the app once you installed it and then "open", and then allow it to run. In some cases it may forbid running it altogether, then you have to go to "System Settings", "Privacy and Security", and change the corresponding setting. Once you go through it once, the updates are automatic!
 
 ## Initial Setup
+Normally, after first run the system should ask you to configure your first LLM provider. If it doesn't or if you want to have more than one provider (which we definitely recommend, especially if you want multimedia capabilities) - go to "LLM Providers" tab and simply add a new one!
 
+ ![LLMs configuration](docs/images/01llms.png)  
 
 
 
