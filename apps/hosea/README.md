@@ -17,7 +17,17 @@ A desktop application for interacting with AI agents and generative AI in genera
 
 ## Installation
 
-For developers, simply clone the `oneringai` repo, then `cd apps/hosea` and then `npm install` and `npm run dev` - that's it, you are set!
+For developers, simply clone the `oneringai` repo, then:
+
+```
+npm install
+npm run build
+cd apps/hosea
+npm install
+npm run dev
+```
+
+that's it, you are set!
 
 For non-developers, [go to releases](https://github.com/Integrail/oneringai/releases/), find your platform's installer and follow the usual steps.
 

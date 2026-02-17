@@ -837,7 +837,13 @@ export class AgentService {
 
       await this.loadEWProfiles();
       this.checkTokenExpiry();
-      await this.syncActiveEWProfile();
+
+      // EW profile sync is non-critical — don't let it block startup.
+      // Fire in background so agents, MCP servers, etc. load immediately.
+      this.syncActiveEWProfile().catch(err => {
+        logger.warn(`[initializeHeavy] EW profile sync failed (non-blocking): ${err instanceof Error ? err.message : String(err)}`);
+      });
+
       await this.loadAgents();
       await this.migrateAgentsToNextGen();
       await this.loadMCPServers();
@@ -1236,10 +1242,18 @@ export class AgentService {
     try {
       const url = `${profile.url}/api/v1/proxy/connectors`;
       logger.info(`[testEWProfileConnection] Testing connection to ${url}`);
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${profile.token}` },
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${profile.token}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!response.ok) {
         const text = await response.text();
         logger.error(`[testEWProfileConnection] HTTP ${response.status}: ${text}`);
@@ -1273,10 +1287,18 @@ export class AgentService {
 
     try {
       const url = `${activeProfile.url}/api/v1/proxy/connectors`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${activeProfile.token}` },
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${activeProfile.token}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!response.ok) {
         const text = await response.text();
         logger.error(`[syncActiveEWProfile] Discovery endpoint returned HTTP ${response.status}: ${text}`);
