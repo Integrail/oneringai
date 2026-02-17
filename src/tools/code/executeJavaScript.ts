@@ -253,7 +253,7 @@ export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = c
 /**
  * Execute code in Node.js vm module with userId-scoped connector access.
  */
-async function executeInVM(
+export async function executeInVM(
   code: string,
   input: any,
   timeout: number,

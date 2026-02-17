@@ -26,3 +26,7 @@ export type { FileAgentDefinitionStorageConfig } from './FileAgentDefinitionStor
 // Media storage (for multimedia tool outputs)
 export { FileMediaStorage, createFileMediaStorage } from './FileMediaStorage.js';
 export type { FileMediaStorageConfig } from './FileMediaStorage.js';
+
+// Custom tool storage (for user-created custom tools)
+export { FileCustomToolStorage, createFileCustomToolStorage } from './FileCustomToolStorage.js';
+export type { FileCustomToolStorageConfig } from './FileCustomToolStorage.js';

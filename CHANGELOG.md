@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Custom Tool Generation System** — 6 meta-tools (`custom_tool_draft`, `custom_tool_test`, `custom_tool_save`, `custom_tool_list`, `custom_tool_load`, `custom_tool_delete`) that enable any agent to create, test, iterate, and persist reusable custom tools at runtime. Tools are saved to `~/.oneringai/custom-tools/` and can be hydrated back into executable `ToolFunction`s via `hydrateCustomTool()`. Draft and test tools use `descriptionFactory` to dynamically show all available connectors and the full sandbox API. Bundle factory: `createCustomToolMetaTools()`.
+- **Custom Tool Storage** — `ICustomToolStorage` interface (domain layer) with `FileCustomToolStorage` implementation. Supports CRUD, search (case-insensitive substring on name + description), tag/category filtering, and pagination. Atomic writes with `.tmp` + rename pattern and index-based listing.
+- **ToolManager metadata fields** — `tags`, `category`, and `source` fields on `ToolOptions`, `ToolRegistration`, and `SerializedToolState`. Enables tracking tool provenance (built-in, connector, custom, mcp) and categorization. Persisted through `getState()`/`loadState()`.
+- **Exported `executeInVM`** — The VM sandbox executor from `executeJavaScript.ts` is now a public export, enabling reuse by custom tool meta-tools and external code.
 - **OAuth Scope Selector** — New `ScopeSelector` component replaces the plain-text scope input field with a checkbox-based selector. Shows template-defined scopes with human-readable descriptions, all pre-checked by default. Users can toggle scopes on/off and add custom scopes. Falls back to plain text input when no template scopes are available.
 - **Scope descriptions for vendor templates** — Added `scopeDescriptions` field to `AuthTemplate` type. Enriched 15+ vendor templates with comprehensive scope lists and descriptions: Microsoft (21 Graph scopes), Google (9 scopes), GitHub (9 scopes), Slack (10 scopes), Discord (7 scopes), HubSpot (8 scopes), Atlassian/Jira/Confluence/Bitbucket (expanded), Salesforce (6 scopes), Shopify (10 scopes), Box (4 scopes), PagerDuty (2 scopes), Sentry (5 scopes), Dropbox (7 scopes), GitLab, Zendesk, Trello.
 - **QuickBooks vendor template** — OAuth 2.0 authorization_code flow template for QuickBooks Online API (Intuit). Includes sandbox support and company/realm ID notes.
@@ -17,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **OAuth public client fallback** — AuthCodePKCE flow now auto-retries token exchange and refresh without `client_secret` when the provider rejects it for public clients (e.g., Microsoft/Entra ID error AADSTS700025). Prevents failures when a `clientSecret` is configured but the app registration is set to "public client".
+- **Documentation cleanup** — Fixed multiple outdated sections in README.md and USER_GUIDE.md:
+  - Replaced non-existent `webSearch`/`webScrape` standalone imports with correct `ConnectorTools.for()` pattern in README
+  - Added missing scrape providers (Jina Reader, Firecrawl, ScrapingBee) to README
+  - Fixed Grok provider capabilities (now shows Image ✅ and Video ✅)
+  - Removed non-existent "Tool Result Eviction" section from USER_GUIDE (feature doesn't exist in codebase)
+  - Removed non-existent `IdempotencyCache` from Direct LLM comparison table
+  - Fixed Feature-Aware APIs section referencing old AgentContext properties (`ctx.cache`, `ctx.permissions`, `requireMemory()`, etc.) to match actual AgentContextNextGen API
+  - Fixed `setupInContextMemory()` references to use correct `ctx.getPlugin()` API
+  - Fixed Web Tools description to correctly note web_search/web_scrape are connector-dependent
 
 ## [0.2.1] - 2026-02-11
 

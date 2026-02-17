@@ -39,6 +39,53 @@ export type { CircuitState, CircuitBreakerConfig } from '../infrastructure/resil
 // Types
 // ============================================================================
 
+/**
+ * Source identifier for a registered tool
+ */
+export type ToolSource = 'built-in' | 'connector' | 'custom' | 'mcp' | string;
+
+/**
+ * Options for searching tools
+ */
+export interface ToolSearchOptions {
+  /** Filter by tags (any match) */
+  tags?: string[];
+  /** Filter by category */
+  category?: string;
+  /** Only return enabled tools. Default: true */
+  enabledOnly?: boolean;
+  /** Filter by source */
+  source?: ToolSource;
+  /** Filter by namespace */
+  namespace?: string;
+  /** Maximum number of results */
+  limit?: number;
+  /** Offset for pagination */
+  offset?: number;
+}
+
+/**
+ * Result from a tool search
+ */
+export interface ToolSearchResult {
+  /** The tool function */
+  tool: ToolFunction;
+  /** Tool name */
+  name: string;
+  /** Tool description */
+  description: string;
+  /** Relevance score (higher = more relevant) */
+  relevanceScore: number;
+  /** Tags */
+  tags?: string[];
+  /** Category */
+  category?: string;
+  /** Source */
+  source?: ToolSource;
+  /** Namespace */
+  namespace: string;
+}
+
 export interface ToolOptions {
   /** Whether the tool is enabled. Default: true */
   enabled?: boolean;
@@ -50,6 +97,12 @@ export interface ToolOptions {
   conditions?: ToolCondition[];
   /** Permission configuration override. If not set, uses tool's config or defaults. */
   permission?: ToolPermissionConfig;
+  /** Tags for categorization and search */
+  tags?: string[];
+  /** Category grouping */
+  category?: string;
+  /** Source identifier (built-in, connector, custom, mcp, etc.) */
+  source?: ToolSource;
 }
 
 export interface ToolCondition {
@@ -83,6 +136,12 @@ export interface ToolRegistration {
   permission?: ToolPermissionConfig;
   /** Circuit breaker configuration for this tool (uses shared CircuitBreakerConfig from resilience) */
   circuitBreakerConfig?: Partial<CircuitBreakerConfig>;
+  /** Tags for categorization and search */
+  tags?: string[];
+  /** Category grouping */
+  category?: string;
+  /** Source identifier (built-in, connector, custom, mcp, etc.) */
+  source?: ToolSource;
 }
 
 export interface ToolMetadata {
@@ -111,6 +170,12 @@ export interface SerializedToolState {
   priorities: Record<string, number>;
   /** Permission configs by tool name */
   permissions?: Record<string, ToolPermissionConfig>;
+  /** Tags by tool name */
+  tags?: Record<string, string[]>;
+  /** Categories by tool name */
+  categories?: Record<string, string>;
+  /** Sources by tool name */
+  sources?: Record<string, ToolSource>;
 }
 
 export type ToolManagerEvent =
@@ -271,6 +336,9 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
       if (options.priority !== undefined) existing.priority = options.priority;
       if (options.conditions !== undefined) existing.conditions = options.conditions;
       if (options.permission !== undefined) existing.permission = options.permission;
+      if (options.tags !== undefined) existing.tags = options.tags;
+      if (options.category !== undefined) existing.category = options.category;
+      if (options.source !== undefined) existing.source = options.source;
       return;
     }
 
@@ -294,6 +362,9 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
         failureCount: 0,
       },
       permission: effectivePermission,
+      tags: options.tags,
+      category: options.category,
+      source: options.source,
     };
 
     this.registry.set(name, registration);
@@ -1034,6 +1105,9 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     const namespaces: Record<string, string> = {};
     const priorities: Record<string, number> = {};
     const permissions: Record<string, ToolPermissionConfig> = {};
+    const tags: Record<string, string[]> = {};
+    const categories: Record<string, string> = {};
+    const sources: Record<string, ToolSource> = {};
 
     for (const [name, reg] of this.registry) {
       enabled[name] = reg.enabled;
@@ -1042,9 +1116,18 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
       if (reg.permission) {
         permissions[name] = reg.permission;
       }
+      if (reg.tags) {
+        tags[name] = reg.tags;
+      }
+      if (reg.category) {
+        categories[name] = reg.category;
+      }
+      if (reg.source) {
+        sources[name] = reg.source;
+      }
     }
 
-    return { enabled, namespaces, priorities, permissions };
+    return { enabled, namespaces, priorities, permissions, tags, categories, sources };
   }
 
   /**
@@ -1071,6 +1154,30 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     if (state.permissions) {
       for (const [name, permission] of Object.entries(state.permissions)) {
         this.setPermission(name, permission);
+      }
+    }
+
+    // Restore tags if present
+    if (state.tags) {
+      for (const [name, toolTags] of Object.entries(state.tags)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.tags = toolTags;
+      }
+    }
+
+    // Restore categories if present
+    if (state.categories) {
+      for (const [name, category] of Object.entries(state.categories)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.category = category;
+      }
+    }
+
+    // Restore sources if present
+    if (state.sources) {
+      for (const [name, source] of Object.entries(state.sources)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.source = source;
       }
     }
   }

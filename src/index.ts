@@ -168,6 +168,7 @@ export type {
   ToolManagerConfig,
   SerializedToolState,
   ToolManagerEvent,
+  ToolSource,
 } from './core/index.js';
 // Note: CircuitBreakerConfig, CircuitState are exported from infrastructure/resilience
 
@@ -391,6 +392,21 @@ export type { FileContextStorageConfig } from './infrastructure/storage/index.js
 // Agent Definition Storage Implementations (for agent configuration persistence)
 export { FileAgentDefinitionStorage, createFileAgentDefinitionStorage } from './infrastructure/storage/index.js';
 export type { FileAgentDefinitionStorageConfig } from './infrastructure/storage/index.js';
+
+// Custom Tool Storage
+export type {
+  ICustomToolStorage,
+  CustomToolListOptions,
+} from './domain/interfaces/ICustomToolStorage.js';
+export { CUSTOM_TOOL_DEFINITION_VERSION } from './domain/entities/CustomToolDefinition.js';
+export type {
+  CustomToolDefinition,
+  CustomToolSummary,
+  CustomToolTestCase,
+  CustomToolMetadata,
+} from './domain/entities/CustomToolDefinition.js';
+export { FileCustomToolStorage, createFileCustomToolStorage } from './infrastructure/storage/index.js';
+export type { FileCustomToolStorageConfig } from './infrastructure/storage/index.js';
 
 // Tool Context (ToolContext is the canonical interface for tool execution context)
 export type { ToolContext, ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';
@@ -789,6 +805,23 @@ export type { JSONExtractionResult } from './utils/jsonExtractor.js';
 // ============ Pre-built Tools ============
 export * as tools from './tools/index.js';
 export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
+
+// Custom tool generation system (meta-tools + hydration)
+export {
+  createCustomToolMetaTools,
+  createCustomToolDraft,
+  createCustomToolTest,
+  createCustomToolSave,
+  createCustomToolList,
+  createCustomToolLoad,
+  createCustomToolDelete,
+  hydrateCustomTool,
+} from './tools/custom-tools/index.js';
+
+export type {
+  CustomToolMetaToolsOptions,
+  HydrateOptions,
+} from './tools/custom-tools/index.js';
 
 // Filesystem tools (factory functions and types)
 export {

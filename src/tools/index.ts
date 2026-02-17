@@ -103,7 +103,7 @@ export type { SearchResult } from './web/index.js';
 // Code Execution Tools
 // ============================================================================
 
-export { executeJavaScript, createExecuteJavaScriptTool } from './code/index.js';
+export { executeJavaScript, createExecuteJavaScriptTool, executeInVM } from './code/index.js';
 
 // ============================================================================
 // Connector Tools (Vendor-Dependent Tools Framework)
@@ -325,6 +325,26 @@ export {
   type ToolCategory,
   type ToolRegistryEntry,
 } from './registry.generated.js';
+
+// ============================================================================
+// Custom Tool Generation System
+// ============================================================================
+
+export {
+  createCustomToolMetaTools,
+  createCustomToolDraft,
+  createCustomToolTest,
+  createCustomToolSave,
+  createCustomToolList,
+  createCustomToolLoad,
+  createCustomToolDelete,
+  hydrateCustomTool,
+} from './custom-tools/index.js';
+
+export type {
+  CustomToolMetaToolsOptions,
+  HydrateOptions,
+} from './custom-tools/index.js';
 
 // ============================================================================
 // Unified Tool Registry (Built-in + Connector Tools)

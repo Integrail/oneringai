@@ -1,7 +1,7 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs16 from 'fs';
+import * as fs17 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path2 from 'path';
@@ -19,7 +19,7 @@ import * as z from 'zod/v4';
 import spawn$1 from 'cross-spawn';
 import process2 from 'process';
 import { PassThrough } from 'stream';
-import * as fs15 from 'fs/promises';
+import * as fs16 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import * as simpleIcons from 'simple-icons';
 import { exec, spawn } from 'child_process';
@@ -641,7 +641,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs16.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs17.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1292,10 +1292,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2.dirname(filePath);
-          if (!fs16.existsSync(dir)) {
-            fs16.mkdirSync(dir, { recursive: true });
+          if (!fs17.existsSync(dir)) {
+            fs17.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs16.createWriteStream(filePath, {
+          this.fileStream = fs17.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -14632,12 +14632,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs17, exportName) {
+    function addFormats(ajv, list, fs18, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs17[f]);
+        ajv.addFormat(f, fs18[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -16691,6 +16691,9 @@ var ToolManager = class extends EventEmitter {
       if (options.priority !== void 0) existing.priority = options.priority;
       if (options.conditions !== void 0) existing.conditions = options.conditions;
       if (options.permission !== void 0) existing.permission = options.permission;
+      if (options.tags !== void 0) existing.tags = options.tags;
+      if (options.category !== void 0) existing.category = options.category;
+      if (options.source !== void 0) existing.source = options.source;
       return;
     }
     const namespace = options.namespace ?? "default";
@@ -16709,7 +16712,10 @@ var ToolManager = class extends EventEmitter {
         successCount: 0,
         failureCount: 0
       },
-      permission: effectivePermission
+      permission: effectivePermission,
+      tags: options.tags,
+      category: options.category,
+      source: options.source
     };
     this.registry.set(name, registration);
     this.addToNamespace(name, namespace);
@@ -17292,6 +17298,9 @@ var ToolManager = class extends EventEmitter {
     const namespaces = {};
     const priorities = {};
     const permissions = {};
+    const tags = {};
+    const categories = {};
+    const sources = {};
     for (const [name, reg] of this.registry) {
       enabled[name] = reg.enabled;
       namespaces[name] = reg.namespace;
@@ -17299,8 +17308,17 @@ var ToolManager = class extends EventEmitter {
       if (reg.permission) {
         permissions[name] = reg.permission;
       }
+      if (reg.tags) {
+        tags[name] = reg.tags;
+      }
+      if (reg.category) {
+        categories[name] = reg.category;
+      }
+      if (reg.source) {
+        sources[name] = reg.source;
+      }
     }
-    return { enabled, namespaces, priorities, permissions };
+    return { enabled, namespaces, priorities, permissions, tags, categories, sources };
   }
   /**
    * Load state (restores enabled/disabled, namespaces, priorities, permissions)
@@ -17322,6 +17340,24 @@ var ToolManager = class extends EventEmitter {
     if (state.permissions) {
       for (const [name, permission] of Object.entries(state.permissions)) {
         this.setPermission(name, permission);
+      }
+    }
+    if (state.tags) {
+      for (const [name, toolTags] of Object.entries(state.tags)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.tags = toolTags;
+      }
+    }
+    if (state.categories) {
+      for (const [name, category] of Object.entries(state.categories)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.category = category;
+      }
+    }
+    if (state.sources) {
+      for (const [name, source] of Object.entries(state.sources)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.source = source;
       }
     }
   }
@@ -28317,8 +28353,8 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs17 = __require("fs");
-      const content = fs17.readFileSync(configPath, "utf-8");
+      const fs18 = __require("fs");
+      const content = fs18.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -28347,10 +28383,10 @@ init_constants();
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs17 = __require("fs");
+    const fs18 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs17.accessSync(resolve(path6));
+        fs18.accessSync(resolve(path6));
         return resolve(path6);
       } catch {
       }
@@ -34511,7 +34547,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs16.createReadStream(audio);
+      return fs17.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -35064,7 +35100,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs15.writeFile(filePath, response.audio);
+    await fs16.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -35412,7 +35448,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs15.readFile(filePath);
+    const audio = await fs16.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -35738,7 +35774,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs16.createReadStream(image);
+    return fs17.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -35885,8 +35921,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs17 = await import('fs');
-      const buffer = fs17.readFileSync(image);
+      const fs18 = await import('fs');
+      const buffer = fs18.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -36047,7 +36083,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs16.createReadStream(image);
+    return fs17.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -37497,8 +37533,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs17 = await import('fs');
-      const data = fs17.readFileSync(image);
+      const fs18 = await import('fs');
+      const data = fs18.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -37676,7 +37712,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs17 = await import('fs/promises');
+            const fs18 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -37687,11 +37723,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs17.readFile(tempFile);
-              await fs17.unlink(tempFile).catch(() => {
+              buffer = await fs18.readFile(tempFile);
+              await fs18.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs17.unlink(tempFile).catch(() => {
+              await fs18.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -37813,8 +37849,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs17 = await import('fs/promises');
-    const data = await fs17.readFile(image);
+    const fs18 = await import('fs/promises');
+    const data = await fs18.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -38121,8 +38157,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs17 = await import('fs');
-    const data = fs17.readFileSync(image);
+    const fs18 = await import('fs');
+    const data = fs18.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -42394,10 +42430,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs15.mkdir(dir, { recursive: true });
+    await fs16.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2.join(dir, filename);
-    await fs15.writeFile(filePath, data);
+    await fs16.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -42408,7 +42444,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs15.readFile(location);
+      return await fs16.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -42418,7 +42454,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs15.unlink(location);
+      await fs16.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -42428,7 +42464,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs15.access(location);
+      await fs16.access(location);
       return true;
     } catch {
       return false;
@@ -42437,11 +42473,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs15.readdir(this.outputDir);
+    const files = await fs16.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2.join(this.outputDir, file);
       try {
-        const stat6 = await fs15.stat(filePath);
+        const stat6 = await fs16.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -42481,7 +42517,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs15.mkdir(this.outputDir, { recursive: true });
+      await fs16.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -42489,6 +42525,230 @@ var FileMediaStorage = class {
 function createFileMediaStorage(config) {
   return new FileMediaStorage(config);
 }
+function getDefaultBaseDirectory4() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return join(appData, "oneringai", "custom-tools");
+    }
+  }
+  return join(homedir(), ".oneringai", "custom-tools");
+}
+function sanitizeName(name) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileCustomToolStorage = class {
+  baseDirectory;
+  indexPath;
+  prettyPrint;
+  index = null;
+  constructor(config = {}) {
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory4();
+    this.prettyPrint = config.prettyPrint ?? true;
+    this.indexPath = join(this.baseDirectory, "_index.json");
+  }
+  /**
+   * Save a custom tool definition
+   */
+  async save(definition) {
+    const sanitized = sanitizeName(definition.name);
+    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    await this.ensureDirectory(this.baseDirectory);
+    const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await promises.writeFile(tempPath, data, "utf-8");
+      await promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+    await this.updateIndex(definition);
+  }
+  /**
+   * Load a custom tool definition by name
+   */
+  async load(name) {
+    const sanitized = sanitizeName(name);
+    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    try {
+      const data = await promises.readFile(filePath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      if (error instanceof SyntaxError) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  /**
+   * Delete a custom tool definition
+   */
+  async delete(name) {
+    const sanitized = sanitizeName(name);
+    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    try {
+      await promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await this.removeFromIndex(name);
+  }
+  /**
+   * Check if a custom tool exists
+   */
+  async exists(name) {
+    const sanitized = sanitizeName(name);
+    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    try {
+      await promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * List custom tools (summaries only)
+   */
+  async list(options) {
+    const index = await this.loadIndex();
+    let entries = [...index.tools];
+    if (options?.tags && options.tags.length > 0) {
+      entries = entries.filter((e) => {
+        const entryTags = e.tags ?? [];
+        return options.tags.some((t) => entryTags.includes(t));
+      });
+    }
+    if (options?.category) {
+      entries = entries.filter((e) => e.category === options.category);
+    }
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      entries = entries.filter(
+        (e) => e.name.toLowerCase().includes(searchLower) || e.description.toLowerCase().includes(searchLower)
+      );
+    }
+    entries.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    if (options?.offset) {
+      entries = entries.slice(options.offset);
+    }
+    if (options?.limit) {
+      entries = entries.slice(0, options.limit);
+    }
+    return entries.map((e) => ({
+      name: e.name,
+      displayName: e.displayName,
+      description: e.description,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+      metadata: {
+        tags: e.tags,
+        category: e.category
+      }
+    }));
+  }
+  /**
+   * Update metadata without loading full definition
+   */
+  async updateMetadata(name, metadata) {
+    const definition = await this.load(name);
+    if (!definition) {
+      throw new Error(`Custom tool '${name}' not found`);
+    }
+    definition.metadata = { ...definition.metadata, ...metadata };
+    definition.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await this.save(definition);
+  }
+  /**
+   * Get storage path
+   */
+  getPath() {
+    return this.baseDirectory;
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  async ensureDirectory(dir) {
+    try {
+      await promises.mkdir(dir, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  async loadIndex() {
+    if (this.index) {
+      return this.index;
+    }
+    try {
+      const data = await promises.readFile(this.indexPath, "utf-8");
+      this.index = JSON.parse(data);
+      return this.index;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        this.index = {
+          version: 1,
+          tools: [],
+          lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        return this.index;
+      }
+      throw error;
+    }
+  }
+  async saveIndex() {
+    if (!this.index) return;
+    await this.ensureDirectory(this.baseDirectory);
+    this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
+    await promises.writeFile(this.indexPath, data, "utf-8");
+  }
+  async updateIndex(definition) {
+    const index = await this.loadIndex();
+    const entry = this.definitionToIndexEntry(definition);
+    const existingIdx = index.tools.findIndex((e) => e.name === definition.name);
+    if (existingIdx >= 0) {
+      index.tools[existingIdx] = entry;
+    } else {
+      index.tools.push(entry);
+    }
+    await this.saveIndex();
+  }
+  async removeFromIndex(name) {
+    const index = await this.loadIndex();
+    index.tools = index.tools.filter((e) => e.name !== name);
+    await this.saveIndex();
+  }
+  definitionToIndexEntry(definition) {
+    return {
+      name: definition.name,
+      displayName: definition.displayName,
+      description: definition.description,
+      createdAt: definition.createdAt,
+      updatedAt: definition.updatedAt,
+      tags: definition.metadata?.tags,
+      category: definition.metadata?.category
+    };
+  }
+};
+function createFileCustomToolStorage(config) {
+  return new FileCustomToolStorage(config);
+}
+
+// src/domain/entities/CustomToolDefinition.ts
+var CUSTOM_TOOL_DEFINITION_VERSION = 1;
 
 // src/capabilities/agents/StreamHelpers.ts
 var StreamHelpers = class {
@@ -43585,8 +43845,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs15.mkdir(this.directory, { recursive: true });
-      await fs15.chmod(this.directory, 448);
+      await fs16.mkdir(this.directory, { recursive: true });
+      await fs16.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -43602,13 +43862,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs15.writeFile(filePath, encrypted, "utf8");
-    await fs15.chmod(filePath, 384);
+    await fs16.writeFile(filePath, encrypted, "utf8");
+    await fs16.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs15.readFile(filePath, "utf8");
+      const encrypted = await fs16.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -43617,7 +43877,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs15.unlink(filePath);
+        await fs16.unlink(filePath);
       } catch {
       }
       return null;
@@ -43626,7 +43886,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs15.unlink(filePath);
+      await fs16.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -43636,7 +43896,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs15.access(filePath);
+      await fs16.access(filePath);
       return true;
     } catch {
       return false;
@@ -43647,7 +43907,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs15.readdir(this.directory);
+      const files = await fs16.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -43658,10 +43918,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs15.readdir(this.directory);
+      const files = await fs16.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs15.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs16.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -44088,14 +44348,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs15.writeFile(filePath, json, "utf8");
-    await fs15.chmod(filePath, 384);
+    await fs16.writeFile(filePath, json, "utf8");
+    await fs16.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs15.readFile(filePath, "utf8");
+      const json = await fs16.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -44108,7 +44368,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs15.unlink(filePath);
+      await fs16.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -44122,7 +44382,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs15.access(filePath);
+      await fs16.access(filePath);
       return true;
     } catch {
       return false;
@@ -44148,13 +44408,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs15.readdir(this.directory);
+      const files = await fs16.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs15.unlink(path2.join(this.directory, f)).catch(() => {
+          (f) => fs16.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -44181,8 +44441,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs15.mkdir(this.directory, { recursive: true });
-      await fs15.chmod(this.directory, 448);
+      await fs16.mkdir(this.directory, { recursive: true });
+      await fs16.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -44193,7 +44453,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs15.readFile(this.indexPath, "utf8");
+      const json = await fs16.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -44211,8 +44471,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs15.writeFile(this.indexPath, json, "utf8");
-    await fs15.chmod(this.indexPath, 384);
+    await fs16.writeFile(this.indexPath, json, "utf8");
+    await fs16.chmod(this.indexPath, 384);
   }
 };
 
@@ -46667,8 +46927,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs16.existsSync(filePath)) {
-      fs16.unlinkSync(filePath);
+    if (fs17.existsSync(filePath)) {
+      fs17.unlinkSync(filePath);
     }
   } catch {
   }
@@ -46719,7 +46979,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs16.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs17.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -46736,14 +46996,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs16.existsSync(tempFile) && fs16.statSync(tempFile).size > 0) {
+      if (fs17.existsSync(tempFile) && fs17.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs16.existsSync(tempFile) && fs16.statSync(tempFile).size > 0) {
+      if (fs17.existsSync(tempFile) && fs17.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -46770,7 +47030,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs16.existsSync(tempFile) && fs16.statSync(tempFile).size > 0) {
+    if (fs17.existsSync(tempFile) && fs17.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -46783,7 +47043,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs16.readFileSync(filePath);
+    const imageBuffer = fs17.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -47039,6 +47299,13 @@ __export(tools_exports, {
   bash: () => bash,
   createBashTool: () => createBashTool,
   createCreatePRTool: () => createCreatePRTool,
+  createCustomToolDelete: () => createCustomToolDelete,
+  createCustomToolDraft: () => createCustomToolDraft,
+  createCustomToolList: () => createCustomToolList,
+  createCustomToolLoad: () => createCustomToolLoad,
+  createCustomToolMetaTools: () => createCustomToolMetaTools,
+  createCustomToolSave: () => createCustomToolSave,
+  createCustomToolTest: () => createCustomToolTest,
   createDesktopGetCursorTool: () => createDesktopGetCursorTool,
   createDesktopGetScreenSizeTool: () => createDesktopGetScreenSizeTool,
   createDesktopKeyboardKeyTool: () => createDesktopKeyboardKeyTool,
@@ -47083,6 +47350,7 @@ __export(tools_exports, {
   desktopWindowList: () => desktopWindowList,
   developerTools: () => developerTools,
   editFile: () => editFile,
+  executeInVM: () => executeInVM,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
   getAllBuiltInTools: () => getAllBuiltInTools,
@@ -47097,6 +47365,7 @@ __export(tools_exports, {
   getToolsRequiringConnector: () => getToolsRequiringConnector,
   glob: () => glob,
   grep: () => grep,
+  hydrateCustomTool: () => hydrateCustomTool,
   isBlockedCommand: () => isBlockedCommand,
   isExcludedExtension: () => isExcludedExtension,
   jsonManipulator: () => jsonManipulator,
@@ -52215,6 +52484,547 @@ function getToolCategories() {
   return [...new Set(toolRegistry.map((entry) => entry.category))];
 }
 
+// src/tools/custom-tools/sandboxDescription.ts
+init_Connector();
+function formatConnectorEntry2(c) {
+  const parts = [];
+  const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
+  if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+  if (c.config.description) parts.push(c.config.description);
+  if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
+  const details = parts.map((p) => `     ${p}`).join("\n");
+  return `   \u2022 "${c.name}" (${c.displayName})
+${details}`;
+}
+function buildConnectorList(context) {
+  const registry = context?.connectorRegistry ?? Connector.asRegistry();
+  const connectors = registry.listAll();
+  if (connectors.length === 0) {
+    return "   No connectors registered.";
+  }
+  return connectors.map(formatConnectorEntry2).join("\n\n");
+}
+var SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
+
+1. authenticatedFetch(url, options, connectorName)
+   Makes authenticated HTTP requests using the connector's credentials.
+   Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
+
+   Parameters:
+     \u2022 url: Full URL or path relative to the connector's base URL
+       - Full: "https://api.github.com/user/repos"
+       - Relative: "/user/repos" (resolved against connector's base URL)
+     \u2022 options: Standard fetch options { method, headers, body }
+       - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
+     \u2022 connectorName: Name of a registered connector (see REGISTERED CONNECTORS below)
+
+   Returns: Promise<Response>
+     \u2022 response.ok \u2014 true if status 200-299
+     \u2022 response.status \u2014 HTTP status code
+     \u2022 await response.json() \u2014 parse JSON body
+     \u2022 await response.text() \u2014 get text body
+
+2. fetch(url, options) \u2014 Standard fetch without authentication
+
+3. connectors.list() \u2014 Array of available connector names
+4. connectors.get(name) \u2014 Connector info: { displayName, description, baseURL, serviceType }
+
+VARIABLES:
+   \u2022 input \u2014 the tool's input arguments (matches inputSchema)
+   \u2022 output \u2014 SET THIS to return the tool's result to the caller
+
+GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
+
+LIMITS: No file system access, no require/import. Code runs in async context (await is available).`;
+function buildDraftDescription(context) {
+  const connectorList = buildConnectorList(context);
+  return `Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.
+
+When writing the "code" field, you have access to the full VM sandbox:
+
+${SANDBOX_API_REFERENCE}
+
+REGISTERED CONNECTORS:
+${connectorList}
+
+CODE EXAMPLES:
+
+// Simple data processing tool
+const items = input.data;
+output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
+
+// API tool using a connector
+const resp = await authenticatedFetch('/user/repos', { method: 'GET' }, 'github');
+const repos = await resp.json();
+output = repos.map(r => ({ name: r.full_name, stars: r.stargazers_count }));
+
+// Tool that chains multiple API calls
+const users = await (await authenticatedFetch('/users', {}, 'my-api')).json();
+const enriched = await Promise.all(users.map(async u => {
+  const details = await (await authenticatedFetch(\`/users/\${u.id}\`, {}, 'my-api')).json();
+  return { ...u, ...details };
+}));
+output = enriched;`;
+}
+function buildTestDescription(context) {
+  const connectorList = buildConnectorList(context);
+  return `Test custom tool code by executing it in the VM sandbox with provided test input. Returns execution result, captured logs, and timing.
+
+The code runs in the same sandbox as execute_javascript:
+
+${SANDBOX_API_REFERENCE}
+
+REGISTERED CONNECTORS:
+${connectorList}
+
+The testInput you provide will be available as the \`input\` variable in the code.
+Set \`output\` to the value you want returned.`;
+}
+
+// src/tools/custom-tools/customToolDraft.ts
+var NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+function createCustomToolDraft() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_draft",
+        description: "Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: 'Tool name (lowercase, underscores, must start with letter). Example: "fetch_weather"'
+            },
+            description: {
+              type: "string",
+              description: "What the tool does"
+            },
+            inputSchema: {
+              type: "object",
+              description: 'JSON Schema for the tool input (must have type: "object")'
+            },
+            outputSchema: {
+              type: "object",
+              description: "Optional JSON Schema for the tool output (documentation only)"
+            },
+            code: {
+              type: "string",
+              description: "JavaScript code that reads `input` and sets `output`. Runs in the same sandbox as execute_javascript. See tool description for full API reference."
+            },
+            tags: {
+              type: "array",
+              description: "Optional tags for categorization",
+              items: { type: "string" }
+            },
+            connectorName: {
+              type: "string",
+              description: "Optional connector name if the tool requires API access"
+            }
+          },
+          required: ["name", "description", "inputSchema", "code"]
+        }
+      }
+    },
+    descriptionFactory: (context) => buildDraftDescription(context),
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const errors = [];
+      if (!args.name || typeof args.name !== "string") {
+        errors.push("name is required and must be a string");
+      } else if (!NAME_PATTERN.test(args.name)) {
+        errors.push(
+          `name "${args.name}" is invalid. Must match /^[a-z][a-z0-9_]*$/ (lowercase, underscores, start with letter)`
+        );
+      }
+      if (!args.description || typeof args.description !== "string" || args.description.trim().length === 0) {
+        errors.push("description is required and must be a non-empty string");
+      }
+      if (!args.inputSchema || typeof args.inputSchema !== "object") {
+        errors.push("inputSchema is required and must be an object");
+      } else if (args.inputSchema.type !== "object") {
+        errors.push('inputSchema.type must be "object"');
+      }
+      if (!args.code || typeof args.code !== "string" || args.code.trim().length === 0) {
+        errors.push("code is required and must be a non-empty string");
+      } else {
+        try {
+          new Function(args.code);
+        } catch (e) {
+          errors.push(`code has syntax error: ${e.message}`);
+        }
+      }
+      if (errors.length > 0) {
+        return { success: false, errors };
+      }
+      return {
+        success: true,
+        validated: {
+          name: args.name,
+          description: args.description,
+          inputSchema: args.inputSchema,
+          outputSchema: args.outputSchema,
+          code: args.code,
+          tags: args.tags,
+          connectorName: args.connectorName
+        }
+      };
+    },
+    describeCall: (args) => args.name ?? "unknown"
+  };
+}
+
+// src/tools/custom-tools/customToolTest.ts
+init_Connector();
+var DEFAULT_TEST_TIMEOUT = 1e4;
+var MAX_TEST_TIMEOUT = 3e4;
+function createCustomToolTest() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_test",
+        description: "Test custom tool code by executing it in the VM sandbox with provided test input.",
+        parameters: {
+          type: "object",
+          properties: {
+            code: {
+              type: "string",
+              description: "JavaScript code to test. See tool description for full sandbox API reference."
+            },
+            inputSchema: {
+              type: "object",
+              description: "The input schema (for documentation, not enforced at test time)"
+            },
+            testInput: {
+              description: "Test input data \u2014 available as `input` in the code"
+            },
+            connectorName: {
+              type: "string",
+              description: "Optional connector name for authenticated API access"
+            },
+            timeout: {
+              type: "number",
+              description: `Execution timeout in ms. Default: ${DEFAULT_TEST_TIMEOUT}, max: ${MAX_TEST_TIMEOUT}`
+            }
+          },
+          required: ["code", "inputSchema", "testInput"]
+        }
+      },
+      timeout: MAX_TEST_TIMEOUT + 5e3
+    },
+    descriptionFactory: (context) => buildTestDescription(context),
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args, context) => {
+      const logs = [];
+      const startTime = Date.now();
+      const timeout = Math.min(Math.max(args.timeout || DEFAULT_TEST_TIMEOUT, 0), MAX_TEST_TIMEOUT);
+      try {
+        const registry = context?.connectorRegistry ?? Connector.asRegistry();
+        const result = await executeInVM(
+          args.code,
+          args.testInput,
+          timeout,
+          logs,
+          context?.userId,
+          registry
+        );
+        return {
+          success: true,
+          result,
+          logs,
+          executionTime: Date.now() - startTime
+        };
+      } catch (error) {
+        return {
+          success: false,
+          result: null,
+          logs,
+          error: error.message,
+          executionTime: Date.now() - startTime
+        };
+      }
+    },
+    describeCall: (args) => `testing code (${args.code.length} chars)`
+  };
+}
+
+// src/tools/custom-tools/customToolSave.ts
+function createCustomToolSave(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_save",
+        description: "Save a custom tool definition to persistent storage. The tool can later be loaded, hydrated, and registered on any agent.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Tool name (must match /^[a-z][a-z0-9_]*$/)"
+            },
+            description: {
+              type: "string",
+              description: "What the tool does"
+            },
+            displayName: {
+              type: "string",
+              description: "Optional human-readable display name"
+            },
+            inputSchema: {
+              type: "object",
+              description: "JSON Schema for input parameters"
+            },
+            outputSchema: {
+              type: "object",
+              description: "Optional JSON Schema for output"
+            },
+            code: {
+              type: "string",
+              description: "JavaScript code (same sandbox as execute_javascript)"
+            },
+            tags: {
+              type: "array",
+              description: "Tags for categorization",
+              items: { type: "string" }
+            },
+            category: {
+              type: "string",
+              description: "Category grouping"
+            },
+            generationPrompt: {
+              type: "string",
+              description: "The prompt that was used to generate this tool (for reference)"
+            },
+            connectorNames: {
+              type: "array",
+              description: "Connector names this tool uses",
+              items: { type: "string" }
+            }
+          },
+          required: ["name", "description", "inputSchema", "code"]
+        }
+      }
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args) => {
+      try {
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const existing = await storage.load(args.name);
+        const definition = {
+          version: CUSTOM_TOOL_DEFINITION_VERSION,
+          name: args.name,
+          displayName: args.displayName,
+          description: args.description,
+          inputSchema: args.inputSchema,
+          outputSchema: args.outputSchema,
+          code: args.code,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          metadata: {
+            tags: args.tags,
+            category: args.category,
+            generationPrompt: args.generationPrompt,
+            connectorNames: args.connectorNames,
+            requiresConnector: (args.connectorNames?.length ?? 0) > 0
+          }
+        };
+        await storage.save(definition);
+        return {
+          success: true,
+          name: args.name,
+          storagePath: storage.getPath()
+        };
+      } catch (error) {
+        return {
+          success: false,
+          name: args.name,
+          storagePath: storage.getPath(),
+          error: error.message
+        };
+      }
+    },
+    describeCall: (args) => args.name
+  };
+}
+
+// src/tools/custom-tools/customToolList.ts
+function createCustomToolList(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_list",
+        description: "List saved custom tools from persistent storage. Supports filtering by search text, tags, and category.",
+        parameters: {
+          type: "object",
+          properties: {
+            search: {
+              type: "string",
+              description: "Search text (case-insensitive substring match on name + description)"
+            },
+            tags: {
+              type: "array",
+              description: "Filter by tags (any match)",
+              items: { type: "string" }
+            },
+            category: {
+              type: "string",
+              description: "Filter by category"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results"
+            },
+            offset: {
+              type: "number",
+              description: "Offset for pagination"
+            }
+          }
+        }
+      }
+    },
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const tools = await storage.list({
+        search: args.search,
+        tags: args.tags,
+        category: args.category,
+        limit: args.limit,
+        offset: args.offset
+      });
+      return { tools, total: tools.length };
+    },
+    describeCall: (args) => args.search ?? "all tools"
+  };
+}
+
+// src/tools/custom-tools/customToolLoad.ts
+function createCustomToolLoad(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_load",
+        description: "Load a full custom tool definition from storage (including code). Use this to inspect, modify, or hydrate a saved tool.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the tool to load"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    },
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const tool = await storage.load(args.name);
+      if (!tool) {
+        return { success: false, error: `Custom tool '${args.name}' not found` };
+      }
+      return { success: true, tool };
+    },
+    describeCall: (args) => args.name
+  };
+}
+
+// src/tools/custom-tools/customToolDelete.ts
+function createCustomToolDelete(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_delete",
+        description: "Delete a custom tool from persistent storage.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the tool to delete"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args) => {
+      try {
+        const exists = await storage.exists(args.name);
+        if (!exists) {
+          return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
+        }
+        await storage.delete(args.name);
+        return { success: true, name: args.name };
+      } catch (error) {
+        return { success: false, name: args.name, error: error.message };
+      }
+    },
+    describeCall: (args) => args.name
+  };
+}
+
+// src/tools/custom-tools/factories.ts
+function createCustomToolMetaTools(options) {
+  const storage = options?.storage ?? new FileCustomToolStorage();
+  return [
+    createCustomToolDraft(),
+    createCustomToolTest(),
+    createCustomToolSave(storage),
+    createCustomToolList(storage),
+    createCustomToolLoad(storage),
+    createCustomToolDelete(storage)
+  ];
+}
+
+// src/tools/custom-tools/hydrate.ts
+init_Connector();
+var DEFAULT_TIMEOUT2 = 1e4;
+var MAX_TIMEOUT = 3e4;
+function hydrateCustomTool(definition, options) {
+  const defaultTimeout = options?.defaultTimeout ?? DEFAULT_TIMEOUT2;
+  const maxTimeout = options?.maxTimeout ?? MAX_TIMEOUT;
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: definition.name,
+        description: definition.description,
+        parameters: definition.inputSchema
+      },
+      timeout: maxTimeout + 5e3
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args, context) => {
+      const logs = [];
+      const registry = context?.connectorRegistry ?? Connector.asRegistry();
+      const result = await executeInVM(
+        definition.code,
+        args,
+        defaultTimeout,
+        logs,
+        context?.userId,
+        registry
+      );
+      return result;
+    },
+    describeCall: (args) => {
+      if (!args || typeof args !== "object") return definition.name;
+      const firstKey = Object.keys(args)[0];
+      if (!firstKey) return definition.name;
+      const val = args[firstKey];
+      const str = typeof val === "string" ? val : JSON.stringify(val);
+      return str.length > 50 ? str.slice(0, 47) + "..." : str;
+    }
+  };
+}
+
 // src/tools/ToolRegistry.ts
 init_Connector();
 var ToolRegistry = class {
@@ -52551,6 +53361,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

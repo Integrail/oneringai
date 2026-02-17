@@ -2,7 +2,7 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs16 = require('fs');
+var fs17 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
 var TurndownService = require('turndown');
@@ -17,7 +17,7 @@ var z = require('zod/v4');
 var spawn = require('cross-spawn');
 var process2 = require('process');
 var stream = require('stream');
-var fs15 = require('fs/promises');
+var fs16 = require('fs/promises');
 var simpleIcons = require('simple-icons');
 var child_process = require('child_process');
 var util = require('util');
@@ -45,7 +45,7 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
+var fs17__namespace = /*#__PURE__*/_interopNamespace(fs17);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var os2__namespace = /*#__PURE__*/_interopNamespace(os2);
@@ -55,7 +55,7 @@ var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var spawn__default = /*#__PURE__*/_interopDefault(spawn);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
-var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
+var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
 var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -673,7 +673,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs16__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs17__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1324,10 +1324,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2__namespace.dirname(filePath);
-          if (!fs16__namespace.existsSync(dir)) {
-            fs16__namespace.mkdirSync(dir, { recursive: true });
+          if (!fs17__namespace.existsSync(dir)) {
+            fs17__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs16__namespace.createWriteStream(filePath, {
+          this.fileStream = fs17__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -14664,12 +14664,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs17, exportName) {
+    function addFormats(ajv, list, fs18, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs17[f]);
+        ajv.addFormat(f, fs18[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -16723,6 +16723,9 @@ var ToolManager = class extends eventemitter3.EventEmitter {
       if (options.priority !== void 0) existing.priority = options.priority;
       if (options.conditions !== void 0) existing.conditions = options.conditions;
       if (options.permission !== void 0) existing.permission = options.permission;
+      if (options.tags !== void 0) existing.tags = options.tags;
+      if (options.category !== void 0) existing.category = options.category;
+      if (options.source !== void 0) existing.source = options.source;
       return;
     }
     const namespace = options.namespace ?? "default";
@@ -16741,7 +16744,10 @@ var ToolManager = class extends eventemitter3.EventEmitter {
         successCount: 0,
         failureCount: 0
       },
-      permission: effectivePermission
+      permission: effectivePermission,
+      tags: options.tags,
+      category: options.category,
+      source: options.source
     };
     this.registry.set(name, registration);
     this.addToNamespace(name, namespace);
@@ -17324,6 +17330,9 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     const namespaces = {};
     const priorities = {};
     const permissions = {};
+    const tags = {};
+    const categories = {};
+    const sources = {};
     for (const [name, reg] of this.registry) {
       enabled[name] = reg.enabled;
       namespaces[name] = reg.namespace;
@@ -17331,8 +17340,17 @@ var ToolManager = class extends eventemitter3.EventEmitter {
       if (reg.permission) {
         permissions[name] = reg.permission;
       }
+      if (reg.tags) {
+        tags[name] = reg.tags;
+      }
+      if (reg.category) {
+        categories[name] = reg.category;
+      }
+      if (reg.source) {
+        sources[name] = reg.source;
+      }
     }
-    return { enabled, namespaces, priorities, permissions };
+    return { enabled, namespaces, priorities, permissions, tags, categories, sources };
   }
   /**
    * Load state (restores enabled/disabled, namespaces, priorities, permissions)
@@ -17354,6 +17372,24 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     if (state.permissions) {
       for (const [name, permission] of Object.entries(state.permissions)) {
         this.setPermission(name, permission);
+      }
+    }
+    if (state.tags) {
+      for (const [name, toolTags] of Object.entries(state.tags)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.tags = toolTags;
+      }
+    }
+    if (state.categories) {
+      for (const [name, category] of Object.entries(state.categories)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.category = category;
+      }
+    }
+    if (state.sources) {
+      for (const [name, source] of Object.entries(state.sources)) {
+        const reg = this.registry.get(name);
+        if (reg) reg.source = source;
       }
     }
   }
@@ -20357,7 +20393,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async load() {
     try {
-      const raw = await fs16.promises.readFile(this.filePath, "utf-8");
+      const raw = await fs17.promises.readFile(this.filePath, "utf-8");
       const data = JSON.parse(raw);
       if (data.version === 2 && Array.isArray(data.entries)) {
         return data.entries.length > 0 ? data.entries : null;
@@ -20369,7 +20405,7 @@ var FilePersistentInstructionsStorage = class {
       }
     }
     try {
-      const content = await fs16.promises.readFile(this.legacyFilePath, "utf-8");
+      const content = await fs17.promises.readFile(this.legacyFilePath, "utf-8");
       const trimmed = content.trim();
       if (!trimmed) return null;
       const now = Date.now();
@@ -20399,11 +20435,11 @@ var FilePersistentInstructionsStorage = class {
     };
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs16.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
-      await fs16.promises.rename(tempPath, this.filePath);
+      await fs17.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await fs17.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
-        await fs16.promises.unlink(tempPath);
+        await fs17.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -20415,7 +20451,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async delete() {
     try {
-      await fs16.promises.unlink(this.filePath);
+      await fs17.promises.unlink(this.filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -20428,11 +20464,11 @@ var FilePersistentInstructionsStorage = class {
    */
   async exists() {
     try {
-      await fs16.promises.access(this.filePath);
+      await fs17.promises.access(this.filePath);
       return true;
     } catch {
       try {
-        await fs16.promises.access(this.legacyFilePath);
+        await fs17.promises.access(this.legacyFilePath);
         return true;
       } catch {
         return false;
@@ -20456,7 +20492,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async ensureDirectory() {
     try {
-      await fs16.promises.mkdir(this.directory, { recursive: true });
+      await fs17.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -20468,7 +20504,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async removeLegacyFile() {
     try {
-      await fs16.promises.unlink(this.legacyFilePath);
+      await fs17.promises.unlink(this.legacyFilePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         console.warn(`Failed to remove legacy instructions file: ${this.legacyFilePath}`);
@@ -28328,7 +28364,7 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const content = await fs16.promises.readFile(configPath, "utf-8");
+      const content = await fs17.promises.readFile(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -28349,8 +28385,8 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs17 = __require("fs");
-      const content = fs17.readFileSync(configPath, "utf-8");
+      const fs18 = __require("fs");
+      const content = fs18.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -28368,7 +28404,7 @@ init_constants();
   static async findConfig() {
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs16.promises.access(path2.resolve(path6));
+        await fs17.promises.access(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -28379,10 +28415,10 @@ init_constants();
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs17 = __require("fs");
+    const fs18 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs17.accessSync(path2.resolve(path6));
+        fs18.accessSync(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -33938,7 +33974,7 @@ var MCPRegistry = class {
   static async loadFromConfigFile(path6) {
     try {
       const configPath = path2.resolve(path6);
-      const content = await fs16.promises.readFile(configPath, "utf-8");
+      const content = await fs17.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -34543,7 +34579,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs16__namespace.createReadStream(audio);
+      return fs17__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -35096,7 +35132,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs15__namespace.writeFile(filePath, response.audio);
+    await fs16__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -35444,7 +35480,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs15__namespace.readFile(filePath);
+    const audio = await fs16__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -35770,7 +35806,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs16__namespace.createReadStream(image);
+    return fs17__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -35917,8 +35953,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs17 = await import('fs');
-      const buffer = fs17.readFileSync(image);
+      const fs18 = await import('fs');
+      const buffer = fs18.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -36079,7 +36115,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs16__namespace.createReadStream(image);
+    return fs17__namespace.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -37529,8 +37565,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs17 = await import('fs');
-      const data = fs17.readFileSync(image);
+      const fs18 = await import('fs');
+      const data = fs18.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -37708,7 +37744,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs17 = await import('fs/promises');
+            const fs18 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -37719,11 +37755,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs17.readFile(tempFile);
-              await fs17.unlink(tempFile).catch(() => {
+              buffer = await fs18.readFile(tempFile);
+              await fs18.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs17.unlink(tempFile).catch(() => {
+              await fs18.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -37845,8 +37881,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs17 = await import('fs/promises');
-    const data = await fs17.readFile(image);
+    const fs18 = await import('fs/promises');
+    const data = await fs18.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -38153,8 +38189,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs17 = await import('fs');
-    const data = fs17.readFileSync(image);
+    const fs18 = await import('fs');
+    const data = fs18.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -39590,7 +39626,7 @@ var DocumentReader = class _DocumentReader {
   async resolveSource(source) {
     switch (source.type) {
       case "file": {
-        const buffer = await fs15.readFile(source.path);
+        const buffer = await fs16.readFile(source.path);
         const filename = source.path.split("/").pop() || source.path;
         return { buffer, filename };
       }
@@ -41909,11 +41945,11 @@ var FileContextStorage = class {
     const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs16.promises.writeFile(tempPath, data, "utf-8");
-      await fs16.promises.rename(tempPath, filePath);
+      await fs17.promises.writeFile(tempPath, data, "utf-8");
+      await fs17.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs16.promises.unlink(tempPath);
+        await fs17.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -41934,7 +41970,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs16.promises.unlink(filePath);
+      await fs17.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -41949,7 +41985,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs16.promises.access(filePath);
+      await fs17.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -42014,7 +42050,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
-    await fs16.promises.writeFile(filePath, data, "utf-8");
+    await fs17.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(stored);
   }
   /**
@@ -42042,13 +42078,13 @@ var FileContextStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs16.promises.readdir(this.sessionsDirectory);
+    const files = await fs17.promises.readdir(this.sessionsDirectory);
     const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
         const filePath = path2.join(this.sessionsDirectory, file);
-        const data = await fs16.promises.readFile(filePath, "utf-8");
+        const data = await fs17.promises.readFile(filePath, "utf-8");
         const stored = JSON.parse(data);
         entries.push(this.storedToIndexEntry(stored));
       } catch {
@@ -42070,7 +42106,7 @@ var FileContextStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs16.promises.mkdir(this.sessionsDirectory, { recursive: true });
+      await fs17.promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -42080,7 +42116,7 @@ var FileContextStorage = class {
   async loadRaw(sanitizedSessionId) {
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      const data = await fs16.promises.readFile(filePath, "utf-8");
+      const data = await fs17.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -42098,7 +42134,7 @@ var FileContextStorage = class {
       return this.index;
     }
     try {
-      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs17.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -42119,7 +42155,7 @@ var FileContextStorage = class {
     await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs17.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(stored) {
     const index = await this.loadIndex();
@@ -42193,11 +42229,11 @@ var FileAgentDefinitionStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs16.promises.writeFile(tempPath, data, "utf-8");
-      await fs16.promises.rename(tempPath, filePath);
+      await fs17.promises.writeFile(tempPath, data, "utf-8");
+      await fs17.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs16.promises.unlink(tempPath);
+        await fs17.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -42219,7 +42255,7 @@ var FileAgentDefinitionStorage = class {
     const agentDir = path2.join(this.baseDirectory, sanitizedId);
     const filePath = path2.join(agentDir, "definition.json");
     try {
-      await fs16.promises.unlink(filePath);
+      await fs17.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -42234,7 +42270,7 @@ var FileAgentDefinitionStorage = class {
     const sanitizedId = sanitizeAgentId2(agentId);
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      await fs16.promises.access(filePath);
+      await fs17.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -42296,13 +42332,13 @@ var FileAgentDefinitionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory(this.baseDirectory);
-    const entries = await fs16.promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const entries = await fs17.promises.readdir(this.baseDirectory, { withFileTypes: true });
     const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
     const indexEntries = [];
     for (const dir of agentDirs) {
       try {
         const filePath = path2.join(this.baseDirectory, dir.name, "definition.json");
-        const data = await fs16.promises.readFile(filePath, "utf-8");
+        const data = await fs17.promises.readFile(filePath, "utf-8");
         const definition = JSON.parse(data);
         indexEntries.push(this.definitionToIndexEntry(definition));
       } catch {
@@ -42320,7 +42356,7 @@ var FileAgentDefinitionStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs16.promises.mkdir(dir, { recursive: true });
+      await fs17.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -42330,7 +42366,7 @@ var FileAgentDefinitionStorage = class {
   async loadRaw(sanitizedId) {
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      const data = await fs16.promises.readFile(filePath, "utf-8");
+      const data = await fs17.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -42348,7 +42384,7 @@ var FileAgentDefinitionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs17.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -42368,7 +42404,7 @@ var FileAgentDefinitionStorage = class {
     await this.ensureDirectory(this.baseDirectory);
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs17.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(definition) {
     const index = await this.loadIndex();
@@ -42426,10 +42462,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2__namespace.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs15__namespace.mkdir(dir, { recursive: true });
+    await fs16__namespace.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2__namespace.join(dir, filename);
-    await fs15__namespace.writeFile(filePath, data);
+    await fs16__namespace.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -42440,7 +42476,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs15__namespace.readFile(location);
+      return await fs16__namespace.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -42450,7 +42486,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs15__namespace.unlink(location);
+      await fs16__namespace.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -42460,7 +42496,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs15__namespace.access(location);
+      await fs16__namespace.access(location);
       return true;
     } catch {
       return false;
@@ -42469,11 +42505,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs15__namespace.readdir(this.outputDir);
+    const files = await fs16__namespace.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2__namespace.join(this.outputDir, file);
       try {
-        const stat6 = await fs15__namespace.stat(filePath);
+        const stat6 = await fs16__namespace.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2__namespace.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -42513,7 +42549,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs15__namespace.mkdir(this.outputDir, { recursive: true });
+      await fs16__namespace.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -42521,6 +42557,230 @@ var FileMediaStorage = class {
 function createFileMediaStorage(config) {
   return new FileMediaStorage(config);
 }
+function getDefaultBaseDirectory4() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return path2.join(appData, "oneringai", "custom-tools");
+    }
+  }
+  return path2.join(os2.homedir(), ".oneringai", "custom-tools");
+}
+function sanitizeName(name) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileCustomToolStorage = class {
+  baseDirectory;
+  indexPath;
+  prettyPrint;
+  index = null;
+  constructor(config = {}) {
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory4();
+    this.prettyPrint = config.prettyPrint ?? true;
+    this.indexPath = path2.join(this.baseDirectory, "_index.json");
+  }
+  /**
+   * Save a custom tool definition
+   */
+  async save(definition) {
+    const sanitized = sanitizeName(definition.name);
+    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    await this.ensureDirectory(this.baseDirectory);
+    const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await fs17.promises.writeFile(tempPath, data, "utf-8");
+      await fs17.promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await fs17.promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+    await this.updateIndex(definition);
+  }
+  /**
+   * Load a custom tool definition by name
+   */
+  async load(name) {
+    const sanitized = sanitizeName(name);
+    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    try {
+      const data = await fs17.promises.readFile(filePath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      if (error instanceof SyntaxError) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  /**
+   * Delete a custom tool definition
+   */
+  async delete(name) {
+    const sanitized = sanitizeName(name);
+    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    try {
+      await fs17.promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await this.removeFromIndex(name);
+  }
+  /**
+   * Check if a custom tool exists
+   */
+  async exists(name) {
+    const sanitized = sanitizeName(name);
+    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    try {
+      await fs17.promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * List custom tools (summaries only)
+   */
+  async list(options) {
+    const index = await this.loadIndex();
+    let entries = [...index.tools];
+    if (options?.tags && options.tags.length > 0) {
+      entries = entries.filter((e) => {
+        const entryTags = e.tags ?? [];
+        return options.tags.some((t) => entryTags.includes(t));
+      });
+    }
+    if (options?.category) {
+      entries = entries.filter((e) => e.category === options.category);
+    }
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      entries = entries.filter(
+        (e) => e.name.toLowerCase().includes(searchLower) || e.description.toLowerCase().includes(searchLower)
+      );
+    }
+    entries.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    if (options?.offset) {
+      entries = entries.slice(options.offset);
+    }
+    if (options?.limit) {
+      entries = entries.slice(0, options.limit);
+    }
+    return entries.map((e) => ({
+      name: e.name,
+      displayName: e.displayName,
+      description: e.description,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+      metadata: {
+        tags: e.tags,
+        category: e.category
+      }
+    }));
+  }
+  /**
+   * Update metadata without loading full definition
+   */
+  async updateMetadata(name, metadata) {
+    const definition = await this.load(name);
+    if (!definition) {
+      throw new Error(`Custom tool '${name}' not found`);
+    }
+    definition.metadata = { ...definition.metadata, ...metadata };
+    definition.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await this.save(definition);
+  }
+  /**
+   * Get storage path
+   */
+  getPath() {
+    return this.baseDirectory;
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  async ensureDirectory(dir) {
+    try {
+      await fs17.promises.mkdir(dir, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  async loadIndex() {
+    if (this.index) {
+      return this.index;
+    }
+    try {
+      const data = await fs17.promises.readFile(this.indexPath, "utf-8");
+      this.index = JSON.parse(data);
+      return this.index;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        this.index = {
+          version: 1,
+          tools: [],
+          lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        return this.index;
+      }
+      throw error;
+    }
+  }
+  async saveIndex() {
+    if (!this.index) return;
+    await this.ensureDirectory(this.baseDirectory);
+    this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
+    await fs17.promises.writeFile(this.indexPath, data, "utf-8");
+  }
+  async updateIndex(definition) {
+    const index = await this.loadIndex();
+    const entry = this.definitionToIndexEntry(definition);
+    const existingIdx = index.tools.findIndex((e) => e.name === definition.name);
+    if (existingIdx >= 0) {
+      index.tools[existingIdx] = entry;
+    } else {
+      index.tools.push(entry);
+    }
+    await this.saveIndex();
+  }
+  async removeFromIndex(name) {
+    const index = await this.loadIndex();
+    index.tools = index.tools.filter((e) => e.name !== name);
+    await this.saveIndex();
+  }
+  definitionToIndexEntry(definition) {
+    return {
+      name: definition.name,
+      displayName: definition.displayName,
+      description: definition.description,
+      createdAt: definition.createdAt,
+      updatedAt: definition.updatedAt,
+      tags: definition.metadata?.tags,
+      category: definition.metadata?.category
+    };
+  }
+};
+function createFileCustomToolStorage(config) {
+  return new FileCustomToolStorage(config);
+}
+
+// src/domain/entities/CustomToolDefinition.ts
+var CUSTOM_TOOL_DEFINITION_VERSION = 1;
 
 // src/capabilities/agents/StreamHelpers.ts
 var StreamHelpers = class {
@@ -43617,8 +43877,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs15__namespace.mkdir(this.directory, { recursive: true });
-      await fs15__namespace.chmod(this.directory, 448);
+      await fs16__namespace.mkdir(this.directory, { recursive: true });
+      await fs16__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -43634,13 +43894,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs15__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs15__namespace.chmod(filePath, 384);
+    await fs16__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs16__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs15__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs16__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -43649,7 +43909,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs15__namespace.unlink(filePath);
+        await fs16__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -43658,7 +43918,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs15__namespace.unlink(filePath);
+      await fs16__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -43668,7 +43928,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs15__namespace.access(filePath);
+      await fs16__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -43679,7 +43939,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs15__namespace.readdir(this.directory);
+      const files = await fs16__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -43690,10 +43950,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs15__namespace.readdir(this.directory);
+      const files = await fs16__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs16__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -44120,14 +44380,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs15__namespace.writeFile(filePath, json, "utf8");
-    await fs15__namespace.chmod(filePath, 384);
+    await fs16__namespace.writeFile(filePath, json, "utf8");
+    await fs16__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs15__namespace.readFile(filePath, "utf8");
+      const json = await fs16__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -44140,7 +44400,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs15__namespace.unlink(filePath);
+      await fs16__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -44154,7 +44414,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs15__namespace.access(filePath);
+      await fs16__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -44180,13 +44440,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs15__namespace.readdir(this.directory);
+      const files = await fs16__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs16__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -44213,8 +44473,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs15__namespace.mkdir(this.directory, { recursive: true });
-      await fs15__namespace.chmod(this.directory, 448);
+      await fs16__namespace.mkdir(this.directory, { recursive: true });
+      await fs16__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -44225,7 +44485,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs15__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs16__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -44243,8 +44503,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs15__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs15__namespace.chmod(this.indexPath, 384);
+    await fs16__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs16__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -46699,8 +46959,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs16__namespace.existsSync(filePath)) {
-      fs16__namespace.unlinkSync(filePath);
+    if (fs17__namespace.existsSync(filePath)) {
+      fs17__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -46751,7 +47011,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs16__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs17__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -46768,14 +47028,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
+      if (fs17__namespace.existsSync(tempFile) && fs17__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
+      if (fs17__namespace.existsSync(tempFile) && fs17__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -46802,7 +47062,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
+    if (fs17__namespace.existsSync(tempFile) && fs17__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -46815,7 +47075,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs16__namespace.readFileSync(filePath);
+    const imageBuffer = fs17__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -47071,6 +47331,13 @@ __export(tools_exports, {
   bash: () => bash,
   createBashTool: () => createBashTool,
   createCreatePRTool: () => createCreatePRTool,
+  createCustomToolDelete: () => createCustomToolDelete,
+  createCustomToolDraft: () => createCustomToolDraft,
+  createCustomToolList: () => createCustomToolList,
+  createCustomToolLoad: () => createCustomToolLoad,
+  createCustomToolMetaTools: () => createCustomToolMetaTools,
+  createCustomToolSave: () => createCustomToolSave,
+  createCustomToolTest: () => createCustomToolTest,
   createDesktopGetCursorTool: () => createDesktopGetCursorTool,
   createDesktopGetScreenSizeTool: () => createDesktopGetScreenSizeTool,
   createDesktopKeyboardKeyTool: () => createDesktopKeyboardKeyTool,
@@ -47115,6 +47382,7 @@ __export(tools_exports, {
   desktopWindowList: () => desktopWindowList,
   developerTools: () => developerTools,
   editFile: () => editFile,
+  executeInVM: () => executeInVM,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
   getAllBuiltInTools: () => getAllBuiltInTools,
@@ -47129,6 +47397,7 @@ __export(tools_exports, {
   getToolsRequiringConnector: () => getToolsRequiringConnector,
   glob: () => glob,
   grep: () => grep,
+  hydrateCustomTool: () => hydrateCustomTool,
   isBlockedCommand: () => isBlockedCommand,
   isExcludedExtension: () => isExcludedExtension,
   jsonManipulator: () => jsonManipulator,
@@ -47349,7 +47618,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs17.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -47357,7 +47626,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs15.stat(resolvedPath);
+        const stats = await fs16.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -47399,7 +47668,7 @@ EXAMPLES:
           } catch {
           }
         }
-        const content = await fs15.readFile(resolvedPath, "utf-8");
+        const content = await fs16.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -47504,13 +47773,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs16.existsSync(resolvedPath);
+      const fileExists = fs17.existsSync(resolvedPath);
       try {
         const parentDir = path2.dirname(resolvedPath);
-        if (!fs16.existsSync(parentDir)) {
-          await fs15.mkdir(parentDir, { recursive: true });
+        if (!fs17.existsSync(parentDir)) {
+          await fs16.mkdir(parentDir, { recursive: true });
         }
-        await fs15.writeFile(resolvedPath, content, "utf-8");
+        await fs16.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -47613,7 +47882,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs17.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -47621,7 +47890,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs15.readFile(resolvedPath, "utf-8");
+        const content = await fs16.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -47660,7 +47929,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs15.writeFile(resolvedPath, newContent, "utf-8");
+        await fs16.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -47716,7 +47985,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs15.readdir(dir, { withFileTypes: true });
+    const entries = await fs16.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -47730,7 +47999,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs15.stat(fullPath);
+            const stats = await fs16.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -47812,7 +48081,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedDir)) {
+      if (!fs17.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -47867,7 +48136,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs15.readdir(dir, { withFileTypes: true });
+    const entries = await fs16.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path2.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -47900,7 +48169,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs15.readFile(filePath, "utf-8");
+    const content = await fs16.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -48041,7 +48310,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs17.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -48057,7 +48326,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs15.stat(resolvedPath);
+        const stats = await fs16.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -48145,7 +48414,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs15.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs16.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -48163,7 +48432,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs15.stat(fullPath);
+        const stats = await fs16.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -48259,14 +48528,14 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs16.existsSync(resolvedPath)) {
+      if (!fs17.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Directory not found: ${path6}`
         };
       }
       try {
-        const stats = await fs15.stat(resolvedPath);
+        const stats = await fs16.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
@@ -52247,6 +52516,547 @@ function getToolCategories() {
   return [...new Set(toolRegistry.map((entry) => entry.category))];
 }
 
+// src/tools/custom-tools/sandboxDescription.ts
+init_Connector();
+function formatConnectorEntry2(c) {
+  const parts = [];
+  const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
+  if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+  if (c.config.description) parts.push(c.config.description);
+  if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
+  const details = parts.map((p) => `     ${p}`).join("\n");
+  return `   \u2022 "${c.name}" (${c.displayName})
+${details}`;
+}
+function buildConnectorList(context) {
+  const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
+  const connectors = registry.listAll();
+  if (connectors.length === 0) {
+    return "   No connectors registered.";
+  }
+  return connectors.map(formatConnectorEntry2).join("\n\n");
+}
+var SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
+
+1. authenticatedFetch(url, options, connectorName)
+   Makes authenticated HTTP requests using the connector's credentials.
+   Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
+
+   Parameters:
+     \u2022 url: Full URL or path relative to the connector's base URL
+       - Full: "https://api.github.com/user/repos"
+       - Relative: "/user/repos" (resolved against connector's base URL)
+     \u2022 options: Standard fetch options { method, headers, body }
+       - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
+     \u2022 connectorName: Name of a registered connector (see REGISTERED CONNECTORS below)
+
+   Returns: Promise<Response>
+     \u2022 response.ok \u2014 true if status 200-299
+     \u2022 response.status \u2014 HTTP status code
+     \u2022 await response.json() \u2014 parse JSON body
+     \u2022 await response.text() \u2014 get text body
+
+2. fetch(url, options) \u2014 Standard fetch without authentication
+
+3. connectors.list() \u2014 Array of available connector names
+4. connectors.get(name) \u2014 Connector info: { displayName, description, baseURL, serviceType }
+
+VARIABLES:
+   \u2022 input \u2014 the tool's input arguments (matches inputSchema)
+   \u2022 output \u2014 SET THIS to return the tool's result to the caller
+
+GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
+
+LIMITS: No file system access, no require/import. Code runs in async context (await is available).`;
+function buildDraftDescription(context) {
+  const connectorList = buildConnectorList(context);
+  return `Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.
+
+When writing the "code" field, you have access to the full VM sandbox:
+
+${SANDBOX_API_REFERENCE}
+
+REGISTERED CONNECTORS:
+${connectorList}
+
+CODE EXAMPLES:
+
+// Simple data processing tool
+const items = input.data;
+output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
+
+// API tool using a connector
+const resp = await authenticatedFetch('/user/repos', { method: 'GET' }, 'github');
+const repos = await resp.json();
+output = repos.map(r => ({ name: r.full_name, stars: r.stargazers_count }));
+
+// Tool that chains multiple API calls
+const users = await (await authenticatedFetch('/users', {}, 'my-api')).json();
+const enriched = await Promise.all(users.map(async u => {
+  const details = await (await authenticatedFetch(\`/users/\${u.id}\`, {}, 'my-api')).json();
+  return { ...u, ...details };
+}));
+output = enriched;`;
+}
+function buildTestDescription(context) {
+  const connectorList = buildConnectorList(context);
+  return `Test custom tool code by executing it in the VM sandbox with provided test input. Returns execution result, captured logs, and timing.
+
+The code runs in the same sandbox as execute_javascript:
+
+${SANDBOX_API_REFERENCE}
+
+REGISTERED CONNECTORS:
+${connectorList}
+
+The testInput you provide will be available as the \`input\` variable in the code.
+Set \`output\` to the value you want returned.`;
+}
+
+// src/tools/custom-tools/customToolDraft.ts
+var NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+function createCustomToolDraft() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_draft",
+        description: "Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: 'Tool name (lowercase, underscores, must start with letter). Example: "fetch_weather"'
+            },
+            description: {
+              type: "string",
+              description: "What the tool does"
+            },
+            inputSchema: {
+              type: "object",
+              description: 'JSON Schema for the tool input (must have type: "object")'
+            },
+            outputSchema: {
+              type: "object",
+              description: "Optional JSON Schema for the tool output (documentation only)"
+            },
+            code: {
+              type: "string",
+              description: "JavaScript code that reads `input` and sets `output`. Runs in the same sandbox as execute_javascript. See tool description for full API reference."
+            },
+            tags: {
+              type: "array",
+              description: "Optional tags for categorization",
+              items: { type: "string" }
+            },
+            connectorName: {
+              type: "string",
+              description: "Optional connector name if the tool requires API access"
+            }
+          },
+          required: ["name", "description", "inputSchema", "code"]
+        }
+      }
+    },
+    descriptionFactory: (context) => buildDraftDescription(context),
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const errors = [];
+      if (!args.name || typeof args.name !== "string") {
+        errors.push("name is required and must be a string");
+      } else if (!NAME_PATTERN.test(args.name)) {
+        errors.push(
+          `name "${args.name}" is invalid. Must match /^[a-z][a-z0-9_]*$/ (lowercase, underscores, start with letter)`
+        );
+      }
+      if (!args.description || typeof args.description !== "string" || args.description.trim().length === 0) {
+        errors.push("description is required and must be a non-empty string");
+      }
+      if (!args.inputSchema || typeof args.inputSchema !== "object") {
+        errors.push("inputSchema is required and must be an object");
+      } else if (args.inputSchema.type !== "object") {
+        errors.push('inputSchema.type must be "object"');
+      }
+      if (!args.code || typeof args.code !== "string" || args.code.trim().length === 0) {
+        errors.push("code is required and must be a non-empty string");
+      } else {
+        try {
+          new Function(args.code);
+        } catch (e) {
+          errors.push(`code has syntax error: ${e.message}`);
+        }
+      }
+      if (errors.length > 0) {
+        return { success: false, errors };
+      }
+      return {
+        success: true,
+        validated: {
+          name: args.name,
+          description: args.description,
+          inputSchema: args.inputSchema,
+          outputSchema: args.outputSchema,
+          code: args.code,
+          tags: args.tags,
+          connectorName: args.connectorName
+        }
+      };
+    },
+    describeCall: (args) => args.name ?? "unknown"
+  };
+}
+
+// src/tools/custom-tools/customToolTest.ts
+init_Connector();
+var DEFAULT_TEST_TIMEOUT = 1e4;
+var MAX_TEST_TIMEOUT = 3e4;
+function createCustomToolTest() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_test",
+        description: "Test custom tool code by executing it in the VM sandbox with provided test input.",
+        parameters: {
+          type: "object",
+          properties: {
+            code: {
+              type: "string",
+              description: "JavaScript code to test. See tool description for full sandbox API reference."
+            },
+            inputSchema: {
+              type: "object",
+              description: "The input schema (for documentation, not enforced at test time)"
+            },
+            testInput: {
+              description: "Test input data \u2014 available as `input` in the code"
+            },
+            connectorName: {
+              type: "string",
+              description: "Optional connector name for authenticated API access"
+            },
+            timeout: {
+              type: "number",
+              description: `Execution timeout in ms. Default: ${DEFAULT_TEST_TIMEOUT}, max: ${MAX_TEST_TIMEOUT}`
+            }
+          },
+          required: ["code", "inputSchema", "testInput"]
+        }
+      },
+      timeout: MAX_TEST_TIMEOUT + 5e3
+    },
+    descriptionFactory: (context) => buildTestDescription(context),
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args, context) => {
+      const logs = [];
+      const startTime = Date.now();
+      const timeout = Math.min(Math.max(args.timeout || DEFAULT_TEST_TIMEOUT, 0), MAX_TEST_TIMEOUT);
+      try {
+        const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
+        const result = await executeInVM(
+          args.code,
+          args.testInput,
+          timeout,
+          logs,
+          context?.userId,
+          registry
+        );
+        return {
+          success: true,
+          result,
+          logs,
+          executionTime: Date.now() - startTime
+        };
+      } catch (error) {
+        return {
+          success: false,
+          result: null,
+          logs,
+          error: error.message,
+          executionTime: Date.now() - startTime
+        };
+      }
+    },
+    describeCall: (args) => `testing code (${args.code.length} chars)`
+  };
+}
+
+// src/tools/custom-tools/customToolSave.ts
+function createCustomToolSave(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_save",
+        description: "Save a custom tool definition to persistent storage. The tool can later be loaded, hydrated, and registered on any agent.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Tool name (must match /^[a-z][a-z0-9_]*$/)"
+            },
+            description: {
+              type: "string",
+              description: "What the tool does"
+            },
+            displayName: {
+              type: "string",
+              description: "Optional human-readable display name"
+            },
+            inputSchema: {
+              type: "object",
+              description: "JSON Schema for input parameters"
+            },
+            outputSchema: {
+              type: "object",
+              description: "Optional JSON Schema for output"
+            },
+            code: {
+              type: "string",
+              description: "JavaScript code (same sandbox as execute_javascript)"
+            },
+            tags: {
+              type: "array",
+              description: "Tags for categorization",
+              items: { type: "string" }
+            },
+            category: {
+              type: "string",
+              description: "Category grouping"
+            },
+            generationPrompt: {
+              type: "string",
+              description: "The prompt that was used to generate this tool (for reference)"
+            },
+            connectorNames: {
+              type: "array",
+              description: "Connector names this tool uses",
+              items: { type: "string" }
+            }
+          },
+          required: ["name", "description", "inputSchema", "code"]
+        }
+      }
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args) => {
+      try {
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const existing = await storage.load(args.name);
+        const definition = {
+          version: CUSTOM_TOOL_DEFINITION_VERSION,
+          name: args.name,
+          displayName: args.displayName,
+          description: args.description,
+          inputSchema: args.inputSchema,
+          outputSchema: args.outputSchema,
+          code: args.code,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          metadata: {
+            tags: args.tags,
+            category: args.category,
+            generationPrompt: args.generationPrompt,
+            connectorNames: args.connectorNames,
+            requiresConnector: (args.connectorNames?.length ?? 0) > 0
+          }
+        };
+        await storage.save(definition);
+        return {
+          success: true,
+          name: args.name,
+          storagePath: storage.getPath()
+        };
+      } catch (error) {
+        return {
+          success: false,
+          name: args.name,
+          storagePath: storage.getPath(),
+          error: error.message
+        };
+      }
+    },
+    describeCall: (args) => args.name
+  };
+}
+
+// src/tools/custom-tools/customToolList.ts
+function createCustomToolList(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_list",
+        description: "List saved custom tools from persistent storage. Supports filtering by search text, tags, and category.",
+        parameters: {
+          type: "object",
+          properties: {
+            search: {
+              type: "string",
+              description: "Search text (case-insensitive substring match on name + description)"
+            },
+            tags: {
+              type: "array",
+              description: "Filter by tags (any match)",
+              items: { type: "string" }
+            },
+            category: {
+              type: "string",
+              description: "Filter by category"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results"
+            },
+            offset: {
+              type: "number",
+              description: "Offset for pagination"
+            }
+          }
+        }
+      }
+    },
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const tools = await storage.list({
+        search: args.search,
+        tags: args.tags,
+        category: args.category,
+        limit: args.limit,
+        offset: args.offset
+      });
+      return { tools, total: tools.length };
+    },
+    describeCall: (args) => args.search ?? "all tools"
+  };
+}
+
+// src/tools/custom-tools/customToolLoad.ts
+function createCustomToolLoad(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_load",
+        description: "Load a full custom tool definition from storage (including code). Use this to inspect, modify, or hydrate a saved tool.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the tool to load"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    },
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const tool = await storage.load(args.name);
+      if (!tool) {
+        return { success: false, error: `Custom tool '${args.name}' not found` };
+      }
+      return { success: true, tool };
+    },
+    describeCall: (args) => args.name
+  };
+}
+
+// src/tools/custom-tools/customToolDelete.ts
+function createCustomToolDelete(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_delete",
+        description: "Delete a custom tool from persistent storage.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the tool to delete"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args) => {
+      try {
+        const exists = await storage.exists(args.name);
+        if (!exists) {
+          return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
+        }
+        await storage.delete(args.name);
+        return { success: true, name: args.name };
+      } catch (error) {
+        return { success: false, name: args.name, error: error.message };
+      }
+    },
+    describeCall: (args) => args.name
+  };
+}
+
+// src/tools/custom-tools/factories.ts
+function createCustomToolMetaTools(options) {
+  const storage = options?.storage ?? new FileCustomToolStorage();
+  return [
+    createCustomToolDraft(),
+    createCustomToolTest(),
+    createCustomToolSave(storage),
+    createCustomToolList(storage),
+    createCustomToolLoad(storage),
+    createCustomToolDelete(storage)
+  ];
+}
+
+// src/tools/custom-tools/hydrate.ts
+init_Connector();
+var DEFAULT_TIMEOUT2 = 1e4;
+var MAX_TIMEOUT = 3e4;
+function hydrateCustomTool(definition, options) {
+  const defaultTimeout = options?.defaultTimeout ?? DEFAULT_TIMEOUT2;
+  const maxTimeout = options?.maxTimeout ?? MAX_TIMEOUT;
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: definition.name,
+        description: definition.description,
+        parameters: definition.inputSchema
+      },
+      timeout: maxTimeout + 5e3
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args, context) => {
+      const logs = [];
+      const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
+      const result = await executeInVM(
+        definition.code,
+        args,
+        defaultTimeout,
+        logs,
+        context?.userId,
+        registry
+      );
+      return result;
+    },
+    describeCall: (args) => {
+      if (!args || typeof args !== "object") return definition.name;
+      const firstKey = Object.keys(args)[0];
+      if (!firstKey) return definition.name;
+      const val = args[firstKey];
+      const str = typeof val === "string" ? val : JSON.stringify(val);
+      return str.length > 50 ? str.slice(0, 47) + "..." : str;
+    }
+  };
+}
+
 // src/tools/ToolRegistry.ts
 init_Connector();
 var ToolRegistry = class {
@@ -52596,6 +53406,7 @@ exports.BaseTextProvider = BaseTextProvider;
 exports.BraveProvider = BraveProvider;
 exports.CONNECTOR_CONFIG_VERSION = CONNECTOR_CONFIG_VERSION;
 exports.CONTEXT_SESSION_FORMAT_VERSION = CONTEXT_SESSION_FORMAT_VERSION;
+exports.CUSTOM_TOOL_DEFINITION_VERSION = CUSTOM_TOOL_DEFINITION_VERSION;
 exports.CheckpointManager = CheckpointManager;
 exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConnectorTools = ConnectorTools;
@@ -52623,6 +53434,7 @@ exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileAgentDefinitionStorage = FileAgentDefinitionStorage;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileContextStorage = FileContextStorage;
+exports.FileCustomToolStorage = FileCustomToolStorage;
 exports.FileMediaOutputHandler = FileMediaStorage;
 exports.FileMediaStorage = FileMediaStorage;
 exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
@@ -52733,6 +53545,13 @@ exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createBashTool = createBashTool;
 exports.createConnectorFromTemplate = createConnectorFromTemplate;
 exports.createCreatePRTool = createCreatePRTool;
+exports.createCustomToolDelete = createCustomToolDelete;
+exports.createCustomToolDraft = createCustomToolDraft;
+exports.createCustomToolList = createCustomToolList;
+exports.createCustomToolLoad = createCustomToolLoad;
+exports.createCustomToolMetaTools = createCustomToolMetaTools;
+exports.createCustomToolSave = createCustomToolSave;
+exports.createCustomToolTest = createCustomToolTest;
 exports.createDesktopGetCursorTool = createDesktopGetCursorTool;
 exports.createDesktopGetScreenSizeTool = createDesktopGetScreenSizeTool;
 exports.createDesktopKeyboardKeyTool = createDesktopKeyboardKeyTool;
@@ -52749,6 +53568,7 @@ exports.createEstimator = createEstimator;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
 exports.createFileContextStorage = createFileContextStorage;
+exports.createFileCustomToolStorage = createFileCustomToolStorage;
 exports.createFileMediaStorage = createFileMediaStorage;
 exports.createGetPRTool = createGetPRTool;
 exports.createGitHubReadFileTool = createGitHubReadFileTool;
@@ -52857,6 +53677,7 @@ exports.globalErrorHandler = globalErrorHandler;
 exports.grep = grep;
 exports.hasClipboardImage = hasClipboardImage;
 exports.hasVendorLogo = hasVendorLogo;
+exports.hydrateCustomTool = hydrateCustomTool;
 exports.isBlockedCommand = isBlockedCommand;
 exports.isErrorEvent = isErrorEvent;
 exports.isExcludedExtension = isExcludedExtension;

@@ -137,6 +137,7 @@ export type {
   ToolManagerConfig,
   SerializedToolState,
   ToolManagerEvent,
+  ToolSource,
 } from './ToolManager.js';
 // Note: CircuitBreakerConfig, CircuitState are re-exported from ToolManager but
 // canonically exported from infrastructure/resilience/index.js

@@ -320,7 +320,7 @@ const response = await agent.run([
 Connector-based web search with multiple providers:
 
 ```typescript
-import { Connector, SearchProvider, Services, webSearch, Agent } from '@everworker/oneringai';
+import { Connector, SearchProvider, ConnectorTools, Services, Agent, tools } from '@everworker/oneringai';
 
 // Create search connector
 Connector.create({
@@ -338,11 +338,13 @@ const results = await search.search('latest AI developments 2026', {
   language: 'en',
 });
 
-// Option 2: Use with Agent
+// Option 2: Use with Agent via ConnectorTools
+const searchTools = ConnectorTools.for('serper-main');
+
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [webSearch],
+  tools: [...searchTools, tools.webFetch],
 });
 
 await agent.run('Search for quantum computing news and summarize');
@@ -359,7 +361,7 @@ await agent.run('Search for quantum computing news and summarize');
 Enterprise web scraping with automatic fallback and bot protection bypass:
 
 ```typescript
-import { Connector, ScrapeProvider, Services, webScrape, Agent } from '@everworker/oneringai';
+import { Connector, ScrapeProvider, ConnectorTools, Services, Agent, tools } from '@everworker/oneringai';
 
 // Create ZenRows connector for bot-protected sites
 Connector.create({
@@ -379,19 +381,24 @@ const result = await scraper.scrape('https://protected-site.com', {
   },
 });
 
-// Option 2: Use webScrape tool with Agent
+// Option 2: Use web_scrape tool with Agent via ConnectorTools
+const scrapeTools = ConnectorTools.for('zenrows');
+
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [webScrape],
+  tools: [...scrapeTools, tools.webFetch],
 });
 
-// webScrape auto-falls back: native → JS → API
+// web_scrape auto-falls back: native → API
 await agent.run('Scrape https://example.com and summarize');
 ```
 
 **Supported Scrape Providers:**
 - **ZenRows** - Enterprise scraping with JS rendering, residential proxies, anti-bot bypass
+- **Jina Reader** - Clean content extraction with AI-powered readability
+- **Firecrawl** - Web scraping with JavaScript rendering
+- **ScrapingBee** - Headless browser scraping with proxy rotation
 
 ## Supported Providers
 
@@ -401,7 +408,7 @@ await agent.run('Scrape https://example.com and summarize');
 | **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 200K |
 | **Google (Gemini)** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | 1M |
 | **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 1M |
-| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
+| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | 128K |
 | **Groq** | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | 128K |
 | **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
@@ -643,7 +650,7 @@ await agent.run('Check weather for SF and remember the result');
 Use `Agent` with search tools and `WorkingMemoryPluginNextGen` for research workflows:
 
 ```typescript
-import { Agent, webSearch, SearchProvider, Connector, Services } from '@everworker/oneringai';
+import { Agent, ConnectorTools, Connector, Services, tools } from '@everworker/oneringai';
 
 // Setup search connector
 Connector.create({
@@ -654,10 +661,12 @@ Connector.create({
 });
 
 // Create agent with search and memory
+const searchTools = ConnectorTools.for('serper-main');
+
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [webSearch],
+  tools: [...searchTools, tools.webFetch],
   context: {
     features: { workingMemory: true },
   },
@@ -1477,4 +1486,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.2.1 | **Last Updated:** 2026-02-11 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.2.1 | **Last Updated:** 2026-02-17 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
