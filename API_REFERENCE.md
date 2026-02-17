@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-16
+**Generated:** 2026-02-17
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -18,8 +18,8 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Video Generation](#video-generation) (18 items)
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (21 items)
-- [Tools & Function Calling](#tools-function-calling) (102 items)
+- [Session Management](#session-management) (24 items)
+- [Tools & Function Calling](#tools-function-calling) (118 items)
 - [Streaming](#streaming) (15 items)
 - [Model Registry](#model-registry) (9 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (42 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (233 items)
+- [Other](#other) (234 items)
 
 ## Core
 
@@ -9017,6 +9017,134 @@ async rebuildIndex(): Promise&lt;void&gt;
 
 ---
 
+### FileCustomToolStorage `class`
+
+📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:84`](src/infrastructure/storage/FileCustomToolStorage.ts)
+
+File-based storage for custom tool definitions
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: FileCustomToolStorageConfig =
+```
+
+**Parameters:**
+- `config`: `FileCustomToolStorageConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `save()`
+
+Save a custom tool definition
+
+```typescript
+async save(definition: CustomToolDefinition): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `definition`: `CustomToolDefinition`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `load()`
+
+Load a custom tool definition by name
+
+```typescript
+async load(name: string): Promise&lt;CustomToolDefinition | null&gt;
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `Promise&lt;CustomToolDefinition | null&gt;`
+
+#### `delete()`
+
+Delete a custom tool definition
+
+```typescript
+async delete(name: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+Check if a custom tool exists
+
+```typescript
+async exists(name: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `list()`
+
+List custom tools (summaries only)
+
+```typescript
+async list(options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;
+```
+
+**Parameters:**
+- `options`: `CustomToolListOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;CustomToolSummary[]&gt;`
+
+#### `updateMetadata()`
+
+Update metadata without loading full definition
+
+```typescript
+async updateMetadata(name: string, metadata: Record&lt;string, unknown&gt;): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `name`: `string`
+- `metadata`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getPath()`
+
+Get storage path
+
+```typescript
+getPath(): string
+```
+
+**Returns:** `string`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `baseDirectory` | `baseDirectory: string` | - |
+| `indexPath` | `indexPath: string` | - |
+| `prettyPrint` | `prettyPrint: boolean` | - |
+| `index` | `index: CustomToolIndex | null` | - |
+
+</details>
+
+---
+
 ### FileMediaStorage `class`
 
 📍 [`src/infrastructure/storage/FileMediaStorage.ts:47`](src/infrastructure/storage/FileMediaStorage.ts)
@@ -9414,6 +9542,24 @@ Configuration for FileContextStorage
 
 ---
 
+### FileCustomToolStorageConfig `interface`
+
+📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:24`](src/infrastructure/storage/FileCustomToolStorage.ts)
+
+Configuration for FileCustomToolStorage
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `baseDirectory?` | `baseDirectory?: string;` | Override the base directory (default: ~/.oneringai/custom-tools) |
+| `prettyPrint?` | `prettyPrint?: boolean;` | Pretty-print JSON (default: true) |
+
+</details>
+
+---
+
 ### FileMediaStorageConfig `interface`
 
 📍 [`src/infrastructure/storage/FileMediaStorage.ts:42`](src/infrastructure/storage/FileMediaStorage.ts)
@@ -9558,6 +9704,20 @@ await ctx.save('session-001', { title: 'My Session' });
 
 // Load session
 await ctx.load('session-001');
+```
+
+---
+
+### createFileCustomToolStorage `function`
+
+📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:344`](src/infrastructure/storage/FileCustomToolStorage.ts)
+
+Create a FileCustomToolStorage with default configuration
+
+```typescript
+export function createFileCustomToolStorage(
+  config?: FileCustomToolStorageConfig
+): FileCustomToolStorage
 ```
 
 ---
@@ -10021,7 +10181,7 @@ async execute(tool: ToolFunction, args: unknown): Promise&lt;unknown&gt;
 
 ### ToolManager `class`
 
-📍 [`src/core/ToolManager.ts:142`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:207`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -11325,6 +11485,134 @@ Options for ConnectorTools methods that accept a scoped registry
 
 ---
 
+### CustomToolDefinition `interface`
+
+📍 [`src/domain/entities/CustomToolDefinition.ts:54`](src/domain/entities/CustomToolDefinition.ts)
+
+Full custom tool definition - everything needed to hydrate into a ToolFunction
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `version` | `version: number;` | Format version for migration support |
+| `name` | `name: string;` | Unique tool name (must match /^[a-z][a-z0-9_]*$/) |
+| `displayName?` | `displayName?: string;` | Human-readable display name |
+| `description` | `description: string;` | Description of what the tool does |
+| `inputSchema` | `inputSchema: Record&lt;string, unknown&gt;;` | JSON Schema for input parameters |
+| `outputSchema?` | `outputSchema?: Record&lt;string, unknown&gt;;` | JSON Schema for output (documentation only) |
+| `code` | `code: string;` | JavaScript code to execute in VM sandbox |
+| `createdAt` | `createdAt: string;` | When the definition was created |
+| `updatedAt` | `updatedAt: string;` | When the definition was last updated |
+| `metadata?` | `metadata?: CustomToolMetadata;` | Optional metadata |
+
+</details>
+
+---
+
+### CustomToolListOptions `interface`
+
+📍 [`src/domain/interfaces/ICustomToolStorage.ts:14`](src/domain/interfaces/ICustomToolStorage.ts)
+
+Options for listing custom tools
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tags?` | `tags?: string[];` | Filter by tags (any match) |
+| `category?` | `category?: string;` | Filter by category |
+| `search?` | `search?: string;` | Search string (case-insensitive substring match on name + description) |
+| `limit?` | `limit?: number;` | Maximum number of results |
+| `offset?` | `offset?: number;` | Offset for pagination |
+
+</details>
+
+---
+
+### CustomToolMetadata `interface`
+
+📍 [`src/domain/entities/CustomToolDefinition.ts:32`](src/domain/entities/CustomToolDefinition.ts)
+
+Metadata for a custom tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tags?` | `tags?: string[];` | Tags for categorization and search |
+| `category?` | `category?: string;` | Category grouping |
+| `author?` | `author?: string;` | Author/creator identifier |
+| `generationPrompt?` | `generationPrompt?: string;` | The prompt that was used to generate this tool |
+| `testCases?` | `testCases?: CustomToolTestCase[];` | Test cases for validation |
+| `requiresConnector?` | `requiresConnector?: boolean;` | Whether this tool requires a connector to function |
+| `connectorNames?` | `connectorNames?: string[];` | Connector names this tool uses |
+
+</details>
+
+---
+
+### CustomToolMetaToolsOptions `interface`
+
+📍 [`src/tools/custom-tools/factories.ts:18`](src/tools/custom-tools/factories.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `storage?` | `storage?: ICustomToolStorage;` | Custom storage backend. Default: FileCustomToolStorage |
+
+</details>
+
+---
+
+### CustomToolSummary `interface`
+
+📍 [`src/domain/entities/CustomToolDefinition.ts:80`](src/domain/entities/CustomToolDefinition.ts)
+
+Lightweight summary of a custom tool (no code) - used for listing
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Tool name |
+| `displayName?` | `displayName?: string;` | Human-readable display name |
+| `description` | `description: string;` | Description |
+| `createdAt` | `createdAt: string;` | When created |
+| `updatedAt` | `updatedAt: string;` | When last updated |
+| `metadata?` | `metadata?: CustomToolMetadata;` | Optional metadata |
+
+</details>
+
+---
+
+### CustomToolTestCase `interface`
+
+📍 [`src/domain/entities/CustomToolDefinition.ts:16`](src/domain/entities/CustomToolDefinition.ts)
+
+Test case for a custom tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `label` | `label: string;` | Human-readable label for this test case |
+| `input` | `input: unknown;` | Input to pass to the tool |
+| `expectedOutput?` | `expectedOutput?: unknown;` | Expected output (for validation) |
+| `lastResult?` | `lastResult?: unknown;` | Result from last test run |
+| `lastError?` | `lastError?: string;` | Error from last test run |
+
+</details>
+
+---
+
 ### DesktopToolConfig `interface`
 
 📍 [`src/tools/desktop/types.ts:91`](src/tools/desktop/types.ts)
@@ -11458,6 +11746,111 @@ Options for generating the generic API tool
 | `description?` | `description?: string;` | Override the description |
 | `userId?` | `userId?: string;` | User ID for multi-user OAuth |
 | `permission?` | `permission?: ToolPermissionConfig;` | Permission config for the tool |
+
+</details>
+
+---
+
+### ICustomToolStorage `interface`
+
+📍 [`src/domain/interfaces/ICustomToolStorage.ts:33`](src/domain/interfaces/ICustomToolStorage.ts)
+
+Storage interface for custom tool definitions
+
+Implementations:
+- FileCustomToolStorage: File-based storage at ~/.oneringai/custom-tools/
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `save()`
+
+Save a custom tool definition
+
+```typescript
+save(definition: CustomToolDefinition): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `definition`: `CustomToolDefinition`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `load()`
+
+Load a custom tool definition by name
+
+```typescript
+load(name: string): Promise&lt;CustomToolDefinition | null&gt;;
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `Promise&lt;CustomToolDefinition | null&gt;`
+
+#### `delete()`
+
+Delete a custom tool definition by name
+
+```typescript
+delete(name: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+Check if a custom tool exists
+
+```typescript
+exists(name: string): Promise&lt;boolean&gt;;
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `list()`
+
+List custom tools (summaries only)
+
+```typescript
+list(options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;;
+```
+
+**Parameters:**
+- `options`: `CustomToolListOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;CustomToolSummary[]&gt;`
+
+#### `updateMetadata()?`
+
+Update metadata without loading full definition
+
+```typescript
+updateMetadata?(name: string, metadata: Record&lt;string, unknown&gt;): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `name`: `string`
+- `metadata`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getPath()`
+
+Get the storage path/location (for display/debugging)
+
+```typescript
+getPath(): string;
+```
+
+**Returns:** `string`
 
 </details>
 
@@ -11838,7 +12231,7 @@ MCP Tool call result
 
 ### SerializedToolState `interface`
 
-📍 [`src/core/ToolManager.ts:108`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:167`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11849,6 +12242,9 @@ MCP Tool call result
 | `namespaces` | `namespaces: Record&lt;string, string&gt;;` | - |
 | `priorities` | `priorities: Record&lt;string, number&gt;;` | - |
 | `permissions?` | `permissions?: Record&lt;string, ToolPermissionConfig&gt;;` | Permission configs by tool name |
+| `tags?` | `tags?: Record&lt;string, string[]&gt;;` | Tags by tool name |
+| `categories?` | `categories?: Record&lt;string, string&gt;;` | Categories by tool name |
+| `sources?` | `sources?: Record&lt;string, ToolSource&gt;;` | Sources by tool name |
 
 </details>
 
@@ -11979,7 +12375,7 @@ Tool call detected and starting
 
 ### ToolCondition `interface`
 
-📍 [`src/core/ToolManager.ts:55`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:108`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12129,7 +12525,7 @@ Used for logging, UI display, and debugging. |
 
 ### ToolManagerConfig `interface`
 
-📍 [`src/core/ToolManager.ts:132`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:197`](src/core/ToolManager.ts)
 
 Configuration for ToolManager
 
@@ -12149,7 +12545,7 @@ Default: 0 (disabled - relies on tool's own timeout) |
 
 ### ToolManagerStats `interface`
 
-📍 [`src/core/ToolManager.ts:98`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:157`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12170,7 +12566,7 @@ Default: 0 (disabled - relies on tool's own timeout) |
 
 ### ToolMetadata `interface`
 
-📍 [`src/core/ToolManager.ts:88`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:147`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12209,7 +12605,7 @@ Default: 0 (disabled - relies on tool's own timeout) |
 
 ### ToolOptions `interface`
 
-📍 [`src/core/ToolManager.ts:42`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:89`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12221,6 +12617,9 @@ Default: 0 (disabled - relies on tool's own timeout) |
 | `priority?` | `priority?: number;` | Priority for selection ordering. Higher = preferred. Default: 0 |
 | `conditions?` | `conditions?: ToolCondition[];` | Conditions for auto-enable/disable |
 | `permission?` | `permission?: ToolPermissionConfig;` | Permission configuration override. If not set, uses tool's config or defaults. |
+| `tags?` | `tags?: string[];` | Tags for categorization and search |
+| `category?` | `category?: string;` | Category grouping |
+| `source?` | `source?: ToolSource;` | Source identifier (built-in, connector, custom, mcp, etc.) |
 
 </details>
 
@@ -12282,7 +12681,7 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistration `interface`
 
-📍 [`src/core/ToolManager.ts:75`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:128`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12297,6 +12696,9 @@ Used by the ToolPermissionManager.
 | `metadata` | `metadata: ToolMetadata;` | - |
 | `permission?` | `permission?: ToolPermissionConfig;` | Effective permission config (merged from tool.permission and options.permission) |
 | `circuitBreakerConfig?` | `circuitBreakerConfig?: Partial&lt;CircuitBreakerConfig&gt;;` | Circuit breaker configuration for this tool (uses shared CircuitBreakerConfig from resilience) |
+| `tags?` | `tags?: string[];` | Tags for categorization and search |
+| `category?` | `category?: string;` | Category grouping |
+| `source?` | `source?: ToolSource;` | Source identifier (built-in, connector, custom, mcp, etc.) |
 
 </details>
 
@@ -12304,7 +12706,7 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistryEntry `interface`
 
-📍 [`src/tools/registry.generated.ts:38`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:44`](src/tools/registry.generated.ts)
 
 Metadata for a tool in the registry
 
@@ -12371,7 +12773,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### ToolSelectionContext `interface`
 
-📍 [`src/core/ToolManager.ts:60`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:113`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12477,19 +12879,19 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolCategory `type`
 
-📍 [`src/tools/registry.generated.ts:35`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:41`](src/tools/registry.generated.ts)
 
 Tool category for grouping
 
 ```typescript
-type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other'
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'custom-tools' | 'other'
 ```
 
 ---
 
 ### ToolManagerEvent `type`
 
-📍 [`src/core/ToolManager.ts:116`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:181`](src/core/ToolManager.ts)
 
 ```typescript
 type ToolManagerEvent = | 'tool:registered'
@@ -12499,6 +12901,18 @@ type ToolManagerEvent = | 'tool:registered'
   | 'tool:executed'
   | 'namespace:enabled'
   | 'namespace:disabled'
+```
+
+---
+
+### ToolSource `type`
+
+📍 [`src/core/ToolManager.ts:45`](src/core/ToolManager.ts)
+
+Source identifier for a registered tool
+
+```typescript
+type ToolSource = 'built-in' | 'connector' | 'custom' | 'mcp' | string
 ```
 
 ---
@@ -12526,6 +12940,91 @@ export function createCreatePRTool(
   connector: Connector,
   userId?: string
 ): ToolFunction&lt;CreatePRArgs, GitHubCreatePRResult&gt;
+```
+
+---
+
+### createCustomToolDelete `function`
+
+📍 [`src/tools/custom-tools/customToolDelete.ts:19`](src/tools/custom-tools/customToolDelete.ts)
+
+```typescript
+export function createCustomToolDelete(storage: ICustomToolStorage): ToolFunction&lt;DeleteArgs, DeleteResult&gt;
+```
+
+---
+
+### createCustomToolDraft `function`
+
+📍 [`src/tools/custom-tools/customToolDraft.ts:43`](src/tools/custom-tools/customToolDraft.ts)
+
+```typescript
+export function createCustomToolDraft(): ToolFunction&lt;DraftArgs, DraftResult&gt;
+```
+
+---
+
+### createCustomToolList `function`
+
+📍 [`src/tools/custom-tools/customToolList.ts:23`](src/tools/custom-tools/customToolList.ts)
+
+```typescript
+export function createCustomToolList(storage: ICustomToolStorage): ToolFunction&lt;ListArgs, ListResult&gt;
+```
+
+---
+
+### createCustomToolLoad `function`
+
+📍 [`src/tools/custom-tools/customToolLoad.ts:20`](src/tools/custom-tools/customToolLoad.ts)
+
+```typescript
+export function createCustomToolLoad(storage: ICustomToolStorage): ToolFunction&lt;LoadArgs, LoadResult&gt;
+```
+
+---
+
+### createCustomToolMetaTools `function`
+
+📍 [`src/tools/custom-tools/factories.ts:38`](src/tools/custom-tools/factories.ts)
+
+Create all 6 custom tool meta-tools as an array.
+
+```typescript
+export function createCustomToolMetaTools(options?: CustomToolMetaToolsOptions): ToolFunction[]
+```
+
+**Example:**
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [
+    ...createCustomToolMetaTools(),
+    ...otherTools,
+  ],
+});
+```
+
+---
+
+### createCustomToolSave `function`
+
+📍 [`src/tools/custom-tools/customToolSave.ts:31`](src/tools/custom-tools/customToolSave.ts)
+
+```typescript
+export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction&lt;SaveArgs, SaveResult&gt;
+```
+
+---
+
+### createCustomToolTest `function`
+
+📍 [`src/tools/custom-tools/customToolTest.ts:32`](src/tools/custom-tools/customToolTest.ts)
+
+```typescript
+export function createCustomToolTest(): ToolFunction&lt;TestArgs, TestResult&gt;
 ```
 
 ---
@@ -12892,7 +13391,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:253`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:313`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -12916,7 +13415,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:268`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:328`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -12944,7 +13443,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:278`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:338`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -12956,7 +13455,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:258`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:318`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -12968,7 +13467,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:263`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:323`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -12980,12 +13479,33 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:273`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:333`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
 ```typescript
 export function getToolsRequiringConnector(): ToolRegistryEntry[]
+```
+
+---
+
+### hydrateCustomTool `function`
+
+📍 [`src/tools/custom-tools/hydrate.ts:32`](src/tools/custom-tools/hydrate.ts)
+
+Convert a stored CustomToolDefinition into an executable ToolFunction.
+
+The resulting ToolFunction:
+- Executes the definition's code through executeInVM
+- Has input args passed as `input` in the VM sandbox
+- Gets connector registry from ToolContext for authenticatedFetch
+- Has session-scoped permission with medium risk level
+
+```typescript
+export function hydrateCustomTool(
+  definition: CustomToolDefinition,
+  options?: HydrateOptions,
+): ToolFunction
 ```
 
 ---
@@ -24989,6 +25509,22 @@ HTTP/HTTPS transport configuration (StreamableHTTP)
     /** Max retry attempts (default: 2) */
     maxRetries?: number;
   };` | Reconnection options |
+
+</details>
+
+---
+
+### HydrateOptions `interface`
+
+📍 [`src/tools/custom-tools/hydrate.ts:16`](src/tools/custom-tools/hydrate.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `defaultTimeout?` | `defaultTimeout?: number;` | Default execution timeout in ms. Default: 10000 |
+| `maxTimeout?` | `maxTimeout?: number;` | Maximum execution timeout in ms. Default: 30000 |
 
 </details>
 
