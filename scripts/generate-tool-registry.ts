@@ -20,7 +20,7 @@ const ROOT = join(__dirname, '..');
 const TOOLS_DIR = join(ROOT, 'src/tools');
 const OUTPUT_FILE = join(TOOLS_DIR, 'registry.generated.ts');
 
-type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other';
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'custom-tools' | 'other';
 
 interface ToolMetadata {
   name: string;
@@ -43,6 +43,7 @@ const dirToCategory: Record<string, ToolCategory> = {
   json: 'json',
   connector: 'connector',
   desktop: 'desktop',
+  'custom-tools': 'custom-tools',
 };
 
 // Tools that are safe by default (read-only or low risk)
@@ -54,6 +55,9 @@ const SAFE_TOOLS = new Set([
   'web_fetch',
   'json_manipulate',
   'json_manipulator',
+  'custom_tool_draft',
+  'custom_tool_list',
+  'custom_tool_load',
 ]);
 
 // Tools that require a connector
@@ -154,8 +158,8 @@ async function extractToolFromSource(
     // Skip lines that are clearly inside strings (start with quotes or have description-like content)
     const trimmedLine = line.trim();
 
-    // Pattern 1: Factory pattern - "export const X = createYTool("
-    const factoryMatch = trimmedLine.match(/^export\s+const\s+(\w+)\s*=\s*create\w+Tool\s*\(/);
+    // Pattern 1: Factory pattern - "export const X = createY(" (covers createXTool and createCustomToolX)
+    const factoryMatch = trimmedLine.match(/^export\s+const\s+(\w+)\s*=\s*create\w+\s*\(/);
     if (factoryMatch) {
       factoryExportName = factoryMatch[1];
       continue;
@@ -276,7 +280,7 @@ import type { ToolFunction } from '../domain/entities/Tool.js';
 ${imports}
 
 /** Tool category for grouping */
-export type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'other';
+export type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'custom-tools' | 'other';
 
 /** Metadata for a tool in the registry */
 export interface ToolRegistryEntry {

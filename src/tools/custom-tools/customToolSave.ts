@@ -6,6 +6,7 @@ import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolDefinition } from '../../domain/entities/CustomToolDefinition.js';
 import { CUSTOM_TOOL_DEFINITION_VERSION } from '../../domain/entities/CustomToolDefinition.js';
+import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
 
 interface SaveArgs {
   name: string;
@@ -135,3 +136,6 @@ export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction<
     describeCall: (args: SaveArgs) => args.name,
   };
 }
+
+/** Default custom_tool_save instance (uses FileCustomToolStorage) */
+export const customToolSave = createCustomToolSave(new FileCustomToolStorage());

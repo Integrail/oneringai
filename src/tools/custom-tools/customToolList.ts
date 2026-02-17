@@ -5,6 +5,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolSummary } from '../../domain/entities/CustomToolDefinition.js';
+import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
 
 interface ListArgs {
   search?: string;
@@ -73,3 +74,6 @@ export function createCustomToolList(storage: ICustomToolStorage): ToolFunction<
     describeCall: (args: ListArgs) => args.search ?? 'all tools',
   };
 }
+
+/** Default custom_tool_list instance (uses FileCustomToolStorage) */
+export const customToolList = createCustomToolList(new FileCustomToolStorage());

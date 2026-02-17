@@ -47368,6 +47368,12 @@ __export(tools_exports, {
   createWebScrapeTool: () => createWebScrapeTool,
   createWebSearchTool: () => createWebSearchTool,
   createWriteFileTool: () => createWriteFileTool,
+  customToolDelete: () => customToolDelete,
+  customToolDraft: () => customToolDraft,
+  customToolList: () => customToolList,
+  customToolLoad: () => customToolLoad,
+  customToolSave: () => customToolSave,
+  customToolTest: () => customToolTest,
   desktopGetCursor: () => desktopGetCursor,
   desktopGetScreenSize: () => desktopGetScreenSize,
   desktopKeyboardKey: () => desktopKeyboardKey,
@@ -52305,6 +52311,498 @@ var desktopTools = [
   desktopWindowFocus
 ];
 
+// src/tools/custom-tools/customToolDelete.ts
+function createCustomToolDelete(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_delete",
+        description: "Delete a custom tool from persistent storage.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the tool to delete"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args) => {
+      try {
+        const exists = await storage.exists(args.name);
+        if (!exists) {
+          return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
+        }
+        await storage.delete(args.name);
+        return { success: true, name: args.name };
+      } catch (error) {
+        return { success: false, name: args.name, error: error.message };
+      }
+    },
+    describeCall: (args) => args.name
+  };
+}
+var customToolDelete = createCustomToolDelete(new FileCustomToolStorage());
+
+// src/tools/custom-tools/sandboxDescription.ts
+init_Connector();
+function formatConnectorEntry2(c) {
+  const parts = [];
+  const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
+  if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+  if (c.config.description) parts.push(c.config.description);
+  if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
+  const details = parts.map((p) => `     ${p}`).join("\n");
+  return `   \u2022 "${c.name}" (${c.displayName})
+${details}`;
+}
+function buildConnectorList(context) {
+  const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
+  const connectors = registry.listAll();
+  if (connectors.length === 0) {
+    return "   No connectors registered.";
+  }
+  return connectors.map(formatConnectorEntry2).join("\n\n");
+}
+var SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
+
+1. authenticatedFetch(url, options, connectorName)
+   Makes authenticated HTTP requests using the connector's credentials.
+   Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
+
+   Parameters:
+     \u2022 url: Full URL or path relative to the connector's base URL
+       - Full: "https://api.github.com/user/repos"
+       - Relative: "/user/repos" (resolved against connector's base URL)
+     \u2022 options: Standard fetch options { method, headers, body }
+       - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
+     \u2022 connectorName: Name of a registered connector (see REGISTERED CONNECTORS below)
+
+   Returns: Promise<Response>
+     \u2022 response.ok \u2014 true if status 200-299
+     \u2022 response.status \u2014 HTTP status code
+     \u2022 await response.json() \u2014 parse JSON body
+     \u2022 await response.text() \u2014 get text body
+
+2. fetch(url, options) \u2014 Standard fetch without authentication
+
+3. connectors.list() \u2014 Array of available connector names
+4. connectors.get(name) \u2014 Connector info: { displayName, description, baseURL, serviceType }
+
+VARIABLES:
+   \u2022 input \u2014 the tool's input arguments (matches inputSchema)
+   \u2022 output \u2014 SET THIS to return the tool's result to the caller
+
+GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
+
+LIMITS: No file system access, no require/import. Code runs in async context (await is available).`;
+function buildDraftDescription(context) {
+  const connectorList = buildConnectorList(context);
+  return `Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.
+
+When writing the "code" field, you have access to the full VM sandbox:
+
+${SANDBOX_API_REFERENCE}
+
+REGISTERED CONNECTORS:
+${connectorList}
+
+CODE EXAMPLES:
+
+// Simple data processing tool
+const items = input.data;
+output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
+
+// API tool using a connector
+const resp = await authenticatedFetch('/user/repos', { method: 'GET' }, 'github');
+const repos = await resp.json();
+output = repos.map(r => ({ name: r.full_name, stars: r.stargazers_count }));
+
+// Tool that chains multiple API calls
+const users = await (await authenticatedFetch('/users', {}, 'my-api')).json();
+const enriched = await Promise.all(users.map(async u => {
+  const details = await (await authenticatedFetch(\`/users/\${u.id}\`, {}, 'my-api')).json();
+  return { ...u, ...details };
+}));
+output = enriched;`;
+}
+function buildTestDescription(context) {
+  const connectorList = buildConnectorList(context);
+  return `Test custom tool code by executing it in the VM sandbox with provided test input. Returns execution result, captured logs, and timing.
+
+The code runs in the same sandbox as execute_javascript:
+
+${SANDBOX_API_REFERENCE}
+
+REGISTERED CONNECTORS:
+${connectorList}
+
+The testInput you provide will be available as the \`input\` variable in the code.
+Set \`output\` to the value you want returned.`;
+}
+
+// src/tools/custom-tools/customToolDraft.ts
+var NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+function createCustomToolDraft() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_draft",
+        description: "Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: 'Tool name (lowercase, underscores, must start with letter). Example: "fetch_weather"'
+            },
+            description: {
+              type: "string",
+              description: "What the tool does"
+            },
+            inputSchema: {
+              type: "object",
+              description: 'JSON Schema for the tool input (must have type: "object")'
+            },
+            outputSchema: {
+              type: "object",
+              description: "Optional JSON Schema for the tool output (documentation only)"
+            },
+            code: {
+              type: "string",
+              description: "JavaScript code that reads `input` and sets `output`. Runs in the same sandbox as execute_javascript. See tool description for full API reference."
+            },
+            tags: {
+              type: "array",
+              description: "Optional tags for categorization",
+              items: { type: "string" }
+            },
+            connectorName: {
+              type: "string",
+              description: "Optional connector name if the tool requires API access"
+            }
+          },
+          required: ["name", "description", "inputSchema", "code"]
+        }
+      }
+    },
+    descriptionFactory: (context) => buildDraftDescription(context),
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const errors = [];
+      if (!args.name || typeof args.name !== "string") {
+        errors.push("name is required and must be a string");
+      } else if (!NAME_PATTERN.test(args.name)) {
+        errors.push(
+          `name "${args.name}" is invalid. Must match /^[a-z][a-z0-9_]*$/ (lowercase, underscores, start with letter)`
+        );
+      }
+      if (!args.description || typeof args.description !== "string" || args.description.trim().length === 0) {
+        errors.push("description is required and must be a non-empty string");
+      }
+      if (!args.inputSchema || typeof args.inputSchema !== "object") {
+        errors.push("inputSchema is required and must be an object");
+      } else if (args.inputSchema.type !== "object") {
+        errors.push('inputSchema.type must be "object"');
+      }
+      if (!args.code || typeof args.code !== "string" || args.code.trim().length === 0) {
+        errors.push("code is required and must be a non-empty string");
+      } else {
+        try {
+          new Function(args.code);
+        } catch (e) {
+          errors.push(`code has syntax error: ${e.message}`);
+        }
+      }
+      if (errors.length > 0) {
+        return { success: false, errors };
+      }
+      return {
+        success: true,
+        validated: {
+          name: args.name,
+          description: args.description,
+          inputSchema: args.inputSchema,
+          outputSchema: args.outputSchema,
+          code: args.code,
+          tags: args.tags,
+          connectorName: args.connectorName
+        }
+      };
+    },
+    describeCall: (args) => args.name ?? "unknown"
+  };
+}
+var customToolDraft = createCustomToolDraft();
+
+// src/tools/custom-tools/customToolList.ts
+function createCustomToolList(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_list",
+        description: "List saved custom tools from persistent storage. Supports filtering by search text, tags, and category.",
+        parameters: {
+          type: "object",
+          properties: {
+            search: {
+              type: "string",
+              description: "Search text (case-insensitive substring match on name + description)"
+            },
+            tags: {
+              type: "array",
+              description: "Filter by tags (any match)",
+              items: { type: "string" }
+            },
+            category: {
+              type: "string",
+              description: "Filter by category"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results"
+            },
+            offset: {
+              type: "number",
+              description: "Offset for pagination"
+            }
+          }
+        }
+      }
+    },
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const tools = await storage.list({
+        search: args.search,
+        tags: args.tags,
+        category: args.category,
+        limit: args.limit,
+        offset: args.offset
+      });
+      return { tools, total: tools.length };
+    },
+    describeCall: (args) => args.search ?? "all tools"
+  };
+}
+var customToolList = createCustomToolList(new FileCustomToolStorage());
+
+// src/tools/custom-tools/customToolLoad.ts
+function createCustomToolLoad(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_load",
+        description: "Load a full custom tool definition from storage (including code). Use this to inspect, modify, or hydrate a saved tool.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the tool to load"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    },
+    permission: { scope: "always", riskLevel: "low" },
+    execute: async (args) => {
+      const tool = await storage.load(args.name);
+      if (!tool) {
+        return { success: false, error: `Custom tool '${args.name}' not found` };
+      }
+      return { success: true, tool };
+    },
+    describeCall: (args) => args.name
+  };
+}
+var customToolLoad = createCustomToolLoad(new FileCustomToolStorage());
+
+// src/tools/custom-tools/customToolSave.ts
+function createCustomToolSave(storage) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_save",
+        description: "Save a custom tool definition to persistent storage. The tool can later be loaded, hydrated, and registered on any agent.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Tool name (must match /^[a-z][a-z0-9_]*$/)"
+            },
+            description: {
+              type: "string",
+              description: "What the tool does"
+            },
+            displayName: {
+              type: "string",
+              description: "Optional human-readable display name"
+            },
+            inputSchema: {
+              type: "object",
+              description: "JSON Schema for input parameters"
+            },
+            outputSchema: {
+              type: "object",
+              description: "Optional JSON Schema for output"
+            },
+            code: {
+              type: "string",
+              description: "JavaScript code (same sandbox as execute_javascript)"
+            },
+            tags: {
+              type: "array",
+              description: "Tags for categorization",
+              items: { type: "string" }
+            },
+            category: {
+              type: "string",
+              description: "Category grouping"
+            },
+            generationPrompt: {
+              type: "string",
+              description: "The prompt that was used to generate this tool (for reference)"
+            },
+            connectorNames: {
+              type: "array",
+              description: "Connector names this tool uses",
+              items: { type: "string" }
+            }
+          },
+          required: ["name", "description", "inputSchema", "code"]
+        }
+      }
+    },
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args) => {
+      try {
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const existing = await storage.load(args.name);
+        const definition = {
+          version: CUSTOM_TOOL_DEFINITION_VERSION,
+          name: args.name,
+          displayName: args.displayName,
+          description: args.description,
+          inputSchema: args.inputSchema,
+          outputSchema: args.outputSchema,
+          code: args.code,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          metadata: {
+            tags: args.tags,
+            category: args.category,
+            generationPrompt: args.generationPrompt,
+            connectorNames: args.connectorNames,
+            requiresConnector: (args.connectorNames?.length ?? 0) > 0
+          }
+        };
+        await storage.save(definition);
+        return {
+          success: true,
+          name: args.name,
+          storagePath: storage.getPath()
+        };
+      } catch (error) {
+        return {
+          success: false,
+          name: args.name,
+          storagePath: storage.getPath(),
+          error: error.message
+        };
+      }
+    },
+    describeCall: (args) => args.name
+  };
+}
+var customToolSave = createCustomToolSave(new FileCustomToolStorage());
+
+// src/tools/custom-tools/customToolTest.ts
+init_Connector();
+var DEFAULT_TEST_TIMEOUT = 1e4;
+var MAX_TEST_TIMEOUT = 3e4;
+function createCustomToolTest() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "custom_tool_test",
+        description: "Test custom tool code by executing it in the VM sandbox with provided test input.",
+        parameters: {
+          type: "object",
+          properties: {
+            code: {
+              type: "string",
+              description: "JavaScript code to test. See tool description for full sandbox API reference."
+            },
+            inputSchema: {
+              type: "object",
+              description: "The input schema (for documentation, not enforced at test time)"
+            },
+            testInput: {
+              description: "Test input data \u2014 available as `input` in the code"
+            },
+            connectorName: {
+              type: "string",
+              description: "Optional connector name for authenticated API access"
+            },
+            timeout: {
+              type: "number",
+              description: `Execution timeout in ms. Default: ${DEFAULT_TEST_TIMEOUT}, max: ${MAX_TEST_TIMEOUT}`
+            }
+          },
+          required: ["code", "inputSchema", "testInput"]
+        }
+      },
+      timeout: MAX_TEST_TIMEOUT + 5e3
+    },
+    descriptionFactory: (context) => buildTestDescription(context),
+    permission: { scope: "session", riskLevel: "medium" },
+    execute: async (args, context) => {
+      const logs = [];
+      const startTime = Date.now();
+      const timeout = Math.min(Math.max(args.timeout || DEFAULT_TEST_TIMEOUT, 0), MAX_TEST_TIMEOUT);
+      try {
+        const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
+        const result = await executeInVM(
+          args.code,
+          args.testInput,
+          timeout,
+          logs,
+          context?.userId,
+          registry
+        );
+        return {
+          success: true,
+          result,
+          logs,
+          executionTime: Date.now() - startTime
+        };
+      } catch (error) {
+        return {
+          success: false,
+          result: null,
+          logs,
+          error: error.message,
+          executionTime: Date.now() - startTime
+        };
+      }
+    },
+    describeCall: (args) => `testing code (${args.code.length} chars)`
+  };
+}
+var customToolTest = createCustomToolTest();
+
 // src/tools/registry.generated.ts
 var toolRegistry = [
   {
@@ -52314,6 +52812,60 @@ var toolRegistry = [
     category: "code",
     description: "Execute JavaScript code in a secure sandbox with authenticated API access via connectors.",
     tool: executeJavaScript,
+    safeByDefault: false
+  },
+  {
+    name: "custom_tool_delete",
+    exportName: "customToolDelete",
+    displayName: "Custom Tool Delete",
+    category: "custom-tools",
+    description: "Delete a custom tool from persistent storage.",
+    tool: customToolDelete,
+    safeByDefault: false
+  },
+  {
+    name: "custom_tool_draft",
+    exportName: "customToolDraft",
+    displayName: "Custom Tool Draft",
+    category: "custom-tools",
+    description: "Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.",
+    tool: customToolDraft,
+    safeByDefault: true
+  },
+  {
+    name: "custom_tool_list",
+    exportName: "customToolList",
+    displayName: "Custom Tool List",
+    category: "custom-tools",
+    description: "List saved custom tools from persistent storage. Supports filtering by search text, tags, and category.",
+    tool: customToolList,
+    safeByDefault: true
+  },
+  {
+    name: "custom_tool_load",
+    exportName: "customToolLoad",
+    displayName: "Custom Tool Load",
+    category: "custom-tools",
+    description: "Load a full custom tool definition from storage (including code).",
+    tool: customToolLoad,
+    safeByDefault: true
+  },
+  {
+    name: "custom_tool_save",
+    exportName: "customToolSave",
+    displayName: "Custom Tool Save",
+    category: "custom-tools",
+    description: "Save a custom tool definition to persistent storage.",
+    tool: customToolSave,
+    safeByDefault: false
+  },
+  {
+    name: "custom_tool_test",
+    exportName: "customToolTest",
+    displayName: "Custom Tool Test",
+    category: "custom-tools",
+    description: "Test custom tool code by executing it in the VM sandbox with provided test input.",
+    tool: customToolTest,
     safeByDefault: false
   },
   {
@@ -52514,492 +53066,6 @@ function getToolsRequiringConnector() {
 }
 function getToolCategories() {
   return [...new Set(toolRegistry.map((entry) => entry.category))];
-}
-
-// src/tools/custom-tools/sandboxDescription.ts
-init_Connector();
-function formatConnectorEntry2(c) {
-  const parts = [];
-  const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
-  if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
-  if (c.config.description) parts.push(c.config.description);
-  if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
-  const details = parts.map((p) => `     ${p}`).join("\n");
-  return `   \u2022 "${c.name}" (${c.displayName})
-${details}`;
-}
-function buildConnectorList(context) {
-  const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
-  const connectors = registry.listAll();
-  if (connectors.length === 0) {
-    return "   No connectors registered.";
-  }
-  return connectors.map(formatConnectorEntry2).join("\n\n");
-}
-var SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
-
-1. authenticatedFetch(url, options, connectorName)
-   Makes authenticated HTTP requests using the connector's credentials.
-   Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
-
-   Parameters:
-     \u2022 url: Full URL or path relative to the connector's base URL
-       - Full: "https://api.github.com/user/repos"
-       - Relative: "/user/repos" (resolved against connector's base URL)
-     \u2022 options: Standard fetch options { method, headers, body }
-       - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
-     \u2022 connectorName: Name of a registered connector (see REGISTERED CONNECTORS below)
-
-   Returns: Promise<Response>
-     \u2022 response.ok \u2014 true if status 200-299
-     \u2022 response.status \u2014 HTTP status code
-     \u2022 await response.json() \u2014 parse JSON body
-     \u2022 await response.text() \u2014 get text body
-
-2. fetch(url, options) \u2014 Standard fetch without authentication
-
-3. connectors.list() \u2014 Array of available connector names
-4. connectors.get(name) \u2014 Connector info: { displayName, description, baseURL, serviceType }
-
-VARIABLES:
-   \u2022 input \u2014 the tool's input arguments (matches inputSchema)
-   \u2022 output \u2014 SET THIS to return the tool's result to the caller
-
-GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
-
-LIMITS: No file system access, no require/import. Code runs in async context (await is available).`;
-function buildDraftDescription(context) {
-  const connectorList = buildConnectorList(context);
-  return `Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.
-
-When writing the "code" field, you have access to the full VM sandbox:
-
-${SANDBOX_API_REFERENCE}
-
-REGISTERED CONNECTORS:
-${connectorList}
-
-CODE EXAMPLES:
-
-// Simple data processing tool
-const items = input.data;
-output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
-
-// API tool using a connector
-const resp = await authenticatedFetch('/user/repos', { method: 'GET' }, 'github');
-const repos = await resp.json();
-output = repos.map(r => ({ name: r.full_name, stars: r.stargazers_count }));
-
-// Tool that chains multiple API calls
-const users = await (await authenticatedFetch('/users', {}, 'my-api')).json();
-const enriched = await Promise.all(users.map(async u => {
-  const details = await (await authenticatedFetch(\`/users/\${u.id}\`, {}, 'my-api')).json();
-  return { ...u, ...details };
-}));
-output = enriched;`;
-}
-function buildTestDescription(context) {
-  const connectorList = buildConnectorList(context);
-  return `Test custom tool code by executing it in the VM sandbox with provided test input. Returns execution result, captured logs, and timing.
-
-The code runs in the same sandbox as execute_javascript:
-
-${SANDBOX_API_REFERENCE}
-
-REGISTERED CONNECTORS:
-${connectorList}
-
-The testInput you provide will be available as the \`input\` variable in the code.
-Set \`output\` to the value you want returned.`;
-}
-
-// src/tools/custom-tools/customToolDraft.ts
-var NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
-function createCustomToolDraft() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "custom_tool_draft",
-        description: "Validate a draft custom tool definition. Checks name format, schema structure, and code syntax.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: 'Tool name (lowercase, underscores, must start with letter). Example: "fetch_weather"'
-            },
-            description: {
-              type: "string",
-              description: "What the tool does"
-            },
-            inputSchema: {
-              type: "object",
-              description: 'JSON Schema for the tool input (must have type: "object")'
-            },
-            outputSchema: {
-              type: "object",
-              description: "Optional JSON Schema for the tool output (documentation only)"
-            },
-            code: {
-              type: "string",
-              description: "JavaScript code that reads `input` and sets `output`. Runs in the same sandbox as execute_javascript. See tool description for full API reference."
-            },
-            tags: {
-              type: "array",
-              description: "Optional tags for categorization",
-              items: { type: "string" }
-            },
-            connectorName: {
-              type: "string",
-              description: "Optional connector name if the tool requires API access"
-            }
-          },
-          required: ["name", "description", "inputSchema", "code"]
-        }
-      }
-    },
-    descriptionFactory: (context) => buildDraftDescription(context),
-    permission: { scope: "always", riskLevel: "low" },
-    execute: async (args) => {
-      const errors = [];
-      if (!args.name || typeof args.name !== "string") {
-        errors.push("name is required and must be a string");
-      } else if (!NAME_PATTERN.test(args.name)) {
-        errors.push(
-          `name "${args.name}" is invalid. Must match /^[a-z][a-z0-9_]*$/ (lowercase, underscores, start with letter)`
-        );
-      }
-      if (!args.description || typeof args.description !== "string" || args.description.trim().length === 0) {
-        errors.push("description is required and must be a non-empty string");
-      }
-      if (!args.inputSchema || typeof args.inputSchema !== "object") {
-        errors.push("inputSchema is required and must be an object");
-      } else if (args.inputSchema.type !== "object") {
-        errors.push('inputSchema.type must be "object"');
-      }
-      if (!args.code || typeof args.code !== "string" || args.code.trim().length === 0) {
-        errors.push("code is required and must be a non-empty string");
-      } else {
-        try {
-          new Function(args.code);
-        } catch (e) {
-          errors.push(`code has syntax error: ${e.message}`);
-        }
-      }
-      if (errors.length > 0) {
-        return { success: false, errors };
-      }
-      return {
-        success: true,
-        validated: {
-          name: args.name,
-          description: args.description,
-          inputSchema: args.inputSchema,
-          outputSchema: args.outputSchema,
-          code: args.code,
-          tags: args.tags,
-          connectorName: args.connectorName
-        }
-      };
-    },
-    describeCall: (args) => args.name ?? "unknown"
-  };
-}
-
-// src/tools/custom-tools/customToolTest.ts
-init_Connector();
-var DEFAULT_TEST_TIMEOUT = 1e4;
-var MAX_TEST_TIMEOUT = 3e4;
-function createCustomToolTest() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "custom_tool_test",
-        description: "Test custom tool code by executing it in the VM sandbox with provided test input.",
-        parameters: {
-          type: "object",
-          properties: {
-            code: {
-              type: "string",
-              description: "JavaScript code to test. See tool description for full sandbox API reference."
-            },
-            inputSchema: {
-              type: "object",
-              description: "The input schema (for documentation, not enforced at test time)"
-            },
-            testInput: {
-              description: "Test input data \u2014 available as `input` in the code"
-            },
-            connectorName: {
-              type: "string",
-              description: "Optional connector name for authenticated API access"
-            },
-            timeout: {
-              type: "number",
-              description: `Execution timeout in ms. Default: ${DEFAULT_TEST_TIMEOUT}, max: ${MAX_TEST_TIMEOUT}`
-            }
-          },
-          required: ["code", "inputSchema", "testInput"]
-        }
-      },
-      timeout: MAX_TEST_TIMEOUT + 5e3
-    },
-    descriptionFactory: (context) => buildTestDescription(context),
-    permission: { scope: "session", riskLevel: "medium" },
-    execute: async (args, context) => {
-      const logs = [];
-      const startTime = Date.now();
-      const timeout = Math.min(Math.max(args.timeout || DEFAULT_TEST_TIMEOUT, 0), MAX_TEST_TIMEOUT);
-      try {
-        const registry = context?.connectorRegistry ?? exports.Connector.asRegistry();
-        const result = await executeInVM(
-          args.code,
-          args.testInput,
-          timeout,
-          logs,
-          context?.userId,
-          registry
-        );
-        return {
-          success: true,
-          result,
-          logs,
-          executionTime: Date.now() - startTime
-        };
-      } catch (error) {
-        return {
-          success: false,
-          result: null,
-          logs,
-          error: error.message,
-          executionTime: Date.now() - startTime
-        };
-      }
-    },
-    describeCall: (args) => `testing code (${args.code.length} chars)`
-  };
-}
-
-// src/tools/custom-tools/customToolSave.ts
-function createCustomToolSave(storage) {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "custom_tool_save",
-        description: "Save a custom tool definition to persistent storage. The tool can later be loaded, hydrated, and registered on any agent.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "Tool name (must match /^[a-z][a-z0-9_]*$/)"
-            },
-            description: {
-              type: "string",
-              description: "What the tool does"
-            },
-            displayName: {
-              type: "string",
-              description: "Optional human-readable display name"
-            },
-            inputSchema: {
-              type: "object",
-              description: "JSON Schema for input parameters"
-            },
-            outputSchema: {
-              type: "object",
-              description: "Optional JSON Schema for output"
-            },
-            code: {
-              type: "string",
-              description: "JavaScript code (same sandbox as execute_javascript)"
-            },
-            tags: {
-              type: "array",
-              description: "Tags for categorization",
-              items: { type: "string" }
-            },
-            category: {
-              type: "string",
-              description: "Category grouping"
-            },
-            generationPrompt: {
-              type: "string",
-              description: "The prompt that was used to generate this tool (for reference)"
-            },
-            connectorNames: {
-              type: "array",
-              description: "Connector names this tool uses",
-              items: { type: "string" }
-            }
-          },
-          required: ["name", "description", "inputSchema", "code"]
-        }
-      }
-    },
-    permission: { scope: "session", riskLevel: "medium" },
-    execute: async (args) => {
-      try {
-        const now = (/* @__PURE__ */ new Date()).toISOString();
-        const existing = await storage.load(args.name);
-        const definition = {
-          version: CUSTOM_TOOL_DEFINITION_VERSION,
-          name: args.name,
-          displayName: args.displayName,
-          description: args.description,
-          inputSchema: args.inputSchema,
-          outputSchema: args.outputSchema,
-          code: args.code,
-          createdAt: existing?.createdAt ?? now,
-          updatedAt: now,
-          metadata: {
-            tags: args.tags,
-            category: args.category,
-            generationPrompt: args.generationPrompt,
-            connectorNames: args.connectorNames,
-            requiresConnector: (args.connectorNames?.length ?? 0) > 0
-          }
-        };
-        await storage.save(definition);
-        return {
-          success: true,
-          name: args.name,
-          storagePath: storage.getPath()
-        };
-      } catch (error) {
-        return {
-          success: false,
-          name: args.name,
-          storagePath: storage.getPath(),
-          error: error.message
-        };
-      }
-    },
-    describeCall: (args) => args.name
-  };
-}
-
-// src/tools/custom-tools/customToolList.ts
-function createCustomToolList(storage) {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "custom_tool_list",
-        description: "List saved custom tools from persistent storage. Supports filtering by search text, tags, and category.",
-        parameters: {
-          type: "object",
-          properties: {
-            search: {
-              type: "string",
-              description: "Search text (case-insensitive substring match on name + description)"
-            },
-            tags: {
-              type: "array",
-              description: "Filter by tags (any match)",
-              items: { type: "string" }
-            },
-            category: {
-              type: "string",
-              description: "Filter by category"
-            },
-            limit: {
-              type: "number",
-              description: "Maximum number of results"
-            },
-            offset: {
-              type: "number",
-              description: "Offset for pagination"
-            }
-          }
-        }
-      }
-    },
-    permission: { scope: "always", riskLevel: "low" },
-    execute: async (args) => {
-      const tools = await storage.list({
-        search: args.search,
-        tags: args.tags,
-        category: args.category,
-        limit: args.limit,
-        offset: args.offset
-      });
-      return { tools, total: tools.length };
-    },
-    describeCall: (args) => args.search ?? "all tools"
-  };
-}
-
-// src/tools/custom-tools/customToolLoad.ts
-function createCustomToolLoad(storage) {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "custom_tool_load",
-        description: "Load a full custom tool definition from storage (including code). Use this to inspect, modify, or hydrate a saved tool.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "Name of the tool to load"
-            }
-          },
-          required: ["name"]
-        }
-      }
-    },
-    permission: { scope: "always", riskLevel: "low" },
-    execute: async (args) => {
-      const tool = await storage.load(args.name);
-      if (!tool) {
-        return { success: false, error: `Custom tool '${args.name}' not found` };
-      }
-      return { success: true, tool };
-    },
-    describeCall: (args) => args.name
-  };
-}
-
-// src/tools/custom-tools/customToolDelete.ts
-function createCustomToolDelete(storage) {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "custom_tool_delete",
-        description: "Delete a custom tool from persistent storage.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "Name of the tool to delete"
-            }
-          },
-          required: ["name"]
-        }
-      }
-    },
-    permission: { scope: "session", riskLevel: "medium" },
-    execute: async (args) => {
-      try {
-        const exists = await storage.exists(args.name);
-        if (!exists) {
-          return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
-        }
-        await storage.delete(args.name);
-        return { success: true, name: args.name };
-      } catch (error) {
-        return { success: false, name: args.name, error: error.message };
-      }
-    },
-    describeCall: (args) => args.name
-  };
 }
 
 // src/tools/custom-tools/factories.ts
@@ -53593,6 +53659,12 @@ exports.createTextToSpeechTool = createTextToSpeechTool;
 exports.createVideoProvider = createVideoProvider;
 exports.createVideoTools = createVideoTools;
 exports.createWriteFileTool = createWriteFileTool;
+exports.customToolDelete = customToolDelete;
+exports.customToolDraft = customToolDraft;
+exports.customToolList = customToolList;
+exports.customToolLoad = customToolLoad;
+exports.customToolSave = customToolSave;
+exports.customToolTest = customToolTest;
 exports.defaultDescribeCall = defaultDescribeCall;
 exports.desktopGetCursor = desktopGetCursor;
 exports.desktopGetScreenSize = desktopGetScreenSize;

@@ -27,8 +27,9 @@
   - [13. Streaming](#13-streaming)
   - [14. OAuth for External APIs](#14-oauth-for-external-apis)
   - [15. Developer Tools](#15-developer-tools)
-  - [16. Document Reader](#16-document-reader-new) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
-  - [17. External API Integration](#17-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+  - [16. Custom Tool Generation](#16-custom-tool-generation-new) — Agents create, test, and persist their own tools
+  - [17. Document Reader](#17-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
+  - [18. External API Integration](#18-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -87,6 +88,7 @@ Better to see once and then dig in the code! :)
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
+- 🧰 **Custom Tool Generation** - NEW: Let agents create, test, and persist their own reusable tools at runtime — complete meta-tool system with VM sandbox
 - 🖥️ **Desktop Automation** - NEW: OS-level computer use — screenshot, mouse, keyboard, and window control for vision-driven agent loops
 - 📄 **Document Reader** - NEW: Universal file-to-text converter — PDF, DOCX, XLSX, PPTX, CSV, HTML, images auto-converted to markdown
 - 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
@@ -1033,7 +1035,42 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 16. Desktop Automation Tools (NEW)
+### 16. Custom Tool Generation (NEW)
+
+Let agents **create their own tools** at runtime — draft, test, iterate, save, and reuse. The agent writes JavaScript code, validates it, tests it in the VM sandbox, and persists it for future use. All 6 meta-tools are auto-registered and visible in Hosea.
+
+```typescript
+import { createCustomToolMetaTools, hydrateCustomTool } from '@everworker/oneringai';
+
+// Give an agent the ability to create tools
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [...createCustomToolMetaTools()],
+});
+
+// The agent can now: draft → test → save tools autonomously
+await agent.run('Create a tool that fetches weather data from the OpenWeather API');
+
+// Later: load and use a saved tool
+import { createFileCustomToolStorage } from '@everworker/oneringai';
+const storage = createFileCustomToolStorage();
+const definition = await storage.load('fetch_weather');
+const weatherTool = hydrateCustomTool(definition!);
+
+// Register on any agent
+agent.tools.register(weatherTool, { source: 'custom', tags: ['weather', 'api'] });
+```
+
+**Meta-Tools:** `custom_tool_draft` (validate), `custom_tool_test` (execute in sandbox), `custom_tool_save` (persist), `custom_tool_list` (search), `custom_tool_load` (retrieve), `custom_tool_delete` (remove)
+
+**Dynamic Descriptions:** Draft and test tools use `descriptionFactory` to show all available connectors and the full sandbox API — automatically updated when connectors are added or removed.
+
+**Pluggable Storage:** Default `FileCustomToolStorage` saves to `~/.oneringai/custom-tools/`. Implement `ICustomToolStorage` for MongoDB, S3, or any backend.
+
+> See the [User Guide](./USER_GUIDE.md#custom-tool-generation) for the complete workflow, sandbox API reference, and examples.
+
+### 17. Desktop Automation Tools (NEW)
 
 OS-level desktop automation for building "computer use" agents — screenshot the screen, send to a vision model, receive tool calls (click, type, etc.), execute them, repeat:
 
@@ -1069,7 +1106,7 @@ await agent.run('Open Safari and search for "weather forecast"');
 - Screenshots use the `__images` convention for automatic multimodal handling across all providers (Anthropic, OpenAI, Google)
 - Requires `@nut-tree-fork/nut-js` as an optional peer dependency: `npm install @nut-tree-fork/nut-js`
 
-### 17. Document Reader (NEW)
+### 18. Document Reader
 
 Universal file-to-LLM-content converter. Reads arbitrary document formats and produces clean markdown text with optional image extraction:
 
@@ -1134,7 +1171,7 @@ await agent.run([
 
 See the [User Guide](./USER_GUIDE.md#document-reader) for complete API reference and configuration options.
 
-### 18. External API Integration
+### 19. External API Integration
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 

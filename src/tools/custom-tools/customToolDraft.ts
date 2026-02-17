@@ -148,3 +148,6 @@ export function createCustomToolDraft(): ToolFunction<DraftArgs, DraftResult> {
     describeCall: (args: DraftArgs) => args.name ?? 'unknown',
   };
 }
+
+/** Default custom_tool_draft instance */
+export const customToolDraft = createCustomToolDraft();

@@ -5,6 +5,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolDefinition } from '../../domain/entities/CustomToolDefinition.js';
+import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
 
 interface LoadArgs {
   name: string;
@@ -51,3 +52,6 @@ export function createCustomToolLoad(storage: ICustomToolStorage): ToolFunction<
     describeCall: (args: LoadArgs) => args.name,
   };
 }
+
+/** Default custom_tool_load instance (uses FileCustomToolStorage) */
+export const customToolLoad = createCustomToolLoad(new FileCustomToolStorage());

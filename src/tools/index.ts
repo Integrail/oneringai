@@ -331,6 +331,14 @@ export {
 // ============================================================================
 
 export {
+  // Default instances
+  customToolDraft,
+  customToolTest,
+  customToolSave,
+  customToolList,
+  customToolLoad,
+  customToolDelete,
+  // Factory functions
   createCustomToolMetaTools,
   createCustomToolDraft,
   createCustomToolTest,
@@ -338,6 +346,7 @@ export {
   createCustomToolList,
   createCustomToolLoad,
   createCustomToolDelete,
+  // Hydration
   hydrateCustomTool,
 } from './custom-tools/index.js';
 

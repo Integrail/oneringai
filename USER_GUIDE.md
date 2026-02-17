@@ -33,8 +33,9 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Storage and Persistence
    - Use Cases and Best Practices
 10. [Tools & Function Calling](#tools--function-calling)
-    - Built-in Tools Overview (27+ tools across 7 categories)
+    - Built-in Tools Overview (33+ tools across 8 categories)
     - Developer Tools (Filesystem & Shell)
+    - [Custom Tool Generation](#custom-tool-generation) — Agents create, test, and persist their own tools
     - [Document Reader](#document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
     - Web Tools (webFetch, web_search via ConnectorTools, web_scrape via ConnectorTools)
     - JSON Tool
@@ -3069,6 +3070,328 @@ const response = await agent.run('Calculate the sum of numbers from 1 to 100');
 // 2. Execute: executeJavaScript({ code: 'Array(100).fill(0).map((_, i) => i+1).reduce((a,b) => a+b)' })
 // 3. Return result: 5050
 ```
+
+### Custom Tool Generation
+
+A complete meta-tool system that enables agents to **create, test, iterate, and persist their own reusable tools at runtime**. Instead of pre-defining every tool, agents can generate new tools on-the-fly based on user requests, test them in a sandboxed VM, save them to disk, and load them later — across sessions and agents.
+
+#### Overview
+
+| Meta-Tool | Purpose | Safe by Default |
+|-----------|---------|:-:|
+| `custom_tool_draft` | Validate name, schema, code syntax | Yes |
+| `custom_tool_test` | Execute code in VM sandbox with test input | No |
+| `custom_tool_save` | Persist to `~/.oneringai/custom-tools/` | No |
+| `custom_tool_list` | Search saved tools (name, description, tags, category) | Yes |
+| `custom_tool_load` | Retrieve full definition including code | Yes |
+| `custom_tool_delete` | Remove from storage | No |
+
+**Additionally:**
+- `hydrateCustomTool()` — Convert a saved definition into a live `ToolFunction`
+- `createCustomToolMetaTools()` — Bundle factory that creates all 6 tools with shared storage
+
+#### Quick Start
+
+```typescript
+import { Agent, Connector, Vendor, createCustomToolMetaTools } from '@everworker/oneringai';
+
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Give the agent the ability to create tools
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [...createCustomToolMetaTools()],
+});
+
+// Ask the agent to create a tool
+const response = await agent.run(
+  'Create a tool called "celsius_to_fahrenheit" that converts temperature from Celsius to Fahrenheit'
+);
+
+// The agent will autonomously:
+// 1. Call custom_tool_draft to validate the definition
+// 2. Call custom_tool_test with sample inputs to verify
+// 3. Call custom_tool_save to persist it
+```
+
+#### The Agent Workflow: Draft → Test → Save
+
+When an agent has the custom tool meta-tools registered, it follows this natural workflow:
+
+**Step 1: Draft** — The agent generates the tool definition and validates it:
+```
+Agent calls: custom_tool_draft({
+  name: "celsius_to_fahrenheit",
+  description: "Converts temperature from Celsius to Fahrenheit",
+  inputSchema: {
+    type: "object",
+    properties: { celsius: { type: "number" } },
+    required: ["celsius"]
+  },
+  code: "output = { fahrenheit: input.celsius * 9/5 + 32 };"
+})
+→ Returns: { success: true, validated: { ... } }
+```
+
+**Step 2: Test** — The agent tests the code with sample inputs:
+```
+Agent calls: custom_tool_test({
+  code: "output = { fahrenheit: input.celsius * 9/5 + 32 };",
+  inputSchema: { type: "object", properties: { celsius: { type: "number" } } },
+  testInput: { celsius: 100 }
+})
+→ Returns: { success: true, result: { fahrenheit: 212 }, logs: [], executionTime: 3 }
+```
+
+If the test fails, the agent fixes the code and tests again — iterating until it works.
+
+**Step 3: Save** — The agent persists the validated, tested tool:
+```
+Agent calls: custom_tool_save({
+  name: "celsius_to_fahrenheit",
+  description: "Converts temperature from Celsius to Fahrenheit",
+  inputSchema: { ... },
+  code: "output = { fahrenheit: input.celsius * 9/5 + 32 };",
+  tags: ["conversion", "temperature"],
+  category: "math"
+})
+→ Returns: { success: true, name: "celsius_to_fahrenheit", storagePath: "~/.oneringai/custom-tools/" }
+```
+
+#### Dynamic Descriptions & Connector Awareness
+
+The `custom_tool_draft` and `custom_tool_test` tools use `descriptionFactory` to generate **dynamic descriptions** that include:
+
+1. **The full VM sandbox API** — `authenticatedFetch`, `fetch`, `connectors.list()`, globals, etc.
+2. **All currently registered connectors** — names, service types, base URLs, descriptions
+
+This means the agent always knows what APIs are available when writing custom tool code. The description is **regenerated every time** tool definitions are sent to the LLM, so it stays current when connectors are added or removed.
+
+Example of what the agent sees in the tool description:
+
+```
+SANDBOX API (available inside custom tool code):
+
+1. authenticatedFetch(url, options, connectorName)
+   Makes authenticated HTTP requests using the connector's credentials.
+   Auth headers are added automatically — DO NOT set Authorization header manually.
+   ...
+
+REGISTERED CONNECTORS:
+   • "github" (GitHub)
+     Service: github
+     URL: https://api.github.com
+
+   • "slack" (Slack Workspace)
+     Service: slack
+     URL: https://slack.com/api
+```
+
+#### Creating API-Connected Tools
+
+Because the sandbox provides `authenticatedFetch`, agents can create tools that call external APIs through registered connectors:
+
+```typescript
+// Agent creates a tool that fetches GitHub repos
+// (assuming a 'github' connector is registered)
+await agent.run(
+  'Create a tool called "list_repos" that lists all repositories for a given GitHub user. ' +
+  'Use the github connector.'
+);
+
+// The agent will write code like:
+// const resp = await authenticatedFetch(`/users/${input.username}/repos`, { method: 'GET' }, 'github');
+// const repos = await resp.json();
+// output = repos.map(r => ({ name: r.full_name, stars: r.stargazers_count }));
+```
+
+#### Loading and Using Saved Tools
+
+Saved tools can be loaded programmatically and used by any agent:
+
+```typescript
+import {
+  createFileCustomToolStorage,
+  hydrateCustomTool,
+  Agent,
+} from '@everworker/oneringai';
+
+// Load a saved tool
+const storage = createFileCustomToolStorage();
+const definition = await storage.load('celsius_to_fahrenheit');
+
+if (definition) {
+  // Hydrate into a live ToolFunction
+  const tool = hydrateCustomTool(definition);
+
+  // Register on any agent
+  const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [tool] });
+
+  // The agent can now use celsius_to_fahrenheit like any built-in tool
+  const response = await agent.run('Convert 37°C to Fahrenheit');
+}
+```
+
+#### Searching Saved Tools
+
+The storage layer supports filtering and search:
+
+```typescript
+const storage = createFileCustomToolStorage();
+
+// List all saved tools
+const all = await storage.list();
+
+// Search by name or description
+const mathTools = await storage.list({ search: 'convert' });
+
+// Filter by tags
+const apiTools = await storage.list({ tags: ['api'] });
+
+// Filter by category
+const networkTools = await storage.list({ category: 'network' });
+
+// Pagination
+const page2 = await storage.list({ limit: 10, offset: 10 });
+```
+
+#### Custom Storage Backends
+
+The default `FileCustomToolStorage` persists tools to `~/.oneringai/custom-tools/`. For production systems, implement `ICustomToolStorage` with any backend:
+
+```typescript
+import type { ICustomToolStorage, CustomToolListOptions } from '@everworker/oneringai';
+import type { CustomToolDefinition, CustomToolSummary } from '@everworker/oneringai';
+
+class MongoCustomToolStorage implements ICustomToolStorage {
+  constructor(private db: Db) {}
+
+  async save(definition: CustomToolDefinition): Promise<void> {
+    await this.db.collection('custom_tools').replaceOne(
+      { name: definition.name },
+      definition,
+      { upsert: true }
+    );
+  }
+
+  async load(name: string): Promise<CustomToolDefinition | null> {
+    return this.db.collection('custom_tools').findOne({ name });
+  }
+
+  async delete(name: string): Promise<void> {
+    await this.db.collection('custom_tools').deleteOne({ name });
+  }
+
+  async exists(name: string): Promise<boolean> {
+    return (await this.db.collection('custom_tools').countDocuments({ name })) > 0;
+  }
+
+  async list(options?: CustomToolListOptions): Promise<CustomToolSummary[]> {
+    const filter: any = {};
+    if (options?.tags?.length) filter['metadata.tags'] = { $in: options.tags };
+    if (options?.category) filter['metadata.category'] = options.category;
+    if (options?.search) {
+      filter.$or = [
+        { name: { $regex: options.search, $options: 'i' } },
+        { description: { $regex: options.search, $options: 'i' } },
+      ];
+    }
+
+    return this.db.collection('custom_tools')
+      .find(filter, { projection: { code: 0 } })  // Exclude code for summaries
+      .sort({ updatedAt: -1 })
+      .skip(options?.offset ?? 0)
+      .limit(options?.limit ?? 100)
+      .toArray();
+  }
+
+  getPath(): string { return 'mongodb://custom_tools'; }
+}
+
+// Use with meta-tools
+import { createCustomToolMetaTools } from '@everworker/oneringai';
+const storage = new MongoCustomToolStorage(db);
+const tools = createCustomToolMetaTools({ storage });
+```
+
+#### Sandbox API Reference
+
+Custom tool code runs in the same VM sandbox as `execute_javascript`. Available APIs:
+
+| API | Description |
+|-----|-------------|
+| `input` | The tool's input arguments (matches `inputSchema`) |
+| `output` | Set this to return the tool's result |
+| `authenticatedFetch(url, options, connectorName)` | Authenticated HTTP request via a registered connector |
+| `fetch(url, options)` | Standard fetch (no authentication) |
+| `connectors.list()` | Array of available connector names |
+| `connectors.get(name)` | Connector info: `{ displayName, description, baseURL, serviceType }` |
+| `console.log/error/warn` | Captured in logs (returned in test results) |
+| `JSON, Math, Date, Buffer, Promise` | Standard globals |
+| `Array, Object, String, Number, Boolean` | Built-in types |
+| `RegExp, Map, Set, Error, URL, URLSearchParams` | Utility types |
+| `TextEncoder, TextDecoder` | Text encoding |
+| `setTimeout, setInterval` | Timers |
+
+**Limitations:** No file system access, no `require`/`import`, code runs in async context (top-level `await` is available).
+
+#### Tool Definition Schema
+
+```typescript
+interface CustomToolDefinition {
+  version: number;                         // Format version (currently 1)
+  name: string;                            // Unique name (/^[a-z][a-z0-9_]*$/)
+  displayName?: string;                    // Human-readable name
+  description: string;                     // What the tool does
+  inputSchema: Record<string, unknown>;    // JSON Schema (must have type: 'object')
+  outputSchema?: Record<string, unknown>;  // Optional output schema (documentation only)
+  code: string;                            // JavaScript code for the VM sandbox
+  createdAt: string;                       // ISO timestamp
+  updatedAt: string;                       // ISO timestamp
+  metadata?: {
+    tags?: string[];                       // Categorization tags
+    category?: string;                     // Category grouping
+    author?: string;                       // Creator identifier
+    generationPrompt?: string;             // The prompt used to create this tool
+    testCases?: CustomToolTestCase[];      // Saved test cases
+    requiresConnector?: boolean;           // Whether connectors are needed
+    connectorNames?: string[];             // Which connectors the tool uses
+  };
+}
+```
+
+#### ToolManager Metadata
+
+When registering hydrated custom tools, you can set provenance metadata:
+
+```typescript
+const tool = hydrateCustomTool(definition);
+
+agent.tools.register(tool, {
+  source: 'custom',            // Track origin (built-in, connector, custom, mcp)
+  tags: ['api', 'weather'],    // Categorization
+  category: 'external-apis',   // Grouping
+});
+```
+
+These fields are preserved through `getState()`/`loadState()` for session persistence.
+
+#### Storage Path
+
+```
+~/.oneringai/custom-tools/
+├── _index.json              # Index for fast listing and search
+├── celsius_to_fahrenheit.json
+├── fetch_weather.json
+└── list_repos.json
+```
+
+---
 
 ### Developer Tools (Filesystem & Shell)
 

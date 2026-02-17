@@ -4,6 +4,7 @@
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
+import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
 
 interface DeleteArgs {
   name: string;
@@ -54,3 +55,6 @@ export function createCustomToolDelete(storage: ICustomToolStorage): ToolFunctio
     describeCall: (args: DeleteArgs) => args.name,
   };
 }
+
+/** Default custom_tool_delete instance (uses FileCustomToolStorage) */
+export const customToolDelete = createCustomToolDelete(new FileCustomToolStorage());

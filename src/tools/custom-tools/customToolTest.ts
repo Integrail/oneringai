@@ -105,3 +105,6 @@ export function createCustomToolTest(): ToolFunction<TestArgs, TestResult> {
     describeCall: (args: TestArgs) => `testing code (${args.code.length} chars)`,
   };
 }
+
+/** Default custom_tool_test instance */
+export const customToolTest = createCustomToolTest();

@@ -808,6 +808,14 @@ export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 
 // Custom tool generation system (meta-tools + hydration)
 export {
+  // Default instances (auto-registered via tool registry)
+  customToolDraft,
+  customToolTest,
+  customToolSave,
+  customToolList,
+  customToolLoad,
+  customToolDelete,
+  // Factory functions (for custom storage backends)
   createCustomToolMetaTools,
   createCustomToolDraft,
   createCustomToolTest,
@@ -815,6 +823,7 @@ export {
   createCustomToolList,
   createCustomToolLoad,
   createCustomToolDelete,
+  // Hydration
   hydrateCustomTool,
 } from './tools/custom-tools/index.js';
 
