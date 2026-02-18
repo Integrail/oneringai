@@ -10,10 +10,12 @@ import {
   ProviderContextLengthError,
   ProviderError,
 } from '../../../domain/errors/AIErrors.js';
+import { resolveMaxContextTokens } from './ModelCapabilityResolver.js';
 
 export interface ProviderErrorContext {
   providerName: string;
   maxContextTokens?: number;
+  model?: string;
 }
 
 /**
@@ -24,7 +26,10 @@ export class ProviderErrorMapper {
    * Map any provider error to our standard error types
    */
   static mapError(error: any, context: ProviderErrorContext): AIError {
-    const { providerName, maxContextTokens = 128000 } = context;
+    const { providerName, maxContextTokens, model } = context;
+    const effectiveMaxTokens = model
+      ? resolveMaxContextTokens(model, maxContextTokens ?? 128000)
+      : (maxContextTokens ?? 128000);
 
     // Already our error type - return as-is
     if (error instanceof AIError) {
@@ -75,7 +80,7 @@ export class ProviderErrorMapper {
       messageLower.includes('max_tokens') ||
       messageLower.includes('prompt is too long')
     ) {
-      return new ProviderContextLengthError(providerName, maxContextTokens);
+      return new ProviderContextLengthError(providerName, effectiveMaxTokens);
     }
 
     // Generic provider error for everything else

@@ -649,6 +649,7 @@ export { BaseProvider } from './infrastructure/providers/base/BaseProvider.js';
 export { BaseTextProvider } from './infrastructure/providers/base/BaseTextProvider.js';
 export { BaseMediaProvider } from './infrastructure/providers/base/BaseMediaProvider.js';
 export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErrorMapper.js';
+export { resolveModelCapabilities, resolveMaxContextTokens } from './infrastructure/providers/base/ModelCapabilityResolver.js';
 
 // Shared types for multi-modal
 export type {

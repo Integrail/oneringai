@@ -1,4 +1,4 @@
-import { e as IProvider, b as Connector } from './IProvider-CrHdrrIO.cjs';
+import { e as IProvider, b as Connector } from './IProvider-Br817mKc.cjs';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 
 /**
@@ -334,4 +334,4 @@ declare function getImageModelsWithFeature(feature: keyof IImageModelDescription
  */
 declare function calculateImageCost(modelName: string, imageCount: number, quality?: 'standard' | 'hd'): number | null;
 
-export { type AudioFormat as A, type IBaseModelDescription as I, type OutputFormat as O, type QualityLevel as Q, type SimpleGenerateOptions as S, type VendorOptionSchema as V, type IImageProvider as a, ImageGeneration as b, type ImageGenerationCreateOptions as c, type IImageModelDescription as d, type ImageModelCapabilities as e, type ImageModelPricing as f, IMAGE_MODELS as g, IMAGE_MODEL_REGISTRY as h, getImageModelInfo as i, getImageModelsByVendor as j, getActiveImageModels as k, getImageModelsWithFeature as l, calculateImageCost as m, type ImageGenerateOptions as n, type ImageEditOptions as o, type ImageVariationOptions as p, type ImageResponse as q, type AspectRatio$1 as r, type ISourceLinks as s };
+export { type AudioFormat as A, type IBaseModelDescription as I, type OutputFormat as O, type QualityLevel as Q, type SimpleGenerateOptions as S, type VendorOptionSchema as V, type IImageProvider as a, type AspectRatio$1 as b, type IImageModelDescription as c, IMAGE_MODELS as d, IMAGE_MODEL_REGISTRY as e, type ISourceLinks as f, type ImageEditOptions as g, type ImageGenerateOptions as h, ImageGeneration as i, type ImageGenerationCreateOptions as j, type ImageModelCapabilities as k, type ImageModelPricing as l, type ImageResponse as m, type ImageVariationOptions as n, calculateImageCost as o, getActiveImageModels as p, getImageModelInfo as q, getImageModelsByVendor as r, getImageModelsWithFeature as s };

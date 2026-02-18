@@ -18,6 +18,7 @@ import {
 import { GoogleConverter } from '../google/GoogleConverter.js';
 import { GoogleStreamConverter } from '../google/GoogleStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
+import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
 
 export class VertexAITextProvider extends BaseTextProvider {
   readonly name = 'vertex-ai';
@@ -88,7 +89,7 @@ export class VertexAITextProvider extends BaseTextProvider {
       // Convert response → our format (same as regular Gemini API)
       return this.converter.convertResponse(result);
     } catch (error: any) {
-      this.handleError(error);
+      this.handleError(error, options.model);
       throw error; // TypeScript needs this
     }
   }
@@ -118,49 +119,30 @@ export class VertexAITextProvider extends BaseTextProvider {
       const streamConverter = new GoogleStreamConverter();
       yield* streamConverter.convertStream(stream, options.model);
     } catch (error: any) {
-      this.handleError(error);
+      this.handleError(error, options.model);
       throw error;
     }
   }
 
   /**
-   * Get model capabilities
+   * Get model capabilities (registry-driven with Vertex AI vendor defaults)
    */
   getModelCapabilities(model: string): ModelCapabilities {
-    // Same models as regular Gemini, but enterprise features
-    if (
-      model.includes('gemini-3') ||
-      model.includes('gemini-2.5') ||
-      model.includes('gemini-2.0') ||
-      model.includes('gemini-1.5') ||
-      model.includes('gemini-pro') ||
-      model.includes('gemini-flash')
-    ) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1048576, // 1M tokens
-        maxOutputTokens: 8192,
-      };
-    }
-
-    // Default
-    return {
+    return resolveModelCapabilities(model, {
       supportsTools: true,
       supportsVision: true,
       supportsJSON: true,
       supportsJSONSchema: false,
       maxTokens: 1048576,
-      maxOutputTokens: 8192,
-    };
+      maxInputTokens: 1048576,
+      maxOutputTokens: 65536,
+    });
   }
 
   /**
    * Handle Vertex AI-specific errors
    */
-  private handleError(error: any): never {
+  private handleError(error: any, model?: string): never {
     const errorMessage = error.message || '';
 
     // Authentication errors
@@ -181,7 +163,7 @@ export class VertexAITextProvider extends BaseTextProvider {
     }
 
     if (errorMessage.includes('context length') || errorMessage.includes('too long')) {
-      throw new ProviderContextLengthError('vertex-ai', 1048576);
+      throw new ProviderContextLengthError('vertex-ai', resolveMaxContextTokens(model, 1048576));
     }
 
     // Re-throw other errors

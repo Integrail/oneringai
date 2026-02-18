@@ -222,20 +222,19 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         type: 'image',
         source: {
           type: 'base64',
-          media_type: parsed.mediaType as Anthropic.ImageBlockParam['source']['media_type'],
+          media_type: parsed.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
           data: parsed.data,
         },
       };
     } else {
       // URL (Claude 3.5+ supports this)
-      // Note: Anthropic SDK types may not include 'url' source type yet
       return {
         type: 'image',
         source: {
           type: 'url',
           url,
         },
-      } as unknown as Anthropic.ImageBlockParam;
+      };
     }
   }
 
@@ -290,7 +289,7 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
             media_type: (img.mediaType || 'image/png') as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
             data: img.base64,
           },
-        } as any);
+        });
       }
 
       return {
@@ -298,7 +297,7 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         tool_use_id: resultContent.tool_use_id,
         content: contentBlocks.length > 0 ? contentBlocks : textContent,
         is_error: isError,
-      } as any;
+      };
     }
 
     return {

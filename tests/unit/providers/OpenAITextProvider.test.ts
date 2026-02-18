@@ -594,36 +594,30 @@ describe('OpenAITextProvider', () => {
   });
 
   describe('getModelCapabilities()', () => {
-    it('should return correct capabilities for gpt-4 models', () => {
-      const caps = provider.getModelCapabilities('gpt-4-turbo');
+    it('should return registry capabilities for registered models', () => {
+      const caps = provider.getModelCapabilities('gpt-5.2');
 
       expect(caps.supportsTools).toBe(true);
       expect(caps.supportsJSON).toBe(true);
       expect(caps.supportsJSONSchema).toBe(true);
-      expect(caps.maxTokens).toBe(128000);
+      expect(caps.maxTokens).toBe(400000);
+      expect(caps.maxOutputTokens).toBe(128000);
     });
 
-    it('should return correct capabilities for gpt-3.5 models', () => {
-      const caps = provider.getModelCapabilities('gpt-3.5-turbo');
+    it('should return registry capabilities for o-series models', () => {
+      const caps = provider.getModelCapabilities('o3-mini');
 
       expect(caps.supportsTools).toBe(true);
-      expect(caps.supportsVision).toBe(false);
-      expect(caps.maxTokens).toBe(16385);
-    });
-
-    it('should return correct capabilities for o-series models', () => {
-      const caps = provider.getModelCapabilities('o1-preview');
-
-      expect(caps.supportsTools).toBe(false); // o-series doesn't support tools
       expect(caps.supportsVision).toBe(true);
       expect(caps.maxTokens).toBe(200000);
     });
 
-    it('should return default capabilities for unknown models', () => {
+    it('should return vendor defaults for unregistered models', () => {
       const caps = provider.getModelCapabilities('unknown-model');
 
-      expect(caps.supportsTools).toBe(false);
-      expect(caps.maxTokens).toBe(4096);
+      expect(caps.supportsTools).toBe(true);
+      expect(caps.maxTokens).toBe(128000);
+      expect(caps.maxOutputTokens).toBe(16384);
     });
   });
 });

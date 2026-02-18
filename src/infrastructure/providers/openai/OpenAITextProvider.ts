@@ -18,6 +18,7 @@ import { OpenAIResponsesConverter } from './OpenAIResponsesConverter.js';
 import { OpenAIResponsesStreamConverter } from './OpenAIResponsesStreamConverter.js';
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
 import { getModelInfo } from '../../../domain/entities/Model.js';
+import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
 
 export class OpenAITextProvider extends BaseTextProvider {
   readonly name: string = 'openai';
@@ -105,7 +106,7 @@ export class OpenAITextProvider extends BaseTextProvider {
         // Convert response to our format
         return this.converter.convertResponse(response);
       } catch (error: any) {
-        this.handleError(error);
+        this.handleError(error, options.model);
         throw error; // TypeScript needs this
       }
     }, options.model);
@@ -156,67 +157,31 @@ export class OpenAITextProvider extends BaseTextProvider {
       // Convert stream events using the stream converter
       yield* this.streamConverter.convertStream(stream as AsyncIterable<ResponsesAPI.ResponseStreamEvent>);
     } catch (error: any) {
-      this.handleError(error);
+      this.handleError(error, options.model);
       throw error;
     }
   }
 
   /**
-   * Get model capabilities
+   * Get model capabilities (registry-driven with OpenAI vendor defaults)
    */
   getModelCapabilities(model: string): ModelCapabilities {
-    // GPT-4 models
-    if (model.startsWith('gpt-4')) {
-      return {
-        supportsTools: true,
-        supportsVision: model.includes('vision') || !model.includes('0613'),
-        supportsJSON: true,
-        supportsJSONSchema: true,
-        maxTokens: model.includes('turbo') ? 128000 : 8192,
-        maxOutputTokens: 16384,
-      };
-    }
-
-    // GPT-3.5
-    if (model.startsWith('gpt-3.5')) {
-      return {
-        supportsTools: true,
-        supportsVision: false,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 16385,
-        maxOutputTokens: 4096,
-      };
-    }
-
-    // o-series (reasoning models)
-    if (model.startsWith('o1') || model.startsWith('o3')) {
-      return {
-        supportsTools: false,
-        supportsVision: true,
-        supportsJSON: false,
-        supportsJSONSchema: false,
-        maxTokens: 200000,
-        maxOutputTokens: 100000,
-      };
-    }
-
-    // Default
-    return {
-      supportsTools: false,
-      supportsVision: false,
-      supportsJSON: false,
-      supportsJSONSchema: false,
-      maxTokens: 4096,
-      maxOutputTokens: 4096,
-    };
+    return resolveModelCapabilities(model, {
+      supportsTools: true,
+      supportsVision: true,
+      supportsJSON: true,
+      supportsJSONSchema: true,
+      maxTokens: 128000,
+      maxInputTokens: 128000,
+      maxOutputTokens: 16384,
+    });
   }
 
 
   /**
    * Handle OpenAI-specific errors
    */
-  private handleError(error: any): never {
+  private handleError(error: any, model?: string): never {
     if (error.status === 401) {
       throw new ProviderAuthError('openai', 'Invalid API key');
     }
@@ -230,7 +195,7 @@ export class OpenAITextProvider extends BaseTextProvider {
     }
 
     if (error.code === 'context_length_exceeded' || error.status === 413) {
-      throw new ProviderContextLengthError('openai', 128000);
+      throw new ProviderContextLengthError('openai', resolveMaxContextTokens(model, 128000));
     }
 
     // Re-throw other errors

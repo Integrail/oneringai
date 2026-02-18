@@ -1,4 +1,4 @@
-import { V as Vendor } from './Vendor-DYh_bzwo.js';
+import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 
 /**
  * Connector - Represents authenticated connection to ANY API
@@ -506,4 +506,4 @@ interface IProvider {
     validateConfig(): Promise<boolean>;
 }
 
-export { type APIKeyConnectorAuth as A, type ConnectorAccessContext as C, DEFAULT_CONNECTOR_TIMEOUT as D, type IConnectorRegistry as I, type JWTConnectorAuth as J, type OAuthConnectorAuth as O, type ProviderCapabilities as P, type StoredToken as S, type IConnectorAccessPolicy as a, Connector as b, type ConnectorConfig as c, type ITokenStorage as d, type IProvider as e, type ConnectorFetchOptions as f, type ConnectorAuth as g, type ConnectorConfigResult as h, DEFAULT_MAX_RETRIES as i, DEFAULT_RETRYABLE_STATUSES as j, DEFAULT_BASE_DELAY_MS as k, DEFAULT_MAX_DELAY_MS as l };
+export { type APIKeyConnectorAuth as A, type ConnectorAccessContext as C, DEFAULT_BASE_DELAY_MS as D, type IConnectorRegistry as I, type JWTConnectorAuth as J, type OAuthConnectorAuth as O, type ProviderCapabilities as P, type StoredToken as S, type IConnectorAccessPolicy as a, Connector as b, type ConnectorConfig as c, type ITokenStorage as d, type IProvider as e, type ConnectorFetchOptions as f, type ConnectorAuth as g, type ConnectorConfigResult as h, DEFAULT_CONNECTOR_TIMEOUT as i, DEFAULT_MAX_DELAY_MS as j, DEFAULT_MAX_RETRIES as k, DEFAULT_RETRYABLE_STATUSES as l };

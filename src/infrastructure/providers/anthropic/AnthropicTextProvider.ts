@@ -16,6 +16,7 @@ import {
 import { AnthropicConverter } from './AnthropicConverter.js';
 import { AnthropicStreamConverter } from './AnthropicStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
+import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
 
 export class AnthropicTextProvider extends BaseTextProvider {
   readonly name = 'anthropic';
@@ -60,7 +61,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
         // Convert Anthropic response → our format
         return this.converter.convertResponse(anthropicResponse);
       } catch (error: any) {
-        this.handleError(error);
+        this.handleError(error, options.model);
         throw error; // TypeScript needs this
       }
     }, options.model);
@@ -86,7 +87,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
       // Convert Anthropic events → our StreamEvent format
       yield* this.streamConverter.convertStream(stream, options.model);
     } catch (error: any) {
-      this.handleError(error);
+      this.handleError(error, options.model);
       throw error;
     } finally {
       // ALWAYS clear stream converter to prevent memory leaks
@@ -96,85 +97,27 @@ export class AnthropicTextProvider extends BaseTextProvider {
   }
 
   /**
-   * Get model capabilities
+   * Get model capabilities (registry-driven with Anthropic vendor defaults)
    */
   getModelCapabilities(model: string): ModelCapabilities {
-    // Claude 4.5 and Claude 4 (Sonnet, Opus, Haiku)
-    if (model.includes('claude-sonnet-4') || model.includes('claude-opus-4') || model.includes('claude-haiku-4')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false, // Use prompt engineering
-        maxTokens: 200000,
-        maxOutputTokens: 8192,
-      };
-    }
-
-    // Claude 3.5 Sonnet
-    if (model.includes('claude-3-5-sonnet') || model.includes('claude-3-7-sonnet')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 200000,
-        maxOutputTokens: 8192,
-      };
-    }
-
-    // Claude 3 Opus
-    if (model.includes('claude-3-opus')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 200000,
-        maxOutputTokens: 4096,
-      };
-    }
-
-    // Claude 3 Sonnet
-    if (model.includes('claude-3-sonnet')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 200000,
-        maxOutputTokens: 4096,
-      };
-    }
-
-    // Claude 3 Haiku
-    if (model.includes('claude-3-haiku')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 200000,
-        maxOutputTokens: 4096,
-      };
-    }
-
-
-    // Default for unknown models
-    return {
+    const caps = resolveModelCapabilities(model, {
       supportsTools: true,
       supportsVision: true,
       supportsJSON: true,
       supportsJSONSchema: false,
       maxTokens: 200000,
-      maxOutputTokens: 4096,
-    };
+      maxInputTokens: 200000,
+      maxOutputTokens: 8192,
+    });
+    // Anthropic doesn't support JSON schema mode even though registry has structuredOutput: true
+    caps.supportsJSONSchema = false;
+    return caps;
   }
 
   /**
    * Handle Anthropic-specific errors
    */
-  private handleError(error: any): never {
+  private handleError(error: any, model?: string): never {
     if (error.status === 401) {
       throw new ProviderAuthError('anthropic', 'Invalid API key');
     }
@@ -192,7 +135,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
       (error.message?.includes('prompt is too long') ||
         error.message?.includes('maximum context length'))
     ) {
-      throw new ProviderContextLengthError('anthropic', 200000);
+      throw new ProviderContextLengthError('anthropic', resolveMaxContextTokens(model, 200000));
     }
 
     // Re-throw other errors

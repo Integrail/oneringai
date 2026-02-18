@@ -7,6 +7,7 @@
 import { OpenAITextProvider } from '../openai/OpenAITextProvider.js';
 import { ModelCapabilities } from '../../../domain/interfaces/ITextProvider.js';
 import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
+import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 
 export interface GenericOpenAIConfig {
   apiKey: string;
@@ -49,29 +50,17 @@ export class GenericOpenAIProvider extends OpenAITextProvider {
   }
 
   /**
-   * Override model capabilities for generic providers
-   * Can be customized per provider
+   * Override model capabilities for generic providers (registry-driven with conservative defaults)
    */
   getModelCapabilities(model: string): ModelCapabilities {
-    // Check for vision in model name (heuristic)
-    const hasVision =
-      model.toLowerCase().includes('vision') ||
-      model.toLowerCase().includes('llava') ||
-      model.toLowerCase().includes('llama-3.2-90b'); // Llama 3.2 90B has vision
-
-    // Check for large context models
-    const isLargeContext =
-      model.includes('128k') ||
-      model.includes('200k') ||
-      model.toLowerCase().includes('longtext');
-
-    return {
-      supportsTools: true, // Most OpenAI-compatible APIs support tools
-      supportsVision: hasVision,
-      supportsJSON: true, // Most support JSON mode
-      supportsJSONSchema: false, // Conservative - not all support schema
-      maxTokens: isLargeContext ? 128000 : 32000, // Conservative default
-      maxOutputTokens: 4096, // Common default
-    };
+    return resolveModelCapabilities(model, {
+      supportsTools: true,
+      supportsVision: false,
+      supportsJSON: true,
+      supportsJSONSchema: false,
+      maxTokens: 32000,
+      maxInputTokens: 32000,
+      maxOutputTokens: 4096,
+    });
   }
 }

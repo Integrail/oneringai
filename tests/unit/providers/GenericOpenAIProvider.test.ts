@@ -152,30 +152,17 @@ describe('GenericOpenAIProvider', () => {
       });
     });
 
-    it('should detect vision models by name', () => {
-      const visionCaps = provider.getModelCapabilities('llava-v1.5-7b');
-      expect(visionCaps.supportsVision).toBe(true);
-
-      const visionCaps2 = provider.getModelCapabilities('model-vision-preview');
-      expect(visionCaps2.supportsVision).toBe(true);
+    it('should return registry capabilities for registered models', () => {
+      // Grok models are in the registry and routed through generic provider
+      const caps = provider.getModelCapabilities('grok-3');
+      expect(caps.supportsTools).toBe(true);
+      expect(caps.maxTokens).toBe(131072);
     });
 
-    it('should detect Llama 3.2 90B as having vision', () => {
-      const caps = provider.getModelCapabilities('llama-3.2-90b-text-preview');
-      expect(caps.supportsVision).toBe(true);
-    });
-
-    it('should detect large context models', () => {
-      const caps128k = provider.getModelCapabilities('mixtral-8x7b-128k');
-      expect(caps128k.maxTokens).toBe(128000);
-
-      const caps200k = provider.getModelCapabilities('claude-200k');
-      expect(caps200k.maxTokens).toBe(128000);
-    });
-
-    it('should return default maxTokens for standard models', () => {
+    it('should return vendor defaults for unregistered models', () => {
       const caps = provider.getModelCapabilities('llama-3-8b');
       expect(caps.maxTokens).toBe(32000);
+      expect(caps.supportsVision).toBe(false);
     });
 
     it('should assume tools support for most OpenAI-compatible APIs', () => {

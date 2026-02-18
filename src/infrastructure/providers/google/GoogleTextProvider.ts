@@ -16,6 +16,7 @@ import {
 import { GoogleConverter } from './GoogleConverter.js';
 import { GoogleStreamConverter } from './GoogleStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
+import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
 
 export class GoogleTextProvider extends BaseTextProvider {
   readonly name = 'google';
@@ -109,7 +110,7 @@ export class GoogleTextProvider extends BaseTextProvider {
       } catch (error: any) {
         // Clear mappings on error to prevent stale state
         this.converter.clearMappings();
-        this.handleError(error);
+        this.handleError(error, options.model);
         throw error; // TypeScript needs this
       }
     }, options.model);
@@ -152,49 +153,30 @@ export class GoogleTextProvider extends BaseTextProvider {
       // Clear converters on error to prevent stale state
       this.converter.clearMappings();
       this.streamConverter.clear();
-      this.handleError(error);
+      this.handleError(error, options.model);
       throw error;
     }
   }
 
   /**
-   * Get model capabilities
+   * Get model capabilities (registry-driven with Google vendor defaults)
    */
   getModelCapabilities(model: string): ModelCapabilities {
-    // All modern Gemini models (3.x, 2.5, 2.0, 1.5) have similar capabilities
-    if (
-      model.includes('gemini-3') ||
-      model.includes('gemini-2.5') ||
-      model.includes('gemini-2.0') ||
-      model.includes('gemini-1.5') ||
-      model.includes('gemini-pro') ||
-      model.includes('gemini-flash')
-    ) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1048576, // 1M tokens
-        maxOutputTokens: 8192,
-      };
-    }
-
-    // Default for unknown models
-    return {
+    return resolveModelCapabilities(model, {
       supportsTools: true,
       supportsVision: true,
       supportsJSON: true,
       supportsJSONSchema: false,
       maxTokens: 1048576,
-      maxOutputTokens: 8192,
-    };
+      maxInputTokens: 1048576,
+      maxOutputTokens: 65536,
+    });
   }
 
   /**
    * Handle Google-specific errors
    */
-  private handleError(error: any): never {
+  private handleError(error: any, model?: string): never {
     const errorMessage = error.message || '';
 
     if (error.status === 401 || errorMessage.includes('API key not valid')) {
@@ -206,7 +188,7 @@ export class GoogleTextProvider extends BaseTextProvider {
     }
 
     if (errorMessage.includes('context length') || errorMessage.includes('too long')) {
-      throw new ProviderContextLengthError('google', 1048576);
+      throw new ProviderContextLengthError('google', resolveMaxContextTokens(model, 1048576));
     }
 
     // Re-throw other errors
