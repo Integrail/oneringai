@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-17
+**Generated:** 2026-02-18
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -21,14 +21,14 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Session Management](#session-management) (24 items)
 - [Tools & Function Calling](#tools-function-calling) (118 items)
 - [Streaming](#streaming) (15 items)
-- [Model Registry](#model-registry) (9 items)
+- [Model Registry](#model-registry) (10 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
 - [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (42 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (234 items)
+- [Other](#other) (238 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:129`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:130`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -104,14 +104,14 @@ The connector must be registered at runtime before calling this method.
 ```typescript
 static async fromStorage(
     agentId: string,
-    storage: IAgentDefinitionStorage,
+    storage?: IAgentDefinitionStorage,
     overrides?: Partial&lt;AgentConfig&gt;
   ): Promise&lt;Agent | null&gt;
 ```
 
 **Parameters:**
 - `agentId`: `string`
-- `storage`: `IAgentDefinitionStorage`
+- `storage`: `IAgentDefinitionStorage | undefined` *(optional)*
 - `overrides`: `Partial&lt;AgentConfig&gt; | undefined` *(optional)*
 
 **Returns:** `Promise&lt;Agent | null&gt;`
@@ -310,13 +310,13 @@ setTemperature(temperature: number): void
 
 ```typescript
 async saveDefinition(
-    storage: IAgentDefinitionStorage,
+    storage?: IAgentDefinitionStorage,
     metadata?: AgentDefinitionMetadata
   ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `storage`: `IAgentDefinitionStorage`
+- `storage`: `IAgentDefinitionStorage | undefined` *(optional)*
 - `metadata`: `AgentDefinitionMetadata | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
@@ -449,7 +449,7 @@ destroy(): void
 
 ### Connector `class`
 
-📍 [`src/core/Connector.ts:52`](src/core/Connector.ts)
+📍 [`src/core/Connector.ts:53`](src/core/Connector.ts)
 
 Connector class - represents a single authenticated connection
 
@@ -820,7 +820,6 @@ isDisposed(): boolean
 | Property | Type | Description |
 |----------|------|-------------|
 | `registry` | `registry: Map&lt;string, Connector&gt;` | - |
-| `defaultStorage` | `defaultStorage: ITokenStorage` | - |
 | `name` | `name: string` | - |
 | `vendor?` | `vendor: Vendor | undefined` | - |
 | `config` | `config: ConnectorConfig` | - |
@@ -838,7 +837,7 @@ isDisposed(): boolean
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:46`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:47`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -885,7 +884,7 @@ Example: `toolExecutionTimeout: 300000` (5 minutes hard cap per tool call) |
 
 ### ConnectorFetchOptions `interface`
 
-📍 [`src/core/Connector.ts:40`](src/core/Connector.ts)
+📍 [`src/core/Connector.ts:41`](src/core/Connector.ts)
 
 Fetch options with additional connector-specific settings
 
@@ -904,7 +903,7 @@ Fetch options with additional connector-specific settings
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:41`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:42`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -6260,7 +6259,7 @@ async restore(state: SerializedMemory): Promise&lt;void&gt;
 
 ### WorkingMemoryPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:201`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:202`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7047,7 +7046,7 @@ Research plan for systematic research
 
 ### SerializedWorkingMemoryState `interface`
 
-📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:153`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:154`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7416,7 +7415,7 @@ Configuration for working memory
 
 ### WorkingMemoryPluginConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:168`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:169`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8474,7 +8473,7 @@ Persist and resume agent conversations
 
 ### ConnectorConfigStore `class`
 
-📍 [`src/connectors/storage/ConnectorConfigStore.ts:31`](src/connectors/storage/ConnectorConfigStore.ts)
+📍 [`src/connectors/storage/ConnectorConfigStore.ts:32`](src/connectors/storage/ConnectorConfigStore.ts)
 
 ConnectorConfigStore - manages connector configs with automatic encryption
 
@@ -8502,6 +8501,25 @@ constructor(
 **Parameters:**
 - `storage`: `IConnectorConfigStorage`
 - `encryptionKey`: `string`
+
+</details>
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Factory that resolves storage from StorageRegistry when no explicit storage is provided.
+
+```typescript
+static create(encryptionKey: string, storage?: IConnectorConfigStorage): ConnectorConfigStore
+```
+
+**Parameters:**
+- `encryptionKey`: `string`
+- `storage`: `IConnectorConfigStorage | undefined` *(optional)*
+
+**Returns:** `ConnectorConfigStore`
 
 </details>
 
@@ -11557,7 +11575,7 @@ Metadata for a custom tool
 
 ### CustomToolMetaToolsOptions `interface`
 
-📍 [`src/tools/custom-tools/factories.ts:18`](src/tools/custom-tools/factories.ts)
+📍 [`src/tools/custom-tools/factories.ts:17`](src/tools/custom-tools/factories.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12946,10 +12964,10 @@ export function createCreatePRTool(
 
 ### createCustomToolDelete `function`
 
-📍 [`src/tools/custom-tools/customToolDelete.ts:19`](src/tools/custom-tools/customToolDelete.ts)
+📍 [`src/tools/custom-tools/customToolDelete.ts:20`](src/tools/custom-tools/customToolDelete.ts)
 
 ```typescript
-export function createCustomToolDelete(storage: ICustomToolStorage): ToolFunction&lt;DeleteArgs, DeleteResult&gt;
+export function createCustomToolDelete(storage?: ICustomToolStorage): ToolFunction&lt;DeleteArgs, DeleteResult&gt;
 ```
 
 ---
@@ -12966,27 +12984,27 @@ export function createCustomToolDraft(): ToolFunction&lt;DraftArgs, DraftResult&
 
 ### createCustomToolList `function`
 
-📍 [`src/tools/custom-tools/customToolList.ts:23`](src/tools/custom-tools/customToolList.ts)
+📍 [`src/tools/custom-tools/customToolList.ts:24`](src/tools/custom-tools/customToolList.ts)
 
 ```typescript
-export function createCustomToolList(storage: ICustomToolStorage): ToolFunction&lt;ListArgs, ListResult&gt;
+export function createCustomToolList(storage?: ICustomToolStorage): ToolFunction&lt;ListArgs, ListResult&gt;
 ```
 
 ---
 
 ### createCustomToolLoad `function`
 
-📍 [`src/tools/custom-tools/customToolLoad.ts:20`](src/tools/custom-tools/customToolLoad.ts)
+📍 [`src/tools/custom-tools/customToolLoad.ts:21`](src/tools/custom-tools/customToolLoad.ts)
 
 ```typescript
-export function createCustomToolLoad(storage: ICustomToolStorage): ToolFunction&lt;LoadArgs, LoadResult&gt;
+export function createCustomToolLoad(storage?: ICustomToolStorage): ToolFunction&lt;LoadArgs, LoadResult&gt;
 ```
 
 ---
 
 ### createCustomToolMetaTools `function`
 
-📍 [`src/tools/custom-tools/factories.ts:38`](src/tools/custom-tools/factories.ts)
+📍 [`src/tools/custom-tools/factories.ts:37`](src/tools/custom-tools/factories.ts)
 
 Create all 6 custom tool meta-tools as an array.
 
@@ -13011,10 +13029,10 @@ const agent = Agent.create({
 
 ### createCustomToolSave `function`
 
-📍 [`src/tools/custom-tools/customToolSave.ts:31`](src/tools/custom-tools/customToolSave.ts)
+📍 [`src/tools/custom-tools/customToolSave.ts:32`](src/tools/custom-tools/customToolSave.ts)
 
 ```typescript
-export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction&lt;SaveArgs, SaveResult&gt;
+export function createCustomToolSave(storage?: ICustomToolStorage): ToolFunction&lt;SaveArgs, SaveResult&gt;
 ```
 
 ---
@@ -14499,6 +14517,21 @@ Get all models for a specific vendor
 
 ```typescript
 export function getModelsByVendor(vendor: VendorType): ILLMDescription[]
+```
+
+---
+
+### resolveModelCapabilities `function`
+
+📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:32`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
+
+Resolve model capabilities from the centralized registry, falling back to vendor defaults.
+
+```typescript
+export function resolveModelCapabilities(
+  model: string,
+  vendorDefaults: ModelCapabilities
+): ModelCapabilities
 ```
 
 ---
@@ -18351,7 +18384,7 @@ constructor(
 
 ### ProviderErrorMapper `class`
 
-📍 [`src/infrastructure/providers/base/ProviderErrorMapper.ts:22`](src/infrastructure/providers/base/ProviderErrorMapper.ts)
+📍 [`src/infrastructure/providers/base/ProviderErrorMapper.ts:24`](src/infrastructure/providers/base/ProviderErrorMapper.ts)
 
 Maps provider-specific errors to our unified error types
 
@@ -21060,7 +21093,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:106`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:107`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -23086,7 +23119,7 @@ async focusWindow(windowId: number): Promise&lt;void&gt;
 
 ### PersistentInstructionsPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:162`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:163`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -23635,6 +23668,135 @@ async search(query: string, options: SearchOptions =
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "serper"` | - |
+
+</details>
+
+---
+
+### StorageRegistry `class`
+
+📍 [`src/core/StorageRegistry.ts:84`](src/core/StorageRegistry.ts)
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static configure()`
+
+Configure multiple storage backends at once.
+
+```typescript
+static configure(config: Partial&lt;StorageConfig&gt;): void
+```
+
+**Parameters:**
+- `config`: `Partial&lt;StorageConfig&gt;`
+
+**Returns:** `void`
+
+#### `static setContext()`
+
+Set the default StorageContext.
+
+This context is automatically passed to all per-agent factory calls
+(sessions, persistentInstructions, workingMemory) when no explicit
+context is provided. Typically set once at app startup with global
+tenant/environment info, or per-request in multi-tenant servers.
+
+```typescript
+static setContext(context: StorageContext | undefined): void
+```
+
+**Parameters:**
+- `context`: `StorageContext | undefined`
+
+**Returns:** `void`
+
+#### `static getContext()`
+
+Get the current default StorageContext.
+
+```typescript
+static getContext(): StorageContext | undefined
+```
+
+**Returns:** `StorageContext | undefined`
+
+#### `static set()`
+
+Set a single storage backend.
+
+```typescript
+static set&lt;K extends keyof StorageConfig&gt;(key: K, value: StorageConfig[K]): void
+```
+
+**Parameters:**
+- `key`: `K`
+- `value`: `StorageConfig[K]`
+
+**Returns:** `void`
+
+#### `static get()`
+
+Get a storage backend (or undefined if not configured).
+
+```typescript
+static get&lt;K extends keyof StorageConfig&gt;(key: K): StorageConfig[K] | undefined
+```
+
+**Parameters:**
+- `key`: `K`
+
+**Returns:** `StorageConfig[K] | undefined`
+
+#### `static resolve()`
+
+Resolve a storage backend, lazily creating and caching a default if needed.
+
+If a value has been configured via `set()` or `configure()`, returns that.
+Otherwise, calls `defaultFactory()`, caches the result, and returns it.
+
+```typescript
+static resolve&lt;K extends keyof StorageConfig&gt;(key: K, defaultFactory: () =&gt; StorageConfig[K]): StorageConfig[K]
+```
+
+**Parameters:**
+- `key`: `K`
+- `defaultFactory`: `() =&gt; StorageConfig[K]`
+
+**Returns:** `StorageConfig[K]`
+
+#### `static has()`
+
+Check if a storage backend has been configured.
+
+```typescript
+static has(key: keyof StorageConfig): boolean
+```
+
+**Parameters:**
+- `key`: `keyof StorageConfig`
+
+**Returns:** `boolean`
+
+#### `static reset()`
+
+Clear all configured storage backends and context.
+Useful for testing.
+
+```typescript
+static reset(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `entries` | `entries: Map&lt;string, unknown&gt;` | Internal storage map |
 
 </details>
 
@@ -26872,7 +27034,7 @@ Result of checking if a tool needs approval
 
 ### PersistentInstructionsConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:28`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:29`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -27397,7 +27559,7 @@ Serialized approval state for session persistence
 
 ### SerializedPersistentInstructionsState `interface`
 
-📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:39`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts:40`](src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -27522,6 +27684,34 @@ Stdio transport configuration
 | `args?` | `args?: string[];` | Command arguments |
 | `env?` | `env?: Record&lt;string, string&gt;;` | Environment variables |
 | `cwd?` | `cwd?: string;` | Working directory for the process |
+
+</details>
+
+---
+
+### StorageConfig `interface`
+
+📍 [`src/core/StorageRegistry.ts:66`](src/core/StorageRegistry.ts)
+
+Storage configuration map.
+
+Global singletons are stored directly.
+Per-agent factories are functions that accept an agentId (and optional
+StorageContext for multi-tenant scenarios) and return a storage instance.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `media` | `media: IMediaStorage;` | - |
+| `agentDefinitions` | `agentDefinitions: IAgentDefinitionStorage;` | - |
+| `connectorConfig` | `connectorConfig: IConnectorConfigStorage;` | - |
+| `oauthTokens` | `oauthTokens: ITokenStorage;` | - |
+| `customTools` | `customTools: (context?: StorageContext) =&gt; ICustomToolStorage;` | - |
+| `sessions` | `sessions: (agentId: string, context?: StorageContext) =&gt; IContextStorage;` | - |
+| `persistentInstructions` | `persistentInstructions: (agentId: string, context?: StorageContext) =&gt; IPersistentInstructionsStorage;` | - |
+| `workingMemory` | `workingMemory: (context?: StorageContext) =&gt; IMemoryStorage;` | - |
 
 </details>
 
@@ -27842,7 +28032,7 @@ type DocumentSource = FileSource | URLSource | BufferSource | BlobSource
 
 ### EvictionStrategy `type`
 
-📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:166`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts:167`](src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts)
 
 ```typescript
 type EvictionStrategy = 'lru' | 'size'
@@ -28104,6 +28294,23 @@ type ServiceType = (typeof SERVICE_DEFINITIONS)[number]['id']
 
 ---
 
+### StorageContext `type`
+
+📍 [`src/core/StorageRegistry.ts:57`](src/core/StorageRegistry.ts)
+
+Opaque context passed to per-agent storage factories.
+
+The library imposes no structure — consumers define their own shape
+(e.g., `{ userId: 'alice', tenantId: 'acme' }`).
+
+Mirrors the `ConnectorAccessContext` pattern used by `Connector.scoped()`.
+
+```typescript
+type StorageContext = Record&lt;string, unknown&gt;
+```
+
+---
+
 ### TransportConfig `type`
 
 📍 [`src/domain/entities/MCPConfig.ts:56`](src/domain/entities/MCPConfig.ts)
@@ -28223,7 +28430,7 @@ export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;I
 
 ### getMediaStorage `function`
 
-📍 [`src/tools/multimedia/config.ts:24`](src/tools/multimedia/config.ts)
+📍 [`src/tools/multimedia/config.ts:23`](src/tools/multimedia/config.ts)
 
 Get the global media storage (creates default FileMediaStorage on first access)
 
@@ -28429,6 +28636,22 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ---
 
+### resolveMaxContextTokens `function`
+
+📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:51`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
+
+Resolve the max context token limit for a specific model.
+Used primarily for accurate error messages.
+
+```typescript
+export function resolveMaxContextTokens(
+  model: string | undefined,
+  fallback: number
+): number
+```
+
+---
+
 ### resolveRepository `function`
 
 📍 [`src/tools/github/types.ts:71`](src/tools/github/types.ts)
@@ -28450,7 +28673,7 @@ export function resolveRepository(
 
 ### setMediaStorage `function`
 
-📍 [`src/tools/multimedia/config.ts:36`](src/tools/multimedia/config.ts)
+📍 [`src/tools/multimedia/config.ts:32`](src/tools/multimedia/config.ts)
 
 Set a custom global media storage
 
