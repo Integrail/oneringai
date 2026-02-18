@@ -3,10 +3,10 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolDefinition } from '../../domain/entities/CustomToolDefinition.js';
-import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
-import { StorageRegistry } from '../../core/StorageRegistry.js';
+import { resolveCustomToolStorage } from './resolveStorage.js';
 
 interface LoadArgs {
   name: string;
@@ -42,8 +42,8 @@ export function createCustomToolLoad(storage?: ICustomToolStorage): ToolFunction
 
     permission: { scope: 'always', riskLevel: 'low' },
 
-    execute: async (args: LoadArgs): Promise<LoadResult> => {
-      const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
+    execute: async (args: LoadArgs, context?: ToolContext): Promise<LoadResult> => {
+      const s = resolveCustomToolStorage(storage, context);
       const tool = await s.load(args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };

@@ -3,11 +3,11 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolDefinition } from '../../domain/entities/CustomToolDefinition.js';
 import { CUSTOM_TOOL_DEFINITION_VERSION } from '../../domain/entities/CustomToolDefinition.js';
-import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
-import { StorageRegistry } from '../../core/StorageRegistry.js';
+import { resolveCustomToolStorage } from './resolveStorage.js';
 
 interface SaveArgs {
   name: string;
@@ -91,9 +91,9 @@ export function createCustomToolSave(storage?: ICustomToolStorage): ToolFunction
 
     permission: { scope: 'session', riskLevel: 'medium' },
 
-    execute: async (args: SaveArgs): Promise<SaveResult> => {
+    execute: async (args: SaveArgs, context?: ToolContext): Promise<SaveResult> => {
       try {
-        const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
+        const s = resolveCustomToolStorage(storage, context);
         const now = new Date().toISOString();
 
         // Preserve createdAt if updating an existing tool
@@ -129,7 +129,7 @@ export function createCustomToolSave(storage?: ICustomToolStorage): ToolFunction
         return {
           success: false,
           name: args.name,
-          storagePath: (storage ?? StorageRegistry.get('customTools'))?.getPath() ?? 'unknown',
+          storagePath: resolveCustomToolStorage(storage, context).getPath(),
           error: (error as Error).message,
         };
       }

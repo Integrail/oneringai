@@ -27263,6 +27263,7 @@ function assertNotDestroyed(obj, operation) {
 // src/core/Agent.ts
 init_Metrics();
 init_constants();
+init_StorageRegistry();
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
   hookManager;
@@ -27326,7 +27327,11 @@ var Agent = class _Agent extends BaseAgent {
    * @returns Agent instance, or null if not found
    */
   static async fromStorage(agentId, storage, overrides) {
-    const definition = await storage.load(agentId);
+    const s = storage ?? exports.StorageRegistry.get("agentDefinitions");
+    if (!s) {
+      throw new Error("No storage provided and no agentDefinitions configured in StorageRegistry");
+    }
+    const definition = await s.load(agentId);
     if (!definition) {
       return null;
     }
@@ -28374,6 +28379,10 @@ var Agent = class _Agent extends BaseAgent {
   }
   // ===== Definition Persistence =====
   async saveDefinition(storage, metadata) {
+    const s = storage ?? exports.StorageRegistry.get("agentDefinitions");
+    if (!s) {
+      throw new Error("No storage provided and no agentDefinitions configured in StorageRegistry");
+    }
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const definition = {
       version: 1,
@@ -28396,7 +28405,7 @@ var Agent = class _Agent extends BaseAgent {
         vendorOptions: this._config.vendorOptions
       }
     };
-    await storage.save(definition);
+    await s.save(definition);
   }
   // ===== Introspection =====
   getExecutionContext() {
@@ -44221,8 +44230,9 @@ var CONNECTOR_CONFIG_VERSION = 1;
 
 // src/connectors/storage/ConnectorConfigStore.ts
 init_encryption();
+init_StorageRegistry();
 var ENCRYPTED_PREFIX = "$ENC$:";
-var ConnectorConfigStore = class {
+var ConnectorConfigStore = class _ConnectorConfigStore {
   constructor(storage, encryptionKey) {
     this.storage = storage;
     this.encryptionKey = encryptionKey;
@@ -44231,6 +44241,26 @@ var ConnectorConfigStore = class {
         "ConnectorConfigStore requires an encryption key of at least 16 characters"
       );
     }
+  }
+  /**
+   * Factory that resolves storage from StorageRegistry when no explicit storage is provided.
+   *
+   * @param encryptionKey - Encryption key for secrets (required, min 16 chars)
+   * @param storage - Optional explicit storage backend (overrides registry)
+   * @returns ConnectorConfigStore instance
+   * @throws Error if no storage available (neither explicit nor in registry)
+   */
+  static create(encryptionKey, storage) {
+    if (storage) {
+      return new _ConnectorConfigStore(storage, encryptionKey);
+    }
+    const registryStorage = exports.StorageRegistry.get("connectorConfig");
+    if (!registryStorage) {
+      throw new Error(
+        "No storage provided and no connectorConfig configured in StorageRegistry. Pass storage explicitly or call StorageRegistry.set('connectorConfig', storage) first."
+      );
+    }
+    return new _ConnectorConfigStore(registryStorage, encryptionKey);
   }
   /**
    * Save a connector configuration (secrets are encrypted automatically)
@@ -52431,8 +52461,24 @@ var desktopTools = [
   desktopWindowFocus
 ];
 
-// src/tools/custom-tools/customToolDelete.ts
+// src/tools/custom-tools/resolveStorage.ts
 init_StorageRegistry();
+function buildStorageContext(toolContext) {
+  const global2 = exports.StorageRegistry.getContext();
+  if (global2) return global2;
+  if (toolContext?.userId) return { userId: toolContext.userId };
+  return void 0;
+}
+function resolveCustomToolStorage(explicit, toolContext) {
+  if (explicit) return explicit;
+  const factory = exports.StorageRegistry.get("customTools");
+  if (factory) {
+    return factory(buildStorageContext(toolContext));
+  }
+  return new FileCustomToolStorage();
+}
+
+// src/tools/custom-tools/customToolDelete.ts
 function createCustomToolDelete(storage) {
   return {
     definition: {
@@ -52453,9 +52499,9 @@ function createCustomToolDelete(storage) {
       }
     },
     permission: { scope: "session", riskLevel: "medium" },
-    execute: async (args) => {
+    execute: async (args, context) => {
       try {
-        const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+        const s = resolveCustomToolStorage(storage, context);
         const exists = await s.exists(args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
@@ -52664,7 +52710,6 @@ function createCustomToolDraft() {
 var customToolDraft = createCustomToolDraft();
 
 // src/tools/custom-tools/customToolList.ts
-init_StorageRegistry();
 function createCustomToolList(storage) {
   return {
     definition: {
@@ -52701,8 +52746,8 @@ function createCustomToolList(storage) {
       }
     },
     permission: { scope: "always", riskLevel: "low" },
-    execute: async (args) => {
-      const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+    execute: async (args, context) => {
+      const s = resolveCustomToolStorage(storage, context);
       const tools = await s.list({
         search: args.search,
         tags: args.tags,
@@ -52718,7 +52763,6 @@ function createCustomToolList(storage) {
 var customToolList = createCustomToolList();
 
 // src/tools/custom-tools/customToolLoad.ts
-init_StorageRegistry();
 function createCustomToolLoad(storage) {
   return {
     definition: {
@@ -52739,8 +52783,8 @@ function createCustomToolLoad(storage) {
       }
     },
     permission: { scope: "always", riskLevel: "low" },
-    execute: async (args) => {
-      const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+    execute: async (args, context) => {
+      const s = resolveCustomToolStorage(storage, context);
       const tool = await s.load(args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };
@@ -52753,7 +52797,6 @@ function createCustomToolLoad(storage) {
 var customToolLoad = createCustomToolLoad();
 
 // src/tools/custom-tools/customToolSave.ts
-init_StorageRegistry();
 function createCustomToolSave(storage) {
   return {
     definition: {
@@ -52812,9 +52855,9 @@ function createCustomToolSave(storage) {
       }
     },
     permission: { scope: "session", riskLevel: "medium" },
-    execute: async (args) => {
+    execute: async (args, context) => {
       try {
-        const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+        const s = resolveCustomToolStorage(storage, context);
         const now = (/* @__PURE__ */ new Date()).toISOString();
         const existing = await s.load(args.name);
         const definition = {
@@ -52845,7 +52888,7 @@ function createCustomToolSave(storage) {
         return {
           success: false,
           name: args.name,
-          storagePath: (storage ?? exports.StorageRegistry.get("customTools"))?.getPath() ?? "unknown",
+          storagePath: resolveCustomToolStorage(storage, context).getPath(),
           error: error.message
         };
       }

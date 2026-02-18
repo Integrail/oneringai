@@ -65,13 +65,13 @@ export type StorageContext = Record<string, unknown>;
  */
 export interface StorageConfig {
   // Global singletons
-  customTools: ICustomToolStorage;
   media: IMediaStorage;
   agentDefinitions: IAgentDefinitionStorage;
   connectorConfig: IConnectorConfigStorage;
   oauthTokens: ITokenStorage;
 
-  // Per-agent factories (optional StorageContext for multi-tenant)
+  // Context-aware factories (optional StorageContext for multi-tenant)
+  customTools: (context?: StorageContext) => ICustomToolStorage;
   sessions: (agentId: string, context?: StorageContext) => IContextStorage;
   persistentInstructions: (agentId: string, context?: StorageContext) => IPersistentInstructionsStorage;
   workingMemory: (context?: StorageContext) => IMemoryStorage;

@@ -12,6 +12,7 @@ import type {
 } from '../../domain/interfaces/IConnectorConfigStorage.js';
 import { CONNECTOR_CONFIG_VERSION } from '../../domain/interfaces/IConnectorConfigStorage.js';
 import { encrypt, decrypt } from '../oauth/utils/encryption.js';
+import { StorageRegistry } from '../../core/StorageRegistry.js';
 
 /** Prefix for encrypted values */
 const ENCRYPTED_PREFIX = '$ENC$:';
@@ -38,6 +39,29 @@ export class ConnectorConfigStore {
         'ConnectorConfigStore requires an encryption key of at least 16 characters'
       );
     }
+  }
+
+  /**
+   * Factory that resolves storage from StorageRegistry when no explicit storage is provided.
+   *
+   * @param encryptionKey - Encryption key for secrets (required, min 16 chars)
+   * @param storage - Optional explicit storage backend (overrides registry)
+   * @returns ConnectorConfigStore instance
+   * @throws Error if no storage available (neither explicit nor in registry)
+   */
+  static create(encryptionKey: string, storage?: IConnectorConfigStorage): ConnectorConfigStore {
+    if (storage) {
+      return new ConnectorConfigStore(storage, encryptionKey);
+    }
+
+    const registryStorage = StorageRegistry.get('connectorConfig');
+    if (!registryStorage) {
+      throw new Error(
+        'No storage provided and no connectorConfig configured in StorageRegistry. ' +
+        'Pass storage explicitly or call StorageRegistry.set(\'connectorConfig\', storage) first.'
+      );
+    }
+    return new ConnectorConfigStore(registryStorage, encryptionKey);
   }
 
   /**

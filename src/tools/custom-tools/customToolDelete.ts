@@ -3,9 +3,9 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
-import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
-import { StorageRegistry } from '../../core/StorageRegistry.js';
+import { resolveCustomToolStorage } from './resolveStorage.js';
 
 interface DeleteArgs {
   name: string;
@@ -39,9 +39,9 @@ export function createCustomToolDelete(storage?: ICustomToolStorage): ToolFuncti
 
     permission: { scope: 'session', riskLevel: 'medium' },
 
-    execute: async (args: DeleteArgs): Promise<DeleteResult> => {
+    execute: async (args: DeleteArgs, context?: ToolContext): Promise<DeleteResult> => {
       try {
-        const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
+        const s = resolveCustomToolStorage(storage, context);
         const exists = await s.exists(args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };

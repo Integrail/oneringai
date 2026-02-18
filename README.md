@@ -631,10 +631,10 @@ Swap all storage backends (sessions, media, custom tools, OAuth tokens, etc.) wi
 import { StorageRegistry } from '@everworker/oneringai';
 
 StorageRegistry.configure({
-  customTools: new MongoCustomToolStorage(),
   media: new S3MediaStorage(),
   oauthTokens: new EncryptedFileTokenStorage(),
-  // Per-agent factories — optional StorageContext for multi-tenant partitioning
+  // Context-aware factories — optional StorageContext for multi-tenant partitioning
+  customTools: (ctx) => new MongoCustomToolStorage(ctx?.userId),
   sessions: (agentId, ctx) => new RedisContextStorage(agentId, ctx?.tenantId),
   persistentInstructions: (agentId, ctx) => new DBInstructionsStorage(agentId, ctx?.userId),
   workingMemory: (ctx) => new RedisMemoryStorage(ctx?.tenantId),

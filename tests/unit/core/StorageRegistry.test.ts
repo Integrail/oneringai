@@ -2,8 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { StorageRegistry } from '../../../src/core/StorageRegistry.js';
 import type { StorageConfig } from '../../../src/core/StorageRegistry.js';
 
+import type { ICustomToolStorage } from '../../../src/domain/interfaces/ICustomToolStorage.js';
+
 // Minimal mocks implementing enough interface to test registry behavior
-const mockCustomToolStorage = { save: async () => {}, load: async () => null, list: async () => [], delete: async () => {}, exists: async () => false, getPath: () => '/mock' } as unknown as StorageConfig['customTools'];
+const mockCustomToolFactoryInstance = { save: async () => {}, load: async () => null, list: async () => [], delete: async () => {}, exists: async () => false, getPath: () => '/mock' } as unknown as ICustomToolStorage;
+const mockCustomToolFactory = (() => mockCustomToolFactoryInstance) as StorageConfig['customTools'];
 const mockMediaStorage = { save: async () => ({ path: '/mock' }), load: async () => null } as unknown as StorageConfig['media'];
 const mockTokenStorage = { getToken: async () => null, saveToken: async () => {} } as unknown as StorageConfig['oauthTokens'];
 
@@ -15,11 +18,11 @@ describe('StorageRegistry', () => {
   describe('configure()', () => {
     it('should set multiple backends at once', () => {
       StorageRegistry.configure({
-        customTools: mockCustomToolStorage,
+        customTools: mockCustomToolFactory,
         media: mockMediaStorage,
       });
 
-      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolStorage);
+      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolFactory);
       expect(StorageRegistry.get('media')).toBe(mockMediaStorage);
     });
 
@@ -31,8 +34,8 @@ describe('StorageRegistry', () => {
 
   describe('set() / get()', () => {
     it('should store and retrieve a value', () => {
-      StorageRegistry.set('customTools', mockCustomToolStorage);
-      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolStorage);
+      StorageRegistry.set('customTools', mockCustomToolFactory);
+      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolFactory);
     });
 
     it('should return undefined for unconfigured key', () => {
@@ -53,35 +56,35 @@ describe('StorageRegistry', () => {
 
   describe('resolve()', () => {
     it('should return configured value when present', () => {
-      StorageRegistry.set('customTools', mockCustomToolStorage);
+      StorageRegistry.set('customTools', mockCustomToolFactory);
 
       const anotherMock = { notTheSame: true } as unknown as StorageConfig['customTools'];
       const result = StorageRegistry.resolve('customTools', () => anotherMock);
 
-      expect(result).toBe(mockCustomToolStorage);
+      expect(result).toBe(mockCustomToolFactory);
     });
 
     it('should call defaultFactory and cache when nothing configured', () => {
       let callCount = 0;
       const factory = () => {
         callCount++;
-        return mockCustomToolStorage;
+        return mockCustomToolFactory;
       };
 
       const result1 = StorageRegistry.resolve('customTools', factory);
-      expect(result1).toBe(mockCustomToolStorage);
+      expect(result1).toBe(mockCustomToolFactory);
       expect(callCount).toBe(1);
 
       // Second call should use cached value, not call factory again
       const result2 = StorageRegistry.resolve('customTools', factory);
-      expect(result2).toBe(mockCustomToolStorage);
+      expect(result2).toBe(mockCustomToolFactory);
       expect(callCount).toBe(1);
     });
   });
 
   describe('reset()', () => {
     it('should clear all entries', () => {
-      StorageRegistry.set('customTools', mockCustomToolStorage);
+      StorageRegistry.set('customTools', mockCustomToolFactory);
       StorageRegistry.set('media', mockMediaStorage);
       StorageRegistry.set('oauthTokens', mockTokenStorage);
 
@@ -188,7 +191,7 @@ describe('StorageRegistry', () => {
 
   describe('overwrite behavior', () => {
     it('should allow overwriting a configured value', () => {
-      StorageRegistry.set('customTools', mockCustomToolStorage);
+      StorageRegistry.set('customTools', mockCustomToolFactory);
       const newMock = { save: async () => {} } as unknown as StorageConfig['customTools'];
       StorageRegistry.set('customTools', newMock);
       expect(StorageRegistry.get('customTools')).toBe(newMock);
@@ -196,8 +199,8 @@ describe('StorageRegistry', () => {
 
     it('should allow overwriting a resolved default', () => {
       // First resolve creates a default
-      StorageRegistry.resolve('customTools', () => mockCustomToolStorage);
-      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolStorage);
+      StorageRegistry.resolve('customTools', () => mockCustomToolFactory);
+      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolFactory);
 
       // Overwrite the resolved default
       const newMock = { save: async () => {} } as unknown as StorageConfig['customTools'];

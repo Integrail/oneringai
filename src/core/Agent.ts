@@ -34,6 +34,7 @@ import type {
   StoredAgentDefinition,
   AgentDefinitionMetadata,
 } from '../domain/interfaces/IAgentDefinitionStorage.js';
+import { StorageRegistry } from './StorageRegistry.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -201,10 +202,14 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    */
   static async fromStorage(
     agentId: string,
-    storage: IAgentDefinitionStorage,
+    storage?: IAgentDefinitionStorage,
     overrides?: Partial<AgentConfig>
   ): Promise<Agent | null> {
-    const definition = await storage.load(agentId);
+    const s = storage ?? StorageRegistry.get('agentDefinitions');
+    if (!s) {
+      throw new Error('No storage provided and no agentDefinitions configured in StorageRegistry');
+    }
+    const definition = await s.load(agentId);
     if (!definition) {
       return null;
     }
@@ -1662,9 +1667,13 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   // ===== Definition Persistence =====
 
   async saveDefinition(
-    storage: IAgentDefinitionStorage,
+    storage?: IAgentDefinitionStorage,
     metadata?: AgentDefinitionMetadata
   ): Promise<void> {
+    const s = storage ?? StorageRegistry.get('agentDefinitions');
+    if (!s) {
+      throw new Error('No storage provided and no agentDefinitions configured in StorageRegistry');
+    }
     const now = new Date().toISOString();
 
     const definition: StoredAgentDefinition = {
@@ -1689,7 +1698,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       },
     };
 
-    await storage.save(definition);
+    await s.save(definition);
   }
 
   // ===== Introspection =====

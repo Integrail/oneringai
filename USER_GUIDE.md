@@ -579,11 +579,11 @@ import { StorageRegistry } from '@everworker/oneringai';
 // Configure all storage backends at init time
 StorageRegistry.configure({
   // Global singletons
-  customTools: new MongoCustomToolStorage(),
   media: new S3MediaStorage(),
   oauthTokens: new FileTokenStorage({ directory: './tokens' }),
 
-  // Per-agent factories (called with agentId when needed)
+  // Context-aware factories (called with optional StorageContext for multi-tenant)
+  customTools: () => new MongoCustomToolStorage(),
   sessions: (agentId) => new RedisContextStorage(agentId),
   persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
   workingMemory: () => new RedisMemoryStorage(),
@@ -602,16 +602,16 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
 
 **Available storage keys:**
 
-| Key | Type | Default | Used By |
-|-----|------|---------|---------|
-| `customTools` | `ICustomToolStorage` | `FileCustomToolStorage` | `custom_tool_save/list/load/delete` |
-| `media` | `IMediaStorage` | `FileMediaStorage` | Image/video/TTS output |
-| `oauthTokens` | `ITokenStorage` | `MemoryStorage` | OAuth token persistence |
-| `agentDefinitions` | `IAgentDefinitionStorage` | — | Agent config persistence |
-| `connectorConfig` | `IConnectorConfigStorage` | — | Connector config persistence |
-| `sessions` | `(agentId, ctx?) => IContextStorage` | — | Session persistence |
-| `persistentInstructions` | `(agentId, ctx?) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | Persistent instructions plugin |
-| `workingMemory` | `(ctx?) => IMemoryStorage` | `InMemoryStorage` | Working memory plugin |
+| Key | Type | Default | Consumed By |
+|-----|------|---------|-------------|
+| `customTools` | `(ctx?) => ICustomToolStorage` | `FileCustomToolStorage` | `custom_tool_save/list/load/delete` meta-tools |
+| `media` | `IMediaStorage` | `FileMediaStorage` | Image/video/TTS output tools |
+| `oauthTokens` | `ITokenStorage` | `MemoryStorage` | `Connector` OAuth token persistence |
+| `agentDefinitions` | `IAgentDefinitionStorage` | — | `Agent.saveDefinition()`, `Agent.fromStorage()` |
+| `connectorConfig` | `IConnectorConfigStorage` | — | `ConnectorConfigStore.create()` |
+| `sessions` | `(agentId, ctx?) => IContextStorage` | — | `AgentContextNextGen` constructor |
+| `persistentInstructions` | `(agentId, ctx?) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | `PersistentInstructionsPluginNextGen` |
+| `workingMemory` | `(ctx?) => IMemoryStorage` | `InMemoryStorage` | `WorkingMemoryPluginNextGen` |
 
 **Individual access:**
 

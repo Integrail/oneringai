@@ -294,12 +294,22 @@ StorageRegistry.set('customTools', myStorage);
 ```
 
 **Storage types:**
-- **Global singletons**: `customTools`, `media`, `agentDefinitions`, `connectorConfig`, `oauthTokens`
-- **Per-agent factories**: `sessions(agentId, ctx?)`, `persistentInstructions(agentId, ctx?)`, `workingMemory(ctx?)`
+- **Global singletons**: `media`, `agentDefinitions`, `connectorConfig`, `oauthTokens`
+- **Context-aware factories**: `customTools(ctx?)`, `sessions(agentId, ctx?)`, `persistentInstructions(agentId, ctx?)`, `workingMemory(ctx?)`
 
 **Resolution order** (in every subsystem): explicit constructor param > `StorageRegistry.get()` > file-based default.
 
-**Multi-tenant StorageContext** — Per-agent factories receive an optional `StorageContext` (opaque `Record<string, unknown>`, same pattern as `ConnectorAccessContext`). Set via `StorageRegistry.setContext({ userId, tenantId })`. Auto-forwarded by `AgentContextNextGen` (merges its own `userId` if context not set globally). Subsystems pass `StorageRegistry.getContext()` when calling factories.
+**Multi-tenant StorageContext** — All factories receive optional `StorageContext` (opaque `Record<string, unknown>`, same pattern as `ConnectorAccessContext`). Set via `StorageRegistry.setContext({ userId, tenantId })`. Auto-forwarded by `AgentContextNextGen` and custom tool meta-tools (from `ToolContext.userId`).
+
+**Wired into library code:**
+- `customTools` — 4 meta-tools resolve factory from registry, pass `ToolContext.userId` as context
+- `oauthTokens` — `Connector.defaultStorage` getter resolves from registry
+- `media` — `getMediaStorage()` resolves from registry
+- `persistentInstructions` — plugin constructor checks registry factory
+- `workingMemory` — plugin constructor checks registry factory
+- `sessions` — `AgentContextNextGen` constructor checks registry factory
+- `agentDefinitions` — `Agent.saveDefinition()` / `Agent.fromStorage()` resolve from registry
+- `connectorConfig` — `ConnectorConfigStore.create()` resolves from registry
 
 ## Centralized Constants (`src/core/constants.ts`)
 
