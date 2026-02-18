@@ -70,7 +70,7 @@ Better to see once and then dig in the code! :)
 
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
-- 📊 **Model Registry** - Complete metadata for 23+ latest (2026) models with pricing and features
+- 📊 **Model Registry** - Complete metadata for 35+ latest (2026) models with pricing and features
 - 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
 - 🖼️ **Image Generation** - DALL-E 3, gpt-image-1, Google Imagen 4 with editing and variations
 - 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
@@ -973,25 +973,26 @@ Complete metadata for 23+ models:
 import { getModelInfo, calculateCost, LLM_MODELS, Vendor } from '@everworker/oneringai';
 
 // Get model information
-const model = getModelInfo('gpt-5.2-thinking');
+const model = getModelInfo('gpt-5.2');
 console.log(model.features.input.tokens);  // 400000
 console.log(model.features.input.cpm);     // 1.75 (cost per million)
 
 // Calculate costs
-const cost = calculateCost('gpt-5.2-thinking', 50_000, 2_000);
+const cost = calculateCost('gpt-5.2', 50_000, 2_000);
 console.log(`Cost: $${cost}`);  // $0.1155
 
 // With caching
-const cachedCost = calculateCost('gpt-5.2-thinking', 50_000, 2_000, {
+const cachedCost = calculateCost('gpt-5.2', 50_000, 2_000, {
   useCachedInput: true
 });
 console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 ```
 
 **Available Models:**
-- **OpenAI (11)**: GPT-5.2 series, GPT-5 family, GPT-4.1, o3-mini
-- **Anthropic (5)**: Claude 4.5 series, Claude 4.x
+- **OpenAI (12)**: GPT-5.2 series, GPT-5 family, GPT-4.1, GPT-4o, o3-mini, o1
+- **Anthropic (7)**: Claude 4.5 series, Claude 4.x, Claude 3.7 Sonnet, Claude 3 Haiku
 - **Google (7)**: Gemini 3, Gemini 2.5
+- **Grok (9)**: Grok 4.1, Grok 4, Grok Code, Grok 3, Grok 2 Vision
 
 ### 13. Streaming
 

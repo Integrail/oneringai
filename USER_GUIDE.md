@@ -1,6 +1,6 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.2.1
+**Version:** 0.3.0
 **Last Updated:** 2026-02-17
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
@@ -8407,7 +8407,7 @@ await agent.run('Show me my recent emails');
 
 ## Model Registry
 
-The library includes a comprehensive model registry with metadata for 23+ models.
+The library includes a comprehensive model registry with metadata for 35+ models.
 
 ### Using the Model Registry
 
@@ -8422,8 +8422,8 @@ import {
 } from '@everworker/oneringai';
 
 // Get model information
-const model = getModelInfo('gpt-5.2-thinking');
-console.log(model.vendor);                    // 'openai'
+const model = getModelInfo('gpt-5.2');
+console.log(model.provider);                   // 'openai'
 console.log(model.features.input.tokens);     // 400000
 console.log(model.features.output.tokens);    // 128000
 console.log(model.features.reasoning);        // true
@@ -8432,11 +8432,11 @@ console.log(model.features.input.cpm);        // 1.75 (cost per million)
 console.log(model.features.output.cpm);       // 14
 
 // Calculate API costs
-const cost = calculateCost('gpt-5.2-thinking', 50000, 2000);
+const cost = calculateCost('gpt-5.2', 50000, 2000);
 console.log(`Cost: $${cost}`); // $0.1155
 
 // With caching (90% discount)
-const cachedCost = calculateCost('gpt-5.2-thinking', 50000, 2000, {
+const cachedCost = calculateCost('gpt-5.2', 50000, 2000, {
   useCachedInput: true
 });
 console.log(`Cached: $${cachedCost}`); // $0.0293
@@ -8444,15 +8444,39 @@ console.log(`Cached: $${cachedCost}`); // $0.0293
 // Get all models for a vendor
 const openaiModels = getModelsByVendor(Vendor.OpenAI);
 console.log(openaiModels.map(m => m.name));
-// ['gpt-5.2-thinking', 'gpt-5.2-instant', 'gpt-5.1', ...]
+// ['gpt-5.2', 'gpt-5.2-instant', 'gpt-5.1', ...]
 
 // Get all active models
 const activeModels = getActiveModels();
-console.log(activeModels.length); // 23
+console.log(activeModels.length); // 35
 
 // Use model constants
-const model = LLM_MODELS[Vendor.OpenAI].GPT_5_2_THINKING;
-console.log(model); // 'gpt-5.2-thinking'
+const model = LLM_MODELS[Vendor.OpenAI].GPT_5_2;
+console.log(model); // 'gpt-5.2'
+```
+
+### Resolve Model Capabilities
+
+Providers use the registry to resolve model capabilities automatically, but you can also use the helper directly:
+
+```typescript
+import { resolveModelCapabilities, resolveMaxContextTokens } from '@everworker/oneringai';
+
+// Get full capabilities for a registered model
+const caps = resolveModelCapabilities('gpt-5.2', {
+  supportsTools: true, supportsVision: false, supportsJSON: true,
+  supportsJSONSchema: false, maxTokens: 128000, maxOutputTokens: 4096,
+});
+console.log(caps.maxTokens);       // 400000 (from registry)
+console.log(caps.maxOutputTokens); // 128000 (from registry)
+
+// For unregistered models, vendor defaults are returned
+const unknown = resolveModelCapabilities('my-custom-model', { ...vendorDefaults });
+console.log(unknown.maxTokens);    // falls back to vendorDefaults
+
+// Quick context limit lookup (useful for error messages)
+const limit = resolveMaxContextTokens('gpt-5.2', 128000);
+console.log(limit); // 400000
 ```
 
 ### Model Information
@@ -8493,19 +8517,28 @@ interface ILLMDescription {
 
 ### Available Models
 
-**OpenAI (11 models):**
-- GPT-5.2: thinking, instant, pro, codex
-- GPT-5: standard, 5.1, mini, nano
-- GPT-4.1: standard, mini
-- o3-mini
+**OpenAI (12 models):**
+- GPT-5.2: standard, pro
+- GPT-5: standard, mini, nano
+- GPT-4.1: standard, mini, nano
+- GPT-4o: standard, mini
+- o3-mini, o1
 
-**Anthropic (5 models):**
+**Anthropic (7 models):**
 - Claude 4.5: Opus, Sonnet, Haiku
-- Claude 4.x: Opus 4.1, Sonnet 4
+- Claude 4.x: Opus 4.1, Sonnet 4, Sonnet 3.7
+- Claude 3: Haiku
 
 **Google (7 models):**
 - Gemini 3: Flash preview, Pro, Pro Image
 - Gemini 2.5: Pro, Flash, Flash-Lite, Flash Image
+
+**Grok / xAI (9 models):**
+- Grok 4.1: fast-reasoning, fast-non-reasoning (2M context)
+- Grok 4: fast-reasoning, fast-non-reasoning, 0709
+- Grok Code: fast-1
+- Grok 3: standard, mini
+- Grok 2: vision-1212
 
 ---
 
