@@ -1,4 +1,4 @@
-import { V as Vendor } from './Vendor-DYh_bzwo.js';
+import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 
 /**
  * Connector - Represents authenticated connection to ANY API
@@ -295,7 +295,6 @@ interface ConnectorFetchOptions extends RequestInit {
  */
 declare class Connector {
     private static registry;
-    private static defaultStorage;
     /**
      * Create and register a new connector
      * @param config - Must include `name` field
@@ -323,6 +322,11 @@ declare class Connector {
      * Clear all connectors (useful for testing)
      */
     static clear(): void;
+    /**
+     * Get the default token storage for OAuth connectors.
+     * Resolves from StorageRegistry, falling back to MemoryStorage.
+     */
+    private static get defaultStorage();
     /**
      * Set default token storage for OAuth connectors
      */
@@ -502,4 +506,4 @@ interface IProvider {
     validateConfig(): Promise<boolean>;
 }
 
-export { type APIKeyConnectorAuth as A, type ConnectorAccessContext as C, DEFAULT_CONNECTOR_TIMEOUT as D, type IConnectorRegistry as I, type JWTConnectorAuth as J, type OAuthConnectorAuth as O, type ProviderCapabilities as P, type StoredToken as S, type IConnectorAccessPolicy as a, Connector as b, type IProvider as c, type ConnectorFetchOptions as d, type ITokenStorage as e, type ConnectorConfig as f, type ConnectorAuth as g, type ConnectorConfigResult as h, DEFAULT_MAX_RETRIES as i, DEFAULT_RETRYABLE_STATUSES as j, DEFAULT_BASE_DELAY_MS as k, DEFAULT_MAX_DELAY_MS as l };
+export { type APIKeyConnectorAuth as A, type ConnectorAccessContext as C, DEFAULT_CONNECTOR_TIMEOUT as D, type IConnectorRegistry as I, type JWTConnectorAuth as J, type OAuthConnectorAuth as O, type ProviderCapabilities as P, type StoredToken as S, type IConnectorAccessPolicy as a, Connector as b, type ConnectorConfig as c, type ITokenStorage as d, type IProvider as e, type ConnectorFetchOptions as f, type ConnectorAuth as g, type ConnectorConfigResult as h, DEFAULT_MAX_RETRIES as i, DEFAULT_RETRYABLE_STATUSES as j, DEFAULT_BASE_DELAY_MS as k, DEFAULT_MAX_DELAY_MS as l };

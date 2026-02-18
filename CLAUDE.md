@@ -272,6 +272,33 @@ Per-tool failure protection in ToolManager:
 toolManager.setCircuitBreakerConfig('tool', { failureThreshold: 3, resetTimeoutMs: 60000 });
 ```
 
+## StorageRegistry (`src/core/StorageRegistry.ts`)
+
+Centralized storage backend registry. All subsystems resolve storage lazily at execution time.
+
+```typescript
+import { StorageRegistry } from '@everworker/oneringai';
+
+// Configure all backends at once
+StorageRegistry.configure({
+  customTools: new MongoCustomToolStorage(),
+  media: new S3MediaStorage(),
+  sessions: (agentId) => new RedisContextStorage(agentId),
+  persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
+  workingMemory: () => new RedisMemoryStorage(),
+  oauthTokens: new FileTokenStorage(),
+});
+
+// Or set individually
+StorageRegistry.set('customTools', myStorage);
+```
+
+**Storage types:**
+- **Global singletons**: `customTools`, `media`, `agentDefinitions`, `connectorConfig`, `oauthTokens`
+- **Per-agent factories**: `sessions(agentId)`, `persistentInstructions(agentId)`, `workingMemory()`
+
+**Resolution order** (in every subsystem): explicit constructor param > `StorageRegistry.get()` > file-based default.
+
 ## Centralized Constants (`src/core/constants.ts`)
 
 | Group | Key Constants |

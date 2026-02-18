@@ -937,6 +937,76 @@ var init_OAuthManager = __esm({
     };
   }
 });
+
+// src/core/StorageRegistry.ts
+exports.StorageRegistry = void 0;
+var init_StorageRegistry = __esm({
+  "src/core/StorageRegistry.ts"() {
+    exports.StorageRegistry = class _StorageRegistry {
+      /** Internal storage map */
+      static entries = /* @__PURE__ */ new Map();
+      /**
+       * Configure multiple storage backends at once.
+       *
+       * @example
+       * ```typescript
+       * StorageRegistry.configure({
+       *   customTools: new MongoCustomToolStorage(),
+       *   media: new S3MediaStorage(),
+       *   sessions: (agentId) => new RedisContextStorage(agentId),
+       * });
+       * ```
+       */
+      static configure(config) {
+        for (const [key, value] of Object.entries(config)) {
+          if (value !== void 0) {
+            _StorageRegistry.entries.set(key, value);
+          }
+        }
+      }
+      /**
+       * Set a single storage backend.
+       */
+      static set(key, value) {
+        _StorageRegistry.entries.set(key, value);
+      }
+      /**
+       * Get a storage backend (or undefined if not configured).
+       */
+      static get(key) {
+        return _StorageRegistry.entries.get(key);
+      }
+      /**
+       * Resolve a storage backend, lazily creating and caching a default if needed.
+       *
+       * If a value has been configured via `set()` or `configure()`, returns that.
+       * Otherwise, calls `defaultFactory()`, caches the result, and returns it.
+       */
+      static resolve(key, defaultFactory) {
+        const existing = _StorageRegistry.entries.get(key);
+        if (existing !== void 0) {
+          return existing;
+        }
+        const value = defaultFactory();
+        _StorageRegistry.entries.set(key, value);
+        return value;
+      }
+      /**
+       * Check if a storage backend has been configured.
+       */
+      static has(key) {
+        return _StorageRegistry.entries.has(key);
+      }
+      /**
+       * Clear all configured storage backends.
+       * Useful for testing.
+       */
+      static reset() {
+        _StorageRegistry.entries.clear();
+      }
+    };
+  }
+});
 exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = void 0; exports.CircuitOpenError = void 0; exports.CircuitBreaker = void 0;
 var init_CircuitBreaker = __esm({
   "src/infrastructure/resilience/CircuitBreaker.ts"() {
@@ -1743,6 +1813,7 @@ var init_Connector = __esm({
   "src/core/Connector.ts"() {
     init_OAuthManager();
     init_MemoryStorage();
+    init_StorageRegistry();
     init_CircuitBreaker();
     init_BackoffStrategy();
     init_Logger();
@@ -1756,7 +1827,6 @@ var init_Connector = __esm({
     exports.Connector = class _Connector {
       // ============ Static Registry ============
       static registry = /* @__PURE__ */ new Map();
-      static defaultStorage = new exports.MemoryStorage();
       /**
        * Create and register a new connector
        * @param config - Must include `name` field
@@ -1815,10 +1885,17 @@ var init_Connector = __esm({
         _Connector.registry.clear();
       }
       /**
+       * Get the default token storage for OAuth connectors.
+       * Resolves from StorageRegistry, falling back to MemoryStorage.
+       */
+      static get defaultStorage() {
+        return exports.StorageRegistry.resolve("oauthTokens", () => new exports.MemoryStorage());
+      }
+      /**
        * Set default token storage for OAuth connectors
        */
       static setDefaultStorage(storage) {
-        _Connector.defaultStorage = storage;
+        exports.StorageRegistry.set("oauthTokens", storage);
       }
       /**
        * Get all registered connectors
@@ -15638,6 +15715,7 @@ var init_transformers = __esm({
 // src/core/index.ts
 init_Connector();
 init_ScopedConnectorRegistry();
+init_StorageRegistry();
 
 // src/core/BaseAgent.ts
 init_Connector();
@@ -19474,6 +19552,7 @@ function createAgentStorage(options = {}) {
 }
 
 // src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts
+init_StorageRegistry();
 var memoryStoreDefinition = {
   type: "function",
   function: {
@@ -19606,7 +19685,8 @@ var WorkingMemoryPluginNextGen = class {
    */
   _syncEntries = /* @__PURE__ */ new Map();
   constructor(pluginConfig = {}) {
-    this.storage = pluginConfig.storage ?? new InMemoryStorage();
+    const registryFactory = exports.StorageRegistry.get("workingMemory");
+    this.storage = pluginConfig.storage ?? registryFactory?.() ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
     this.priorityCalculator = pluginConfig.priorityCalculator ?? staticPriorityCalculator;
   }
@@ -20514,6 +20594,7 @@ var FilePersistentInstructionsStorage = class {
 };
 
 // src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts
+init_StorageRegistry();
 var DEFAULT_MAX_TOTAL_LENGTH = 5e4;
 var DEFAULT_MAX_ENTRIES = 50;
 var KEY_MAX_LENGTH = 100;
@@ -20623,9 +20704,8 @@ var PersistentInstructionsPluginNextGen = class {
     this.agentId = config.agentId;
     this.maxTotalLength = config.maxTotalLength ?? DEFAULT_MAX_TOTAL_LENGTH;
     this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
-    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
-      agentId: config.agentId
-    });
+    const registryFactory = exports.StorageRegistry.get("persistentInstructions");
+    this.storage = config.storage ?? registryFactory?.(config.agentId) ?? new FilePersistentInstructionsStorage({ agentId: config.agentId });
   }
   // ============================================================================
   // IContextPluginNextGen Implementation
@@ -20968,6 +21048,9 @@ ${entry.content}`).join("\n\n");
     };
   }
 };
+
+// src/core/context-nextgen/AgentContextNextGen.ts
+init_StorageRegistry();
 
 // src/core/context-nextgen/strategies/DefaultCompactionStrategy.ts
 var DEFAULT_THRESHOLD = 0.7;
@@ -21689,7 +21772,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
     this._agentId = this._config.agentId;
     this._userId = config.userId;
     this._allowedConnectors = config.connectors;
-    this._storage = config.storage;
+    const sessionFactory = exports.StorageRegistry.get("sessions");
+    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId) : void 0);
     this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
     this._tools = new ToolManager(
       config.toolExecutionTimeout ? { toolExecutionTimeout: config.toolExecutionTimeout } : void 0
@@ -50089,15 +50173,12 @@ async function executeInVM(code, input, timeout, logs, userId, registry) {
 }
 
 // src/tools/multimedia/config.ts
-var _storage = null;
+init_StorageRegistry();
 function getMediaStorage() {
-  if (!_storage) {
-    _storage = new FileMediaStorage();
-  }
-  return _storage;
+  return exports.StorageRegistry.resolve("media", () => new FileMediaStorage());
 }
 function setMediaStorage(storage) {
-  _storage = storage;
+  exports.StorageRegistry.set("media", storage);
 }
 var getMediaOutputHandler = getMediaStorage;
 var setMediaOutputHandler = setMediaStorage;
@@ -52312,6 +52393,7 @@ var desktopTools = [
 ];
 
 // src/tools/custom-tools/customToolDelete.ts
+init_StorageRegistry();
 function createCustomToolDelete(storage) {
   return {
     definition: {
@@ -52334,11 +52416,12 @@ function createCustomToolDelete(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args) => {
       try {
-        const exists = await storage.exists(args.name);
+        const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+        const exists = await s.exists(args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
         }
-        await storage.delete(args.name);
+        await s.delete(args.name);
         return { success: true, name: args.name };
       } catch (error) {
         return { success: false, name: args.name, error: error.message };
@@ -52347,7 +52430,7 @@ function createCustomToolDelete(storage) {
     describeCall: (args) => args.name
   };
 }
-var customToolDelete = createCustomToolDelete(new FileCustomToolStorage());
+var customToolDelete = createCustomToolDelete();
 
 // src/tools/custom-tools/sandboxDescription.ts
 init_Connector();
@@ -52542,6 +52625,7 @@ function createCustomToolDraft() {
 var customToolDraft = createCustomToolDraft();
 
 // src/tools/custom-tools/customToolList.ts
+init_StorageRegistry();
 function createCustomToolList(storage) {
   return {
     definition: {
@@ -52579,7 +52663,8 @@ function createCustomToolList(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args) => {
-      const tools = await storage.list({
+      const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+      const tools = await s.list({
         search: args.search,
         tags: args.tags,
         category: args.category,
@@ -52591,9 +52676,10 @@ function createCustomToolList(storage) {
     describeCall: (args) => args.search ?? "all tools"
   };
 }
-var customToolList = createCustomToolList(new FileCustomToolStorage());
+var customToolList = createCustomToolList();
 
 // src/tools/custom-tools/customToolLoad.ts
+init_StorageRegistry();
 function createCustomToolLoad(storage) {
   return {
     definition: {
@@ -52615,7 +52701,8 @@ function createCustomToolLoad(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args) => {
-      const tool = await storage.load(args.name);
+      const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+      const tool = await s.load(args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };
       }
@@ -52624,9 +52711,10 @@ function createCustomToolLoad(storage) {
     describeCall: (args) => args.name
   };
 }
-var customToolLoad = createCustomToolLoad(new FileCustomToolStorage());
+var customToolLoad = createCustomToolLoad();
 
 // src/tools/custom-tools/customToolSave.ts
+init_StorageRegistry();
 function createCustomToolSave(storage) {
   return {
     definition: {
@@ -52687,8 +52775,9 @@ function createCustomToolSave(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args) => {
       try {
+        const s = storage ?? exports.StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
         const now = (/* @__PURE__ */ new Date()).toISOString();
-        const existing = await storage.load(args.name);
+        const existing = await s.load(args.name);
         const definition = {
           version: CUSTOM_TOOL_DEFINITION_VERSION,
           name: args.name,
@@ -52707,17 +52796,17 @@ function createCustomToolSave(storage) {
             requiresConnector: (args.connectorNames?.length ?? 0) > 0
           }
         };
-        await storage.save(definition);
+        await s.save(definition);
         return {
           success: true,
           name: args.name,
-          storagePath: storage.getPath()
+          storagePath: s.getPath()
         };
       } catch (error) {
         return {
           success: false,
           name: args.name,
-          storagePath: storage.getPath(),
+          storagePath: (storage ?? exports.StorageRegistry.get("customTools"))?.getPath() ?? "unknown",
           error: error.message
         };
       }
@@ -52725,7 +52814,7 @@ function createCustomToolSave(storage) {
     describeCall: (args) => args.name
   };
 }
-var customToolSave = createCustomToolSave(new FileCustomToolStorage());
+var customToolSave = createCustomToolSave();
 
 // src/tools/custom-tools/customToolTest.ts
 init_Connector();
@@ -53070,7 +53159,7 @@ function getToolCategories() {
 
 // src/tools/custom-tools/factories.ts
 function createCustomToolMetaTools(options) {
-  const storage = options?.storage ?? new FileCustomToolStorage();
+  const storage = options?.storage;
   return [
     createCustomToolDraft(),
     createCustomToolTest(),

@@ -1,8 +1,8 @@
 /**
  * Module-level configuration for multimedia output storage
  *
- * Provides a global default media storage used by all tool factories
- * when called through ConnectorTools.registerService().
+ * Delegates to StorageRegistry for centralized storage management.
+ * The public API (getMediaStorage / setMediaStorage) stays the same.
  *
  * @example
  * ```typescript
@@ -15,17 +15,13 @@
 
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
 import { FileMediaStorage } from '../../infrastructure/storage/FileMediaStorage.js';
-
-let _storage: IMediaStorage | null = null;
+import { StorageRegistry } from '../../core/StorageRegistry.js';
 
 /**
  * Get the global media storage (creates default FileMediaStorage on first access)
  */
 export function getMediaStorage(): IMediaStorage {
-  if (!_storage) {
-    _storage = new FileMediaStorage();
-  }
-  return _storage;
+  return StorageRegistry.resolve('media', () => new FileMediaStorage());
 }
 
 /**
@@ -34,7 +30,7 @@ export function getMediaStorage(): IMediaStorage {
  * Call this before agent creation to use custom storage (S3, GCS, etc.)
  */
 export function setMediaStorage(storage: IMediaStorage): void {
-  _storage = storage;
+  StorageRegistry.set('media', storage);
 }
 
 // ============================================================================

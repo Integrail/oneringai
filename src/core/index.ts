@@ -27,6 +27,8 @@
 
 export { Connector } from './Connector.js';
 export { ScopedConnectorRegistry } from './ScopedConnectorRegistry.js';
+export { StorageRegistry } from './StorageRegistry.js';
+export type { StorageConfig } from './StorageRegistry.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 

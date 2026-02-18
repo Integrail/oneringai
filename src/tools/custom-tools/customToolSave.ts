@@ -7,6 +7,7 @@ import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStor
 import type { CustomToolDefinition } from '../../domain/entities/CustomToolDefinition.js';
 import { CUSTOM_TOOL_DEFINITION_VERSION } from '../../domain/entities/CustomToolDefinition.js';
 import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
+import { StorageRegistry } from '../../core/StorageRegistry.js';
 
 interface SaveArgs {
   name: string;
@@ -28,7 +29,7 @@ interface SaveResult {
   error?: string;
 }
 
-export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction<SaveArgs, SaveResult> {
+export function createCustomToolSave(storage?: ICustomToolStorage): ToolFunction<SaveArgs, SaveResult> {
   return {
     definition: {
       type: 'function',
@@ -92,10 +93,11 @@ export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction<
 
     execute: async (args: SaveArgs): Promise<SaveResult> => {
       try {
+        const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
         const now = new Date().toISOString();
 
         // Preserve createdAt if updating an existing tool
-        const existing = await storage.load(args.name);
+        const existing = await s.load(args.name);
 
         const definition: CustomToolDefinition = {
           version: CUSTOM_TOOL_DEFINITION_VERSION,
@@ -116,18 +118,18 @@ export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction<
           },
         };
 
-        await storage.save(definition);
+        await s.save(definition);
 
         return {
           success: true,
           name: args.name,
-          storagePath: storage.getPath(),
+          storagePath: s.getPath(),
         };
       } catch (error) {
         return {
           success: false,
           name: args.name,
-          storagePath: storage.getPath(),
+          storagePath: (storage ?? StorageRegistry.get('customTools'))?.getPath() ?? 'unknown',
           error: (error as Error).message,
         };
       }
@@ -137,5 +139,5 @@ export function createCustomToolSave(storage: ICustomToolStorage): ToolFunction<
   };
 }
 
-/** Default custom_tool_save instance (uses FileCustomToolStorage) */
-export const customToolSave = createCustomToolSave(new FileCustomToolStorage());
+/** Default custom_tool_save instance (resolves storage from StorageRegistry at execution time) */
+export const customToolSave = createCustomToolSave();

@@ -1,5 +1,92 @@
-import { I as IConnectorRegistry, c as IProvider } from './IProvider-DcYJ3YE-.js';
+import { I as IConnectorRegistry, e as IProvider } from './IProvider-CrHdrrIO.cjs';
 import { EventEmitter } from 'eventemitter3';
+
+/**
+ * Content types based on OpenAI Responses API format
+ */
+declare enum ContentType {
+    INPUT_TEXT = "input_text",
+    INPUT_IMAGE_URL = "input_image_url",
+    INPUT_FILE = "input_file",
+    OUTPUT_TEXT = "output_text",
+    TOOL_USE = "tool_use",
+    TOOL_RESULT = "tool_result"
+}
+interface BaseContent {
+    type: ContentType;
+}
+interface InputTextContent extends BaseContent {
+    type: ContentType.INPUT_TEXT;
+    text: string;
+}
+interface InputImageContent extends BaseContent {
+    type: ContentType.INPUT_IMAGE_URL;
+    image_url: {
+        url: string;
+        detail?: 'auto' | 'low' | 'high';
+    };
+}
+interface InputFileContent extends BaseContent {
+    type: ContentType.INPUT_FILE;
+    file_id: string;
+}
+interface OutputTextContent extends BaseContent {
+    type: ContentType.OUTPUT_TEXT;
+    text: string;
+    annotations?: any[];
+}
+interface ToolUseContent extends BaseContent {
+    type: ContentType.TOOL_USE;
+    id: string;
+    name: string;
+    arguments: string;
+}
+interface ToolResultContent extends BaseContent {
+    type: ContentType.TOOL_RESULT;
+    tool_use_id: string;
+    content: string | any;
+    error?: string;
+    /**
+     * Images extracted from tool results via the __images convention.
+     * Stored separately from `content` so they don't inflate text-based token counts.
+     * Provider converters read this field to inject native multimodal image blocks.
+     */
+    __images?: Array<{
+        base64: string;
+        mediaType: string;
+    }>;
+}
+type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
+
+/**
+ * Message entity based on OpenAI Responses API format
+ */
+
+declare enum MessageRole {
+    USER = "user",
+    ASSISTANT = "assistant",
+    DEVELOPER = "developer"
+}
+interface Message {
+    type: 'message';
+    id?: string;
+    role: MessageRole;
+    content: Content[];
+}
+interface CompactionItem {
+    type: 'compaction';
+    id: string;
+    encrypted_content: string;
+}
+interface ReasoningItem {
+    type: 'reasoning';
+    id: string;
+    effort?: 'low' | 'medium' | 'high';
+    summary?: string;
+    encrypted_content?: string;
+}
+type InputItem = Message | CompactionItem;
+type OutputItem = Message | CompactionItem | ReasoningItem;
 
 /**
  * Memory entities for WorkingMemory
@@ -479,93 +566,6 @@ declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: 
  * @returns Human-readable description
  */
 declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
-
-/**
- * Content types based on OpenAI Responses API format
- */
-declare enum ContentType {
-    INPUT_TEXT = "input_text",
-    INPUT_IMAGE_URL = "input_image_url",
-    INPUT_FILE = "input_file",
-    OUTPUT_TEXT = "output_text",
-    TOOL_USE = "tool_use",
-    TOOL_RESULT = "tool_result"
-}
-interface BaseContent {
-    type: ContentType;
-}
-interface InputTextContent extends BaseContent {
-    type: ContentType.INPUT_TEXT;
-    text: string;
-}
-interface InputImageContent extends BaseContent {
-    type: ContentType.INPUT_IMAGE_URL;
-    image_url: {
-        url: string;
-        detail?: 'auto' | 'low' | 'high';
-    };
-}
-interface InputFileContent extends BaseContent {
-    type: ContentType.INPUT_FILE;
-    file_id: string;
-}
-interface OutputTextContent extends BaseContent {
-    type: ContentType.OUTPUT_TEXT;
-    text: string;
-    annotations?: any[];
-}
-interface ToolUseContent extends BaseContent {
-    type: ContentType.TOOL_USE;
-    id: string;
-    name: string;
-    arguments: string;
-}
-interface ToolResultContent extends BaseContent {
-    type: ContentType.TOOL_RESULT;
-    tool_use_id: string;
-    content: string | any;
-    error?: string;
-    /**
-     * Images extracted from tool results via the __images convention.
-     * Stored separately from `content` so they don't inflate text-based token counts.
-     * Provider converters read this field to inject native multimodal image blocks.
-     */
-    __images?: Array<{
-        base64: string;
-        mediaType: string;
-    }>;
-}
-type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
-
-/**
- * Message entity based on OpenAI Responses API format
- */
-
-declare enum MessageRole {
-    USER = "user",
-    ASSISTANT = "assistant",
-    DEVELOPER = "developer"
-}
-interface Message {
-    type: 'message';
-    id?: string;
-    role: MessageRole;
-    content: Content[];
-}
-interface CompactionItem {
-    type: 'compaction';
-    id: string;
-    encrypted_content: string;
-}
-interface ReasoningItem {
-    type: 'reasoning';
-    id: string;
-    effort?: 'low' | 'medium' | 'high';
-    summary?: string;
-    encrypted_content?: string;
-}
-type InputItem = Message | CompactionItem;
-type OutputItem = Message | CompactionItem | ReasoningItem;
 
 /**
  * LLM Response entity based on OpenAI Responses API format
@@ -1349,4 +1349,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type OutputTextContent as $, type AgentEvents as A, type SimpleScope as B, type Content as C, DEFAULT_MEMORY_CONFIG as D, ExecutionContext as E, type FunctionToolDefinition as F, forTasks as G, type HookConfig as H, type InputItem as I, forPlan as J, scopeEquals as K, type LLMResponse as L, type MemoryEntry as M, scopeMatches as N, type OutputItem as O, type PriorityCalculator as P, isSimpleScope as Q, isTaskAwareScope as R, type StreamEvent as S, type Tool as T, isTerminalMemoryStatus as U, calculateEntrySize as V, type WorkingMemoryConfig as W, MEMORY_PRIORITY_VALUES as X, ContentType as Y, type InputTextContent as Z, type InputImageContent as _, type ToolFunction as a, type ToolUseContent as a0, type ToolResultContent as a1, type Message as a2, type CompactionItem as a3, type ReasoningItem as a4, ToolCallState as a5, defaultDescribeCall as a6, getToolCallDescription as a7, type BuiltInTool as a8, type ToolExecutionContext as a9, type Hook as aA, type ModifyingHook as aB, type BeforeToolContext as aC, type AfterToolContext as aD, type ApproveToolContext as aE, type ToolModification as aF, type ApprovalResult as aG, type ExecutionStartEvent as aH, type ExecutionCompleteEvent as aI, type ToolStartEvent as aJ, type ToolCompleteEvent as aK, type LLMRequestEvent as aL, type LLMResponseEvent as aM, type JSONSchema as aa, type ResponseCreatedEvent as ab, type ResponseInProgressEvent as ac, type OutputTextDeltaEvent as ad, type OutputTextDoneEvent as ae, type ToolCallStartEvent as af, type ToolCallArgumentsDeltaEvent as ag, type ToolCallArgumentsDoneEvent as ah, type ToolExecutionStartEvent as ai, type ToolExecutionDoneEvent as aj, type IterationCompleteEvent$1 as ak, type ResponseCompleteEvent as al, type ErrorEvent as am, isStreamEvent as an, isOutputTextDelta as ao, isToolCallStart as ap, isToolCallArgumentsDelta as aq, isToolCallArgumentsDone as ar, isResponseComplete as as, isErrorEvent as at, HookManager as au, type AgentEventName as av, type ExecutionConfig as aw, type AgenticLoopEvents as ax, type AgenticLoopEventName as ay, type HookName as az, type ToolContext as b, type ToolPermissionConfig as c, type ToolCall as d, type MemoryScope as e, type MemoryPriority as f, type MemoryTier as g, type ToolResult as h, type ITextProvider as i, type HistoryMode as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type StaleEntryInfo as n, type PriorityContext as o, type MemoryIndex as p, type TaskStatusForMemory as q, type WorkingMemoryAccess as r, type TokenUsage as s, StreamEventType as t, type TextGenerateOptions as u, type ModelCapabilities as v, MessageRole as w, type MemoryEntryInput as x, type MemoryIndexEntry as y, type TaskAwareScope as z };
+export { type OutputTextContent as $, type AgentEvents as A, type SimpleScope as B, type Content as C, DEFAULT_MEMORY_CONFIG as D, ExecutionContext as E, type FunctionToolDefinition as F, forTasks as G, type HookConfig as H, type InputItem as I, forPlan as J, scopeEquals as K, type LLMResponse as L, type MemoryEntry as M, scopeMatches as N, type OutputItem as O, type PriorityCalculator as P, isSimpleScope as Q, isTaskAwareScope as R, type StreamEvent as S, type ToolFunction as T, isTerminalMemoryStatus as U, calculateEntrySize as V, type WorkingMemoryConfig as W, MEMORY_PRIORITY_VALUES as X, ContentType as Y, type InputTextContent as Z, type InputImageContent as _, type MemoryScope as a, type ToolUseContent as a0, type ToolResultContent as a1, type Message as a2, type CompactionItem as a3, type ReasoningItem as a4, ToolCallState as a5, defaultDescribeCall as a6, getToolCallDescription as a7, type BuiltInTool as a8, type ToolExecutionContext as a9, type Hook as aA, type ModifyingHook as aB, type BeforeToolContext as aC, type AfterToolContext as aD, type ApproveToolContext as aE, type ToolModification as aF, type ApprovalResult as aG, type ExecutionStartEvent as aH, type ExecutionCompleteEvent as aI, type ToolStartEvent as aJ, type ToolCompleteEvent as aK, type LLMRequestEvent as aL, type LLMResponseEvent as aM, type JSONSchema as aa, type ResponseCreatedEvent as ab, type ResponseInProgressEvent as ac, type OutputTextDeltaEvent as ad, type OutputTextDoneEvent as ae, type ToolCallStartEvent as af, type ToolCallArgumentsDeltaEvent as ag, type ToolCallArgumentsDoneEvent as ah, type ToolExecutionStartEvent as ai, type ToolExecutionDoneEvent as aj, type IterationCompleteEvent$1 as ak, type ResponseCompleteEvent as al, type ErrorEvent as am, isStreamEvent as an, isOutputTextDelta as ao, isToolCallStart as ap, isToolCallArgumentsDelta as aq, isToolCallArgumentsDone as ar, isResponseComplete as as, isErrorEvent as at, HookManager as au, type AgentEventName as av, type ExecutionConfig as aw, type AgenticLoopEvents as ax, type AgenticLoopEventName as ay, type HookName as az, type Tool as b, type ToolContext as c, type ToolPermissionConfig as d, type ToolCall as e, type MemoryPriority as f, type MemoryTier as g, type ToolResult as h, type ITextProvider as i, type HistoryMode as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type StaleEntryInfo as n, type PriorityContext as o, type MemoryIndex as p, type TaskStatusForMemory as q, type WorkingMemoryAccess as r, type TokenUsage as s, StreamEventType as t, type TextGenerateOptions as u, type ModelCapabilities as v, MessageRole as w, type MemoryEntryInput as x, type MemoryIndexEntry as y, type TaskAwareScope as z };

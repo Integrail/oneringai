@@ -27,7 +27,8 @@
  */
 
 // ============ Core API (Primary) ============
-export { Connector, ScopedConnectorRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL } from './core/index.js';
+export { Connector, ScopedConnectorRegistry, StorageRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL } from './core/index.js';
+export type { StorageConfig } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContextNextGen - Clean, Simple Context Management

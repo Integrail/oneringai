@@ -568,6 +568,66 @@ class DatabaseContextStorage implements IContextStorage {
 }
 ```
 
+### Centralized Storage Registry
+
+Instead of configuring each subsystem separately, use `StorageRegistry` to set all storage backends in one call. Every subsystem (custom tools, media, sessions, persistent instructions, working memory, OAuth tokens) resolves its storage lazily from the registry at execution time, falling back to file-based defaults.
+
+```typescript
+import { StorageRegistry } from '@everworker/oneringai';
+
+// Configure all storage backends at init time
+StorageRegistry.configure({
+  // Global singletons
+  customTools: new MongoCustomToolStorage(),
+  media: new S3MediaStorage(),
+  oauthTokens: new FileTokenStorage({ directory: './tokens' }),
+
+  // Per-agent factories (called with agentId when needed)
+  sessions: (agentId) => new RedisContextStorage(agentId),
+  persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
+  workingMemory: () => new RedisMemoryStorage(),
+});
+
+// That's it! All agents, tools, and plugins will use these backends automatically.
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+```
+
+**Resolution order** (every subsystem follows this):
+1. Explicit parameter passed to constructor/factory (e.g., `createCustomToolMetaTools({ storage })`)
+2. Value registered in `StorageRegistry`
+3. Built-in file-based (or in-memory) default
+
+**No breaking changes** — `setMediaStorage()`, `Connector.setDefaultStorage()`, and all explicit constructor params continue to work exactly as before. They now delegate to the registry internally.
+
+**Available storage keys:**
+
+| Key | Type | Default | Used By |
+|-----|------|---------|---------|
+| `customTools` | `ICustomToolStorage` | `FileCustomToolStorage` | `custom_tool_save/list/load/delete` |
+| `media` | `IMediaStorage` | `FileMediaStorage` | Image/video/TTS output |
+| `oauthTokens` | `ITokenStorage` | `MemoryStorage` | OAuth token persistence |
+| `agentDefinitions` | `IAgentDefinitionStorage` | — | Agent config persistence |
+| `connectorConfig` | `IConnectorConfigStorage` | — | Connector config persistence |
+| `sessions` | `(agentId) => IContextStorage` | — | Session persistence |
+| `persistentInstructions` | `(agentId) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | Persistent instructions plugin |
+| `workingMemory` | `() => IMemoryStorage` | `InMemoryStorage` | Working memory plugin |
+
+**Individual access:**
+
+```typescript
+// Set one backend
+StorageRegistry.set('media', new S3MediaStorage());
+
+// Get (returns undefined if not configured)
+const storage = StorageRegistry.get('customTools');
+
+// Check if configured
+if (StorageRegistry.has('sessions')) { /* ... */ }
+
+// Reset all (useful in tests)
+StorageRegistry.reset();
+```
+
 ### Session Management APIs
 
 ```typescript

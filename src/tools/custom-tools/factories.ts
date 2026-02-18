@@ -7,7 +7,6 @@
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
-import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
 import { createCustomToolDraft } from './customToolDraft.js';
 import { createCustomToolTest } from './customToolTest.js';
 import { createCustomToolSave } from './customToolSave.js';
@@ -36,7 +35,9 @@ export interface CustomToolMetaToolsOptions {
  * ```
  */
 export function createCustomToolMetaTools(options?: CustomToolMetaToolsOptions): ToolFunction[] {
-  const storage = options?.storage ?? new FileCustomToolStorage();
+  // When explicit storage is provided, pass it to each factory.
+  // Otherwise, let each factory resolve from StorageRegistry at execution time.
+  const storage = options?.storage;
 
   return [
     createCustomToolDraft(),

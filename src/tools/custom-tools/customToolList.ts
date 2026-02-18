@@ -6,6 +6,7 @@ import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolSummary } from '../../domain/entities/CustomToolDefinition.js';
 import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
+import { StorageRegistry } from '../../core/StorageRegistry.js';
 
 interface ListArgs {
   search?: string;
@@ -20,7 +21,7 @@ interface ListResult {
   total: number;
 }
 
-export function createCustomToolList(storage: ICustomToolStorage): ToolFunction<ListArgs, ListResult> {
+export function createCustomToolList(storage?: ICustomToolStorage): ToolFunction<ListArgs, ListResult> {
   return {
     definition: {
       type: 'function',
@@ -60,7 +61,8 @@ export function createCustomToolList(storage: ICustomToolStorage): ToolFunction<
     permission: { scope: 'always', riskLevel: 'low' },
 
     execute: async (args: ListArgs): Promise<ListResult> => {
-      const tools = await storage.list({
+      const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
+      const tools = await s.list({
         search: args.search,
         tags: args.tags,
         category: args.category,
@@ -75,5 +77,5 @@ export function createCustomToolList(storage: ICustomToolStorage): ToolFunction<
   };
 }
 
-/** Default custom_tool_list instance (uses FileCustomToolStorage) */
-export const customToolList = createCustomToolList(new FileCustomToolStorage());
+/** Default custom_tool_list instance (resolves storage from StorageRegistry at execution time) */
+export const customToolList = createCustomToolList();

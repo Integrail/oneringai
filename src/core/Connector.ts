@@ -17,6 +17,7 @@ import { Vendor } from './Vendor.js';
 import { OAuthManager } from '../connectors/oauth/OAuthManager.js';
 import { MemoryStorage } from '../connectors/oauth/infrastructure/storage/MemoryStorage.js';
 import type { ITokenStorage } from '../connectors/oauth/domain/ITokenStorage.js';
+import { StorageRegistry } from './StorageRegistry.js';
 import { CircuitBreaker } from '../infrastructure/resilience/CircuitBreaker.js';
 import { calculateBackoff, BackoffConfig } from '../infrastructure/resilience/BackoffStrategy.js';
 import { logger } from '../infrastructure/observability/Logger.js';
@@ -53,7 +54,6 @@ export class Connector {
   // ============ Static Registry ============
 
   private static registry: Map<string, Connector> = new Map();
-  private static defaultStorage: ITokenStorage = new MemoryStorage();
 
   /**
    * Create and register a new connector
@@ -119,10 +119,18 @@ export class Connector {
   }
 
   /**
+   * Get the default token storage for OAuth connectors.
+   * Resolves from StorageRegistry, falling back to MemoryStorage.
+   */
+  private static get defaultStorage(): ITokenStorage {
+    return StorageRegistry.resolve('oauthTokens', () => new MemoryStorage());
+  }
+
+  /**
    * Set default token storage for OAuth connectors
    */
   static setDefaultStorage(storage: ITokenStorage): void {
-    Connector.defaultStorage = storage;
+    StorageRegistry.set('oauthTokens', storage);
   }
 
   /**

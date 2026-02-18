@@ -905,6 +905,76 @@ var init_OAuthManager = __esm({
     };
   }
 });
+
+// src/core/StorageRegistry.ts
+var StorageRegistry;
+var init_StorageRegistry = __esm({
+  "src/core/StorageRegistry.ts"() {
+    StorageRegistry = class _StorageRegistry {
+      /** Internal storage map */
+      static entries = /* @__PURE__ */ new Map();
+      /**
+       * Configure multiple storage backends at once.
+       *
+       * @example
+       * ```typescript
+       * StorageRegistry.configure({
+       *   customTools: new MongoCustomToolStorage(),
+       *   media: new S3MediaStorage(),
+       *   sessions: (agentId) => new RedisContextStorage(agentId),
+       * });
+       * ```
+       */
+      static configure(config) {
+        for (const [key, value] of Object.entries(config)) {
+          if (value !== void 0) {
+            _StorageRegistry.entries.set(key, value);
+          }
+        }
+      }
+      /**
+       * Set a single storage backend.
+       */
+      static set(key, value) {
+        _StorageRegistry.entries.set(key, value);
+      }
+      /**
+       * Get a storage backend (or undefined if not configured).
+       */
+      static get(key) {
+        return _StorageRegistry.entries.get(key);
+      }
+      /**
+       * Resolve a storage backend, lazily creating and caching a default if needed.
+       *
+       * If a value has been configured via `set()` or `configure()`, returns that.
+       * Otherwise, calls `defaultFactory()`, caches the result, and returns it.
+       */
+      static resolve(key, defaultFactory) {
+        const existing = _StorageRegistry.entries.get(key);
+        if (existing !== void 0) {
+          return existing;
+        }
+        const value = defaultFactory();
+        _StorageRegistry.entries.set(key, value);
+        return value;
+      }
+      /**
+       * Check if a storage backend has been configured.
+       */
+      static has(key) {
+        return _StorageRegistry.entries.has(key);
+      }
+      /**
+       * Clear all configured storage backends.
+       * Useful for testing.
+       */
+      static reset() {
+        _StorageRegistry.entries.clear();
+      }
+    };
+  }
+});
 var DEFAULT_CIRCUIT_BREAKER_CONFIG, CircuitOpenError, CircuitBreaker;
 var init_CircuitBreaker = __esm({
   "src/infrastructure/resilience/CircuitBreaker.ts"() {
@@ -1711,6 +1781,7 @@ var init_Connector = __esm({
   "src/core/Connector.ts"() {
     init_OAuthManager();
     init_MemoryStorage();
+    init_StorageRegistry();
     init_CircuitBreaker();
     init_BackoffStrategy();
     init_Logger();
@@ -1724,7 +1795,6 @@ var init_Connector = __esm({
     Connector = class _Connector {
       // ============ Static Registry ============
       static registry = /* @__PURE__ */ new Map();
-      static defaultStorage = new MemoryStorage();
       /**
        * Create and register a new connector
        * @param config - Must include `name` field
@@ -1783,10 +1853,17 @@ var init_Connector = __esm({
         _Connector.registry.clear();
       }
       /**
+       * Get the default token storage for OAuth connectors.
+       * Resolves from StorageRegistry, falling back to MemoryStorage.
+       */
+      static get defaultStorage() {
+        return StorageRegistry.resolve("oauthTokens", () => new MemoryStorage());
+      }
+      /**
        * Set default token storage for OAuth connectors
        */
       static setDefaultStorage(storage) {
-        _Connector.defaultStorage = storage;
+        StorageRegistry.set("oauthTokens", storage);
       }
       /**
        * Get all registered connectors
@@ -15606,6 +15683,7 @@ var init_transformers = __esm({
 // src/core/index.ts
 init_Connector();
 init_ScopedConnectorRegistry();
+init_StorageRegistry();
 
 // src/core/BaseAgent.ts
 init_Connector();
@@ -19442,6 +19520,7 @@ function createAgentStorage(options = {}) {
 }
 
 // src/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.ts
+init_StorageRegistry();
 var memoryStoreDefinition = {
   type: "function",
   function: {
@@ -19574,7 +19653,8 @@ var WorkingMemoryPluginNextGen = class {
    */
   _syncEntries = /* @__PURE__ */ new Map();
   constructor(pluginConfig = {}) {
-    this.storage = pluginConfig.storage ?? new InMemoryStorage();
+    const registryFactory = StorageRegistry.get("workingMemory");
+    this.storage = pluginConfig.storage ?? registryFactory?.() ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
     this.priorityCalculator = pluginConfig.priorityCalculator ?? staticPriorityCalculator;
   }
@@ -20482,6 +20562,7 @@ var FilePersistentInstructionsStorage = class {
 };
 
 // src/core/context-nextgen/plugins/PersistentInstructionsPluginNextGen.ts
+init_StorageRegistry();
 var DEFAULT_MAX_TOTAL_LENGTH = 5e4;
 var DEFAULT_MAX_ENTRIES = 50;
 var KEY_MAX_LENGTH = 100;
@@ -20591,9 +20672,8 @@ var PersistentInstructionsPluginNextGen = class {
     this.agentId = config.agentId;
     this.maxTotalLength = config.maxTotalLength ?? DEFAULT_MAX_TOTAL_LENGTH;
     this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
-    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
-      agentId: config.agentId
-    });
+    const registryFactory = StorageRegistry.get("persistentInstructions");
+    this.storage = config.storage ?? registryFactory?.(config.agentId) ?? new FilePersistentInstructionsStorage({ agentId: config.agentId });
   }
   // ============================================================================
   // IContextPluginNextGen Implementation
@@ -20936,6 +21016,9 @@ ${entry.content}`).join("\n\n");
     };
   }
 };
+
+// src/core/context-nextgen/AgentContextNextGen.ts
+init_StorageRegistry();
 
 // src/core/context-nextgen/strategies/DefaultCompactionStrategy.ts
 var DEFAULT_THRESHOLD = 0.7;
@@ -21657,7 +21740,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
     this._agentId = this._config.agentId;
     this._userId = config.userId;
     this._allowedConnectors = config.connectors;
-    this._storage = config.storage;
+    const sessionFactory = StorageRegistry.get("sessions");
+    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId) : void 0);
     this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
     this._tools = new ToolManager(
       config.toolExecutionTimeout ? { toolExecutionTimeout: config.toolExecutionTimeout } : void 0
@@ -50057,15 +50141,12 @@ async function executeInVM(code, input, timeout, logs, userId, registry) {
 }
 
 // src/tools/multimedia/config.ts
-var _storage = null;
+init_StorageRegistry();
 function getMediaStorage() {
-  if (!_storage) {
-    _storage = new FileMediaStorage();
-  }
-  return _storage;
+  return StorageRegistry.resolve("media", () => new FileMediaStorage());
 }
 function setMediaStorage(storage) {
-  _storage = storage;
+  StorageRegistry.set("media", storage);
 }
 var getMediaOutputHandler = getMediaStorage;
 var setMediaOutputHandler = setMediaStorage;
@@ -52280,6 +52361,7 @@ var desktopTools = [
 ];
 
 // src/tools/custom-tools/customToolDelete.ts
+init_StorageRegistry();
 function createCustomToolDelete(storage) {
   return {
     definition: {
@@ -52302,11 +52384,12 @@ function createCustomToolDelete(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args) => {
       try {
-        const exists = await storage.exists(args.name);
+        const s = storage ?? StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+        const exists = await s.exists(args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
         }
-        await storage.delete(args.name);
+        await s.delete(args.name);
         return { success: true, name: args.name };
       } catch (error) {
         return { success: false, name: args.name, error: error.message };
@@ -52315,7 +52398,7 @@ function createCustomToolDelete(storage) {
     describeCall: (args) => args.name
   };
 }
-var customToolDelete = createCustomToolDelete(new FileCustomToolStorage());
+var customToolDelete = createCustomToolDelete();
 
 // src/tools/custom-tools/sandboxDescription.ts
 init_Connector();
@@ -52510,6 +52593,7 @@ function createCustomToolDraft() {
 var customToolDraft = createCustomToolDraft();
 
 // src/tools/custom-tools/customToolList.ts
+init_StorageRegistry();
 function createCustomToolList(storage) {
   return {
     definition: {
@@ -52547,7 +52631,8 @@ function createCustomToolList(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args) => {
-      const tools = await storage.list({
+      const s = storage ?? StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+      const tools = await s.list({
         search: args.search,
         tags: args.tags,
         category: args.category,
@@ -52559,9 +52644,10 @@ function createCustomToolList(storage) {
     describeCall: (args) => args.search ?? "all tools"
   };
 }
-var customToolList = createCustomToolList(new FileCustomToolStorage());
+var customToolList = createCustomToolList();
 
 // src/tools/custom-tools/customToolLoad.ts
+init_StorageRegistry();
 function createCustomToolLoad(storage) {
   return {
     definition: {
@@ -52583,7 +52669,8 @@ function createCustomToolLoad(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args) => {
-      const tool = await storage.load(args.name);
+      const s = storage ?? StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
+      const tool = await s.load(args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };
       }
@@ -52592,9 +52679,10 @@ function createCustomToolLoad(storage) {
     describeCall: (args) => args.name
   };
 }
-var customToolLoad = createCustomToolLoad(new FileCustomToolStorage());
+var customToolLoad = createCustomToolLoad();
 
 // src/tools/custom-tools/customToolSave.ts
+init_StorageRegistry();
 function createCustomToolSave(storage) {
   return {
     definition: {
@@ -52655,8 +52743,9 @@ function createCustomToolSave(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args) => {
       try {
+        const s = storage ?? StorageRegistry.resolve("customTools", () => new FileCustomToolStorage());
         const now = (/* @__PURE__ */ new Date()).toISOString();
-        const existing = await storage.load(args.name);
+        const existing = await s.load(args.name);
         const definition = {
           version: CUSTOM_TOOL_DEFINITION_VERSION,
           name: args.name,
@@ -52675,17 +52764,17 @@ function createCustomToolSave(storage) {
             requiresConnector: (args.connectorNames?.length ?? 0) > 0
           }
         };
-        await storage.save(definition);
+        await s.save(definition);
         return {
           success: true,
           name: args.name,
-          storagePath: storage.getPath()
+          storagePath: s.getPath()
         };
       } catch (error) {
         return {
           success: false,
           name: args.name,
-          storagePath: storage.getPath(),
+          storagePath: (storage ?? StorageRegistry.get("customTools"))?.getPath() ?? "unknown",
           error: error.message
         };
       }
@@ -52693,7 +52782,7 @@ function createCustomToolSave(storage) {
     describeCall: (args) => args.name
   };
 }
-var customToolSave = createCustomToolSave(new FileCustomToolStorage());
+var customToolSave = createCustomToolSave();
 
 // src/tools/custom-tools/customToolTest.ts
 init_Connector();
@@ -53038,7 +53127,7 @@ function getToolCategories() {
 
 // src/tools/custom-tools/factories.ts
 function createCustomToolMetaTools(options) {
-  const storage = options?.storage ?? new FileCustomToolStorage();
+  const storage = options?.storage;
   return [
     createCustomToolDraft(),
     createCustomToolTest(),
@@ -53427,6 +53516,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveRepository, retryWithBackoff, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

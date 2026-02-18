@@ -816,6 +816,71 @@ var OAuthManager = class {
     }
   }
 };
+
+// src/core/StorageRegistry.ts
+var StorageRegistry = class _StorageRegistry {
+  /** Internal storage map */
+  static entries = /* @__PURE__ */ new Map();
+  /**
+   * Configure multiple storage backends at once.
+   *
+   * @example
+   * ```typescript
+   * StorageRegistry.configure({
+   *   customTools: new MongoCustomToolStorage(),
+   *   media: new S3MediaStorage(),
+   *   sessions: (agentId) => new RedisContextStorage(agentId),
+   * });
+   * ```
+   */
+  static configure(config) {
+    for (const [key, value] of Object.entries(config)) {
+      if (value !== void 0) {
+        _StorageRegistry.entries.set(key, value);
+      }
+    }
+  }
+  /**
+   * Set a single storage backend.
+   */
+  static set(key, value) {
+    _StorageRegistry.entries.set(key, value);
+  }
+  /**
+   * Get a storage backend (or undefined if not configured).
+   */
+  static get(key) {
+    return _StorageRegistry.entries.get(key);
+  }
+  /**
+   * Resolve a storage backend, lazily creating and caching a default if needed.
+   *
+   * If a value has been configured via `set()` or `configure()`, returns that.
+   * Otherwise, calls `defaultFactory()`, caches the result, and returns it.
+   */
+  static resolve(key, defaultFactory) {
+    const existing = _StorageRegistry.entries.get(key);
+    if (existing !== void 0) {
+      return existing;
+    }
+    const value = defaultFactory();
+    _StorageRegistry.entries.set(key, value);
+    return value;
+  }
+  /**
+   * Check if a storage backend has been configured.
+   */
+  static has(key) {
+    return _StorageRegistry.entries.has(key);
+  }
+  /**
+   * Clear all configured storage backends.
+   * Useful for testing.
+   */
+  static reset() {
+    _StorageRegistry.entries.clear();
+  }
+};
 var DEFAULT_CIRCUIT_BREAKER_CONFIG = {
   failureThreshold: 5,
   successThreshold: 2,
@@ -1553,7 +1618,6 @@ var DEFAULT_MAX_DELAY_MS = 3e4;
 var Connector = class _Connector {
   // ============ Static Registry ============
   static registry = /* @__PURE__ */ new Map();
-  static defaultStorage = new MemoryStorage();
   /**
    * Create and register a new connector
    * @param config - Must include `name` field
@@ -1612,10 +1676,17 @@ var Connector = class _Connector {
     _Connector.registry.clear();
   }
   /**
+   * Get the default token storage for OAuth connectors.
+   * Resolves from StorageRegistry, falling back to MemoryStorage.
+   */
+  static get defaultStorage() {
+    return StorageRegistry.resolve("oauthTokens", () => new MemoryStorage());
+  }
+  /**
    * Set default token storage for OAuth connectors
    */
   static setDefaultStorage(storage) {
-    _Connector.defaultStorage = storage;
+    StorageRegistry.set("oauthTokens", storage);
   }
   /**
    * Get all registered connectors

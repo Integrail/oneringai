@@ -62,6 +62,7 @@ import {
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
 } from './plugins/index.js';
+import { StorageRegistry } from '../StorageRegistry.js';
 import type {
   WorkingMemoryPluginConfig,
   InContextMemoryConfig,
@@ -201,7 +202,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     this._agentId = this._config.agentId;
     this._userId = config.userId;
     this._allowedConnectors = config.connectors;
-    this._storage = config.storage;
+
+    // Resolve session storage: explicit config > StorageRegistry factory > undefined
+    const sessionFactory = StorageRegistry.get('sessions');
+    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId) : undefined);
 
     // Initialize compaction strategy
     // Use custom strategy if provided, otherwise create from registry

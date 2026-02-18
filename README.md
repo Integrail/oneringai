@@ -16,6 +16,7 @@
   - [2. Dynamic Tool Management](#2-dynamic-tool-management-new)
   - [3. Tool Execution Plugins](#3-tool-execution-plugins-new)
   - [4. Session Persistence](#4-session-persistence)
+  - [Storage Registry](#storage-registry)
   - [5. Working Memory](#5-working-memory)
   - [6. Research with Search Tools](#6-research-with-search-tools)
   - [7. Context Management](#7-context-management)
@@ -95,6 +96,7 @@ Better to see once and then dig in the code! :)
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
 - 🔐 **Scoped Connector Registry** - NEW: Pluggable access control for multi-tenant connector isolation
+- 💾 **StorageRegistry** - Centralized storage configuration — swap all backends (sessions, media, custom tools, etc.) with one `configure()` call
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
 - 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
 - 🔄 **Streaming** - Real-time responses with event streams
@@ -620,6 +622,30 @@ if (loaded) {
 - System prompt
 
 **Storage Location:** `~/.oneringai/agents/<agentId>/sessions/<sessionId>.json`
+
+### Storage Registry
+
+Swap all storage backends (sessions, media, custom tools, OAuth tokens, etc.) with a single `configure()` call at init time. No breaking changes — all existing APIs continue to work.
+
+```typescript
+import { StorageRegistry } from '@everworker/oneringai';
+
+StorageRegistry.configure({
+  customTools: new MongoCustomToolStorage(),
+  media: new S3MediaStorage(),
+  sessions: (agentId) => new RedisContextStorage(agentId),
+  persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
+  workingMemory: () => new RedisMemoryStorage(),
+  oauthTokens: new EncryptedFileTokenStorage(),
+});
+
+// All agents and tools automatically use these backends
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+```
+
+**Resolution order:** explicit constructor param > `StorageRegistry` > file-based default.
+
+See the [User Guide](./USER_GUIDE.md#centralized-storage-registry) for full documentation.
 
 ### 5. Working Memory
 

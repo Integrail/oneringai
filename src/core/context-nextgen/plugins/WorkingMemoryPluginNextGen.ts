@@ -16,6 +16,7 @@ import type { ToolFunction } from '../../../domain/entities/Tool.js';
 import type { IMemoryStorage } from '../../../domain/interfaces/IMemoryStorage.js';
 import { InMemoryStorage } from '../../../infrastructure/storage/InMemoryStorage.js';
 import { simpleTokenEstimator } from '../BasePluginNextGen.js';
+import { StorageRegistry } from '../../StorageRegistry.js';
 
 import type {
   MemoryEntry,
@@ -220,7 +221,8 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
   private _syncEntries: Map<string, SerializedWorkingMemoryState['entries'][number]> = new Map();
 
   constructor(pluginConfig: WorkingMemoryPluginConfig = {}) {
-    this.storage = pluginConfig.storage ?? new InMemoryStorage();
+    const registryFactory = StorageRegistry.get('workingMemory');
+    this.storage = pluginConfig.storage ?? registryFactory?.() ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
     this.priorityCalculator = pluginConfig.priorityCalculator ?? staticPriorityCalculator;
   }

@@ -6,6 +6,7 @@ import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import type { CustomToolDefinition } from '../../domain/entities/CustomToolDefinition.js';
 import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
+import { StorageRegistry } from '../../core/StorageRegistry.js';
 
 interface LoadArgs {
   name: string;
@@ -17,7 +18,7 @@ interface LoadResult {
   error?: string;
 }
 
-export function createCustomToolLoad(storage: ICustomToolStorage): ToolFunction<LoadArgs, LoadResult> {
+export function createCustomToolLoad(storage?: ICustomToolStorage): ToolFunction<LoadArgs, LoadResult> {
   return {
     definition: {
       type: 'function',
@@ -42,7 +43,8 @@ export function createCustomToolLoad(storage: ICustomToolStorage): ToolFunction<
     permission: { scope: 'always', riskLevel: 'low' },
 
     execute: async (args: LoadArgs): Promise<LoadResult> => {
-      const tool = await storage.load(args.name);
+      const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
+      const tool = await s.load(args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };
       }
@@ -53,5 +55,5 @@ export function createCustomToolLoad(storage: ICustomToolStorage): ToolFunction<
   };
 }
 
-/** Default custom_tool_load instance (uses FileCustomToolStorage) */
-export const customToolLoad = createCustomToolLoad(new FileCustomToolStorage());
+/** Default custom_tool_load instance (resolves storage from StorageRegistry at execution time) */
+export const customToolLoad = createCustomToolLoad();

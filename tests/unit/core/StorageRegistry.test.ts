@@ -1,0 +1,133 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { StorageRegistry } from '../../../src/core/StorageRegistry.js';
+import type { StorageConfig } from '../../../src/core/StorageRegistry.js';
+
+// Minimal mocks implementing enough interface to test registry behavior
+const mockCustomToolStorage = { save: async () => {}, load: async () => null, list: async () => [], delete: async () => {}, exists: async () => false, getPath: () => '/mock' } as unknown as StorageConfig['customTools'];
+const mockMediaStorage = { save: async () => ({ path: '/mock' }), load: async () => null } as unknown as StorageConfig['media'];
+const mockTokenStorage = { getToken: async () => null, saveToken: async () => {} } as unknown as StorageConfig['oauthTokens'];
+
+describe('StorageRegistry', () => {
+  beforeEach(() => {
+    StorageRegistry.reset();
+  });
+
+  describe('configure()', () => {
+    it('should set multiple backends at once', () => {
+      StorageRegistry.configure({
+        customTools: mockCustomToolStorage,
+        media: mockMediaStorage,
+      });
+
+      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolStorage);
+      expect(StorageRegistry.get('media')).toBe(mockMediaStorage);
+    });
+
+    it('should not set undefined values', () => {
+      StorageRegistry.configure({ customTools: undefined });
+      expect(StorageRegistry.has('customTools')).toBe(false);
+    });
+  });
+
+  describe('set() / get()', () => {
+    it('should store and retrieve a value', () => {
+      StorageRegistry.set('customTools', mockCustomToolStorage);
+      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolStorage);
+    });
+
+    it('should return undefined for unconfigured key', () => {
+      expect(StorageRegistry.get('customTools')).toBeUndefined();
+    });
+  });
+
+  describe('has()', () => {
+    it('should return true for configured key', () => {
+      StorageRegistry.set('media', mockMediaStorage);
+      expect(StorageRegistry.has('media')).toBe(true);
+    });
+
+    it('should return false for unconfigured key', () => {
+      expect(StorageRegistry.has('media')).toBe(false);
+    });
+  });
+
+  describe('resolve()', () => {
+    it('should return configured value when present', () => {
+      StorageRegistry.set('customTools', mockCustomToolStorage);
+
+      const anotherMock = { notTheSame: true } as unknown as StorageConfig['customTools'];
+      const result = StorageRegistry.resolve('customTools', () => anotherMock);
+
+      expect(result).toBe(mockCustomToolStorage);
+    });
+
+    it('should call defaultFactory and cache when nothing configured', () => {
+      let callCount = 0;
+      const factory = () => {
+        callCount++;
+        return mockCustomToolStorage;
+      };
+
+      const result1 = StorageRegistry.resolve('customTools', factory);
+      expect(result1).toBe(mockCustomToolStorage);
+      expect(callCount).toBe(1);
+
+      // Second call should use cached value, not call factory again
+      const result2 = StorageRegistry.resolve('customTools', factory);
+      expect(result2).toBe(mockCustomToolStorage);
+      expect(callCount).toBe(1);
+    });
+  });
+
+  describe('reset()', () => {
+    it('should clear all entries', () => {
+      StorageRegistry.set('customTools', mockCustomToolStorage);
+      StorageRegistry.set('media', mockMediaStorage);
+      StorageRegistry.set('oauthTokens', mockTokenStorage);
+
+      StorageRegistry.reset();
+
+      expect(StorageRegistry.has('customTools')).toBe(false);
+      expect(StorageRegistry.has('media')).toBe(false);
+      expect(StorageRegistry.has('oauthTokens')).toBe(false);
+    });
+  });
+
+  describe('per-agent factories', () => {
+    it('should store and retrieve factory functions', () => {
+      const sessionFactory = (agentId: string) => ({ agentId } as unknown as StorageConfig['sessions'] extends (...args: any[]) => infer R ? R : never);
+      StorageRegistry.set('sessions', sessionFactory as StorageConfig['sessions']);
+
+      const factory = StorageRegistry.get('sessions');
+      expect(factory).toBe(sessionFactory);
+    });
+
+    it('should store workingMemory factory', () => {
+      const memFactory = () => ({ type: 'custom' } as unknown as StorageConfig['workingMemory'] extends (...args: any[]) => infer R ? R : never);
+      StorageRegistry.set('workingMemory', memFactory as StorageConfig['workingMemory']);
+
+      const factory = StorageRegistry.get('workingMemory');
+      expect(factory).toBe(memFactory);
+    });
+  });
+
+  describe('overwrite behavior', () => {
+    it('should allow overwriting a configured value', () => {
+      StorageRegistry.set('customTools', mockCustomToolStorage);
+      const newMock = { save: async () => {} } as unknown as StorageConfig['customTools'];
+      StorageRegistry.set('customTools', newMock);
+      expect(StorageRegistry.get('customTools')).toBe(newMock);
+    });
+
+    it('should allow overwriting a resolved default', () => {
+      // First resolve creates a default
+      StorageRegistry.resolve('customTools', () => mockCustomToolStorage);
+      expect(StorageRegistry.get('customTools')).toBe(mockCustomToolStorage);
+
+      // Overwrite the resolved default
+      const newMock = { save: async () => {} } as unknown as StorageConfig['customTools'];
+      StorageRegistry.set('customTools', newMock);
+      expect(StorageRegistry.get('customTools')).toBe(newMock);
+    });
+  });
+});

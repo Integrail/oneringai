@@ -5,6 +5,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ICustomToolStorage } from '../../domain/interfaces/ICustomToolStorage.js';
 import { FileCustomToolStorage } from '../../infrastructure/storage/FileCustomToolStorage.js';
+import { StorageRegistry } from '../../core/StorageRegistry.js';
 
 interface DeleteArgs {
   name: string;
@@ -16,7 +17,7 @@ interface DeleteResult {
   error?: string;
 }
 
-export function createCustomToolDelete(storage: ICustomToolStorage): ToolFunction<DeleteArgs, DeleteResult> {
+export function createCustomToolDelete(storage?: ICustomToolStorage): ToolFunction<DeleteArgs, DeleteResult> {
   return {
     definition: {
       type: 'function',
@@ -40,12 +41,13 @@ export function createCustomToolDelete(storage: ICustomToolStorage): ToolFunctio
 
     execute: async (args: DeleteArgs): Promise<DeleteResult> => {
       try {
-        const exists = await storage.exists(args.name);
+        const s = storage ?? StorageRegistry.resolve('customTools', () => new FileCustomToolStorage());
+        const exists = await s.exists(args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
         }
 
-        await storage.delete(args.name);
+        await s.delete(args.name);
         return { success: true, name: args.name };
       } catch (error) {
         return { success: false, name: args.name, error: (error as Error).message };
@@ -56,5 +58,5 @@ export function createCustomToolDelete(storage: ICustomToolStorage): ToolFunctio
   };
 }
 
-/** Default custom_tool_delete instance (uses FileCustomToolStorage) */
-export const customToolDelete = createCustomToolDelete(new FileCustomToolStorage());
+/** Default custom_tool_delete instance (resolves storage from StorageRegistry at execution time) */
+export const customToolDelete = createCustomToolDelete();

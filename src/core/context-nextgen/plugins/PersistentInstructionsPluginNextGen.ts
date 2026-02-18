@@ -18,6 +18,7 @@ import type { ToolFunction } from '../../../domain/entities/Tool.js';
 import type { IPersistentInstructionsStorage, InstructionEntry } from '../../../domain/interfaces/IPersistentInstructionsStorage.js';
 import { FilePersistentInstructionsStorage } from '../../../infrastructure/storage/FilePersistentInstructionsStorage.js';
 import { simpleTokenEstimator } from '../BasePluginNextGen.js';
+import { StorageRegistry } from '../../StorageRegistry.js';
 
 // ============================================================================
 // Types
@@ -183,9 +184,10 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
     this.agentId = config.agentId;
     this.maxTotalLength = config.maxTotalLength ?? DEFAULT_MAX_TOTAL_LENGTH;
     this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
-    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
-      agentId: config.agentId,
-    });
+    const registryFactory = StorageRegistry.get('persistentInstructions');
+    this.storage = config.storage
+      ?? registryFactory?.(config.agentId)
+      ?? new FilePersistentInstructionsStorage({ agentId: config.agentId });
   }
 
   // ============================================================================
