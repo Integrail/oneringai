@@ -19,7 +19,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (24 items)
-- [Tools & Function Calling](#tools-function-calling) (118 items)
+- [Tools & Function Calling](#tools-function-calling) (119 items)
 - [Streaming](#streaming) (15 items)
 - [Model Registry](#model-registry) (10 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
@@ -9758,7 +9758,7 @@ Define and execute tools for agents
 
 ### ConnectorTools `class`
 
-📍 [`src/tools/connector/ConnectorTools.ts:173`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:174`](src/tools/connector/ConnectorTools.ts)
 
 ConnectorTools - Main API for vendor-dependent tools
 
@@ -11488,7 +11488,7 @@ Extended registry entry for connector-generated tools
 
 ### ConnectorToolsOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:149`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:150`](src/tools/connector/ConnectorTools.ts)
 
 Options for ConnectorTools methods that accept a scoped registry
 
@@ -11710,7 +11710,7 @@ When set, read_file will automatically convert binary document formats to markdo
 
 ### GenericAPICallArgs `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:128`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:129`](src/tools/connector/ConnectorTools.ts)
 
 Arguments for the generic API call tool
 
@@ -11731,7 +11731,7 @@ Arguments for the generic API call tool
 
 ### GenericAPICallResult `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:139`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:140`](src/tools/connector/ConnectorTools.ts)
 
 Result from the generic API call tool
 
@@ -11751,7 +11751,7 @@ Result from the generic API call tool
 
 ### GenericAPIToolOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:114`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:115`](src/tools/connector/ConnectorTools.ts)
 
 Options for generating the generic API tool
 
@@ -12870,7 +12870,7 @@ type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
 
 ### ServiceToolFactory `type`
 
-📍 [`src/tools/connector/ConnectorTools.ts:109`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:110`](src/tools/connector/ConnectorTools.ts)
 
 Factory function type for creating service-specific tools.
 Takes a Connector and returns an array of tools that use it.
@@ -13558,6 +13558,25 @@ export function isToolCallArgumentsDone(
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
+```
+
+---
+
+### sanitizeToolName `function`
+
+📍 [`src/utils/sanitize.ts:11`](src/utils/sanitize.ts)
+
+Sanitize a string to be a valid tool name.
+Matches the common denominator pattern across all LLM providers: ^[a-zA-Z0-9_-]+$
+
+- Replaces invalid characters (spaces, special chars, unicode) with underscores
+- Collapses consecutive underscores into one
+- Strips leading/trailing underscores and hyphens
+- Prepends 'n_' if the result starts with a digit
+- Returns 'unnamed' if the result would be empty
+
+```typescript
+export function sanitizeToolName(name: string): string
 ```
 
 ---
