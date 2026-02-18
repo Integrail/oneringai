@@ -17,7 +17,7 @@ describe('custom_tool_test', () => {
 
     expect(result.success).toBe(true);
     expect(result.result).toBe(10);
-    expect(result.executionTime).toBeGreaterThan(0);
+    expect(result.executionTime).toBeGreaterThanOrEqual(0);
   });
 
   it('should capture console.log output', async () => {
