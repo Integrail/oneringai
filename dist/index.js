@@ -913,15 +913,23 @@ var init_StorageRegistry = __esm({
     StorageRegistry = class _StorageRegistry {
       /** Internal storage map */
       static entries = /* @__PURE__ */ new Map();
+      /** Default context passed to all factory calls (set via setContext) */
+      static _context;
       /**
        * Configure multiple storage backends at once.
        *
        * @example
        * ```typescript
+       * // Single-tenant
        * StorageRegistry.configure({
        *   customTools: new MongoCustomToolStorage(),
-       *   media: new S3MediaStorage(),
        *   sessions: (agentId) => new RedisContextStorage(agentId),
+       * });
+       *
+       * // Multi-tenant
+       * StorageRegistry.configure({
+       *   sessions: (agentId, ctx) => new TenantContextStorage(agentId, ctx?.tenantId),
+       *   persistentInstructions: (agentId, ctx) => new TenantInstructionsStorage(agentId, ctx?.userId),
        * });
        * ```
        */
@@ -931,6 +939,35 @@ var init_StorageRegistry = __esm({
             _StorageRegistry.entries.set(key, value);
           }
         }
+      }
+      /**
+       * Set the default StorageContext.
+       *
+       * This context is automatically passed to all per-agent factory calls
+       * (sessions, persistentInstructions, workingMemory) when no explicit
+       * context is provided. Typically set once at app startup with global
+       * tenant/environment info, or per-request in multi-tenant servers.
+       *
+       * @example
+       * ```typescript
+       * // Single-tenant app — set once at init
+       * StorageRegistry.setContext({ tenantId: 'acme', environment: 'production' });
+       *
+       * // Multi-tenant server — set per-request
+       * app.use((req, res, next) => {
+       *   StorageRegistry.setContext({ userId: req.user.id, tenantId: req.tenant.id });
+       *   next();
+       * });
+       * ```
+       */
+      static setContext(context) {
+        _StorageRegistry._context = context;
+      }
+      /**
+       * Get the current default StorageContext.
+       */
+      static getContext() {
+        return _StorageRegistry._context;
       }
       /**
        * Set a single storage backend.
@@ -966,11 +1003,12 @@ var init_StorageRegistry = __esm({
         return _StorageRegistry.entries.has(key);
       }
       /**
-       * Clear all configured storage backends.
+       * Clear all configured storage backends and context.
        * Useful for testing.
        */
       static reset() {
         _StorageRegistry.entries.clear();
+        _StorageRegistry._context = void 0;
       }
     };
   }
@@ -19654,7 +19692,7 @@ var WorkingMemoryPluginNextGen = class {
   _syncEntries = /* @__PURE__ */ new Map();
   constructor(pluginConfig = {}) {
     const registryFactory = StorageRegistry.get("workingMemory");
-    this.storage = pluginConfig.storage ?? registryFactory?.() ?? new InMemoryStorage();
+    this.storage = pluginConfig.storage ?? registryFactory?.(StorageRegistry.getContext()) ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
     this.priorityCalculator = pluginConfig.priorityCalculator ?? staticPriorityCalculator;
   }
@@ -20673,7 +20711,7 @@ var PersistentInstructionsPluginNextGen = class {
     this.maxTotalLength = config.maxTotalLength ?? DEFAULT_MAX_TOTAL_LENGTH;
     this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
     const registryFactory = StorageRegistry.get("persistentInstructions");
-    this.storage = config.storage ?? registryFactory?.(config.agentId) ?? new FilePersistentInstructionsStorage({ agentId: config.agentId });
+    this.storage = config.storage ?? registryFactory?.(config.agentId, StorageRegistry.getContext()) ?? new FilePersistentInstructionsStorage({ agentId: config.agentId });
   }
   // ============================================================================
   // IContextPluginNextGen Implementation
@@ -21741,7 +21779,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
     this._userId = config.userId;
     this._allowedConnectors = config.connectors;
     const sessionFactory = StorageRegistry.get("sessions");
-    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId) : void 0);
+    const storageCtx = StorageRegistry.getContext() ?? (config.userId ? { userId: config.userId } : void 0);
+    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId, storageCtx) : void 0);
     this._compactionStrategy = config.compactionStrategy ?? StrategyRegistry.create(this._config.strategy);
     this._tools = new ToolManager(
       config.toolExecutionTimeout ? { toolExecutionTimeout: config.toolExecutionTimeout } : void 0

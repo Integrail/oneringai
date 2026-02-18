@@ -24,6 +24,7 @@ import {
   getModelInfo,
   FileContextStorage,
   FileAgentDefinitionStorage,
+  StorageRegistry,
   logger,
   defaultDescribeCall,
   getImageModelInfo,
@@ -701,11 +702,15 @@ export class AgentService {
     this.dataDir = dataDir;
     this.isDev = isDev;
 
-    // Initialize agent definition storage using library's FileAgentDefinitionStorage
-    // This stores agents at ~/.everworker/hosea/ (using dataDir's parent as base)
-    this.agentDefinitionStorage = new FileAgentDefinitionStorage({
-      baseDirectory: this.dataDir,
-    });
+    // Initialize centralized storage via StorageRegistry.
+    // All subsystems (sessions, agent definitions, OAuth tokens, custom tools, etc.)
+    // resolve their storage from the registry at execution time.
+    this.initializeStorageRegistry();
+
+    this.agentDefinitionStorage = StorageRegistry.resolve(
+      'agentDefinitions',
+      () => new FileAgentDefinitionStorage({ baseDirectory: this.dataDir }),
+    );
 
     // Initialize UnifiedToolCatalog with providers
     this.toolCatalog = new UnifiedToolCatalog();
@@ -721,6 +726,41 @@ export class AgentService {
     // Create the ready promise for deferred initialization
     this._readyPromise = new Promise<void>((resolve) => {
       this._readyResolve = resolve;
+    });
+  }
+
+  /**
+   * Configure the centralized StorageRegistry.
+   *
+   * Sets per-agent factory for session storage so all agents (default, custom, instances)
+   * resolve their FileContextStorage from the registry automatically.
+   * OAuth token storage is configured later in initializeTokenStorage() once the
+   * encryption key is available.
+   */
+  private initializeStorageRegistry(): void {
+    const baseDirectory = join(this.dataDir, '..');
+
+    StorageRegistry.configure({
+      // Per-agent session storage factory — all agents use the same base directory
+      sessions: (agentId: string) => new FileContextStorage({
+        agentId,
+        baseDirectory,
+      }),
+    });
+  }
+
+  /**
+   * Create session storage for a given agent ID using the StorageRegistry factory.
+   */
+  private createSessionStorage(agentId: string): IContextStorage {
+    const factory = StorageRegistry.get('sessions');
+    if (factory) {
+      return factory(agentId);
+    }
+    // Fallback (should never happen since initializeStorageRegistry runs in constructor)
+    return new FileContextStorage({
+      agentId,
+      baseDirectory: join(this.dataDir, '..'),
     });
   }
 
@@ -796,8 +836,8 @@ export class AgentService {
       }
 
       const storage = new FileStorage({ directory: tokenDir, encryptionKey });
-      Connector.setDefaultStorage(storage);
-      logger.debug('[initializeTokenStorage] Persistent OAuth token storage configured');
+      StorageRegistry.set('oauthTokens', storage);
+      logger.debug('[initializeTokenStorage] Persistent OAuth token storage configured via StorageRegistry');
     } catch (error) {
       logger.warn('[initializeTokenStorage] Failed to configure persistent token storage, using in-memory:', String(error));
       // Fall back to default MemoryStorage — tokens won't persist across restarts
@@ -1661,12 +1701,8 @@ export class AgentService {
       // Destroy existing agent
       this.agent?.destroy();
 
-      // Initialize session storage using new FileContextStorage
-      // This stores sessions at ~/.everworker/hosea/sessions/
-      this.sessionStorage = new FileContextStorage({
-        agentId: 'hosea',
-        baseDirectory: join(this.dataDir, '..'),
-      });
+      // Resolve session storage from StorageRegistry (uses factory configured in initializeStorageRegistry)
+      this.sessionStorage = this.createSessionStorage('hosea');
 
       // Create agent with UI capabilities prompt (NextGen)
       const agentConfig: AgentConfig = {
@@ -3009,12 +3045,8 @@ export class AgentService {
       // Destroy existing agent
       this.agent?.destroy();
 
-      // Initialize session storage using new FileContextStorage
-      // This stores sessions at ~/.everworker/hosea/sessions/
-      this.sessionStorage = new FileContextStorage({
-        agentId: 'hosea',
-        baseDirectory: join(this.dataDir, '..'),
-      });
+      // Resolve session storage from StorageRegistry
+      this.sessionStorage = this.createSessionStorage('hosea');
 
       // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
       // Use agent config ID as instance ID for single-agent mode
@@ -3552,11 +3584,8 @@ export class AgentService {
       // Generate unique instance ID
       const instanceId = `inst_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-      // Create instance-specific session storage
-      const sessionStorage = new FileContextStorage({
-        agentId: instanceId, // Unique per instance
-        baseDirectory: join(this.dataDir, '..'),
-      });
+      // Create instance-specific session storage via StorageRegistry factory
+      const sessionStorage = this.createSessionStorage(instanceId);
 
       // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
       // This handles both oneringai tools AND hosea-specific tools (like browser automation)

@@ -17,6 +17,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Multi-User Support (`userId`)
    - Connector Allowlist (`connectors`)
 6. [Session Persistence](#session-persistence)
+   - [Centralized Storage Registry](#centralized-storage-registry) — One `configure()` for all backends, multi-tenant `StorageContext`
 7. [Context Management](#context-management)
    - Strategy Deep Dive (Algorithmic, Custom)
    - Token Estimation
@@ -608,9 +609,9 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
 | `oauthTokens` | `ITokenStorage` | `MemoryStorage` | OAuth token persistence |
 | `agentDefinitions` | `IAgentDefinitionStorage` | — | Agent config persistence |
 | `connectorConfig` | `IConnectorConfigStorage` | — | Connector config persistence |
-| `sessions` | `(agentId) => IContextStorage` | — | Session persistence |
-| `persistentInstructions` | `(agentId) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | Persistent instructions plugin |
-| `workingMemory` | `() => IMemoryStorage` | `InMemoryStorage` | Working memory plugin |
+| `sessions` | `(agentId, ctx?) => IContextStorage` | — | Session persistence |
+| `persistentInstructions` | `(agentId, ctx?) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | Persistent instructions plugin |
+| `workingMemory` | `(ctx?) => IMemoryStorage` | `InMemoryStorage` | Working memory plugin |
 
 **Individual access:**
 
@@ -627,6 +628,29 @@ if (StorageRegistry.has('sessions')) { /* ... */ }
 // Reset all (useful in tests)
 StorageRegistry.reset();
 ```
+
+**Multi-Tenant / Multi-User:**
+
+Per-agent factories receive an optional `StorageContext` — an opaque object (like `ConnectorAccessContext`) that carries userId, tenantId, or any custom fields:
+
+```typescript
+import { StorageRegistry } from '@everworker/oneringai';
+
+// Configure factories that partition by tenant
+StorageRegistry.configure({
+  sessions: (agentId, ctx) => new TenantSessionStorage(agentId, ctx?.tenantId as string),
+  persistentInstructions: (agentId, ctx) => new TenantInstructionsStorage(agentId, ctx?.userId as string),
+  workingMemory: (ctx) => new TenantMemoryStorage(ctx?.tenantId as string),
+});
+
+// Set the context globally (e.g., at app startup or per-request)
+StorageRegistry.setContext({ userId: 'alice', tenantId: 'acme-corp' });
+
+// All agents now get tenant-scoped storage automatically
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', userId: 'alice' });
+```
+
+If no global context is set, `AgentContextNextGen` auto-derives one from its `userId` config (i.e., `{ userId }`) and passes it to the factories. This means `Agent.create({ userId: 'alice' })` automatically partitions storage by user — no `setContext()` needed for simple single-user cases.
 
 ### Session Management APIs
 

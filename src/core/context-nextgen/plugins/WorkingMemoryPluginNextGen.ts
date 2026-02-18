@@ -222,7 +222,7 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen {
 
   constructor(pluginConfig: WorkingMemoryPluginConfig = {}) {
     const registryFactory = StorageRegistry.get('workingMemory');
-    this.storage = pluginConfig.storage ?? registryFactory?.() ?? new InMemoryStorage();
+    this.storage = pluginConfig.storage ?? registryFactory?.(StorageRegistry.getContext()) ?? new InMemoryStorage();
     this.config = pluginConfig.config ?? DEFAULT_MEMORY_CONFIG;
     this.priorityCalculator = pluginConfig.priorityCalculator ?? staticPriorityCalculator;
   }

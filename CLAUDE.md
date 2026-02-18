@@ -295,9 +295,11 @@ StorageRegistry.set('customTools', myStorage);
 
 **Storage types:**
 - **Global singletons**: `customTools`, `media`, `agentDefinitions`, `connectorConfig`, `oauthTokens`
-- **Per-agent factories**: `sessions(agentId)`, `persistentInstructions(agentId)`, `workingMemory()`
+- **Per-agent factories**: `sessions(agentId, ctx?)`, `persistentInstructions(agentId, ctx?)`, `workingMemory(ctx?)`
 
 **Resolution order** (in every subsystem): explicit constructor param > `StorageRegistry.get()` > file-based default.
+
+**Multi-tenant StorageContext** — Per-agent factories receive an optional `StorageContext` (opaque `Record<string, unknown>`, same pattern as `ConnectorAccessContext`). Set via `StorageRegistry.setContext({ userId, tenantId })`. Auto-forwarded by `AgentContextNextGen` (merges its own `userId` if context not set globally). Subsystems pass `StorageRegistry.getContext()` when calling factories.
 
 ## Centralized Constants (`src/core/constants.ts`)
 

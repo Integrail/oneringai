@@ -794,15 +794,23 @@ var OAuthManager = class {
 var StorageRegistry = class _StorageRegistry {
   /** Internal storage map */
   static entries = /* @__PURE__ */ new Map();
+  /** Default context passed to all factory calls (set via setContext) */
+  static _context;
   /**
    * Configure multiple storage backends at once.
    *
    * @example
    * ```typescript
+   * // Single-tenant
    * StorageRegistry.configure({
    *   customTools: new MongoCustomToolStorage(),
-   *   media: new S3MediaStorage(),
    *   sessions: (agentId) => new RedisContextStorage(agentId),
+   * });
+   *
+   * // Multi-tenant
+   * StorageRegistry.configure({
+   *   sessions: (agentId, ctx) => new TenantContextStorage(agentId, ctx?.tenantId),
+   *   persistentInstructions: (agentId, ctx) => new TenantInstructionsStorage(agentId, ctx?.userId),
    * });
    * ```
    */
@@ -812,6 +820,35 @@ var StorageRegistry = class _StorageRegistry {
         _StorageRegistry.entries.set(key, value);
       }
     }
+  }
+  /**
+   * Set the default StorageContext.
+   *
+   * This context is automatically passed to all per-agent factory calls
+   * (sessions, persistentInstructions, workingMemory) when no explicit
+   * context is provided. Typically set once at app startup with global
+   * tenant/environment info, or per-request in multi-tenant servers.
+   *
+   * @example
+   * ```typescript
+   * // Single-tenant app — set once at init
+   * StorageRegistry.setContext({ tenantId: 'acme', environment: 'production' });
+   *
+   * // Multi-tenant server — set per-request
+   * app.use((req, res, next) => {
+   *   StorageRegistry.setContext({ userId: req.user.id, tenantId: req.tenant.id });
+   *   next();
+   * });
+   * ```
+   */
+  static setContext(context) {
+    _StorageRegistry._context = context;
+  }
+  /**
+   * Get the current default StorageContext.
+   */
+  static getContext() {
+    return _StorageRegistry._context;
   }
   /**
    * Set a single storage backend.
@@ -847,11 +884,12 @@ var StorageRegistry = class _StorageRegistry {
     return _StorageRegistry.entries.has(key);
   }
   /**
-   * Clear all configured storage backends.
+   * Clear all configured storage backends and context.
    * Useful for testing.
    */
   static reset() {
     _StorageRegistry.entries.clear();
+    _StorageRegistry._context = void 0;
   }
 };
 var DEFAULT_CIRCUIT_BREAKER_CONFIG = {

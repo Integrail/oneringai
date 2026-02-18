@@ -633,10 +633,11 @@ import { StorageRegistry } from '@everworker/oneringai';
 StorageRegistry.configure({
   customTools: new MongoCustomToolStorage(),
   media: new S3MediaStorage(),
-  sessions: (agentId) => new RedisContextStorage(agentId),
-  persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
-  workingMemory: () => new RedisMemoryStorage(),
   oauthTokens: new EncryptedFileTokenStorage(),
+  // Per-agent factories — optional StorageContext for multi-tenant partitioning
+  sessions: (agentId, ctx) => new RedisContextStorage(agentId, ctx?.tenantId),
+  persistentInstructions: (agentId, ctx) => new DBInstructionsStorage(agentId, ctx?.userId),
+  workingMemory: (ctx) => new RedisMemoryStorage(ctx?.tenantId),
 });
 
 // All agents and tools automatically use these backends
@@ -644,6 +645,8 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
 ```
 
 **Resolution order:** explicit constructor param > `StorageRegistry` > file-based default.
+
+**Multi-tenant:** Factories receive an optional `StorageContext` (opaque, like `ConnectorAccessContext`). Set via `StorageRegistry.setContext({ userId, tenantId })` — auto-forwarded to all factory calls for per-user/per-tenant storage partitioning.
 
 See the [User Guide](./USER_GUIDE.md#centralized-storage-registry) for full documentation.
 

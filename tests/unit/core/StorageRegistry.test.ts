@@ -111,6 +111,81 @@ describe('StorageRegistry', () => {
     });
   });
 
+  describe('setContext() / getContext()', () => {
+    it('should set and get context', () => {
+      StorageRegistry.setContext({ userId: 'alice', tenantId: 'acme' });
+      expect(StorageRegistry.getContext()).toEqual({ userId: 'alice', tenantId: 'acme' });
+    });
+
+    it('should return undefined when no context set', () => {
+      expect(StorageRegistry.getContext()).toBeUndefined();
+    });
+
+    it('should clear context on reset', () => {
+      StorageRegistry.setContext({ userId: 'alice' });
+      StorageRegistry.reset();
+      expect(StorageRegistry.getContext()).toBeUndefined();
+    });
+
+    it('should clear context when set to undefined', () => {
+      StorageRegistry.setContext({ userId: 'alice' });
+      StorageRegistry.setContext(undefined);
+      expect(StorageRegistry.getContext()).toBeUndefined();
+    });
+  });
+
+  describe('factory context passing', () => {
+    it('should pass context to session factory when invoked by consumer', () => {
+      let receivedContext: unknown;
+      const sessionFactory = (_agentId: string, ctx?: Record<string, unknown>) => {
+        receivedContext = ctx;
+        return {} as any;
+      };
+
+      StorageRegistry.set('sessions', sessionFactory);
+      StorageRegistry.setContext({ userId: 'bob', tenantId: 'corp' });
+
+      // Simulate what AgentContextNextGen does: get factory, call with context
+      const factory = StorageRegistry.get('sessions')!;
+      factory('agent-1', StorageRegistry.getContext());
+
+      expect(receivedContext).toEqual({ userId: 'bob', tenantId: 'corp' });
+    });
+
+    it('should pass context to persistentInstructions factory', () => {
+      let receivedArgs: unknown[];
+      const piFactory = (...args: unknown[]) => {
+        receivedArgs = args;
+        return {} as any;
+      };
+
+      StorageRegistry.set('persistentInstructions', piFactory as any);
+      StorageRegistry.setContext({ userId: 'carol' });
+
+      const factory = StorageRegistry.get('persistentInstructions')!;
+      factory('agent-2', StorageRegistry.getContext());
+
+      expect(receivedArgs![0]).toBe('agent-2');
+      expect(receivedArgs![1]).toEqual({ userId: 'carol' });
+    });
+
+    it('should pass context to workingMemory factory', () => {
+      let receivedContext: unknown;
+      const wmFactory = (ctx?: Record<string, unknown>) => {
+        receivedContext = ctx;
+        return {} as any;
+      };
+
+      StorageRegistry.set('workingMemory', wmFactory as any);
+      StorageRegistry.setContext({ tenantId: 'acme' });
+
+      const factory = StorageRegistry.get('workingMemory')!;
+      factory(StorageRegistry.getContext());
+
+      expect(receivedContext).toEqual({ tenantId: 'acme' });
+    });
+  });
+
   describe('overwrite behavior', () => {
     it('should allow overwriting a configured value', () => {
       StorageRegistry.set('customTools', mockCustomToolStorage);

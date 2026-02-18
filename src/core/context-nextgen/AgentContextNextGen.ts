@@ -205,7 +205,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     // Resolve session storage: explicit config > StorageRegistry factory > undefined
     const sessionFactory = StorageRegistry.get('sessions');
-    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId) : undefined);
+    const storageCtx = StorageRegistry.getContext() ?? (config.userId ? { userId: config.userId } : undefined);
+    this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId, storageCtx) : undefined);
 
     // Initialize compaction strategy
     // Use custom strategy if provided, otherwise create from registry

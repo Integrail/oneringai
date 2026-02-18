@@ -186,7 +186,7 @@ export class PersistentInstructionsPluginNextGen implements IContextPluginNextGe
     this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
     const registryFactory = StorageRegistry.get('persistentInstructions');
     this.storage = config.storage
-      ?? registryFactory?.(config.agentId)
+      ?? registryFactory?.(config.agentId, StorageRegistry.getContext())
       ?? new FilePersistentInstructionsStorage({ agentId: config.agentId });
   }
 
