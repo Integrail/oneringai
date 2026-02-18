@@ -27815,10 +27815,16 @@ function applyServerDefaults(config, defaults) {
   };
 }
 
-// src/infrastructure/mcp/adapters/MCPToolAdapter.ts
+// src/utils/sanitize.ts
 function sanitizeToolName(name) {
-  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  let result = name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^[_-]+|[_-]+$/g, "");
+  if (/^[0-9]/.test(result)) {
+    result = `n_${result}`;
+  }
+  return result || "unnamed";
 }
+
+// src/infrastructure/mcp/adapters/MCPToolAdapter.ts
 function createMCPToolAdapter(tool, client, namespace) {
   const fullName = sanitizeToolName(`${namespace}:${tool.name}`);
   return {
@@ -38042,7 +38048,7 @@ var ConnectorTools = class {
       const factory = this.factories.get(serviceType);
       const serviceTools = factory(connector, userId);
       for (const tool of serviceTools) {
-        tool.definition.function.name = `${connector.name}_${tool.definition.function.name}`;
+        tool.definition.function.name = `${sanitizeToolName(connector.name)}_${tool.definition.function.name}`;
       }
       tools.push(...serviceTools);
     }
@@ -38196,7 +38202,7 @@ var ConnectorTools = class {
     return connectorOrName;
   }
   static createGenericAPITool(connector, options) {
-    const toolName = options?.toolName ?? `${connector.name}_api`;
+    const toolName = options?.toolName ?? `${sanitizeToolName(connector.name)}_api`;
     const userId = options?.userId;
     const description = options?.description ?? `Make an authenticated API call to ${connector.displayName}.` + (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : " Provide full URL in endpoint.") + ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.';
     return {
@@ -48279,6 +48285,7 @@ exports.resolveMaxContextTokens = resolveMaxContextTokens;
 exports.resolveModelCapabilities = resolveModelCapabilities;
 exports.resolveRepository = resolveRepository;
 exports.retryWithBackoff = retryWithBackoff;
+exports.sanitizeToolName = sanitizeToolName;
 exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
 exports.setMediaOutputHandler = setMediaOutputHandler;
