@@ -13,6 +13,7 @@
 
 import { Connector } from '../../core/Connector.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
+import { sanitizeToolName } from '../../utils/sanitize.js';
 import { ToolFunction, ToolPermissionConfig, ToolContext } from '../../domain/entities/Tool.js';
 import { detectServiceFromURL } from '../../domain/entities/Services.js';
 import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
@@ -262,7 +263,7 @@ export class ConnectorTools {
       const factory = this.factories.get(serviceType)!;
       const serviceTools = factory(connector, userId);
       for (const tool of serviceTools) {
-        tool.definition.function.name = `${connector.name}_${tool.definition.function.name}`;
+        tool.definition.function.name = `${sanitizeToolName(connector.name)}_${tool.definition.function.name}`;
       }
       tools.push(...serviceTools);
     }
@@ -457,7 +458,7 @@ export class ConnectorTools {
     connector: Connector,
     options?: GenericAPIToolOptions
   ): ToolFunction<GenericAPICallArgs, GenericAPICallResult> {
-    const toolName = options?.toolName ?? `${connector.name}_api`;
+    const toolName = options?.toolName ?? `${sanitizeToolName(connector.name)}_api`;
     const userId = options?.userId;
 
     const description =

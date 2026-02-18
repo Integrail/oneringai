@@ -803,6 +803,7 @@ export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js
 export type { ClipboardImageResult } from './utils/clipboardImage.js';
 export { extractJSON, extractJSONField, extractNumber } from './utils/jsonExtractor.js';
 export type { JSONExtractionResult } from './utils/jsonExtractor.js';
+export { sanitizeToolName } from './utils/sanitize.js';
 
 // ============ Pre-built Tools ============
 export * as tools from './tools/index.js';

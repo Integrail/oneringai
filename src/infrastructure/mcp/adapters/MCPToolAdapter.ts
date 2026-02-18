@@ -8,14 +8,7 @@ import type { ToolFunction } from '../../../domain/entities/Tool.js';
 import type { MCPTool, MCPToolResult } from '../../../domain/entities/MCPTypes.js';
 import type { IMCPClient } from '../../../domain/interfaces/IMCPClient.js';
 import { MCPToolError } from '../../../domain/errors/MCPError.js';
-
-/**
- * Sanitize tool name to match OpenAI API pattern: ^[a-zA-Z0-9_-]+$
- * Replaces colons, dots, slashes, and any other invalid characters with underscores.
- */
-function sanitizeToolName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
+import { sanitizeToolName } from '../../../utils/sanitize.js';
 
 /**
  * Convert an MCP tool to a ToolFunction
