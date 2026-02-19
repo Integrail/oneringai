@@ -3471,6 +3471,57 @@ if (execution.status === 'completed') {
 6. **Keep `maxAttempts` reasonable** — 2-3 for most tasks. Each retry costs LLM calls.
 7. **Use `continue` failure mode** when tasks are independent and partial results are acceptable.
 
+### Routine Persistence
+
+Save routine definitions to disk and load them later using `FileRoutineDefinitionStorage` (or implement `IRoutineDefinitionStorage` for custom backends like MongoDB).
+
+```typescript
+import {
+  createFileRoutineDefinitionStorage,
+  createRoutineDefinition,
+} from '@everworker/oneringai';
+
+const storage = createFileRoutineDefinitionStorage();
+
+// Save a routine
+const routine = createRoutineDefinition({
+  name: 'Daily Report',
+  description: 'Generate a daily status report',
+  tags: ['daily', 'reports'],
+  author: 'alice',
+  tasks: [
+    { name: 'Gather Data', description: 'Collect metrics from all sources' },
+    { name: 'Write Report', description: 'Summarize findings', dependsOn: ['Gather Data'] },
+  ],
+});
+
+await storage.save(undefined, routine);  // undefined = default user
+
+// Load by ID
+const loaded = await storage.load(undefined, routine.id);
+
+// List with filtering
+const dailyRoutines = await storage.list(undefined, { tags: ['daily'] });
+const searchResults = await storage.list(undefined, { search: 'report', limit: 10 });
+
+// Delete
+await storage.delete(undefined, routine.id);
+```
+
+**Storage Path:** `~/.oneringai/users/<userId>/routines/<id>.json` (defaults to `~/.oneringai/users/default/routines/`)
+
+**Multi-user isolation:** Pass a `userId` to isolate routines per user. When `userId` is `undefined`, defaults to `'default'`.
+
+**StorageRegistry integration:**
+
+```typescript
+import { StorageRegistry } from '@everworker/oneringai';
+
+StorageRegistry.configure({
+  routineDefinitions: (ctx) => new MongoRoutineStorage(ctx?.userId),
+});
+```
+
 ---
 
 ## Tools & Function Calling
