@@ -22,15 +22,16 @@
   - [7. Context Management](#7-context-management)
   - [8. InContextMemory](#8-incontextmemory)
   - [9. Persistent Instructions](#9-persistent-instructions)
-  - [10. Direct LLM Access](#10-direct-llm-access)
-  - [11. Audio Capabilities](#11-audio-capabilities)
-  - [12. Model Registry](#12-model-registry)
-  - [13. Streaming](#13-streaming)
-  - [14. OAuth for External APIs](#14-oauth-for-external-apis)
-  - [15. Developer Tools](#15-developer-tools)
-  - [16. Custom Tool Generation](#16-custom-tool-generation-new) — Agents create, test, and persist their own tools
-  - [17. Document Reader](#17-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
-  - [18. External API Integration](#18-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+  - [10. User Info](#10-user-info)
+  - [11. Direct LLM Access](#11-direct-llm-access)
+  - [12. Audio Capabilities](#12-audio-capabilities)
+  - [13. Model Registry](#13-model-registry)
+  - [14. Streaming](#14-streaming)
+  - [15. OAuth for External APIs](#15-oauth-for-external-apis)
+  - [16. Developer Tools](#16-developer-tools)
+  - [17. Custom Tool Generation](#17-custom-tool-generation-new) — Agents create, test, and persist their own tools
+  - [18. Document Reader](#18-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
+  - [19. External API Integration](#19-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -87,6 +88,7 @@ Better to see once and then dig in the code! :)
 - 🎯 **Context Management** - Algorithmic compaction with tool-result-to-memory offloading
 - 📌 **InContextMemory** - Live key-value storage directly in LLM context with optional UI display (`showInUI`)
 - 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
+- 👤 **User Info Plugin** - NEW: Per-user preferences/context automatically injected into LLM context, shared across agents
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
 - 🧰 **Custom Tool Generation** - NEW: Let agents create, test, and persist their own reusable tools at runtime — complete meta-tool system with VM sandbox
@@ -870,7 +872,44 @@ const agent = Agent.create({
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
 
-### 10. Direct LLM Access
+### 10. User Info
+
+Store user-specific preferences and context that are automatically injected into the LLM system message:
+
+```typescript
+import { Agent } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'alice',  // Optional — defaults to 'default' user
+  context: {
+    features: {
+      userInfo: true,
+    },
+  },
+});
+
+// LLM can now use user_info_set/get/remove/clear tools
+// Data persists to ~/.oneringai/users/alice/user_info.json
+// All entries are automatically shown in context — no need to call user_info_get each turn
+```
+
+**Key Features:**
+- 📁 **Disk Persistence** - User info survives process restarts and sessions
+- 🔄 **Auto-Inject** - Entries rendered as markdown and included in the system message automatically
+- 👥 **User-Scoped** - Data is per-user, not per-agent — different agents share the same user data
+- 🔧 **LLM-Modifiable** - Agent can update user info during execution
+
+**Available Tools:**
+- `user_info_set` - Store/update user information by key (`key`, `value`, `description?`)
+- `user_info_get` - Retrieve one entry by key, or all entries if no key
+- `user_info_remove` - Remove a specific entry
+- `user_info_clear` - Clear all entries (requires confirmation)
+
+**Use cases:** User preferences (theme, language, timezone), user context (role, location), accumulated knowledge about the user.
+
+### 11. Direct LLM Access
 
 Bypass all context management for simple, stateless LLM calls:
 
@@ -916,7 +955,7 @@ for await (const event of agent.streamDirect('Tell me a story')) {
 
 **Use cases:** Quick one-off queries, embeddings-like simplicity, testing, hybrid workflows.
 
-### 11. Audio Capabilities
+### 12. Audio Capabilities
 
 Text-to-Speech and Speech-to-Text with multiple providers:
 
@@ -965,7 +1004,7 @@ const english = await stt.translate(frenchAudio);
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
 
-### 12. Model Registry
+### 13. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -994,7 +1033,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Google (7)**: Gemini 3, Gemini 2.5
 - **Grok (9)**: Grok 4.1, Grok 4, Grok Code, Grok 3, Grok 2 Vision
 
-### 13. Streaming
+### 14. Streaming
 
 Real-time responses:
 
@@ -1006,7 +1045,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 14. OAuth for External APIs
+### 15. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@everworker/oneringai';
@@ -1023,7 +1062,7 @@ const oauth = new OAuthManager({
 const authUrl = await oauth.startAuthFlow('user123');
 ```
 
-### 15. Developer Tools
+### 16. Developer Tools
 
 File system and shell tools for building coding assistants:
 
@@ -1065,7 +1104,7 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 16. Custom Tool Generation (NEW)
+### 17. Custom Tool Generation (NEW)
 
 Let agents **create their own tools** at runtime — draft, test, iterate, save, and reuse. The agent writes JavaScript code, validates it, tests it in the VM sandbox, and persists it for future use. All 6 meta-tools are auto-registered and visible in Hosea.
 
@@ -1100,7 +1139,7 @@ agent.tools.register(weatherTool, { source: 'custom', tags: ['weather', 'api'] }
 
 > See the [User Guide](./USER_GUIDE.md#custom-tool-generation) for the complete workflow, sandbox API reference, and examples.
 
-### 17. Desktop Automation Tools (NEW)
+### 18. Desktop Automation Tools (NEW)
 
 OS-level desktop automation for building "computer use" agents — screenshot the screen, send to a vision model, receive tool calls (click, type, etc.), execute them, repeat:
 
@@ -1136,7 +1175,7 @@ await agent.run('Open Safari and search for "weather forecast"');
 - Screenshots use the `__images` convention for automatic multimodal handling across all providers (Anthropic, OpenAI, Google)
 - Requires `@nut-tree-fork/nut-js` as an optional peer dependency: `npm install @nut-tree-fork/nut-js`
 
-### 18. Document Reader
+### 19. Document Reader
 
 Universal file-to-LLM-content converter. Reads arbitrary document formats and produces clean markdown text with optional image extraction:
 
@@ -1201,7 +1240,7 @@ await agent.run([
 
 See the [User Guide](./USER_GUIDE.md#document-reader) for complete API reference and configuration options.
 
-### 19. External API Integration
+### 20. External API Integration
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 

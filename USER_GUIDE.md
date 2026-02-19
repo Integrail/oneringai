@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.3.1
-**Last Updated:** 2026-02-18
+**Version:** 0.3.2
+**Last Updated:** 2026-02-19
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -33,7 +33,13 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Tools (instructions_set, instructions_remove, instructions_list, instructions_clear)
    - Storage and Persistence
    - Use Cases and Best Practices
-10. [Tools & Function Calling](#tools--function-calling)
+10. [User Info](#user-info-nextgen-plugin)
+    - Setup and Configuration
+    - Context Injection (auto-rendered in system message)
+    - Tools (user_info_set, user_info_get, user_info_remove, user_info_clear)
+    - Storage and Multi-User Isolation
+    - Use Cases and Best Practices
+12. [Tools & Function Calling](#tools--function-calling)
     - Built-in Tools Overview (33+ tools across 8 categories)
     - Developer Tools (Filesystem & Shell)
     - [Custom Tool Generation](#custom-tool-generation) — Agents create, test, and persist their own tools
@@ -41,31 +47,31 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Web Tools (webFetch, web_search via ConnectorTools, web_scrape via ConnectorTools)
     - JSON Tool
     - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
-11. [Dynamic Tool Management](#dynamic-tool-management)
-12. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
-13. [Multimodal (Vision)](#multimodal-vision)
-14. [Audio (TTS/STT)](#audio-ttsstt)
-15. [Image Generation](#image-generation)
-16. [Video Generation](#video-generation)
-17. [Custom Media Storage](#custom-media-storage)
+13. [Dynamic Tool Management](#dynamic-tool-management)
+14. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
+15. [Multimodal (Vision)](#multimodal-vision)
+16. [Audio (TTS/STT)](#audio-ttsstt)
+17. [Image Generation](#image-generation)
+18. [Video Generation](#video-generation)
+19. [Custom Media Storage](#custom-media-storage)
     - IMediaStorage Interface
     - Custom S3 Backend Example
     - FileMediaStorage Default
-18. [Web Search](#web-search)
-19. [Streaming](#streaming)
-20. [External API Integration](#external-api-integration)
-21. [Vendor Templates](#vendor-templates)
+20. [Web Search](#web-search)
+21. [Streaming](#streaming)
+22. [External API Integration](#external-api-integration)
+23. [Vendor Templates](#vendor-templates)
     - Quick Setup for 43+ Services
     - Authentication Methods
     - Complete Vendor Reference
-22. [OAuth for External APIs](#oauth-for-external-apis)
-23. [Model Registry](#model-registry)
-24. [Scoped Connector Registry](#scoped-connector-registry)
+24. [OAuth for External APIs](#oauth-for-external-apis)
+25. [Model Registry](#model-registry)
+26. [Scoped Connector Registry](#scoped-connector-registry)
     - Access Control Policies
     - Multi-Tenant Isolation
     - Using with Agent and ConnectorTools
-25. [Advanced Features](#advanced-features)
-26. [Production Deployment](#production-deployment)
+27. [Advanced Features](#advanced-features)
+28. [Production Deployment](#production-deployment)
 
 ---
 
@@ -995,6 +1001,7 @@ AgentContextNextGen uses a plugin architecture with these core components:
 | **WorkingMemoryPluginNextGen** | `ctx.getPlugin('working-memory')` | Tiered memory (raw/summary/findings) |
 | **InContextMemoryPluginNextGen** | `ctx.getPlugin('in-context-memory')` | Live key-value storage in context |
 | **PersistentInstructionsPluginNextGen** | `ctx.getPlugin('persistent-instructions')` | Disk-persisted agent instructions |
+| **UserInfoPluginNextGen** | `ctx.getPlugin('user_info')` | User-scoped preferences auto-injected into context |
 | **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (Message[]) |
 
 #### Using AgentContextNextGen with Agent
@@ -1089,6 +1096,9 @@ interface ContextFeatures {
 
   /** Enable PersistentInstructionsPluginNextGen (default: false) */
   persistentInstructions?: boolean;
+
+  /** Enable UserInfoPluginNextGen (default: false) */
+  userInfo?: boolean;
 }
 ```
 
@@ -1101,7 +1111,7 @@ import { AgentContextNextGen, DEFAULT_FEATURES } from '@everworker/oneringai';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
-// { workingMemory: true, inContextMemory: false, persistentInstructions: false }
+// { workingMemory: true, inContextMemory: false, persistentInstructions: false, userInfo: false }
 ```
 
 **Available Features:**
@@ -1111,6 +1121,7 @@ console.log(DEFAULT_FEATURES);
 | `workingMemory` | `true` | WorkingMemoryPluginNextGen - tiered memory (raw/summary/findings) | `memory_*` tools not registered; `ctx.memory` returns `null` |
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen - live key-value storage directly in context | `context_set/delete/list` tools not registered |
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk (KVP entries) | `instructions_*` tools not registered |
+| `userInfo` | `false` | UserInfoPluginNextGen - user-scoped preferences auto-injected into context | `user_info_*` tools not registered |
 
 **Usage Examples:**
 
@@ -1130,6 +1141,7 @@ const ctx = AgentContextNextGen.create({
     workingMemory: true,          // default: true
     inContextMemory: true,        // default: false
     persistentInstructions: true, // default: false
+    userInfo: true,               // default: false
   },
 });
 
@@ -1146,12 +1158,14 @@ const agent = Agent.create({
 const fullAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
+  userId: 'alice',  // Optional for userInfo isolation
   context: {
     agentId: 'my-agent',
     features: {
       workingMemory: true,
       inContextMemory: true,
       persistentInstructions: true,
+      userInfo: true,
     },
   },
 });
@@ -1164,9 +1178,10 @@ const fullAgent = Agent.create({
 ctx.features.workingMemory;           // boolean
 ctx.features.inContextMemory;         // boolean
 ctx.features.persistentInstructions;  // boolean
+ctx.features.userInfo;                // boolean
 
 // Get read-only feature configuration
-ctx.features; // { workingMemory, inContextMemory, persistentInstructions }
+ctx.features; // { workingMemory, inContextMemory, persistentInstructions, userInfo }
 
 // Access nullable memory
 ctx.memory;  // WorkingMemoryPluginNextGen | null
@@ -1175,6 +1190,7 @@ ctx.memory;  // WorkingMemoryPluginNextGen | null
 ctx.getPlugin('working-memory');            // WorkingMemoryPluginNextGen | undefined
 ctx.getPlugin('in-context-memory');         // InContextMemoryPluginNextGen | undefined
 ctx.getPlugin('persistent-instructions');   // PersistentInstructionsPluginNextGen | undefined
+ctx.getPlugin('user_info');                 // UserInfoPluginNextGen | undefined
 
 // Check if plugin exists
 ctx.hasPlugin('working-memory');  // boolean
@@ -2912,6 +2928,105 @@ const clarification = await agent.runDirect(
 // Back to run() for continued conversation
 await agent.run('Now tell me more about the first item');
 ```
+
+---
+
+## User Info (NextGen Plugin)
+
+Store user-specific preferences and context that persist across sessions and agents. Unlike other plugins, user info is **user-scoped** (not agent-scoped) — different agents share the same user's data.
+
+User info entries are **automatically injected into the LLM system message** as markdown, so the LLM always knows the user's preferences without needing to call `user_info_get` each turn.
+
+### Setup
+
+```typescript
+import { Agent } from '@everworker/oneringai';
+
+// Single-user app — no userId needed
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { userInfo: true },
+  },
+});
+
+// Multi-user app — opt-in per-user isolation
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'alice',
+  context: {
+    features: { userInfo: true },
+  },
+});
+```
+
+### How It Works
+
+1. **Lazy Loading** — On first access (tool call or `getContent()`), entries are loaded from storage into an in-memory cache
+2. **Context Injection** — `getContent()` renders entries as markdown, included in the system message:
+   ```
+   ### theme
+   dark
+
+   ### language
+   en
+
+   ### preferences
+   {"notifications": true, "compact_view": false}
+   ```
+3. **Write-Through** — Tool mutations (set/remove/clear) update both the in-memory cache and persist to storage immediately
+4. **Session Persistence** — `getState()`/`restoreState()` serialize/deserialize entries for session save/load
+
+### Tools
+
+| Tool | Description | Permission |
+|------|-------------|------------|
+| `user_info_set` | Store/update entry by key (`key`, `value`, `description?`) | Always allowed |
+| `user_info_get` | Retrieve one entry by key, or all entries (key optional) | Always allowed |
+| `user_info_remove` | Remove a specific entry by key | Always allowed |
+| `user_info_clear` | Clear all entries (requires `confirm: true`) | Requires approval |
+
+### Storage
+
+- **Default path:** `~/.oneringai/users/<userId>/user_info.json` (defaults to `~/.oneringai/users/default/user_info.json`)
+- **Custom storage:** Implement `IUserInfoStorage` and pass via config or `StorageRegistry`
+
+```typescript
+// Via StorageRegistry
+StorageRegistry.set('userInfo', (context?: StorageContext) => {
+  return new MongoUserInfoStorage(collection);
+});
+```
+
+### Configuration
+
+```typescript
+interface UserInfoPluginConfig {
+  storage?: IUserInfoStorage;    // Custom storage backend
+  maxTotalSize?: number;         // Default: 100000 (~100KB)
+  maxEntries?: number;           // Default: 100
+  userId?: string;               // Auto-set from AgentContextNextGen._userId
+}
+```
+
+### Differences from Other Plugins
+
+| | PersistentInstructions | UserInfo | InContextMemory |
+|---|---|---|---|
+| **Scope** | Agent-scoped | User-scoped | Session only |
+| **Storage key** | `agentId` | `userId` | None (in memory) |
+| **Persists to disk** | Yes | Yes | No |
+| **In system message** | Yes | Yes | Yes |
+| **Value type** | `string` | `unknown` (any JSON) | `unknown` (any JSON) |
+
+### Use Cases
+
+- User preferences: theme, language, timezone, notification settings
+- User context: role, location, department
+- Accumulated knowledge about the user
+- Profile information the LLM should always have access to
 
 ---
 
