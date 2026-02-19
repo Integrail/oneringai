@@ -291,6 +291,7 @@ export abstract class BaseAgent<
   protected _config: TConfig;
   protected _agentContext: AgentContextNextGen;  // SINGLE SOURCE OF TRUTH for tools and sessions
   protected _permissionManager: ToolPermissionManager;
+  protected _ownsContext = true;
   protected _isDestroyed = false;
   protected _cleanupCallbacks: Array<() => void | Promise<void>> = [];
   protected _logger: FrameworkLogger;
@@ -375,10 +376,12 @@ export abstract class BaseAgent<
    * Otherwise, create a new one with the provided configuration.
    */
   protected initializeAgentContext(config: TConfig): AgentContextNextGen {
-    // If AgentContextNextGen instance is provided, use it directly
+    // If AgentContextNextGen instance is provided, use it directly (caller owns it)
     if (config.context instanceof AgentContextNextGen) {
+      this._ownsContext = false;
       return config.context;
     }
+    this._ownsContext = true;
 
     // Create new AgentContextNextGen with merged config
     // NOTE: Don't pass tools here - they're registered separately after creation
@@ -984,8 +987,10 @@ export abstract class BaseAgent<
       this._autoSaveInterval = null;
     }
 
-    // Cleanup AgentContext (handles tools, memory, cache, plugins)
-    this._agentContext.destroy();
+    // Cleanup AgentContext only if we own it (not shared with other agents)
+    if (this._ownsContext) {
+      this._agentContext.destroy();
+    }
 
     // Cleanup permission manager listeners
     this._permissionManager.removeAllListeners();

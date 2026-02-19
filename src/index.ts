@@ -346,6 +346,20 @@ export {
   TERMINAL_TASK_STATUSES,
 } from './domain/entities/Task.js';
 
+// Routine Entities
+export type {
+  RoutineDefinition,
+  RoutineDefinitionInput,
+  RoutineExecutionStatus,
+  RoutineExecution,
+} from './domain/entities/Routine.js';
+
+export {
+  createRoutineDefinition,
+  createRoutineExecution,
+  getRoutineProgress,
+} from './domain/entities/Routine.js';
+
 // Memory Entities
 export type {
   MemoryEntry,

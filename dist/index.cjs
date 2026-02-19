@@ -35922,6 +35922,7 @@ function createTask(input) {
     externalDependency: input.externalDependency,
     condition: input.condition,
     execution: input.execution,
+    suggestedTools: input.suggestedTools,
     validation: input.validation,
     expectedOutput: input.expectedOutput,
     attempts: 0,
@@ -36939,6 +36940,71 @@ var InMemoryHistoryStorage = class {
     this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
+
+// src/domain/entities/Routine.ts
+function createRoutineDefinition(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = input.id ?? `routine-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const taskNames = new Set(input.tasks.map((t) => t.name));
+  const taskIds = new Set(input.tasks.filter((t) => t.id).map((t) => t.id));
+  for (const task of input.tasks) {
+    if (task.dependsOn) {
+      for (const dep of task.dependsOn) {
+        if (!taskNames.has(dep) && !taskIds.has(dep)) {
+          throw new Error(
+            `Routine "${input.name}": task "${task.name}" depends on unknown task "${dep}"`
+          );
+        }
+      }
+    }
+  }
+  createPlan({
+    goal: input.name,
+    tasks: input.tasks
+  });
+  return {
+    id,
+    name: input.name,
+    description: input.description,
+    version: input.version,
+    tasks: input.tasks,
+    requiredTools: input.requiredTools,
+    requiredPlugins: input.requiredPlugins,
+    instructions: input.instructions,
+    concurrency: input.concurrency,
+    allowDynamicTasks: input.allowDynamicTasks ?? false,
+    tags: input.tags,
+    author: input.author,
+    createdAt: now,
+    updatedAt: now,
+    metadata: input.metadata
+  };
+}
+function createRoutineExecution(definition) {
+  const now = Date.now();
+  const executionId = `rexec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const plan = createPlan({
+    goal: definition.name,
+    context: definition.description,
+    tasks: definition.tasks,
+    concurrency: definition.concurrency,
+    allowDynamicTasks: definition.allowDynamicTasks
+  });
+  return {
+    id: executionId,
+    routineId: definition.id,
+    plan,
+    status: "pending",
+    progress: 0,
+    lastUpdatedAt: now
+  };
+}
+function getRoutineProgress(execution) {
+  const { tasks } = execution.plan;
+  if (tasks.length === 0) return 100;
+  const completed = tasks.filter((t) => isTerminalStatus(t.status)).length;
+  return Math.round(completed / tasks.length * 100);
+}
 function getDefaultBaseDirectory3() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
@@ -48763,6 +48829,8 @@ exports.createPRFilesTool = createPRFilesTool;
 exports.createPlan = createPlan;
 exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
+exports.createRoutineDefinition = createRoutineDefinition;
+exports.createRoutineExecution = createRoutineExecution;
 exports.createSearchCodeTool = createSearchCodeTool;
 exports.createSearchFilesTool = createSearchFilesTool;
 exports.createSpeechToTextTool = createSpeechToTextTool;
@@ -48829,6 +48897,7 @@ exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
 exports.getNextExecutableTasks = getNextExecutableTasks;
 exports.getRegisteredScrapeProviders = getRegisteredScrapeProviders;
+exports.getRoutineProgress = getRoutineProgress;
 exports.getSTTModelInfo = getSTTModelInfo;
 exports.getSTTModelsByVendor = getSTTModelsByVendor;
 exports.getSTTModelsWithFeature = getSTTModelsWithFeature;

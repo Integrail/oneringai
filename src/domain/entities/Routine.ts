@@ -1,0 +1,228 @@
+/**
+ * Routine entities for reusable task-based workflows.
+ *
+ * A RoutineDefinition is a template (recipe) that can be executed multiple times.
+ * A RoutineExecution is a running instance backed by an existing Plan.
+ */
+
+import type { TaskInput, Plan, PlanConcurrency } from './Task.js';
+import { createPlan, isTerminalStatus } from './Task.js';
+
+// ============================================================================
+// Routine Definition (Template)
+// ============================================================================
+
+/**
+ * A reusable routine definition (template).
+ *
+ * Defines what to do but has no runtime state.
+ * Multiple RoutineExecutions can be created from one RoutineDefinition.
+ */
+export interface RoutineDefinition {
+  /** Unique routine identifier */
+  id: string;
+
+  /** Human-readable name */
+  name: string;
+
+  /** Description of what this routine accomplishes */
+  description: string;
+
+  /** Version string for tracking routine evolution */
+  version?: string;
+
+  /** Task templates in execution order (dependencies may override order) */
+  tasks: TaskInput[];
+
+  /** Tool names that must be available before starting */
+  requiredTools?: string[];
+
+  /** Plugin names that must be enabled before starting (e.g. 'working_memory') */
+  requiredPlugins?: string[];
+
+  /** Additional instructions injected into system prompt when routine is active */
+  instructions?: string;
+
+  /** Concurrency settings for task execution */
+  concurrency?: PlanConcurrency;
+
+  /** Whether the LLM can dynamically add/modify tasks during execution. Default: false */
+  allowDynamicTasks?: boolean;
+
+  /** Tags for categorization and filtering */
+  tags?: string[];
+
+  /** Author/creator */
+  author?: string;
+
+  /** When the definition was created (ISO string) */
+  createdAt: string;
+
+  /** When the definition was last updated (ISO string) */
+  updatedAt: string;
+
+  /** Metadata for extensions */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input for creating a RoutineDefinition.
+ * id, createdAt, updatedAt are auto-generated if not provided.
+ */
+export interface RoutineDefinitionInput {
+  id?: string;
+  name: string;
+  description: string;
+  version?: string;
+  tasks: TaskInput[];
+  requiredTools?: string[];
+  requiredPlugins?: string[];
+  instructions?: string;
+  concurrency?: PlanConcurrency;
+  allowDynamicTasks?: boolean;
+  tags?: string[];
+  author?: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Routine Execution (Runtime)
+// ============================================================================
+
+/**
+ * Execution status for a routine run
+ */
+export type RoutineExecutionStatus =
+  | 'pending'     // Created but not started
+  | 'running'     // Currently executing
+  | 'paused'      // Manually paused
+  | 'completed'   // All tasks completed successfully
+  | 'failed'      // Failed (unrecoverable)
+  | 'cancelled';  // Manually cancelled
+
+/**
+ * Runtime state when executing a routine.
+ * Created from a RoutineDefinition, delegates task management to Plan.
+ */
+export interface RoutineExecution {
+  /** Unique execution ID */
+  id: string;
+
+  /** Reference to the routine definition ID */
+  routineId: string;
+
+  /** The live plan managing task execution (created via createPlan) */
+  plan: Plan;
+
+  /** Current execution status */
+  status: RoutineExecutionStatus;
+
+  /** Overall progress (0-100) based on completed tasks */
+  progress: number;
+
+  /** Timestamps */
+  startedAt?: number;
+  completedAt?: number;
+  lastUpdatedAt: number;
+
+  /** Error message if failed */
+  error?: string;
+
+  /** Metadata */
+  metadata?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Factory Functions
+// ============================================================================
+
+/**
+ * Create a RoutineDefinition with defaults.
+ * Validates task dependency references and detects cycles.
+ */
+export function createRoutineDefinition(input: RoutineDefinitionInput): RoutineDefinition {
+  const now = new Date().toISOString();
+  const id = input.id ?? `routine-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Validate dependency references exist within the routine's tasks
+  const taskNames = new Set(input.tasks.map((t) => t.name));
+  const taskIds = new Set(input.tasks.filter((t) => t.id).map((t) => t.id!));
+
+  for (const task of input.tasks) {
+    if (task.dependsOn) {
+      for (const dep of task.dependsOn) {
+        if (!taskNames.has(dep) && !taskIds.has(dep)) {
+          throw new Error(
+            `Routine "${input.name}": task "${task.name}" depends on unknown task "${dep}"`
+          );
+        }
+      }
+    }
+  }
+
+  // Cycle detection: create a temporary plan (which runs detectDependencyCycle internally)
+  // This validates the dependency graph is a DAG
+  createPlan({
+    goal: input.name,
+    tasks: input.tasks,
+  });
+
+  return {
+    id,
+    name: input.name,
+    description: input.description,
+    version: input.version,
+    tasks: input.tasks,
+    requiredTools: input.requiredTools,
+    requiredPlugins: input.requiredPlugins,
+    instructions: input.instructions,
+    concurrency: input.concurrency,
+    allowDynamicTasks: input.allowDynamicTasks ?? false,
+    tags: input.tags,
+    author: input.author,
+    createdAt: now,
+    updatedAt: now,
+    metadata: input.metadata,
+  };
+}
+
+/**
+ * Create a RoutineExecution from a RoutineDefinition.
+ * Instantiates all tasks into a Plan via createPlan().
+ */
+export function createRoutineExecution(definition: RoutineDefinition): RoutineExecution {
+  const now = Date.now();
+  const executionId = `rexec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  const plan = createPlan({
+    goal: definition.name,
+    context: definition.description,
+    tasks: definition.tasks,
+    concurrency: definition.concurrency,
+    allowDynamicTasks: definition.allowDynamicTasks,
+  });
+
+  return {
+    id: executionId,
+    routineId: definition.id,
+    plan,
+    status: 'pending',
+    progress: 0,
+    lastUpdatedAt: now,
+  };
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+/**
+ * Compute routine progress (0-100) from plan task statuses.
+ */
+export function getRoutineProgress(execution: RoutineExecution): number {
+  const { tasks } = execution.plan;
+  if (tasks.length === 0) return 100;
+
+  const completed = tasks.filter((t) => isTerminalStatus(t.status)).length;
+  return Math.round((completed / tasks.length) * 100);
+}

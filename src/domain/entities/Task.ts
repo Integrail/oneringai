@@ -238,6 +238,9 @@ export interface Task {
   /** Completion validation settings */
   validation?: TaskValidation;
 
+  /** Tool names the LLM should prefer for this task (advisory, not enforced) */
+  suggestedTools?: string[];
+
   /** Optional expected output description */
   expectedOutput?: string;
 
@@ -277,6 +280,7 @@ export interface TaskInput {
   externalDependency?: ExternalDependency;
   condition?: TaskCondition;
   execution?: TaskExecution;
+  suggestedTools?: string[];
   validation?: TaskValidation;
   expectedOutput?: string;
   maxAttempts?: number;
@@ -377,6 +381,7 @@ export function createTask(input: TaskInput): Task {
     externalDependency: input.externalDependency,
     condition: input.condition,
     execution: input.execution,
+    suggestedTools: input.suggestedTools,
     validation: input.validation,
     expectedOutput: input.expectedOutput,
     attempts: 0,
