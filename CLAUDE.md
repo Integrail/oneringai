@@ -438,6 +438,97 @@ const list = await plugin.list();  // { key, contentLength, createdAt, updatedAt
 **Config:** `maxTotalLength` (default: 50000), `maxEntries` (default: 50)
 **Storage:** `~/.oneringai/agents/<agentId>/custom_instructions.json`
 
+### UserInfoPluginNextGen
+
+User-specific information storage that persists across sessions and agents. Data is **user-scoped**, not agent-scoped - different agents share the same user data.
+
+```typescript
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { userInfo: true },
+  userId: 'alice',  // Required for multi-user scenarios
+});
+
+// Access via tools (userId resolved from context automatically)
+// user_info_set('theme', 'dark', 'User preferred theme')
+// user_info_get('theme')  // Returns: { key, value, valueType, description, ... }
+// user_info_get()         // Returns all entries
+// user_info_remove('theme')
+// user_info_clear(confirm: true)
+```
+
+**Tools provided:**
+- `user_info_set` - Store/update user information (`key`, `value`, `description?`)
+- `user_info_get` - Retrieve entry by key or all entries (key optional)
+- `user_info_remove` - Remove entry by key
+- `user_info_clear` - Clear all entries (requires `confirm: true`)
+
+**Config:** `maxTotalSize` (default: 100000 bytes / ~100KB), `maxEntries` (default: 100)
+**Storage:** `~/.oneringai/users/<userId>/user_info.json`
+
+**Design:**
+- Plugin is **stateless** - no userId stored in plugin state
+- UserId resolved at tool execution time from `ToolContext.userId`
+- Tools access current user's data only (no cross-user access)
+- User data NOT injected into context (`getContent()` returns null)
+- Multi-user apps set userId via `Agent.create({ userId })` or `StorageRegistry.setContext({ userId })`
+
+## Custom Tools Storage (User-Scoped)
+
+Custom tools are stored per-user to provide isolation in multi-tenant scenarios. Each user has their own isolated custom tools directory.
+
+**Storage Path:** `~/.oneringai/users/<userId>/custom-tools/<tool-name>.json`
+
+**Pattern:** Single storage instance handles all users, userId passed to methods:
+
+```typescript
+// Storage interface
+interface ICustomToolStorage {
+  save(userId: string, definition: CustomToolDefinition): Promise<void>;
+  load(userId: string, name: string): Promise<CustomToolDefinition | null>;
+  list(userId: string, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
+  delete(userId: string, name: string): Promise<void>;
+  exists(userId: string, name: string): Promise<boolean>;
+  updateMetadata?(userId: string, name: string, metadata: Record<string, unknown>): Promise<void>;
+  getPath(userId: string): string;
+}
+
+// Usage in tools
+const userId = context?.userId;
+if (!userId) {
+  return { success: false, error: 'userId required' };
+}
+const storage = resolveCustomToolStorage(explicitStorage, context);
+await storage.save(userId, toolDefinition);
+```
+
+**Meta-Tools:**
+- `custom_tool_save` - Persist custom tool definition
+- `custom_tool_load` - Load full definition (including code)
+- `custom_tool_list` - List saved tools (filtered by tags/category/search)
+- `custom_tool_delete` - Remove custom tool
+- `custom_tool_draft` - Validate tool structure
+- `custom_tool_test` - Execute code in VM sandbox
+
+All meta-tools require `userId` in `ToolContext`. Automatically resolved when agent has `userId` set:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'alice',  // Passed to tools via ToolContext
+});
+
+// Alice's custom tools are isolated from Bob's
+// Alice cannot see, load, or modify Bob's custom tools
+```
+
+**Multi-User Isolation:**
+- Each user has separate directory: `~/.oneringai/users/<userId>/custom-tools/`
+- Users cannot access each other's custom tools
+- Same tool name allowed for different users (separate namespaces)
+- Storage resolution via `StorageRegistry.resolve('customTools', context)`
+
 ## InContextMemory
 
 In-context memory for frequently-accessed state stored **directly in context** (not just an index).

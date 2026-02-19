@@ -23,3 +23,10 @@ export type {
   SerializedPersistentInstructionsState,
   InstructionEntry,
 } from './PersistentInstructionsPluginNextGen.js';
+
+export { UserInfoPluginNextGen } from './UserInfoPluginNextGen.js';
+export type {
+  UserInfoPluginConfig,
+  SerializedUserInfoState,
+  UserInfoEntry,
+} from './UserInfoPluginNextGen.js';

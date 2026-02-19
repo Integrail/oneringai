@@ -41,13 +41,23 @@ export function createCustomToolDelete(storage?: ICustomToolStorage): ToolFuncti
 
     execute: async (args: DeleteArgs, context?: ToolContext): Promise<DeleteResult> => {
       try {
+        // Validate userId
+        const userId = context?.userId;
+        if (!userId) {
+          return {
+            success: false,
+            name: args.name,
+            error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()',
+          };
+        }
+
         const s = resolveCustomToolStorage(storage, context);
-        const exists = await s.exists(args.name);
+        const exists = await s.exists(userId, args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
         }
 
-        await s.delete(args.name);
+        await s.delete(userId, args.name);
         return { success: true, name: args.name };
       } catch (error) {
         return { success: false, name: args.name, error: (error as Error).message };

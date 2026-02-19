@@ -1,14 +1,15 @@
 /**
  * FileCustomToolStorage - File-based storage for custom tool definitions
  *
- * Stores custom tools as JSON files on disk.
- * Path: ~/.oneringai/custom-tools/<sanitized-name>.json
+ * Stores custom tools as JSON files on disk with per-user isolation.
+ * Path: ~/.oneringai/users/<userId>/custom-tools/<sanitized-name>.json
  *
  * Features:
+ * - Per-user isolation (multi-tenant safe)
  * - Cross-platform path handling
  * - Safe name sanitization
  * - Atomic file operations (write to .tmp then rename)
- * - Index file for fast listing
+ * - Per-user index file for fast listing
  * - Search support (case-insensitive substring on name + description)
  */
 
@@ -22,7 +23,7 @@ import type { CustomToolDefinition, CustomToolSummary } from '../../domain/entit
  * Configuration for FileCustomToolStorage
  */
 export interface FileCustomToolStorageConfig {
-  /** Override the base directory (default: ~/.oneringai/custom-tools) */
+  /** Override the base directory (default: ~/.oneringai/users) */
   baseDirectory?: string;
   /** Pretty-print JSON (default: true) */
   prettyPrint?: boolean;
@@ -59,11 +60,24 @@ function getDefaultBaseDirectory(): string {
   if (platform === 'win32') {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return join(appData, 'oneringai', 'custom-tools');
+      return join(appData, 'oneringai', 'users');
     }
   }
 
-  return join(homedir(), '.oneringai', 'custom-tools');
+  return join(homedir(), '.oneringai', 'users');
+}
+
+/**
+ * Sanitize user ID for use as a directory name
+ * Removes or replaces characters that are not safe for filenames
+ */
+function sanitizeUserId(userId: string): string {
+  return userId
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toLowerCase()
+    || 'default';
 }
 
 /**
@@ -80,28 +94,50 @@ function sanitizeName(name: string): string {
 
 /**
  * File-based storage for custom tool definitions
+ *
+ * Single instance handles all users. UserId is passed to each method.
  */
 export class FileCustomToolStorage implements ICustomToolStorage {
   private readonly baseDirectory: string;
-  private readonly indexPath: string;
   private readonly prettyPrint: boolean;
-  private index: CustomToolIndex | null = null;
 
   constructor(config: FileCustomToolStorageConfig = {}) {
     this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.indexPath = join(this.baseDirectory, '_index.json');
+  }
+
+  /**
+   * Get the directory path for a specific user's custom tools
+   */
+  private getUserDirectory(userId: string): string {
+    const sanitizedId = sanitizeUserId(userId);
+    return join(this.baseDirectory, sanitizedId, 'custom-tools');
+  }
+
+  /**
+   * Get the index file path for a specific user
+   */
+  private getUserIndexPath(userId: string): string {
+    return join(this.getUserDirectory(userId), '_index.json');
+  }
+
+  /**
+   * Get the tool file path for a specific user
+   */
+  private getToolPath(userId: string, sanitizedName: string): string {
+    return join(this.getUserDirectory(userId), `${sanitizedName}.json`);
   }
 
   /**
    * Save a custom tool definition
    */
-  async save(definition: CustomToolDefinition): Promise<void> {
+  async save(userId: string, definition: CustomToolDefinition): Promise<void> {
+    const directory = this.getUserDirectory(userId);
     const sanitized = sanitizeName(definition.name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
 
     // Ensure directory exists
-    await this.ensureDirectory(this.baseDirectory);
+    await this.ensureDirectory(directory);
 
     // Write atomically
     const data = this.prettyPrint
@@ -122,15 +158,15 @@ export class FileCustomToolStorage implements ICustomToolStorage {
     }
 
     // Update index
-    await this.updateIndex(definition);
+    await this.updateIndex(userId, definition);
   }
 
   /**
    * Load a custom tool definition by name
    */
-  async load(name: string): Promise<CustomToolDefinition | null> {
+  async load(userId: string, name: string): Promise<CustomToolDefinition | null> {
     const sanitized = sanitizeName(name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
 
     try {
       const data = await fs.readFile(filePath, 'utf-8');
@@ -149,9 +185,9 @@ export class FileCustomToolStorage implements ICustomToolStorage {
   /**
    * Delete a custom tool definition
    */
-  async delete(name: string): Promise<void> {
+  async delete(userId: string, name: string): Promise<void> {
     const sanitized = sanitizeName(name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
 
     try {
       await fs.unlink(filePath);
@@ -162,15 +198,15 @@ export class FileCustomToolStorage implements ICustomToolStorage {
     }
 
     // Remove from index
-    await this.removeFromIndex(name);
+    await this.removeFromIndex(userId, name);
   }
 
   /**
    * Check if a custom tool exists
    */
-  async exists(name: string): Promise<boolean> {
+  async exists(userId: string, name: string): Promise<boolean> {
     const sanitized = sanitizeName(name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
 
     try {
       await fs.access(filePath);
@@ -183,8 +219,8 @@ export class FileCustomToolStorage implements ICustomToolStorage {
   /**
    * List custom tools (summaries only)
    */
-  async list(options?: CustomToolListOptions): Promise<CustomToolSummary[]> {
-    const index = await this.loadIndex();
+  async list(userId: string, options?: CustomToolListOptions): Promise<CustomToolSummary[]> {
+    const index = await this.loadIndex(userId);
     let entries = [...index.tools];
 
     // Apply tag filter
@@ -239,22 +275,22 @@ export class FileCustomToolStorage implements ICustomToolStorage {
   /**
    * Update metadata without loading full definition
    */
-  async updateMetadata(name: string, metadata: Record<string, unknown>): Promise<void> {
-    const definition = await this.load(name);
+  async updateMetadata(userId: string, name: string, metadata: Record<string, unknown>): Promise<void> {
+    const definition = await this.load(userId, name);
     if (!definition) {
       throw new Error(`Custom tool '${name}' not found`);
     }
 
     definition.metadata = { ...definition.metadata, ...metadata };
     definition.updatedAt = new Date().toISOString();
-    await this.save(definition);
+    await this.save(userId, definition);
   }
 
   /**
-   * Get storage path
+   * Get storage path for a specific user
    */
-  getPath(): string {
-    return this.baseDirectory;
+  getPath(userId: string): string {
+    return this.getUserDirectory(userId);
   }
 
   // ==========================================================================
@@ -271,42 +307,39 @@ export class FileCustomToolStorage implements ICustomToolStorage {
     }
   }
 
-  private async loadIndex(): Promise<CustomToolIndex> {
-    if (this.index) {
-      return this.index;
-    }
+  private async loadIndex(userId: string): Promise<CustomToolIndex> {
+    const indexPath = this.getUserIndexPath(userId);
 
     try {
-      const data = await fs.readFile(this.indexPath, 'utf-8');
-      this.index = JSON.parse(data) as CustomToolIndex;
-      return this.index;
+      const data = await fs.readFile(indexPath, 'utf-8');
+      return JSON.parse(data) as CustomToolIndex;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-        this.index = {
+        return {
           version: 1,
           tools: [],
           lastUpdated: new Date().toISOString(),
         };
-        return this.index;
       }
       throw error;
     }
   }
 
-  private async saveIndex(): Promise<void> {
-    if (!this.index) return;
+  private async saveIndex(userId: string, index: CustomToolIndex): Promise<void> {
+    const directory = this.getUserDirectory(userId);
+    const indexPath = this.getUserIndexPath(userId);
 
-    await this.ensureDirectory(this.baseDirectory);
-    this.index.lastUpdated = new Date().toISOString();
+    await this.ensureDirectory(directory);
+    index.lastUpdated = new Date().toISOString();
     const data = this.prettyPrint
-      ? JSON.stringify(this.index, null, 2)
-      : JSON.stringify(this.index);
+      ? JSON.stringify(index, null, 2)
+      : JSON.stringify(index);
 
-    await fs.writeFile(this.indexPath, data, 'utf-8');
+    await fs.writeFile(indexPath, data, 'utf-8');
   }
 
-  private async updateIndex(definition: CustomToolDefinition): Promise<void> {
-    const index = await this.loadIndex();
+  private async updateIndex(userId: string, definition: CustomToolDefinition): Promise<void> {
+    const index = await this.loadIndex(userId);
     const entry = this.definitionToIndexEntry(definition);
 
     const existingIdx = index.tools.findIndex(e => e.name === definition.name);
@@ -316,13 +349,13 @@ export class FileCustomToolStorage implements ICustomToolStorage {
       index.tools.push(entry);
     }
 
-    await this.saveIndex();
+    await this.saveIndex(userId, index);
   }
 
-  private async removeFromIndex(name: string): Promise<void> {
-    const index = await this.loadIndex();
+  private async removeFromIndex(userId: string, name: string): Promise<void> {
+    const index = await this.loadIndex(userId);
     index.tools = index.tools.filter(e => e.name !== name);
-    await this.saveIndex();
+    await this.saveIndex(userId, index);
   }
 
   private definitionToIndexEntry(definition: CustomToolDefinition): CustomToolIndexEntry {

@@ -1,7 +1,7 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs17 from 'fs';
+import * as fs18 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path2 from 'path';
@@ -19,7 +19,7 @@ import * as z from 'zod/v4';
 import spawn$1 from 'cross-spawn';
 import process2 from 'process';
 import { PassThrough } from 'stream';
-import * as fs16 from 'fs/promises';
+import * as fs17 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import * as simpleIcons from 'simple-icons';
 import { exec, spawn } from 'child_process';
@@ -641,7 +641,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs17.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs18.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1400,10 +1400,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2.dirname(filePath);
-          if (!fs17.existsSync(dir)) {
-            fs17.mkdirSync(dir, { recursive: true });
+          if (!fs18.existsSync(dir)) {
+            fs18.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs17.createWriteStream(filePath, {
+          this.fileStream = fs18.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -9133,12 +9133,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs18, exportName) {
+    function addFormats(ajv, list, fs19, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs18[f]);
+        ajv.addFormat(f, fs19[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -10141,6 +10141,11 @@ var DEFAULT_ALLOWLIST = [
   "instructions_remove",
   "instructions_list",
   "instructions_clear",
+  // User info tools (user-specific data - safe)
+  "user_info_set",
+  "user_info_get",
+  "user_info_remove",
+  "user_info_clear",
   // Meta-tools (internal coordination)
   "_start_planning",
   "_modify_plan",
@@ -15440,6 +15445,497 @@ ${entry.content}`).join("\n\n");
     };
   }
 };
+function getDefaultBaseDirectory2() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return join(appData, "oneringai", "users");
+    }
+  }
+  return join(homedir(), ".oneringai", "users");
+}
+function sanitizeUserId(userId) {
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileUserInfoStorage = class {
+  baseDirectory;
+  filename;
+  constructor(config) {
+    this.baseDirectory = config?.baseDirectory ?? getDefaultBaseDirectory2();
+    this.filename = config?.filename ?? "user_info.json";
+  }
+  /**
+   * Get the directory path for a specific user
+   */
+  getUserDirectory(userId) {
+    const sanitizedId = sanitizeUserId(userId);
+    return join(this.baseDirectory, sanitizedId);
+  }
+  /**
+   * Get the file path for a specific user
+   */
+  getUserFilePath(userId) {
+    return join(this.getUserDirectory(userId), this.filename);
+  }
+  /**
+   * Load user info entries from file for a specific user
+   */
+  async load(userId) {
+    const filePath = this.getUserFilePath(userId);
+    try {
+      const raw = await promises.readFile(filePath, "utf-8");
+      const data = JSON.parse(raw);
+      if (data.version === 1 && Array.isArray(data.entries)) {
+        return data.entries.length > 0 ? data.entries : null;
+      }
+      return null;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+        throw error;
+      }
+      return null;
+    }
+  }
+  /**
+   * Save user info entries to file for a specific user
+   * Creates directory if it doesn't exist.
+   */
+  async save(userId, entries) {
+    const directory = this.getUserDirectory(userId);
+    const filePath = this.getUserFilePath(userId);
+    await this.ensureDirectory(directory);
+    const data = {
+      version: 1,
+      userId,
+      entries
+    };
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+  }
+  /**
+   * Delete user info file for a specific user
+   */
+  async delete(userId) {
+    const filePath = this.getUserFilePath(userId);
+    try {
+      await promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  /**
+   * Check if user info file exists for a specific user
+   */
+  async exists(userId) {
+    const filePath = this.getUserFilePath(userId);
+    try {
+      await promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Get the file path for a specific user (for display/debugging)
+   */
+  getPath(userId) {
+    return this.getUserFilePath(userId);
+  }
+  /**
+   * Ensure the directory exists
+   */
+  async ensureDirectory(directory) {
+    try {
+      await promises.mkdir(directory, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+};
+
+// src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts
+init_StorageRegistry();
+var DEFAULT_MAX_TOTAL_SIZE = 1e5;
+var DEFAULT_MAX_ENTRIES2 = 100;
+var KEY_MAX_LENGTH2 = 100;
+var KEY_PATTERN2 = /^[a-zA-Z0-9_-]+$/;
+var USER_INFO_INSTRUCTIONS = `User Info stores key-value information about the current user.
+Data is user-specific and persists across sessions and agents.
+
+**To manage:**
+- \`user_info_set(key, value, description?)\`: Store/update user information
+- \`user_info_get(key?)\`: Retrieve one entry by key, or all entries if no key
+- \`user_info_remove(key)\`: Remove a specific entry
+- \`user_info_clear(confirm: true)\`: Remove all entries (destructive!)
+
+**Use for:** User preferences, context, metadata (theme, language, timezone, role, etc.)`;
+var userInfoSetDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_set",
+    description: `Store or update user information by key. Data persists across sessions.
+If the key exists, it will be updated. If not, a new entry is created.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Unique key for the information (alphanumeric, dash, underscore; max 100 chars)"
+        },
+        value: {
+          description: "Value to store (any JSON-serializable data: string, number, boolean, object, array)"
+        },
+        description: {
+          type: "string",
+          description: "Optional description for self-documentation"
+        }
+      },
+      required: ["key", "value"]
+    }
+  }
+};
+var userInfoGetDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_get",
+    description: "Retrieve user information. If key is provided, returns that entry. Otherwise returns all entries.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Key of the entry to retrieve (optional - omit to get all entries)"
+        }
+      },
+      required: []
+    }
+  }
+};
+var userInfoRemoveDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_remove",
+    description: "Remove a specific user information entry by key.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Key of the entry to remove"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var userInfoClearDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_clear",
+    description: "Clear all user information entries (DESTRUCTIVE). Requires confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description: "Must be true to confirm deletion"
+        }
+      },
+      required: ["confirm"]
+    }
+  }
+};
+function validateKey2(key) {
+  if (typeof key !== "string") return "Key must be a string";
+  const trimmed = key.trim();
+  if (trimmed.length === 0) return "Key cannot be empty";
+  if (trimmed.length > KEY_MAX_LENGTH2) return `Key exceeds maximum length (${KEY_MAX_LENGTH2} chars)`;
+  if (!KEY_PATTERN2.test(trimmed)) return "Key must contain only alphanumeric characters, dashes, and underscores";
+  return null;
+}
+function getValueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+function calculateValueSize(value) {
+  const json = JSON.stringify(value);
+  return Buffer.byteLength(json, "utf-8");
+}
+function buildStorageContext(toolContext) {
+  const global2 = StorageRegistry.getContext();
+  if (global2) return global2;
+  if (toolContext?.userId) return { userId: toolContext.userId };
+  return void 0;
+}
+var UserInfoPluginNextGen = class {
+  name = "user_info";
+  _destroyed = false;
+  _storage = null;
+  maxTotalSize;
+  maxEntries;
+  estimator = simpleTokenEstimator;
+  explicitStorage;
+  _instructionsTokenCache = null;
+  constructor(config) {
+    this.maxTotalSize = config?.maxTotalSize ?? DEFAULT_MAX_TOTAL_SIZE;
+    this.maxEntries = config?.maxEntries ?? DEFAULT_MAX_ENTRIES2;
+    this.explicitStorage = config?.storage;
+  }
+  // ============================================================================
+  // IContextPluginNextGen Implementation
+  // ============================================================================
+  getInstructions() {
+    return USER_INFO_INSTRUCTIONS;
+  }
+  async getContent() {
+    return null;
+  }
+  getContents() {
+    return null;
+  }
+  getTokenSize() {
+    return 0;
+  }
+  getInstructionsTokenSize() {
+    if (this._instructionsTokenCache === null) {
+      this._instructionsTokenCache = this.estimator.estimateTokens(USER_INFO_INSTRUCTIONS);
+    }
+    return this._instructionsTokenCache;
+  }
+  isCompactable() {
+    return false;
+  }
+  async compact(_targetTokensToFree) {
+    return 0;
+  }
+  getTools() {
+    return [
+      this.createUserInfoSetTool(),
+      this.createUserInfoGetTool(),
+      this.createUserInfoRemoveTool(),
+      this.createUserInfoClearTool()
+    ];
+  }
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+  }
+  getState() {
+    return {
+      version: 1
+      // Plugin is stateless - no state to serialize
+    };
+  }
+  restoreState(_state) {
+  }
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("UserInfoPluginNextGen is destroyed");
+    }
+  }
+  /**
+   * Resolve storage instance (lazy singleton)
+   */
+  resolveStorage(context) {
+    if (this._storage) return this._storage;
+    if (this.explicitStorage) {
+      this._storage = this.explicitStorage;
+      return this._storage;
+    }
+    const factory = StorageRegistry.get("userInfo");
+    if (factory) {
+      this._storage = factory(buildStorageContext(context));
+      return this._storage;
+    }
+    this._storage = new FileUserInfoStorage();
+    return this._storage;
+  }
+  // ============================================================================
+  // Tool Factories
+  // ============================================================================
+  createUserInfoSetTool() {
+    return {
+      definition: userInfoSetDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        const key = args.key;
+        const value = args.value;
+        const description = args.description;
+        const keyError = validateKey2(key);
+        if (keyError) {
+          return { error: keyError };
+        }
+        const trimmedKey = key.trim();
+        if (value === void 0) {
+          return { error: "Value cannot be undefined. Use null for explicit null value." };
+        }
+        const storage = this.resolveStorage(context);
+        const entries = await storage.load(userId) || [];
+        const entriesMap = new Map(entries.map((e) => [e.id, e]));
+        if (!entriesMap.has(trimmedKey) && entriesMap.size >= this.maxEntries) {
+          return { error: `Maximum number of entries reached (${this.maxEntries})` };
+        }
+        const valueSize = calculateValueSize(value);
+        const currentTotal = entries.reduce((sum, e) => sum + calculateValueSize(e.value), 0);
+        const existingSize = entriesMap.has(trimmedKey) ? calculateValueSize(entriesMap.get(trimmedKey).value) : 0;
+        const newTotal = currentTotal - existingSize + valueSize;
+        if (newTotal > this.maxTotalSize) {
+          return { error: `Total size would exceed maximum (${this.maxTotalSize} bytes)` };
+        }
+        const now = Date.now();
+        const existing = entriesMap.get(trimmedKey);
+        const entry = {
+          id: trimmedKey,
+          value,
+          valueType: getValueType(value),
+          description,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now
+        };
+        entriesMap.set(trimmedKey, entry);
+        await storage.save(userId, Array.from(entriesMap.values()));
+        return {
+          success: true,
+          message: existing ? `User info '${trimmedKey}' updated` : `User info '${trimmedKey}' added`,
+          key: trimmedKey,
+          valueType: entry.valueType,
+          valueSize
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `set user info '${args.key}'`
+    };
+  }
+  createUserInfoGetTool() {
+    return {
+      definition: userInfoGetDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        const key = args.key;
+        const storage = this.resolveStorage(context);
+        const entries = await storage.load(userId);
+        if (!entries || entries.length === 0) {
+          return { error: "User info not found" };
+        }
+        if (key !== void 0) {
+          const trimmedKey = key.trim();
+          const entry = entries.find((e) => e.id === trimmedKey);
+          if (!entry) {
+            return { error: `User info '${trimmedKey}' not found` };
+          }
+          return {
+            key: entry.id,
+            value: entry.value,
+            valueType: entry.valueType,
+            description: entry.description,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt
+          };
+        }
+        return {
+          count: entries.length,
+          entries: entries.map((e) => ({
+            key: e.id,
+            value: e.value,
+            valueType: e.valueType,
+            description: e.description,
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt
+          }))
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => args.key ? `get user info '${args.key}'` : "get all user info"
+    };
+  }
+  createUserInfoRemoveTool() {
+    return {
+      definition: userInfoRemoveDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        const key = args.key;
+        if (!key || typeof key !== "string" || key.trim().length === 0) {
+          return { error: "Key is required" };
+        }
+        const trimmedKey = key.trim();
+        const storage = this.resolveStorage(context);
+        const entries = await storage.load(userId);
+        if (!entries || entries.length === 0) {
+          return { error: `User info '${trimmedKey}' not found` };
+        }
+        const filtered = entries.filter((e) => e.id !== trimmedKey);
+        if (filtered.length === entries.length) {
+          return { error: `User info '${trimmedKey}' not found` };
+        }
+        if (filtered.length === 0) {
+          await storage.delete(userId);
+        } else {
+          await storage.save(userId, filtered);
+        }
+        return {
+          success: true,
+          message: `User info '${trimmedKey}' removed`,
+          key: trimmedKey
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `remove user info '${args.key}'`
+    };
+  }
+  createUserInfoClearTool() {
+    return {
+      definition: userInfoClearDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        if (args.confirm !== true) {
+          return { error: "Must pass confirm: true to clear user info" };
+        }
+        const storage = this.resolveStorage(context);
+        await storage.delete(userId);
+        return {
+          success: true,
+          message: "All user information cleared"
+        };
+      },
+      permission: { scope: "once", riskLevel: "medium" },
+      describeCall: () => "clear user info"
+    };
+  }
+};
 
 // src/core/context-nextgen/AgentContextNextGen.ts
 init_StorageRegistry();
@@ -16088,7 +16584,8 @@ var StrategyRegistry = class {
 var DEFAULT_FEATURES = {
   workingMemory: true,
   inContextMemory: false,
-  persistentInstructions: false
+  persistentInstructions: false,
+  userInfo: false
 };
 var DEFAULT_CONFIG2 = {
   responseReserve: 4096,
@@ -16205,6 +16702,11 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
         agentId: this._agentId,
         ...piConfig
       }));
+    }
+    if (features.userInfo) {
+      this.registerPlugin(new UserInfoPluginNextGen(
+        configs.userInfo
+      ));
     }
     this.validateStrategyDependencies(this._compactionStrategy);
   }
@@ -22792,8 +23294,8 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs18 = __require("fs");
-      const content = fs18.readFileSync(configPath, "utf-8");
+      const fs19 = __require("fs");
+      const content = fs19.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -22822,10 +23324,10 @@ init_constants();
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs18 = __require("fs");
+    const fs19 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs18.accessSync(resolve(path6));
+        fs19.accessSync(resolve(path6));
         return resolve(path6);
       } catch {
       }
@@ -29004,7 +29506,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs17.createReadStream(audio);
+      return fs18.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -29557,7 +30059,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs16.writeFile(filePath, response.audio);
+    await fs17.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -29905,7 +30407,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs16.readFile(filePath);
+    const audio = await fs17.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -30231,7 +30733,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs17.createReadStream(image);
+    return fs18.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -30378,8 +30880,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs18 = await import('fs');
-      const buffer = fs18.readFileSync(image);
+      const fs19 = await import('fs');
+      const buffer = fs19.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -30540,7 +31042,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs17.createReadStream(image);
+    return fs18.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -31990,8 +32492,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs18 = await import('fs');
-      const data = fs18.readFileSync(image);
+      const fs19 = await import('fs');
+      const data = fs19.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -32169,7 +32671,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs18 = await import('fs/promises');
+            const fs19 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -32180,11 +32682,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs18.readFile(tempFile);
-              await fs18.unlink(tempFile).catch(() => {
+              buffer = await fs19.readFile(tempFile);
+              await fs19.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs18.unlink(tempFile).catch(() => {
+              await fs19.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -32306,8 +32808,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs18 = await import('fs/promises');
-    const data = await fs18.readFile(image);
+    const fs19 = await import('fs/promises');
+    const data = await fs19.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -32614,8 +33116,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs18 = await import('fs');
-    const data = fs18.readFileSync(image);
+    const fs19 = await import('fs');
+    const data = fs19.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -36318,7 +36820,7 @@ var InMemoryHistoryStorage = class {
     this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
-function getDefaultBaseDirectory2() {
+function getDefaultBaseDirectory3() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
@@ -36341,7 +36843,7 @@ var FileContextStorage = class {
   constructor(config) {
     this.agentId = config.agentId;
     const sanitizedAgentId = sanitizeId(config.agentId);
-    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory2();
+    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory3();
     this.prettyPrint = config.prettyPrint ?? true;
     this.sessionsDirectory = join(baseDir, sanitizedAgentId, "sessions");
     this.indexPath = join(this.sessionsDirectory, "_index.json");
@@ -36613,7 +37115,7 @@ var FileContextStorage = class {
 function createFileContextStorage(agentId, options) {
   return new FileContextStorage({ agentId, ...options });
 }
-function getDefaultBaseDirectory3() {
+function getDefaultBaseDirectory4() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
@@ -36632,7 +37134,7 @@ var FileAgentDefinitionStorage = class {
   prettyPrint;
   index = null;
   constructor(config = {}) {
-    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory3();
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory4();
     this.prettyPrint = config.prettyPrint ?? true;
     this.indexPath = join(this.baseDirectory, "_agents_index.json");
   }
@@ -36887,10 +37389,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs16.mkdir(dir, { recursive: true });
+    await fs17.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2.join(dir, filename);
-    await fs16.writeFile(filePath, data);
+    await fs17.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -36901,7 +37403,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs16.readFile(location);
+      return await fs17.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -36911,7 +37413,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs16.unlink(location);
+      await fs17.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -36921,7 +37423,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs16.access(location);
+      await fs17.access(location);
       return true;
     } catch {
       return false;
@@ -36930,11 +37432,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs16.readdir(this.outputDir);
+    const files = await fs17.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2.join(this.outputDir, file);
       try {
-        const stat6 = await fs16.stat(filePath);
+        const stat6 = await fs17.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -36974,7 +37476,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs16.mkdir(this.outputDir, { recursive: true });
+      await fs17.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -36982,36 +37484,56 @@ var FileMediaStorage = class {
 function createFileMediaStorage(config) {
   return new FileMediaStorage(config);
 }
-function getDefaultBaseDirectory4() {
+function getDefaultBaseDirectory5() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return join(appData, "oneringai", "custom-tools");
+      return join(appData, "oneringai", "users");
     }
   }
-  return join(homedir(), ".oneringai", "custom-tools");
+  return join(homedir(), ".oneringai", "users");
+}
+function sanitizeUserId2(userId) {
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
 }
 function sanitizeName(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
 }
 var FileCustomToolStorage = class {
   baseDirectory;
-  indexPath;
   prettyPrint;
-  index = null;
   constructor(config = {}) {
-    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory4();
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory5();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.indexPath = join(this.baseDirectory, "_index.json");
+  }
+  /**
+   * Get the directory path for a specific user's custom tools
+   */
+  getUserDirectory(userId) {
+    const sanitizedId = sanitizeUserId2(userId);
+    return join(this.baseDirectory, sanitizedId, "custom-tools");
+  }
+  /**
+   * Get the index file path for a specific user
+   */
+  getUserIndexPath(userId) {
+    return join(this.getUserDirectory(userId), "_index.json");
+  }
+  /**
+   * Get the tool file path for a specific user
+   */
+  getToolPath(userId, sanitizedName) {
+    return join(this.getUserDirectory(userId), `${sanitizedName}.json`);
   }
   /**
    * Save a custom tool definition
    */
-  async save(definition) {
+  async save(userId, definition) {
+    const directory = this.getUserDirectory(userId);
     const sanitized = sanitizeName(definition.name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
-    await this.ensureDirectory(this.baseDirectory);
+    const filePath = this.getToolPath(userId, sanitized);
+    await this.ensureDirectory(directory);
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
@@ -37024,14 +37546,14 @@ var FileCustomToolStorage = class {
       }
       throw error;
     }
-    await this.updateIndex(definition);
+    await this.updateIndex(userId, definition);
   }
   /**
    * Load a custom tool definition by name
    */
-  async load(name) {
+  async load(userId, name) {
     const sanitized = sanitizeName(name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
     try {
       const data = await promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
@@ -37048,9 +37570,9 @@ var FileCustomToolStorage = class {
   /**
    * Delete a custom tool definition
    */
-  async delete(name) {
+  async delete(userId, name) {
     const sanitized = sanitizeName(name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
     try {
       await promises.unlink(filePath);
     } catch (error) {
@@ -37058,14 +37580,14 @@ var FileCustomToolStorage = class {
         throw error;
       }
     }
-    await this.removeFromIndex(name);
+    await this.removeFromIndex(userId, name);
   }
   /**
    * Check if a custom tool exists
    */
-  async exists(name) {
+  async exists(userId, name) {
     const sanitized = sanitizeName(name);
-    const filePath = join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
     try {
       await promises.access(filePath);
       return true;
@@ -37076,8 +37598,8 @@ var FileCustomToolStorage = class {
   /**
    * List custom tools (summaries only)
    */
-  async list(options) {
-    const index = await this.loadIndex();
+  async list(userId, options) {
+    const index = await this.loadIndex(userId);
     let entries = [...index.tools];
     if (options?.tags && options.tags.length > 0) {
       entries = entries.filter((e) => {
@@ -37118,20 +37640,20 @@ var FileCustomToolStorage = class {
   /**
    * Update metadata without loading full definition
    */
-  async updateMetadata(name, metadata) {
-    const definition = await this.load(name);
+  async updateMetadata(userId, name, metadata) {
+    const definition = await this.load(userId, name);
     if (!definition) {
       throw new Error(`Custom tool '${name}' not found`);
     }
     definition.metadata = { ...definition.metadata, ...metadata };
     definition.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await this.save(definition);
+    await this.save(userId, definition);
   }
   /**
-   * Get storage path
+   * Get storage path for a specific user
    */
-  getPath() {
-    return this.baseDirectory;
+  getPath(userId) {
+    return this.getUserDirectory(userId);
   }
   // ==========================================================================
   // Private Helpers
@@ -37145,35 +37667,32 @@ var FileCustomToolStorage = class {
       }
     }
   }
-  async loadIndex() {
-    if (this.index) {
-      return this.index;
-    }
+  async loadIndex(userId) {
+    const indexPath = this.getUserIndexPath(userId);
     try {
-      const data = await promises.readFile(this.indexPath, "utf-8");
-      this.index = JSON.parse(data);
-      return this.index;
+      const data = await promises.readFile(indexPath, "utf-8");
+      return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        this.index = {
+        return {
           version: 1,
           tools: [],
           lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
         };
-        return this.index;
       }
       throw error;
     }
   }
-  async saveIndex() {
-    if (!this.index) return;
-    await this.ensureDirectory(this.baseDirectory);
-    this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
-    const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await promises.writeFile(this.indexPath, data, "utf-8");
+  async saveIndex(userId, index) {
+    const directory = this.getUserDirectory(userId);
+    const indexPath = this.getUserIndexPath(userId);
+    await this.ensureDirectory(directory);
+    index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(index, null, 2) : JSON.stringify(index);
+    await promises.writeFile(indexPath, data, "utf-8");
   }
-  async updateIndex(definition) {
-    const index = await this.loadIndex();
+  async updateIndex(userId, definition) {
+    const index = await this.loadIndex(userId);
     const entry = this.definitionToIndexEntry(definition);
     const existingIdx = index.tools.findIndex((e) => e.name === definition.name);
     if (existingIdx >= 0) {
@@ -37181,12 +37700,12 @@ var FileCustomToolStorage = class {
     } else {
       index.tools.push(entry);
     }
-    await this.saveIndex();
+    await this.saveIndex(userId, index);
   }
-  async removeFromIndex(name) {
-    const index = await this.loadIndex();
+  async removeFromIndex(userId, name) {
+    const index = await this.loadIndex(userId);
     index.tools = index.tools.filter((e) => e.name !== name);
-    await this.saveIndex();
+    await this.saveIndex(userId, index);
   }
   definitionToIndexEntry(definition) {
     return {
@@ -38303,8 +38822,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs16.mkdir(this.directory, { recursive: true });
-      await fs16.chmod(this.directory, 448);
+      await fs17.mkdir(this.directory, { recursive: true });
+      await fs17.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -38320,13 +38839,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs16.writeFile(filePath, encrypted, "utf8");
-    await fs16.chmod(filePath, 384);
+    await fs17.writeFile(filePath, encrypted, "utf8");
+    await fs17.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs16.readFile(filePath, "utf8");
+      const encrypted = await fs17.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -38335,7 +38854,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs16.unlink(filePath);
+        await fs17.unlink(filePath);
       } catch {
       }
       return null;
@@ -38344,7 +38863,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs16.unlink(filePath);
+      await fs17.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -38354,7 +38873,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs16.access(filePath);
+      await fs17.access(filePath);
       return true;
     } catch {
       return false;
@@ -38365,7 +38884,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs16.readdir(this.directory);
+      const files = await fs17.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -38376,10 +38895,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs16.readdir(this.directory);
+      const files = await fs17.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs16.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs17.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -38827,14 +39346,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs16.writeFile(filePath, json, "utf8");
-    await fs16.chmod(filePath, 384);
+    await fs17.writeFile(filePath, json, "utf8");
+    await fs17.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs16.readFile(filePath, "utf8");
+      const json = await fs17.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -38847,7 +39366,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs16.unlink(filePath);
+      await fs17.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -38861,7 +39380,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs16.access(filePath);
+      await fs17.access(filePath);
       return true;
     } catch {
       return false;
@@ -38887,13 +39406,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs16.readdir(this.directory);
+      const files = await fs17.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs16.unlink(path2.join(this.directory, f)).catch(() => {
+          (f) => fs17.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -38920,8 +39439,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs16.mkdir(this.directory, { recursive: true });
-      await fs16.chmod(this.directory, 448);
+      await fs17.mkdir(this.directory, { recursive: true });
+      await fs17.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -38932,7 +39451,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs16.readFile(this.indexPath, "utf8");
+      const json = await fs17.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -38950,8 +39469,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs16.writeFile(this.indexPath, json, "utf8");
-    await fs16.chmod(this.indexPath, 384);
+    await fs17.writeFile(this.indexPath, json, "utf8");
+    await fs17.chmod(this.indexPath, 384);
   }
 };
 
@@ -41406,8 +41925,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs17.existsSync(filePath)) {
-      fs17.unlinkSync(filePath);
+    if (fs18.existsSync(filePath)) {
+      fs18.unlinkSync(filePath);
     }
   } catch {
   }
@@ -41458,7 +41977,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs17.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs18.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -41475,14 +41994,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs17.existsSync(tempFile) && fs17.statSync(tempFile).size > 0) {
+      if (fs18.existsSync(tempFile) && fs18.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs17.existsSync(tempFile) && fs17.statSync(tempFile).size > 0) {
+      if (fs18.existsSync(tempFile) && fs18.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -41509,7 +42028,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs17.existsSync(tempFile) && fs17.statSync(tempFile).size > 0) {
+    if (fs18.existsSync(tempFile) && fs18.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -41522,7 +42041,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs17.readFileSync(filePath);
+    const imageBuffer = fs18.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -46757,7 +47276,7 @@ var desktopTools = [
 
 // src/tools/custom-tools/resolveStorage.ts
 init_StorageRegistry();
-function buildStorageContext(toolContext) {
+function buildStorageContext2(toolContext) {
   const global2 = StorageRegistry.getContext();
   if (global2) return global2;
   if (toolContext?.userId) return { userId: toolContext.userId };
@@ -46767,7 +47286,7 @@ function resolveCustomToolStorage(explicit, toolContext) {
   if (explicit) return explicit;
   const factory = StorageRegistry.get("customTools");
   if (factory) {
-    return factory(buildStorageContext(toolContext));
+    return factory(buildStorageContext2(toolContext));
   }
   return new FileCustomToolStorage();
 }
@@ -46795,12 +47314,20 @@ function createCustomToolDelete(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args, context) => {
       try {
+        const userId = context?.userId;
+        if (!userId) {
+          return {
+            success: false,
+            name: args.name,
+            error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
+          };
+        }
         const s = resolveCustomToolStorage(storage, context);
-        const exists = await s.exists(args.name);
+        const exists = await s.exists(userId, args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
         }
-        await s.delete(args.name);
+        await s.delete(userId, args.name);
         return { success: true, name: args.name };
       } catch (error) {
         return { success: false, name: args.name, error: error.message };
@@ -47041,8 +47568,15 @@ function createCustomToolList(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args, context) => {
+      const userId = context?.userId;
+      if (!userId) {
+        return {
+          tools: [],
+          total: 0
+        };
+      }
       const s = resolveCustomToolStorage(storage, context);
-      const tools = await s.list({
+      const tools = await s.list(userId, {
         search: args.search,
         tags: args.tags,
         category: args.category,
@@ -47078,8 +47612,15 @@ function createCustomToolLoad(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args, context) => {
+      const userId = context?.userId;
+      if (!userId) {
+        return {
+          success: false,
+          error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
+        };
+      }
       const s = resolveCustomToolStorage(storage, context);
-      const tool = await s.load(args.name);
+      const tool = await s.load(userId, args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };
       }
@@ -47151,9 +47692,18 @@ function createCustomToolSave(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args, context) => {
       try {
+        const userId = context?.userId;
+        if (!userId) {
+          return {
+            success: false,
+            name: args.name,
+            storagePath: "N/A",
+            error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
+          };
+        }
         const s = resolveCustomToolStorage(storage, context);
         const now = (/* @__PURE__ */ new Date()).toISOString();
-        const existing = await s.load(args.name);
+        const existing = await s.load(userId, args.name);
         const definition = {
           version: CUSTOM_TOOL_DEFINITION_VERSION,
           name: args.name,
@@ -47172,17 +47722,18 @@ function createCustomToolSave(storage) {
             requiresConnector: (args.connectorNames?.length ?? 0) > 0
           }
         };
-        await s.save(definition);
+        await s.save(userId, definition);
         return {
           success: true,
           name: args.name,
-          storagePath: s.getPath()
+          storagePath: s.getPath(userId)
         };
       } catch (error) {
+        const userId = context?.userId;
         return {
           success: false,
           name: args.name,
-          storagePath: resolveCustomToolStorage(storage, context).getPath(),
+          storagePath: userId ? resolveCustomToolStorage(storage, context).getPath(userId) : "N/A",
           error: error.message
         };
       }
@@ -47924,6 +48475,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

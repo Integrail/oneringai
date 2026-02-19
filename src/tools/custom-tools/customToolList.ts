@@ -61,8 +61,17 @@ export function createCustomToolList(storage?: ICustomToolStorage): ToolFunction
     permission: { scope: 'always', riskLevel: 'low' },
 
     execute: async (args: ListArgs, context?: ToolContext): Promise<ListResult> => {
+      // Validate userId
+      const userId = context?.userId;
+      if (!userId) {
+        return {
+          tools: [],
+          total: 0,
+        };
+      }
+
       const s = resolveCustomToolStorage(storage, context);
-      const tools = await s.list({
+      const tools = await s.list(userId, {
         search: args.search,
         tags: args.tags,
         category: args.category,

@@ -44,6 +44,7 @@ export {
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
+  UserInfoPluginNextGen,
   // Compaction strategies
   DefaultCompactionStrategy,
   // Strategy Registry
@@ -71,6 +72,8 @@ export type {
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
   InstructionEntry,
+  UserInfoPluginConfig,
+  SerializedUserInfoState,
   // Compaction strategy types
   ICompactionStrategy,
   CompactionContext,

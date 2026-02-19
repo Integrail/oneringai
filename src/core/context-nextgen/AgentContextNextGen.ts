@@ -61,12 +61,14 @@ import {
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
+  UserInfoPluginNextGen,
 } from './plugins/index.js';
 import { StorageRegistry } from '../StorageRegistry.js';
 import type {
   WorkingMemoryPluginConfig,
   InContextMemoryConfig,
   PersistentInstructionsConfig,
+  UserInfoPluginConfig,
 } from './plugins/index.js';
 
 // Strategy imports
@@ -263,6 +265,13 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         agentId: this._agentId,
         ...piConfig,
       }));
+    }
+
+    // 4. User Info (default: disabled)
+    if (features.userInfo) {
+      this.registerPlugin(new UserInfoPluginNextGen(
+        configs.userInfo as UserInfoPluginConfig | undefined
+      ));
     }
 
     // Validate strategy dependencies now that plugins are initialized

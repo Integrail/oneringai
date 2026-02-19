@@ -2,7 +2,7 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs17 = require('fs');
+var fs18 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
 var TurndownService = require('turndown');
@@ -17,7 +17,7 @@ var z = require('zod/v4');
 var spawn = require('cross-spawn');
 var process2 = require('process');
 var stream = require('stream');
-var fs16 = require('fs/promises');
+var fs17 = require('fs/promises');
 var simpleIcons = require('simple-icons');
 var child_process = require('child_process');
 var util = require('util');
@@ -45,7 +45,7 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs17__namespace = /*#__PURE__*/_interopNamespace(fs17);
+var fs18__namespace = /*#__PURE__*/_interopNamespace(fs18);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var os2__namespace = /*#__PURE__*/_interopNamespace(os2);
@@ -55,7 +55,7 @@ var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var spawn__default = /*#__PURE__*/_interopDefault(spawn);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
-var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
+var fs17__namespace = /*#__PURE__*/_interopNamespace(fs17);
 var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -673,7 +673,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs17__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs18__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1432,10 +1432,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2__namespace.dirname(filePath);
-          if (!fs17__namespace.existsSync(dir)) {
-            fs17__namespace.mkdirSync(dir, { recursive: true });
+          if (!fs18__namespace.existsSync(dir)) {
+            fs18__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs17__namespace.createWriteStream(filePath, {
+          this.fileStream = fs18__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -9165,12 +9165,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs18, exportName) {
+    function addFormats(ajv, list, fs19, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs18[f]);
+        ajv.addFormat(f, fs19[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -10173,6 +10173,11 @@ var DEFAULT_ALLOWLIST = [
   "instructions_remove",
   "instructions_list",
   "instructions_clear",
+  // User info tools (user-specific data - safe)
+  "user_info_set",
+  "user_info_get",
+  "user_info_remove",
+  "user_info_clear",
   // Meta-tools (internal coordination)
   "_start_planning",
   "_modify_plan",
@@ -14897,7 +14902,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async load() {
     try {
-      const raw = await fs17.promises.readFile(this.filePath, "utf-8");
+      const raw = await fs18.promises.readFile(this.filePath, "utf-8");
       const data = JSON.parse(raw);
       if (data.version === 2 && Array.isArray(data.entries)) {
         return data.entries.length > 0 ? data.entries : null;
@@ -14909,7 +14914,7 @@ var FilePersistentInstructionsStorage = class {
       }
     }
     try {
-      const content = await fs17.promises.readFile(this.legacyFilePath, "utf-8");
+      const content = await fs18.promises.readFile(this.legacyFilePath, "utf-8");
       const trimmed = content.trim();
       if (!trimmed) return null;
       const now = Date.now();
@@ -14939,11 +14944,11 @@ var FilePersistentInstructionsStorage = class {
     };
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs17.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
-      await fs17.promises.rename(tempPath, this.filePath);
+      await fs18.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await fs18.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
-        await fs17.promises.unlink(tempPath);
+        await fs18.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -14955,7 +14960,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async delete() {
     try {
-      await fs17.promises.unlink(this.filePath);
+      await fs18.promises.unlink(this.filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -14968,11 +14973,11 @@ var FilePersistentInstructionsStorage = class {
    */
   async exists() {
     try {
-      await fs17.promises.access(this.filePath);
+      await fs18.promises.access(this.filePath);
       return true;
     } catch {
       try {
-        await fs17.promises.access(this.legacyFilePath);
+        await fs18.promises.access(this.legacyFilePath);
         return true;
       } catch {
         return false;
@@ -14996,7 +15001,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async ensureDirectory() {
     try {
-      await fs17.promises.mkdir(this.directory, { recursive: true });
+      await fs18.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -15008,7 +15013,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async removeLegacyFile() {
     try {
-      await fs17.promises.unlink(this.legacyFilePath);
+      await fs18.promises.unlink(this.legacyFilePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         console.warn(`Failed to remove legacy instructions file: ${this.legacyFilePath}`);
@@ -15469,6 +15474,497 @@ ${entry.content}`).join("\n\n");
       },
       permission: { scope: "once", riskLevel: "medium" },
       describeCall: () => "clear instructions"
+    };
+  }
+};
+function getDefaultBaseDirectory2() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return path2.join(appData, "oneringai", "users");
+    }
+  }
+  return path2.join(os2.homedir(), ".oneringai", "users");
+}
+function sanitizeUserId(userId) {
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileUserInfoStorage = class {
+  baseDirectory;
+  filename;
+  constructor(config) {
+    this.baseDirectory = config?.baseDirectory ?? getDefaultBaseDirectory2();
+    this.filename = config?.filename ?? "user_info.json";
+  }
+  /**
+   * Get the directory path for a specific user
+   */
+  getUserDirectory(userId) {
+    const sanitizedId = sanitizeUserId(userId);
+    return path2.join(this.baseDirectory, sanitizedId);
+  }
+  /**
+   * Get the file path for a specific user
+   */
+  getUserFilePath(userId) {
+    return path2.join(this.getUserDirectory(userId), this.filename);
+  }
+  /**
+   * Load user info entries from file for a specific user
+   */
+  async load(userId) {
+    const filePath = this.getUserFilePath(userId);
+    try {
+      const raw = await fs18.promises.readFile(filePath, "utf-8");
+      const data = JSON.parse(raw);
+      if (data.version === 1 && Array.isArray(data.entries)) {
+        return data.entries.length > 0 ? data.entries : null;
+      }
+      return null;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+        throw error;
+      }
+      return null;
+    }
+  }
+  /**
+   * Save user info entries to file for a specific user
+   * Creates directory if it doesn't exist.
+   */
+  async save(userId, entries) {
+    const directory = this.getUserDirectory(userId);
+    const filePath = this.getUserFilePath(userId);
+    await this.ensureDirectory(directory);
+    const data = {
+      version: 1,
+      userId,
+      entries
+    };
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await fs18.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await fs18.promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await fs18.promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+  }
+  /**
+   * Delete user info file for a specific user
+   */
+  async delete(userId) {
+    const filePath = this.getUserFilePath(userId);
+    try {
+      await fs18.promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  /**
+   * Check if user info file exists for a specific user
+   */
+  async exists(userId) {
+    const filePath = this.getUserFilePath(userId);
+    try {
+      await fs18.promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Get the file path for a specific user (for display/debugging)
+   */
+  getPath(userId) {
+    return this.getUserFilePath(userId);
+  }
+  /**
+   * Ensure the directory exists
+   */
+  async ensureDirectory(directory) {
+    try {
+      await fs18.promises.mkdir(directory, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+};
+
+// src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts
+init_StorageRegistry();
+var DEFAULT_MAX_TOTAL_SIZE = 1e5;
+var DEFAULT_MAX_ENTRIES2 = 100;
+var KEY_MAX_LENGTH2 = 100;
+var KEY_PATTERN2 = /^[a-zA-Z0-9_-]+$/;
+var USER_INFO_INSTRUCTIONS = `User Info stores key-value information about the current user.
+Data is user-specific and persists across sessions and agents.
+
+**To manage:**
+- \`user_info_set(key, value, description?)\`: Store/update user information
+- \`user_info_get(key?)\`: Retrieve one entry by key, or all entries if no key
+- \`user_info_remove(key)\`: Remove a specific entry
+- \`user_info_clear(confirm: true)\`: Remove all entries (destructive!)
+
+**Use for:** User preferences, context, metadata (theme, language, timezone, role, etc.)`;
+var userInfoSetDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_set",
+    description: `Store or update user information by key. Data persists across sessions.
+If the key exists, it will be updated. If not, a new entry is created.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Unique key for the information (alphanumeric, dash, underscore; max 100 chars)"
+        },
+        value: {
+          description: "Value to store (any JSON-serializable data: string, number, boolean, object, array)"
+        },
+        description: {
+          type: "string",
+          description: "Optional description for self-documentation"
+        }
+      },
+      required: ["key", "value"]
+    }
+  }
+};
+var userInfoGetDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_get",
+    description: "Retrieve user information. If key is provided, returns that entry. Otherwise returns all entries.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Key of the entry to retrieve (optional - omit to get all entries)"
+        }
+      },
+      required: []
+    }
+  }
+};
+var userInfoRemoveDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_remove",
+    description: "Remove a specific user information entry by key.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Key of the entry to remove"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var userInfoClearDefinition = {
+  type: "function",
+  function: {
+    name: "user_info_clear",
+    description: "Clear all user information entries (DESTRUCTIVE). Requires confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description: "Must be true to confirm deletion"
+        }
+      },
+      required: ["confirm"]
+    }
+  }
+};
+function validateKey2(key) {
+  if (typeof key !== "string") return "Key must be a string";
+  const trimmed = key.trim();
+  if (trimmed.length === 0) return "Key cannot be empty";
+  if (trimmed.length > KEY_MAX_LENGTH2) return `Key exceeds maximum length (${KEY_MAX_LENGTH2} chars)`;
+  if (!KEY_PATTERN2.test(trimmed)) return "Key must contain only alphanumeric characters, dashes, and underscores";
+  return null;
+}
+function getValueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+function calculateValueSize(value) {
+  const json = JSON.stringify(value);
+  return Buffer.byteLength(json, "utf-8");
+}
+function buildStorageContext(toolContext) {
+  const global2 = exports.StorageRegistry.getContext();
+  if (global2) return global2;
+  if (toolContext?.userId) return { userId: toolContext.userId };
+  return void 0;
+}
+var UserInfoPluginNextGen = class {
+  name = "user_info";
+  _destroyed = false;
+  _storage = null;
+  maxTotalSize;
+  maxEntries;
+  estimator = simpleTokenEstimator;
+  explicitStorage;
+  _instructionsTokenCache = null;
+  constructor(config) {
+    this.maxTotalSize = config?.maxTotalSize ?? DEFAULT_MAX_TOTAL_SIZE;
+    this.maxEntries = config?.maxEntries ?? DEFAULT_MAX_ENTRIES2;
+    this.explicitStorage = config?.storage;
+  }
+  // ============================================================================
+  // IContextPluginNextGen Implementation
+  // ============================================================================
+  getInstructions() {
+    return USER_INFO_INSTRUCTIONS;
+  }
+  async getContent() {
+    return null;
+  }
+  getContents() {
+    return null;
+  }
+  getTokenSize() {
+    return 0;
+  }
+  getInstructionsTokenSize() {
+    if (this._instructionsTokenCache === null) {
+      this._instructionsTokenCache = this.estimator.estimateTokens(USER_INFO_INSTRUCTIONS);
+    }
+    return this._instructionsTokenCache;
+  }
+  isCompactable() {
+    return false;
+  }
+  async compact(_targetTokensToFree) {
+    return 0;
+  }
+  getTools() {
+    return [
+      this.createUserInfoSetTool(),
+      this.createUserInfoGetTool(),
+      this.createUserInfoRemoveTool(),
+      this.createUserInfoClearTool()
+    ];
+  }
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+  }
+  getState() {
+    return {
+      version: 1
+      // Plugin is stateless - no state to serialize
+    };
+  }
+  restoreState(_state) {
+  }
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("UserInfoPluginNextGen is destroyed");
+    }
+  }
+  /**
+   * Resolve storage instance (lazy singleton)
+   */
+  resolveStorage(context) {
+    if (this._storage) return this._storage;
+    if (this.explicitStorage) {
+      this._storage = this.explicitStorage;
+      return this._storage;
+    }
+    const factory = exports.StorageRegistry.get("userInfo");
+    if (factory) {
+      this._storage = factory(buildStorageContext(context));
+      return this._storage;
+    }
+    this._storage = new FileUserInfoStorage();
+    return this._storage;
+  }
+  // ============================================================================
+  // Tool Factories
+  // ============================================================================
+  createUserInfoSetTool() {
+    return {
+      definition: userInfoSetDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        const key = args.key;
+        const value = args.value;
+        const description = args.description;
+        const keyError = validateKey2(key);
+        if (keyError) {
+          return { error: keyError };
+        }
+        const trimmedKey = key.trim();
+        if (value === void 0) {
+          return { error: "Value cannot be undefined. Use null for explicit null value." };
+        }
+        const storage = this.resolveStorage(context);
+        const entries = await storage.load(userId) || [];
+        const entriesMap = new Map(entries.map((e) => [e.id, e]));
+        if (!entriesMap.has(trimmedKey) && entriesMap.size >= this.maxEntries) {
+          return { error: `Maximum number of entries reached (${this.maxEntries})` };
+        }
+        const valueSize = calculateValueSize(value);
+        const currentTotal = entries.reduce((sum, e) => sum + calculateValueSize(e.value), 0);
+        const existingSize = entriesMap.has(trimmedKey) ? calculateValueSize(entriesMap.get(trimmedKey).value) : 0;
+        const newTotal = currentTotal - existingSize + valueSize;
+        if (newTotal > this.maxTotalSize) {
+          return { error: `Total size would exceed maximum (${this.maxTotalSize} bytes)` };
+        }
+        const now = Date.now();
+        const existing = entriesMap.get(trimmedKey);
+        const entry = {
+          id: trimmedKey,
+          value,
+          valueType: getValueType(value),
+          description,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now
+        };
+        entriesMap.set(trimmedKey, entry);
+        await storage.save(userId, Array.from(entriesMap.values()));
+        return {
+          success: true,
+          message: existing ? `User info '${trimmedKey}' updated` : `User info '${trimmedKey}' added`,
+          key: trimmedKey,
+          valueType: entry.valueType,
+          valueSize
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `set user info '${args.key}'`
+    };
+  }
+  createUserInfoGetTool() {
+    return {
+      definition: userInfoGetDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        const key = args.key;
+        const storage = this.resolveStorage(context);
+        const entries = await storage.load(userId);
+        if (!entries || entries.length === 0) {
+          return { error: "User info not found" };
+        }
+        if (key !== void 0) {
+          const trimmedKey = key.trim();
+          const entry = entries.find((e) => e.id === trimmedKey);
+          if (!entry) {
+            return { error: `User info '${trimmedKey}' not found` };
+          }
+          return {
+            key: entry.id,
+            value: entry.value,
+            valueType: entry.valueType,
+            description: entry.description,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt
+          };
+        }
+        return {
+          count: entries.length,
+          entries: entries.map((e) => ({
+            key: e.id,
+            value: e.value,
+            valueType: e.valueType,
+            description: e.description,
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt
+          }))
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => args.key ? `get user info '${args.key}'` : "get all user info"
+    };
+  }
+  createUserInfoRemoveTool() {
+    return {
+      definition: userInfoRemoveDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        const key = args.key;
+        if (!key || typeof key !== "string" || key.trim().length === 0) {
+          return { error: "Key is required" };
+        }
+        const trimmedKey = key.trim();
+        const storage = this.resolveStorage(context);
+        const entries = await storage.load(userId);
+        if (!entries || entries.length === 0) {
+          return { error: `User info '${trimmedKey}' not found` };
+        }
+        const filtered = entries.filter((e) => e.id !== trimmedKey);
+        if (filtered.length === entries.length) {
+          return { error: `User info '${trimmedKey}' not found` };
+        }
+        if (filtered.length === 0) {
+          await storage.delete(userId);
+        } else {
+          await storage.save(userId, filtered);
+        }
+        return {
+          success: true,
+          message: `User info '${trimmedKey}' removed`,
+          key: trimmedKey
+        };
+      },
+      permission: { scope: "always", riskLevel: "low" },
+      describeCall: (args) => `remove user info '${args.key}'`
+    };
+  }
+  createUserInfoClearTool() {
+    return {
+      definition: userInfoClearDefinition,
+      execute: async (args, context) => {
+        this.assertNotDestroyed();
+        const userId = context?.userId;
+        if (!userId) {
+          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
+        }
+        if (args.confirm !== true) {
+          return { error: "Must pass confirm: true to clear user info" };
+        }
+        const storage = this.resolveStorage(context);
+        await storage.delete(userId);
+        return {
+          success: true,
+          message: "All user information cleared"
+        };
+      },
+      permission: { scope: "once", riskLevel: "medium" },
+      describeCall: () => "clear user info"
     };
   }
 };
@@ -16120,7 +16616,8 @@ var StrategyRegistry = class {
 var DEFAULT_FEATURES = {
   workingMemory: true,
   inContextMemory: false,
-  persistentInstructions: false
+  persistentInstructions: false,
+  userInfo: false
 };
 var DEFAULT_CONFIG2 = {
   responseReserve: 4096,
@@ -16237,6 +16734,11 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
         agentId: this._agentId,
         ...piConfig
       }));
+    }
+    if (features.userInfo) {
+      this.registerPlugin(new UserInfoPluginNextGen(
+        configs.userInfo
+      ));
     }
     this.validateStrategyDependencies(this._compactionStrategy);
   }
@@ -22803,7 +23305,7 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const content = await fs17.promises.readFile(configPath, "utf-8");
+      const content = await fs18.promises.readFile(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -22824,8 +23326,8 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs18 = __require("fs");
-      const content = fs18.readFileSync(configPath, "utf-8");
+      const fs19 = __require("fs");
+      const content = fs19.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -22843,7 +23345,7 @@ init_constants();
   static async findConfig() {
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs17.promises.access(path2.resolve(path6));
+        await fs18.promises.access(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -22854,10 +23356,10 @@ init_constants();
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs18 = __require("fs");
+    const fs19 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs18.accessSync(path2.resolve(path6));
+        fs19.accessSync(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -28431,7 +28933,7 @@ var MCPRegistry = class {
   static async loadFromConfigFile(path6) {
     try {
       const configPath = path2.resolve(path6);
-      const content = await fs17.promises.readFile(configPath, "utf-8");
+      const content = await fs18.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -29036,7 +29538,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs17__namespace.createReadStream(audio);
+      return fs18__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -29589,7 +30091,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs16__namespace.writeFile(filePath, response.audio);
+    await fs17__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -29937,7 +30439,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs16__namespace.readFile(filePath);
+    const audio = await fs17__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -30263,7 +30765,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs17__namespace.createReadStream(image);
+    return fs18__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -30410,8 +30912,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs18 = await import('fs');
-      const buffer = fs18.readFileSync(image);
+      const fs19 = await import('fs');
+      const buffer = fs19.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -30572,7 +31074,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs17__namespace.createReadStream(image);
+    return fs18__namespace.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -32022,8 +32524,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs18 = await import('fs');
-      const data = fs18.readFileSync(image);
+      const fs19 = await import('fs');
+      const data = fs19.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -32201,7 +32703,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs18 = await import('fs/promises');
+            const fs19 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -32212,11 +32714,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs18.readFile(tempFile);
-              await fs18.unlink(tempFile).catch(() => {
+              buffer = await fs19.readFile(tempFile);
+              await fs19.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs18.unlink(tempFile).catch(() => {
+              await fs19.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -32338,8 +32840,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs18 = await import('fs/promises');
-    const data = await fs18.readFile(image);
+    const fs19 = await import('fs/promises');
+    const data = await fs19.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -32646,8 +33148,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs18 = await import('fs');
-    const data = fs18.readFileSync(image);
+    const fs19 = await import('fs');
+    const data = fs19.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -34083,7 +34585,7 @@ var DocumentReader = class _DocumentReader {
   async resolveSource(source) {
     switch (source.type) {
       case "file": {
-        const buffer = await fs16.readFile(source.path);
+        const buffer = await fs17.readFile(source.path);
         const filename = source.path.split("/").pop() || source.path;
         return { buffer, filename };
       }
@@ -36350,7 +36852,7 @@ var InMemoryHistoryStorage = class {
     this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
-function getDefaultBaseDirectory2() {
+function getDefaultBaseDirectory3() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
@@ -36373,7 +36875,7 @@ var FileContextStorage = class {
   constructor(config) {
     this.agentId = config.agentId;
     const sanitizedAgentId = sanitizeId(config.agentId);
-    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory2();
+    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory3();
     this.prettyPrint = config.prettyPrint ?? true;
     this.sessionsDirectory = path2.join(baseDir, sanitizedAgentId, "sessions");
     this.indexPath = path2.join(this.sessionsDirectory, "_index.json");
@@ -36402,11 +36904,11 @@ var FileContextStorage = class {
     const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs17.promises.writeFile(tempPath, data, "utf-8");
-      await fs17.promises.rename(tempPath, filePath);
+      await fs18.promises.writeFile(tempPath, data, "utf-8");
+      await fs18.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs17.promises.unlink(tempPath);
+        await fs18.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -36427,7 +36929,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs17.promises.unlink(filePath);
+      await fs18.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -36442,7 +36944,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs17.promises.access(filePath);
+      await fs18.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -36507,7 +37009,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
-    await fs17.promises.writeFile(filePath, data, "utf-8");
+    await fs18.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(stored);
   }
   /**
@@ -36535,13 +37037,13 @@ var FileContextStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs17.promises.readdir(this.sessionsDirectory);
+    const files = await fs18.promises.readdir(this.sessionsDirectory);
     const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
         const filePath = path2.join(this.sessionsDirectory, file);
-        const data = await fs17.promises.readFile(filePath, "utf-8");
+        const data = await fs18.promises.readFile(filePath, "utf-8");
         const stored = JSON.parse(data);
         entries.push(this.storedToIndexEntry(stored));
       } catch {
@@ -36563,7 +37065,7 @@ var FileContextStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs17.promises.mkdir(this.sessionsDirectory, { recursive: true });
+      await fs18.promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -36573,7 +37075,7 @@ var FileContextStorage = class {
   async loadRaw(sanitizedSessionId) {
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      const data = await fs17.promises.readFile(filePath, "utf-8");
+      const data = await fs18.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -36591,7 +37093,7 @@ var FileContextStorage = class {
       return this.index;
     }
     try {
-      const data = await fs17.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs18.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -36612,7 +37114,7 @@ var FileContextStorage = class {
     await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs17.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs18.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(stored) {
     const index = await this.loadIndex();
@@ -36645,7 +37147,7 @@ var FileContextStorage = class {
 function createFileContextStorage(agentId, options) {
   return new FileContextStorage({ agentId, ...options });
 }
-function getDefaultBaseDirectory3() {
+function getDefaultBaseDirectory4() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
@@ -36664,7 +37166,7 @@ var FileAgentDefinitionStorage = class {
   prettyPrint;
   index = null;
   constructor(config = {}) {
-    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory3();
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory4();
     this.prettyPrint = config.prettyPrint ?? true;
     this.indexPath = path2.join(this.baseDirectory, "_agents_index.json");
   }
@@ -36686,11 +37188,11 @@ var FileAgentDefinitionStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs17.promises.writeFile(tempPath, data, "utf-8");
-      await fs17.promises.rename(tempPath, filePath);
+      await fs18.promises.writeFile(tempPath, data, "utf-8");
+      await fs18.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs17.promises.unlink(tempPath);
+        await fs18.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -36712,7 +37214,7 @@ var FileAgentDefinitionStorage = class {
     const agentDir = path2.join(this.baseDirectory, sanitizedId);
     const filePath = path2.join(agentDir, "definition.json");
     try {
-      await fs17.promises.unlink(filePath);
+      await fs18.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -36727,7 +37229,7 @@ var FileAgentDefinitionStorage = class {
     const sanitizedId = sanitizeAgentId2(agentId);
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      await fs17.promises.access(filePath);
+      await fs18.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -36789,13 +37291,13 @@ var FileAgentDefinitionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory(this.baseDirectory);
-    const entries = await fs17.promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const entries = await fs18.promises.readdir(this.baseDirectory, { withFileTypes: true });
     const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
     const indexEntries = [];
     for (const dir of agentDirs) {
       try {
         const filePath = path2.join(this.baseDirectory, dir.name, "definition.json");
-        const data = await fs17.promises.readFile(filePath, "utf-8");
+        const data = await fs18.promises.readFile(filePath, "utf-8");
         const definition = JSON.parse(data);
         indexEntries.push(this.definitionToIndexEntry(definition));
       } catch {
@@ -36813,7 +37315,7 @@ var FileAgentDefinitionStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs17.promises.mkdir(dir, { recursive: true });
+      await fs18.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -36823,7 +37325,7 @@ var FileAgentDefinitionStorage = class {
   async loadRaw(sanitizedId) {
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      const data = await fs17.promises.readFile(filePath, "utf-8");
+      const data = await fs18.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -36841,7 +37343,7 @@ var FileAgentDefinitionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs17.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs18.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -36861,7 +37363,7 @@ var FileAgentDefinitionStorage = class {
     await this.ensureDirectory(this.baseDirectory);
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs17.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs18.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(definition) {
     const index = await this.loadIndex();
@@ -36919,10 +37421,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2__namespace.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs16__namespace.mkdir(dir, { recursive: true });
+    await fs17__namespace.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2__namespace.join(dir, filename);
-    await fs16__namespace.writeFile(filePath, data);
+    await fs17__namespace.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -36933,7 +37435,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs16__namespace.readFile(location);
+      return await fs17__namespace.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -36943,7 +37445,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs16__namespace.unlink(location);
+      await fs17__namespace.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -36953,7 +37455,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs16__namespace.access(location);
+      await fs17__namespace.access(location);
       return true;
     } catch {
       return false;
@@ -36962,11 +37464,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs16__namespace.readdir(this.outputDir);
+    const files = await fs17__namespace.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2__namespace.join(this.outputDir, file);
       try {
-        const stat6 = await fs16__namespace.stat(filePath);
+        const stat6 = await fs17__namespace.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2__namespace.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -37006,7 +37508,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs16__namespace.mkdir(this.outputDir, { recursive: true });
+      await fs17__namespace.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -37014,58 +37516,78 @@ var FileMediaStorage = class {
 function createFileMediaStorage(config) {
   return new FileMediaStorage(config);
 }
-function getDefaultBaseDirectory4() {
+function getDefaultBaseDirectory5() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
     const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
     if (appData) {
-      return path2.join(appData, "oneringai", "custom-tools");
+      return path2.join(appData, "oneringai", "users");
     }
   }
-  return path2.join(os2.homedir(), ".oneringai", "custom-tools");
+  return path2.join(os2.homedir(), ".oneringai", "users");
+}
+function sanitizeUserId2(userId) {
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
 }
 function sanitizeName(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
 }
 var FileCustomToolStorage = class {
   baseDirectory;
-  indexPath;
   prettyPrint;
-  index = null;
   constructor(config = {}) {
-    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory4();
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory5();
     this.prettyPrint = config.prettyPrint ?? true;
-    this.indexPath = path2.join(this.baseDirectory, "_index.json");
+  }
+  /**
+   * Get the directory path for a specific user's custom tools
+   */
+  getUserDirectory(userId) {
+    const sanitizedId = sanitizeUserId2(userId);
+    return path2.join(this.baseDirectory, sanitizedId, "custom-tools");
+  }
+  /**
+   * Get the index file path for a specific user
+   */
+  getUserIndexPath(userId) {
+    return path2.join(this.getUserDirectory(userId), "_index.json");
+  }
+  /**
+   * Get the tool file path for a specific user
+   */
+  getToolPath(userId, sanitizedName) {
+    return path2.join(this.getUserDirectory(userId), `${sanitizedName}.json`);
   }
   /**
    * Save a custom tool definition
    */
-  async save(definition) {
+  async save(userId, definition) {
+    const directory = this.getUserDirectory(userId);
     const sanitized = sanitizeName(definition.name);
-    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
-    await this.ensureDirectory(this.baseDirectory);
+    const filePath = this.getToolPath(userId, sanitized);
+    await this.ensureDirectory(directory);
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs17.promises.writeFile(tempPath, data, "utf-8");
-      await fs17.promises.rename(tempPath, filePath);
+      await fs18.promises.writeFile(tempPath, data, "utf-8");
+      await fs18.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs17.promises.unlink(tempPath);
+        await fs18.promises.unlink(tempPath);
       } catch {
       }
       throw error;
     }
-    await this.updateIndex(definition);
+    await this.updateIndex(userId, definition);
   }
   /**
    * Load a custom tool definition by name
    */
-  async load(name) {
+  async load(userId, name) {
     const sanitized = sanitizeName(name);
-    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
     try {
-      const data = await fs17.promises.readFile(filePath, "utf-8");
+      const data = await fs18.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -37080,26 +37602,26 @@ var FileCustomToolStorage = class {
   /**
    * Delete a custom tool definition
    */
-  async delete(name) {
+  async delete(userId, name) {
     const sanitized = sanitizeName(name);
-    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
     try {
-      await fs17.promises.unlink(filePath);
+      await fs18.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
       }
     }
-    await this.removeFromIndex(name);
+    await this.removeFromIndex(userId, name);
   }
   /**
    * Check if a custom tool exists
    */
-  async exists(name) {
+  async exists(userId, name) {
     const sanitized = sanitizeName(name);
-    const filePath = path2.join(this.baseDirectory, `${sanitized}.json`);
+    const filePath = this.getToolPath(userId, sanitized);
     try {
-      await fs17.promises.access(filePath);
+      await fs18.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -37108,8 +37630,8 @@ var FileCustomToolStorage = class {
   /**
    * List custom tools (summaries only)
    */
-  async list(options) {
-    const index = await this.loadIndex();
+  async list(userId, options) {
+    const index = await this.loadIndex(userId);
     let entries = [...index.tools];
     if (options?.tags && options.tags.length > 0) {
       entries = entries.filter((e) => {
@@ -37150,62 +37672,59 @@ var FileCustomToolStorage = class {
   /**
    * Update metadata without loading full definition
    */
-  async updateMetadata(name, metadata) {
-    const definition = await this.load(name);
+  async updateMetadata(userId, name, metadata) {
+    const definition = await this.load(userId, name);
     if (!definition) {
       throw new Error(`Custom tool '${name}' not found`);
     }
     definition.metadata = { ...definition.metadata, ...metadata };
     definition.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await this.save(definition);
+    await this.save(userId, definition);
   }
   /**
-   * Get storage path
+   * Get storage path for a specific user
    */
-  getPath() {
-    return this.baseDirectory;
+  getPath(userId) {
+    return this.getUserDirectory(userId);
   }
   // ==========================================================================
   // Private Helpers
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs17.promises.mkdir(dir, { recursive: true });
+      await fs18.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
       }
     }
   }
-  async loadIndex() {
-    if (this.index) {
-      return this.index;
-    }
+  async loadIndex(userId) {
+    const indexPath = this.getUserIndexPath(userId);
     try {
-      const data = await fs17.promises.readFile(this.indexPath, "utf-8");
-      this.index = JSON.parse(data);
-      return this.index;
+      const data = await fs18.promises.readFile(indexPath, "utf-8");
+      return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        this.index = {
+        return {
           version: 1,
           tools: [],
           lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
         };
-        return this.index;
       }
       throw error;
     }
   }
-  async saveIndex() {
-    if (!this.index) return;
-    await this.ensureDirectory(this.baseDirectory);
-    this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
-    const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs17.promises.writeFile(this.indexPath, data, "utf-8");
+  async saveIndex(userId, index) {
+    const directory = this.getUserDirectory(userId);
+    const indexPath = this.getUserIndexPath(userId);
+    await this.ensureDirectory(directory);
+    index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(index, null, 2) : JSON.stringify(index);
+    await fs18.promises.writeFile(indexPath, data, "utf-8");
   }
-  async updateIndex(definition) {
-    const index = await this.loadIndex();
+  async updateIndex(userId, definition) {
+    const index = await this.loadIndex(userId);
     const entry = this.definitionToIndexEntry(definition);
     const existingIdx = index.tools.findIndex((e) => e.name === definition.name);
     if (existingIdx >= 0) {
@@ -37213,12 +37732,12 @@ var FileCustomToolStorage = class {
     } else {
       index.tools.push(entry);
     }
-    await this.saveIndex();
+    await this.saveIndex(userId, index);
   }
-  async removeFromIndex(name) {
-    const index = await this.loadIndex();
+  async removeFromIndex(userId, name) {
+    const index = await this.loadIndex(userId);
     index.tools = index.tools.filter((e) => e.name !== name);
-    await this.saveIndex();
+    await this.saveIndex(userId, index);
   }
   definitionToIndexEntry(definition) {
     return {
@@ -38335,8 +38854,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs16__namespace.mkdir(this.directory, { recursive: true });
-      await fs16__namespace.chmod(this.directory, 448);
+      await fs17__namespace.mkdir(this.directory, { recursive: true });
+      await fs17__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -38352,13 +38871,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs16__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs16__namespace.chmod(filePath, 384);
+    await fs17__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs17__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs16__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs17__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -38367,7 +38886,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs16__namespace.unlink(filePath);
+        await fs17__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -38376,7 +38895,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs16__namespace.unlink(filePath);
+      await fs17__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -38386,7 +38905,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs16__namespace.access(filePath);
+      await fs17__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -38397,7 +38916,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs16__namespace.readdir(this.directory);
+      const files = await fs17__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -38408,10 +38927,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs16__namespace.readdir(this.directory);
+      const files = await fs17__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs16__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs17__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -38859,14 +39378,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs16__namespace.writeFile(filePath, json, "utf8");
-    await fs16__namespace.chmod(filePath, 384);
+    await fs17__namespace.writeFile(filePath, json, "utf8");
+    await fs17__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs16__namespace.readFile(filePath, "utf8");
+      const json = await fs17__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -38879,7 +39398,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs16__namespace.unlink(filePath);
+      await fs17__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -38893,7 +39412,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs16__namespace.access(filePath);
+      await fs17__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -38919,13 +39438,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs16__namespace.readdir(this.directory);
+      const files = await fs17__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs16__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs17__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -38952,8 +39471,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs16__namespace.mkdir(this.directory, { recursive: true });
-      await fs16__namespace.chmod(this.directory, 448);
+      await fs17__namespace.mkdir(this.directory, { recursive: true });
+      await fs17__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -38964,7 +39483,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs16__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs17__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -38982,8 +39501,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs16__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs16__namespace.chmod(this.indexPath, 384);
+    await fs17__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs17__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -41438,8 +41957,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs17__namespace.existsSync(filePath)) {
-      fs17__namespace.unlinkSync(filePath);
+    if (fs18__namespace.existsSync(filePath)) {
+      fs18__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -41490,7 +42009,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs17__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs18__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -41507,14 +42026,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs17__namespace.existsSync(tempFile) && fs17__namespace.statSync(tempFile).size > 0) {
+      if (fs18__namespace.existsSync(tempFile) && fs18__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs17__namespace.existsSync(tempFile) && fs17__namespace.statSync(tempFile).size > 0) {
+      if (fs18__namespace.existsSync(tempFile) && fs18__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -41541,7 +42060,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs17__namespace.existsSync(tempFile) && fs17__namespace.statSync(tempFile).size > 0) {
+    if (fs18__namespace.existsSync(tempFile) && fs18__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -41554,7 +42073,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs17__namespace.readFileSync(filePath);
+    const imageBuffer = fs18__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -42103,7 +42622,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs17.existsSync(resolvedPath)) {
+      if (!fs18.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -42111,7 +42630,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs16.stat(resolvedPath);
+        const stats = await fs17.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -42153,7 +42672,7 @@ EXAMPLES:
           } catch {
           }
         }
-        const content = await fs16.readFile(resolvedPath, "utf-8");
+        const content = await fs17.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -42258,13 +42777,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs17.existsSync(resolvedPath);
+      const fileExists = fs18.existsSync(resolvedPath);
       try {
         const parentDir = path2.dirname(resolvedPath);
-        if (!fs17.existsSync(parentDir)) {
-          await fs16.mkdir(parentDir, { recursive: true });
+        if (!fs18.existsSync(parentDir)) {
+          await fs17.mkdir(parentDir, { recursive: true });
         }
-        await fs16.writeFile(resolvedPath, content, "utf-8");
+        await fs17.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -42367,7 +42886,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs17.existsSync(resolvedPath)) {
+      if (!fs18.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -42375,7 +42894,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs16.readFile(resolvedPath, "utf-8");
+        const content = await fs17.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -42414,7 +42933,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs16.writeFile(resolvedPath, newContent, "utf-8");
+        await fs17.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -42470,7 +42989,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs16.readdir(dir, { withFileTypes: true });
+    const entries = await fs17.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -42484,7 +43003,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs16.stat(fullPath);
+            const stats = await fs17.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -42566,7 +43085,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs17.existsSync(resolvedDir)) {
+      if (!fs18.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -42621,7 +43140,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs16.readdir(dir, { withFileTypes: true });
+    const entries = await fs17.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path2.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -42654,7 +43173,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs16.readFile(filePath, "utf-8");
+    const content = await fs17.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -42795,7 +43314,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs17.existsSync(resolvedPath)) {
+      if (!fs18.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -42811,7 +43330,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs16.stat(resolvedPath);
+        const stats = await fs17.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -42899,7 +43418,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs16.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs17.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -42917,7 +43436,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs16.stat(fullPath);
+        const stats = await fs17.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -43013,14 +43532,14 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs17.existsSync(resolvedPath)) {
+      if (!fs18.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Directory not found: ${path6}`
         };
       }
       try {
-        const stats = await fs16.stat(resolvedPath);
+        const stats = await fs17.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
@@ -46789,7 +47308,7 @@ var desktopTools = [
 
 // src/tools/custom-tools/resolveStorage.ts
 init_StorageRegistry();
-function buildStorageContext(toolContext) {
+function buildStorageContext2(toolContext) {
   const global2 = exports.StorageRegistry.getContext();
   if (global2) return global2;
   if (toolContext?.userId) return { userId: toolContext.userId };
@@ -46799,7 +47318,7 @@ function resolveCustomToolStorage(explicit, toolContext) {
   if (explicit) return explicit;
   const factory = exports.StorageRegistry.get("customTools");
   if (factory) {
-    return factory(buildStorageContext(toolContext));
+    return factory(buildStorageContext2(toolContext));
   }
   return new FileCustomToolStorage();
 }
@@ -46827,12 +47346,20 @@ function createCustomToolDelete(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args, context) => {
       try {
+        const userId = context?.userId;
+        if (!userId) {
+          return {
+            success: false,
+            name: args.name,
+            error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
+          };
+        }
         const s = resolveCustomToolStorage(storage, context);
-        const exists = await s.exists(args.name);
+        const exists = await s.exists(userId, args.name);
         if (!exists) {
           return { success: false, name: args.name, error: `Custom tool '${args.name}' not found` };
         }
-        await s.delete(args.name);
+        await s.delete(userId, args.name);
         return { success: true, name: args.name };
       } catch (error) {
         return { success: false, name: args.name, error: error.message };
@@ -47073,8 +47600,15 @@ function createCustomToolList(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args, context) => {
+      const userId = context?.userId;
+      if (!userId) {
+        return {
+          tools: [],
+          total: 0
+        };
+      }
       const s = resolveCustomToolStorage(storage, context);
-      const tools = await s.list({
+      const tools = await s.list(userId, {
         search: args.search,
         tags: args.tags,
         category: args.category,
@@ -47110,8 +47644,15 @@ function createCustomToolLoad(storage) {
     },
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args, context) => {
+      const userId = context?.userId;
+      if (!userId) {
+        return {
+          success: false,
+          error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
+        };
+      }
       const s = resolveCustomToolStorage(storage, context);
-      const tool = await s.load(args.name);
+      const tool = await s.load(userId, args.name);
       if (!tool) {
         return { success: false, error: `Custom tool '${args.name}' not found` };
       }
@@ -47183,9 +47724,18 @@ function createCustomToolSave(storage) {
     permission: { scope: "session", riskLevel: "medium" },
     execute: async (args, context) => {
       try {
+        const userId = context?.userId;
+        if (!userId) {
+          return {
+            success: false,
+            name: args.name,
+            storagePath: "N/A",
+            error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
+          };
+        }
         const s = resolveCustomToolStorage(storage, context);
         const now = (/* @__PURE__ */ new Date()).toISOString();
-        const existing = await s.load(args.name);
+        const existing = await s.load(userId, args.name);
         const definition = {
           version: CUSTOM_TOOL_DEFINITION_VERSION,
           name: args.name,
@@ -47204,17 +47754,18 @@ function createCustomToolSave(storage) {
             requiresConnector: (args.connectorNames?.length ?? 0) > 0
           }
         };
-        await s.save(definition);
+        await s.save(userId, definition);
         return {
           success: true,
           name: args.name,
-          storagePath: s.getPath()
+          storagePath: s.getPath(userId)
         };
       } catch (error) {
+        const userId = context?.userId;
         return {
           success: false,
           name: args.name,
-          storagePath: resolveCustomToolStorage(storage, context).getPath(),
+          storagePath: userId ? resolveCustomToolStorage(storage, context).getPath(userId) : "N/A",
           error: error.message
         };
       }
@@ -48002,6 +48553,7 @@ exports.FileMediaOutputHandler = FileMediaStorage;
 exports.FileMediaStorage = FileMediaStorage;
 exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
 exports.FileStorage = FileStorage;
+exports.FileUserInfoStorage = FileUserInfoStorage;
 exports.FormatDetector = FormatDetector;
 exports.HookManager = HookManager;
 exports.IMAGE_MODELS = IMAGE_MODELS;
@@ -48077,6 +48629,7 @@ exports.ToolPermissionManager = ToolPermissionManager;
 exports.ToolRegistry = ToolRegistry;
 exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
+exports.UserInfoPluginNextGen = UserInfoPluginNextGen;
 exports.VENDORS = VENDORS;
 exports.VENDOR_ICON_MAP = VENDOR_ICON_MAP;
 exports.VIDEO_MODELS = VIDEO_MODELS;

@@ -17,7 +17,7 @@ describe('custom_tool_delete', () => {
   beforeEach(async () => {
     testDir = join(tmpdir(), `delete-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     storage = new FileCustomToolStorage({ baseDirectory: testDir });
-    await storage.save({
+    await storage.save('test-user', {
       version: CUSTOM_TOOL_DEFINITION_VERSION,
       name: 'to_delete',
       description: 'Will be deleted',
@@ -38,18 +38,26 @@ describe('custom_tool_delete', () => {
 
   it('should delete an existing tool', async () => {
     const tool = createCustomToolDelete(storage);
-    const result = await tool.execute({ name: 'to_delete' });
+    const result = await tool.execute({ name: 'to_delete' }, { userId: 'test-user' });
 
     expect(result.success).toBe(true);
     expect(result.name).toBe('to_delete');
-    expect(await storage.exists('to_delete')).toBe(false);
+    expect(await storage.exists('test-user', 'to_delete')).toBe(false);
   });
 
   it('should return error for nonexistent tool', async () => {
     const tool = createCustomToolDelete(storage);
-    const result = await tool.execute({ name: 'nonexistent' });
+    const result = await tool.execute({ name: 'nonexistent' }, { userId: 'test-user' });
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('not found');
+  });
+
+  it('should require userId', async () => {
+    const tool = createCustomToolDelete(storage);
+    const result = await tool.execute({ name: 'to_delete' });  // No context
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('userId required');
   });
 });

@@ -31,9 +31,9 @@ describe('custom_tool_list', () => {
   beforeEach(async () => {
     testDir = join(tmpdir(), `list-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     storage = new FileCustomToolStorage({ baseDirectory: testDir });
-    await storage.save(makeDef('alpha', { tags: ['math'], category: 'compute' }));
-    await storage.save(makeDef('beta', { tags: ['api'], category: 'network' }));
-    await storage.save(makeDef('gamma', { tags: ['math', 'api'], category: 'compute' }));
+    await storage.save('test-user', makeDef('alpha', { tags: ['math'], category: 'compute' }));
+    await storage.save('test-user', makeDef('beta', { tags: ['api'], category: 'network' }));
+    await storage.save('test-user', makeDef('gamma', { tags: ['math', 'api'], category: 'compute' }));
   });
 
   afterEach(async () => {
@@ -46,7 +46,7 @@ describe('custom_tool_list', () => {
 
   it('should list all tools', async () => {
     const tool = createCustomToolList(storage);
-    const result = await tool.execute({});
+    const result = await tool.execute({}, { userId: 'test-user' });
 
     expect(result.tools).toHaveLength(3);
     expect(result.total).toBe(3);
@@ -54,7 +54,7 @@ describe('custom_tool_list', () => {
 
   it('should filter by search', async () => {
     const tool = createCustomToolList(storage);
-    const result = await tool.execute({ search: 'alpha' });
+    const result = await tool.execute({ search: 'alpha' }, { userId: 'test-user' });
 
     expect(result.tools).toHaveLength(1);
     expect(result.tools[0].name).toBe('alpha');
@@ -62,14 +62,14 @@ describe('custom_tool_list', () => {
 
   it('should filter by tags', async () => {
     const tool = createCustomToolList(storage);
-    const result = await tool.execute({ tags: ['api'] });
+    const result = await tool.execute({ tags: ['api'] }, { userId: 'test-user' });
 
     expect(result.tools).toHaveLength(2);
   });
 
   it('should filter by category', async () => {
     const tool = createCustomToolList(storage);
-    const result = await tool.execute({ category: 'network' });
+    const result = await tool.execute({ category: 'network' }, { userId: 'test-user' });
 
     expect(result.tools).toHaveLength(1);
     expect(result.tools[0].name).toBe('beta');
@@ -77,8 +77,16 @@ describe('custom_tool_list', () => {
 
   it('should support limit', async () => {
     const tool = createCustomToolList(storage);
-    const result = await tool.execute({ limit: 1 });
+    const result = await tool.execute({ limit: 1 }, { userId: 'test-user' });
 
     expect(result.tools).toHaveLength(1);
+  });
+
+  it('should return empty list when userId is not provided', async () => {
+    const tool = createCustomToolList(storage);
+    const result = await tool.execute({});  // No context
+
+    expect(result.tools).toHaveLength(0);
+    expect(result.total).toBe(0);
   });
 });

@@ -41,6 +41,7 @@ export {
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
+  UserInfoPluginNextGen,
   // Compaction strategies
   DefaultCompactionStrategy,
   // Strategy Registry
@@ -69,6 +70,8 @@ export type {
   PersistentInstructionsConfig,
   SerializedPersistentInstructionsState,
   InstructionEntry,
+  UserInfoPluginConfig,
+  SerializedUserInfoState,
   // Compaction strategy types
   ICompactionStrategy,
   CompactionContext,
@@ -1052,4 +1055,9 @@ export {
 export { FilePersistentInstructionsStorage } from './infrastructure/storage/index.js';
 export type { FilePersistentInstructionsStorageConfig } from './infrastructure/storage/index.js';
 export type { IPersistentInstructionsStorage } from './domain/interfaces/IPersistentInstructionsStorage.js';
+
+// UserInfo Storage
+export { FileUserInfoStorage } from './infrastructure/storage/index.js';
+export type { FileUserInfoStorageConfig } from './infrastructure/storage/index.js';
+export type { IUserInfoStorage, UserInfoEntry } from './domain/interfaces/IUserInfoStorage.js';
 

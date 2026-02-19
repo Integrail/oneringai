@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **UserInfo Plugin** — New `UserInfoPluginNextGen` for storing user-specific preferences and context. Data is user-scoped (not agent-scoped), allowing different agents to share the same user data. Storage path: `~/.oneringai/users/<userId>/user_info.json`. Enable via `features: { userInfo: true }`. Includes 4 tools: `user_info_set`, `user_info_get`, `user_info_remove`, `user_info_clear` (all allowlisted by default).
+- **IUserInfoStorage interface** — Storage abstraction for user information with file-based implementation (`FileUserInfoStorage`). Supports multi-user scenarios via `StorageRegistry` pattern with optional `StorageContext`.
+- **userInfo feature flag** — Added to `ContextFeatures` interface. Default: `false`.
+- **userInfo storage factory** — Added to `StorageConfig` interface as context-aware factory: `userInfo: (context?: StorageContext) => IUserInfoStorage`.
+
+### Changed
+
+- **BREAKING: Custom Tools Storage Per-User Isolation** — Custom tools are now isolated per-user instead of global. `ICustomToolStorage` interface updated to require `userId` as first parameter in all methods: `save(userId, definition)`, `load(userId, name)`, `delete(userId, name)`, `exists(userId, name)`, `list(userId, options)`, `updateMetadata(userId, name, metadata)`, `getPath(userId)`. File storage path changed from `~/.oneringai/custom-tools/` to `~/.oneringai/users/<userId>/custom-tools/`. This prevents users from seeing or modifying each other's custom tools in multi-tenant scenarios. **Migration required** for custom storage implementations and existing custom tools (see Migration Guide below).
+
+### Migration Guide: Custom Tools Storage
+
+**For Custom Storage Implementers:**
+
+If you have a custom `ICustomToolStorage` implementation, update all methods to accept `userId` as the first parameter:
+
+```typescript
+// Before (0.3.1 and earlier)
+class MyCustomToolStorage implements ICustomToolStorage {
+  async save(definition: CustomToolDefinition): Promise<void> {
+    await this.db.insert(definition);
+  }
+  async load(name: string): Promise<CustomToolDefinition | null> {
+    return this.db.findOne({ name });
+  }
+  // ... other methods
+}
+
+// After (0.4.0+)
+class MyCustomToolStorage implements ICustomToolStorage {
+  async save(userId: string, definition: CustomToolDefinition): Promise<void> {
+    await this.db.insert({ userId, ...definition });
+  }
+  async load(userId: string, name: string): Promise<CustomToolDefinition | null> {
+    return this.db.findOne({ userId, name });
+  }
+  // ... other methods with userId as first param
+}
+```
+
+**For Existing Custom Tools:**
+
+Custom tools saved at `~/.oneringai/custom-tools/` will not be accessible after upgrading. To preserve them:
+
+```bash
+# Create user directory
+mkdir -p ~/.oneringai/users/default-user/custom-tools/
+
+# Move tools
+mv ~/.oneringai/custom-tools/*.json ~/.oneringai/users/default-user/custom-tools/
+
+# Move index
+mv ~/.oneringai/custom-tools/_index.json ~/.oneringai/users/default-user/custom-tools/
+```
+
+Then set `userId` when creating agents:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'default-user',  // Must match directory name
+});
+```
+
+**For Agent Usage:**
+
+Custom tool meta-tools now require `userId` in context. Set it at agent creation or via `StorageRegistry`:
+
+```typescript
+// Option 1: Set userId at agent creation
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'alice',  // Automatically passed to tools via ToolContext
+});
+
+// Option 2: Set globally via StorageRegistry
+StorageRegistry.setContext({ userId: 'alice' });
+```
+
+Tools called without `userId` will fail with error: "userId required - set userId at agent creation or via StorageRegistry.setContext()".
+
 ## [0.3.1] - 2026-02-18
 
 ### Fixed

@@ -41,6 +41,7 @@ import type { ITokenStorage } from '../connectors/oauth/domain/ITokenStorage.js'
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { IPersistentInstructionsStorage } from '../domain/interfaces/IPersistentInstructionsStorage.js';
 import type { IMemoryStorage } from '../domain/interfaces/IMemoryStorage.js';
+import type { IUserInfoStorage } from '../domain/interfaces/IUserInfoStorage.js';
 
 // ============================================================================
 // Types
@@ -75,6 +76,7 @@ export interface StorageConfig {
   sessions: (agentId: string, context?: StorageContext) => IContextStorage;
   persistentInstructions: (agentId: string, context?: StorageContext) => IPersistentInstructionsStorage;
   workingMemory: (context?: StorageContext) => IMemoryStorage;
+  userInfo: (context?: StorageContext) => IUserInfoStorage;
 }
 
 // ============================================================================

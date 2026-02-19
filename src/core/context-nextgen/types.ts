@@ -476,6 +476,9 @@ export interface ContextFeatures {
 
   /** Enable PersistentInstructions plugin (default: false) */
   persistentInstructions?: boolean;
+
+  /** Enable UserInfo plugin (default: false) */
+  userInfo?: boolean;
 }
 
 /**
@@ -485,6 +488,7 @@ export const DEFAULT_FEATURES: Required<ContextFeatures> = {
   workingMemory: true,
   inContextMemory: false,
   persistentInstructions: false,
+  userInfo: false,
 };
 
 // ============================================================================
@@ -515,6 +519,12 @@ export interface PluginConfigs {
    * See PersistentInstructionsConfig for full options.
    */
   persistentInstructions?: Record<string, unknown>;
+
+  /**
+   * User info plugin config (used when features.userInfo=true).
+   * See UserInfoPluginConfig for full options.
+   */
+  userInfo?: Record<string, unknown>;
 }
 
 /**

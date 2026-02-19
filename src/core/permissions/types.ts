@@ -341,6 +341,12 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
   'instructions_list',
   'instructions_clear',
 
+  // User info tools (user-specific data - safe)
+  'user_info_set',
+  'user_info_get',
+  'user_info_remove',
+  'user_info_clear',
+
   // Meta-tools (internal coordination)
   '_start_planning',
   '_modify_plan',

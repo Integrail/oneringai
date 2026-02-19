@@ -30,3 +30,7 @@ export type { FileMediaStorageConfig } from './FileMediaStorage.js';
 // Custom tool storage (for user-created custom tools)
 export { FileCustomToolStorage, createFileCustomToolStorage } from './FileCustomToolStorage.js';
 export type { FileCustomToolStorageConfig } from './FileCustomToolStorage.js';
+
+// User info storage (for user-specific preferences and context)
+export { FileUserInfoStorage } from './FileUserInfoStorage.js';
+export type { FileUserInfoStorageConfig } from './FileUserInfoStorage.js';
