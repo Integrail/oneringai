@@ -931,4 +931,33 @@ describe('Agent', () => {
       expect(mockStorage.save).toHaveBeenCalled();
     });
   });
+
+  describe('clearConversation()', () => {
+    it('should clear conversation history while preserving plugins', () => {
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+      });
+
+      // Add messages to build up conversation
+      agent.context.addUserMessage('Hello');
+      agent.context.addAssistantResponse([{
+        type: 'message',
+        role: MessageRole.ASSISTANT,
+        content: [{ type: ContentType.OUTPUT_TEXT, text: 'Hi there!' }],
+      }]);
+      agent.context.addUserMessage('How are you?');
+
+      expect(agent.context.getConversation().length).toBeGreaterThan(0);
+
+      // Clear conversation
+      agent.clearConversation('test reset');
+
+      // Conversation should be empty
+      expect(agent.context.getConversation()).toHaveLength(0);
+
+      // Agent should still be functional (tools intact)
+      expect(agent.tools).toBeDefined();
+    });
+  });
 });

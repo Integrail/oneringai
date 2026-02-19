@@ -23307,6 +23307,14 @@ var Agent = class _Agent extends BaseAgent {
   isCancelled() {
     return this._cancelled;
   }
+  /**
+   * Clear conversation history, resetting the context for a fresh interaction.
+   * Plugins (working memory, in-context memory, etc.) are NOT affected.
+   */
+  clearConversation(reason) {
+    this._agentContext.clearConversation(reason);
+    this._logger.info({ reason }, "Conversation cleared");
+  }
   // ===== Cleanup =====
   destroy() {
     if (this._isDestroyed) {
