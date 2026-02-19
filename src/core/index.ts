@@ -32,6 +32,10 @@ export type { StorageConfig, StorageContext } from './StorageRegistry.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 
+// Routine Runner
+export { executeRoutine } from './routineRunner.js';
+export type { ExecuteRoutineOptions, ValidationContext } from './routineRunner.js';
+
 // ============================================================================
 // AgentContextNextGen - Clean, Simple Context Management
 // ============================================================================

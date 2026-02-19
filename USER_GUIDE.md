@@ -39,6 +39,17 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Tools (user_info_set, user_info_get, user_info_remove, user_info_clear)
     - Storage and Multi-User Isolation
     - Use Cases and Best Practices
+11. [Routine Execution](#routine-execution)
+    - Overview and Architecture
+    - Quick Start
+    - RoutineDefinition and Tasks
+    - Task Dependencies and Ordering
+    - Memory as Inter-Task Bridge
+    - Validation and Self-Reflection
+    - Retry Logic and Failure Modes
+    - Custom Prompts
+    - Callbacks and Progress Tracking
+    - Complete Example
 12. [Tools & Function Calling](#tools--function-calling)
     - Built-in Tools Overview (33+ tools across 8 categories)
     - Developer Tools (Filesystem & Shell)
@@ -3027,6 +3038,437 @@ interface UserInfoPluginConfig {
 - User context: role, location, department
 - Accumulated knowledge about the user
 - Profile information the LLM should always have access to
+
+---
+
+## Routine Execution
+
+Execute multi-step workflows where an AI agent runs tasks in dependency order, validates completion via LLM self-reflection, and uses memory as the bridge between tasks.
+
+### Overview
+
+The **Routine Runner** (`executeRoutine()`) takes a `RoutineDefinition` and executes it end-to-end:
+
+1. Creates an Agent with working memory + in-context memory enabled
+2. Runs tasks in dependency order (respecting `dependsOn`)
+3. After each task, validates completion using LLM self-reflection against criteria
+4. Clears conversation between tasks but **preserves memory plugins** — this is how tasks share data
+5. Retries failed tasks up to `maxAttempts`
+6. Returns a `RoutineExecution` with status, progress, and per-task results
+
+```
+Task A → validate → clear conversation → Task B → validate → clear → Task C → done
+           ↓                                ↓
+    memory persists ──────────────→ memory persists
+```
+
+### Quick Start
+
+```typescript
+import {
+  Connector, Vendor, executeRoutine,
+  createRoutineDefinition,
+} from '@everworker/oneringai';
+
+// 1. Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// 2. Define a routine
+const routine = createRoutineDefinition({
+  name: 'Research Report',
+  description: 'Research a topic and write a report',
+  instructions: 'You are a research assistant. Be thorough and cite sources.',
+  tasks: [
+    {
+      name: 'Research',
+      description: 'Search for information about quantum computing advances in 2026',
+      expectedOutput: 'A summary of key findings stored in memory',
+      suggestedTools: ['web_search', 'web_fetch'],
+      validation: {
+        completionCriteria: [
+          'At least 3 distinct sources were found',
+          'Key findings were stored in memory',
+        ],
+      },
+    },
+    {
+      name: 'Write Report',
+      description: 'Write a structured report based on the research findings',
+      expectedOutput: 'A markdown report with introduction, findings, and conclusion',
+      dependsOn: ['Research'],
+      validation: {
+        completionCriteria: [
+          'Report has an introduction, findings section, and conclusion',
+          'Report cites specific sources from the research',
+        ],
+      },
+    },
+  ],
+});
+
+// 3. Execute
+const execution = await executeRoutine({
+  definition: routine,
+  connector: 'openai',
+  model: 'gpt-4',
+  onTaskComplete: (task) => console.log(`Done: ${task.name}`),
+  onTaskFailed: (task) => console.error(`Failed: ${task.name}`),
+});
+
+console.log(execution.status);   // 'completed' | 'failed'
+console.log(execution.progress); // 100
+```
+
+### RoutineDefinition Structure
+
+```typescript
+interface RoutineDefinition {
+  name: string;                    // Routine name
+  description?: string;            // Human-readable description
+  instructions?: string;           // System prompt for the agent
+  requiredTools?: string[];        // Tool names that must be available
+  requiredPlugins?: string[];      // Plugin names that must be registered
+
+  tasks: TaskDefinition[];         // Array of task definitions
+
+  concurrency?: {
+    maxParallel?: number;          // Max parallel tasks (future)
+    failureMode?: 'fail-fast' | 'continue';  // Default: 'fail-fast'
+  };
+}
+```
+
+### Task Definition
+
+Each task in a routine has:
+
+```typescript
+interface TaskDefinition {
+  name: string;                    // Task name (used as ID)
+  description: string;             // What the agent should do
+  expectedOutput?: string;         // What success looks like
+  suggestedTools?: string[];       // Hint to the agent about useful tools
+  dependsOn?: string[];            // Task names this depends on
+  maxAttempts?: number;            // Max retry attempts (default: 3)
+
+  validation?: {
+    completionCriteria?: string[]; // Criteria for LLM self-reflection
+    minCompletionScore?: number;   // Minimum score 0-100 (default: 80)
+    skipReflection?: boolean;      // Skip validation, auto-pass
+  };
+}
+```
+
+### Task Dependencies and Ordering
+
+Tasks execute in dependency order. Use `dependsOn` to create a DAG:
+
+```typescript
+const routine = createRoutineDefinition({
+  name: 'Data Pipeline',
+  tasks: [
+    { name: 'Fetch Data', description: '...' },
+    { name: 'Clean Data', description: '...', dependsOn: ['Fetch Data'] },
+    { name: 'Analyze', description: '...', dependsOn: ['Clean Data'] },
+    { name: 'Visualize', description: '...', dependsOn: ['Analyze'] },
+  ],
+});
+```
+
+Tasks with no dependencies run first. A task only becomes eligible when all its dependencies are completed.
+
+### Memory as the Inter-Task Bridge
+
+Between tasks, conversation history is cleared but **memory plugins persist**. This is how tasks share information:
+
+- **In-Context Memory** (`context_set`): Small key results that subsequent tasks see immediately in context. No retrieval call needed.
+  ```
+  Task 1 calls: context_set("api_endpoints", "Found 3 endpoints: /users, /orders, /products")
+  Task 2 sees this automatically in its context window
+  ```
+
+- **Working Memory** (`memory_store` / `memory_retrieve`): Larger data stored externally, retrieved on demand.
+  ```
+  Task 1 calls: memory_store("raw_data", "Full API response...", "findings")
+  Task 2 calls: memory_retrieve("raw_data") → gets the full response
+  ```
+
+The default system prompt instructs the agent on this pattern. You can override it via `prompts.system`.
+
+### Validation and Self-Reflection
+
+After each task completes, the runner validates the output:
+
+1. If `skipReflection: true` → auto-pass
+2. If no `completionCriteria` defined → auto-pass
+3. Otherwise: calls `agent.runDirect()` with the task criteria and agent's response
+4. The validation LLM returns `{ isComplete, completionScore, explanation }`
+5. Task passes if `isComplete === true` AND `completionScore >= minCompletionScore`
+
+```typescript
+{
+  validation: {
+    completionCriteria: [
+      'All API endpoints were documented',
+      'Error codes were listed for each endpoint',
+      'Authentication requirements were specified',
+    ],
+    minCompletionScore: 85,  // Strict: require 85+ score
+  },
+}
+```
+
+### Retry Logic
+
+If validation fails and the task hasn't exhausted `maxAttempts`:
+
+- The conversation is **NOT cleared** (agent builds on previous attempt)
+- Task status returns to `in_progress` (increments attempt counter)
+- Agent retries with the same prompt
+
+If `maxAttempts` is exceeded, the task is marked `failed`.
+
+### Failure Modes
+
+```typescript
+const routine = createRoutineDefinition({
+  name: 'Pipeline',
+  concurrency: {
+    failureMode: 'fail-fast',  // Default: stop on first failure
+    // failureMode: 'continue', // Skip failed tasks, continue with independents
+  },
+  tasks: [...],
+});
+```
+
+| Mode | Behavior |
+|------|----------|
+| `fail-fast` | Stop entire routine on first task failure |
+| `continue` | Skip failed task, proceed to next independent task |
+
+### Custom Prompts
+
+Override any prompt builder to customize agent behavior:
+
+```typescript
+const execution = await executeRoutine({
+  definition: routine,
+  connector: 'openai',
+  model: 'gpt-4',
+  prompts: {
+    // Custom system prompt
+    system: (definition) => `You are ${definition.name}. Follow these rules...`,
+
+    // Custom task prompt
+    task: (task) => `
+      ## ${task.name}
+      ${task.description}
+      Remember to store results using context_set.
+    `,
+
+    // Custom validation prompt
+    validation: (task, responseText) => `
+      Did the agent complete "${task.name}"?
+      Criteria: ${task.validation?.completionCriteria?.join(', ')}
+      Response: ${responseText}
+      Return JSON: { "isComplete": boolean, "completionScore": number, "explanation": string }
+    `,
+  },
+});
+```
+
+### Callbacks and Progress Tracking
+
+```typescript
+const execution = await executeRoutine({
+  definition: routine,
+  connector: 'openai',
+  model: 'gpt-4',
+
+  onTaskComplete: (task, execution) => {
+    console.log(`Task "${task.name}" completed`);
+    console.log(`  Score: ${task.result?.validationScore}`);
+    console.log(`  Progress: ${execution.progress}%`);
+  },
+
+  onTaskFailed: (task, execution) => {
+    console.error(`Task "${task.name}" failed after ${task.attempts} attempts`);
+    console.error(`  Error: ${task.result?.error}`);
+  },
+});
+```
+
+### ExecuteRoutineOptions Reference
+
+```typescript
+interface ExecuteRoutineOptions {
+  /** Routine definition to execute */
+  definition: RoutineDefinition;
+
+  /** Connector name (must be registered via Connector.create()) */
+  connector: string;
+
+  /** Model ID (e.g., 'gpt-4', 'claude-sonnet-4-5-20250929') */
+  model: string;
+
+  /** Additional tools beyond requiredTools */
+  tools?: ToolFunction[];
+
+  /** Called when a task completes successfully */
+  onTaskComplete?: (task: Task, execution: RoutineExecution) => void;
+
+  /** Called when a task fails */
+  onTaskFailed?: (task: Task, execution: RoutineExecution) => void;
+
+  /** Configurable prompts (all have sensible defaults) */
+  prompts?: {
+    system?: (definition: RoutineDefinition) => string;
+    task?: (task: Task) => string;
+    validation?: (task: Task, responseText: string) => string;
+  };
+}
+```
+
+### RoutineExecution Result
+
+```typescript
+interface RoutineExecution {
+  id: string;                      // Unique execution ID
+  routineId: string;               // From definition
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  plan: Plan;                      // Tasks with statuses and results
+  progress: number;                // 0-100 percentage
+  startedAt?: number;              // Timestamp
+  completedAt?: number;            // Timestamp
+  lastUpdatedAt?: number;          // Timestamp
+  error?: string;                  // Error message if failed
+}
+```
+
+Each completed task has a `result`:
+
+```typescript
+interface TaskResult {
+  success: boolean;
+  output?: string;                 // Agent's response text
+  error?: string;                  // Error message if failed
+  validationScore?: number;        // 0-100 from validation
+  validationExplanation?: string;  // Why it passed/failed
+}
+```
+
+### Complete Example: Multi-Step Research Pipeline
+
+```typescript
+import {
+  Connector, Vendor, Agent,
+  executeRoutine, createRoutineDefinition,
+  ConnectorTools, Services, tools,
+} from '@everworker/oneringai';
+
+// Setup connectors
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+Connector.create({
+  name: 'serper',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Define the routine
+const routine = createRoutineDefinition({
+  name: 'Competitive Analysis',
+  description: 'Analyze competitors and produce a report',
+  instructions: 'You are a business analyst. Be thorough and data-driven.',
+  requiredTools: ['web_search'],
+  tasks: [
+    {
+      name: 'Identify Competitors',
+      description: 'Search for the top 5 competitors of Acme Corp in the cloud storage market',
+      expectedOutput: 'List of competitors stored in context',
+      suggestedTools: ['web_search'],
+      validation: {
+        completionCriteria: [
+          'At least 5 competitors were identified',
+          'Competitor names were stored using context_set',
+        ],
+      },
+    },
+    {
+      name: 'Analyze Features',
+      description: 'For each competitor found, research their key features and pricing',
+      dependsOn: ['Identify Competitors'],
+      expectedOutput: 'Feature comparison data stored in memory',
+      suggestedTools: ['web_search', 'web_fetch'],
+      maxAttempts: 2,
+      validation: {
+        completionCriteria: [
+          'Features were researched for all identified competitors',
+          'Pricing information was found for at least 3 competitors',
+          'Data was stored in working memory',
+        ],
+        minCompletionScore: 70,  // More lenient — pricing may not always be public
+      },
+    },
+    {
+      name: 'Write Report',
+      description: 'Compile findings into a structured competitive analysis report',
+      dependsOn: ['Analyze Features'],
+      expectedOutput: 'A markdown report with executive summary, feature comparison table, and recommendations',
+      validation: {
+        completionCriteria: [
+          'Report has an executive summary',
+          'Report includes a feature comparison table',
+          'Report provides actionable recommendations',
+        ],
+      },
+    },
+  ],
+});
+
+// Execute with search tools
+const searchTools = ConnectorTools.for('serper');
+
+const execution = await executeRoutine({
+  definition: routine,
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [...searchTools, tools.webFetch],
+  onTaskComplete: (task, exec) => {
+    console.log(`[${exec.progress}%] ${task.name} completed (score: ${task.result?.validationScore})`);
+  },
+  onTaskFailed: (task) => {
+    console.error(`FAILED: ${task.name} — ${task.result?.error}`);
+  },
+});
+
+if (execution.status === 'completed') {
+  // Get the final report from the last task's output
+  const reportTask = execution.plan.tasks.find(t => t.name === 'Write Report');
+  console.log(reportTask?.result?.output);
+} else {
+  console.error(`Routine failed: ${execution.error}`);
+}
+```
+
+### Best Practices
+
+1. **Use `context_set` for small shared state** — task names, IDs, short summaries. These are always visible.
+2. **Use `memory_store` for large data** — full API responses, documents, raw data. Retrieved on demand.
+3. **Define clear completion criteria** — specific, verifiable conditions the LLM can evaluate.
+4. **Set appropriate `minCompletionScore`** — use 80+ for strict validation, 60-70 for lenient.
+5. **Use `skipReflection: true`** for simple tasks that don't need validation.
+6. **Keep `maxAttempts` reasonable** — 2-3 for most tasks. Each retry costs LLM calls.
+7. **Use `continue` failure mode** when tasks are independent and partial results are acceptable.
 
 ---
 

@@ -20798,6 +20798,7 @@ var BaseAgent = class extends EventEmitter {
   _agentContext;
   // SINGLE SOURCE OF TRUTH for tools and sessions
   _permissionManager;
+  _ownsContext = true;
   _isDestroyed = false;
   _cleanupCallbacks = [];
   _logger;
@@ -20850,8 +20851,10 @@ var BaseAgent = class extends EventEmitter {
    */
   initializeAgentContext(config) {
     if (config.context instanceof AgentContextNextGen) {
+      this._ownsContext = false;
       return config.context;
     }
+    this._ownsContext = true;
     const contextConfig = {
       model: config.model,
       agentId: config.name,
@@ -21363,7 +21366,9 @@ var BaseAgent = class extends EventEmitter {
       clearInterval(this._autoSaveInterval);
       this._autoSaveInterval = null;
     }
-    this._agentContext.destroy();
+    if (this._ownsContext) {
+      this._agentContext.destroy();
+    }
     this._permissionManager.removeAllListeners();
     this.removeAllListeners();
   }
@@ -23343,6 +23348,827 @@ var Agent = class _Agent extends BaseAgent {
     this._logger.debug("Agent destroyed");
   }
 };
+
+// src/domain/entities/Task.ts
+var TERMINAL_TASK_STATUSES = ["completed", "failed", "skipped", "cancelled"];
+function isTerminalStatus(status) {
+  return TERMINAL_TASK_STATUSES.includes(status);
+}
+function createTask(input) {
+  const now = Date.now();
+  const id = input.id ?? `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return {
+    id,
+    name: input.name,
+    description: input.description,
+    status: "pending",
+    dependsOn: input.dependsOn ?? [],
+    externalDependency: input.externalDependency,
+    condition: input.condition,
+    execution: input.execution,
+    suggestedTools: input.suggestedTools,
+    validation: input.validation,
+    expectedOutput: input.expectedOutput,
+    attempts: 0,
+    maxAttempts: input.maxAttempts ?? 3,
+    createdAt: now,
+    lastUpdatedAt: now,
+    metadata: input.metadata
+  };
+}
+function createPlan(input) {
+  const now = Date.now();
+  const id = `plan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const tasks = input.tasks.map((taskInput) => createTask(taskInput));
+  const nameToId = /* @__PURE__ */ new Map();
+  for (const task of tasks) {
+    nameToId.set(task.name, task.id);
+  }
+  for (let i = 0; i < tasks.length; i++) {
+    const taskInput = input.tasks[i];
+    const task = tasks[i];
+    if (taskInput.dependsOn && taskInput.dependsOn.length > 0) {
+      task.dependsOn = taskInput.dependsOn.map((dep) => {
+        if (dep.startsWith("task-")) {
+          return dep;
+        }
+        const resolvedId = nameToId.get(dep);
+        if (!resolvedId) {
+          throw new Error(`Task dependency "${dep}" not found in plan`);
+        }
+        return resolvedId;
+      });
+    }
+  }
+  if (!input.skipCycleCheck) {
+    const cycle = detectDependencyCycle(tasks);
+    if (cycle) {
+      const cycleNames = cycle.map((taskId) => {
+        const task = tasks.find((t) => t.id === taskId);
+        return task ? task.name : taskId;
+      });
+      throw new DependencyCycleError(cycleNames, id);
+    }
+  }
+  return {
+    id,
+    goal: input.goal,
+    context: input.context,
+    tasks,
+    concurrency: input.concurrency,
+    allowDynamicTasks: input.allowDynamicTasks ?? true,
+    status: "pending",
+    createdAt: now,
+    lastUpdatedAt: now,
+    metadata: input.metadata
+  };
+}
+function canTaskExecute(task, allTasks) {
+  if (task.status !== "pending") {
+    return false;
+  }
+  if (task.dependsOn.length > 0) {
+    for (const depId of task.dependsOn) {
+      const depTask = allTasks.find((t) => t.id === depId);
+      if (!depTask || depTask.status !== "completed") {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+function getNextExecutableTasks(plan) {
+  const executable = plan.tasks.filter((task) => canTaskExecute(task, plan.tasks));
+  if (executable.length === 0) {
+    return [];
+  }
+  if (!plan.concurrency) {
+    return [executable[0]];
+  }
+  const runningCount = plan.tasks.filter((t) => t.status === "in_progress").length;
+  const availableSlots = plan.concurrency.maxParallelTasks - runningCount;
+  if (availableSlots <= 0) {
+    return [];
+  }
+  const parallelTasks = executable.filter((task) => task.execution?.parallel === true);
+  if (parallelTasks.length === 0) {
+    return [executable[0]];
+  }
+  let sortedTasks = [...parallelTasks];
+  if (plan.concurrency.strategy === "priority") {
+    sortedTasks.sort((a, b) => (b.execution?.priority ?? 0) - (a.execution?.priority ?? 0));
+  }
+  return sortedTasks.slice(0, availableSlots);
+}
+async function evaluateCondition(condition, memory) {
+  const value = await memory.get(condition.memoryKey);
+  switch (condition.operator) {
+    case "exists":
+      return value !== void 0;
+    case "not_exists":
+      return value === void 0;
+    case "equals":
+      return value === condition.value;
+    case "contains":
+      if (Array.isArray(value)) {
+        return value.includes(condition.value);
+      }
+      if (typeof value === "string" && typeof condition.value === "string") {
+        return value.includes(condition.value);
+      }
+      return false;
+    case "truthy":
+      return !!value;
+    case "greater_than":
+      if (typeof value === "number" && typeof condition.value === "number") {
+        return value > condition.value;
+      }
+      return false;
+    case "less_than":
+      if (typeof value === "number" && typeof condition.value === "number") {
+        return value < condition.value;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+function updateTaskStatus(task, status) {
+  const now = Date.now();
+  const updated = {
+    ...task,
+    status,
+    lastUpdatedAt: now
+  };
+  if (status === "in_progress") {
+    if (!updated.startedAt) {
+      updated.startedAt = now;
+    }
+    updated.attempts += 1;
+  }
+  if ((status === "completed" || status === "failed") && !updated.completedAt) {
+    updated.completedAt = now;
+  }
+  return updated;
+}
+function isTaskBlocked(task, allTasks) {
+  if (task.dependsOn.length === 0) {
+    return false;
+  }
+  for (const depId of task.dependsOn) {
+    const depTask = allTasks.find((t) => t.id === depId);
+    if (!depTask) {
+      return true;
+    }
+    if (depTask.status !== "completed") {
+      return true;
+    }
+  }
+  return false;
+}
+function getTaskDependencies(task, allTasks) {
+  if (task.dependsOn.length === 0) {
+    return [];
+  }
+  return task.dependsOn.map((depId) => allTasks.find((t) => t.id === depId)).filter((t) => t !== void 0);
+}
+function resolveDependencies(taskInputs, tasks) {
+  const nameToId = /* @__PURE__ */ new Map();
+  for (const task of tasks) {
+    nameToId.set(task.name, task.id);
+  }
+  for (const input of taskInputs) {
+    if (input.dependsOn && input.dependsOn.length > 0) {
+      input.dependsOn = input.dependsOn.map((dep) => {
+        if (dep.startsWith("task-")) {
+          return dep;
+        }
+        const resolvedId = nameToId.get(dep);
+        if (!resolvedId) {
+          throw new Error(`Task dependency "${dep}" not found`);
+        }
+        return resolvedId;
+      });
+    }
+  }
+}
+function detectDependencyCycle(tasks) {
+  const visited = /* @__PURE__ */ new Set();
+  const recStack = /* @__PURE__ */ new Set();
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+  function dfs(taskId, path6) {
+    if (recStack.has(taskId)) {
+      const cycleStart = path6.indexOf(taskId);
+      return [...path6.slice(cycleStart), taskId];
+    }
+    if (visited.has(taskId)) {
+      return null;
+    }
+    visited.add(taskId);
+    recStack.add(taskId);
+    const task = taskMap.get(taskId);
+    if (task) {
+      for (const depId of task.dependsOn) {
+        const cycle = dfs(depId, [...path6, taskId]);
+        if (cycle) {
+          return cycle;
+        }
+      }
+    }
+    recStack.delete(taskId);
+    return null;
+  }
+  for (const task of tasks) {
+    if (!visited.has(task.id)) {
+      const cycle = dfs(task.id, []);
+      if (cycle) {
+        return cycle;
+      }
+    }
+  }
+  return null;
+}
+
+// src/domain/entities/Routine.ts
+function createRoutineDefinition(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = input.id ?? `routine-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const taskNames = new Set(input.tasks.map((t) => t.name));
+  const taskIds = new Set(input.tasks.filter((t) => t.id).map((t) => t.id));
+  for (const task of input.tasks) {
+    if (task.dependsOn) {
+      for (const dep of task.dependsOn) {
+        if (!taskNames.has(dep) && !taskIds.has(dep)) {
+          throw new Error(
+            `Routine "${input.name}": task "${task.name}" depends on unknown task "${dep}"`
+          );
+        }
+      }
+    }
+  }
+  createPlan({
+    goal: input.name,
+    tasks: input.tasks
+  });
+  return {
+    id,
+    name: input.name,
+    description: input.description,
+    version: input.version,
+    tasks: input.tasks,
+    requiredTools: input.requiredTools,
+    requiredPlugins: input.requiredPlugins,
+    instructions: input.instructions,
+    concurrency: input.concurrency,
+    allowDynamicTasks: input.allowDynamicTasks ?? false,
+    tags: input.tags,
+    author: input.author,
+    createdAt: now,
+    updatedAt: now,
+    metadata: input.metadata
+  };
+}
+function createRoutineExecution(definition) {
+  const now = Date.now();
+  const executionId = `rexec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const plan = createPlan({
+    goal: definition.name,
+    context: definition.description,
+    tasks: definition.tasks,
+    concurrency: definition.concurrency,
+    allowDynamicTasks: definition.allowDynamicTasks
+  });
+  return {
+    id: executionId,
+    routineId: definition.id,
+    plan,
+    status: "pending",
+    progress: 0,
+    lastUpdatedAt: now
+  };
+}
+function getRoutineProgress(execution) {
+  const { tasks } = execution.plan;
+  if (tasks.length === 0) return 100;
+  const completed = tasks.filter((t) => isTerminalStatus(t.status)).length;
+  return Math.round(completed / tasks.length * 100);
+}
+
+// src/utils/jsonExtractor.ts
+function extractJSON(text) {
+  if (!text || typeof text !== "string") {
+    return {
+      success: false,
+      error: "Input is empty or not a string"
+    };
+  }
+  const trimmedText = text.trim();
+  const codeBlockResult = extractFromCodeBlock(trimmedText);
+  if (codeBlockResult.success) {
+    return codeBlockResult;
+  }
+  const inlineResult = extractInlineJSON(trimmedText);
+  if (inlineResult.success) {
+    return inlineResult;
+  }
+  try {
+    const data = JSON.parse(trimmedText);
+    return {
+      success: true,
+      data,
+      rawJson: trimmedText,
+      method: "raw"
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: `Could not extract JSON from text: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+}
+function extractFromCodeBlock(text) {
+  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    const content = match[1];
+    if (content) {
+      const trimmed = content.trim();
+      try {
+        const data = JSON.parse(trimmed);
+        return {
+          success: true,
+          data,
+          rawJson: trimmed,
+          method: "code_block"
+        };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return { success: false };
+}
+function extractInlineJSON(text) {
+  const objectMatch = findJSONObject(text);
+  if (objectMatch) {
+    try {
+      const data = JSON.parse(objectMatch);
+      return {
+        success: true,
+        data,
+        rawJson: objectMatch,
+        method: "inline"
+      };
+    } catch {
+    }
+  }
+  const arrayMatch = findJSONArray(text);
+  if (arrayMatch) {
+    try {
+      const data = JSON.parse(arrayMatch);
+      return {
+        success: true,
+        data,
+        rawJson: arrayMatch,
+        method: "inline"
+      };
+    } catch {
+    }
+  }
+  return { success: false };
+}
+function findJSONObject(text) {
+  const startIndex = text.indexOf("{");
+  if (startIndex === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") {
+      depth++;
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function findJSONArray(text) {
+  const startIndex = text.indexOf("[");
+  if (startIndex === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "[") {
+      depth++;
+    } else if (char === "]") {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function extractJSONField(text, field, defaultValue) {
+  const result = extractJSON(text);
+  if (result.success && result.data && field in result.data) {
+    return result.data[field];
+  }
+  return defaultValue;
+}
+function extractNumber(text, patterns = [
+  /(\d{1,3})%?\s*(?:complete|score|percent)/i,
+  /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
+  /(\d{1,3})\s*(?:out of|\/)\s*100/i
+], defaultValue = 0) {
+  const jsonResult = extractJSON(text);
+  if (jsonResult.success && jsonResult.data) {
+    const scoreFields = ["score", "completionScore", "completion_score", "rating", "percent", "value"];
+    for (const field of scoreFields) {
+      if (field in jsonResult.data && typeof jsonResult.data[field] === "number") {
+        return jsonResult.data[field];
+      }
+    }
+  }
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num)) {
+        return num;
+      }
+    }
+  }
+  return defaultValue;
+}
+
+// src/core/routineRunner.ts
+init_Logger();
+function defaultSystemPrompt(definition) {
+  const parts = [];
+  if (definition.instructions) {
+    parts.push(definition.instructions);
+  }
+  parts.push(
+    `You are executing a routine called "${definition.name}".`,
+    "",
+    "Between tasks, your conversation history is cleared but your memory persists.",
+    "Use these strategies to pass information between tasks:",
+    "- Use context_set for small key results that subsequent tasks need immediately (visible in context, no retrieval needed).",
+    '- Use memory_store with tier="findings" for larger data that may be needed later.',
+    "- Use memory_retrieve to access data stored by previous tasks.",
+    "",
+    "When you have completed the current task, stop and let the system know you are done.",
+    "Store your key results in memory before finishing."
+  );
+  return parts.join("\n");
+}
+function defaultTaskPrompt(task) {
+  const parts = [];
+  parts.push(`## Current Task: ${task.name}`, "");
+  parts.push(task.description, "");
+  if (task.expectedOutput) {
+    parts.push(`**Expected output:** ${task.expectedOutput}`, "");
+  }
+  if (task.suggestedTools && task.suggestedTools.length > 0) {
+    parts.push(`**Suggested tools:** ${task.suggestedTools.join(", ")}`, "");
+  }
+  const criteria = task.validation?.completionCriteria;
+  if (criteria && criteria.length > 0) {
+    parts.push("### Completion Criteria");
+    parts.push("When you are done, ensure the following are met:");
+    for (const c of criteria) {
+      parts.push(`- ${c}`);
+    }
+    parts.push("");
+  }
+  parts.push("Store your key results in memory before finishing.");
+  return parts.join("\n");
+}
+function defaultValidationPrompt(task, context) {
+  const criteria = task.validation?.completionCriteria ?? [];
+  const criteriaList = criteria.length > 0 ? criteria.map((c, i) => `${i + 1}. ${c}`).join("\n") : "The task was completed as described.";
+  const parts = [
+    `Evaluate if the task "${task.name}" was completed successfully.`,
+    "",
+    `Task description: ${task.description}`,
+    "",
+    "Completion criteria:",
+    criteriaList,
+    "",
+    "--- EVIDENCE ---",
+    "",
+    "Agent response (final text output):",
+    context.responseText || "(no text output)",
+    "",
+    "Tool calls made during this task:",
+    context.toolCallLog
+  ];
+  if (context.inContextMemory) {
+    parts.push("", "In-context memory (current state):", context.inContextMemory);
+  }
+  if (context.workingMemoryIndex) {
+    parts.push("", "Working memory index (stored data):", context.workingMemoryIndex);
+  }
+  parts.push(
+    "",
+    "--- END EVIDENCE ---",
+    "",
+    "Use the evidence above to verify each criterion. Check tool call results, not just the agent's claims.",
+    "",
+    "Return a JSON object with the following structure:",
+    "```json",
+    '{ "isComplete": boolean, "completionScore": number (0-100), "explanation": "..." }',
+    "```",
+    "",
+    "Be strict: only mark isComplete=true if all criteria are clearly met based on the evidence."
+  );
+  return parts.join("\n");
+}
+function formatToolCallLog(conversation) {
+  const calls = [];
+  for (const item of conversation) {
+    if (!("content" in item) || !Array.isArray(item.content)) continue;
+    const msg = item;
+    for (const c of msg.content) {
+      if (c.type === "tool_use" /* TOOL_USE */) {
+        let argsStr;
+        try {
+          const parsed = JSON.parse(c.arguments);
+          argsStr = JSON.stringify(parsed, null, 2);
+          if (argsStr.length > 500) argsStr = argsStr.slice(0, 500) + "... (truncated)";
+        } catch {
+          argsStr = c.arguments;
+        }
+        calls.push(`CALL: ${c.name}(${argsStr})`);
+      } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+        let resultStr = typeof c.content === "string" ? c.content : JSON.stringify(c.content);
+        if (resultStr.length > 500) resultStr = resultStr.slice(0, 500) + "... (truncated)";
+        const prefix = c.error ? "ERROR" : "RESULT";
+        calls.push(`  ${prefix}: ${resultStr}`);
+      }
+    }
+  }
+  return calls.length > 0 ? calls.join("\n") : "(no tool calls)";
+}
+async function collectValidationContext(agent, responseText) {
+  const icmPlugin = agent.context.getPlugin("in_context_memory");
+  const inContextMemory = icmPlugin ? await icmPlugin.getContent() : null;
+  const wmPlugin = agent.context.memory;
+  const workingMemoryIndex = wmPlugin ? await wmPlugin.getContent() : null;
+  const conversation = agent.context.getConversation();
+  const toolCallLog = formatToolCallLog(conversation);
+  return {
+    responseText,
+    inContextMemory,
+    workingMemoryIndex,
+    toolCallLog
+  };
+}
+async function validateTaskCompletion(agent, task, responseText, validationPromptBuilder) {
+  if (task.validation?.skipReflection) {
+    return {
+      isComplete: true,
+      completionScore: 100,
+      explanation: "Validation skipped (skipReflection=true)",
+      requiresUserApproval: false
+    };
+  }
+  if (!task.validation?.completionCriteria || task.validation.completionCriteria.length === 0) {
+    return {
+      isComplete: true,
+      completionScore: 100,
+      explanation: "No completion criteria defined, auto-passing",
+      requiresUserApproval: false
+    };
+  }
+  const validationContext = await collectValidationContext(agent, responseText);
+  const prompt = validationPromptBuilder(task, validationContext);
+  const response = await agent.runDirect(prompt, {
+    instructions: "You are a task completion evaluator. Return only JSON.",
+    temperature: 0.1
+  });
+  const text = response.output_text ?? "";
+  const extracted = extractJSON(text);
+  if (!extracted.success || !extracted.data) {
+    return {
+      isComplete: false,
+      completionScore: 0,
+      explanation: `Failed to parse validation response: ${extracted.error ?? "unknown error"}`,
+      requiresUserApproval: false
+    };
+  }
+  const { isComplete, completionScore, explanation } = extracted.data;
+  const minScore = task.validation?.minCompletionScore ?? 80;
+  return {
+    isComplete: isComplete && completionScore >= minScore,
+    completionScore,
+    explanation,
+    requiresUserApproval: false
+  };
+}
+async function executeRoutine(options) {
+  const {
+    definition,
+    connector,
+    model,
+    tools: extraTools,
+    onTaskComplete,
+    onTaskFailed,
+    prompts
+  } = options;
+  const log = logger.child({ routine: definition.name });
+  const execution = createRoutineExecution(definition);
+  execution.status = "running";
+  execution.startedAt = Date.now();
+  execution.lastUpdatedAt = Date.now();
+  const buildSystemPrompt = prompts?.system ?? defaultSystemPrompt;
+  const buildTaskPrompt = prompts?.task ?? defaultTaskPrompt;
+  const buildValidationPrompt = prompts?.validation ?? defaultValidationPrompt;
+  const allTools = [...extraTools ?? []];
+  if (definition.requiredTools && definition.requiredTools.length > 0) {
+    const availableToolNames = new Set(allTools.map((t) => t.definition.function.name));
+    const missing = definition.requiredTools.filter((name) => !availableToolNames.has(name));
+    if (missing.length > 0) {
+      execution.status = "failed";
+      execution.error = `Missing required tools: ${missing.join(", ")}`;
+      execution.completedAt = Date.now();
+      execution.lastUpdatedAt = Date.now();
+      return execution;
+    }
+  }
+  const agent = Agent.create({
+    connector,
+    model,
+    tools: allTools,
+    instructions: buildSystemPrompt(definition),
+    context: {
+      model,
+      features: {
+        workingMemory: true,
+        inContextMemory: true
+      }
+    }
+  });
+  if (definition.requiredPlugins && definition.requiredPlugins.length > 0) {
+    const missing = definition.requiredPlugins.filter(
+      (name) => !agent.context.hasPlugin(name)
+    );
+    if (missing.length > 0) {
+      agent.destroy();
+      execution.status = "failed";
+      execution.error = `Missing required plugins: ${missing.join(", ")}`;
+      execution.completedAt = Date.now();
+      execution.lastUpdatedAt = Date.now();
+      return execution;
+    }
+  }
+  const failureMode = definition.concurrency?.failureMode ?? "fail-fast";
+  try {
+    let nextTasks = getNextExecutableTasks(execution.plan);
+    while (nextTasks.length > 0) {
+      const task = nextTasks[0];
+      const taskIndex = execution.plan.tasks.findIndex((t) => t.id === task.id);
+      log.info({ taskName: task.name, taskId: task.id }, "Starting task");
+      execution.plan.tasks[taskIndex] = updateTaskStatus(task, "in_progress");
+      execution.lastUpdatedAt = Date.now();
+      let taskCompleted = false;
+      const getTask = () => execution.plan.tasks[taskIndex];
+      while (!taskCompleted) {
+        try {
+          const taskPrompt = buildTaskPrompt(getTask());
+          const response = await agent.run(taskPrompt);
+          const responseText = response.output_text ?? "";
+          const validationResult = await validateTaskCompletion(
+            agent,
+            getTask(),
+            responseText,
+            buildValidationPrompt
+          );
+          if (validationResult.isComplete) {
+            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "completed");
+            execution.plan.tasks[taskIndex].result = {
+              success: true,
+              output: responseText,
+              validationScore: validationResult.completionScore,
+              validationExplanation: validationResult.explanation
+            };
+            taskCompleted = true;
+            log.info(
+              { taskName: getTask().name, score: validationResult.completionScore },
+              "Task completed"
+            );
+            execution.progress = getRoutineProgress(execution);
+            execution.lastUpdatedAt = Date.now();
+            onTaskComplete?.(execution.plan.tasks[taskIndex], execution);
+          } else {
+            log.warn(
+              {
+                taskName: getTask().name,
+                score: validationResult.completionScore,
+                attempt: getTask().attempts,
+                maxAttempts: getTask().maxAttempts
+              },
+              "Task validation failed"
+            );
+            if (getTask().attempts >= getTask().maxAttempts) {
+              execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "failed");
+              execution.plan.tasks[taskIndex].result = {
+                success: false,
+                error: validationResult.explanation,
+                validationScore: validationResult.completionScore,
+                validationExplanation: validationResult.explanation
+              };
+              break;
+            }
+            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "in_progress");
+          }
+        } catch (error) {
+          const errorMessage = error.message;
+          log.error({ taskName: getTask().name, error: errorMessage }, "Task execution error");
+          if (getTask().attempts >= getTask().maxAttempts) {
+            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "failed");
+            execution.plan.tasks[taskIndex].result = {
+              success: false,
+              error: errorMessage
+            };
+            break;
+          }
+          execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "in_progress");
+        }
+      }
+      if (!taskCompleted) {
+        execution.progress = getRoutineProgress(execution);
+        execution.lastUpdatedAt = Date.now();
+        onTaskFailed?.(execution.plan.tasks[taskIndex], execution);
+        if (failureMode === "fail-fast") {
+          execution.status = "failed";
+          execution.error = `Task "${getTask().name}" failed after ${getTask().attempts} attempt(s)`;
+          execution.completedAt = Date.now();
+          execution.lastUpdatedAt = Date.now();
+          break;
+        }
+      }
+      agent.clearConversation("task-boundary");
+      nextTasks = getNextExecutableTasks(execution.plan);
+    }
+    if (execution.status === "running") {
+      const allTerminal = execution.plan.tasks.every((t) => isTerminalStatus(t.status));
+      const allCompleted = execution.plan.tasks.every((t) => t.status === "completed");
+      if (allCompleted) {
+        execution.status = "completed";
+      } else if (allTerminal) {
+        execution.status = "failed";
+        execution.error = "Not all tasks completed successfully";
+      } else {
+        execution.status = "failed";
+        execution.error = "Execution stalled: remaining tasks are blocked by incomplete dependencies";
+      }
+      execution.completedAt = Date.now();
+      execution.lastUpdatedAt = Date.now();
+      execution.progress = getRoutineProgress(execution);
+    }
+    log.info(
+      { status: execution.status, progress: execution.progress },
+      "Routine execution finished"
+    );
+    return execution;
+  } finally {
+    agent.destroy();
+  }
+}
 
 // src/core/index.ts
 init_constants();
@@ -35873,246 +36699,6 @@ var CheckpointManager = class {
   }
 };
 
-// src/domain/entities/Task.ts
-var TERMINAL_TASK_STATUSES = ["completed", "failed", "skipped", "cancelled"];
-function isTerminalStatus(status) {
-  return TERMINAL_TASK_STATUSES.includes(status);
-}
-function createTask(input) {
-  const now = Date.now();
-  const id = input.id ?? `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  return {
-    id,
-    name: input.name,
-    description: input.description,
-    status: "pending",
-    dependsOn: input.dependsOn ?? [],
-    externalDependency: input.externalDependency,
-    condition: input.condition,
-    execution: input.execution,
-    suggestedTools: input.suggestedTools,
-    validation: input.validation,
-    expectedOutput: input.expectedOutput,
-    attempts: 0,
-    maxAttempts: input.maxAttempts ?? 3,
-    createdAt: now,
-    lastUpdatedAt: now,
-    metadata: input.metadata
-  };
-}
-function createPlan(input) {
-  const now = Date.now();
-  const id = `plan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const tasks = input.tasks.map((taskInput) => createTask(taskInput));
-  const nameToId = /* @__PURE__ */ new Map();
-  for (const task of tasks) {
-    nameToId.set(task.name, task.id);
-  }
-  for (let i = 0; i < tasks.length; i++) {
-    const taskInput = input.tasks[i];
-    const task = tasks[i];
-    if (taskInput.dependsOn && taskInput.dependsOn.length > 0) {
-      task.dependsOn = taskInput.dependsOn.map((dep) => {
-        if (dep.startsWith("task-")) {
-          return dep;
-        }
-        const resolvedId = nameToId.get(dep);
-        if (!resolvedId) {
-          throw new Error(`Task dependency "${dep}" not found in plan`);
-        }
-        return resolvedId;
-      });
-    }
-  }
-  if (!input.skipCycleCheck) {
-    const cycle = detectDependencyCycle(tasks);
-    if (cycle) {
-      const cycleNames = cycle.map((taskId) => {
-        const task = tasks.find((t) => t.id === taskId);
-        return task ? task.name : taskId;
-      });
-      throw new DependencyCycleError(cycleNames, id);
-    }
-  }
-  return {
-    id,
-    goal: input.goal,
-    context: input.context,
-    tasks,
-    concurrency: input.concurrency,
-    allowDynamicTasks: input.allowDynamicTasks ?? true,
-    status: "pending",
-    createdAt: now,
-    lastUpdatedAt: now,
-    metadata: input.metadata
-  };
-}
-function canTaskExecute(task, allTasks) {
-  if (task.status !== "pending") {
-    return false;
-  }
-  if (task.dependsOn.length > 0) {
-    for (const depId of task.dependsOn) {
-      const depTask = allTasks.find((t) => t.id === depId);
-      if (!depTask || depTask.status !== "completed") {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-function getNextExecutableTasks(plan) {
-  const executable = plan.tasks.filter((task) => canTaskExecute(task, plan.tasks));
-  if (executable.length === 0) {
-    return [];
-  }
-  if (!plan.concurrency) {
-    return [executable[0]];
-  }
-  const runningCount = plan.tasks.filter((t) => t.status === "in_progress").length;
-  const availableSlots = plan.concurrency.maxParallelTasks - runningCount;
-  if (availableSlots <= 0) {
-    return [];
-  }
-  const parallelTasks = executable.filter((task) => task.execution?.parallel === true);
-  if (parallelTasks.length === 0) {
-    return [executable[0]];
-  }
-  let sortedTasks = [...parallelTasks];
-  if (plan.concurrency.strategy === "priority") {
-    sortedTasks.sort((a, b) => (b.execution?.priority ?? 0) - (a.execution?.priority ?? 0));
-  }
-  return sortedTasks.slice(0, availableSlots);
-}
-async function evaluateCondition(condition, memory) {
-  const value = await memory.get(condition.memoryKey);
-  switch (condition.operator) {
-    case "exists":
-      return value !== void 0;
-    case "not_exists":
-      return value === void 0;
-    case "equals":
-      return value === condition.value;
-    case "contains":
-      if (Array.isArray(value)) {
-        return value.includes(condition.value);
-      }
-      if (typeof value === "string" && typeof condition.value === "string") {
-        return value.includes(condition.value);
-      }
-      return false;
-    case "truthy":
-      return !!value;
-    case "greater_than":
-      if (typeof value === "number" && typeof condition.value === "number") {
-        return value > condition.value;
-      }
-      return false;
-    case "less_than":
-      if (typeof value === "number" && typeof condition.value === "number") {
-        return value < condition.value;
-      }
-      return false;
-    default:
-      return false;
-  }
-}
-function updateTaskStatus(task, status) {
-  const now = Date.now();
-  const updated = {
-    ...task,
-    status,
-    lastUpdatedAt: now
-  };
-  if (status === "in_progress") {
-    if (!updated.startedAt) {
-      updated.startedAt = now;
-    }
-    updated.attempts += 1;
-  }
-  if ((status === "completed" || status === "failed") && !updated.completedAt) {
-    updated.completedAt = now;
-  }
-  return updated;
-}
-function isTaskBlocked(task, allTasks) {
-  if (task.dependsOn.length === 0) {
-    return false;
-  }
-  for (const depId of task.dependsOn) {
-    const depTask = allTasks.find((t) => t.id === depId);
-    if (!depTask) {
-      return true;
-    }
-    if (depTask.status !== "completed") {
-      return true;
-    }
-  }
-  return false;
-}
-function getTaskDependencies(task, allTasks) {
-  if (task.dependsOn.length === 0) {
-    return [];
-  }
-  return task.dependsOn.map((depId) => allTasks.find((t) => t.id === depId)).filter((t) => t !== void 0);
-}
-function resolveDependencies(taskInputs, tasks) {
-  const nameToId = /* @__PURE__ */ new Map();
-  for (const task of tasks) {
-    nameToId.set(task.name, task.id);
-  }
-  for (const input of taskInputs) {
-    if (input.dependsOn && input.dependsOn.length > 0) {
-      input.dependsOn = input.dependsOn.map((dep) => {
-        if (dep.startsWith("task-")) {
-          return dep;
-        }
-        const resolvedId = nameToId.get(dep);
-        if (!resolvedId) {
-          throw new Error(`Task dependency "${dep}" not found`);
-        }
-        return resolvedId;
-      });
-    }
-  }
-}
-function detectDependencyCycle(tasks) {
-  const visited = /* @__PURE__ */ new Set();
-  const recStack = /* @__PURE__ */ new Set();
-  const taskMap = new Map(tasks.map((t) => [t.id, t]));
-  function dfs(taskId, path6) {
-    if (recStack.has(taskId)) {
-      const cycleStart = path6.indexOf(taskId);
-      return [...path6.slice(cycleStart), taskId];
-    }
-    if (visited.has(taskId)) {
-      return null;
-    }
-    visited.add(taskId);
-    recStack.add(taskId);
-    const task = taskMap.get(taskId);
-    if (task) {
-      for (const depId of task.dependsOn) {
-        const cycle = dfs(depId, [...path6, taskId]);
-        if (cycle) {
-          return cycle;
-        }
-      }
-    }
-    recStack.delete(taskId);
-    return null;
-  }
-  for (const task of tasks) {
-    if (!visited.has(task.id)) {
-      const cycle = dfs(task.id, []);
-      if (cycle) {
-        return cycle;
-      }
-    }
-  }
-  return null;
-}
-
 // src/capabilities/taskAgent/PlanningAgent.ts
 var PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to analyze goals and break them down into structured, executable task plans.
 
@@ -36908,71 +37494,6 @@ var InMemoryHistoryStorage = class {
     this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
-
-// src/domain/entities/Routine.ts
-function createRoutineDefinition(input) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = input.id ?? `routine-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const taskNames = new Set(input.tasks.map((t) => t.name));
-  const taskIds = new Set(input.tasks.filter((t) => t.id).map((t) => t.id));
-  for (const task of input.tasks) {
-    if (task.dependsOn) {
-      for (const dep of task.dependsOn) {
-        if (!taskNames.has(dep) && !taskIds.has(dep)) {
-          throw new Error(
-            `Routine "${input.name}": task "${task.name}" depends on unknown task "${dep}"`
-          );
-        }
-      }
-    }
-  }
-  createPlan({
-    goal: input.name,
-    tasks: input.tasks
-  });
-  return {
-    id,
-    name: input.name,
-    description: input.description,
-    version: input.version,
-    tasks: input.tasks,
-    requiredTools: input.requiredTools,
-    requiredPlugins: input.requiredPlugins,
-    instructions: input.instructions,
-    concurrency: input.concurrency,
-    allowDynamicTasks: input.allowDynamicTasks ?? false,
-    tags: input.tags,
-    author: input.author,
-    createdAt: now,
-    updatedAt: now,
-    metadata: input.metadata
-  };
-}
-function createRoutineExecution(definition) {
-  const now = Date.now();
-  const executionId = `rexec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const plan = createPlan({
-    goal: definition.name,
-    context: definition.description,
-    tasks: definition.tasks,
-    concurrency: definition.concurrency,
-    allowDynamicTasks: definition.allowDynamicTasks
-  });
-  return {
-    id: executionId,
-    routineId: definition.id,
-    plan,
-    status: "pending",
-    progress: 0,
-    lastUpdatedAt: now
-  };
-}
-function getRoutineProgress(execution) {
-  const { tasks } = execution.plan;
-  if (tasks.length === 0) return 100;
-  const completed = tasks.filter((t) => isTerminalStatus(t.status)).length;
-  return Math.round(completed / tasks.length * 100);
-}
 function getDefaultBaseDirectory3() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
@@ -42255,186 +42776,6 @@ async function hasClipboardImage() {
   } catch {
     return false;
   }
-}
-
-// src/utils/jsonExtractor.ts
-function extractJSON(text) {
-  if (!text || typeof text !== "string") {
-    return {
-      success: false,
-      error: "Input is empty or not a string"
-    };
-  }
-  const trimmedText = text.trim();
-  const codeBlockResult = extractFromCodeBlock(trimmedText);
-  if (codeBlockResult.success) {
-    return codeBlockResult;
-  }
-  const inlineResult = extractInlineJSON(trimmedText);
-  if (inlineResult.success) {
-    return inlineResult;
-  }
-  try {
-    const data = JSON.parse(trimmedText);
-    return {
-      success: true,
-      data,
-      rawJson: trimmedText,
-      method: "raw"
-    };
-  } catch (e) {
-    return {
-      success: false,
-      error: `Could not extract JSON from text: ${e instanceof Error ? e.message : String(e)}`
-    };
-  }
-}
-function extractFromCodeBlock(text) {
-  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/g;
-  let match;
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    const content = match[1];
-    if (content) {
-      const trimmed = content.trim();
-      try {
-        const data = JSON.parse(trimmed);
-        return {
-          success: true,
-          data,
-          rawJson: trimmed,
-          method: "code_block"
-        };
-      } catch {
-        continue;
-      }
-    }
-  }
-  return { success: false };
-}
-function extractInlineJSON(text) {
-  const objectMatch = findJSONObject(text);
-  if (objectMatch) {
-    try {
-      const data = JSON.parse(objectMatch);
-      return {
-        success: true,
-        data,
-        rawJson: objectMatch,
-        method: "inline"
-      };
-    } catch {
-    }
-  }
-  const arrayMatch = findJSONArray(text);
-  if (arrayMatch) {
-    try {
-      const data = JSON.parse(arrayMatch);
-      return {
-        success: true,
-        data,
-        rawJson: arrayMatch,
-        method: "inline"
-      };
-    } catch {
-    }
-  }
-  return { success: false };
-}
-function findJSONObject(text) {
-  const startIndex = text.indexOf("{");
-  if (startIndex === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = startIndex; i < text.length; i++) {
-    const char = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\" && inString) {
-      escaped = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "{") {
-      depth++;
-    } else if (char === "}") {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIndex, i + 1);
-      }
-    }
-  }
-  return null;
-}
-function findJSONArray(text) {
-  const startIndex = text.indexOf("[");
-  if (startIndex === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = startIndex; i < text.length; i++) {
-    const char = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\" && inString) {
-      escaped = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "[") {
-      depth++;
-    } else if (char === "]") {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIndex, i + 1);
-      }
-    }
-  }
-  return null;
-}
-function extractJSONField(text, field, defaultValue) {
-  const result = extractJSON(text);
-  if (result.success && result.data && field in result.data) {
-    return result.data[field];
-  }
-  return defaultValue;
-}
-function extractNumber(text, patterns = [
-  /(\d{1,3})%?\s*(?:complete|score|percent)/i,
-  /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
-  /(\d{1,3})\s*(?:out of|\/)\s*100/i
-], defaultValue = 0) {
-  const jsonResult = extractJSON(text);
-  if (jsonResult.success && jsonResult.data) {
-    const scoreFields = ["score", "completionScore", "completion_score", "rating", "percent", "value"];
-    for (const field of scoreFields) {
-      if (field in jsonResult.data && typeof jsonResult.data[field] === "number") {
-        return jsonResult.data[field];
-      }
-    }
-  }
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match && match[1]) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num)) {
-        return num;
-      }
-    }
-  }
-  return defaultValue;
 }
 
 // src/tools/index.ts
@@ -48604,6 +48945,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

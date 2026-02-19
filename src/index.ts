@@ -360,6 +360,10 @@ export {
   getRoutineProgress,
 } from './domain/entities/Routine.js';
 
+// Routine Runner
+export { executeRoutine } from './core/routineRunner.js';
+export type { ExecuteRoutineOptions, ValidationContext } from './core/routineRunner.js';
+
 // Memory Entities
 export type {
   MemoryEntry,

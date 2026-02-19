@@ -31,7 +31,8 @@
   - [16. Developer Tools](#16-developer-tools)
   - [17. Custom Tool Generation](#17-custom-tool-generation-new) — Agents create, test, and persist their own tools
   - [18. Document Reader](#18-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
-  - [19. External API Integration](#19-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+  - [20. Routine Execution](#20-routine-execution) — Multi-step workflows with task dependencies, validation, and memory bridging
+  - [21. External API Integration](#21-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -101,6 +102,7 @@ Better to see once and then dig in the code! :)
 - 💾 **StorageRegistry** - Centralized storage configuration — swap all backends (sessions, media, custom tools, etc.) with one `configure()` call
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
 - 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
+- 🔁 **Routine Execution** - NEW: Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
@@ -1240,7 +1242,58 @@ await agent.run([
 
 See the [User Guide](./USER_GUIDE.md#document-reader) for complete API reference and configuration options.
 
-### 20. External API Integration
+### 20. Routine Execution (NEW)
+
+Execute multi-step AI workflows where tasks run in dependency order with automatic validation:
+
+```typescript
+import { executeRoutine, createRoutineDefinition } from '@everworker/oneringai';
+
+const routine = createRoutineDefinition({
+  name: 'Research Report',
+  tasks: [
+    {
+      name: 'Research',
+      description: 'Search for information about quantum computing',
+      suggestedTools: ['web_search'],
+      validation: {
+        completionCriteria: ['At least 3 sources found', 'Key findings stored in memory'],
+      },
+    },
+    {
+      name: 'Write Report',
+      description: 'Write a report based on research findings',
+      dependsOn: ['Research'],
+      validation: {
+        completionCriteria: ['Report has introduction and conclusion', 'Sources are cited'],
+      },
+    },
+  ],
+});
+
+const execution = await executeRoutine({
+  definition: routine,
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [...searchTools],
+  onTaskComplete: (task, exec) => console.log(`[${exec.progress}%] ${task.name} done`),
+});
+
+console.log(execution.status); // 'completed' | 'failed'
+```
+
+**Key Features:**
+- 🔗 **Task Dependencies** - DAG-based ordering via `dependsOn`
+- 🧠 **Memory Bridging** - In-context memory (`context_set`) + working memory (`memory_store`) persist across tasks while conversation is cleared
+- 🔍 **LLM Validation** - Self-reflection against completion criteria with configurable score thresholds
+- 🔄 **Retry Logic** - Configurable `maxAttempts` per task with automatic retry on validation failure
+- 📊 **Progress Tracking** - Real-time callbacks and progress percentage
+- ⚙️ **Failure Modes** - `fail-fast` (default) or `continue` for independent tasks
+- 🎨 **Custom Prompts** - Override system, task, or validation prompts
+
+> See the [User Guide](./USER_GUIDE.md#routine-execution) for the complete API reference, architecture details, and examples.
+
+### 21. External API Integration
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 
@@ -1592,4 +1645,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.3.1 | **Last Updated:** 2026-02-18 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.3.2 | **Last Updated:** 2026-02-19 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
