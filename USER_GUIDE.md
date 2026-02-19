@@ -583,7 +583,7 @@ StorageRegistry.configure({
   oauthTokens: new FileTokenStorage({ directory: './tokens' }),
 
   // Context-aware factories (called with optional StorageContext for multi-tenant)
-  customTools: () => new MongoCustomToolStorage(),
+  customTools: (ctx) => new MongoCustomToolStorage(ctx?.userId),
   sessions: (agentId) => new RedisContextStorage(agentId),
   persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
   workingMemory: () => new RedisMemoryStorage(),
@@ -3165,7 +3165,7 @@ A complete meta-tool system that enables agents to **create, test, iterate, and 
 |-----------|---------|:-:|
 | `custom_tool_draft` | Validate name, schema, code syntax | Yes |
 | `custom_tool_test` | Execute code in VM sandbox with test input | No |
-| `custom_tool_save` | Persist to `~/.oneringai/custom-tools/` | No |
+| `custom_tool_save` | Persist to `~/.oneringai/users/<userId>/custom-tools/` | No |
 | `custom_tool_list` | Search saved tools (name, description, tags, category) | Yes |
 | `custom_tool_load` | Retrieve full definition including code | Yes |
 | `custom_tool_delete` | Remove from storage | No |
@@ -3305,9 +3305,9 @@ import {
   Agent,
 } from '@everworker/oneringai';
 
-// Load a saved tool
+// Load a saved tool (undefined = default user)
 const storage = createFileCustomToolStorage();
-const definition = await storage.load('celsius_to_fahrenheit');
+const definition = await storage.load(undefined, 'celsius_to_fahrenheit');
 
 if (definition) {
   // Hydrate into a live ToolFunction
@@ -3327,26 +3327,27 @@ The storage layer supports filtering and search:
 
 ```typescript
 const storage = createFileCustomToolStorage();
+const userId = undefined; // or a specific userId for multi-tenant apps
 
 // List all saved tools
-const all = await storage.list();
+const all = await storage.list(userId);
 
 // Search by name or description
-const mathTools = await storage.list({ search: 'convert' });
+const mathTools = await storage.list(userId, { search: 'convert' });
 
 // Filter by tags
-const apiTools = await storage.list({ tags: ['api'] });
+const apiTools = await storage.list(userId, { tags: ['api'] });
 
 // Filter by category
-const networkTools = await storage.list({ category: 'network' });
+const networkTools = await storage.list(userId, { category: 'network' });
 
 // Pagination
-const page2 = await storage.list({ limit: 10, offset: 10 });
+const page2 = await storage.list(userId, { limit: 10, offset: 10 });
 ```
 
 #### Custom Storage Backends
 
-The default `FileCustomToolStorage` persists tools to `~/.oneringai/custom-tools/`. For production systems, implement `ICustomToolStorage` with any backend:
+The default `FileCustomToolStorage` persists tools to `~/.oneringai/users/<userId>/custom-tools/` (defaults to `~/.oneringai/users/default/custom-tools/` when no userId). For production systems, implement `ICustomToolStorage` with any backend:
 
 ```typescript
 import type { ICustomToolStorage, CustomToolListOptions } from '@everworker/oneringai';
@@ -3355,28 +3356,33 @@ import type { CustomToolDefinition, CustomToolSummary } from '@everworker/onerin
 class MongoCustomToolStorage implements ICustomToolStorage {
   constructor(private db: Db) {}
 
-  async save(definition: CustomToolDefinition): Promise<void> {
+  async save(userId: string | undefined, definition: CustomToolDefinition): Promise<void> {
+    const user = userId || 'default';
     await this.db.collection('custom_tools').replaceOne(
-      { name: definition.name },
-      definition,
+      { userId: user, name: definition.name },
+      { userId: user, ...definition },
       { upsert: true }
     );
   }
 
-  async load(name: string): Promise<CustomToolDefinition | null> {
-    return this.db.collection('custom_tools').findOne({ name });
+  async load(userId: string | undefined, name: string): Promise<CustomToolDefinition | null> {
+    const user = userId || 'default';
+    return this.db.collection('custom_tools').findOne({ userId: user, name });
   }
 
-  async delete(name: string): Promise<void> {
-    await this.db.collection('custom_tools').deleteOne({ name });
+  async delete(userId: string | undefined, name: string): Promise<void> {
+    const user = userId || 'default';
+    await this.db.collection('custom_tools').deleteOne({ userId: user, name });
   }
 
-  async exists(name: string): Promise<boolean> {
-    return (await this.db.collection('custom_tools').countDocuments({ name })) > 0;
+  async exists(userId: string | undefined, name: string): Promise<boolean> {
+    const user = userId || 'default';
+    return (await this.db.collection('custom_tools').countDocuments({ userId: user, name })) > 0;
   }
 
-  async list(options?: CustomToolListOptions): Promise<CustomToolSummary[]> {
-    const filter: any = {};
+  async list(userId: string | undefined, options?: CustomToolListOptions): Promise<CustomToolSummary[]> {
+    const user = userId || 'default';
+    const filter: any = { userId: user };
     if (options?.tags?.length) filter['metadata.tags'] = { $in: options.tags };
     if (options?.category) filter['metadata.category'] = options.category;
     if (options?.search) {
@@ -3394,7 +3400,7 @@ class MongoCustomToolStorage implements ICustomToolStorage {
       .toArray();
   }
 
-  getPath(): string { return 'mongodb://custom_tools'; }
+  getPath(userId: string | undefined): string { return `mongodb://custom_tools/${userId || 'default'}`; }
 }
 
 // Use with meta-tools

@@ -1085,7 +1085,7 @@ await agent.run('Create a tool that fetches weather data from the OpenWeather AP
 // Later: load and use a saved tool
 import { createFileCustomToolStorage } from '@everworker/oneringai';
 const storage = createFileCustomToolStorage();
-const definition = await storage.load('fetch_weather');
+const definition = await storage.load(undefined, 'fetch_weather'); // undefined = default user
 const weatherTool = hydrateCustomTool(definition!);
 
 // Register on any agent
@@ -1096,7 +1096,7 @@ agent.tools.register(weatherTool, { source: 'custom', tags: ['weather', 'api'] }
 
 **Dynamic Descriptions:** Draft and test tools use `descriptionFactory` to show all available connectors and the full sandbox API — automatically updated when connectors are added or removed.
 
-**Pluggable Storage:** Default `FileCustomToolStorage` saves to `~/.oneringai/custom-tools/`. Implement `ICustomToolStorage` for MongoDB, S3, or any backend.
+**Pluggable Storage:** Default `FileCustomToolStorage` saves to `~/.oneringai/users/<userId>/custom-tools/` (defaults to `~/.oneringai/users/default/custom-tools/` when no userId). Implement `ICustomToolStorage` for MongoDB, S3, or any backend.
 
 > See the [User Guide](./USER_GUIDE.md#custom-tool-generation) for the complete workflow, sandbox API reference, and examples.
 
