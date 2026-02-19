@@ -72,7 +72,11 @@ User info is automatically shown in context — no need to call user_info_get ev
 - \`user_info_remove(key)\`: Remove a specific entry
 - \`user_info_clear(confirm: true)\`: Remove all entries (destructive!)
 
-**Use for:** User preferences, context, metadata (theme, language, timezone, role, etc.)`;
+**Use for:** User preferences, context, metadata (theme, language, timezone, role, etc.) It is also perfectly fine to search the web and other external sources for information about the user and then store it in user info for future use.
+
+**Important:** Do not store sensitive information (passwords, tokens, PII) in user info. It is not encrypted and may be accessible to other parts of the system. Always follow best practices for security.
+
+**Rules after each user message:** If the user provides new information about themselves, update user info accordingly. If they ask to change or remove existing information, do that as well. Always keep user info up to date with the latest information provided by the user. Learn about the user proactively!`;
 
 // ============================================================================
 // Tool Definitions
