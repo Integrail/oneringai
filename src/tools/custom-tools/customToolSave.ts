@@ -93,17 +93,7 @@ export function createCustomToolSave(storage?: ICustomToolStorage): ToolFunction
 
     execute: async (args: SaveArgs, context?: ToolContext): Promise<SaveResult> => {
       try {
-        // Validate userId
         const userId = context?.userId;
-        if (!userId) {
-          return {
-            success: false,
-            name: args.name,
-            storagePath: 'N/A',
-            error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()',
-          };
-        }
-
         const s = resolveCustomToolStorage(storage, context);
         const now = new Date().toISOString();
 
@@ -137,11 +127,10 @@ export function createCustomToolSave(storage?: ICustomToolStorage): ToolFunction
           storagePath: s.getPath(userId),
         };
       } catch (error) {
-        const userId = context?.userId;
         return {
           success: false,
           name: args.name,
-          storagePath: userId ? resolveCustomToolStorage(storage, context).getPath(userId) : 'N/A',
+          storagePath: resolveCustomToolStorage(storage, context).getPath(context?.userId),
           error: (error as Error).message,
         };
       }

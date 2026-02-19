@@ -241,29 +241,46 @@ describe('Custom Tools - Multi-User Isolation', () => {
     expect(bobFiles.some(f => f.includes('alice_tool'))).toBe(false);
   });
 
-  it('should require userId for all operations', async () => {
+  it('should default to "default" user when userId not provided', async () => {
     const saveTool = createCustomToolSave(storage);
     const loadTool = createCustomToolLoad(storage);
-    const deleteTool = createCustomToolDelete(storage);
+    const listTool = createCustomToolList(storage);
 
-    // Save without userId should fail
+    // Save without userId should default to 'default' user
     const saveResult = await saveTool.execute({
-      name: 'test_tool',
-      description: 'Test',
+      name: 'default_tool',
+      description: 'Test tool',
       inputSchema: { type: 'object' },
       code: 'output = 1;',
     });
-    expect(saveResult.success).toBe(false);
-    expect(saveResult.error).toContain('userId required');
+    expect(saveResult.success).toBe(true);
 
-    // Load without userId should fail
-    const loadResult = await loadTool.execute({ name: 'test_tool' });
-    expect(loadResult.success).toBe(false);
-    expect(loadResult.error).toContain('userId required');
+    // Load without userId should use 'default' user
+    const loadResult = await loadTool.execute({ name: 'default_tool' });
+    expect(loadResult.success).toBe(true);
+    expect(loadResult.tool?.name).toBe('default_tool');
 
-    // Delete without userId should fail
-    const deleteResult = await deleteTool.execute({ name: 'test_tool' });
-    expect(deleteResult.success).toBe(false);
-    expect(deleteResult.error).toContain('userId required');
+    // List without userId should show 'default' user's tools
+    const listResult = await listTool.execute({});
+    expect(listResult.tools).toHaveLength(1);
+    expect(listResult.tools[0].name).toBe('default_tool');
+
+    // Verify tools under different userId are separate
+    await saveTool.execute({
+      name: 'alice_tool',
+      description: 'Alice tool',
+      inputSchema: { type: 'object' },
+      code: 'output = 2;',
+    }, { userId: 'alice' });
+
+    // Default user should only see their tool
+    const defaultList = await listTool.execute({});
+    expect(defaultList.tools).toHaveLength(1);
+    expect(defaultList.tools[0].name).toBe('default_tool');
+
+    // Alice should only see her tool
+    const aliceList = await listTool.execute({}, { userId: 'alice' });
+    expect(aliceList.tools).toHaveLength(1);
+    expect(aliceList.tools[0].name).toBe('alice_tool');
   });
 });

@@ -95,7 +95,7 @@ describe('custom_tool_save', () => {
     expect(loaded!.metadata?.requiresConnector).toBe(true);
   });
 
-  it('should require userId', async () => {
+  it('should work without userId (defaults to "default" user)', async () => {
     const tool = createCustomToolSave(storage);
 
     const result = await tool.execute({
@@ -105,7 +105,12 @@ describe('custom_tool_save', () => {
       code: 'output = 1;',
     });  // No context
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('userId required');
+    expect(result.success).toBe(true);
+    expect(result.name).toBe('my_tool');
+
+    // Should be stored under 'default' user
+    const loaded = await storage.load(undefined, 'my_tool');
+    expect(loaded).not.toBeNull();
+    expect(loaded!.description).toBe('A test tool');
   });
 });

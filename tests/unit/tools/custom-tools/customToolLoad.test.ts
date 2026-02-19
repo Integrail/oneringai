@@ -54,11 +54,24 @@ describe('custom_tool_load', () => {
     expect(result.error).toContain('not found');
   });
 
-  it('should require userId', async () => {
-    const tool = createCustomToolLoad(storage);
-    const result = await tool.execute({ name: 'existing_tool' });  // No context
+  it('should work without userId (defaults to "default" user)', async () => {
+    // Save a tool without userId (goes to default user)
+    await storage.save(undefined, {
+      version: CUSTOM_TOOL_DEFINITION_VERSION,
+      name: 'default_tool',
+      description: 'Default user tool',
+      inputSchema: { type: 'object' },
+      code: 'output = 99;',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('userId required');
+    const tool = createCustomToolLoad(storage);
+    const result = await tool.execute({ name: 'default_tool' });  // No context
+
+    expect(result.success).toBe(true);
+    expect(result.tool).toBeDefined();
+    expect(result.tool!.name).toBe('default_tool');
+    expect(result.tool!.code).toBe('output = 99;');
   });
 });

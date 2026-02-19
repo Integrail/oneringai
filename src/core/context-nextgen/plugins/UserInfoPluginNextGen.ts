@@ -330,10 +330,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
         this.assertNotDestroyed();
 
         // Validate userId
-        const userId = context?.userId;
-        if (!userId) {
-          return { error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()' };
-        }
+        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
 
         const key = args.key as string;
         const value = args.value;
@@ -409,10 +406,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
         this.assertNotDestroyed();
 
         // Validate userId
-        const userId = context?.userId;
-        if (!userId) {
-          return { error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()' };
-        }
+        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
 
         const key = args.key as string | undefined;
         const storage = this.resolveStorage(context);
@@ -466,10 +460,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
         this.assertNotDestroyed();
 
         // Validate userId
-        const userId = context?.userId;
-        if (!userId) {
-          return { error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()' };
-        }
+        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
 
         const key = args.key as string;
 
@@ -516,10 +507,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
         this.assertNotDestroyed();
 
         // Validate userId
-        const userId = context?.userId;
-        if (!userId) {
-          return { error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()' };
-        }
+        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
 
         if (args.confirm !== true) {
           return { error: 'Must pass confirm: true to clear user info' };

@@ -43,15 +43,7 @@ export function createCustomToolLoad(storage?: ICustomToolStorage): ToolFunction
     permission: { scope: 'always', riskLevel: 'low' },
 
     execute: async (args: LoadArgs, context?: ToolContext): Promise<LoadResult> => {
-      // Validate userId
       const userId = context?.userId;
-      if (!userId) {
-        return {
-          success: false,
-          error: 'userId required - set userId at agent creation or via StorageRegistry.setContext()',
-        };
-      }
-
       const s = resolveCustomToolStorage(storage, context);
       const tool = await s.load(userId, args.name);
       if (!tool) {

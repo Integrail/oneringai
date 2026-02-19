@@ -41,44 +41,45 @@ export interface UserInfoEntry {
  *
  * Design: Single storage instance handles ALL users. UserId is passed to
  * each method, allowing efficient multi-tenant storage.
+ * When userId is undefined, defaults to 'default' user.
  */
 export interface IUserInfoStorage {
   /**
    * Load user info entries from storage for a specific user
    *
-   * @param userId - The user ID to load data for
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @returns The stored user info entries, or null if none exist
    */
-  load(userId: string): Promise<UserInfoEntry[] | null>;
+  load(userId: string | undefined): Promise<UserInfoEntry[] | null>;
 
   /**
    * Save user info entries to storage for a specific user
    *
-   * @param userId - The user ID to save data for
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param entries - The user info entries to save
    */
-  save(userId: string, entries: UserInfoEntry[]): Promise<void>;
+  save(userId: string | undefined, entries: UserInfoEntry[]): Promise<void>;
 
   /**
    * Delete user info from storage for a specific user
    *
-   * @param userId - The user ID to delete data for
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    */
-  delete(userId: string): Promise<void>;
+  delete(userId: string | undefined): Promise<void>;
 
   /**
    * Check if user info exists in storage for a specific user
    *
-   * @param userId - The user ID to check
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @returns true if user info exists
    */
-  exists(userId: string): Promise<boolean>;
+  exists(userId: string | undefined): Promise<boolean>;
 
   /**
    * Get the storage path for a specific user (for display/debugging)
    *
-   * @param userId - The user ID to get path for
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @returns Human-readable path to the storage location
    */
-  getPath(userId: string): string;
+  getPath(userId: string | undefined): string;
 }

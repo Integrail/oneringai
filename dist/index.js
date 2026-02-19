@@ -15455,8 +15455,10 @@ function getDefaultBaseDirectory2() {
   }
   return join(homedir(), ".oneringai", "users");
 }
+var DEFAULT_USER_ID = "default";
 function sanitizeUserId(userId) {
-  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+  if (!userId) return DEFAULT_USER_ID;
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || DEFAULT_USER_ID;
 }
 var FileUserInfoStorage = class {
   baseDirectory;
@@ -15507,7 +15509,7 @@ var FileUserInfoStorage = class {
     await this.ensureDirectory(directory);
     const data = {
       version: 1,
-      userId,
+      userId: userId || DEFAULT_USER_ID,
       entries
     };
     const tempPath = `${filePath}.tmp`;
@@ -15777,9 +15779,6 @@ var UserInfoPluginNextGen = class {
       execute: async (args, context) => {
         this.assertNotDestroyed();
         const userId = context?.userId;
-        if (!userId) {
-          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
-        }
         const key = args.key;
         const value = args.value;
         const description = args.description;
@@ -15834,9 +15833,6 @@ var UserInfoPluginNextGen = class {
       execute: async (args, context) => {
         this.assertNotDestroyed();
         const userId = context?.userId;
-        if (!userId) {
-          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
-        }
         const key = args.key;
         const storage = this.resolveStorage(context);
         const entries = await storage.load(userId);
@@ -15880,9 +15876,6 @@ var UserInfoPluginNextGen = class {
       execute: async (args, context) => {
         this.assertNotDestroyed();
         const userId = context?.userId;
-        if (!userId) {
-          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
-        }
         const key = args.key;
         if (!key || typeof key !== "string" || key.trim().length === 0) {
           return { error: "Key is required" };
@@ -15918,9 +15911,6 @@ var UserInfoPluginNextGen = class {
       execute: async (args, context) => {
         this.assertNotDestroyed();
         const userId = context?.userId;
-        if (!userId) {
-          return { error: "userId required - set userId at agent creation or via StorageRegistry.setContext()" };
-        }
         if (args.confirm !== true) {
           return { error: "Must pass confirm: true to clear user info" };
         }
@@ -37494,8 +37484,12 @@ function getDefaultBaseDirectory5() {
   }
   return join(homedir(), ".oneringai", "users");
 }
+var DEFAULT_USER_ID2 = "default";
 function sanitizeUserId2(userId) {
-  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+  if (!userId) {
+    return DEFAULT_USER_ID2;
+  }
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || DEFAULT_USER_ID2;
 }
 function sanitizeName(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
@@ -47315,13 +47309,6 @@ function createCustomToolDelete(storage) {
     execute: async (args, context) => {
       try {
         const userId = context?.userId;
-        if (!userId) {
-          return {
-            success: false,
-            name: args.name,
-            error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
-          };
-        }
         const s = resolveCustomToolStorage(storage, context);
         const exists = await s.exists(userId, args.name);
         if (!exists) {
@@ -47569,12 +47556,6 @@ function createCustomToolList(storage) {
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args, context) => {
       const userId = context?.userId;
-      if (!userId) {
-        return {
-          tools: [],
-          total: 0
-        };
-      }
       const s = resolveCustomToolStorage(storage, context);
       const tools = await s.list(userId, {
         search: args.search,
@@ -47613,12 +47594,6 @@ function createCustomToolLoad(storage) {
     permission: { scope: "always", riskLevel: "low" },
     execute: async (args, context) => {
       const userId = context?.userId;
-      if (!userId) {
-        return {
-          success: false,
-          error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
-        };
-      }
       const s = resolveCustomToolStorage(storage, context);
       const tool = await s.load(userId, args.name);
       if (!tool) {
@@ -47693,14 +47668,6 @@ function createCustomToolSave(storage) {
     execute: async (args, context) => {
       try {
         const userId = context?.userId;
-        if (!userId) {
-          return {
-            success: false,
-            name: args.name,
-            storagePath: "N/A",
-            error: "userId required - set userId at agent creation or via StorageRegistry.setContext()"
-          };
-        }
         const s = resolveCustomToolStorage(storage, context);
         const now = (/* @__PURE__ */ new Date()).toISOString();
         const existing = await s.load(userId, args.name);
@@ -47729,11 +47696,10 @@ function createCustomToolSave(storage) {
           storagePath: s.getPath(userId)
         };
       } catch (error) {
-        const userId = context?.userId;
         return {
           success: false,
           name: args.name,
-          storagePath: userId ? resolveCustomToolStorage(storage, context).getPath(userId) : "N/A",
+          storagePath: resolveCustomToolStorage(storage, context).getPath(context?.userId),
           error: error.message
         };
       }

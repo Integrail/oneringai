@@ -27,7 +27,8 @@ export interface CustomToolListOptions {
 /**
  * Storage interface for custom tool definitions
  *
- * Custom tools are stored per-user to provide isolation in multi-tenant scenarios.
+ * Custom tools support optional per-user isolation for multi-tenant scenarios.
+ * When userId is not provided, defaults to 'default' user.
  *
  * Implementations:
  * - FileCustomToolStorage: File-based storage at ~/.oneringai/users/<userId>/custom-tools/
@@ -35,50 +36,50 @@ export interface CustomToolListOptions {
 export interface ICustomToolStorage {
   /**
    * Save a custom tool definition
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param definition - Tool definition to save
    */
-  save(userId: string, definition: CustomToolDefinition): Promise<void>;
+  save(userId: string | undefined, definition: CustomToolDefinition): Promise<void>;
 
   /**
    * Load a custom tool definition by name
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param name - Tool name
    */
-  load(userId: string, name: string): Promise<CustomToolDefinition | null>;
+  load(userId: string | undefined, name: string): Promise<CustomToolDefinition | null>;
 
   /**
    * Delete a custom tool definition by name
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param name - Tool name
    */
-  delete(userId: string, name: string): Promise<void>;
+  delete(userId: string | undefined, name: string): Promise<void>;
 
   /**
    * Check if a custom tool exists
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param name - Tool name
    */
-  exists(userId: string, name: string): Promise<boolean>;
+  exists(userId: string | undefined, name: string): Promise<boolean>;
 
   /**
    * List custom tools (summaries only)
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param options - Filtering and pagination options
    */
-  list(userId: string, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
+  list(userId: string | undefined, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
 
   /**
    * Update metadata without loading full definition
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    * @param name - Tool name
    * @param metadata - Metadata to update
    */
-  updateMetadata?(userId: string, name: string, metadata: Record<string, unknown>): Promise<void>;
+  updateMetadata?(userId: string | undefined, name: string, metadata: Record<string, unknown>): Promise<void>;
 
   /**
    * Get the storage path/location for a specific user (for display/debugging)
-   * @param userId - User ID for isolation
+   * @param userId - Optional user ID for isolation (defaults to 'default')
    */
-  getPath(userId: string): string;
+  getPath(userId: string | undefined): string;
 }

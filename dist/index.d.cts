@@ -152,7 +152,8 @@ interface CustomToolListOptions {
 /**
  * Storage interface for custom tool definitions
  *
- * Custom tools are stored per-user to provide isolation in multi-tenant scenarios.
+ * Custom tools support optional per-user isolation for multi-tenant scenarios.
+ * When userId is not provided, defaults to 'default' user.
  *
  * Implementations:
  * - FileCustomToolStorage: File-based storage at ~/.oneringai/users/<userId>/custom-tools/
@@ -160,46 +161,46 @@ interface CustomToolListOptions {
 interface ICustomToolStorage {
     /**
      * Save a custom tool definition
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param definition - Tool definition to save
      */
-    save(userId: string, definition: CustomToolDefinition): Promise<void>;
+    save(userId: string | undefined, definition: CustomToolDefinition): Promise<void>;
     /**
      * Load a custom tool definition by name
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param name - Tool name
      */
-    load(userId: string, name: string): Promise<CustomToolDefinition | null>;
+    load(userId: string | undefined, name: string): Promise<CustomToolDefinition | null>;
     /**
      * Delete a custom tool definition by name
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param name - Tool name
      */
-    delete(userId: string, name: string): Promise<void>;
+    delete(userId: string | undefined, name: string): Promise<void>;
     /**
      * Check if a custom tool exists
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param name - Tool name
      */
-    exists(userId: string, name: string): Promise<boolean>;
+    exists(userId: string | undefined, name: string): Promise<boolean>;
     /**
      * List custom tools (summaries only)
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param options - Filtering and pagination options
      */
-    list(userId: string, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
+    list(userId: string | undefined, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
     /**
      * Update metadata without loading full definition
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param name - Tool name
      * @param metadata - Metadata to update
      */
-    updateMetadata?(userId: string, name: string, metadata: Record<string, unknown>): Promise<void>;
+    updateMetadata?(userId: string | undefined, name: string, metadata: Record<string, unknown>): Promise<void>;
     /**
      * Get the storage path/location for a specific user (for display/debugging)
-     * @param userId - User ID for isolation
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      */
-    getPath(userId: string): string;
+    getPath(userId: string | undefined): string;
 }
 
 /**
@@ -1515,42 +1516,43 @@ interface UserInfoEntry {
  *
  * Design: Single storage instance handles ALL users. UserId is passed to
  * each method, allowing efficient multi-tenant storage.
+ * When userId is undefined, defaults to 'default' user.
  */
 interface IUserInfoStorage {
     /**
      * Load user info entries from storage for a specific user
      *
-     * @param userId - The user ID to load data for
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @returns The stored user info entries, or null if none exist
      */
-    load(userId: string): Promise<UserInfoEntry[] | null>;
+    load(userId: string | undefined): Promise<UserInfoEntry[] | null>;
     /**
      * Save user info entries to storage for a specific user
      *
-     * @param userId - The user ID to save data for
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @param entries - The user info entries to save
      */
-    save(userId: string, entries: UserInfoEntry[]): Promise<void>;
+    save(userId: string | undefined, entries: UserInfoEntry[]): Promise<void>;
     /**
      * Delete user info from storage for a specific user
      *
-     * @param userId - The user ID to delete data for
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      */
-    delete(userId: string): Promise<void>;
+    delete(userId: string | undefined): Promise<void>;
     /**
      * Check if user info exists in storage for a specific user
      *
-     * @param userId - The user ID to check
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @returns true if user info exists
      */
-    exists(userId: string): Promise<boolean>;
+    exists(userId: string | undefined): Promise<boolean>;
     /**
      * Get the storage path for a specific user (for display/debugging)
      *
-     * @param userId - The user ID to get path for
+     * @param userId - Optional user ID for isolation (defaults to 'default')
      * @returns Human-readable path to the storage location
      */
-    getPath(userId: string): string;
+    getPath(userId: string | undefined): string;
 }
 
 /**
@@ -9747,31 +9749,31 @@ declare class FileCustomToolStorage implements ICustomToolStorage {
     /**
      * Save a custom tool definition
      */
-    save(userId: string, definition: CustomToolDefinition): Promise<void>;
+    save(userId: string | undefined, definition: CustomToolDefinition): Promise<void>;
     /**
      * Load a custom tool definition by name
      */
-    load(userId: string, name: string): Promise<CustomToolDefinition | null>;
+    load(userId: string | undefined, name: string): Promise<CustomToolDefinition | null>;
     /**
      * Delete a custom tool definition
      */
-    delete(userId: string, name: string): Promise<void>;
+    delete(userId: string | undefined, name: string): Promise<void>;
     /**
      * Check if a custom tool exists
      */
-    exists(userId: string, name: string): Promise<boolean>;
+    exists(userId: string | undefined, name: string): Promise<boolean>;
     /**
      * List custom tools (summaries only)
      */
-    list(userId: string, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
+    list(userId: string | undefined, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
     /**
      * Update metadata without loading full definition
      */
-    updateMetadata(userId: string, name: string, metadata: Record<string, unknown>): Promise<void>;
+    updateMetadata(userId: string | undefined, name: string, metadata: Record<string, unknown>): Promise<void>;
     /**
      * Get storage path for a specific user
      */
-    getPath(userId: string): string;
+    getPath(userId: string | undefined): string;
     private ensureDirectory;
     private loadIndex;
     private saveIndex;
@@ -9828,24 +9830,24 @@ declare class FileUserInfoStorage implements IUserInfoStorage {
     /**
      * Load user info entries from file for a specific user
      */
-    load(userId: string): Promise<UserInfoEntry[] | null>;
+    load(userId: string | undefined): Promise<UserInfoEntry[] | null>;
     /**
      * Save user info entries to file for a specific user
      * Creates directory if it doesn't exist.
      */
-    save(userId: string, entries: UserInfoEntry[]): Promise<void>;
+    save(userId: string | undefined, entries: UserInfoEntry[]): Promise<void>;
     /**
      * Delete user info file for a specific user
      */
-    delete(userId: string): Promise<void>;
+    delete(userId: string | undefined): Promise<void>;
     /**
      * Check if user info file exists for a specific user
      */
-    exists(userId: string): Promise<boolean>;
+    exists(userId: string | undefined): Promise<boolean>;
     /**
      * Get the file path for a specific user (for display/debugging)
      */
-    getPath(userId: string): string;
+    getPath(userId: string | undefined): string;
     /**
      * Ensure the directory exists
      */
@@ -13512,7 +13514,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-19T11:28:03.401Z
+ * Generated at: 2026-02-19T11:45:45.729Z
  *
  * To regenerate: npm run generate:tools
  */

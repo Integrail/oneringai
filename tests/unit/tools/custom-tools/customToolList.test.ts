@@ -82,11 +82,15 @@ describe('custom_tool_list', () => {
     expect(result.tools).toHaveLength(1);
   });
 
-  it('should return empty list when userId is not provided', async () => {
-    const tool = createCustomToolList(storage);
-    const result = await tool.execute({});  // No context
+  it('should work without userId (defaults to "default" user)', async () => {
+    // Add tool to default user
+    await storage.save(undefined, makeDef('default_tool', { tags: ['test'] }));
 
-    expect(result.tools).toHaveLength(0);
-    expect(result.total).toBe(0);
+    const tool = createCustomToolList(storage);
+    const result = await tool.execute({});  // No context - should use default user
+
+    expect(result.tools).toHaveLength(1);
+    expect(result.tools[0].name).toBe('default_tool');
+    expect(result.total).toBe(1);
   });
 });

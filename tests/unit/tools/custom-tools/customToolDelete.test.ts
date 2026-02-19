@@ -53,11 +53,22 @@ describe('custom_tool_delete', () => {
     expect(result.error).toContain('not found');
   });
 
-  it('should require userId', async () => {
-    const tool = createCustomToolDelete(storage);
-    const result = await tool.execute({ name: 'to_delete' });  // No context
+  it('should work without userId (defaults to "default" user)', async () => {
+    // Save a tool without userId (goes to default user)
+    await storage.save(undefined, {
+      version: CUSTOM_TOOL_DEFINITION_VERSION,
+      name: 'default_delete',
+      description: 'Will be deleted',
+      inputSchema: { type: 'object' },
+      code: 'output = 1;',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('userId required');
+    const tool = createCustomToolDelete(storage);
+    const result = await tool.execute({ name: 'default_delete' });  // No context
+
+    expect(result.success).toBe(true);
+    expect(await storage.exists(undefined, 'default_delete')).toBe(false);
   });
 });

@@ -58,10 +58,16 @@ function getDefaultBaseDirectory(): string {
 }
 
 /**
+ * Default user ID when none is provided
+ */
+const DEFAULT_USER_ID = 'default';
+
+/**
  * Sanitize user ID for use as a directory name
  * Removes or replaces characters that are not safe for filenames
  */
-function sanitizeUserId(userId: string): string {
+function sanitizeUserId(userId: string | undefined): string {
+  if (!userId) return DEFAULT_USER_ID;
   // Replace any character that isn't alphanumeric, dash, or underscore
   // Also collapse multiple consecutive safe characters into one
   return userId
@@ -69,7 +75,7 @@ function sanitizeUserId(userId: string): string {
     .replace(/_+/g, '_')               // Collapse multiple underscores
     .replace(/^_|_$/g, '')             // Remove leading/trailing underscores
     .toLowerCase()                      // Normalize to lowercase
-    || 'default';                       // Fallback if empty
+    || DEFAULT_USER_ID;                 // Fallback if empty
 }
 
 /**
@@ -89,7 +95,7 @@ export class FileUserInfoStorage implements IUserInfoStorage {
   /**
    * Get the directory path for a specific user
    */
-  private getUserDirectory(userId: string): string {
+  private getUserDirectory(userId: string | undefined): string {
     const sanitizedId = sanitizeUserId(userId);
     return join(this.baseDirectory, sanitizedId);
   }
@@ -97,14 +103,14 @@ export class FileUserInfoStorage implements IUserInfoStorage {
   /**
    * Get the file path for a specific user
    */
-  private getUserFilePath(userId: string): string {
+  private getUserFilePath(userId: string | undefined): string {
     return join(this.getUserDirectory(userId), this.filename);
   }
 
   /**
    * Load user info entries from file for a specific user
    */
-  async load(userId: string): Promise<UserInfoEntry[] | null> {
+  async load(userId: string | undefined): Promise<UserInfoEntry[] | null> {
     const filePath = this.getUserFilePath(userId);
 
     try {
@@ -127,7 +133,7 @@ export class FileUserInfoStorage implements IUserInfoStorage {
    * Save user info entries to file for a specific user
    * Creates directory if it doesn't exist.
    */
-  async save(userId: string, entries: UserInfoEntry[]): Promise<void> {
+  async save(userId: string | undefined, entries: UserInfoEntry[]): Promise<void> {
     const directory = this.getUserDirectory(userId);
     const filePath = this.getUserFilePath(userId);
 
@@ -135,7 +141,7 @@ export class FileUserInfoStorage implements IUserInfoStorage {
 
     const data: StoredUserInfoFile = {
       version: 1,
-      userId,
+      userId: userId || DEFAULT_USER_ID,
       entries,
     };
 
@@ -158,7 +164,7 @@ export class FileUserInfoStorage implements IUserInfoStorage {
   /**
    * Delete user info file for a specific user
    */
-  async delete(userId: string): Promise<void> {
+  async delete(userId: string | undefined): Promise<void> {
     const filePath = this.getUserFilePath(userId);
 
     try {
@@ -173,7 +179,7 @@ export class FileUserInfoStorage implements IUserInfoStorage {
   /**
    * Check if user info file exists for a specific user
    */
-  async exists(userId: string): Promise<boolean> {
+  async exists(userId: string | undefined): Promise<boolean> {
     const filePath = this.getUserFilePath(userId);
 
     try {
@@ -187,7 +193,7 @@ export class FileUserInfoStorage implements IUserInfoStorage {
   /**
    * Get the file path for a specific user (for display/debugging)
    */
-  getPath(userId: string): string {
+  getPath(userId: string | undefined): string {
     return this.getUserFilePath(userId);
   }
 

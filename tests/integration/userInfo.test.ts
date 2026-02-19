@@ -44,6 +44,7 @@ describe('UserInfo Plugin Integration', () => {
     StorageRegistry.reset();
     await cleanupTestUser(TEST_USER_ID_1);
     await cleanupTestUser(TEST_USER_ID_2);
+    await cleanupTestUser('default');
   });
 
   describe('Single User Flow', () => {
@@ -259,20 +260,29 @@ describe('UserInfo Plugin Integration', () => {
     });
   });
 
-  describe('Error Handling', () => {
-    it('should require userId for tool execution', async () => {
+  describe('Default User Behavior', () => {
+    it('should work without userId (defaults to "default" user)', async () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         features: { userInfo: true },
       });
 
       const plugin = ctx.getPlugin<UserInfoPluginNextGen>('user_info')!;
-      const setTool = plugin.getTools().find(t => t.definition.function.name === 'user_info_set')!;
+      const tools = plugin.getTools();
+      const setTool = tools.find(t => t.definition.function.name === 'user_info_set')!;
+      const getTool = tools.find(t => t.definition.function.name === 'user_info_get')!;
 
-      // Call without userId
-      const result = await setTool.execute({ key: 'test', value: 'value' });
-      expect(result).toHaveProperty('error');
-      expect((result as any).error).toContain('userId required');
+      // Call without userId — should work, using 'default' user
+      const setResult = await setTool.execute({ key: 'test_default', value: 'value' });
+      expect(setResult).toHaveProperty('success', true);
+
+      // Retrieve without userId — should find the entry
+      const getResult = await getTool.execute({ key: 'test_default' });
+      expect(getResult).toHaveProperty('value', 'value');
+
+      // Clean up
+      const clearTool = tools.find(t => t.definition.function.name === 'user_info_clear')!;
+      await clearTool.execute({ confirm: true });
 
       ctx.destroy();
     });

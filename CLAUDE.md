@@ -443,10 +443,18 @@ const list = await plugin.list();  // { key, contentLength, createdAt, updatedAt
 User-specific information storage that persists across sessions and agents. Data is **user-scoped**, not agent-scoped - different agents share the same user data.
 
 ```typescript
+// Single-user app — no userId needed
 const ctx = AgentContextNextGen.create({
   model: 'gpt-4',
   features: { userInfo: true },
-  userId: 'alice',  // Required for multi-user scenarios
+  // No userId — defaults to 'default' user
+});
+
+// Multi-tenant app — opt-in isolation
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { userInfo: true },
+  userId: 'alice',  // Optional, for multi-user isolation
 });
 
 // Access via tools (userId resolved from context automatically)
@@ -464,40 +472,38 @@ const ctx = AgentContextNextGen.create({
 - `user_info_clear` - Clear all entries (requires `confirm: true`)
 
 **Config:** `maxTotalSize` (default: 100000 bytes / ~100KB), `maxEntries` (default: 100)
-**Storage:** `~/.oneringai/users/<userId>/user_info.json`
+**Storage:** `~/.oneringai/users/<userId>/user_info.json` (defaults to `~/.oneringai/users/default/user_info.json`)
 
 **Design:**
 - Plugin is **stateless** - no userId stored in plugin state
 - UserId resolved at tool execution time from `ToolContext.userId`
+- **userId is optional** — defaults to `'default'` when not provided
 - Tools access current user's data only (no cross-user access)
 - User data NOT injected into context (`getContent()` returns null)
 - Multi-user apps set userId via `Agent.create({ userId })` or `StorageRegistry.setContext({ userId })`
 
-## Custom Tools Storage (User-Scoped)
+## Custom Tools Storage (Optional Per-User Isolation)
 
-Custom tools are stored per-user to provide isolation in multi-tenant scenarios. Each user has their own isolated custom tools directory.
+Custom tools support optional per-user isolation for multi-tenant scenarios. By default, all tools are stored under the `'default'` user.
 
-**Storage Path:** `~/.oneringai/users/<userId>/custom-tools/<tool-name>.json`
+**Storage Path:** `~/.oneringai/users/<userId>/custom-tools/<tool-name>.json` (defaults to `~/.oneringai/users/default/custom-tools/`)
 
-**Pattern:** Single storage instance handles all users, userId passed to methods:
+**Pattern:** Single storage instance handles all users, userId optional:
 
 ```typescript
 // Storage interface
 interface ICustomToolStorage {
-  save(userId: string, definition: CustomToolDefinition): Promise<void>;
-  load(userId: string, name: string): Promise<CustomToolDefinition | null>;
-  list(userId: string, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
-  delete(userId: string, name: string): Promise<void>;
-  exists(userId: string, name: string): Promise<boolean>;
-  updateMetadata?(userId: string, name: string, metadata: Record<string, unknown>): Promise<void>;
-  getPath(userId: string): string;
+  save(userId: string | undefined, definition: CustomToolDefinition): Promise<void>;
+  load(userId: string | undefined, name: string): Promise<CustomToolDefinition | null>;
+  list(userId: string | undefined, options?: CustomToolListOptions): Promise<CustomToolSummary[]>;
+  delete(userId: string | undefined, name: string): Promise<void>;
+  exists(userId: string | undefined, name: string): Promise<boolean>;
+  updateMetadata?(userId: string | undefined, name: string, metadata: Record<string, unknown>): Promise<void>;
+  getPath(userId: string | undefined): string;
 }
 
-// Usage in tools
-const userId = context?.userId;
-if (!userId) {
-  return { success: false, error: 'userId required' };
-}
+// Usage in tools - userId optional
+const userId = context?.userId;  // undefined is OK, defaults to 'default'
 const storage = resolveCustomToolStorage(explicitStorage, context);
 await storage.save(userId, toolDefinition);
 ```
@@ -510,21 +516,27 @@ await storage.save(userId, toolDefinition);
 - `custom_tool_draft` - Validate tool structure
 - `custom_tool_test` - Execute code in VM sandbox
 
-All meta-tools require `userId` in `ToolContext`. Automatically resolved when agent has `userId` set:
+All meta-tools work with or without `userId`:
 
 ```typescript
+// Single-user app - no userId needed
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  userId: 'alice',  // Passed to tools via ToolContext
+  // No userId - tools use 'default' user
 });
 
-// Alice's custom tools are isolated from Bob's
-// Alice cannot see, load, or modify Bob's custom tools
+// Multi-tenant app - opt-in per-user isolation
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'alice',  // Alice's tools isolated from Bob's
+});
 ```
 
-**Multi-User Isolation:**
-- Each user has separate directory: `~/.oneringai/users/<userId>/custom-tools/`
+**Multi-User Isolation (Optional):**
+- Provide `userId` to enable per-user isolation
+- Each user gets separate directory: `~/.oneringai/users/<userId>/custom-tools/`
 - Users cannot access each other's custom tools
 - Same tool name allowed for different users (separate namespaces)
 - Storage resolution via `StorageRegistry.resolve('customTools', context)`
