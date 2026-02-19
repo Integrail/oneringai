@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **UserInfo Plugin** — New `UserInfoPluginNextGen` for storing user-specific preferences and context. Data is user-scoped (not agent-scoped), allowing different agents to share the same user data. Storage path: `~/.oneringai/users/<userId>/user_info.json` (defaults to `~/.oneringai/users/default/user_info.json` when no userId). Enable via `features: { userInfo: true }`. Includes 4 tools: `user_info_set`, `user_info_get`, `user_info_remove`, `user_info_clear` (all allowlisted by default). **userId is optional** — tools work without it, defaulting to the `'default'` user.
+
+### Fixed
+
+- **UserInfo Plugin context injection** — `UserInfoPluginNextGen.getContent()` now returns user info entries rendered as markdown, injected into the LLM system message. Previously returned `null`, requiring the LLM to call `user_info_get` every turn. Added in-memory cache with lazy loading from storage, write-through on tool mutations, proper `getState()`/`restoreState()` for session persistence, and `getContents()` returning entries Map. `AgentContextNextGen` now passes `userId` to the plugin at construction time.
 - **IUserInfoStorage interface** — Storage abstraction for user information with file-based implementation (`FileUserInfoStorage`). UserId is optional (`string | undefined`), defaults to `'default'`. Supports multi-user scenarios via `StorageRegistry` pattern with optional `StorageContext`.
 - **userInfo feature flag** — Added to `ContextFeatures` interface. Default: `false`.
 - **userInfo storage factory** — Added to `StorageConfig` interface as context-aware factory: `userInfo: (context?: StorageContext) => IUserInfoStorage`.

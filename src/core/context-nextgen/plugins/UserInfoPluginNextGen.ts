@@ -12,9 +12,9 @@
  * Storage: ~/.oneringai/users/<userId>/user_info.json
  *
  * Design:
- * - Plugin is STATELESS regarding userId
- * - UserId resolved at tool execution time from ToolContext.userId
- * - User data NOT injected into context (getContent returns null)
+ * - UserId passed at construction time from AgentContextNextGen._userId
+ * - User data IS injected into context via getContent() (entries rendered as markdown)
+ * - In-memory cache with lazy loading + write-through to storage
  * - Tools access current user's data only (no cross-user access)
  */
 
@@ -39,11 +39,14 @@ export interface UserInfoPluginConfig {
   maxTotalSize?: number;
   /** Maximum number of entries (default: 100) */
   maxEntries?: number;
+  /** User ID for storage isolation (resolved from AgentContextNextGen._userId) */
+  userId?: string;
 }
 
 export interface SerializedUserInfoState {
   version: 1;
-  // Plugin is stateless - no state to serialize
+  entries: UserInfoEntry[];
+  userId?: string;
 }
 
 // ============================================================================
@@ -61,6 +64,7 @@ const KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 const USER_INFO_INSTRUCTIONS = `User Info stores key-value information about the current user.
 Data is user-specific and persists across sessions and agents.
+User info is automatically shown in context — no need to call user_info_get every turn.
 
 **To manage:**
 - \`user_info_set(key, value, description?)\`: Store/update user information
@@ -197,6 +201,16 @@ function buildStorageContext(toolContext?: ToolContext): StorageContext | undefi
   return undefined;
 }
 
+/**
+ * Format a value for context rendering
+ */
+function formatValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
 // ============================================================================
 // Plugin Implementation
 // ============================================================================
@@ -207,17 +221,27 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
   private _destroyed = false;
   private _storage: IUserInfoStorage | null = null;
 
+  /** In-memory cache of entries */
+  private _entries: Map<string, UserInfoEntry> = new Map();
+  /** Whether entries have been loaded from storage */
+  private _initialized = false;
+
   private readonly maxTotalSize: number;
   private readonly maxEntries: number;
   private readonly estimator: ITokenEstimator = simpleTokenEstimator;
   private readonly explicitStorage?: IUserInfoStorage;
 
+  /** UserId for getContent() and lazy initialization */
+  readonly userId: string | undefined;
+
+  private _tokenCache: number | null = null;
   private _instructionsTokenCache: number | null = null;
 
   constructor(config?: UserInfoPluginConfig) {
     this.maxTotalSize = config?.maxTotalSize ?? DEFAULT_MAX_TOTAL_SIZE;
     this.maxEntries = config?.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.explicitStorage = config?.storage;
+    this.userId = config?.userId;
   }
 
   // ============================================================================
@@ -229,18 +253,24 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
   }
 
   async getContent(): Promise<string | null> {
-    // User info is NOT injected into context - tools provide read access
-    return null;
+    await this.ensureInitialized();
+
+    if (this._entries.size === 0) {
+      this._tokenCache = 0;
+      return null;
+    }
+
+    const rendered = this.renderContent();
+    this._tokenCache = this.estimator.estimateTokens(rendered);
+    return rendered;
   }
 
-  getContents(): null {
-    // No contents to return (stateless plugin)
-    return null;
+  getContents(): Map<string, UserInfoEntry> {
+    return new Map(this._entries);
   }
 
   getTokenSize(): number {
-    // No content injected into context
-    return 0;
+    return this._tokenCache ?? 0;
   }
 
   getInstructionsTokenSize(): number {
@@ -251,7 +281,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
   }
 
   isCompactable(): boolean {
-    // User info is never compacted (not in context)
+    // User info is never compacted
     return false;
   }
 
@@ -271,18 +301,43 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
 
   destroy(): void {
     if (this._destroyed) return;
+    this._entries.clear();
     this._destroyed = true;
+    this._tokenCache = null;
   }
 
   getState(): SerializedUserInfoState {
     return {
       version: 1,
-      // Plugin is stateless - no state to serialize
+      entries: Array.from(this._entries.values()),
+      userId: this.userId,
     };
   }
 
-  restoreState(_state: unknown): void {
-    // Plugin is stateless - nothing to restore
+  restoreState(state: unknown): void {
+    if (!state || typeof state !== 'object') return;
+
+    const s = state as Record<string, unknown>;
+
+    if ('version' in s && s.version === 1 && Array.isArray(s.entries)) {
+      this._entries.clear();
+      for (const entry of s.entries as UserInfoEntry[]) {
+        this._entries.set(entry.id, entry);
+      }
+      this._initialized = true;
+      this._tokenCache = null;
+    }
+  }
+
+  // ============================================================================
+  // Public API
+  // ============================================================================
+
+  /**
+   * Check if initialized
+   */
+  get isInitialized(): boolean {
+    return this._initialized;
   }
 
   // ============================================================================
@@ -293,6 +348,40 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
     if (this._destroyed) {
       throw new Error('UserInfoPluginNextGen is destroyed');
     }
+  }
+
+  /**
+   * Lazy load entries from storage
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this._initialized || this._destroyed) return;
+
+    try {
+      const storage = this.resolveStorage();
+      const entries = await storage.load(this.userId);
+      this._entries.clear();
+      if (entries) {
+        for (const entry of entries) {
+          this._entries.set(entry.id, entry);
+        }
+      }
+      this._initialized = true;
+    } catch (error) {
+      console.warn(`Failed to load user info for userId '${this.userId ?? 'default'}':`, error);
+      this._entries.clear();
+      this._initialized = true;
+    }
+    this._tokenCache = null;
+  }
+
+  /**
+   * Render entries as markdown for context injection
+   */
+  private renderContent(): string {
+    const sorted = Array.from(this._entries.values()).sort((a, b) => a.createdAt - b.createdAt);
+    return sorted
+      .map(entry => `### ${entry.id}\n${formatValue(entry.value)}`)
+      .join('\n\n');
   }
 
   /**
@@ -319,6 +408,18 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
     return this._storage;
   }
 
+  /**
+   * Persist current entries to storage
+   */
+  private async persistToStorage(userId: string | undefined): Promise<void> {
+    const storage = this.resolveStorage();
+    if (this._entries.size === 0) {
+      await storage.delete(userId);
+    } else {
+      await storage.save(userId, Array.from(this._entries.values()));
+    }
+  }
+
   // ============================================================================
   // Tool Factories
   // ============================================================================
@@ -328,9 +429,9 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
       definition: userInfoSetDefinition,
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         this.assertNotDestroyed();
+        await this.ensureInitialized();
 
-        // Validate userId
-        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
+        const userId = context?.userId ?? this.userId;
 
         const key = args.key as string;
         const value = args.value;
@@ -349,20 +450,18 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
           return { error: 'Value cannot be undefined. Use null for explicit null value.' };
         }
 
-        // Load current entries
-        const storage = this.resolveStorage(context);
-        const entries = await storage.load(userId) || [];
-        const entriesMap = new Map(entries.map(e => [e.id, e]));
-
         // Check maxEntries (new entry only)
-        if (!entriesMap.has(trimmedKey) && entriesMap.size >= this.maxEntries) {
+        if (!this._entries.has(trimmedKey) && this._entries.size >= this.maxEntries) {
           return { error: `Maximum number of entries reached (${this.maxEntries})` };
         }
 
         // Calculate sizes
         const valueSize = calculateValueSize(value);
-        const currentTotal = entries.reduce((sum, e) => sum + calculateValueSize(e.value), 0);
-        const existingSize = entriesMap.has(trimmedKey) ? calculateValueSize(entriesMap.get(trimmedKey)!.value) : 0;
+        let currentTotal = 0;
+        for (const e of this._entries.values()) {
+          currentTotal += calculateValueSize(e.value);
+        }
+        const existingSize = this._entries.has(trimmedKey) ? calculateValueSize(this._entries.get(trimmedKey)!.value) : 0;
         const newTotal = currentTotal - existingSize + valueSize;
 
         if (newTotal > this.maxTotalSize) {
@@ -371,7 +470,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
 
         // Create or update entry
         const now = Date.now();
-        const existing = entriesMap.get(trimmedKey);
+        const existing = this._entries.get(trimmedKey);
         const entry: UserInfoEntry = {
           id: trimmedKey,
           value,
@@ -381,10 +480,11 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
           updatedAt: now,
         };
 
-        entriesMap.set(trimmedKey, entry);
+        this._entries.set(trimmedKey, entry);
+        this._tokenCache = null;
 
-        // Save to storage
-        await storage.save(userId, Array.from(entriesMap.values()));
+        // Write-through to storage
+        await this.persistToStorage(userId);
 
         return {
           success: true,
@@ -402,24 +502,20 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
   private createUserInfoGetTool(): ToolFunction {
     return {
       definition: userInfoGetDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      execute: async (args: Record<string, unknown>, _context?: ToolContext) => {
         this.assertNotDestroyed();
-
-        // Validate userId
-        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
+        await this.ensureInitialized();
 
         const key = args.key as string | undefined;
-        const storage = this.resolveStorage(context);
-        const entries = await storage.load(userId);
 
-        if (!entries || entries.length === 0) {
+        if (this._entries.size === 0) {
           return { error: 'User info not found' };
         }
 
         // Get specific entry
         if (key !== undefined) {
           const trimmedKey = key.trim();
-          const entry = entries.find(e => e.id === trimmedKey);
+          const entry = this._entries.get(trimmedKey);
 
           if (!entry) {
             return { error: `User info '${trimmedKey}' not found` };
@@ -436,6 +532,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
         }
 
         // Get all entries
+        const entries = Array.from(this._entries.values());
         return {
           count: entries.length,
           entries: entries.map(e => ({
@@ -458,9 +555,9 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
       definition: userInfoRemoveDefinition,
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         this.assertNotDestroyed();
+        await this.ensureInitialized();
 
-        // Validate userId
-        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
+        const userId = context?.userId ?? this.userId;
 
         const key = args.key as string;
 
@@ -469,25 +566,16 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
         }
 
         const trimmedKey = key.trim();
-        const storage = this.resolveStorage(context);
-        const entries = await storage.load(userId);
 
-        if (!entries || entries.length === 0) {
+        if (!this._entries.has(trimmedKey)) {
           return { error: `User info '${trimmedKey}' not found` };
         }
 
-        const filtered = entries.filter(e => e.id !== trimmedKey);
+        this._entries.delete(trimmedKey);
+        this._tokenCache = null;
 
-        if (filtered.length === entries.length) {
-          return { error: `User info '${trimmedKey}' not found` };
-        }
-
-        // Save or delete
-        if (filtered.length === 0) {
-          await storage.delete(userId);
-        } else {
-          await storage.save(userId, filtered);
-        }
+        // Write-through to storage
+        await this.persistToStorage(userId);
 
         return {
           success: true,
@@ -506,12 +594,14 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         this.assertNotDestroyed();
 
-        // Validate userId
-        const userId = context?.userId; // undefined is OK, defaults to 'default' in storage
+        const userId = context?.userId ?? this.userId;
 
         if (args.confirm !== true) {
           return { error: 'Must pass confirm: true to clear user info' };
         }
+
+        this._entries.clear();
+        this._tokenCache = null;
 
         const storage = this.resolveStorage(context);
         await storage.delete(userId);

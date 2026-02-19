@@ -15577,6 +15577,7 @@ var KEY_MAX_LENGTH2 = 100;
 var KEY_PATTERN2 = /^[a-zA-Z0-9_-]+$/;
 var USER_INFO_INSTRUCTIONS = `User Info stores key-value information about the current user.
 Data is user-specific and persists across sessions and agents.
+User info is automatically shown in context \u2014 no need to call user_info_get every turn.
 
 **To manage:**
 - \`user_info_set(key, value, description?)\`: Store/update user information
@@ -15684,19 +15685,33 @@ function buildStorageContext(toolContext) {
   if (toolContext?.userId) return { userId: toolContext.userId };
   return void 0;
 }
+function formatValue(value) {
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
 var UserInfoPluginNextGen = class {
   name = "user_info";
   _destroyed = false;
   _storage = null;
+  /** In-memory cache of entries */
+  _entries = /* @__PURE__ */ new Map();
+  /** Whether entries have been loaded from storage */
+  _initialized = false;
   maxTotalSize;
   maxEntries;
   estimator = simpleTokenEstimator;
   explicitStorage;
+  /** UserId for getContent() and lazy initialization */
+  userId;
+  _tokenCache = null;
   _instructionsTokenCache = null;
   constructor(config) {
     this.maxTotalSize = config?.maxTotalSize ?? DEFAULT_MAX_TOTAL_SIZE;
     this.maxEntries = config?.maxEntries ?? DEFAULT_MAX_ENTRIES2;
     this.explicitStorage = config?.storage;
+    this.userId = config?.userId;
   }
   // ============================================================================
   // IContextPluginNextGen Implementation
@@ -15705,13 +15720,20 @@ var UserInfoPluginNextGen = class {
     return USER_INFO_INSTRUCTIONS;
   }
   async getContent() {
-    return null;
+    await this.ensureInitialized();
+    if (this._entries.size === 0) {
+      this._tokenCache = 0;
+      return null;
+    }
+    const rendered = this.renderContent();
+    this._tokenCache = this.estimator.estimateTokens(rendered);
+    return rendered;
   }
   getContents() {
-    return null;
+    return new Map(this._entries);
   }
   getTokenSize() {
-    return 0;
+    return this._tokenCache ?? 0;
   }
   getInstructionsTokenSize() {
     if (this._instructionsTokenCache === null) {
@@ -15735,15 +15757,37 @@ var UserInfoPluginNextGen = class {
   }
   destroy() {
     if (this._destroyed) return;
+    this._entries.clear();
     this._destroyed = true;
+    this._tokenCache = null;
   }
   getState() {
     return {
-      version: 1
-      // Plugin is stateless - no state to serialize
+      version: 1,
+      entries: Array.from(this._entries.values()),
+      userId: this.userId
     };
   }
-  restoreState(_state) {
+  restoreState(state) {
+    if (!state || typeof state !== "object") return;
+    const s = state;
+    if ("version" in s && s.version === 1 && Array.isArray(s.entries)) {
+      this._entries.clear();
+      for (const entry of s.entries) {
+        this._entries.set(entry.id, entry);
+      }
+      this._initialized = true;
+      this._tokenCache = null;
+    }
+  }
+  // ============================================================================
+  // Public API
+  // ============================================================================
+  /**
+   * Check if initialized
+   */
+  get isInitialized() {
+    return this._initialized;
   }
   // ============================================================================
   // Private Helpers
@@ -15752,6 +15796,36 @@ var UserInfoPluginNextGen = class {
     if (this._destroyed) {
       throw new Error("UserInfoPluginNextGen is destroyed");
     }
+  }
+  /**
+   * Lazy load entries from storage
+   */
+  async ensureInitialized() {
+    if (this._initialized || this._destroyed) return;
+    try {
+      const storage = this.resolveStorage();
+      const entries = await storage.load(this.userId);
+      this._entries.clear();
+      if (entries) {
+        for (const entry of entries) {
+          this._entries.set(entry.id, entry);
+        }
+      }
+      this._initialized = true;
+    } catch (error) {
+      console.warn(`Failed to load user info for userId '${this.userId ?? "default"}':`, error);
+      this._entries.clear();
+      this._initialized = true;
+    }
+    this._tokenCache = null;
+  }
+  /**
+   * Render entries as markdown for context injection
+   */
+  renderContent() {
+    const sorted = Array.from(this._entries.values()).sort((a, b) => a.createdAt - b.createdAt);
+    return sorted.map((entry) => `### ${entry.id}
+${formatValue(entry.value)}`).join("\n\n");
   }
   /**
    * Resolve storage instance (lazy singleton)
@@ -15770,6 +15844,17 @@ var UserInfoPluginNextGen = class {
     this._storage = new FileUserInfoStorage();
     return this._storage;
   }
+  /**
+   * Persist current entries to storage
+   */
+  async persistToStorage(userId) {
+    const storage = this.resolveStorage();
+    if (this._entries.size === 0) {
+      await storage.delete(userId);
+    } else {
+      await storage.save(userId, Array.from(this._entries.values()));
+    }
+  }
   // ============================================================================
   // Tool Factories
   // ============================================================================
@@ -15778,7 +15863,8 @@ var UserInfoPluginNextGen = class {
       definition: userInfoSetDefinition,
       execute: async (args, context) => {
         this.assertNotDestroyed();
-        const userId = context?.userId;
+        await this.ensureInitialized();
+        const userId = context?.userId ?? this.userId;
         const key = args.key;
         const value = args.value;
         const description = args.description;
@@ -15790,21 +15876,21 @@ var UserInfoPluginNextGen = class {
         if (value === void 0) {
           return { error: "Value cannot be undefined. Use null for explicit null value." };
         }
-        const storage = this.resolveStorage(context);
-        const entries = await storage.load(userId) || [];
-        const entriesMap = new Map(entries.map((e) => [e.id, e]));
-        if (!entriesMap.has(trimmedKey) && entriesMap.size >= this.maxEntries) {
+        if (!this._entries.has(trimmedKey) && this._entries.size >= this.maxEntries) {
           return { error: `Maximum number of entries reached (${this.maxEntries})` };
         }
         const valueSize = calculateValueSize(value);
-        const currentTotal = entries.reduce((sum, e) => sum + calculateValueSize(e.value), 0);
-        const existingSize = entriesMap.has(trimmedKey) ? calculateValueSize(entriesMap.get(trimmedKey).value) : 0;
+        let currentTotal = 0;
+        for (const e of this._entries.values()) {
+          currentTotal += calculateValueSize(e.value);
+        }
+        const existingSize = this._entries.has(trimmedKey) ? calculateValueSize(this._entries.get(trimmedKey).value) : 0;
         const newTotal = currentTotal - existingSize + valueSize;
         if (newTotal > this.maxTotalSize) {
           return { error: `Total size would exceed maximum (${this.maxTotalSize} bytes)` };
         }
         const now = Date.now();
-        const existing = entriesMap.get(trimmedKey);
+        const existing = this._entries.get(trimmedKey);
         const entry = {
           id: trimmedKey,
           value,
@@ -15813,8 +15899,9 @@ var UserInfoPluginNextGen = class {
           createdAt: existing?.createdAt ?? now,
           updatedAt: now
         };
-        entriesMap.set(trimmedKey, entry);
-        await storage.save(userId, Array.from(entriesMap.values()));
+        this._entries.set(trimmedKey, entry);
+        this._tokenCache = null;
+        await this.persistToStorage(userId);
         return {
           success: true,
           message: existing ? `User info '${trimmedKey}' updated` : `User info '${trimmedKey}' added`,
@@ -15830,18 +15917,16 @@ var UserInfoPluginNextGen = class {
   createUserInfoGetTool() {
     return {
       definition: userInfoGetDefinition,
-      execute: async (args, context) => {
+      execute: async (args, _context) => {
         this.assertNotDestroyed();
-        const userId = context?.userId;
+        await this.ensureInitialized();
         const key = args.key;
-        const storage = this.resolveStorage(context);
-        const entries = await storage.load(userId);
-        if (!entries || entries.length === 0) {
+        if (this._entries.size === 0) {
           return { error: "User info not found" };
         }
         if (key !== void 0) {
           const trimmedKey = key.trim();
-          const entry = entries.find((e) => e.id === trimmedKey);
+          const entry = this._entries.get(trimmedKey);
           if (!entry) {
             return { error: `User info '${trimmedKey}' not found` };
           }
@@ -15854,6 +15939,7 @@ var UserInfoPluginNextGen = class {
             updatedAt: entry.updatedAt
           };
         }
+        const entries = Array.from(this._entries.values());
         return {
           count: entries.length,
           entries: entries.map((e) => ({
@@ -15875,26 +15961,19 @@ var UserInfoPluginNextGen = class {
       definition: userInfoRemoveDefinition,
       execute: async (args, context) => {
         this.assertNotDestroyed();
-        const userId = context?.userId;
+        await this.ensureInitialized();
+        const userId = context?.userId ?? this.userId;
         const key = args.key;
         if (!key || typeof key !== "string" || key.trim().length === 0) {
           return { error: "Key is required" };
         }
         const trimmedKey = key.trim();
-        const storage = this.resolveStorage(context);
-        const entries = await storage.load(userId);
-        if (!entries || entries.length === 0) {
+        if (!this._entries.has(trimmedKey)) {
           return { error: `User info '${trimmedKey}' not found` };
         }
-        const filtered = entries.filter((e) => e.id !== trimmedKey);
-        if (filtered.length === entries.length) {
-          return { error: `User info '${trimmedKey}' not found` };
-        }
-        if (filtered.length === 0) {
-          await storage.delete(userId);
-        } else {
-          await storage.save(userId, filtered);
-        }
+        this._entries.delete(trimmedKey);
+        this._tokenCache = null;
+        await this.persistToStorage(userId);
         return {
           success: true,
           message: `User info '${trimmedKey}' removed`,
@@ -15910,10 +15989,12 @@ var UserInfoPluginNextGen = class {
       definition: userInfoClearDefinition,
       execute: async (args, context) => {
         this.assertNotDestroyed();
-        const userId = context?.userId;
+        const userId = context?.userId ?? this.userId;
         if (args.confirm !== true) {
           return { error: "Must pass confirm: true to clear user info" };
         }
+        this._entries.clear();
+        this._tokenCache = null;
         const storage = this.resolveStorage(context);
         await storage.delete(userId);
         return {
@@ -16694,9 +16775,11 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
       }));
     }
     if (features.userInfo) {
-      this.registerPlugin(new UserInfoPluginNextGen(
-        configs.userInfo
-      ));
+      const uiConfig = configs.userInfo;
+      this.registerPlugin(new UserInfoPluginNextGen({
+        userId: this._userId,
+        ...uiConfig
+      }));
     }
     this.validateStrategyDependencies(this._compactionStrategy);
   }
