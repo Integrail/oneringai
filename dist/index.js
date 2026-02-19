@@ -17338,6 +17338,8 @@ ${content}`);
         breakdown.pluginContents[plugin.name] = plugin.getTokenSize();
       }
     }
+    const now = /* @__PURE__ */ new Date();
+    parts.push(`CURRENT DATE AND TIME: ${now.toLocaleString("en-US", { dateStyle: "full", timeStyle: "long", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`);
     const systemText = parts.join("\n\n---\n\n");
     const systemTokens = this._estimator.estimateTokens(systemText);
     const systemMessage = {

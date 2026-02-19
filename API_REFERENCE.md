@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-18
+**Generated:** 2026-02-19
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -18,7 +18,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Video Generation](#video-generation) (18 items)
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (24 items)
+- [Session Management](#session-management) (26 items)
 - [Tools & Function Calling](#tools-function-calling) (119 items)
 - [Streaming](#streaming) (15 items)
 - [Model Registry](#model-registry) (10 items)
@@ -26,9 +26,9 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
 - [Utilities](#utilities) (8 items)
-- [Interfaces](#interfaces) (42 items)
+- [Interfaces](#interfaces) (44 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (238 items)
+- [Other](#other) (241 items)
 
 ## Core
 
@@ -9037,9 +9037,11 @@ async rebuildIndex(): Promise&lt;void&gt;
 
 ### FileCustomToolStorage `class`
 
-📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:84`](src/infrastructure/storage/FileCustomToolStorage.ts)
+📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:108`](src/infrastructure/storage/FileCustomToolStorage.ts)
 
 File-based storage for custom tool definitions
+
+Single instance handles all users. UserId is passed to each method.
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -9063,10 +9065,11 @@ constructor(config: FileCustomToolStorageConfig =
 Save a custom tool definition
 
 ```typescript
-async save(definition: CustomToolDefinition): Promise&lt;void&gt;
+async save(userId: string | undefined, definition: CustomToolDefinition): Promise&lt;void&gt;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `definition`: `CustomToolDefinition`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -9076,10 +9079,11 @@ async save(definition: CustomToolDefinition): Promise&lt;void&gt;
 Load a custom tool definition by name
 
 ```typescript
-async load(name: string): Promise&lt;CustomToolDefinition | null&gt;
+async load(userId: string | undefined, name: string): Promise&lt;CustomToolDefinition | null&gt;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 
 **Returns:** `Promise&lt;CustomToolDefinition | null&gt;`
@@ -9089,10 +9093,11 @@ async load(name: string): Promise&lt;CustomToolDefinition | null&gt;
 Delete a custom tool definition
 
 ```typescript
-async delete(name: string): Promise&lt;void&gt;
+async delete(userId: string | undefined, name: string): Promise&lt;void&gt;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -9102,10 +9107,11 @@ async delete(name: string): Promise&lt;void&gt;
 Check if a custom tool exists
 
 ```typescript
-async exists(name: string): Promise&lt;boolean&gt;
+async exists(userId: string | undefined, name: string): Promise&lt;boolean&gt;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
@@ -9115,10 +9121,11 @@ async exists(name: string): Promise&lt;boolean&gt;
 List custom tools (summaries only)
 
 ```typescript
-async list(options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;
+async list(userId: string | undefined, options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `options`: `CustomToolListOptions | undefined` *(optional)*
 
 **Returns:** `Promise&lt;CustomToolSummary[]&gt;`
@@ -9128,10 +9135,11 @@ async list(options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;
 Update metadata without loading full definition
 
 ```typescript
-async updateMetadata(name: string, metadata: Record&lt;string, unknown&gt;): Promise&lt;void&gt;
+async updateMetadata(userId: string | undefined, name: string, metadata: Record&lt;string, unknown&gt;): Promise&lt;void&gt;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 - `metadata`: `Record&lt;string, unknown&gt;`
 
@@ -9139,11 +9147,14 @@ async updateMetadata(name: string, metadata: Record&lt;string, unknown&gt;): Pro
 
 #### `getPath()`
 
-Get storage path
+Get storage path for a specific user
 
 ```typescript
-getPath(): string
+getPath(userId: string | undefined): string
 ```
+
+**Parameters:**
+- `userId`: `string | undefined`
 
 **Returns:** `string`
 
@@ -9155,9 +9166,7 @@ getPath(): string
 | Property | Type | Description |
 |----------|------|-------------|
 | `baseDirectory` | `baseDirectory: string` | - |
-| `indexPath` | `indexPath: string` | - |
 | `prettyPrint` | `prettyPrint: boolean` | - |
-| `index` | `index: CustomToolIndex | null` | - |
 
 </details>
 
@@ -9467,6 +9476,112 @@ async clearAll(): Promise&lt;void&gt;
 
 ---
 
+### FileUserInfoStorage `class`
+
+📍 [`src/infrastructure/storage/FileUserInfoStorage.ts:86`](src/infrastructure/storage/FileUserInfoStorage.ts)
+
+File-based storage for user information
+
+Single instance handles all users. UserId is passed to each method.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config?: FileUserInfoStorageConfig)
+```
+
+**Parameters:**
+- `config`: `FileUserInfoStorageConfig | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `load()`
+
+Load user info entries from file for a specific user
+
+```typescript
+async load(userId: string | undefined): Promise&lt;UserInfoEntry[] | null&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `Promise&lt;UserInfoEntry[] | null&gt;`
+
+#### `save()`
+
+Save user info entries to file for a specific user
+Creates directory if it doesn't exist.
+
+```typescript
+async save(userId: string | undefined, entries: UserInfoEntry[]): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `entries`: `UserInfoEntry[]`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `delete()`
+
+Delete user info file for a specific user
+
+```typescript
+async delete(userId: string | undefined): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+Check if user info file exists for a specific user
+
+```typescript
+async exists(userId: string | undefined): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `getPath()`
+
+Get the file path for a specific user (for display/debugging)
+
+```typescript
+getPath(userId: string | undefined): string
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `string`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `baseDirectory` | `baseDirectory: string` | - |
+| `filename` | `filename: string` | - |
+
+</details>
+
+---
+
 ### ContextSessionMetadata `interface`
 
 📍 [`src/domain/interfaces/IContextStorage.ts:62`](src/domain/interfaces/IContextStorage.ts)
@@ -9562,7 +9677,7 @@ Configuration for FileContextStorage
 
 ### FileCustomToolStorageConfig `interface`
 
-📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:24`](src/infrastructure/storage/FileCustomToolStorage.ts)
+📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:25`](src/infrastructure/storage/FileCustomToolStorage.ts)
 
 Configuration for FileCustomToolStorage
 
@@ -9571,7 +9686,7 @@ Configuration for FileCustomToolStorage
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `baseDirectory?` | `baseDirectory?: string;` | Override the base directory (default: ~/.oneringai/custom-tools) |
+| `baseDirectory?` | `baseDirectory?: string;` | Override the base directory (default: ~/.oneringai/users) |
 | `prettyPrint?` | `prettyPrint?: boolean;` | Pretty-print JSON (default: true) |
 
 </details>
@@ -9623,6 +9738,24 @@ Configuration for FilePersistentInstructionsStorage
 |----------|------|-------------|
 | `directory` | `directory: string;` | - |
 | `encryptionKey` | `encryptionKey: string;` | - |
+
+</details>
+
+---
+
+### FileUserInfoStorageConfig `interface`
+
+📍 [`src/infrastructure/storage/FileUserInfoStorage.ts:24`](src/infrastructure/storage/FileUserInfoStorage.ts)
+
+Configuration for FileUserInfoStorage
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `baseDirectory?` | `baseDirectory?: string;` | Override the base directory (default: ~/.oneringai/users) |
+| `filename?` | `filename?: string;` | Override the filename (default: user_info.json) |
 
 </details>
 
@@ -9728,7 +9861,7 @@ await ctx.load('session-001');
 
 ### createFileCustomToolStorage `function`
 
-📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:344`](src/infrastructure/storage/FileCustomToolStorage.ts)
+📍 [`src/infrastructure/storage/FileCustomToolStorage.ts:385`](src/infrastructure/storage/FileCustomToolStorage.ts)
 
 Create a FileCustomToolStorage with default configuration
 
@@ -11771,12 +11904,15 @@ Options for generating the generic API tool
 
 ### ICustomToolStorage `interface`
 
-📍 [`src/domain/interfaces/ICustomToolStorage.ts:33`](src/domain/interfaces/ICustomToolStorage.ts)
+📍 [`src/domain/interfaces/ICustomToolStorage.ts:36`](src/domain/interfaces/ICustomToolStorage.ts)
 
 Storage interface for custom tool definitions
 
+Custom tools support optional per-user isolation for multi-tenant scenarios.
+When userId is not provided, defaults to 'default' user.
+
 Implementations:
-- FileCustomToolStorage: File-based storage at ~/.oneringai/custom-tools/
+- FileCustomToolStorage: File-based storage at ~/.oneringai/users/<userId>/custom-tools/
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -11786,10 +11922,11 @@ Implementations:
 Save a custom tool definition
 
 ```typescript
-save(definition: CustomToolDefinition): Promise&lt;void&gt;;
+save(userId: string | undefined, definition: CustomToolDefinition): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `definition`: `CustomToolDefinition`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -11799,10 +11936,11 @@ save(definition: CustomToolDefinition): Promise&lt;void&gt;;
 Load a custom tool definition by name
 
 ```typescript
-load(name: string): Promise&lt;CustomToolDefinition | null&gt;;
+load(userId: string | undefined, name: string): Promise&lt;CustomToolDefinition | null&gt;;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 
 **Returns:** `Promise&lt;CustomToolDefinition | null&gt;`
@@ -11812,10 +11950,11 @@ load(name: string): Promise&lt;CustomToolDefinition | null&gt;;
 Delete a custom tool definition by name
 
 ```typescript
-delete(name: string): Promise&lt;void&gt;;
+delete(userId: string | undefined, name: string): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -11825,10 +11964,11 @@ delete(name: string): Promise&lt;void&gt;;
 Check if a custom tool exists
 
 ```typescript
-exists(name: string): Promise&lt;boolean&gt;;
+exists(userId: string | undefined, name: string): Promise&lt;boolean&gt;;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
@@ -11838,10 +11978,11 @@ exists(name: string): Promise&lt;boolean&gt;;
 List custom tools (summaries only)
 
 ```typescript
-list(options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;;
+list(userId: string | undefined, options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `options`: `CustomToolListOptions | undefined` *(optional)*
 
 **Returns:** `Promise&lt;CustomToolSummary[]&gt;`
@@ -11851,10 +11992,11 @@ list(options?: CustomToolListOptions): Promise&lt;CustomToolSummary[]&gt;;
 Update metadata without loading full definition
 
 ```typescript
-updateMetadata?(name: string, metadata: Record&lt;string, unknown&gt;): Promise&lt;void&gt;;
+updateMetadata?(userId: string | undefined, name: string, metadata: Record&lt;string, unknown&gt;): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
+- `userId`: `string | undefined`
 - `name`: `string`
 - `metadata`: `Record&lt;string, unknown&gt;`
 
@@ -11862,11 +12004,14 @@ updateMetadata?(name: string, metadata: Record&lt;string, unknown&gt;): Promise&
 
 #### `getPath()`
 
-Get the storage path/location (for display/debugging)
+Get the storage path/location for a specific user (for display/debugging)
 
 ```typescript
-getPath(): string;
+getPath(userId: string | undefined): string;
 ```
+
+**Parameters:**
+- `userId`: `string | undefined`
 
 **Returns:** `string`
 
@@ -12848,7 +12993,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### DefaultAllowlistedTool `type`
 
-📍 [`src/core/permissions/types.ts:354`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:360`](src/core/permissions/types.ts)
 
 Type for default allowlisted tools
 
@@ -20412,6 +20557,92 @@ listVoices?(): Promise&lt;IVoiceInfo[]&gt;;
 
 ---
 
+### IUserInfoStorage `interface`
+
+📍 [`src/domain/interfaces/IUserInfoStorage.ts:46`](src/domain/interfaces/IUserInfoStorage.ts)
+
+Storage interface for user information
+
+Implementations handle the actual storage mechanism while the plugin
+handles the business logic.
+
+Design: Single storage instance handles ALL users. UserId is passed to
+each method, allowing efficient multi-tenant storage.
+When userId is undefined, defaults to 'default' user.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `load()`
+
+Load user info entries from storage for a specific user
+
+```typescript
+load(userId: string | undefined): Promise&lt;UserInfoEntry[] | null&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `Promise&lt;UserInfoEntry[] | null&gt;`
+
+#### `save()`
+
+Save user info entries to storage for a specific user
+
+```typescript
+save(userId: string | undefined, entries: UserInfoEntry[]): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `entries`: `UserInfoEntry[]`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `delete()`
+
+Delete user info from storage for a specific user
+
+```typescript
+delete(userId: string | undefined): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+Check if user info exists in storage for a specific user
+
+```typescript
+exists(userId: string | undefined): Promise&lt;boolean&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `getPath()`
+
+Get the storage path for a specific user (for display/debugging)
+
+```typescript
+getPath(userId: string | undefined): string;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `string`
+
+</details>
+
+---
+
 ### MediaStorageEntry `interface`
 
 📍 [`src/domain/interfaces/IMediaStorage.ts:50`](src/domain/interfaces/IMediaStorage.ts)
@@ -20666,6 +20897,33 @@ Wrapper for stored connector configuration with metadata
 | `previous_response_id?` | `previous_response_id?: string;` | - |
 | `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) |
+
+</details>
+
+---
+
+### UserInfoEntry `interface`
+
+📍 [`src/domain/interfaces/IUserInfoStorage.ts:17`](src/domain/interfaces/IUserInfoStorage.ts)
+
+IUserInfoStorage - Storage interface for user information
+
+Abstracted storage interface following Clean Architecture principles.
+Implementations can use file system, database, or any other storage backend.
+
+User information is stored per userId - each user has their own isolated data.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | User-supplied key (e.g., "theme", "language") |
+| `value` | `value: unknown;` | Value (any JSON-serializable data) |
+| `valueType` | `valueType: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null';` | Type of the value for display/debugging |
+| `description?` | `description?: string;` | Optional description for self-documentation |
+| `createdAt` | `createdAt: number;` | Timestamp when entry was first created |
+| `updatedAt` | `updatedAt: number;` | Timestamp when entry was last updated |
 
 </details>
 
@@ -21112,7 +21370,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:107`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:109`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -23694,7 +23952,7 @@ async search(query: string, options: SearchOptions =
 
 ### StorageRegistry `class`
 
-📍 [`src/core/StorageRegistry.ts:84`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:86`](src/core/StorageRegistry.ts)
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -24004,6 +24262,139 @@ async search(query: string, options: SearchOptions =
 
 ---
 
+### UserInfoPluginNextGen `class`
+
+📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:222`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config?: UserInfoPluginConfig)
+```
+
+**Parameters:**
+- `config`: `UserInfoPluginConfig | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getInstructions()`
+
+```typescript
+getInstructions(): string
+```
+
+**Returns:** `string`
+
+#### `getContent()`
+
+```typescript
+async getContent(): Promise&lt;string | null&gt;
+```
+
+**Returns:** `Promise&lt;string | null&gt;`
+
+#### `getContents()`
+
+```typescript
+getContents(): Map&lt;string, UserInfoEntry&gt;
+```
+
+**Returns:** `Map&lt;string, UserInfoEntry&gt;`
+
+#### `getTokenSize()`
+
+```typescript
+getTokenSize(): number
+```
+
+**Returns:** `number`
+
+#### `getInstructionsTokenSize()`
+
+```typescript
+getInstructionsTokenSize(): number
+```
+
+**Returns:** `number`
+
+#### `isCompactable()`
+
+```typescript
+isCompactable(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `compact()`
+
+```typescript
+async compact(_targetTokensToFree: number): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `_targetTokensToFree`: `number`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getTools()`
+
+```typescript
+getTools(): ToolFunction[]
+```
+
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+#### `getState()`
+
+```typescript
+getState(): SerializedUserInfoState
+```
+
+**Returns:** `SerializedUserInfoState`
+
+#### `restoreState()`
+
+```typescript
+restoreState(state: unknown): void
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "user_info"` | - |
+| `maxTotalSize` | `maxTotalSize: number` | - |
+| `maxEntries` | `maxEntries: number` | - |
+| `estimator` | `estimator: ITokenEstimator` | - |
+| `explicitStorage?` | `explicitStorage: IUserInfoStorage | undefined` | - |
+| `userId` | `userId: string | undefined` | UserId for getContent() and lazy initialization |
+
+</details>
+
+---
+
 ### AgentConfig `interface`
 
 📍 [`src/domain/entities/AgentState.ts:23`](src/domain/entities/AgentState.ts)
@@ -24027,7 +24418,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:523`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:533`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -24357,7 +24748,7 @@ Result of a bash command execution
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:696`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:706`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -24443,7 +24834,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:663`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:673`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -24554,7 +24945,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:680`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:690`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -24607,7 +24998,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:613`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:623`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -24648,6 +25039,7 @@ Feature flags for enabling/disabling plugins
 | `workingMemory?` | `workingMemory?: boolean;` | Enable WorkingMemory plugin (default: true) |
 | `inContextMemory?` | `inContextMemory?: boolean;` | Enable InContextMemory plugin (default: false) |
 | `persistentInstructions?` | `persistentInstructions?: boolean;` | Enable PersistentInstructions plugin (default: false) |
+| `userInfo?` | `userInfo?: boolean;` | Enable UserInfo plugin (default: false) |
 
 </details>
 
@@ -25731,7 +26123,7 @@ Base interface for all capability providers
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:751`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:761`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -27092,7 +27484,7 @@ Result of checking if a tool needs approval
 
 ### PluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:499`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:503`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -27110,6 +27502,8 @@ See InContextMemoryConfig for full options. |
 | `persistentInstructions?` | `persistentInstructions?: Record&lt;string, unknown&gt;;` | Persistent instructions plugin config (used when features.persistentInstructions=true).
 Note: agentId is auto-filled from context config if not provided.
 See PersistentInstructionsConfig for full options. |
+| `userInfo?` | `userInfo?: Record&lt;string, unknown&gt;;` | User info plugin config (used when features.userInfo=true).
+See UserInfoPluginConfig for full options. |
 
 </details>
 
@@ -27593,6 +27987,23 @@ Serialized approval state for session persistence
 
 ---
 
+### SerializedUserInfoState `interface`
+
+📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:46`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `version` | `version: 1;` | - |
+| `entries` | `entries: UserInfoEntry[];` | - |
+| `userId?` | `userId?: string;` | - |
+
+</details>
+
+---
+
 ### ServiceDefinition `interface`
 
 📍 [`src/domain/entities/Services.ts:29`](src/domain/entities/Services.ts)
@@ -27710,7 +28121,7 @@ Stdio transport configuration
 
 ### StorageConfig `interface`
 
-📍 [`src/core/StorageRegistry.ts:66`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:67`](src/core/StorageRegistry.ts)
 
 Storage configuration map.
 
@@ -27731,6 +28142,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 | `sessions` | `sessions: (agentId: string, context?: StorageContext) =&gt; IContextStorage;` | - |
 | `persistentInstructions` | `persistentInstructions: (agentId: string, context?: StorageContext) =&gt; IPersistentInstructionsStorage;` | - |
 | `workingMemory` | `workingMemory: (context?: StorageContext) =&gt; IMemoryStorage;` | - |
+| `userInfo` | `userInfo: (context?: StorageContext) =&gt; IUserInfoStorage;` | - |
 
 </details>
 
@@ -27769,6 +28181,24 @@ Full strategy registry entry (includes class reference)
 | Property | Type | Description |
 |----------|------|-------------|
 | `strategyClass` | `strategyClass: StrategyClass;` | Strategy constructor class |
+
+</details>
+
+---
+
+### UserInfoPluginConfig `interface`
+
+📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:35`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `storage?` | `storage?: IUserInfoStorage;` | Custom storage implementation (default: FileUserInfoStorage) |
+| `maxTotalSize?` | `maxTotalSize?: number;` | Maximum total size across all entries in bytes (default: 100000 / ~100KB) |
+| `maxEntries?` | `maxEntries?: number;` | Maximum number of entries (default: 100) |
+| `userId?` | `userId?: string;` | User ID for storage isolation (resolved from AgentContextNextGen._userId) |
 
 </details>
 
@@ -28315,7 +28745,7 @@ type ServiceType = (typeof SERVICE_DEFINITIONS)[number]['id']
 
 ### StorageContext `type`
 
-📍 [`src/core/StorageRegistry.ts:57`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:58`](src/core/StorageRegistry.ts)
 
 Opaque context passed to per-agent storage factories.
 
@@ -28745,7 +29175,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:586`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:596`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -28798,7 +29228,7 @@ Default configuration values
 
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:484`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:487`](src/core/context-nextgen/types.ts)
 
 Default feature configuration
 
@@ -28810,6 +29240,7 @@ Default feature configuration
 | `workingMemory` | `true` | - |
 | `inContextMemory` | `false` | - |
 | `persistentInstructions` | `false` | - |
+| `userInfo` | `false` | - |
 
 </details>
 

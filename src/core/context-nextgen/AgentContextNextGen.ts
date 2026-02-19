@@ -981,6 +981,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       }
     }
 
+    // 5. Current date and time (always injected)
+    const now = new Date();
+    parts.push(`CURRENT DATE AND TIME: ${now.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'long', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`);
+
     // Build final system message
     const systemText = parts.join('\n\n---\n\n');
     const systemTokens = this._estimator.estimateTokens(systemText);
