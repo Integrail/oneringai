@@ -34,3 +34,7 @@ export type { FileCustomToolStorageConfig } from './FileCustomToolStorage.js';
 // User info storage (for user-specific preferences and context)
 export { FileUserInfoStorage } from './FileUserInfoStorage.js';
 export type { FileUserInfoStorageConfig } from './FileUserInfoStorage.js';
+
+// Routine definition storage (for reusable task-based workflows)
+export { FileRoutineDefinitionStorage, createFileRoutineDefinitionStorage } from './FileRoutineDefinitionStorage.js';
+export type { FileRoutineDefinitionStorageConfig } from './FileRoutineDefinitionStorage.js';

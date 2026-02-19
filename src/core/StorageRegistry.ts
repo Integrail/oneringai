@@ -42,6 +42,7 @@ import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { IPersistentInstructionsStorage } from '../domain/interfaces/IPersistentInstructionsStorage.js';
 import type { IMemoryStorage } from '../domain/interfaces/IMemoryStorage.js';
 import type { IUserInfoStorage } from '../domain/interfaces/IUserInfoStorage.js';
+import type { IRoutineDefinitionStorage } from '../domain/interfaces/IRoutineDefinitionStorage.js';
 
 // ============================================================================
 // Types
@@ -77,6 +78,7 @@ export interface StorageConfig {
   persistentInstructions: (agentId: string, context?: StorageContext) => IPersistentInstructionsStorage;
   workingMemory: (context?: StorageContext) => IMemoryStorage;
   userInfo: (context?: StorageContext) => IUserInfoStorage;
+  routineDefinitions: (context?: StorageContext) => IRoutineDefinitionStorage;
 }
 
 // ============================================================================

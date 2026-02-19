@@ -642,6 +642,7 @@ StorageRegistry.configure({
   sessions: (agentId, ctx) => new RedisContextStorage(agentId, ctx?.tenantId),
   persistentInstructions: (agentId, ctx) => new DBInstructionsStorage(agentId, ctx?.userId),
   workingMemory: (ctx) => new RedisMemoryStorage(ctx?.tenantId),
+  routineDefinitions: (ctx) => new MongoRoutineStorage(ctx?.userId),
 });
 
 // All agents and tools automatically use these backends
@@ -1290,6 +1291,18 @@ console.log(execution.status); // 'completed' | 'failed'
 - 📊 **Progress Tracking** - Real-time callbacks and progress percentage
 - ⚙️ **Failure Modes** - `fail-fast` (default) or `continue` for independent tasks
 - 🎨 **Custom Prompts** - Override system, task, or validation prompts
+
+**Routine Persistence:** Save and load routine definitions with `FileRoutineDefinitionStorage` (or implement `IRoutineDefinitionStorage` for custom backends). Per-user isolation via optional `userId`. Integrated into `StorageRegistry` as `routineDefinitions`.
+
+```typescript
+import { createFileRoutineDefinitionStorage, createRoutineDefinition } from '@everworker/oneringai';
+
+const storage = createFileRoutineDefinitionStorage();
+const routine = createRoutineDefinition({ name: 'Daily Report', description: '...', tasks: [...] });
+await storage.save(undefined, routine);  // undefined = default user
+const loaded = await storage.load(undefined, routine.id);
+const all = await storage.list(undefined, { tags: ['daily'] });
+```
 
 > See the [User Guide](./USER_GUIDE.md#routine-execution) for the complete API reference, architecture details, and examples.
 

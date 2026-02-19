@@ -2,7 +2,7 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs18 = require('fs');
+var fs19 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
 var TurndownService = require('turndown');
@@ -17,7 +17,7 @@ var z = require('zod/v4');
 var spawn = require('cross-spawn');
 var process2 = require('process');
 var stream = require('stream');
-var fs17 = require('fs/promises');
+var fs18 = require('fs/promises');
 var simpleIcons = require('simple-icons');
 var child_process = require('child_process');
 var util = require('util');
@@ -45,7 +45,7 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs18__namespace = /*#__PURE__*/_interopNamespace(fs18);
+var fs19__namespace = /*#__PURE__*/_interopNamespace(fs19);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var os2__namespace = /*#__PURE__*/_interopNamespace(os2);
@@ -55,7 +55,7 @@ var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var spawn__default = /*#__PURE__*/_interopDefault(spawn);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
-var fs17__namespace = /*#__PURE__*/_interopNamespace(fs17);
+var fs18__namespace = /*#__PURE__*/_interopNamespace(fs18);
 var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -673,7 +673,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs18__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs19__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1432,10 +1432,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2__namespace.dirname(filePath);
-          if (!fs18__namespace.existsSync(dir)) {
-            fs18__namespace.mkdirSync(dir, { recursive: true });
+          if (!fs19__namespace.existsSync(dir)) {
+            fs19__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs18__namespace.createWriteStream(filePath, {
+          this.fileStream = fs19__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -9165,12 +9165,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs19, exportName) {
+    function addFormats(ajv, list, fs20, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs19[f]);
+        ajv.addFormat(f, fs20[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -14902,7 +14902,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async load() {
     try {
-      const raw = await fs18.promises.readFile(this.filePath, "utf-8");
+      const raw = await fs19.promises.readFile(this.filePath, "utf-8");
       const data = JSON.parse(raw);
       if (data.version === 2 && Array.isArray(data.entries)) {
         return data.entries.length > 0 ? data.entries : null;
@@ -14914,7 +14914,7 @@ var FilePersistentInstructionsStorage = class {
       }
     }
     try {
-      const content = await fs18.promises.readFile(this.legacyFilePath, "utf-8");
+      const content = await fs19.promises.readFile(this.legacyFilePath, "utf-8");
       const trimmed = content.trim();
       if (!trimmed) return null;
       const now = Date.now();
@@ -14944,11 +14944,11 @@ var FilePersistentInstructionsStorage = class {
     };
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs18.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
-      await fs18.promises.rename(tempPath, this.filePath);
+      await fs19.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await fs19.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
-        await fs18.promises.unlink(tempPath);
+        await fs19.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -14960,7 +14960,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async delete() {
     try {
-      await fs18.promises.unlink(this.filePath);
+      await fs19.promises.unlink(this.filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -14973,11 +14973,11 @@ var FilePersistentInstructionsStorage = class {
    */
   async exists() {
     try {
-      await fs18.promises.access(this.filePath);
+      await fs19.promises.access(this.filePath);
       return true;
     } catch {
       try {
-        await fs18.promises.access(this.legacyFilePath);
+        await fs19.promises.access(this.legacyFilePath);
         return true;
       } catch {
         return false;
@@ -15001,7 +15001,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async ensureDirectory() {
     try {
-      await fs18.promises.mkdir(this.directory, { recursive: true });
+      await fs19.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -15013,7 +15013,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async removeLegacyFile() {
     try {
-      await fs18.promises.unlink(this.legacyFilePath);
+      await fs19.promises.unlink(this.legacyFilePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         console.warn(`Failed to remove legacy instructions file: ${this.legacyFilePath}`);
@@ -15518,7 +15518,7 @@ var FileUserInfoStorage = class {
   async load(userId) {
     const filePath = this.getUserFilePath(userId);
     try {
-      const raw = await fs18.promises.readFile(filePath, "utf-8");
+      const raw = await fs19.promises.readFile(filePath, "utf-8");
       const data = JSON.parse(raw);
       if (data.version === 1 && Array.isArray(data.entries)) {
         return data.entries.length > 0 ? data.entries : null;
@@ -15546,11 +15546,11 @@ var FileUserInfoStorage = class {
     };
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs18.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
-      await fs18.promises.rename(tempPath, filePath);
+      await fs19.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+      await fs19.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs18.promises.unlink(tempPath);
+        await fs19.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -15562,7 +15562,7 @@ var FileUserInfoStorage = class {
   async delete(userId) {
     const filePath = this.getUserFilePath(userId);
     try {
-      await fs18.promises.unlink(filePath);
+      await fs19.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -15575,7 +15575,7 @@ var FileUserInfoStorage = class {
   async exists(userId) {
     const filePath = this.getUserFilePath(userId);
     try {
-      await fs18.promises.access(filePath);
+      await fs19.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -15592,7 +15592,7 @@ var FileUserInfoStorage = class {
    */
   async ensureDirectory(directory) {
     try {
-      await fs18.promises.mkdir(directory, { recursive: true });
+      await fs19.promises.mkdir(directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -24218,7 +24218,7 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const content = await fs18.promises.readFile(configPath, "utf-8");
+      const content = await fs19.promises.readFile(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -24239,8 +24239,8 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs19 = __require("fs");
-      const content = fs19.readFileSync(configPath, "utf-8");
+      const fs20 = __require("fs");
+      const content = fs20.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -24258,7 +24258,7 @@ init_constants();
   static async findConfig() {
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs18.promises.access(path2.resolve(path6));
+        await fs19.promises.access(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -24269,10 +24269,10 @@ init_constants();
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs19 = __require("fs");
+    const fs20 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs19.accessSync(path2.resolve(path6));
+        fs20.accessSync(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -29846,7 +29846,7 @@ var MCPRegistry = class {
   static async loadFromConfigFile(path6) {
     try {
       const configPath = path2.resolve(path6);
-      const content = await fs18.promises.readFile(configPath, "utf-8");
+      const content = await fs19.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -30451,7 +30451,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs18__namespace.createReadStream(audio);
+      return fs19__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -31004,7 +31004,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs17__namespace.writeFile(filePath, response.audio);
+    await fs18__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -31352,7 +31352,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs17__namespace.readFile(filePath);
+    const audio = await fs18__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -31678,7 +31678,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs18__namespace.createReadStream(image);
+    return fs19__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -31825,8 +31825,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs19 = await import('fs');
-      const buffer = fs19.readFileSync(image);
+      const fs20 = await import('fs');
+      const buffer = fs20.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -31987,7 +31987,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs18__namespace.createReadStream(image);
+    return fs19__namespace.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -33437,8 +33437,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs19 = await import('fs');
-      const data = fs19.readFileSync(image);
+      const fs20 = await import('fs');
+      const data = fs20.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -33616,7 +33616,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs19 = await import('fs/promises');
+            const fs20 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -33627,11 +33627,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs19.readFile(tempFile);
-              await fs19.unlink(tempFile).catch(() => {
+              buffer = await fs20.readFile(tempFile);
+              await fs20.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs19.unlink(tempFile).catch(() => {
+              await fs20.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -33753,8 +33753,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs19 = await import('fs/promises');
-    const data = await fs19.readFile(image);
+    const fs20 = await import('fs/promises');
+    const data = await fs20.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -34061,8 +34061,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs19 = await import('fs');
-    const data = fs19.readFileSync(image);
+    const fs20 = await import('fs');
+    const data = fs20.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -35498,7 +35498,7 @@ var DocumentReader = class _DocumentReader {
   async resolveSource(source) {
     switch (source.type) {
       case "file": {
-        const buffer = await fs17.readFile(source.path);
+        const buffer = await fs18.readFile(source.path);
         const filename = source.path.split("/").pop() || source.path;
         return { buffer, filename };
       }
@@ -37578,11 +37578,11 @@ var FileContextStorage = class {
     const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs18.promises.writeFile(tempPath, data, "utf-8");
-      await fs18.promises.rename(tempPath, filePath);
+      await fs19.promises.writeFile(tempPath, data, "utf-8");
+      await fs19.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs18.promises.unlink(tempPath);
+        await fs19.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -37603,7 +37603,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs18.promises.unlink(filePath);
+      await fs19.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -37618,7 +37618,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs18.promises.access(filePath);
+      await fs19.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -37683,7 +37683,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
-    await fs18.promises.writeFile(filePath, data, "utf-8");
+    await fs19.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(stored);
   }
   /**
@@ -37711,13 +37711,13 @@ var FileContextStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs18.promises.readdir(this.sessionsDirectory);
+    const files = await fs19.promises.readdir(this.sessionsDirectory);
     const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
         const filePath = path2.join(this.sessionsDirectory, file);
-        const data = await fs18.promises.readFile(filePath, "utf-8");
+        const data = await fs19.promises.readFile(filePath, "utf-8");
         const stored = JSON.parse(data);
         entries.push(this.storedToIndexEntry(stored));
       } catch {
@@ -37739,7 +37739,7 @@ var FileContextStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs18.promises.mkdir(this.sessionsDirectory, { recursive: true });
+      await fs19.promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -37749,7 +37749,7 @@ var FileContextStorage = class {
   async loadRaw(sanitizedSessionId) {
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      const data = await fs18.promises.readFile(filePath, "utf-8");
+      const data = await fs19.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -37767,7 +37767,7 @@ var FileContextStorage = class {
       return this.index;
     }
     try {
-      const data = await fs18.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs19.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -37788,7 +37788,7 @@ var FileContextStorage = class {
     await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs18.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs19.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(stored) {
     const index = await this.loadIndex();
@@ -37862,11 +37862,11 @@ var FileAgentDefinitionStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs18.promises.writeFile(tempPath, data, "utf-8");
-      await fs18.promises.rename(tempPath, filePath);
+      await fs19.promises.writeFile(tempPath, data, "utf-8");
+      await fs19.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs18.promises.unlink(tempPath);
+        await fs19.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -37888,7 +37888,7 @@ var FileAgentDefinitionStorage = class {
     const agentDir = path2.join(this.baseDirectory, sanitizedId);
     const filePath = path2.join(agentDir, "definition.json");
     try {
-      await fs18.promises.unlink(filePath);
+      await fs19.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -37903,7 +37903,7 @@ var FileAgentDefinitionStorage = class {
     const sanitizedId = sanitizeAgentId2(agentId);
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      await fs18.promises.access(filePath);
+      await fs19.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -37965,13 +37965,13 @@ var FileAgentDefinitionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory(this.baseDirectory);
-    const entries = await fs18.promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const entries = await fs19.promises.readdir(this.baseDirectory, { withFileTypes: true });
     const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
     const indexEntries = [];
     for (const dir of agentDirs) {
       try {
         const filePath = path2.join(this.baseDirectory, dir.name, "definition.json");
-        const data = await fs18.promises.readFile(filePath, "utf-8");
+        const data = await fs19.promises.readFile(filePath, "utf-8");
         const definition = JSON.parse(data);
         indexEntries.push(this.definitionToIndexEntry(definition));
       } catch {
@@ -37989,7 +37989,7 @@ var FileAgentDefinitionStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs18.promises.mkdir(dir, { recursive: true });
+      await fs19.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -37999,7 +37999,7 @@ var FileAgentDefinitionStorage = class {
   async loadRaw(sanitizedId) {
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      const data = await fs18.promises.readFile(filePath, "utf-8");
+      const data = await fs19.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -38017,7 +38017,7 @@ var FileAgentDefinitionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs18.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs19.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -38037,7 +38037,7 @@ var FileAgentDefinitionStorage = class {
     await this.ensureDirectory(this.baseDirectory);
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs18.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs19.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(definition) {
     const index = await this.loadIndex();
@@ -38095,10 +38095,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2__namespace.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs17__namespace.mkdir(dir, { recursive: true });
+    await fs18__namespace.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2__namespace.join(dir, filename);
-    await fs17__namespace.writeFile(filePath, data);
+    await fs18__namespace.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -38109,7 +38109,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs17__namespace.readFile(location);
+      return await fs18__namespace.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -38119,7 +38119,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs17__namespace.unlink(location);
+      await fs18__namespace.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -38129,7 +38129,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs17__namespace.access(location);
+      await fs18__namespace.access(location);
       return true;
     } catch {
       return false;
@@ -38138,11 +38138,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs17__namespace.readdir(this.outputDir);
+    const files = await fs18__namespace.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2__namespace.join(this.outputDir, file);
       try {
-        const stat6 = await fs17__namespace.stat(filePath);
+        const stat6 = await fs18__namespace.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2__namespace.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -38182,7 +38182,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs17__namespace.mkdir(this.outputDir, { recursive: true });
+      await fs18__namespace.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -38247,11 +38247,11 @@ var FileCustomToolStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs18.promises.writeFile(tempPath, data, "utf-8");
-      await fs18.promises.rename(tempPath, filePath);
+      await fs19.promises.writeFile(tempPath, data, "utf-8");
+      await fs19.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs18.promises.unlink(tempPath);
+        await fs19.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -38265,7 +38265,7 @@ var FileCustomToolStorage = class {
     const sanitized = sanitizeName(name);
     const filePath = this.getToolPath(userId, sanitized);
     try {
-      const data = await fs18.promises.readFile(filePath, "utf-8");
+      const data = await fs19.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -38284,7 +38284,7 @@ var FileCustomToolStorage = class {
     const sanitized = sanitizeName(name);
     const filePath = this.getToolPath(userId, sanitized);
     try {
-      await fs18.promises.unlink(filePath);
+      await fs19.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -38299,7 +38299,7 @@ var FileCustomToolStorage = class {
     const sanitized = sanitizeName(name);
     const filePath = this.getToolPath(userId, sanitized);
     try {
-      await fs18.promises.access(filePath);
+      await fs19.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -38370,7 +38370,7 @@ var FileCustomToolStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs18.promises.mkdir(dir, { recursive: true });
+      await fs19.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -38380,7 +38380,7 @@ var FileCustomToolStorage = class {
   async loadIndex(userId) {
     const indexPath = this.getUserIndexPath(userId);
     try {
-      const data = await fs18.promises.readFile(indexPath, "utf-8");
+      const data = await fs19.promises.readFile(indexPath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -38399,7 +38399,7 @@ var FileCustomToolStorage = class {
     await this.ensureDirectory(directory);
     index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(index, null, 2) : JSON.stringify(index);
-    await fs18.promises.writeFile(indexPath, data, "utf-8");
+    await fs19.promises.writeFile(indexPath, data, "utf-8");
   }
   async updateIndex(userId, definition) {
     const index = await this.loadIndex(userId);
@@ -38431,6 +38431,234 @@ var FileCustomToolStorage = class {
 };
 function createFileCustomToolStorage(config) {
   return new FileCustomToolStorage(config);
+}
+var STORAGE_VERSION = 1;
+var DEFAULT_USER_ID3 = "default";
+function getDefaultBaseDirectory6() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return path2.join(appData, "oneringai", "users");
+    }
+  }
+  return path2.join(os2.homedir(), ".oneringai", "users");
+}
+function sanitizeUserId3(userId) {
+  if (!userId) {
+    return DEFAULT_USER_ID3;
+  }
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || DEFAULT_USER_ID3;
+}
+function sanitizeId2(id) {
+  return id.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileRoutineDefinitionStorage = class {
+  baseDirectory;
+  prettyPrint;
+  constructor(config = {}) {
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory6();
+    this.prettyPrint = config.prettyPrint ?? true;
+  }
+  getUserDirectory(userId) {
+    const sanitizedId = sanitizeUserId3(userId);
+    return path2.join(this.baseDirectory, sanitizedId, "routines");
+  }
+  getIndexPath(userId) {
+    return path2.join(this.getUserDirectory(userId), "_index.json");
+  }
+  getRoutinePath(userId, sanitizedId) {
+    return path2.join(this.getUserDirectory(userId), `${sanitizedId}.json`);
+  }
+  async save(userId, definition) {
+    const directory = this.getUserDirectory(userId);
+    const sanitized = sanitizeId2(definition.id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    await this.ensureDirectory(directory);
+    const stored = { version: STORAGE_VERSION, definition };
+    const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await fs19.promises.writeFile(tempPath, data, "utf-8");
+      await fs19.promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await fs19.promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+    await this.updateIndex(userId, definition);
+  }
+  async load(userId, id) {
+    const sanitized = sanitizeId2(id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    try {
+      const data = await fs19.promises.readFile(filePath, "utf-8");
+      const stored = JSON.parse(data);
+      return stored.definition;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      if (error instanceof SyntaxError) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  async delete(userId, id) {
+    const sanitized = sanitizeId2(id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    try {
+      await fs19.promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await this.removeFromIndex(userId, id);
+  }
+  async exists(userId, id) {
+    const sanitized = sanitizeId2(id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    try {
+      await fs19.promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list(userId, options) {
+    const index = await this.loadIndex(userId);
+    let entries = [...index.routines];
+    if (options?.tags && options.tags.length > 0) {
+      entries = entries.filter((e) => {
+        const entryTags = e.tags ?? [];
+        return options.tags.some((t) => entryTags.includes(t));
+      });
+    }
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      entries = entries.filter(
+        (e) => e.name.toLowerCase().includes(searchLower) || e.description.toLowerCase().includes(searchLower)
+      );
+    }
+    entries.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    if (options?.offset) {
+      entries = entries.slice(options.offset);
+    }
+    if (options?.limit) {
+      entries = entries.slice(0, options.limit);
+    }
+    const results = [];
+    for (const entry of entries) {
+      const def = await this.load(userId, entry.id);
+      if (def) {
+        results.push(def);
+      }
+    }
+    return results;
+  }
+  getPath(userId) {
+    return this.getUserDirectory(userId);
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  async ensureDirectory(dir) {
+    try {
+      await fs19.promises.mkdir(dir, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  async loadIndex(userId) {
+    const indexPath = this.getIndexPath(userId);
+    try {
+      const data = await fs19.promises.readFile(indexPath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return await this.rebuildIndex(userId);
+      }
+      throw error;
+    }
+  }
+  async saveIndex(userId, index) {
+    const directory = this.getUserDirectory(userId);
+    const indexPath = this.getIndexPath(userId);
+    await this.ensureDirectory(directory);
+    index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(index, null, 2) : JSON.stringify(index);
+    await fs19.promises.writeFile(indexPath, data, "utf-8");
+  }
+  async updateIndex(userId, definition) {
+    const index = await this.loadIndex(userId);
+    const entry = this.definitionToIndexEntry(definition);
+    const existingIdx = index.routines.findIndex((e) => e.id === definition.id);
+    if (existingIdx >= 0) {
+      index.routines[existingIdx] = entry;
+    } else {
+      index.routines.push(entry);
+    }
+    await this.saveIndex(userId, index);
+  }
+  async removeFromIndex(userId, id) {
+    const index = await this.loadIndex(userId);
+    index.routines = index.routines.filter((e) => e.id !== id);
+    await this.saveIndex(userId, index);
+  }
+  definitionToIndexEntry(definition) {
+    return {
+      id: definition.id,
+      name: definition.name,
+      description: definition.description,
+      tags: definition.tags,
+      author: definition.author,
+      updatedAt: definition.updatedAt
+    };
+  }
+  /**
+   * Rebuild index by scanning directory for .json files (excluding _index.json).
+   * Returns empty index if directory doesn't exist.
+   */
+  async rebuildIndex(userId) {
+    const directory = this.getUserDirectory(userId);
+    const index = {
+      version: 1,
+      routines: [],
+      lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    let files;
+    try {
+      files = await fs19.promises.readdir(directory);
+    } catch {
+      return index;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".json") || file === "_index.json") continue;
+      try {
+        const data = await fs19.promises.readFile(path2.join(directory, file), "utf-8");
+        const stored = JSON.parse(data);
+        if (stored.definition) {
+          index.routines.push(this.definitionToIndexEntry(stored.definition));
+        }
+      } catch {
+      }
+    }
+    if (index.routines.length > 0) {
+      await this.saveIndex(userId, index);
+    }
+    return index;
+  }
+};
+function createFileRoutineDefinitionStorage(config) {
+  return new FileRoutineDefinitionStorage(config);
 }
 
 // src/domain/entities/CustomToolDefinition.ts
@@ -39532,8 +39760,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs17__namespace.mkdir(this.directory, { recursive: true });
-      await fs17__namespace.chmod(this.directory, 448);
+      await fs18__namespace.mkdir(this.directory, { recursive: true });
+      await fs18__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -39549,13 +39777,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs17__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs17__namespace.chmod(filePath, 384);
+    await fs18__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs18__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs17__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs18__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -39564,7 +39792,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs17__namespace.unlink(filePath);
+        await fs18__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -39573,7 +39801,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs17__namespace.unlink(filePath);
+      await fs18__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -39583,7 +39811,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs17__namespace.access(filePath);
+      await fs18__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -39594,7 +39822,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs17__namespace.readdir(this.directory);
+      const files = await fs18__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -39605,10 +39833,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs17__namespace.readdir(this.directory);
+      const files = await fs18__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs17__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs18__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -40056,14 +40284,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs17__namespace.writeFile(filePath, json, "utf8");
-    await fs17__namespace.chmod(filePath, 384);
+    await fs18__namespace.writeFile(filePath, json, "utf8");
+    await fs18__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs17__namespace.readFile(filePath, "utf8");
+      const json = await fs18__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -40076,7 +40304,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs17__namespace.unlink(filePath);
+      await fs18__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -40090,7 +40318,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs17__namespace.access(filePath);
+      await fs18__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -40116,13 +40344,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs17__namespace.readdir(this.directory);
+      const files = await fs18__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs17__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs18__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -40149,8 +40377,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs17__namespace.mkdir(this.directory, { recursive: true });
-      await fs17__namespace.chmod(this.directory, 448);
+      await fs18__namespace.mkdir(this.directory, { recursive: true });
+      await fs18__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -40161,7 +40389,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs17__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs18__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -40179,8 +40407,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs17__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs17__namespace.chmod(this.indexPath, 384);
+    await fs18__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs18__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -42635,8 +42863,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs18__namespace.existsSync(filePath)) {
-      fs18__namespace.unlinkSync(filePath);
+    if (fs19__namespace.existsSync(filePath)) {
+      fs19__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -42687,7 +42915,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs18__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs19__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -42704,14 +42932,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs18__namespace.existsSync(tempFile) && fs18__namespace.statSync(tempFile).size > 0) {
+      if (fs19__namespace.existsSync(tempFile) && fs19__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs18__namespace.existsSync(tempFile) && fs18__namespace.statSync(tempFile).size > 0) {
+      if (fs19__namespace.existsSync(tempFile) && fs19__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -42738,7 +42966,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs18__namespace.existsSync(tempFile) && fs18__namespace.statSync(tempFile).size > 0) {
+    if (fs19__namespace.existsSync(tempFile) && fs19__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -42751,7 +42979,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs18__namespace.readFileSync(filePath);
+    const imageBuffer = fs19__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -43120,7 +43348,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs18.existsSync(resolvedPath)) {
+      if (!fs19.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -43128,7 +43356,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs17.stat(resolvedPath);
+        const stats = await fs18.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -43170,7 +43398,7 @@ EXAMPLES:
           } catch {
           }
         }
-        const content = await fs17.readFile(resolvedPath, "utf-8");
+        const content = await fs18.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -43275,13 +43503,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs18.existsSync(resolvedPath);
+      const fileExists = fs19.existsSync(resolvedPath);
       try {
         const parentDir = path2.dirname(resolvedPath);
-        if (!fs18.existsSync(parentDir)) {
-          await fs17.mkdir(parentDir, { recursive: true });
+        if (!fs19.existsSync(parentDir)) {
+          await fs18.mkdir(parentDir, { recursive: true });
         }
-        await fs17.writeFile(resolvedPath, content, "utf-8");
+        await fs18.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -43384,7 +43612,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs18.existsSync(resolvedPath)) {
+      if (!fs19.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -43392,7 +43620,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs17.readFile(resolvedPath, "utf-8");
+        const content = await fs18.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -43431,7 +43659,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs17.writeFile(resolvedPath, newContent, "utf-8");
+        await fs18.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -43487,7 +43715,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs17.readdir(dir, { withFileTypes: true });
+    const entries = await fs18.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -43501,7 +43729,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs17.stat(fullPath);
+            const stats = await fs18.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -43583,7 +43811,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs18.existsSync(resolvedDir)) {
+      if (!fs19.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -43638,7 +43866,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs17.readdir(dir, { withFileTypes: true });
+    const entries = await fs18.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path2.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -43671,7 +43899,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs17.readFile(filePath, "utf-8");
+    const content = await fs18.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -43812,7 +44040,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs18.existsSync(resolvedPath)) {
+      if (!fs19.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -43828,7 +44056,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs17.stat(resolvedPath);
+        const stats = await fs18.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -43916,7 +44144,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs17.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs18.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -43934,7 +44162,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs17.stat(fullPath);
+        const stats = await fs18.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -44030,14 +44258,14 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs18.existsSync(resolvedPath)) {
+      if (!fs19.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Directory not found: ${path6}`
         };
       }
       try {
-        const stats = await fs17.stat(resolvedPath);
+        const stats = await fs18.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
@@ -49022,6 +49250,7 @@ exports.FileCustomToolStorage = FileCustomToolStorage;
 exports.FileMediaOutputHandler = FileMediaStorage;
 exports.FileMediaStorage = FileMediaStorage;
 exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
+exports.FileRoutineDefinitionStorage = FileRoutineDefinitionStorage;
 exports.FileStorage = FileStorage;
 exports.FileUserInfoStorage = FileUserInfoStorage;
 exports.FormatDetector = FormatDetector;
@@ -49156,6 +49385,7 @@ exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
 exports.createFileContextStorage = createFileContextStorage;
 exports.createFileCustomToolStorage = createFileCustomToolStorage;
 exports.createFileMediaStorage = createFileMediaStorage;
+exports.createFileRoutineDefinitionStorage = createFileRoutineDefinitionStorage;
 exports.createGetPRTool = createGetPRTool;
 exports.createGitHubReadFileTool = createGitHubReadFileTool;
 exports.createGlobTool = createGlobTool;

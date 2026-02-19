@@ -1079,3 +1079,8 @@ export { FileUserInfoStorage } from './infrastructure/storage/index.js';
 export type { FileUserInfoStorageConfig } from './infrastructure/storage/index.js';
 export type { IUserInfoStorage, UserInfoEntry } from './domain/interfaces/IUserInfoStorage.js';
 
+// RoutineDefinition Storage
+export type { IRoutineDefinitionStorage } from './domain/interfaces/IRoutineDefinitionStorage.js';
+export { FileRoutineDefinitionStorage, createFileRoutineDefinitionStorage } from './infrastructure/storage/index.js';
+export type { FileRoutineDefinitionStorageConfig } from './infrastructure/storage/index.js';
+

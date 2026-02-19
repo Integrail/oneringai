@@ -1,7 +1,7 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs18 from 'fs';
+import * as fs19 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path2 from 'path';
@@ -19,7 +19,7 @@ import * as z from 'zod/v4';
 import spawn$1 from 'cross-spawn';
 import process2 from 'process';
 import { PassThrough } from 'stream';
-import * as fs17 from 'fs/promises';
+import * as fs18 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import * as simpleIcons from 'simple-icons';
 import { exec, spawn } from 'child_process';
@@ -641,7 +641,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs18.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs19.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1400,10 +1400,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2.dirname(filePath);
-          if (!fs18.existsSync(dir)) {
-            fs18.mkdirSync(dir, { recursive: true });
+          if (!fs19.existsSync(dir)) {
+            fs19.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs18.createWriteStream(filePath, {
+          this.fileStream = fs19.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -9133,12 +9133,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs19, exportName) {
+    function addFormats(ajv, list, fs20, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs19[f]);
+        ajv.addFormat(f, fs20[f]);
     }
     module.exports = exports$1 = formatsPlugin;
     Object.defineProperty(exports$1, "__esModule", { value: true });
@@ -24207,8 +24207,8 @@ init_constants();
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs19 = __require("fs");
-      const content = fs19.readFileSync(configPath, "utf-8");
+      const fs20 = __require("fs");
+      const content = fs20.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -24237,10 +24237,10 @@ init_constants();
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs19 = __require("fs");
+    const fs20 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs19.accessSync(resolve(path6));
+        fs20.accessSync(resolve(path6));
         return resolve(path6);
       } catch {
       }
@@ -30419,7 +30419,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs18.createReadStream(audio);
+      return fs19.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -30972,7 +30972,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs17.writeFile(filePath, response.audio);
+    await fs18.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -31320,7 +31320,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs17.readFile(filePath);
+    const audio = await fs18.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -31646,7 +31646,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs18.createReadStream(image);
+    return fs19.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -31793,8 +31793,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs19 = await import('fs');
-      const buffer = fs19.readFileSync(image);
+      const fs20 = await import('fs');
+      const buffer = fs20.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -31955,7 +31955,7 @@ var GrokImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs18.createReadStream(image);
+    return fs19.createReadStream(image);
   }
   /**
    * Handle API errors
@@ -33405,8 +33405,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs19 = await import('fs');
-      const data = fs19.readFileSync(image);
+      const fs20 = await import('fs');
+      const data = fs20.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -33584,7 +33584,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (video.videoBytes) {
             buffer = Buffer.from(video.videoBytes, "base64");
           } else if (video.uri) {
-            const fs19 = await import('fs/promises');
+            const fs20 = await import('fs/promises');
             const os3 = await import('os');
             const path6 = await import('path');
             const tempDir = os3.tmpdir();
@@ -33595,11 +33595,11 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
                 // Pass as GeneratedVideo
                 downloadPath: tempFile
               });
-              buffer = await fs19.readFile(tempFile);
-              await fs19.unlink(tempFile).catch(() => {
+              buffer = await fs20.readFile(tempFile);
+              await fs20.unlink(tempFile).catch(() => {
               });
             } catch (downloadError) {
-              await fs19.unlink(tempFile).catch(() => {
+              await fs20.unlink(tempFile).catch(() => {
               });
               throw new ProviderError(
                 "google",
@@ -33721,8 +33721,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs19 = await import('fs/promises');
-    const data = await fs19.readFile(image);
+    const fs20 = await import('fs/promises');
+    const data = await fs20.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -34029,8 +34029,8 @@ var GrokImagineProvider = class extends BaseMediaProvider {
     if (image.startsWith("http") || image.startsWith("data:")) {
       return image;
     }
-    const fs19 = await import('fs');
-    const data = fs19.readFileSync(image);
+    const fs20 = await import('fs');
+    const data = fs20.readFileSync(image);
     const base64 = data.toString("base64");
     const ext = image.split(".").pop()?.toLowerCase() || "png";
     const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
@@ -38063,10 +38063,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs17.mkdir(dir, { recursive: true });
+    await fs18.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2.join(dir, filename);
-    await fs17.writeFile(filePath, data);
+    await fs18.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -38077,7 +38077,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs17.readFile(location);
+      return await fs18.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -38087,7 +38087,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs17.unlink(location);
+      await fs18.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -38097,7 +38097,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs17.access(location);
+      await fs18.access(location);
       return true;
     } catch {
       return false;
@@ -38106,11 +38106,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs17.readdir(this.outputDir);
+    const files = await fs18.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2.join(this.outputDir, file);
       try {
-        const stat6 = await fs17.stat(filePath);
+        const stat6 = await fs18.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -38150,7 +38150,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs17.mkdir(this.outputDir, { recursive: true });
+      await fs18.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -38399,6 +38399,234 @@ var FileCustomToolStorage = class {
 };
 function createFileCustomToolStorage(config) {
   return new FileCustomToolStorage(config);
+}
+var STORAGE_VERSION = 1;
+var DEFAULT_USER_ID3 = "default";
+function getDefaultBaseDirectory6() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return join(appData, "oneringai", "users");
+    }
+  }
+  return join(homedir(), ".oneringai", "users");
+}
+function sanitizeUserId3(userId) {
+  if (!userId) {
+    return DEFAULT_USER_ID3;
+  }
+  return userId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || DEFAULT_USER_ID3;
+}
+function sanitizeId2(id) {
+  return id.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileRoutineDefinitionStorage = class {
+  baseDirectory;
+  prettyPrint;
+  constructor(config = {}) {
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory6();
+    this.prettyPrint = config.prettyPrint ?? true;
+  }
+  getUserDirectory(userId) {
+    const sanitizedId = sanitizeUserId3(userId);
+    return join(this.baseDirectory, sanitizedId, "routines");
+  }
+  getIndexPath(userId) {
+    return join(this.getUserDirectory(userId), "_index.json");
+  }
+  getRoutinePath(userId, sanitizedId) {
+    return join(this.getUserDirectory(userId), `${sanitizedId}.json`);
+  }
+  async save(userId, definition) {
+    const directory = this.getUserDirectory(userId);
+    const sanitized = sanitizeId2(definition.id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    await this.ensureDirectory(directory);
+    const stored = { version: STORAGE_VERSION, definition };
+    const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await promises.writeFile(tempPath, data, "utf-8");
+      await promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+    await this.updateIndex(userId, definition);
+  }
+  async load(userId, id) {
+    const sanitized = sanitizeId2(id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    try {
+      const data = await promises.readFile(filePath, "utf-8");
+      const stored = JSON.parse(data);
+      return stored.definition;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      if (error instanceof SyntaxError) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  async delete(userId, id) {
+    const sanitized = sanitizeId2(id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    try {
+      await promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await this.removeFromIndex(userId, id);
+  }
+  async exists(userId, id) {
+    const sanitized = sanitizeId2(id);
+    const filePath = this.getRoutinePath(userId, sanitized);
+    try {
+      await promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list(userId, options) {
+    const index = await this.loadIndex(userId);
+    let entries = [...index.routines];
+    if (options?.tags && options.tags.length > 0) {
+      entries = entries.filter((e) => {
+        const entryTags = e.tags ?? [];
+        return options.tags.some((t) => entryTags.includes(t));
+      });
+    }
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      entries = entries.filter(
+        (e) => e.name.toLowerCase().includes(searchLower) || e.description.toLowerCase().includes(searchLower)
+      );
+    }
+    entries.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    if (options?.offset) {
+      entries = entries.slice(options.offset);
+    }
+    if (options?.limit) {
+      entries = entries.slice(0, options.limit);
+    }
+    const results = [];
+    for (const entry of entries) {
+      const def = await this.load(userId, entry.id);
+      if (def) {
+        results.push(def);
+      }
+    }
+    return results;
+  }
+  getPath(userId) {
+    return this.getUserDirectory(userId);
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  async ensureDirectory(dir) {
+    try {
+      await promises.mkdir(dir, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  async loadIndex(userId) {
+    const indexPath = this.getIndexPath(userId);
+    try {
+      const data = await promises.readFile(indexPath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return await this.rebuildIndex(userId);
+      }
+      throw error;
+    }
+  }
+  async saveIndex(userId, index) {
+    const directory = this.getUserDirectory(userId);
+    const indexPath = this.getIndexPath(userId);
+    await this.ensureDirectory(directory);
+    index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(index, null, 2) : JSON.stringify(index);
+    await promises.writeFile(indexPath, data, "utf-8");
+  }
+  async updateIndex(userId, definition) {
+    const index = await this.loadIndex(userId);
+    const entry = this.definitionToIndexEntry(definition);
+    const existingIdx = index.routines.findIndex((e) => e.id === definition.id);
+    if (existingIdx >= 0) {
+      index.routines[existingIdx] = entry;
+    } else {
+      index.routines.push(entry);
+    }
+    await this.saveIndex(userId, index);
+  }
+  async removeFromIndex(userId, id) {
+    const index = await this.loadIndex(userId);
+    index.routines = index.routines.filter((e) => e.id !== id);
+    await this.saveIndex(userId, index);
+  }
+  definitionToIndexEntry(definition) {
+    return {
+      id: definition.id,
+      name: definition.name,
+      description: definition.description,
+      tags: definition.tags,
+      author: definition.author,
+      updatedAt: definition.updatedAt
+    };
+  }
+  /**
+   * Rebuild index by scanning directory for .json files (excluding _index.json).
+   * Returns empty index if directory doesn't exist.
+   */
+  async rebuildIndex(userId) {
+    const directory = this.getUserDirectory(userId);
+    const index = {
+      version: 1,
+      routines: [],
+      lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    let files;
+    try {
+      files = await promises.readdir(directory);
+    } catch {
+      return index;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".json") || file === "_index.json") continue;
+      try {
+        const data = await promises.readFile(join(directory, file), "utf-8");
+        const stored = JSON.parse(data);
+        if (stored.definition) {
+          index.routines.push(this.definitionToIndexEntry(stored.definition));
+        }
+      } catch {
+      }
+    }
+    if (index.routines.length > 0) {
+      await this.saveIndex(userId, index);
+    }
+    return index;
+  }
+};
+function createFileRoutineDefinitionStorage(config) {
+  return new FileRoutineDefinitionStorage(config);
 }
 
 // src/domain/entities/CustomToolDefinition.ts
@@ -39500,8 +39728,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs17.mkdir(this.directory, { recursive: true });
-      await fs17.chmod(this.directory, 448);
+      await fs18.mkdir(this.directory, { recursive: true });
+      await fs18.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -39517,13 +39745,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs17.writeFile(filePath, encrypted, "utf8");
-    await fs17.chmod(filePath, 384);
+    await fs18.writeFile(filePath, encrypted, "utf8");
+    await fs18.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs17.readFile(filePath, "utf8");
+      const encrypted = await fs18.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -39532,7 +39760,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs17.unlink(filePath);
+        await fs18.unlink(filePath);
       } catch {
       }
       return null;
@@ -39541,7 +39769,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs17.unlink(filePath);
+      await fs18.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -39551,7 +39779,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs17.access(filePath);
+      await fs18.access(filePath);
       return true;
     } catch {
       return false;
@@ -39562,7 +39790,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs17.readdir(this.directory);
+      const files = await fs18.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -39573,10 +39801,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs17.readdir(this.directory);
+      const files = await fs18.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs17.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs18.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -40024,14 +40252,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs17.writeFile(filePath, json, "utf8");
-    await fs17.chmod(filePath, 384);
+    await fs18.writeFile(filePath, json, "utf8");
+    await fs18.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs17.readFile(filePath, "utf8");
+      const json = await fs18.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -40044,7 +40272,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs17.unlink(filePath);
+      await fs18.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -40058,7 +40286,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs17.access(filePath);
+      await fs18.access(filePath);
       return true;
     } catch {
       return false;
@@ -40084,13 +40312,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs17.readdir(this.directory);
+      const files = await fs18.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs17.unlink(path2.join(this.directory, f)).catch(() => {
+          (f) => fs18.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -40117,8 +40345,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs17.mkdir(this.directory, { recursive: true });
-      await fs17.chmod(this.directory, 448);
+      await fs18.mkdir(this.directory, { recursive: true });
+      await fs18.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -40129,7 +40357,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs17.readFile(this.indexPath, "utf8");
+      const json = await fs18.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -40147,8 +40375,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs17.writeFile(this.indexPath, json, "utf8");
-    await fs17.chmod(this.indexPath, 384);
+    await fs18.writeFile(this.indexPath, json, "utf8");
+    await fs18.chmod(this.indexPath, 384);
   }
 };
 
@@ -42603,8 +42831,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs18.existsSync(filePath)) {
-      fs18.unlinkSync(filePath);
+    if (fs19.existsSync(filePath)) {
+      fs19.unlinkSync(filePath);
     }
   } catch {
   }
@@ -42655,7 +42883,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs18.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs19.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -42672,14 +42900,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs18.existsSync(tempFile) && fs18.statSync(tempFile).size > 0) {
+      if (fs19.existsSync(tempFile) && fs19.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs18.existsSync(tempFile) && fs18.statSync(tempFile).size > 0) {
+      if (fs19.existsSync(tempFile) && fs19.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -42706,7 +42934,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs18.existsSync(tempFile) && fs18.statSync(tempFile).size > 0) {
+    if (fs19.existsSync(tempFile) && fs19.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -42719,7 +42947,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs18.readFileSync(filePath);
+    const imageBuffer = fs19.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -48945,6 +49173,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

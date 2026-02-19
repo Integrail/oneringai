@@ -629,6 +629,7 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
 | `sessions` | `(agentId, ctx?) => IContextStorage` | — | `AgentContextNextGen` constructor |
 | `persistentInstructions` | `(agentId, ctx?) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | `PersistentInstructionsPluginNextGen` |
 | `workingMemory` | `(ctx?) => IMemoryStorage` | `InMemoryStorage` | `WorkingMemoryPluginNextGen` |
+| `routineDefinitions` | `(ctx?) => IRoutineDefinitionStorage` | `FileRoutineDefinitionStorage` | Routine definition persistence |
 
 **Individual access:**
 

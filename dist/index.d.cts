@@ -1556,6 +1556,461 @@ interface IUserInfoStorage {
 }
 
 /**
+ * Task and Plan entities for TaskAgent
+ *
+ * Defines the data structures for task-based autonomous agents.
+ */
+/**
+ * Task status lifecycle
+ */
+type TaskStatus = 'pending' | 'blocked' | 'in_progress' | 'waiting_external' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+/**
+ * Terminal statuses - task will not progress further
+ */
+declare const TERMINAL_TASK_STATUSES: TaskStatus[];
+/**
+ * Check if a task status is terminal (task will not progress further)
+ */
+declare function isTerminalStatus(status: TaskStatus): boolean;
+/**
+ * Plan status
+ */
+type PlanStatus = 'pending' | 'running' | 'suspended' | 'completed' | 'failed' | 'cancelled';
+/**
+ * Condition operators for conditional task execution
+ */
+type ConditionOperator = 'exists' | 'not_exists' | 'equals' | 'contains' | 'truthy' | 'greater_than' | 'less_than';
+/**
+ * Task condition - evaluated before execution
+ */
+interface TaskCondition {
+    memoryKey: string;
+    operator: ConditionOperator;
+    value?: unknown;
+    onFalse: 'skip' | 'fail' | 'wait';
+}
+/**
+ * External dependency configuration
+ */
+interface ExternalDependency {
+    type: 'webhook' | 'poll' | 'manual' | 'scheduled';
+    /** For webhook: unique ID to match incoming webhook */
+    webhookId?: string;
+    /** For poll: how to check if complete */
+    pollConfig?: {
+        toolName: string;
+        toolArgs: Record<string, unknown>;
+        intervalMs: number;
+        maxAttempts: number;
+    };
+    /** For scheduled: when to resume */
+    scheduledAt?: number;
+    /** For manual: description of what's needed */
+    manualDescription?: string;
+    /** Timeout for all types */
+    timeoutMs?: number;
+    /** Current state */
+    state: 'waiting' | 'received' | 'timeout';
+    /** Data received from external source */
+    receivedData?: unknown;
+    receivedAt?: number;
+}
+/**
+ * Task execution settings
+ */
+interface TaskExecution {
+    /** Can run in parallel with other parallel tasks */
+    parallel?: boolean;
+    /** Max concurrent if this spawns sub-work */
+    maxConcurrency?: number;
+    /** Priority (higher = executed first) */
+    priority?: number;
+    /**
+     * If true (default), re-check condition immediately before LLM call
+     * to protect against race conditions when parallel tasks modify memory.
+     * Set to false to skip re-check for performance if you know condition won't change.
+     */
+    raceProtection?: boolean;
+}
+/**
+ * Task completion validation settings
+ *
+ * Used to verify that a task actually achieved its goal before marking it complete.
+ * Supports multiple validation approaches:
+ * - Programmatic checks (memory keys, hooks)
+ * - LLM self-reflection with completeness scoring
+ * - Natural language criteria evaluation
+ */
+interface TaskValidation {
+    /**
+     * Natural language completion criteria.
+     * These are evaluated by LLM self-reflection to determine if the task is complete.
+     * Examples:
+     * - "The response contains at least 3 specific examples"
+     * - "User's email has been validated and stored in memory"
+     * - "All requested data fields are present in the output"
+     *
+     * This is the RECOMMENDED approach for flexible, intelligent validation.
+     */
+    completionCriteria?: string[];
+    /**
+     * Minimum completeness score (0-100) to consider task successful.
+     * LLM self-reflection returns a score; if below this threshold:
+     * - If requireUserApproval is set, ask user
+     * - Otherwise, follow the mode setting (strict = fail, warn = continue)
+     * Default: 80
+     */
+    minCompletionScore?: number;
+    /**
+     * When to require user approval:
+     * - 'never': Never ask user, use automated decision (default)
+     * - 'uncertain': Ask user when score is between minCompletionScore and minCompletionScore + 15
+     * - 'always': Always ask user to confirm task completion
+     */
+    requireUserApproval?: 'never' | 'uncertain' | 'always';
+    /**
+     * Memory keys that must exist after task completion.
+     * If the task should store data in memory, list the required keys here.
+     * This is a hard requirement checked BEFORE LLM reflection.
+     */
+    requiredMemoryKeys?: string[];
+    /**
+     * Custom validation function name (registered via validateTask hook).
+     * The hook will be called with this identifier to dispatch to the right validator.
+     * Runs AFTER LLM reflection, can override the result.
+     */
+    customValidator?: string;
+    /**
+     * Validation mode:
+     * - 'strict': Validation failure marks task as failed (default)
+     * - 'warn': Validation failure logs warning but task still completes
+     */
+    mode?: 'strict' | 'warn';
+    /**
+     * Skip LLM self-reflection validation.
+     * Set to true if you only want programmatic validation (memory keys, hooks).
+     * Default: false (reflection is enabled when completionCriteria is set)
+     */
+    skipReflection?: boolean;
+}
+/**
+ * Result of task validation (returned by LLM reflection)
+ */
+interface TaskValidationResult {
+    /** Whether the task is considered complete */
+    isComplete: boolean;
+    /** Completeness score from 0-100 */
+    completionScore: number;
+    /** LLM's explanation of why the task is/isn't complete */
+    explanation: string;
+    /** Per-criterion evaluation results */
+    criteriaResults?: Array<{
+        criterion: string;
+        met: boolean;
+        evidence?: string;
+    }>;
+    /** Whether user approval is needed */
+    requiresUserApproval: boolean;
+    /** Reason for requiring user approval */
+    approvalReason?: string;
+}
+/**
+ * A single unit of work
+ */
+interface Task {
+    id: string;
+    name: string;
+    description: string;
+    status: TaskStatus;
+    /** Tasks that must complete before this one (task IDs) */
+    dependsOn: string[];
+    /** External dependency (if waiting on external event) */
+    externalDependency?: ExternalDependency;
+    /** Condition for execution */
+    condition?: TaskCondition;
+    /** Execution settings */
+    execution?: TaskExecution;
+    /** Completion validation settings */
+    validation?: TaskValidation;
+    /** Tool names the LLM should prefer for this task (advisory, not enforced) */
+    suggestedTools?: string[];
+    /** Optional expected output description */
+    expectedOutput?: string;
+    /** Result after completion */
+    result?: {
+        success: boolean;
+        output?: unknown;
+        error?: string;
+        /** Validation score (0-100) if validation was performed */
+        validationScore?: number;
+        /** Explanation of validation result */
+        validationExplanation?: string;
+    };
+    /** Timestamps */
+    createdAt: number;
+    startedAt?: number;
+    completedAt?: number;
+    lastUpdatedAt: number;
+    /** Retry tracking */
+    attempts: number;
+    maxAttempts: number;
+    /** Metadata for extensions */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Input for creating a task
+ */
+interface TaskInput {
+    id?: string;
+    name: string;
+    description: string;
+    dependsOn?: string[];
+    externalDependency?: ExternalDependency;
+    condition?: TaskCondition;
+    execution?: TaskExecution;
+    suggestedTools?: string[];
+    validation?: TaskValidation;
+    expectedOutput?: string;
+    maxAttempts?: number;
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Plan concurrency settings
+ */
+interface PlanConcurrency {
+    maxParallelTasks: number;
+    strategy: 'fifo' | 'priority' | 'shortest-first';
+    /**
+     * How to handle failures when executing tasks in parallel
+     * - 'fail-fast': Stop on first failure (Promise.all behavior) - DEFAULT
+     * - 'continue': Continue other tasks on failure, mark failed ones
+     * - 'fail-all': Wait for all to complete, then report all failures together
+     */
+    failureMode?: 'fail-fast' | 'continue' | 'fail-all';
+}
+/**
+ * Execution plan - a goal with steps to achieve it
+ */
+interface Plan {
+    id: string;
+    goal: string;
+    context?: string;
+    tasks: Task[];
+    /** Concurrency settings */
+    concurrency?: PlanConcurrency;
+    /** Can agent modify the plan? */
+    allowDynamicTasks: boolean;
+    /** Plan status */
+    status: PlanStatus;
+    /** Why is the plan suspended? */
+    suspendedReason?: {
+        type: 'waiting_external' | 'manual_pause' | 'error';
+        taskId?: string;
+        message?: string;
+    };
+    /** Timestamps */
+    createdAt: number;
+    startedAt?: number;
+    completedAt?: number;
+    lastUpdatedAt: number;
+    /** For resume: which task to continue from */
+    currentTaskId?: string;
+    /** Metadata */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Input for creating a plan
+ */
+interface PlanInput {
+    goal: string;
+    context?: string;
+    tasks: TaskInput[];
+    concurrency?: PlanConcurrency;
+    allowDynamicTasks?: boolean;
+    metadata?: Record<string, unknown>;
+    /** Skip dependency cycle detection (default: false) */
+    skipCycleCheck?: boolean;
+}
+/**
+ * Memory access interface for condition evaluation
+ */
+interface ConditionMemoryAccess {
+    get(key: string): Promise<unknown>;
+}
+/**
+ * Create a task with defaults
+ */
+declare function createTask(input: TaskInput): Task;
+/**
+ * Create a plan with tasks
+ * @throws {DependencyCycleError} If circular dependencies detected (unless skipCycleCheck is true)
+ */
+declare function createPlan(input: PlanInput): Plan;
+/**
+ * Check if a task can be executed (dependencies met, status is pending)
+ */
+declare function canTaskExecute(task: Task, allTasks: Task[]): boolean;
+/**
+ * Get the next tasks that can be executed
+ */
+declare function getNextExecutableTasks(plan: Plan): Task[];
+/**
+ * Evaluate a task condition against memory
+ */
+declare function evaluateCondition(condition: TaskCondition, memory: ConditionMemoryAccess): Promise<boolean>;
+/**
+ * Update task status and timestamps
+ */
+declare function updateTaskStatus(task: Task, status: TaskStatus): Task;
+/**
+ * Check if a task is blocked by dependencies
+ */
+declare function isTaskBlocked(task: Task, allTasks: Task[]): boolean;
+/**
+ * Get the dependency tasks for a task
+ */
+declare function getTaskDependencies(task: Task, allTasks: Task[]): Task[];
+/**
+ * Resolve task name dependencies to task IDs
+ * Modifies taskInputs in place
+ */
+declare function resolveDependencies(taskInputs: TaskInput[], tasks: Task[]): void;
+/**
+ * Detect dependency cycles in tasks using depth-first search
+ * @param tasks Array of tasks with resolved dependencies (IDs, not names)
+ * @returns Array of task IDs forming the cycle (e.g., ['A', 'B', 'C', 'A']), or null if no cycle
+ */
+declare function detectDependencyCycle(tasks: Task[]): string[] | null;
+
+/**
+ * Routine entities for reusable task-based workflows.
+ *
+ * A RoutineDefinition is a template (recipe) that can be executed multiple times.
+ * A RoutineExecution is a running instance backed by an existing Plan.
+ */
+
+/**
+ * A reusable routine definition (template).
+ *
+ * Defines what to do but has no runtime state.
+ * Multiple RoutineExecutions can be created from one RoutineDefinition.
+ */
+interface RoutineDefinition {
+    /** Unique routine identifier */
+    id: string;
+    /** Human-readable name */
+    name: string;
+    /** Description of what this routine accomplishes */
+    description: string;
+    /** Version string for tracking routine evolution */
+    version?: string;
+    /** Task templates in execution order (dependencies may override order) */
+    tasks: TaskInput[];
+    /** Tool names that must be available before starting */
+    requiredTools?: string[];
+    /** Plugin names that must be enabled before starting (e.g. 'working_memory') */
+    requiredPlugins?: string[];
+    /** Additional instructions injected into system prompt when routine is active */
+    instructions?: string;
+    /** Concurrency settings for task execution */
+    concurrency?: PlanConcurrency;
+    /** Whether the LLM can dynamically add/modify tasks during execution. Default: false */
+    allowDynamicTasks?: boolean;
+    /** Tags for categorization and filtering */
+    tags?: string[];
+    /** Author/creator */
+    author?: string;
+    /** When the definition was created (ISO string) */
+    createdAt: string;
+    /** When the definition was last updated (ISO string) */
+    updatedAt: string;
+    /** Metadata for extensions */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Input for creating a RoutineDefinition.
+ * id, createdAt, updatedAt are auto-generated if not provided.
+ */
+interface RoutineDefinitionInput {
+    id?: string;
+    name: string;
+    description: string;
+    version?: string;
+    tasks: TaskInput[];
+    requiredTools?: string[];
+    requiredPlugins?: string[];
+    instructions?: string;
+    concurrency?: PlanConcurrency;
+    allowDynamicTasks?: boolean;
+    tags?: string[];
+    author?: string;
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Execution status for a routine run
+ */
+type RoutineExecutionStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+/**
+ * Runtime state when executing a routine.
+ * Created from a RoutineDefinition, delegates task management to Plan.
+ */
+interface RoutineExecution {
+    /** Unique execution ID */
+    id: string;
+    /** Reference to the routine definition ID */
+    routineId: string;
+    /** The live plan managing task execution (created via createPlan) */
+    plan: Plan;
+    /** Current execution status */
+    status: RoutineExecutionStatus;
+    /** Overall progress (0-100) based on completed tasks */
+    progress: number;
+    /** Timestamps */
+    startedAt?: number;
+    completedAt?: number;
+    lastUpdatedAt: number;
+    /** Error message if failed */
+    error?: string;
+    /** Metadata */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Create a RoutineDefinition with defaults.
+ * Validates task dependency references and detects cycles.
+ */
+declare function createRoutineDefinition(input: RoutineDefinitionInput): RoutineDefinition;
+/**
+ * Create a RoutineExecution from a RoutineDefinition.
+ * Instantiates all tasks into a Plan via createPlan().
+ */
+declare function createRoutineExecution(definition: RoutineDefinition): RoutineExecution;
+/**
+ * Compute routine progress (0-100) from plan task statuses.
+ */
+declare function getRoutineProgress(execution: RoutineExecution): number;
+
+/**
+ * IRoutineDefinitionStorage - Storage interface for routine definitions.
+ *
+ * Follows the same userId-optional pattern as ICustomToolStorage and IUserInfoStorage.
+ * When userId is undefined, defaults to 'default' user in storage implementation.
+ */
+
+interface IRoutineDefinitionStorage {
+    save(userId: string | undefined, definition: RoutineDefinition): Promise<void>;
+    load(userId: string | undefined, id: string): Promise<RoutineDefinition | null>;
+    delete(userId: string | undefined, id: string): Promise<void>;
+    exists(userId: string | undefined, id: string): Promise<boolean>;
+    list(userId: string | undefined, options?: {
+        tags?: string[];
+        search?: string;
+        limit?: number;
+        offset?: number;
+    }): Promise<RoutineDefinition[]>;
+    getPath(userId: string | undefined): string;
+}
+
+/**
  * StorageRegistry - Centralized storage backend registry
  *
  * Provides a single point of configuration for all storage backends
@@ -1616,6 +2071,7 @@ interface StorageConfig {
     persistentInstructions: (agentId: string, context?: StorageContext) => IPersistentInstructionsStorage;
     workingMemory: (context?: StorageContext) => IMemoryStorage;
     userInfo: (context?: StorageContext) => IUserInfoStorage;
+    routineDefinitions: (context?: StorageContext) => IRoutineDefinitionStorage;
 }
 declare class StorageRegistry {
     /** Internal storage map */
@@ -4257,440 +4713,6 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgentEvents> implements IDi
     clearConversation(reason?: string): void;
     destroy(): void;
 }
-
-/**
- * Task and Plan entities for TaskAgent
- *
- * Defines the data structures for task-based autonomous agents.
- */
-/**
- * Task status lifecycle
- */
-type TaskStatus = 'pending' | 'blocked' | 'in_progress' | 'waiting_external' | 'completed' | 'failed' | 'skipped' | 'cancelled';
-/**
- * Terminal statuses - task will not progress further
- */
-declare const TERMINAL_TASK_STATUSES: TaskStatus[];
-/**
- * Check if a task status is terminal (task will not progress further)
- */
-declare function isTerminalStatus(status: TaskStatus): boolean;
-/**
- * Plan status
- */
-type PlanStatus = 'pending' | 'running' | 'suspended' | 'completed' | 'failed' | 'cancelled';
-/**
- * Condition operators for conditional task execution
- */
-type ConditionOperator = 'exists' | 'not_exists' | 'equals' | 'contains' | 'truthy' | 'greater_than' | 'less_than';
-/**
- * Task condition - evaluated before execution
- */
-interface TaskCondition {
-    memoryKey: string;
-    operator: ConditionOperator;
-    value?: unknown;
-    onFalse: 'skip' | 'fail' | 'wait';
-}
-/**
- * External dependency configuration
- */
-interface ExternalDependency {
-    type: 'webhook' | 'poll' | 'manual' | 'scheduled';
-    /** For webhook: unique ID to match incoming webhook */
-    webhookId?: string;
-    /** For poll: how to check if complete */
-    pollConfig?: {
-        toolName: string;
-        toolArgs: Record<string, unknown>;
-        intervalMs: number;
-        maxAttempts: number;
-    };
-    /** For scheduled: when to resume */
-    scheduledAt?: number;
-    /** For manual: description of what's needed */
-    manualDescription?: string;
-    /** Timeout for all types */
-    timeoutMs?: number;
-    /** Current state */
-    state: 'waiting' | 'received' | 'timeout';
-    /** Data received from external source */
-    receivedData?: unknown;
-    receivedAt?: number;
-}
-/**
- * Task execution settings
- */
-interface TaskExecution {
-    /** Can run in parallel with other parallel tasks */
-    parallel?: boolean;
-    /** Max concurrent if this spawns sub-work */
-    maxConcurrency?: number;
-    /** Priority (higher = executed first) */
-    priority?: number;
-    /**
-     * If true (default), re-check condition immediately before LLM call
-     * to protect against race conditions when parallel tasks modify memory.
-     * Set to false to skip re-check for performance if you know condition won't change.
-     */
-    raceProtection?: boolean;
-}
-/**
- * Task completion validation settings
- *
- * Used to verify that a task actually achieved its goal before marking it complete.
- * Supports multiple validation approaches:
- * - Programmatic checks (memory keys, hooks)
- * - LLM self-reflection with completeness scoring
- * - Natural language criteria evaluation
- */
-interface TaskValidation {
-    /**
-     * Natural language completion criteria.
-     * These are evaluated by LLM self-reflection to determine if the task is complete.
-     * Examples:
-     * - "The response contains at least 3 specific examples"
-     * - "User's email has been validated and stored in memory"
-     * - "All requested data fields are present in the output"
-     *
-     * This is the RECOMMENDED approach for flexible, intelligent validation.
-     */
-    completionCriteria?: string[];
-    /**
-     * Minimum completeness score (0-100) to consider task successful.
-     * LLM self-reflection returns a score; if below this threshold:
-     * - If requireUserApproval is set, ask user
-     * - Otherwise, follow the mode setting (strict = fail, warn = continue)
-     * Default: 80
-     */
-    minCompletionScore?: number;
-    /**
-     * When to require user approval:
-     * - 'never': Never ask user, use automated decision (default)
-     * - 'uncertain': Ask user when score is between minCompletionScore and minCompletionScore + 15
-     * - 'always': Always ask user to confirm task completion
-     */
-    requireUserApproval?: 'never' | 'uncertain' | 'always';
-    /**
-     * Memory keys that must exist after task completion.
-     * If the task should store data in memory, list the required keys here.
-     * This is a hard requirement checked BEFORE LLM reflection.
-     */
-    requiredMemoryKeys?: string[];
-    /**
-     * Custom validation function name (registered via validateTask hook).
-     * The hook will be called with this identifier to dispatch to the right validator.
-     * Runs AFTER LLM reflection, can override the result.
-     */
-    customValidator?: string;
-    /**
-     * Validation mode:
-     * - 'strict': Validation failure marks task as failed (default)
-     * - 'warn': Validation failure logs warning but task still completes
-     */
-    mode?: 'strict' | 'warn';
-    /**
-     * Skip LLM self-reflection validation.
-     * Set to true if you only want programmatic validation (memory keys, hooks).
-     * Default: false (reflection is enabled when completionCriteria is set)
-     */
-    skipReflection?: boolean;
-}
-/**
- * Result of task validation (returned by LLM reflection)
- */
-interface TaskValidationResult {
-    /** Whether the task is considered complete */
-    isComplete: boolean;
-    /** Completeness score from 0-100 */
-    completionScore: number;
-    /** LLM's explanation of why the task is/isn't complete */
-    explanation: string;
-    /** Per-criterion evaluation results */
-    criteriaResults?: Array<{
-        criterion: string;
-        met: boolean;
-        evidence?: string;
-    }>;
-    /** Whether user approval is needed */
-    requiresUserApproval: boolean;
-    /** Reason for requiring user approval */
-    approvalReason?: string;
-}
-/**
- * A single unit of work
- */
-interface Task {
-    id: string;
-    name: string;
-    description: string;
-    status: TaskStatus;
-    /** Tasks that must complete before this one (task IDs) */
-    dependsOn: string[];
-    /** External dependency (if waiting on external event) */
-    externalDependency?: ExternalDependency;
-    /** Condition for execution */
-    condition?: TaskCondition;
-    /** Execution settings */
-    execution?: TaskExecution;
-    /** Completion validation settings */
-    validation?: TaskValidation;
-    /** Tool names the LLM should prefer for this task (advisory, not enforced) */
-    suggestedTools?: string[];
-    /** Optional expected output description */
-    expectedOutput?: string;
-    /** Result after completion */
-    result?: {
-        success: boolean;
-        output?: unknown;
-        error?: string;
-        /** Validation score (0-100) if validation was performed */
-        validationScore?: number;
-        /** Explanation of validation result */
-        validationExplanation?: string;
-    };
-    /** Timestamps */
-    createdAt: number;
-    startedAt?: number;
-    completedAt?: number;
-    lastUpdatedAt: number;
-    /** Retry tracking */
-    attempts: number;
-    maxAttempts: number;
-    /** Metadata for extensions */
-    metadata?: Record<string, unknown>;
-}
-/**
- * Input for creating a task
- */
-interface TaskInput {
-    id?: string;
-    name: string;
-    description: string;
-    dependsOn?: string[];
-    externalDependency?: ExternalDependency;
-    condition?: TaskCondition;
-    execution?: TaskExecution;
-    suggestedTools?: string[];
-    validation?: TaskValidation;
-    expectedOutput?: string;
-    maxAttempts?: number;
-    metadata?: Record<string, unknown>;
-}
-/**
- * Plan concurrency settings
- */
-interface PlanConcurrency {
-    maxParallelTasks: number;
-    strategy: 'fifo' | 'priority' | 'shortest-first';
-    /**
-     * How to handle failures when executing tasks in parallel
-     * - 'fail-fast': Stop on first failure (Promise.all behavior) - DEFAULT
-     * - 'continue': Continue other tasks on failure, mark failed ones
-     * - 'fail-all': Wait for all to complete, then report all failures together
-     */
-    failureMode?: 'fail-fast' | 'continue' | 'fail-all';
-}
-/**
- * Execution plan - a goal with steps to achieve it
- */
-interface Plan {
-    id: string;
-    goal: string;
-    context?: string;
-    tasks: Task[];
-    /** Concurrency settings */
-    concurrency?: PlanConcurrency;
-    /** Can agent modify the plan? */
-    allowDynamicTasks: boolean;
-    /** Plan status */
-    status: PlanStatus;
-    /** Why is the plan suspended? */
-    suspendedReason?: {
-        type: 'waiting_external' | 'manual_pause' | 'error';
-        taskId?: string;
-        message?: string;
-    };
-    /** Timestamps */
-    createdAt: number;
-    startedAt?: number;
-    completedAt?: number;
-    lastUpdatedAt: number;
-    /** For resume: which task to continue from */
-    currentTaskId?: string;
-    /** Metadata */
-    metadata?: Record<string, unknown>;
-}
-/**
- * Input for creating a plan
- */
-interface PlanInput {
-    goal: string;
-    context?: string;
-    tasks: TaskInput[];
-    concurrency?: PlanConcurrency;
-    allowDynamicTasks?: boolean;
-    metadata?: Record<string, unknown>;
-    /** Skip dependency cycle detection (default: false) */
-    skipCycleCheck?: boolean;
-}
-/**
- * Memory access interface for condition evaluation
- */
-interface ConditionMemoryAccess {
-    get(key: string): Promise<unknown>;
-}
-/**
- * Create a task with defaults
- */
-declare function createTask(input: TaskInput): Task;
-/**
- * Create a plan with tasks
- * @throws {DependencyCycleError} If circular dependencies detected (unless skipCycleCheck is true)
- */
-declare function createPlan(input: PlanInput): Plan;
-/**
- * Check if a task can be executed (dependencies met, status is pending)
- */
-declare function canTaskExecute(task: Task, allTasks: Task[]): boolean;
-/**
- * Get the next tasks that can be executed
- */
-declare function getNextExecutableTasks(plan: Plan): Task[];
-/**
- * Evaluate a task condition against memory
- */
-declare function evaluateCondition(condition: TaskCondition, memory: ConditionMemoryAccess): Promise<boolean>;
-/**
- * Update task status and timestamps
- */
-declare function updateTaskStatus(task: Task, status: TaskStatus): Task;
-/**
- * Check if a task is blocked by dependencies
- */
-declare function isTaskBlocked(task: Task, allTasks: Task[]): boolean;
-/**
- * Get the dependency tasks for a task
- */
-declare function getTaskDependencies(task: Task, allTasks: Task[]): Task[];
-/**
- * Resolve task name dependencies to task IDs
- * Modifies taskInputs in place
- */
-declare function resolveDependencies(taskInputs: TaskInput[], tasks: Task[]): void;
-/**
- * Detect dependency cycles in tasks using depth-first search
- * @param tasks Array of tasks with resolved dependencies (IDs, not names)
- * @returns Array of task IDs forming the cycle (e.g., ['A', 'B', 'C', 'A']), or null if no cycle
- */
-declare function detectDependencyCycle(tasks: Task[]): string[] | null;
-
-/**
- * Routine entities for reusable task-based workflows.
- *
- * A RoutineDefinition is a template (recipe) that can be executed multiple times.
- * A RoutineExecution is a running instance backed by an existing Plan.
- */
-
-/**
- * A reusable routine definition (template).
- *
- * Defines what to do but has no runtime state.
- * Multiple RoutineExecutions can be created from one RoutineDefinition.
- */
-interface RoutineDefinition {
-    /** Unique routine identifier */
-    id: string;
-    /** Human-readable name */
-    name: string;
-    /** Description of what this routine accomplishes */
-    description: string;
-    /** Version string for tracking routine evolution */
-    version?: string;
-    /** Task templates in execution order (dependencies may override order) */
-    tasks: TaskInput[];
-    /** Tool names that must be available before starting */
-    requiredTools?: string[];
-    /** Plugin names that must be enabled before starting (e.g. 'working_memory') */
-    requiredPlugins?: string[];
-    /** Additional instructions injected into system prompt when routine is active */
-    instructions?: string;
-    /** Concurrency settings for task execution */
-    concurrency?: PlanConcurrency;
-    /** Whether the LLM can dynamically add/modify tasks during execution. Default: false */
-    allowDynamicTasks?: boolean;
-    /** Tags for categorization and filtering */
-    tags?: string[];
-    /** Author/creator */
-    author?: string;
-    /** When the definition was created (ISO string) */
-    createdAt: string;
-    /** When the definition was last updated (ISO string) */
-    updatedAt: string;
-    /** Metadata for extensions */
-    metadata?: Record<string, unknown>;
-}
-/**
- * Input for creating a RoutineDefinition.
- * id, createdAt, updatedAt are auto-generated if not provided.
- */
-interface RoutineDefinitionInput {
-    id?: string;
-    name: string;
-    description: string;
-    version?: string;
-    tasks: TaskInput[];
-    requiredTools?: string[];
-    requiredPlugins?: string[];
-    instructions?: string;
-    concurrency?: PlanConcurrency;
-    allowDynamicTasks?: boolean;
-    tags?: string[];
-    author?: string;
-    metadata?: Record<string, unknown>;
-}
-/**
- * Execution status for a routine run
- */
-type RoutineExecutionStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-/**
- * Runtime state when executing a routine.
- * Created from a RoutineDefinition, delegates task management to Plan.
- */
-interface RoutineExecution {
-    /** Unique execution ID */
-    id: string;
-    /** Reference to the routine definition ID */
-    routineId: string;
-    /** The live plan managing task execution (created via createPlan) */
-    plan: Plan;
-    /** Current execution status */
-    status: RoutineExecutionStatus;
-    /** Overall progress (0-100) based on completed tasks */
-    progress: number;
-    /** Timestamps */
-    startedAt?: number;
-    completedAt?: number;
-    lastUpdatedAt: number;
-    /** Error message if failed */
-    error?: string;
-    /** Metadata */
-    metadata?: Record<string, unknown>;
-}
-/**
- * Create a RoutineDefinition with defaults.
- * Validates task dependency references and detects cycles.
- */
-declare function createRoutineDefinition(input: RoutineDefinitionInput): RoutineDefinition;
-/**
- * Create a RoutineExecution from a RoutineDefinition.
- * Instantiates all tasks into a Plan via createPlan().
- */
-declare function createRoutineExecution(definition: RoutineDefinition): RoutineExecution;
-/**
- * Compute routine progress (0-100) from plan task statuses.
- */
-declare function getRoutineProgress(execution: RoutineExecution): number;
 
 /**
  * Routine Execution Runner
@@ -10069,6 +10091,70 @@ declare class FileUserInfoStorage implements IUserInfoStorage {
 }
 
 /**
+ * FileRoutineDefinitionStorage - File-based storage for routine definitions.
+ *
+ * Stores routines as JSON files on disk with per-user isolation.
+ * Path: ~/.oneringai/users/<userId>/routines/<sanitized-id>.json
+ *
+ * Features:
+ * - Per-user isolation (multi-tenant safe)
+ * - Cross-platform path handling
+ * - Safe ID sanitization
+ * - Atomic file operations (write to .tmp then rename)
+ * - Per-user index file for fast listing/filtering
+ * - Index auto-rebuild if missing
+ */
+
+/**
+ * Configuration for FileRoutineDefinitionStorage
+ */
+interface FileRoutineDefinitionStorageConfig {
+    /** Override the base directory (default: ~/.oneringai/users) */
+    baseDirectory?: string;
+    /** Pretty-print JSON (default: true) */
+    prettyPrint?: boolean;
+}
+/**
+ * File-based storage for routine definitions.
+ *
+ * Single instance handles all users. UserId is passed to each method.
+ */
+declare class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
+    private readonly baseDirectory;
+    private readonly prettyPrint;
+    constructor(config?: FileRoutineDefinitionStorageConfig);
+    private getUserDirectory;
+    private getIndexPath;
+    private getRoutinePath;
+    save(userId: string | undefined, definition: RoutineDefinition): Promise<void>;
+    load(userId: string | undefined, id: string): Promise<RoutineDefinition | null>;
+    delete(userId: string | undefined, id: string): Promise<void>;
+    exists(userId: string | undefined, id: string): Promise<boolean>;
+    list(userId: string | undefined, options?: {
+        tags?: string[];
+        search?: string;
+        limit?: number;
+        offset?: number;
+    }): Promise<RoutineDefinition[]>;
+    getPath(userId: string | undefined): string;
+    private ensureDirectory;
+    private loadIndex;
+    private saveIndex;
+    private updateIndex;
+    private removeFromIndex;
+    private definitionToIndexEntry;
+    /**
+     * Rebuild index by scanning directory for .json files (excluding _index.json).
+     * Returns empty index if directory doesn't exist.
+     */
+    private rebuildIndex;
+}
+/**
+ * Create a FileRoutineDefinitionStorage with default configuration
+ */
+declare function createFileRoutineDefinitionStorage(config?: FileRoutineDefinitionStorageConfig): FileRoutineDefinitionStorage;
+
+/**
  * Video Model Registry
  *
  * Comprehensive registry of video generation models with capabilities and pricing.
@@ -13728,7 +13814,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-19T18:27:42.113Z
+ * Generated at: 2026-02-19T21:06:04.757Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -14329,4 +14415,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, type CustomToolDefinition, type CustomToolListOptions, type CustomToolMetaToolsOptions, type CustomToolMetadata, type CustomToolSummary, type CustomToolTestCase, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DesktopGetCursorResult, type DesktopGetScreenSizeResult, type DesktopKeyboardKeyArgs, type DesktopKeyboardKeyResult, type DesktopKeyboardTypeArgs, type DesktopKeyboardTypeResult, type DesktopMouseClickArgs, type DesktopMouseClickResult, type DesktopMouseDragArgs, type DesktopMouseDragResult, type DesktopMouseMoveArgs, type DesktopMouseMoveResult, type DesktopMouseScrollArgs, type DesktopMouseScrollResult, type DesktopPoint, type DesktopScreenSize, type DesktopScreenshot, type DesktopScreenshotArgs, type DesktopScreenshotResult, type DesktopToolConfig, type DesktopToolName, type DesktopWindow, type DesktopWindowFocusArgs, type DesktopWindowFocusResult, type DesktopWindowListResult, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, type ExecuteRoutineOptions, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileCustomToolStorage, type FileCustomToolStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileStorage, type FileStorageConfig, FileUserInfoStorage, type FileUserInfoStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type HydrateOptions, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type ICustomToolStorage, type IDesktopDriver, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IUserInfoStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type MouseButton, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, NutTreeDriver, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, type RoutineDefinition, type RoutineDefinitionInput, type RoutineExecution, type RoutineExecutionStatus, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedUserInfoState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StorageConfig, type StorageContext, StorageRegistry, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, type ToolSource, ToolTimeoutError, type TransportConfig, TruncateCompactor, type UserInfoEntry, type UserInfoPluginConfig, UserInfoPluginNextGen, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, type ValidationContext, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isExcludedExtension, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, type AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, type CompactionContext, type CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, type ConsolidationResult, Content, type ContextBudget$1 as ContextBudget, type ContextEvents, type ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, type ContextSessionMetadata, type ContextSessionSummary, type ContextStorageListOptions, type ConversationMessage, type CreateConnectorOptions, type CustomToolDefinition, type CustomToolListOptions, type CustomToolMetaToolsOptions, type CustomToolMetadata, type CustomToolSummary, type CustomToolTestCase, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DesktopGetCursorResult, type DesktopGetScreenSizeResult, type DesktopKeyboardKeyArgs, type DesktopKeyboardKeyResult, type DesktopKeyboardTypeArgs, type DesktopKeyboardTypeResult, type DesktopMouseClickArgs, type DesktopMouseClickResult, type DesktopMouseDragArgs, type DesktopMouseDragResult, type DesktopMouseMoveArgs, type DesktopMouseMoveResult, type DesktopMouseScrollArgs, type DesktopMouseScrollResult, type DesktopPoint, type DesktopScreenSize, type DesktopScreenshot, type DesktopScreenshotArgs, type DesktopScreenshotResult, type DesktopToolConfig, type DesktopToolName, type DesktopWindow, type DesktopWindowFocusArgs, type DesktopWindowFocusResult, type DesktopWindowListResult, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, type ExecuteRoutineOptions, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileCustomToolStorage, type FileCustomToolStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileRoutineDefinitionStorage, type FileRoutineDefinitionStorageConfig, FileStorage, type FileStorageConfig, FileUserInfoStorage, type FileUserInfoStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type HydrateOptions, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, type IContextPluginNextGen, type IContextStorage, type IContextStrategy, type ICustomToolStorage, type IDesktopDriver, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type IRoutineDefinitionStorage, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IUserInfoStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, type MouseButton, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, NutTreeDriver, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, type OversizedInputResult, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginConfigs, type PluginExecutionContext, type PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, type RoutineDefinition, type RoutineDefinitionInput, type RoutineExecution, type RoutineExecutionStatus, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, type SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedUserInfoState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StorageConfig, type StorageContext, StorageRegistry, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, type StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskExecution, type TaskFailure, type TaskInput, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, type ToolSource, ToolTimeoutError, type TransportConfig, TruncateCompactor, type UserInfoEntry, type UserInfoPluginConfig, UserInfoPluginNextGen, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, type ValidationContext, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isExcludedExtension, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
