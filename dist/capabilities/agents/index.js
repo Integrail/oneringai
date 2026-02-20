@@ -294,7 +294,7 @@ var HookManager = class {
       const hook = hooks[i];
       const hookKey = this.getHookKey(hook, i);
       const hookResult = await this.executeHookSafely(hook, context, hookKey);
-      if (hookResult === null) {
+      if (hookResult == null) {
         continue;
       }
       result = { ...result, ...hookResult };
@@ -314,7 +314,7 @@ var HookManager = class {
         return this.executeHookSafely(hook, context, hookKey);
       })
     );
-    const validResults = results.filter((r) => r !== null);
+    const validResults = results.filter((r) => r != null);
     return validResults.reduce(
       (acc, hookResult) => ({ ...acc, ...hookResult }),
       defaultResult

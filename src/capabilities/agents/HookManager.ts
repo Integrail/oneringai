@@ -136,8 +136,8 @@ export class HookManager {
       const hookKey = this.getHookKey(hook, i);
       const hookResult = await this.executeHookSafely(hook, context, hookKey);
 
-      // Skip failed hooks
-      if (hookResult === null) {
+      // Skip failed hooks (loose equality catches both null and undefined)
+      if (hookResult == null) {
         continue;
       }
 
@@ -170,7 +170,7 @@ export class HookManager {
     );
 
     // Filter out failures and merge results
-    const validResults = results.filter((r) => r !== null);
+    const validResults = results.filter((r) => r != null);
 
     return validResults.reduce(
       (acc, hookResult) => ({ ...acc, ...hookResult }),
