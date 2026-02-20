@@ -24277,7 +24277,7 @@ async function executeRoutine(options) {
       execution.lastUpdatedAt = Date.now();
       onTaskStarted?.(execution.plan.tasks[taskIndex], execution);
       let taskCompleted = false;
-      const maxTaskIterations = task.execution?.maxIterations ?? 15;
+      const maxTaskIterations = task.execution?.maxIterations ?? 50;
       const iterationLimiter = async (ctx) => {
         if (ctx.iteration >= maxTaskIterations) {
           agent.cancel(`Task "${task.name}" exceeded max iterations (${maxTaskIterations})`);
