@@ -113,7 +113,7 @@ export interface TaskExecution {
 
   /**
    * Maximum LLM iterations (tool-call loops) per agent.run() for this task.
-   * Prevents runaway agents. Default: 15.
+   * Prevents runaway agents. Default: 50.
    */
   maxIterations?: number;
 
