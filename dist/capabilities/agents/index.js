@@ -261,6 +261,18 @@ var HookManager = class {
     existing.push(hook);
   }
   /**
+   * Unregister a specific hook function by reference.
+   * Returns true if the hook was found and removed.
+   */
+  unregister(name, hook) {
+    const hooks = this.hooks.get(name);
+    if (!hooks) return false;
+    const index = hooks.indexOf(hook);
+    if (index === -1) return false;
+    hooks.splice(index, 1);
+    return true;
+  }
+  /**
    * Execute hooks for a given name
    */
   async executeHooks(name, context, defaultResult) {

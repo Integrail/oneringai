@@ -19,7 +19,7 @@ import { StreamState } from '../domain/entities/StreamState.js';
 import { Tool, ToolCall, ToolCallState, ToolResult } from '../domain/entities/Tool.js';
 import { Content, ContentType } from '../domain/entities/Content.js';
 import { ToolTimeoutError } from '../domain/errors/AIErrors.js';
-import { HookConfig } from '../capabilities/agents/types/HookTypes.js';
+import type { HookConfig, HookName } from '../capabilities/agents/types/HookTypes.js';
 import { AgentEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import { TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
@@ -557,7 +557,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   private _cleanupExecution(streamState?: StreamState): void {
     streamState?.clear();
     this.executionContext?.cleanup();
-    this.hookManager.clear();
   }
 
   /**
@@ -1765,6 +1764,22 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   clearConversation(reason?: string): void {
     this._agentContext.clearConversation(reason);
     this._logger.info({ reason }, 'Conversation cleared');
+  }
+
+  // ===== Hook Management =====
+
+  /**
+   * Register a hook on the agent. Can be called after creation.
+   */
+  registerHook(name: HookName, hook: Function): void {
+    this.hookManager.register(name, hook as any);
+  }
+
+  /**
+   * Unregister a previously registered hook by reference.
+   */
+  unregisterHook(name: HookName, hook: Function): boolean {
+    return this.hookManager.unregister(name, hook as any);
   }
 
   // ===== Cleanup =====

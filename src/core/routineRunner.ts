@@ -65,7 +65,9 @@ export interface ExecuteRoutineOptions {
   /** Additional tools — only used when creating a new agent (no `agent` provided) */
   tools?: ToolFunction[];
 
-  /** Hooks — only used when creating a new agent (no `agent` provided) */
+  /** Hooks — applied to agent for the duration of routine execution.
+   *  For new agents: baked in at creation. For existing agents: registered before
+   *  execution and unregistered after. */
   hooks?: HookConfig;
 
   /** Called when a task starts executing (set to in_progress) */
@@ -415,9 +417,27 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
   // 3. Resolve agent: reuse existing or create new
   let agent: Agent;
 
+  // Track hooks registered on an existing agent so we can unregister in finally
+  const registeredHooks: Array<{ name: string; hook: Function }> = [];
+
   if (existingAgent) {
     // Mode 2: Reuse pre-created agent — caller owns lifecycle
     agent = existingAgent;
+
+    // Register routine-specific hooks on the existing agent (cleaned up in finally)
+    if (hooks) {
+      const hookNames = [
+        'before:execution', 'after:execution', 'before:llm', 'after:llm',
+        'before:tool', 'after:tool', 'approve:tool', 'pause:check',
+      ] as const;
+      for (const name of hookNames) {
+        const hook = hooks[name];
+        if (hook) {
+          agent.registerHook(name, hook as any);
+          registeredHooks.push({ name, hook });
+        }
+      }
+    }
   } else {
     // Mode 1: Create new agent — we own lifecycle and destroy in finally
 
@@ -630,6 +650,11 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
 
     return execution;
   } finally {
+    // Unregister routine-specific hooks from existing agent
+    for (const { name, hook } of registeredHooks) {
+      try { agent.unregisterHook(name as any, hook as any); } catch { /* ignore */ }
+    }
+
     if (ownsAgent) {
       agent.destroy();
     }

@@ -21710,6 +21710,18 @@ var HookManager = class {
     existing.push(hook);
   }
   /**
+   * Unregister a specific hook function by reference.
+   * Returns true if the hook was found and removed.
+   */
+  unregister(name, hook) {
+    const hooks = this.hooks.get(name);
+    if (!hooks) return false;
+    const index = hooks.indexOf(hook);
+    if (index === -1) return false;
+    hooks.splice(index, 1);
+    return true;
+  }
+  /**
    * Execute hooks for a given name
    */
   async executeHooks(name, context, defaultResult) {
@@ -22427,7 +22439,6 @@ var Agent = class _Agent extends BaseAgent {
   _cleanupExecution(streamState) {
     streamState?.clear();
     this.executionContext?.cleanup();
-    this.hookManager.clear();
   }
   /**
    * Emit iteration complete event (helper for run loop)
@@ -23320,6 +23331,19 @@ var Agent = class _Agent extends BaseAgent {
     this._agentContext.clearConversation(reason);
     this._logger.info({ reason }, "Conversation cleared");
   }
+  // ===== Hook Management =====
+  /**
+   * Register a hook on the agent. Can be called after creation.
+   */
+  registerHook(name, hook) {
+    this.hookManager.register(name, hook);
+  }
+  /**
+   * Unregister a previously registered hook by reference.
+   */
+  unregisterHook(name, hook) {
+    return this.hookManager.unregister(name, hook);
+  }
   // ===== Cleanup =====
   destroy() {
     if (this._isDestroyed) {
@@ -24025,8 +24049,28 @@ async function executeRoutine(options) {
   const buildTaskPrompt = prompts?.task ?? defaultTaskPrompt;
   const buildValidationPrompt = prompts?.validation ?? defaultValidationPrompt;
   let agent;
+  const registeredHooks = [];
   if (existingAgent) {
     agent = existingAgent;
+    if (hooks) {
+      const hookNames = [
+        "before:execution",
+        "after:execution",
+        "before:llm",
+        "after:llm",
+        "before:tool",
+        "after:tool",
+        "approve:tool",
+        "pause:check"
+      ];
+      for (const name of hookNames) {
+        const hook = hooks[name];
+        if (hook) {
+          agent.registerHook(name, hook);
+          registeredHooks.push({ name, hook });
+        }
+      }
+    }
   } else {
     const allTools = [...extraTools ?? []];
     if (definition.requiredTools && definition.requiredTools.length > 0) {
@@ -24180,6 +24224,12 @@ async function executeRoutine(options) {
     );
     return execution;
   } finally {
+    for (const { name, hook } of registeredHooks) {
+      try {
+        agent.unregisterHook(name, hook);
+      } catch {
+      }
+    }
     if (ownsAgent) {
       agent.destroy();
     }
