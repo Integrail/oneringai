@@ -695,7 +695,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       onTaskStarted?.(execution.plan.tasks[taskIndex]!, execution);
 
       let taskCompleted = false;
-      const maxTaskIterations = task.execution?.maxIterations ?? 15;
+      const maxTaskIterations = task.execution?.maxIterations ?? 50;
 
       // Safety: limit iterations per task via pause:check hook.
       // When exceeded, cancel the agent to break out of the run loop.
