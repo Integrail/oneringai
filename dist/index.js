@@ -24002,6 +24002,7 @@ async function validateTaskCompletion(agent, task, responseText, validationPromp
 async function executeRoutine(options) {
   const {
     definition,
+    agent: existingAgent,
     connector,
     model,
     tools: extraTools,
@@ -24011,6 +24012,10 @@ async function executeRoutine(options) {
     hooks,
     prompts
   } = options;
+  if (!existingAgent && (!connector || !model)) {
+    throw new Error("executeRoutine requires either `agent` or both `connector` and `model`");
+  }
+  const ownsAgent = !existingAgent;
   const log = logger.child({ routine: definition.name });
   const execution = createRoutineExecution(definition);
   execution.status = "running";
@@ -24019,38 +24024,43 @@ async function executeRoutine(options) {
   const buildSystemPrompt = prompts?.system ?? defaultSystemPrompt;
   const buildTaskPrompt = prompts?.task ?? defaultTaskPrompt;
   const buildValidationPrompt = prompts?.validation ?? defaultValidationPrompt;
-  const allTools = [...extraTools ?? []];
-  if (definition.requiredTools && definition.requiredTools.length > 0) {
-    const availableToolNames = new Set(allTools.map((t) => t.definition.function.name));
-    const missing = definition.requiredTools.filter((name) => !availableToolNames.has(name));
-    if (missing.length > 0) {
-      execution.status = "failed";
-      execution.error = `Missing required tools: ${missing.join(", ")}`;
-      execution.completedAt = Date.now();
-      execution.lastUpdatedAt = Date.now();
-      return execution;
-    }
-  }
-  const agent = Agent.create({
-    connector,
-    model,
-    tools: allTools,
-    instructions: buildSystemPrompt(definition),
-    hooks,
-    context: {
-      model,
-      features: {
-        workingMemory: true,
-        inContextMemory: true
+  let agent;
+  if (existingAgent) {
+    agent = existingAgent;
+  } else {
+    const allTools = [...extraTools ?? []];
+    if (definition.requiredTools && definition.requiredTools.length > 0) {
+      const availableToolNames = new Set(allTools.map((t) => t.definition.function.name));
+      const missing = definition.requiredTools.filter((name) => !availableToolNames.has(name));
+      if (missing.length > 0) {
+        execution.status = "failed";
+        execution.error = `Missing required tools: ${missing.join(", ")}`;
+        execution.completedAt = Date.now();
+        execution.lastUpdatedAt = Date.now();
+        return execution;
       }
     }
-  });
+    agent = Agent.create({
+      connector,
+      model,
+      tools: allTools,
+      instructions: buildSystemPrompt(definition),
+      hooks,
+      context: {
+        model,
+        features: {
+          workingMemory: true,
+          inContextMemory: true
+        }
+      }
+    });
+  }
   if (definition.requiredPlugins && definition.requiredPlugins.length > 0) {
     const missing = definition.requiredPlugins.filter(
       (name) => !agent.context.hasPlugin(name)
     );
     if (missing.length > 0) {
-      agent.destroy();
+      if (ownsAgent) agent.destroy();
       execution.status = "failed";
       execution.error = `Missing required plugins: ${missing.join(", ")}`;
       execution.completedAt = Date.now();
@@ -24170,7 +24180,9 @@ async function executeRoutine(options) {
     );
     return execution;
   } finally {
-    agent.destroy();
+    if (ownsAgent) {
+      agent.destroy();
+    }
   }
 }
 

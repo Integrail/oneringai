@@ -38,19 +38,35 @@ import { logger } from '../infrastructure/observability/Logger.js';
 
 /**
  * Options for executing a routine.
+ *
+ * Two modes:
+ * 1. **New agent**: Pass `connector` + `model` (+ optional `tools`, `hooks`).
+ *    An agent is created internally and destroyed after execution.
+ * 2. **Existing agent**: Pass `agent` (a pre-created Agent instance).
+ *    The agent is NOT destroyed after execution — caller owns its lifecycle.
+ *    The agent's existing connector, model, tools, and hooks are used.
  */
 export interface ExecuteRoutineOptions {
   /** Routine definition to execute */
   definition: RoutineDefinition;
 
-  /** Connector name (must be registered via Connector.create()) */
-  connector: string;
+  /**
+   * Pre-created Agent instance. When provided, `connector`/`model`/`tools` are ignored.
+   * The agent is NOT destroyed after execution — caller manages its lifecycle.
+   */
+  agent?: Agent;
 
-  /** Model ID (e.g., 'gpt-4', 'claude-sonnet-4-5-20250929') */
-  model: string;
+  /** Connector name — required when `agent` is not provided */
+  connector?: string;
 
-  /** Additional tools beyond requiredTools */
+  /** Model ID — required when `agent` is not provided */
+  model?: string;
+
+  /** Additional tools — only used when creating a new agent (no `agent` provided) */
   tools?: ToolFunction[];
+
+  /** Hooks — only used when creating a new agent (no `agent` provided) */
+  hooks?: HookConfig;
 
   /** Called when a task starts executing (set to in_progress) */
   onTaskStarted?: (task: Task, execution: RoutineExecution) => void;
@@ -60,9 +76,6 @@ export interface ExecuteRoutineOptions {
 
   /** Called when a task fails */
   onTaskFailed?: (task: Task, execution: RoutineExecution) => void;
-
-  /** Hooks passed through to Agent.create() for monitoring tool calls, LLM interactions, etc. */
-  hooks?: HookConfig;
 
   /** Configurable prompts (all have sensible defaults) */
   prompts?: {
@@ -369,6 +382,7 @@ async function validateTaskCompletion(
 export async function executeRoutine(options: ExecuteRoutineOptions): Promise<RoutineExecution> {
   const {
     definition,
+    agent: existingAgent,
     connector,
     model,
     tools: extraTools,
@@ -379,6 +393,12 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     prompts,
   } = options;
 
+  // Validate: must provide either `agent` or `connector` + `model`
+  if (!existingAgent && (!connector || !model)) {
+    throw new Error('executeRoutine requires either `agent` or both `connector` and `model`');
+  }
+
+  const ownsAgent = !existingAgent;
   const log = logger.child({ routine: definition.name });
 
   // 1. Create execution
@@ -392,45 +412,54 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
   const buildTaskPrompt = prompts?.task ?? defaultTaskPrompt;
   const buildValidationPrompt = prompts?.validation ?? defaultValidationPrompt;
 
-  // 3. Collect tools
-  const allTools: ToolFunction[] = [...(extraTools ?? [])];
+  // 3. Resolve agent: reuse existing or create new
+  let agent: Agent;
 
-  // 4. Validate required tools
-  if (definition.requiredTools && definition.requiredTools.length > 0) {
-    const availableToolNames = new Set(allTools.map((t) => t.definition.function.name));
-    const missing = definition.requiredTools.filter((name) => !availableToolNames.has(name));
-    if (missing.length > 0) {
-      execution.status = 'failed';
-      execution.error = `Missing required tools: ${missing.join(', ')}`;
-      execution.completedAt = Date.now();
-      execution.lastUpdatedAt = Date.now();
-      return execution;
+  if (existingAgent) {
+    // Mode 2: Reuse pre-created agent — caller owns lifecycle
+    agent = existingAgent;
+  } else {
+    // Mode 1: Create new agent — we own lifecycle and destroy in finally
+
+    // Collect tools
+    const allTools: ToolFunction[] = [...(extraTools ?? [])];
+
+    // Validate required tools
+    if (definition.requiredTools && definition.requiredTools.length > 0) {
+      const availableToolNames = new Set(allTools.map((t) => t.definition.function.name));
+      const missing = definition.requiredTools.filter((name) => !availableToolNames.has(name));
+      if (missing.length > 0) {
+        execution.status = 'failed';
+        execution.error = `Missing required tools: ${missing.join(', ')}`;
+        execution.completedAt = Date.now();
+        execution.lastUpdatedAt = Date.now();
+        return execution;
+      }
     }
+
+    agent = Agent.create({
+      connector: connector!,
+      model: model!,
+      tools: allTools,
+      instructions: buildSystemPrompt(definition),
+      hooks,
+      context: {
+        model: model!,
+        features: {
+          workingMemory: true,
+          inContextMemory: true,
+        },
+      },
+    });
   }
 
-  // 5. Create Agent
-  const agent = Agent.create({
-    connector,
-    model,
-    tools: allTools,
-    instructions: buildSystemPrompt(definition),
-    hooks,
-    context: {
-      model,
-      features: {
-        workingMemory: true,
-        inContextMemory: true,
-      },
-    },
-  });
-
-  // 6. Validate required plugins
+  // 4. Validate required plugins
   if (definition.requiredPlugins && definition.requiredPlugins.length > 0) {
     const missing = definition.requiredPlugins.filter(
       (name) => !agent.context.hasPlugin(name)
     );
     if (missing.length > 0) {
-      agent.destroy();
+      if (ownsAgent) agent.destroy();
       execution.status = 'failed';
       execution.error = `Missing required plugins: ${missing.join(', ')}`;
       execution.completedAt = Date.now();
@@ -601,6 +630,8 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
 
     return execution;
   } finally {
-    agent.destroy();
+    if (ownsAgent) {
+      agent.destroy();
+    }
   }
 }
