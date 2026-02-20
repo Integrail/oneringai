@@ -132,8 +132,9 @@ function defaultSystemPrompt(definition: RoutineDefinition): string {
     '- Use memory_store with tier="findings" for larger data that may be needed later.',
     '- Use memory_retrieve to access data stored by previous tasks.',
     '',
-    'When you have completed the current task, stop and let the system know you are done.',
-    'Store your key results in memory before finishing.'
+    'IMPORTANT: When you have completed the current task, you MUST stop immediately.',
+    'Do NOT repeat work you have already done. Do NOT re-fetch data you already have.',
+    'Store key results in memory once, then produce a final text response (no more tool calls) to signal completion.'
   );
 
   return parts.join('\n');
@@ -166,7 +167,7 @@ function defaultTaskPrompt(task: Task): string {
     parts.push('');
   }
 
-  parts.push('Store your key results in memory before finishing.');
+  parts.push('After completing the work, store key results in memory once, then respond with a text summary (no more tool calls).');
 
   return parts.join('\n');
 }
@@ -511,6 +512,17 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       onTaskStarted?.(execution.plan.tasks[taskIndex]!, execution);
 
       let taskCompleted = false;
+      const maxTaskIterations = task.execution?.maxIterations ?? 15;
+
+      // Safety hook: limit iterations per task to prevent runaway agents.
+      // Registered before each task and unregistered after.
+      const iterationLimiter = async (ctx: { iteration: number }) => {
+        if (ctx.iteration >= maxTaskIterations) {
+          throw new Error(`Task "${task.name}" exceeded max iterations (${maxTaskIterations})`);
+        }
+        return {};
+      };
+      agent.registerHook('before:llm', iterationLimiter);
 
       // Helper to get the live task reference (updateTaskStatus returns new objects)
       const getTask = () => execution.plan.tasks[taskIndex]!;
@@ -619,6 +631,9 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
         }
         // 'continue' mode: skip this task, proceed to next
       }
+
+      // Remove per-task iteration limiter
+      agent.unregisterHook('before:llm', iterationLimiter);
 
       // Clear conversation for next task (memory persists)
       agent.clearConversation('task-boundary');

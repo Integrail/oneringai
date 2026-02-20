@@ -112,6 +112,12 @@ export interface TaskExecution {
   priority?: number;
 
   /**
+   * Maximum LLM iterations (tool-call loops) per agent.run() for this task.
+   * Prevents runaway agents. Default: 15.
+   */
+  maxIterations?: number;
+
+  /**
    * If true (default), re-check condition immediately before LLM call
    * to protect against race conditions when parallel tasks modify memory.
    * Set to false to skip re-check for performance if you know condition won't change.
