@@ -141,35 +141,79 @@ export function formatRecipients(emails: string[]): { emailAddress: { address: s
 }
 
 /**
- * Parse a meeting ID from a Teams meeting URL or raw meeting ID.
+ * Check if a meeting ID input is a Teams join URL.
  *
- * Accepts:
- * - Raw meeting IDs (passed through)
- * - Teams meeting URLs: `https://teams.microsoft.com/l/meetup-join/19%3ameeting_...`
+ * Teams join URLs look like:
+ * - `https://teams.microsoft.com/l/meetup-join/19%3ameeting_...`
+ * - `https://teams.live.com/l/meetup-join/...`
+ *
+ * IMPORTANT: A Teams join URL does NOT contain the Graph API meeting ID.
+ * To resolve a URL to a meeting ID, use `resolveMeetingId()` which calls
+ * `GET /me/onlineMeetings?$filter=JoinWebUrl eq '{url}'`.
  */
-export function parseMeetingId(input: string): string {
+export function isTeamsMeetingUrl(input: string): boolean {
+  try {
+    const url = new URL(input.trim());
+    return (
+      (url.hostname === 'teams.microsoft.com' || url.hostname === 'teams.live.com') &&
+      url.pathname.includes('meetup-join')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** @internal Graph API response for onlineMeetings filter query */
+export interface GraphOnlineMeetingListResponse {
+  value: { id: string; subject?: string; joinWebUrl?: string }[];
+}
+
+/**
+ * Resolve a meeting input (ID or Teams URL) to a Graph API online meeting ID.
+ *
+ * - Raw meeting IDs are passed through as-is
+ * - Teams join URLs are resolved via `GET /me/onlineMeetings?$filter=JoinWebUrl eq '{url}'`
+ *
+ * @returns The resolved meeting ID and optional subject
+ * @throws Error if the URL cannot be resolved or input is empty
+ */
+export async function resolveMeetingId(
+  connector: Connector,
+  input: string,
+  prefix: string,
+  effectiveUserId?: string
+): Promise<{ meetingId: string; subject?: string }> {
   if (!input || input.trim().length === 0) {
     throw new Error('Meeting ID cannot be empty');
   }
 
   const trimmed = input.trim();
 
-  // Try URL format
-  try {
-    const url = new URL(trimmed);
-    if (url.hostname === 'teams.microsoft.com' || url.hostname === 'teams.live.com') {
-      const segments = url.pathname.split('/').filter(Boolean);
-      // Format: /l/meetup-join/<encoded-thread-id>/<encoded-context>
-      const joinIndex = segments.indexOf('meetup-join');
-      if (joinIndex >= 0 && segments.length > joinIndex + 1) {
-        return decodeURIComponent(segments[joinIndex + 1]!);
-      }
-    }
-  } catch {
-    // Not a URL, treat as raw ID
+  if (!isTeamsMeetingUrl(trimmed)) {
+    return { meetingId: trimmed };
   }
 
-  return trimmed;
+  // Resolve Teams URL to meeting ID via Graph API filter
+  const meetings = await microsoftFetch<GraphOnlineMeetingListResponse>(
+    connector,
+    `${prefix}/onlineMeetings`,
+    {
+      userId: effectiveUserId,
+      queryParams: { '$filter': `JoinWebUrl eq '${trimmed}'` },
+    }
+  );
+
+  if (!meetings.value || meetings.value.length === 0) {
+    throw new Error(
+      `Could not find an online meeting matching the provided Teams URL. ` +
+      `Make sure the URL is correct and you have access to this meeting.`
+    );
+  }
+
+  return {
+    meetingId: meetings.value[0]!.id,
+    subject: meetings.value[0]!.subject,
+  };
 }
 
 // ============================================================================

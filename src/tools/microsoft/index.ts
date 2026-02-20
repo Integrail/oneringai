@@ -31,7 +31,7 @@ export type {
 } from './types.js';
 
 // Utility functions
-export { getUserPathPrefix, microsoftFetch, formatRecipients, parseMeetingId } from './types.js';
+export { getUserPathPrefix, microsoftFetch, formatRecipients, isTeamsMeetingUrl, resolveMeetingId } from './types.js';
 
 // Tool factories (for direct use with custom options)
 export { createDraftEmailTool } from './createDraftEmail.js';

@@ -972,6 +972,31 @@ export type {
   GitHubCreatePRResult,
 } from './tools/index.js';
 
+// Microsoft Graph connector tools (auto-registered with ConnectorTools for Microsoft service)
+export {
+  createDraftEmailTool,
+  createSendEmailTool,
+  createMeetingTool,
+  createEditMeetingTool,
+  createGetMeetingTranscriptTool,
+  createFindMeetingSlotsTool,
+  getUserPathPrefix,
+  microsoftFetch,
+  formatRecipients,
+  isTeamsMeetingUrl,
+  resolveMeetingId,
+} from './tools/index.js';
+
+export type {
+  MicrosoftDraftEmailResult,
+  MicrosoftSendEmailResult,
+  MicrosoftCreateMeetingResult,
+  MicrosoftEditMeetingResult,
+  MicrosoftGetTranscriptResult,
+  MicrosoftFindSlotsResult,
+  MeetingSlotSuggestion,
+} from './tools/index.js';
+
 // Desktop automation tools (requires @nut-tree-fork/nut-js peer dependency)
 export {
   desktopScreenshot,

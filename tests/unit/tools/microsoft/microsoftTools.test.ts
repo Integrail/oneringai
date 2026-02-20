@@ -9,7 +9,8 @@ import {
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,
-  parseMeetingId,
+  isTeamsMeetingUrl,
+  resolveMeetingId,
   MicrosoftAPIError,
 } from '../../../../src/tools/microsoft/types.js';
 import { createDraftEmailTool } from '../../../../src/tools/microsoft/createDraftEmail.js';
@@ -208,32 +209,81 @@ describe('Microsoft Graph Tools', () => {
   });
 
   // ========================================================================
-  // parseMeetingId
+  // isTeamsMeetingUrl
   // ========================================================================
 
-  describe('parseMeetingId', () => {
-    it('should pass through raw meeting IDs', () => {
-      expect(parseMeetingId('MSo1N2Y5ZGFjYy03MWJmLTQ3NDMtYjQxMy01M2EdFGkdRWHJlQ')).toBe(
-        'MSo1N2Y5ZGFjYy03MWJmLTQ3NDMtYjQxMy01M2EdFGkdRWHJlQ'
+  describe('isTeamsMeetingUrl', () => {
+    it('should detect teams.microsoft.com meeting URLs', () => {
+      expect(isTeamsMeetingUrl('https://teams.microsoft.com/l/meetup-join/19%3ameeting_ABC123/0')).toBe(true);
+    });
+
+    it('should detect teams.live.com meeting URLs', () => {
+      expect(isTeamsMeetingUrl('https://teams.live.com/l/meetup-join/19%3ameeting_XYZ/0')).toBe(true);
+    });
+
+    it('should return false for raw meeting IDs', () => {
+      expect(isTeamsMeetingUrl('MSo1N2Y5ZGFjYy03MWJmLTQ3NDMtYjQxMy01M2EdFGkdRWHJlQ')).toBe(false);
+    });
+
+    it('should return false for other URLs', () => {
+      expect(isTeamsMeetingUrl('https://example.com/meeting')).toBe(false);
+    });
+
+    it('should handle whitespace', () => {
+      expect(isTeamsMeetingUrl('  https://teams.microsoft.com/l/meetup-join/19%3ameeting_X/0  ')).toBe(true);
+    });
+  });
+
+  // ========================================================================
+  // resolveMeetingId
+  // ========================================================================
+
+  describe('resolveMeetingId', () => {
+    it('should pass through raw meeting IDs without API call', async () => {
+      const connector = createMockConnector('ms-resolve');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+
+      const result = await resolveMeetingId(connector, 'MSo1N2Y5ZGFjYy0', '/me');
+
+      expect(result.meetingId).toBe('MSo1N2Y5ZGFjYy0');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    it('should resolve Teams URL to meeting ID via Graph API', async () => {
+      const connector = createMockConnector('ms-resolve2');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      fetchSpy.mockResolvedValueOnce(
+        mockResponse({
+          value: [{ id: 'MSo1N2Y5ZGFjYy0', subject: 'Sprint Review' }],
+        })
       );
-    });
 
-    it('should extract meeting ID from Teams URL', () => {
       const url = 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_ABC123/0';
-      expect(parseMeetingId(url)).toBe('19:meeting_ABC123');
+      const result = await resolveMeetingId(connector, url, '/me');
+
+      expect(result.meetingId).toBe('MSo1N2Y5ZGFjYy0');
+      expect(result.subject).toBe('Sprint Review');
+      // Should have called the onlineMeetings filter endpoint
+      const calledUrl = fetchSpy.mock.calls[0]![0] as string;
+      expect(calledUrl).toContain('/me/onlineMeetings');
+      expect(calledUrl).toContain('JoinWebUrl');
+      fetchSpy.mockRestore();
     });
 
-    it('should handle teams.live.com URLs', () => {
-      const url = 'https://teams.live.com/l/meetup-join/19%3ameeting_XYZ/0';
-      expect(parseMeetingId(url)).toBe('19:meeting_XYZ');
+    it('should throw if Teams URL does not match any meeting', async () => {
+      const connector = createMockConnector('ms-resolve3');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      fetchSpy.mockResolvedValueOnce(mockResponse({ value: [] }));
+
+      const url = 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_UNKNOWN/0';
+      await expect(resolveMeetingId(connector, url, '/me')).rejects.toThrow('Could not find an online meeting');
+      fetchSpy.mockRestore();
     });
 
-    it('should trim whitespace', () => {
-      expect(parseMeetingId('  some-id  ')).toBe('some-id');
-    });
-
-    it('should throw on empty string', () => {
-      expect(() => parseMeetingId('')).toThrow('cannot be empty');
+    it('should throw on empty input', async () => {
+      const connector = createMockConnector('ms-resolve4');
+      await expect(resolveMeetingId(connector, '', '/me')).rejects.toThrow('cannot be empty');
     });
   });
 
@@ -753,8 +803,16 @@ Bob: Hi Alice, thanks for setting this up.`;
         expect(result.transcript).not.toContain('00:00:00');
       });
 
-      it('should parse Teams meeting URL to extract ID', async () => {
-        fetchSpy.mockResolvedValueOnce(mockResponse({ value: [{ id: 'transcript-001' }] }));
+      it('should resolve Teams meeting URL to ID then fetch transcript', async () => {
+        // Step 0: Resolve URL to meeting ID via Graph filter
+        fetchSpy.mockResolvedValueOnce(
+          mockResponse({ value: [{ id: 'resolved-meeting-id', subject: 'Sprint Review' }] })
+        );
+        // Step 1: List transcripts
+        fetchSpy.mockResolvedValueOnce(
+          mockResponse({ value: [{ id: 'transcript-001' }] })
+        );
+        // Step 2: Fetch VTT content
         fetchSpy.mockResolvedValueOnce({
           ok: true,
           status: 200,
@@ -762,13 +820,21 @@ Bob: Hi Alice, thanks for setting this up.`;
         } as unknown as Response);
 
         const tool = createGetMeetingTranscriptTool(connector);
-        await tool.execute({
+        const result = await tool.execute({
           meetingId: 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_ABC123/0',
         });
 
-        // First call should use the decoded meeting ID
+        expect(result.success).toBe(true);
+        expect(result.meetingSubject).toBe('Sprint Review');
+
+        // First call should be the URL resolution filter
         const firstUrl = fetchSpy.mock.calls[0]![0] as string;
-        expect(firstUrl).toContain('19:meeting_ABC123');
+        expect(firstUrl).toContain('/me/onlineMeetings');
+        expect(firstUrl).toContain('JoinWebUrl');
+
+        // Second call should use the resolved meeting ID
+        const secondUrl = fetchSpy.mock.calls[1]![0] as string;
+        expect(secondUrl).toContain('resolved-meeting-id');
       });
 
       it('should return error when no transcripts found', async () => {

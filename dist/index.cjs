@@ -43138,16 +43138,17 @@ __export(tools_exports, {
   hydrateCustomTool: () => hydrateCustomTool,
   isBlockedCommand: () => isBlockedCommand,
   isExcludedExtension: () => isExcludedExtension,
+  isTeamsMeetingUrl: () => isTeamsMeetingUrl,
   jsonManipulator: () => jsonManipulator,
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   mergeTextPieces: () => mergeTextPieces,
   microsoftFetch: () => microsoftFetch,
   parseKeyCombo: () => parseKeyCombo,
-  parseMeetingId: () => parseMeetingId,
   parseRepository: () => parseRepository,
   readFile: () => readFile5,
   resetDefaultDriver: () => resetDefaultDriver,
+  resolveMeetingId: () => resolveMeetingId,
   resolveRepository: () => resolveRepository,
   setMediaOutputHandler: () => setMediaOutputHandler,
   setMediaStorage: () => setMediaStorage,
@@ -47298,23 +47299,39 @@ async function microsoftFetch(connector, endpoint, options) {
 function formatRecipients(emails) {
   return emails.map((address) => ({ emailAddress: { address } }));
 }
-function parseMeetingId(input) {
+function isTeamsMeetingUrl(input) {
+  try {
+    const url2 = new URL(input.trim());
+    return (url2.hostname === "teams.microsoft.com" || url2.hostname === "teams.live.com") && url2.pathname.includes("meetup-join");
+  } catch {
+    return false;
+  }
+}
+async function resolveMeetingId(connector, input, prefix, effectiveUserId) {
   if (!input || input.trim().length === 0) {
     throw new Error("Meeting ID cannot be empty");
   }
   const trimmed = input.trim();
-  try {
-    const url2 = new URL(trimmed);
-    if (url2.hostname === "teams.microsoft.com" || url2.hostname === "teams.live.com") {
-      const segments = url2.pathname.split("/").filter(Boolean);
-      const joinIndex = segments.indexOf("meetup-join");
-      if (joinIndex >= 0 && segments.length > joinIndex + 1) {
-        return decodeURIComponent(segments[joinIndex + 1]);
-      }
-    }
-  } catch {
+  if (!isTeamsMeetingUrl(trimmed)) {
+    return { meetingId: trimmed };
   }
-  return trimmed;
+  const meetings = await microsoftFetch(
+    connector,
+    `${prefix}/onlineMeetings`,
+    {
+      userId: effectiveUserId,
+      queryParams: { "$filter": `JoinWebUrl eq '${trimmed}'` }
+    }
+  );
+  if (!meetings.value || meetings.value.length === 0) {
+    throw new Error(
+      `Could not find an online meeting matching the provided Teams URL. Make sure the URL is correct and you have access to this meeting.`
+    );
+  }
+  return {
+    meetingId: meetings.value[0].id,
+    subject: meetings.value[0].subject
+  };
 }
 
 // src/tools/microsoft/createDraftEmail.ts
@@ -47847,7 +47864,8 @@ EXAMPLES:
       const effectiveUserId = context?.userId ?? userId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
-        const meetingId = parseMeetingId(args.meetingId);
+        const resolved = await resolveMeetingId(connector, args.meetingId, prefix, effectiveUserId);
+        const meetingId = resolved.meetingId;
         const transcriptList = await microsoftFetch(
           connector,
           `${prefix}/onlineMeetings/${meetingId}/transcripts`,
@@ -47877,7 +47895,8 @@ EXAMPLES:
         const transcript = parseVttToText(vttContent);
         return {
           success: true,
-          transcript
+          transcript,
+          meetingSubject: resolved.subject
         };
       } catch (error) {
         return {
@@ -50180,7 +50199,9 @@ exports.createDesktopMouseScrollTool = createDesktopMouseScrollTool;
 exports.createDesktopScreenshotTool = createDesktopScreenshotTool;
 exports.createDesktopWindowFocusTool = createDesktopWindowFocusTool;
 exports.createDesktopWindowListTool = createDesktopWindowListTool;
+exports.createDraftEmailTool = createDraftEmailTool;
 exports.createEditFileTool = createEditFileTool;
+exports.createEditMeetingTool = createEditMeetingTool;
 exports.createEstimator = createEstimator;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
@@ -50188,6 +50209,8 @@ exports.createFileContextStorage = createFileContextStorage;
 exports.createFileCustomToolStorage = createFileCustomToolStorage;
 exports.createFileMediaStorage = createFileMediaStorage;
 exports.createFileRoutineDefinitionStorage = createFileRoutineDefinitionStorage;
+exports.createFindMeetingSlotsTool = createFindMeetingSlotsTool;
+exports.createGetMeetingTranscriptTool = createGetMeetingTranscriptTool;
 exports.createGetPRTool = createGetPRTool;
 exports.createGitHubReadFileTool = createGitHubReadFileTool;
 exports.createGlobTool = createGlobTool;
@@ -50195,6 +50218,7 @@ exports.createGrepTool = createGrepTool;
 exports.createImageGenerationTool = createImageGenerationTool;
 exports.createImageProvider = createImageProvider;
 exports.createListDirectoryTool = createListDirectoryTool;
+exports.createMeetingTool = createMeetingTool;
 exports.createMessageWithImages = createMessageWithImages;
 exports.createMetricsCollector = createMetricsCollector;
 exports.createPRCommentsTool = createPRCommentsTool;
@@ -50206,6 +50230,7 @@ exports.createRoutineDefinition = createRoutineDefinition;
 exports.createRoutineExecution = createRoutineExecution;
 exports.createSearchCodeTool = createSearchCodeTool;
 exports.createSearchFilesTool = createSearchFilesTool;
+exports.createSendEmailTool = createSendEmailTool;
 exports.createSpeechToTextTool = createSpeechToTextTool;
 exports.createTask = createTask;
 exports.createTextMessage = createTextMessage;
@@ -50245,6 +50270,7 @@ exports.extractNumber = extractNumber;
 exports.findConnectorByServiceTypes = findConnectorByServiceTypes;
 exports.forPlan = forPlan;
 exports.forTasks = forTasks;
+exports.formatRecipients = formatRecipients;
 exports.generateEncryptionKey = generateEncryptionKey;
 exports.generateSimplePlan = generateSimplePlan;
 exports.generateWebAPITool = generateWebAPITool;
@@ -50288,6 +50314,7 @@ exports.getToolCategories = getToolCategories;
 exports.getToolRegistry = getToolRegistry;
 exports.getToolsByCategory = getToolsByCategory;
 exports.getToolsRequiringConnector = getToolsRequiringConnector;
+exports.getUserPathPrefix = getUserPathPrefix;
 exports.getVendorAuthTemplate = getVendorAuthTemplate;
 exports.getVendorColor = getVendorColor;
 exports.getVendorDefaultBaseURL = getVendorDefaultBaseURL;
@@ -50316,6 +50343,7 @@ exports.isSimpleScope = isSimpleScope;
 exports.isStreamEvent = isStreamEvent;
 exports.isTaskAwareScope = isTaskAwareScope;
 exports.isTaskBlocked = isTaskBlocked;
+exports.isTeamsMeetingUrl = isTeamsMeetingUrl;
 exports.isTerminalMemoryStatus = isTerminalMemoryStatus;
 exports.isTerminalStatus = isTerminalStatus;
 exports.isToolCallArgumentsDelta = isToolCallArgumentsDelta;
@@ -50331,6 +50359,7 @@ exports.listVendorsByAuthType = listVendorsByAuthType;
 exports.listVendorsByCategory = listVendorsByCategory;
 exports.listVendorsWithLogos = listVendorsWithLogos;
 exports.mergeTextPieces = mergeTextPieces;
+exports.microsoftFetch = microsoftFetch;
 exports.parseKeyCombo = parseKeyCombo;
 exports.parseRepository = parseRepository;
 exports.readClipboardImage = readClipboardImage;
@@ -50341,6 +50370,7 @@ exports.resetDefaultDriver = resetDefaultDriver;
 exports.resolveConnector = resolveConnector;
 exports.resolveDependencies = resolveDependencies;
 exports.resolveMaxContextTokens = resolveMaxContextTokens;
+exports.resolveMeetingId = resolveMeetingId;
 exports.resolveModelCapabilities = resolveModelCapabilities;
 exports.resolveRepository = resolveRepository;
 exports.retryWithBackoff = retryWithBackoff;

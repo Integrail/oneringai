@@ -190,7 +190,8 @@ export {
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,
-  parseMeetingId,
+  isTeamsMeetingUrl,
+  resolveMeetingId,
 } from './microsoft/index.js';
 
 export type {

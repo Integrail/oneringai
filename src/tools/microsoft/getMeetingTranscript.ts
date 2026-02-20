@@ -12,7 +12,7 @@ import {
   type GraphTranscriptListResponse,
   getUserPathPrefix,
   microsoftFetch,
-  parseMeetingId,
+  resolveMeetingId,
 } from './types.js';
 
 export interface GetMeetingTranscriptArgs {
@@ -102,7 +102,10 @@ EXAMPLES:
       const effectiveUserId = context?.userId ?? userId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
-        const meetingId = parseMeetingId(args.meetingId);
+
+        // Resolve meeting ID — handles both raw IDs and Teams join URLs
+        const resolved = await resolveMeetingId(connector, args.meetingId, prefix, effectiveUserId);
+        const meetingId = resolved.meetingId;
 
         // Step 1: List transcripts for the meeting
         const transcriptList = await microsoftFetch<GraphTranscriptListResponse>(
@@ -143,6 +146,7 @@ EXAMPLES:
         return {
           success: true,
           transcript,
+          meetingSubject: resolved.subject,
         };
       } catch (error) {
         return {
