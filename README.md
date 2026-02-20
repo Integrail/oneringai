@@ -33,6 +33,7 @@
   - [18. Document Reader](#18-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
   - [20. Routine Execution](#20-routine-execution) — Multi-step workflows with task dependencies, validation, and memory bridging
   - [21. External API Integration](#21-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+  - [22. Microsoft Graph Connector Tools](#22-microsoft-graph-connector-tools-new) — Email, calendar, meetings, and Teams transcripts
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -102,6 +103,7 @@ Better to see once and then dig in the code! :)
 - 💾 **StorageRegistry** - Centralized storage configuration — swap all backends (sessions, media, custom tools, etc.) with one `configure()` call
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
 - 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
+- 📧 **Microsoft Graph Tools** - NEW: Email, calendar, meetings, and Teams transcripts via Microsoft Graph API
 - 🔁 **Routine Execution** - NEW: Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
@@ -1346,6 +1348,7 @@ await agent.run('Show me PR #42 and summarize the review comments');
 **Supported Services (35+):**
 - **Communication**: Slack, Discord, Microsoft Teams, Twilio
 - **Development**: GitHub *(7 built-in tools)*, GitLab, Jira, Linear, Bitbucket
+- **Microsoft**: Microsoft Graph *(6 built-in tools)* — email, calendar, meetings, Teams transcripts
 - **Productivity**: Notion, Asana, Monday, Airtable, Trello
 - **CRM**: Salesforce, HubSpot, Zendesk, Intercom
 - **Payments**: Stripe, PayPal, Square
@@ -1511,6 +1514,49 @@ for (const tool of allTools) {
   }
 }
 ```
+
+### 22. Microsoft Graph Connector Tools (NEW)
+
+6 dedicated tools for Microsoft Graph API — email, calendar, meetings, and Teams transcripts. Auto-registered for connectors with `serviceType: 'microsoft'` or `baseURL` matching `graph.microsoft.com`.
+
+```typescript
+import { Connector, ConnectorTools, Services, Agent } from '@everworker/oneringai';
+
+// Create a Microsoft connector (OAuth required for most operations)
+Connector.create({
+  name: 'microsoft',
+  serviceType: Services.Microsoft,
+  auth: { type: 'oauth', /* ... OAuth config ... */ },
+  baseURL: 'https://graph.microsoft.com/v1.0',
+});
+
+// Get all Microsoft tools (generic API + 6 dedicated tools)
+const tools = ConnectorTools.for('microsoft');
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools,
+});
+
+await agent.run('Draft an email to alice@example.com about the project update');
+await agent.run('Schedule a 30-minute meeting with bob@example.com next Tuesday at 2pm');
+await agent.run('Find available meeting slots for alice and bob this week');
+```
+
+**Tools:**
+| Tool | Description | Risk |
+|------|-------------|------|
+| `create_draft_email` | Create a draft email or reply draft | medium |
+| `send_email` | Send an email or reply immediately | medium |
+| `create_meeting` | Create calendar event with optional Teams link | medium |
+| `edit_meeting` | Update an existing calendar event | medium |
+| `find_meeting_slots` | Find available slots when all attendees are free | low |
+| `get_meeting_transcript` | Retrieve Teams meeting transcript as text | low |
+
+Supports both **delegated** (`/me` — user signs in) and **application** (`/users/{id}` — app-only) permission modes. See the [User Guide](./USER_GUIDE.md#microsoft-graph-connector-tools) for full parameter reference.
+
+---
 
 ## MCP (Model Context Protocol) Integration
 

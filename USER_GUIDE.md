@@ -1,6 +1,6 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.3.2
+**Version:** 0.4.0
 **Last Updated:** 2026-02-19
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
@@ -58,6 +58,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Web Tools (webFetch, web_search via ConnectorTools, web_scrape via ConnectorTools)
     - JSON Tool
     - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
+    - Microsoft Graph Connector Tools (create_draft_email, send_email, create_meeting, edit_meeting, find_meeting_slots, get_meeting_transcript)
 13. [Dynamic Tool Management](#dynamic-tool-management)
 14. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
 15. [Multimodal (Vision)](#multimodal-vision)
@@ -5071,6 +5072,202 @@ const readFile = createGitHubReadFileTool(connector);
 const { owner, repo } = parseRepository('https://github.com/facebook/react');
 ```
 
+### Microsoft Graph Connector Tools
+
+When a Microsoft connector is configured, `ConnectorTools.for('microsoft')` automatically includes 6 dedicated tools alongside the generic API tool. These enable email, calendar, meetings, and Teams transcript workflows.
+
+#### Quick Start
+
+```typescript
+import { Connector, ConnectorTools, Services, Agent } from '@everworker/oneringai';
+
+// Create a Microsoft connector with OAuth
+Connector.create({
+  name: 'microsoft',
+  serviceType: Services.Microsoft,
+  auth: { type: 'oauth', /* ... OAuth config ... */ },
+  baseURL: 'https://graph.microsoft.com/v1.0',
+});
+
+// Get all Microsoft tools (generic API + 6 dedicated tools)
+const tools = ConnectorTools.for('microsoft');
+
+// Use with an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: tools,
+});
+
+await agent.run('Draft an email to alice@example.com about the project update');
+await agent.run('Schedule a 30-minute Teams meeting with bob@example.com next Tuesday at 2pm');
+```
+
+#### Delegated vs Application Mode
+
+Microsoft Graph supports two permission modes:
+
+| Mode | Path Prefix | Use Case |
+|------|-------------|----------|
+| **Delegated** | `/me` | User signs in via OAuth. Tools access the signed-in user's mailbox/calendar. |
+| **Application** | `/users/{targetUser}` | App authenticates as itself (client_credentials). Requires `targetUser` parameter in each tool call. |
+
+All 6 tools accept an optional `targetUser` parameter (email or user ID). When using delegated auth, this is ignored and `/me` is used automatically.
+
+#### create_draft_email
+
+Create a draft email or draft reply in the user's Outlook mailbox.
+
+```typescript
+// New draft
+{ "to": ["alice@example.com"], "subject": "Project Update", "body": "<p>Here's the latest...</p>" }
+
+// Reply draft
+{ "to": ["alice@example.com"], "subject": "Re: Project", "body": "<p>Thanks!</p>", "replyToMessageId": "AAMkAG..." }
+```
+
+**Parameters:**
+- `to` (required, string[]) — Recipient email addresses
+- `subject` (required) — Email subject
+- `body` (required) — Email body as HTML
+- `cc` (optional, string[]) — CC email addresses
+- `replyToMessageId` (optional) — Graph message ID to create a reply draft
+- `targetUser` (optional) — User ID/email for app-only auth
+
+**Returns:** `{ success, draftId, webLink }`
+
+#### send_email
+
+Send an email immediately or reply to an existing message.
+
+```typescript
+// Send new email
+{ "to": ["bob@example.com"], "subject": "Meeting Notes", "body": "<p>Attached are the notes.</p>" }
+
+// Reply to existing message
+{ "to": ["bob@example.com"], "subject": "Re: Meeting Notes", "body": "<p>Thanks!</p>", "replyToMessageId": "AAMkAG..." }
+```
+
+**Parameters:**
+- `to` (required, string[]) — Recipient email addresses
+- `subject` (required) — Email subject
+- `body` (required) — Email body as HTML
+- `cc` (optional, string[]) — CC email addresses
+- `replyToMessageId` (optional) — Graph message ID to reply to
+- `targetUser` (optional) — User ID/email for app-only auth
+
+**Returns:** `{ success }`
+
+#### create_meeting
+
+Create a calendar event on the user's Outlook calendar, optionally with a Teams online meeting link.
+
+```typescript
+// Simple meeting
+{
+  "subject": "Sprint Review",
+  "startDateTime": "2026-03-01T14:00:00",
+  "endDateTime": "2026-03-01T14:30:00",
+  "attendees": ["alice@example.com", "bob@example.com"],
+  "isOnlineMeeting": true,
+  "timeZone": "America/New_York"
+}
+```
+
+**Parameters:**
+- `subject` (required) — Meeting title
+- `startDateTime` (required) — ISO 8601 without timezone (e.g., `"2026-03-01T14:00:00"`)
+- `endDateTime` (required) — ISO 8601 without timezone
+- `attendees` (required, string[]) — Attendee email addresses
+- `body` (optional) — Meeting description as HTML
+- `isOnlineMeeting` (optional, boolean) — Set `true` to generate a Teams meeting link
+- `location` (optional) — Physical location
+- `timeZone` (optional) — IANA timezone (default: `"UTC"`)
+- `targetUser` (optional) — User ID/email for app-only auth
+
+**Returns:** `{ success, eventId, webLink, onlineMeetingUrl }`
+
+#### edit_meeting
+
+Update an existing Outlook calendar event. Only the fields you provide are changed.
+
+```typescript
+{ "eventId": "AAMkAG...", "subject": "Updated Sprint Review", "attendees": ["alice@example.com", "bob@example.com", "charlie@example.com"] }
+```
+
+**Parameters:**
+- `eventId` (required) — Graph event ID from `create_meeting` result
+- `subject` (optional) — New meeting title
+- `startDateTime` (optional) — New start time
+- `endDateTime` (optional) — New end time
+- `attendees` (optional, string[]) — **Full replacement** attendee list (not additive)
+- `body` (optional) — New description as HTML
+- `isOnlineMeeting` (optional, boolean) — `true` = add Teams link, `false` = remove it
+- `location` (optional) — New location
+- `timeZone` (optional) — IANA timezone (default: `"UTC"`)
+- `targetUser` (optional) — User ID/email for app-only auth
+
+**Returns:** `{ success, eventId, webLink }`
+
+> **Important:** The `attendees` parameter **replaces** the entire attendee list — it is not additive.
+
+#### find_meeting_slots
+
+Find available meeting time slots when all attendees are free.
+
+```typescript
+{
+  "attendees": ["alice@example.com", "bob@example.com"],
+  "startDateTime": "2026-03-01T08:00:00",
+  "endDateTime": "2026-03-05T18:00:00",
+  "duration": 30,
+  "timeZone": "America/New_York",
+  "maxResults": 5
+}
+```
+
+**Parameters:**
+- `attendees` (required, string[]) — Attendee email addresses
+- `startDateTime` (required) — Search window start (ISO 8601 without timezone)
+- `endDateTime` (required) — Search window end
+- `duration` (required, number) — Meeting duration in minutes
+- `timeZone` (optional) — IANA timezone (default: `"UTC"`)
+- `maxResults` (optional, number) — Maximum suggestions (default: 5)
+- `targetUser` (optional) — User ID/email for app-only auth
+
+**Returns:** `{ success, slots: [{ start, end, confidence, attendeeAvailability }], emptySuggestionsReason }`
+
+#### get_meeting_transcript
+
+Retrieve the transcript from a Teams online meeting as plain text with speaker labels.
+
+```typescript
+// By meeting ID
+{ "meetingId": "MSoxMjM0NTY3..." }
+
+// By Teams join URL
+{ "meetingId": "https://teams.microsoft.com/l/meetup-join/..." }
+```
+
+**Parameters:**
+- `meetingId` (required) — Teams online meeting ID or Teams meeting join URL
+- `targetUser` (optional) — User ID/email for app-only auth
+
+**Returns:** `{ success, transcript, meetingSubject }`
+
+> **Note:** Requires `OnlineMeetingTranscript.Read.All` permission. The `meetingId` is the Teams online meeting ID (not the calendar event ID). It can be obtained from meeting details or extracted from the Teams join URL.
+
+#### Required Microsoft Graph Permissions
+
+| Tool | Delegated Scopes | Application Scopes |
+|------|-------------------|-------------------|
+| `create_draft_email` | `Mail.ReadWrite` | `Mail.ReadWrite` |
+| `send_email` | `Mail.Send` | `Mail.Send` |
+| `create_meeting` | `Calendars.ReadWrite` | `Calendars.ReadWrite` |
+| `edit_meeting` | `Calendars.ReadWrite` | `Calendars.ReadWrite` |
+| `find_meeting_slots` | `Calendars.Read` | `Calendars.Read` |
+| `get_meeting_transcript` | `OnlineMeetingTranscript.Read.All` | `OnlineMeetingTranscript.Read.All` |
+
 ---
 
 ## Dynamic Tool Management
@@ -8222,6 +8419,7 @@ All tools generated by `ConnectorTools.for()` are prefixed with the connector na
 
 **Services with built-in tools:**
 - **GitHub** — 7 tools: `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` (see [GitHub Connector Tools](#github-connector-tools))
+- **Microsoft** — 6 tools: `create_draft_email`, `send_email`, `create_meeting`, `edit_meeting`, `find_meeting_slots`, `get_meeting_transcript` (see [Microsoft Graph Connector Tools](#microsoft-graph-connector-tools))
 - **AI Vendors** (OpenAI, Google, Grok) — Multimedia tools: `generate_image`, `generate_video`, `text_to_speech`, `speech_to_text`
 
 This ensures that tools from different vendors (e.g., `google_generate_image` vs `main-openai_generate_image`) never collide, and are clearly identified by connector in UIs and agent configs.
