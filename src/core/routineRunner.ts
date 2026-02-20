@@ -514,15 +514,16 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       let taskCompleted = false;
       const maxTaskIterations = task.execution?.maxIterations ?? 15;
 
-      // Safety hook: limit iterations per task to prevent runaway agents.
-      // Registered before each task and unregistered after.
+      // Safety: limit iterations per task via pause:check hook.
+      // When exceeded, cancel the agent to break out of the run loop.
+      // We reset _cancelled after each agent.run() so the next task can proceed.
       const iterationLimiter = async (ctx: { iteration: number }) => {
         if (ctx.iteration >= maxTaskIterations) {
-          throw new Error(`Task "${task.name}" exceeded max iterations (${maxTaskIterations})`);
+          agent.cancel(`Task "${task.name}" exceeded max iterations (${maxTaskIterations})`);
         }
-        return {};
+        return { shouldPause: false };
       };
-      agent.registerHook('before:llm', iterationLimiter);
+      agent.registerHook('pause:check', iterationLimiter);
 
       // Helper to get the live task reference (updateTaskStatus returns new objects)
       const getTask = () => execution.plan.tasks[taskIndex]!;
@@ -633,7 +634,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       }
 
       // Remove per-task iteration limiter
-      agent.unregisterHook('before:llm', iterationLimiter);
+      agent.unregisterHook('pause:check', iterationLimiter);
 
       // Clear conversation for next task (memory persists)
       agent.clearConversation('task-boundary');

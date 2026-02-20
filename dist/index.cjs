@@ -24153,11 +24153,11 @@ async function executeRoutine(options) {
       const maxTaskIterations = task.execution?.maxIterations ?? 15;
       const iterationLimiter = async (ctx) => {
         if (ctx.iteration >= maxTaskIterations) {
-          throw new Error(`Task "${task.name}" exceeded max iterations (${maxTaskIterations})`);
+          agent.cancel(`Task "${task.name}" exceeded max iterations (${maxTaskIterations})`);
         }
-        return {};
+        return { shouldPause: false };
       };
-      agent.registerHook("before:llm", iterationLimiter);
+      agent.registerHook("pause:check", iterationLimiter);
       const getTask = () => execution.plan.tasks[taskIndex];
       while (!taskCompleted) {
         try {
@@ -24235,7 +24235,7 @@ async function executeRoutine(options) {
           break;
         }
       }
-      agent.unregisterHook("before:llm", iterationLimiter);
+      agent.unregisterHook("pause:check", iterationLimiter);
       agent.clearConversation("task-boundary");
       nextTasks = getNextExecutableTasks(execution.plan);
     }
