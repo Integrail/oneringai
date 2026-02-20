@@ -127,6 +127,7 @@ function createRoutineWithValidation(): RoutineDefinition {
             'All items have names',
           ],
           minCompletionScore: 80,
+          skipReflection: false,
         },
       },
     ],
@@ -360,6 +361,7 @@ describe('executeRoutine', () => {
             validation: {
               completionCriteria: ['Must have 10 items'],
               minCompletionScore: 80,
+              skipReflection: false,
             },
           },
         ],
@@ -391,6 +393,7 @@ describe('executeRoutine', () => {
             validation: {
               completionCriteria: ['Something'],
               minCompletionScore: 90,
+              skipReflection: false,
             },
           },
         ],
@@ -419,6 +422,7 @@ describe('executeRoutine', () => {
             maxAttempts: 1,
             validation: {
               completionCriteria: ['Something'],
+              skipReflection: false,
             },
           },
         ],
@@ -480,6 +484,7 @@ describe('executeRoutine', () => {
             validation: {
               completionCriteria: ['Must succeed'],
               minCompletionScore: 80,
+              skipReflection: false,
             },
           },
         ],
@@ -519,6 +524,7 @@ describe('executeRoutine', () => {
             validation: {
               completionCriteria: ['Impossible criterion'],
               minCompletionScore: 80,
+              skipReflection: false,
             },
           },
         ],
@@ -1089,6 +1095,7 @@ describe('executeRoutine', () => {
             validation: {
               completionCriteria: ['Must pass'],
               minCompletionScore: 80,
+              skipReflection: false,
             },
           },
         ],

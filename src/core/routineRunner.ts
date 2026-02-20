@@ -79,6 +79,9 @@ export interface ExecuteRoutineOptions {
   /** Called when a task fails */
   onTaskFailed?: (task: Task, execution: RoutineExecution) => void;
 
+  /** Called after each validation attempt (whether pass or fail) */
+  onTaskValidation?: (task: Task, result: TaskValidationResult, execution: RoutineExecution) => void;
+
   /** Configurable prompts (all have sensible defaults) */
   prompts?: {
     /** Override system prompt builder. Receives definition, should return full system prompt. */
@@ -293,6 +296,10 @@ async function collectValidationContext(
  * Validate task completion using LLM self-reflection via agent.runDirect().
  * Collects full context (memory state, tool calls) so the validator can verify
  * what actually happened, not just what the agent claimed.
+ *
+ * LLM validation is OPT-IN: it only runs when the task explicitly sets
+ * `validation.skipReflection = false` AND provides completionCriteria.
+ * By default, tasks auto-pass with score 100.
  */
 async function validateTaskCompletion(
   agent: Agent,
@@ -300,22 +307,18 @@ async function validateTaskCompletion(
   responseText: string,
   validationPromptBuilder: (task: Task, context: ValidationContext) => string
 ): Promise<TaskValidationResult> {
-  // If skipReflection is set, auto-pass
-  if (task.validation?.skipReflection) {
-    return {
-      isComplete: true,
-      completionScore: 100,
-      explanation: 'Validation skipped (skipReflection=true)',
-      requiresUserApproval: false,
-    };
-  }
+  // LLM validation is opt-in: only run when skipReflection is explicitly false
+  // AND completion criteria are provided. Otherwise auto-pass.
+  const hasExplicitValidation =
+    task.validation?.skipReflection === false &&
+    task.validation?.completionCriteria &&
+    task.validation.completionCriteria.length > 0;
 
-  // If no completion criteria defined, auto-pass
-  if (!task.validation?.completionCriteria || task.validation.completionCriteria.length === 0) {
+  if (!hasExplicitValidation) {
     return {
       isComplete: true,
       completionScore: 100,
-      explanation: 'No completion criteria defined, auto-passing',
+      explanation: 'Auto-passed (LLM validation not enabled)',
       requiresUserApproval: false,
     };
   }
@@ -391,6 +394,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     onTaskStarted,
     onTaskComplete,
     onTaskFailed,
+    onTaskValidation,
     hooks,
     prompts,
   } = options;
@@ -530,6 +534,9 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
             responseText,
             buildValidationPrompt
           );
+
+          // Notify caller of validation result
+          onTaskValidation?.(getTask(), validationResult, execution);
 
           if (validationResult.isComplete) {
             // Mark completed

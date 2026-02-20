@@ -24014,19 +24014,12 @@ async function collectValidationContext(agent, responseText) {
   };
 }
 async function validateTaskCompletion(agent, task, responseText, validationPromptBuilder) {
-  if (task.validation?.skipReflection) {
+  const hasExplicitValidation = task.validation?.skipReflection === false && task.validation?.completionCriteria && task.validation.completionCriteria.length > 0;
+  if (!hasExplicitValidation) {
     return {
       isComplete: true,
       completionScore: 100,
-      explanation: "Validation skipped (skipReflection=true)",
-      requiresUserApproval: false
-    };
-  }
-  if (!task.validation?.completionCriteria || task.validation.completionCriteria.length === 0) {
-    return {
-      isComplete: true,
-      completionScore: 100,
-      explanation: "No completion criteria defined, auto-passing",
+      explanation: "Auto-passed (LLM validation not enabled)",
       requiresUserApproval: false
     };
   }
@@ -24065,6 +24058,7 @@ async function executeRoutine(options) {
     onTaskStarted,
     onTaskComplete,
     onTaskFailed,
+    onTaskValidation,
     hooks,
     prompts
   } = options;
@@ -24167,6 +24161,7 @@ async function executeRoutine(options) {
             responseText,
             buildValidationPrompt
           );
+          onTaskValidation?.(getTask(), validationResult, execution);
           if (validationResult.isComplete) {
             execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "completed");
             execution.plan.tasks[taskIndex].result = {

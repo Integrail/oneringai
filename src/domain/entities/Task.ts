@@ -181,8 +181,8 @@ export interface TaskValidation {
 
   /**
    * Skip LLM self-reflection validation.
-   * Set to true if you only want programmatic validation (memory keys, hooks).
-   * Default: false (reflection is enabled when completionCriteria is set)
+   * LLM validation is opt-in: set to `false` to enable it (requires completionCriteria).
+   * Default: undefined (treated as true — validation auto-passes).
    */
   skipReflection?: boolean;
 }
