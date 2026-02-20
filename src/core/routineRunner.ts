@@ -28,6 +28,7 @@ import {
 import { ContentType } from '../domain/entities/Content.js';
 import type { Content } from '../domain/entities/Content.js';
 import type { Message, OutputItem } from '../domain/entities/Message.js';
+import type { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { extractJSON } from '../utils/jsonExtractor.js';
 import { logger } from '../infrastructure/observability/Logger.js';
 
@@ -51,11 +52,17 @@ export interface ExecuteRoutineOptions {
   /** Additional tools beyond requiredTools */
   tools?: ToolFunction[];
 
+  /** Called when a task starts executing (set to in_progress) */
+  onTaskStarted?: (task: Task, execution: RoutineExecution) => void;
+
   /** Called when a task completes successfully */
   onTaskComplete?: (task: Task, execution: RoutineExecution) => void;
 
   /** Called when a task fails */
   onTaskFailed?: (task: Task, execution: RoutineExecution) => void;
+
+  /** Hooks passed through to Agent.create() for monitoring tool calls, LLM interactions, etc. */
+  hooks?: HookConfig;
 
   /** Configurable prompts (all have sensible defaults) */
   prompts?: {
@@ -365,8 +372,10 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     connector,
     model,
     tools: extraTools,
+    onTaskStarted,
     onTaskComplete,
     onTaskFailed,
+    hooks,
     prompts,
   } = options;
 
@@ -405,6 +414,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     model,
     tools: allTools,
     instructions: buildSystemPrompt(definition),
+    hooks,
     context: {
       model,
       features: {
@@ -445,6 +455,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       // Set task to in_progress
       execution.plan.tasks[taskIndex] = updateTaskStatus(task, 'in_progress');
       execution.lastUpdatedAt = Date.now();
+      onTaskStarted?.(execution.plan.tasks[taskIndex]!, execution);
 
       let taskCompleted = false;
 

@@ -24037,8 +24037,10 @@ async function executeRoutine(options) {
     connector,
     model,
     tools: extraTools,
+    onTaskStarted,
     onTaskComplete,
     onTaskFailed,
+    hooks,
     prompts
   } = options;
   const log = exports.logger.child({ routine: definition.name });
@@ -24066,6 +24068,7 @@ async function executeRoutine(options) {
     model,
     tools: allTools,
     instructions: buildSystemPrompt(definition),
+    hooks,
     context: {
       model,
       features: {
@@ -24096,6 +24099,7 @@ async function executeRoutine(options) {
       log.info({ taskName: task.name, taskId: task.id }, "Starting task");
       execution.plan.tasks[taskIndex] = updateTaskStatus(task, "in_progress");
       execution.lastUpdatedAt = Date.now();
+      onTaskStarted?.(execution.plan.tasks[taskIndex], execution);
       let taskCompleted = false;
       const getTask = () => execution.plan.tasks[taskIndex];
       while (!taskCompleted) {
