@@ -9,6 +9,8 @@ import {
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,
+  formatAttendees,
+  normalizeEmails,
   isTeamsMeetingUrl,
   resolveMeetingId,
   MicrosoftAPIError,
@@ -191,20 +193,84 @@ describe('Microsoft Graph Tools', () => {
   });
 
   // ========================================================================
-  // formatRecipients
+  // normalizeEmails
   // ========================================================================
 
-  describe('formatRecipients', () => {
-    it('should convert email strings to Graph recipient format', () => {
-      const result = formatRecipients(['alice@example.com', 'bob@example.com']);
-      expect(result).toEqual([
-        { emailAddress: { address: 'alice@example.com' } },
+  describe('normalizeEmails', () => {
+    it('should pass through plain strings', () => {
+      expect(normalizeEmails(['alice@example.com', 'bob@example.com'])).toEqual([
+        'alice@example.com',
+        'bob@example.com',
+      ]);
+    });
+
+    it('should extract from Graph recipient objects { emailAddress: { address } }', () => {
+      const input = [
+        { emailAddress: { address: 'alice@example.com', name: 'Alice' }, type: 'required' },
         { emailAddress: { address: 'bob@example.com' } },
+      ];
+      expect(normalizeEmails(input)).toEqual(['alice@example.com', 'bob@example.com']);
+    });
+
+    it('should extract from bare { address } objects', () => {
+      expect(normalizeEmails([{ address: 'alice@example.com' }])).toEqual(['alice@example.com']);
+    });
+
+    it('should extract from { email } objects', () => {
+      expect(normalizeEmails([{ email: 'alice@example.com' }])).toEqual(['alice@example.com']);
+    });
+
+    it('should handle mixed formats', () => {
+      const input = [
+        'plain@example.com',
+        { emailAddress: { address: 'graph@example.com' } },
+        { address: 'bare@example.com' },
+      ];
+      expect(normalizeEmails(input)).toEqual([
+        'plain@example.com',
+        'graph@example.com',
+        'bare@example.com',
       ]);
     });
 
     it('should handle empty array', () => {
-      expect(formatRecipients([])).toEqual([]);
+      expect(normalizeEmails([])).toEqual([]);
+    });
+  });
+
+  // ========================================================================
+  // formatRecipients / formatAttendees
+  // ========================================================================
+
+  describe('formatRecipients', () => {
+    it('should convert plain email strings to Graph recipient format', () => {
+      const result = formatRecipients(['alice@example.com']);
+      expect(result).toEqual([{ emailAddress: { address: 'alice@example.com' } }]);
+    });
+
+    it('should normalize Graph objects and re-wrap correctly', () => {
+      const result = formatRecipients([
+        { emailAddress: { address: 'alice@example.com' }, type: 'required' } as any,
+      ]);
+      expect(result).toEqual([{ emailAddress: { address: 'alice@example.com' } }]);
+    });
+  });
+
+  describe('formatAttendees', () => {
+    it('should convert plain email strings to Graph attendee format', () => {
+      const result = formatAttendees(['alice@example.com']);
+      expect(result).toEqual([
+        { emailAddress: { address: 'alice@example.com' }, type: 'required' },
+      ]);
+    });
+
+    it('should normalize Graph objects and re-wrap correctly', () => {
+      const result = formatAttendees([
+        { emailAddress: { address: 'alice@example.com', name: 'Alice' }, type: 'required' } as any,
+      ]);
+      expect(result).toEqual([
+        { emailAddress: { address: 'alice@example.com' }, type: 'required' },
+      ]);
     });
   });
 
@@ -968,6 +1034,31 @@ Bob: Hi Alice, thanks for setting this up.`;
         expect(result.success).toBe(true);
         expect(result.slots).toHaveLength(0);
         expect(result.emptySuggestionsReason).toBe('AttendeesUnavailable');
+      });
+
+      it('should normalize Graph attendee objects sent by LLM', async () => {
+        fetchSpy.mockResolvedValueOnce(
+          mockResponse({ meetingTimeSuggestions: [], emptySuggestionsReason: 'AttendeesUnavailable' })
+        );
+
+        const tool = createFindMeetingSlotsTool(connector);
+        // LLM sends Graph-formatted attendee objects instead of plain strings
+        const result = await tool.execute({
+          attendees: [
+            { emailAddress: { address: 'alice@example.com', name: 'Alice' }, type: 'required' },
+          ] as any,
+          startDateTime: '2025-01-15T08:00:00',
+          endDateTime: '2025-01-15T18:00:00',
+          duration: 30,
+        });
+
+        expect(result.success).toBe(true);
+
+        // Verify the body sent to Graph API has correct format (not double-nested)
+        const callBody = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string);
+        expect(callBody.attendees).toEqual([
+          { emailAddress: { address: 'alice@example.com' }, type: 'required' },
+        ]);
       });
 
       it('should handle API errors gracefully', async () => {

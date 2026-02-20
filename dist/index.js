@@ -43089,6 +43089,7 @@ __export(tools_exports, {
   executeInVM: () => executeInVM,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
+  formatAttendees: () => formatAttendees,
   formatRecipients: () => formatRecipients,
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
@@ -43112,6 +43113,7 @@ __export(tools_exports, {
   listDirectory: () => listDirectory,
   mergeTextPieces: () => mergeTextPieces,
   microsoftFetch: () => microsoftFetch,
+  normalizeEmails: () => normalizeEmails,
   parseKeyCombo: () => parseKeyCombo,
   parseRepository: () => parseRepository,
   readFile: () => readFile5,
@@ -47264,8 +47266,29 @@ async function microsoftFetch(connector, endpoint, options) {
     return text;
   }
 }
+function normalizeEmails(input) {
+  return input.map((item) => {
+    if (typeof item === "string") return item;
+    if (typeof item === "object" && item !== null) {
+      const obj = item;
+      if (obj.emailAddress && typeof obj.emailAddress === "object") {
+        const ea = obj.emailAddress;
+        if (typeof ea.address === "string") return ea.address;
+      }
+      if (typeof obj.address === "string") return obj.address;
+      if (typeof obj.email === "string") return obj.email;
+    }
+    return String(item);
+  });
+}
 function formatRecipients(emails) {
-  return emails.map((address) => ({ emailAddress: { address } }));
+  return normalizeEmails(emails).map((address) => ({ emailAddress: { address } }));
+}
+function formatAttendees(emails) {
+  return normalizeEmails(emails).map((address) => ({
+    emailAddress: { address },
+    type: "required"
+  }));
 }
 function isTeamsMeetingUrl(input) {
   try {
@@ -47311,43 +47334,44 @@ function createDraftEmailTool(connector, userId) {
         name: "create_draft_email",
         description: `Create a draft email or draft reply in the user's Outlook mailbox via Microsoft Graph. The draft is saved but NOT sent \u2014 use send_email to send immediately instead.
 
-USAGE:
-- New draft: provide to, subject, and body (HTML content, e.g. "<p>Hello!</p>")
-- Reply draft: also provide replyToMessageId (the Graph message ID of the original email) to create a threaded reply draft
-- The body field accepts HTML \u2014 use <p>, <br>, <ul>, <b>, etc. for formatting
+PARAMETER FORMATS:
+- to/cc: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects.
+- subject: plain string. Example: "Project update" or "Re: Project update" for replies.
+- body: HTML string. Example: "<p>Hi Alice,</p><p>Here is the update.</p>". Use <p>, <br>, <b>, <ul> tags for formatting.
+- replyToMessageId: Graph message ID string (starts with "AAMk..."). Only set when replying to an existing email.
 
 EXAMPLES:
 - New draft: { "to": ["alice@contoso.com"], "subject": "Project update", "body": "<p>Hi Alice,</p><p>Here is the update.</p>" }
-- Reply draft: { "to": ["alice@contoso.com"], "subject": "Re: Project update", "body": "<p>Thanks for the info!</p>", "replyToMessageId": "AAMkADI1..." }
-- With CC: { "to": ["alice@contoso.com"], "subject": "Meeting notes", "body": "<p>Notes attached.</p>", "cc": ["bob@contoso.com"] }`,
+- Reply draft: { "to": ["alice@contoso.com"], "subject": "Re: Project update", "body": "<p>Thanks!</p>", "replyToMessageId": "AAMkADI1..." }
+- With CC: { "to": ["alice@contoso.com"], "subject": "Notes", "body": "<p>See attached.</p>", "cc": ["bob@contoso.com"] }`,
         parameters: {
           type: "object",
           properties: {
             to: {
               type: "array",
               items: { type: "string" },
-              description: "Recipient email addresses"
+              description: 'Recipient email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]'
             },
             subject: {
               type: "string",
-              description: 'Email subject line (use "Re: ..." prefix for replies)'
+              description: 'Email subject as plain string. Example: "Project update" or "Re: Original subject" for replies.'
             },
             body: {
               type: "string",
-              description: 'Email body as HTML content (e.g. "<p>Hello!</p>"). Use HTML tags for formatting.'
+              description: 'Email body as an HTML string. Example: "<p>Hello!</p><p>See you tomorrow.</p>"'
             },
             cc: {
               type: "array",
               items: { type: "string" },
-              description: "CC recipient email addresses (optional)"
+              description: 'CC email addresses as plain strings. Example: ["bob@contoso.com"]. Optional.'
             },
             replyToMessageId: {
               type: "string",
-              description: 'Microsoft Graph message ID of the email to reply to (e.g. "AAMkADI1..."). When set, creates a threaded reply draft instead of a new draft.'
+              description: 'Graph message ID of the email to reply to. Example: "AAMkADI1M2I3YzgtODg...". When set, creates a threaded reply draft.'
             },
             targetUser: {
               type: "string",
-              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.'
             }
           },
           required: ["to", "subject", "body"]
@@ -47432,14 +47456,15 @@ function createSendEmailTool(connector, userId) {
         name: "send_email",
         description: `Send an email immediately or reply to an existing message via Microsoft Graph (Outlook). The email is sent right away \u2014 use create_draft_email to save a draft instead.
 
-USAGE:
-- New email: provide to, subject, and body (HTML content, e.g. "<p>Hello!</p>")
-- Reply: also provide replyToMessageId (the Graph message ID of the original email) to send a threaded reply
-- The body field accepts HTML \u2014 use <p>, <br>, <ul>, <b>, etc. for formatting
+PARAMETER FORMATS:
+- to/cc: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects.
+- subject: plain string. Example: "Meeting tomorrow" or "Re: Meeting tomorrow" for replies.
+- body: HTML string. Example: "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>". Use <p>, <br>, <b>, <ul> tags.
+- replyToMessageId: Graph message ID string (starts with "AAMk..."). Only set when replying to an existing email.
 
 EXAMPLES:
-- Send email: { "to": ["alice@contoso.com"], "subject": "Meeting tomorrow", "body": "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>" }
-- Reply: { "to": ["alice@contoso.com"], "subject": "Re: Meeting tomorrow", "body": "<p>Confirmed, see you then!</p>", "replyToMessageId": "AAMkADI1..." }
+- Send email: { "to": ["alice@contoso.com"], "subject": "Meeting tomorrow", "body": "<p>Can we meet at 2pm?</p>" }
+- Reply: { "to": ["alice@contoso.com"], "subject": "Re: Meeting", "body": "<p>Confirmed!</p>", "replyToMessageId": "AAMkADI1..." }
 - With CC: { "to": ["alice@contoso.com"], "subject": "Update", "body": "<p>FYI</p>", "cc": ["bob@contoso.com"] }`,
         parameters: {
           type: "object",
@@ -47447,28 +47472,28 @@ EXAMPLES:
             to: {
               type: "array",
               items: { type: "string" },
-              description: "Recipient email addresses"
+              description: 'Recipient email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]'
             },
             subject: {
               type: "string",
-              description: 'Email subject line (use "Re: ..." prefix for replies)'
+              description: 'Email subject as plain string. Example: "Meeting tomorrow" or "Re: Original subject" for replies.'
             },
             body: {
               type: "string",
-              description: 'Email body as HTML content (e.g. "<p>Hello!</p>"). Use HTML tags for formatting.'
+              description: 'Email body as an HTML string. Example: "<p>Hi!</p><p>Can we meet at 2pm?</p>"'
             },
             cc: {
               type: "array",
               items: { type: "string" },
-              description: "CC recipient email addresses (optional)"
+              description: 'CC email addresses as plain strings. Example: ["bob@contoso.com"]. Optional.'
             },
             replyToMessageId: {
               type: "string",
-              description: 'Microsoft Graph message ID of the email to reply to (e.g. "AAMkADI1..."). When set, sends a threaded reply instead of a new email.'
+              description: 'Graph message ID of the email to reply to. Example: "AAMkADI1M2I3YzgtODg...". When set, sends a threaded reply.'
             },
             targetUser: {
               type: "string",
-              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.'
             }
           },
           required: ["to", "subject", "body"]
@@ -47543,54 +47568,57 @@ function createMeetingTool(connector, userId) {
         name: "create_meeting",
         description: `Create a calendar event on the user's Outlook calendar via Microsoft Graph, optionally with a Teams online meeting link.
 
-USAGE:
-- Provide subject, start/end times (ISO 8601 without timezone suffix \u2014 timezone is set separately via the timeZone param), and attendees
-- Set isOnlineMeeting: true to generate a Teams meeting link automatically
-- Attendees receive an Outlook calendar invitation
+PARAMETER FORMATS:
+- subject: plain string. Example: "Sprint Review"
+- startDateTime/endDateTime: ISO 8601 string WITHOUT timezone suffix (timezone is a separate param). Example: "2025-01-15T09:00:00"
+- attendees: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects.
+- body: HTML string for the invitation body. Example: "<p>Agenda: discuss Q1 goals</p>". Optional.
+- timeZone: IANA timezone string. Example: "America/New_York", "Europe/Zurich". Default: "UTC".
+- isOnlineMeeting: boolean. Set true to auto-generate a Teams meeting link.
+- location: plain string. Example: "Conference Room A". Optional.
 
 EXAMPLES:
-- Simple meeting: { "subject": "Standup", "startDateTime": "2025-01-15T09:00:00", "endDateTime": "2025-01-15T09:30:00", "attendees": ["alice@contoso.com"], "timeZone": "America/New_York" }
-- Teams meeting: { "subject": "Sprint Review", "startDateTime": "2025-01-15T14:00:00", "endDateTime": "2025-01-15T15:00:00", "attendees": ["alice@contoso.com", "bob@contoso.com"], "isOnlineMeeting": true }
-- With location and body: { "subject": "1:1", "startDateTime": "2025-01-15T10:00:00", "endDateTime": "2025-01-15T10:30:00", "attendees": ["alice@contoso.com"], "location": "Room 201", "body": "<p>Weekly sync</p>" }`,
+- Simple: { "subject": "Standup", "startDateTime": "2025-01-15T09:00:00", "endDateTime": "2025-01-15T09:30:00", "attendees": ["alice@contoso.com"], "timeZone": "America/New_York" }
+- Teams: { "subject": "Sprint Review", "startDateTime": "2025-01-15T14:00:00", "endDateTime": "2025-01-15T15:00:00", "attendees": ["alice@contoso.com", "bob@contoso.com"], "isOnlineMeeting": true }`,
         parameters: {
           type: "object",
           properties: {
             subject: {
               type: "string",
-              description: "Meeting title"
+              description: 'Meeting title as plain string. Example: "Sprint Review"'
             },
             startDateTime: {
               type: "string",
-              description: 'Start date and time in ISO 8601 format (e.g., "2025-01-15T09:00:00")'
+              description: 'Start date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T09:00:00"'
             },
             endDateTime: {
               type: "string",
-              description: 'End date and time in ISO 8601 format (e.g., "2025-01-15T09:30:00")'
+              description: 'End date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T09:30:00"'
             },
             attendees: {
               type: "array",
               items: { type: "string" },
-              description: "Attendee email addresses"
+              description: 'Attendee email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]'
             },
             body: {
               type: "string",
-              description: 'Meeting description as HTML content (e.g. "<p>Agenda: ...</p>"). Shown in the calendar invitation.'
+              description: 'Meeting description as HTML string. Example: "<p>Agenda: discuss Q1 goals</p>". Optional.'
             },
             isOnlineMeeting: {
               type: "boolean",
-              description: "When true, generates a Teams online meeting link. Default: false."
+              description: "Set to true to generate a Teams online meeting link. Default: false."
             },
             location: {
               type: "string",
-              description: 'Physical location or room name (e.g. "Conference Room A")'
+              description: 'Physical location as plain string. Example: "Conference Room A". Optional.'
             },
             timeZone: {
               type: "string",
-              description: 'IANA timezone for start/end times (e.g. "America/New_York", "Europe/London"). Default: "UTC".'
+              description: 'IANA timezone string for start/end times. Example: "America/New_York", "Europe/Zurich". Default: "UTC".'
             },
             targetUser: {
               type: "string",
-              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.'
             }
           },
           required: ["subject", "startDateTime", "endDateTime", "attendees"]
@@ -47614,10 +47642,7 @@ EXAMPLES:
           subject: args.subject,
           start: { dateTime: args.startDateTime, timeZone: tz },
           end: { dateTime: args.endDateTime, timeZone: tz },
-          attendees: args.attendees.map((email) => ({
-            emailAddress: { address: email },
-            type: "required"
-          }))
+          attendees: formatAttendees(args.attendees)
         };
         if (args.body) {
           eventBody.body = { contentType: "HTML", content: args.body };
@@ -47659,60 +47684,65 @@ function createEditMeetingTool(connector, userId) {
         name: "edit_meeting",
         description: `Update an existing Outlook calendar event via Microsoft Graph. Only the fields you provide will be changed \u2014 omitted fields keep their current values.
 
-IMPORTANT: The "attendees" field REPLACES the entire attendee list. Include all desired attendees (both new and existing), not just the ones you want to add.
+IMPORTANT: The "attendees" field REPLACES the entire attendee list. Include ALL desired attendees (both new and existing), not just the ones you want to add.
 
-USAGE:
-- Provide eventId (from create_meeting result or calendar event) and only the fields to change
-- Get the eventId from a previous create_meeting call or from the user's calendar
+PARAMETER FORMATS:
+- eventId: Graph event ID string (starts with "AAMk..."). Get this from a previous create_meeting result.
+- subject: plain string. Example: "Updated: Sprint Review"
+- startDateTime/endDateTime: ISO 8601 string without timezone suffix. Example: "2025-01-15T10:00:00"
+- attendees: plain string array of email addresses. Example: ["alice@contoso.com", "charlie@contoso.com"]. Do NOT use objects. REPLACES all attendees.
+- body: HTML string. Example: "<p>Updated agenda</p>"
+- timeZone: IANA timezone string. Example: "Europe/Zurich". Default: "UTC".
+- isOnlineMeeting: boolean. true = add Teams link, false = remove it.
+- location: plain string. Example: "Room 201"
 
 EXAMPLES:
 - Reschedule: { "eventId": "AAMkADI1...", "startDateTime": "2025-01-15T10:00:00", "endDateTime": "2025-01-15T10:30:00", "timeZone": "America/New_York" }
 - Change attendees: { "eventId": "AAMkADI1...", "attendees": ["alice@contoso.com", "charlie@contoso.com"] }
-- Add Teams link: { "eventId": "AAMkADI1...", "isOnlineMeeting": true }
-- Update title: { "eventId": "AAMkADI1...", "subject": "Updated: Sprint Review" }`,
+- Add Teams link: { "eventId": "AAMkADI1...", "isOnlineMeeting": true }`,
         parameters: {
           type: "object",
           properties: {
             eventId: {
               type: "string",
-              description: 'Calendar event ID to update (from create_meeting result or Graph API, e.g. "AAMkADI1...")'
+              description: 'Calendar event ID string from create_meeting result. Example: "AAMkADI1M2I3YzgtODg..."'
             },
             subject: {
               type: "string",
-              description: "New meeting title"
+              description: 'New meeting title as plain string. Example: "Updated: Sprint Review"'
             },
             startDateTime: {
               type: "string",
-              description: "New start date and time in ISO 8601 format"
+              description: 'New start date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T10:00:00"'
             },
             endDateTime: {
               type: "string",
-              description: "New end date and time in ISO 8601 format"
+              description: 'New end date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T10:30:00"'
             },
             attendees: {
               type: "array",
               items: { type: "string" },
-              description: "Full replacement attendee list (email addresses). Include ALL desired attendees, not just new ones."
+              description: 'FULL replacement attendee list as plain email strings. Example: ["alice@contoso.com", "charlie@contoso.com"]. Include ALL attendees.'
             },
             body: {
               type: "string",
-              description: "New meeting description as HTML content"
+              description: 'New meeting description as HTML string. Example: "<p>Updated agenda</p>"'
             },
             isOnlineMeeting: {
               type: "boolean",
-              description: "Set to true to add a Teams meeting link, or false to remove it"
+              description: "true to add Teams meeting link, false to remove it."
             },
             location: {
               type: "string",
-              description: "New physical location or room name"
+              description: 'New location as plain string. Example: "Conference Room A"'
             },
             timeZone: {
               type: "string",
-              description: 'IANA timezone for start/end times (e.g. "America/New_York"). Default: "UTC".'
+              description: 'IANA timezone string for start/end times. Example: "Europe/Zurich". Default: "UTC".'
             },
             targetUser: {
               type: "string",
-              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.'
             }
           },
           required: ["eventId"]
@@ -47740,10 +47770,7 @@ EXAMPLES:
         if (args.startDateTime !== void 0) patchBody.start = { dateTime: args.startDateTime, timeZone: tz };
         if (args.endDateTime !== void 0) patchBody.end = { dateTime: args.endDateTime, timeZone: tz };
         if (args.attendees !== void 0) {
-          patchBody.attendees = args.attendees.map((email) => ({
-            emailAddress: { address: email },
-            type: "required"
-          }));
+          patchBody.attendees = formatAttendees(args.attendees);
         }
         if (args.isOnlineMeeting !== void 0) {
           patchBody.isOnlineMeeting = args.isOnlineMeeting;
@@ -47885,13 +47912,15 @@ function createFindMeetingSlotsTool(connector, userId) {
         name: "find_meeting_slots",
         description: `Find available meeting time slots when all attendees are free, via Microsoft Graph. Checks each attendee's Outlook calendar and suggests times when everyone is available.
 
-USAGE:
-- Provide attendee emails, a search window (start/end datetimes), and desired meeting duration in minutes
-- Returns up to maxResults (default: 5) suggested time slots ranked by confidence, with per-attendee availability
-- If no slots are found, returns an emptySuggestionsReason explaining why
+PARAMETER FORMATS:
+- attendees: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects \u2014 just plain email strings.
+- startDateTime/endDateTime: ISO 8601 string without timezone suffix. Example: "2025-01-15T08:00:00". Can span multiple days.
+- duration: number of minutes as integer. Example: 30 or 60.
+- timeZone: IANA timezone string. Example: "America/New_York", "Europe/Zurich". Default: "UTC".
+- maxResults: integer. Default: 5.
 
 EXAMPLES:
-- Find 30min slot this week: { "attendees": ["alice@contoso.com", "bob@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-15T18:00:00", "duration": 30, "timeZone": "America/New_York" }
+- Find 30min slot: { "attendees": ["alice@contoso.com", "bob@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-15T18:00:00", "duration": 30, "timeZone": "America/New_York" }
 - Find 1hr slot across days: { "attendees": ["alice@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-17T18:00:00", "duration": 60, "maxResults": 10 }`,
         parameters: {
           type: "object",
@@ -47899,31 +47928,31 @@ EXAMPLES:
             attendees: {
               type: "array",
               items: { type: "string" },
-              description: "Attendee email addresses to check availability for"
+              description: 'Attendee email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT pass objects.'
             },
             startDateTime: {
               type: "string",
-              description: 'Search window start in ISO 8601 format (e.g. "2025-01-15T08:00:00")'
+              description: 'Search window start as ISO 8601 string without timezone suffix. Example: "2025-01-15T08:00:00"'
             },
             endDateTime: {
               type: "string",
-              description: 'Search window end in ISO 8601 format (e.g. "2025-01-15T18:00:00"). Can span multiple days.'
+              description: 'Search window end as ISO 8601 string without timezone suffix. Example: "2025-01-15T18:00:00". Can span multiple days.'
             },
             duration: {
               type: "number",
-              description: "Desired meeting duration in minutes (e.g. 30, 60)"
+              description: "Meeting duration in minutes as integer. Example: 30 or 60."
             },
             timeZone: {
               type: "string",
-              description: 'IANA timezone for start/end times (e.g. "America/New_York"). Default: "UTC".'
+              description: 'IANA timezone string for start/end times. Example: "America/New_York", "Europe/Zurich". Default: "UTC".'
             },
             maxResults: {
               type: "number",
-              description: "Maximum number of time slot suggestions to return. Default: 5."
+              description: "Maximum number of time slot suggestions as integer. Default: 5."
             },
             targetUser: {
               type: "string",
-              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.'
             }
           },
           required: ["attendees", "startDateTime", "endDateTime", "duration"]
@@ -47950,10 +47979,7 @@ EXAMPLES:
             method: "POST",
             userId: effectiveUserId,
             body: {
-              attendees: args.attendees.map((email) => ({
-                emailAddress: { address: email },
-                type: "required"
-              })),
+              attendees: formatAttendees(args.attendees),
               timeConstraint: {
                 timeslots: [
                   {
@@ -49994,6 +50020,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTeamsMeetingUrl, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, formatAttendees, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTeamsMeetingUrl, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

@@ -11,6 +11,7 @@ import {
   type GraphEventResponse,
   getUserPathPrefix,
   microsoftFetch,
+  formatAttendees,
 } from './types.js';
 
 export interface EditMeetingArgs {
@@ -40,60 +41,65 @@ export function createEditMeetingTool(
         name: 'edit_meeting',
         description: `Update an existing Outlook calendar event via Microsoft Graph. Only the fields you provide will be changed — omitted fields keep their current values.
 
-IMPORTANT: The "attendees" field REPLACES the entire attendee list. Include all desired attendees (both new and existing), not just the ones you want to add.
+IMPORTANT: The "attendees" field REPLACES the entire attendee list. Include ALL desired attendees (both new and existing), not just the ones you want to add.
 
-USAGE:
-- Provide eventId (from create_meeting result or calendar event) and only the fields to change
-- Get the eventId from a previous create_meeting call or from the user's calendar
+PARAMETER FORMATS:
+- eventId: Graph event ID string (starts with "AAMk..."). Get this from a previous create_meeting result.
+- subject: plain string. Example: "Updated: Sprint Review"
+- startDateTime/endDateTime: ISO 8601 string without timezone suffix. Example: "2025-01-15T10:00:00"
+- attendees: plain string array of email addresses. Example: ["alice@contoso.com", "charlie@contoso.com"]. Do NOT use objects. REPLACES all attendees.
+- body: HTML string. Example: "<p>Updated agenda</p>"
+- timeZone: IANA timezone string. Example: "Europe/Zurich". Default: "UTC".
+- isOnlineMeeting: boolean. true = add Teams link, false = remove it.
+- location: plain string. Example: "Room 201"
 
 EXAMPLES:
 - Reschedule: { "eventId": "AAMkADI1...", "startDateTime": "2025-01-15T10:00:00", "endDateTime": "2025-01-15T10:30:00", "timeZone": "America/New_York" }
 - Change attendees: { "eventId": "AAMkADI1...", "attendees": ["alice@contoso.com", "charlie@contoso.com"] }
-- Add Teams link: { "eventId": "AAMkADI1...", "isOnlineMeeting": true }
-- Update title: { "eventId": "AAMkADI1...", "subject": "Updated: Sprint Review" }`,
+- Add Teams link: { "eventId": "AAMkADI1...", "isOnlineMeeting": true }`,
         parameters: {
           type: 'object',
           properties: {
             eventId: {
               type: 'string',
-              description: 'Calendar event ID to update (from create_meeting result or Graph API, e.g. "AAMkADI1...")',
+              description: 'Calendar event ID string from create_meeting result. Example: "AAMkADI1M2I3YzgtODg..."',
             },
             subject: {
               type: 'string',
-              description: 'New meeting title',
+              description: 'New meeting title as plain string. Example: "Updated: Sprint Review"',
             },
             startDateTime: {
               type: 'string',
-              description: 'New start date and time in ISO 8601 format',
+              description: 'New start date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T10:00:00"',
             },
             endDateTime: {
               type: 'string',
-              description: 'New end date and time in ISO 8601 format',
+              description: 'New end date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T10:30:00"',
             },
             attendees: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Full replacement attendee list (email addresses). Include ALL desired attendees, not just new ones.',
+              description: 'FULL replacement attendee list as plain email strings. Example: ["alice@contoso.com", "charlie@contoso.com"]. Include ALL attendees.',
             },
             body: {
               type: 'string',
-              description: 'New meeting description as HTML content',
+              description: 'New meeting description as HTML string. Example: "<p>Updated agenda</p>"',
             },
             isOnlineMeeting: {
               type: 'boolean',
-              description: 'Set to true to add a Teams meeting link, or false to remove it',
+              description: 'true to add Teams meeting link, false to remove it.',
             },
             location: {
               type: 'string',
-              description: 'New physical location or room name',
+              description: 'New location as plain string. Example: "Conference Room A"',
             },
             timeZone: {
               type: 'string',
-              description: 'IANA timezone for start/end times (e.g. "America/New_York"). Default: "UTC".',
+              description: 'IANA timezone string for start/end times. Example: "Europe/Zurich". Default: "UTC".',
             },
             targetUser: {
               type: 'string',
-              description: 'User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth.',
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.',
             },
           },
           required: ['eventId'],
@@ -130,10 +136,7 @@ EXAMPLES:
         if (args.startDateTime !== undefined) patchBody.start = { dateTime: args.startDateTime, timeZone: tz };
         if (args.endDateTime !== undefined) patchBody.end = { dateTime: args.endDateTime, timeZone: tz };
         if (args.attendees !== undefined) {
-          patchBody.attendees = args.attendees.map((email) => ({
-            emailAddress: { address: email },
-            type: 'required',
-          }));
+          patchBody.attendees = formatAttendees(args.attendees);
         }
         if (args.isOnlineMeeting !== undefined) {
           patchBody.isOnlineMeeting = args.isOnlineMeeting;

@@ -11,6 +11,7 @@ import {
   type GraphEventResponse,
   getUserPathPrefix,
   microsoftFetch,
+  formatAttendees,
 } from './types.js';
 
 export interface CreateMeetingArgs {
@@ -39,54 +40,57 @@ export function createMeetingTool(
         name: 'create_meeting',
         description: `Create a calendar event on the user's Outlook calendar via Microsoft Graph, optionally with a Teams online meeting link.
 
-USAGE:
-- Provide subject, start/end times (ISO 8601 without timezone suffix — timezone is set separately via the timeZone param), and attendees
-- Set isOnlineMeeting: true to generate a Teams meeting link automatically
-- Attendees receive an Outlook calendar invitation
+PARAMETER FORMATS:
+- subject: plain string. Example: "Sprint Review"
+- startDateTime/endDateTime: ISO 8601 string WITHOUT timezone suffix (timezone is a separate param). Example: "2025-01-15T09:00:00"
+- attendees: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects.
+- body: HTML string for the invitation body. Example: "<p>Agenda: discuss Q1 goals</p>". Optional.
+- timeZone: IANA timezone string. Example: "America/New_York", "Europe/Zurich". Default: "UTC".
+- isOnlineMeeting: boolean. Set true to auto-generate a Teams meeting link.
+- location: plain string. Example: "Conference Room A". Optional.
 
 EXAMPLES:
-- Simple meeting: { "subject": "Standup", "startDateTime": "2025-01-15T09:00:00", "endDateTime": "2025-01-15T09:30:00", "attendees": ["alice@contoso.com"], "timeZone": "America/New_York" }
-- Teams meeting: { "subject": "Sprint Review", "startDateTime": "2025-01-15T14:00:00", "endDateTime": "2025-01-15T15:00:00", "attendees": ["alice@contoso.com", "bob@contoso.com"], "isOnlineMeeting": true }
-- With location and body: { "subject": "1:1", "startDateTime": "2025-01-15T10:00:00", "endDateTime": "2025-01-15T10:30:00", "attendees": ["alice@contoso.com"], "location": "Room 201", "body": "<p>Weekly sync</p>" }`,
+- Simple: { "subject": "Standup", "startDateTime": "2025-01-15T09:00:00", "endDateTime": "2025-01-15T09:30:00", "attendees": ["alice@contoso.com"], "timeZone": "America/New_York" }
+- Teams: { "subject": "Sprint Review", "startDateTime": "2025-01-15T14:00:00", "endDateTime": "2025-01-15T15:00:00", "attendees": ["alice@contoso.com", "bob@contoso.com"], "isOnlineMeeting": true }`,
         parameters: {
           type: 'object',
           properties: {
             subject: {
               type: 'string',
-              description: 'Meeting title',
+              description: 'Meeting title as plain string. Example: "Sprint Review"',
             },
             startDateTime: {
               type: 'string',
-              description: 'Start date and time in ISO 8601 format (e.g., "2025-01-15T09:00:00")',
+              description: 'Start date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T09:00:00"',
             },
             endDateTime: {
               type: 'string',
-              description: 'End date and time in ISO 8601 format (e.g., "2025-01-15T09:30:00")',
+              description: 'End date/time as ISO 8601 string without timezone suffix. Example: "2025-01-15T09:30:00"',
             },
             attendees: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Attendee email addresses',
+              description: 'Attendee email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]',
             },
             body: {
               type: 'string',
-              description: 'Meeting description as HTML content (e.g. "<p>Agenda: ...</p>"). Shown in the calendar invitation.',
+              description: 'Meeting description as HTML string. Example: "<p>Agenda: discuss Q1 goals</p>". Optional.',
             },
             isOnlineMeeting: {
               type: 'boolean',
-              description: 'When true, generates a Teams online meeting link. Default: false.',
+              description: 'Set to true to generate a Teams online meeting link. Default: false.',
             },
             location: {
               type: 'string',
-              description: 'Physical location or room name (e.g. "Conference Room A")',
+              description: 'Physical location as plain string. Example: "Conference Room A". Optional.',
             },
             timeZone: {
               type: 'string',
-              description: 'IANA timezone for start/end times (e.g. "America/New_York", "Europe/London"). Default: "UTC".',
+              description: 'IANA timezone string for start/end times. Example: "America/New_York", "Europe/Zurich". Default: "UTC".',
             },
             targetUser: {
               type: 'string',
-              description: 'User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth.',
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.',
             },
           },
           required: ['subject', 'startDateTime', 'endDateTime', 'attendees'],
@@ -117,10 +121,7 @@ EXAMPLES:
           subject: args.subject,
           start: { dateTime: args.startDateTime, timeZone: tz },
           end: { dateTime: args.endDateTime, timeZone: tz },
-          attendees: args.attendees.map((email) => ({
-            emailAddress: { address: email },
-            type: 'required',
-          })),
+          attendees: formatAttendees(args.attendees),
         };
 
         if (args.body) {

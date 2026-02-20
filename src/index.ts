@@ -983,6 +983,8 @@ export {
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,
+  formatAttendees,
+  normalizeEmails,
   isTeamsMeetingUrl,
   resolveMeetingId,
 } from './tools/index.js';

@@ -36,14 +36,15 @@ export function createSendEmailTool(
         name: 'send_email',
         description: `Send an email immediately or reply to an existing message via Microsoft Graph (Outlook). The email is sent right away — use create_draft_email to save a draft instead.
 
-USAGE:
-- New email: provide to, subject, and body (HTML content, e.g. "<p>Hello!</p>")
-- Reply: also provide replyToMessageId (the Graph message ID of the original email) to send a threaded reply
-- The body field accepts HTML — use <p>, <br>, <ul>, <b>, etc. for formatting
+PARAMETER FORMATS:
+- to/cc: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects.
+- subject: plain string. Example: "Meeting tomorrow" or "Re: Meeting tomorrow" for replies.
+- body: HTML string. Example: "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>". Use <p>, <br>, <b>, <ul> tags.
+- replyToMessageId: Graph message ID string (starts with "AAMk..."). Only set when replying to an existing email.
 
 EXAMPLES:
-- Send email: { "to": ["alice@contoso.com"], "subject": "Meeting tomorrow", "body": "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>" }
-- Reply: { "to": ["alice@contoso.com"], "subject": "Re: Meeting tomorrow", "body": "<p>Confirmed, see you then!</p>", "replyToMessageId": "AAMkADI1..." }
+- Send email: { "to": ["alice@contoso.com"], "subject": "Meeting tomorrow", "body": "<p>Can we meet at 2pm?</p>" }
+- Reply: { "to": ["alice@contoso.com"], "subject": "Re: Meeting", "body": "<p>Confirmed!</p>", "replyToMessageId": "AAMkADI1..." }
 - With CC: { "to": ["alice@contoso.com"], "subject": "Update", "body": "<p>FYI</p>", "cc": ["bob@contoso.com"] }`,
         parameters: {
           type: 'object',
@@ -51,28 +52,28 @@ EXAMPLES:
             to: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Recipient email addresses',
+              description: 'Recipient email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]',
             },
             subject: {
               type: 'string',
-              description: 'Email subject line (use "Re: ..." prefix for replies)',
+              description: 'Email subject as plain string. Example: "Meeting tomorrow" or "Re: Original subject" for replies.',
             },
             body: {
               type: 'string',
-              description: 'Email body as HTML content (e.g. "<p>Hello!</p>"). Use HTML tags for formatting.',
+              description: 'Email body as an HTML string. Example: "<p>Hi!</p><p>Can we meet at 2pm?</p>"',
             },
             cc: {
               type: 'array',
               items: { type: 'string' },
-              description: 'CC recipient email addresses (optional)',
+              description: 'CC email addresses as plain strings. Example: ["bob@contoso.com"]. Optional.',
             },
             replyToMessageId: {
               type: 'string',
-              description: 'Microsoft Graph message ID of the email to reply to (e.g. "AAMkADI1..."). When set, sends a threaded reply instead of a new email.',
+              description: 'Graph message ID of the email to reply to. Example: "AAMkADI1M2I3YzgtODg...". When set, sends a threaded reply.',
             },
             targetUser: {
               type: 'string',
-              description: 'User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth.',
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.',
             },
           },
           required: ['to', 'subject', 'body'],

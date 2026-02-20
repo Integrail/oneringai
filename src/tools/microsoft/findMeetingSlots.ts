@@ -11,6 +11,7 @@ import {
   type GraphFindMeetingTimesResponse,
   getUserPathPrefix,
   microsoftFetch,
+  formatAttendees,
 } from './types.js';
 
 export interface FindMeetingSlotsArgs {
@@ -37,13 +38,15 @@ export function createFindMeetingSlotsTool(
         name: 'find_meeting_slots',
         description: `Find available meeting time slots when all attendees are free, via Microsoft Graph. Checks each attendee's Outlook calendar and suggests times when everyone is available.
 
-USAGE:
-- Provide attendee emails, a search window (start/end datetimes), and desired meeting duration in minutes
-- Returns up to maxResults (default: 5) suggested time slots ranked by confidence, with per-attendee availability
-- If no slots are found, returns an emptySuggestionsReason explaining why
+PARAMETER FORMATS:
+- attendees: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects — just plain email strings.
+- startDateTime/endDateTime: ISO 8601 string without timezone suffix. Example: "2025-01-15T08:00:00". Can span multiple days.
+- duration: number of minutes as integer. Example: 30 or 60.
+- timeZone: IANA timezone string. Example: "America/New_York", "Europe/Zurich". Default: "UTC".
+- maxResults: integer. Default: 5.
 
 EXAMPLES:
-- Find 30min slot this week: { "attendees": ["alice@contoso.com", "bob@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-15T18:00:00", "duration": 30, "timeZone": "America/New_York" }
+- Find 30min slot: { "attendees": ["alice@contoso.com", "bob@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-15T18:00:00", "duration": 30, "timeZone": "America/New_York" }
 - Find 1hr slot across days: { "attendees": ["alice@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-17T18:00:00", "duration": 60, "maxResults": 10 }`,
         parameters: {
           type: 'object',
@@ -51,31 +54,31 @@ EXAMPLES:
             attendees: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Attendee email addresses to check availability for',
+              description: 'Attendee email addresses as plain strings. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT pass objects.',
             },
             startDateTime: {
               type: 'string',
-              description: 'Search window start in ISO 8601 format (e.g. "2025-01-15T08:00:00")',
+              description: 'Search window start as ISO 8601 string without timezone suffix. Example: "2025-01-15T08:00:00"',
             },
             endDateTime: {
               type: 'string',
-              description: 'Search window end in ISO 8601 format (e.g. "2025-01-15T18:00:00"). Can span multiple days.',
+              description: 'Search window end as ISO 8601 string without timezone suffix. Example: "2025-01-15T18:00:00". Can span multiple days.',
             },
             duration: {
               type: 'number',
-              description: 'Desired meeting duration in minutes (e.g. 30, 60)',
+              description: 'Meeting duration in minutes as integer. Example: 30 or 60.',
             },
             timeZone: {
               type: 'string',
-              description: 'IANA timezone for start/end times (e.g. "America/New_York"). Default: "UTC".',
+              description: 'IANA timezone string for start/end times. Example: "America/New_York", "Europe/Zurich". Default: "UTC".',
             },
             maxResults: {
               type: 'number',
-              description: 'Maximum number of time slot suggestions to return. Default: 5.',
+              description: 'Maximum number of time slot suggestions as integer. Default: 5.',
             },
             targetUser: {
               type: 'string',
-              description: 'User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth.',
+              description: 'User ID or email (UPN) for app-only auth. Example: "alice@contoso.com". Ignored in delegated auth.',
             },
           },
           required: ['attendees', 'startDateTime', 'endDateTime', 'duration'],
@@ -109,10 +112,7 @@ EXAMPLES:
             method: 'POST',
             userId: effectiveUserId,
             body: {
-              attendees: args.attendees.map((email) => ({
-                emailAddress: { address: email },
-                type: 'required',
-              })),
+              attendees: formatAttendees(args.attendees),
               timeConstraint: {
                 timeslots: [
                   {

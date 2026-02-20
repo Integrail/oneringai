@@ -134,10 +134,53 @@ export async function microsoftFetch<T = unknown>(
 // ============================================================================
 
 /**
- * Convert an array of email addresses to Microsoft Graph recipient format.
+ * Normalize an email array from any format the LLM might send into plain strings.
+ *
+ * Accepts:
+ * - Plain strings: `["alice@contoso.com"]`
+ * - Graph recipient objects: `[{ emailAddress: { address: "alice@contoso.com" } }]`
+ * - Graph attendee objects: `[{ emailAddress: { address: "alice@contoso.com", name: "Alice" }, type: "required" }]`
+ * - Bare email objects: `[{ address: "alice@contoso.com" }]` or `[{ email: "alice@contoso.com" }]`
+ *
+ * Always returns `string[]` of email addresses.
  */
-export function formatRecipients(emails: string[]): { emailAddress: { address: string } }[] {
-  return emails.map((address) => ({ emailAddress: { address } }));
+export function normalizeEmails(input: unknown[]): string[] {
+  return input.map((item) => {
+    if (typeof item === 'string') return item;
+    if (typeof item === 'object' && item !== null) {
+      const obj = item as Record<string, unknown>;
+      // { emailAddress: { address: "..." } } — Graph recipient/attendee format
+      if (obj.emailAddress && typeof obj.emailAddress === 'object') {
+        const ea = obj.emailAddress as Record<string, unknown>;
+        if (typeof ea.address === 'string') return ea.address;
+      }
+      // { address: "..." } — bare email object
+      if (typeof obj.address === 'string') return obj.address;
+      // { email: "..." } — common LLM mistake
+      if (typeof obj.email === 'string') return obj.email;
+    }
+    // Last resort: stringify and hope for the best
+    return String(item);
+  });
+}
+
+/**
+ * Convert an array of email addresses (any format) to Microsoft Graph recipient format.
+ * Normalizes input first, so it's safe to pass LLM output directly.
+ */
+export function formatRecipients(emails: unknown[]): { emailAddress: { address: string } }[] {
+  return normalizeEmails(emails).map((address) => ({ emailAddress: { address } }));
+}
+
+/**
+ * Convert an array of email addresses (any format) to Microsoft Graph attendee format.
+ * Normalizes input first, so it's safe to pass LLM output directly.
+ */
+export function formatAttendees(emails: unknown[]): { emailAddress: { address: string }; type: string }[] {
+  return normalizeEmails(emails).map((address) => ({
+    emailAddress: { address },
+    type: 'required',
+  }));
 }
 
 /**
