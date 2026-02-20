@@ -18,8 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **userInfo feature flag** — Added to `ContextFeatures` interface. Default: `false`.
 - **userInfo storage factory** — Added to `StorageConfig` interface as context-aware factory: `userInfo: (context?: StorageContext) => IUserInfoStorage`.
 
+- **Routine Context Flow** — Routine tasks now automatically receive plan overview and dependency results before execution. Plan overview (all tasks with statuses) is injected into in-context memory as `__routine_plan`. Dependency results are automatically routed: small results (< 5000 tokens) go directly into in-context memory, large results go to working memory with descriptive labels. Tasks with dependencies get a prompt note about available results. All routine-managed keys (`__routine_*`, `__dep_result_*`) are cleaned up after execution.
+
 ### Changed
 
+- **InContextMemory default enabled** — `DEFAULT_FEATURES.inContextMemory` changed from `false` to `true`. All agents now have in-context memory available by default.
+- **InContextMemory default token limit** — `maxTotalTokens` increased from 4000 to 40000 to accommodate routine plan overviews and dependency results.
 - **Custom Tools Storage - Optional Per-User Isolation** — Custom tools storage now supports optional per-user isolation for multi-tenant scenarios. `ICustomToolStorage` interface updated to accept optional `userId` parameter in all methods: `save(userId?, definition)`, `load(userId?, name)`, `delete(userId?, name)`, `exists(userId?, name)`, `list(userId?, options)`, `updateMetadata(userId?, name, metadata)`, `getPath(userId?)`. When `userId` is not provided, defaults to `'default'` user. File storage path changed from `~/.oneringai/custom-tools/` to `~/.oneringai/users/<userId>/custom-tools/` (defaults to `~/.oneringai/users/default/custom-tools/`). **Backwards compatible** - existing code works without changes. Opt-in to multi-user isolation by providing `userId: 'user-id'` when creating agents.
 
 ### Migration Guide: Custom Tools Storage

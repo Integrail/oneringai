@@ -101,7 +101,7 @@ describe('AgentContextNextGen', () => {
     it('should have default features', () => {
       expect(ctx.features).toBeDefined();
       expect(ctx.features.workingMemory).toBe(true); // Default is true
-      expect(ctx.features.inContextMemory).toBe(false);
+      expect(ctx.features.inContextMemory).toBe(true);
       expect(ctx.features.persistentInstructions).toBe(false);
     });
 
@@ -234,7 +234,7 @@ describe('AgentContextNextGen', () => {
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -251,7 +251,7 @@ describe('AgentContextNextGen', () => {
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const plugin1 = new WorkingMemoryPluginNextGen();
@@ -269,7 +269,7 @@ describe('AgentContextNextGen', () => {
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -287,7 +287,7 @@ describe('AgentContextNextGen', () => {
       const testCtx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -342,7 +342,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 500,
         responseReserve: 100,
         strategy: 'default', // 70% threshold
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Add many messages to fill context
@@ -370,7 +370,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 1000,
         responseReserve: 200,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -407,7 +407,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 500,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const compactionListener = vi.fn();
@@ -435,6 +435,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 800,
         responseReserve: 100,
         strategy: 'default',
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Add a tool use/result pair
@@ -534,7 +535,7 @@ describe('AgentContextNextGen', () => {
       expect(() => {
         AgentContextNextGen.create({
           model: 'gpt-4',
-          features: { workingMemory: false }, // Disabled!
+          features: { workingMemory: false, inContextMemory: false }, // Disabled!
           compactionStrategy: new PluginDependentStrategy(),
         });
       }).toThrow(/requires plugins that are not registered/);
@@ -544,7 +545,7 @@ describe('AgentContextNextGen', () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       expect(() => {
@@ -578,7 +579,7 @@ describe('AgentContextNextGen', () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       expect(ctx.compactionStrategy.name).toBe('default');
@@ -595,7 +596,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 200,
         responseReserve: 50,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Try to add very large user message
@@ -614,7 +615,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 500,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Add assistant with tool use first
@@ -654,7 +655,7 @@ describe('AgentContextNextGen', () => {
         maxContextTokens: 400,
         responseReserve: 50,
         strategy: 'default', // Default strategy (70% threshold)
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const warningListener = vi.fn();
@@ -734,12 +735,12 @@ describe('AgentContextNextGen', () => {
       const ctx1 = AgentContextNextGen.create({
         model: 'gpt-4',
         storage,
+        features: { inContextMemory: true },
       });
 
-      // Use InContextMemoryPlugin which has synchronous state (can be properly serialized)
-      // Note: WorkingMemoryPlugin's getState() is limited because storage is async
-      const inContextPlugin = new InContextMemoryPluginNextGen();
-      ctx1.registerPlugin(inContextPlugin);
+      // ICM is now auto-registered via features — use getPlugin instead of registerPlugin
+      const inContextPlugin = ctx1.getPlugin<InContextMemoryPluginNextGen>('in_context_memory')!;
+      expect(inContextPlugin).toBeDefined();
 
       inContextPlugin.set('key1', 'Description', { data: 123 });
 
@@ -750,13 +751,12 @@ describe('AgentContextNextGen', () => {
       const ctx2 = AgentContextNextGen.create({
         model: 'gpt-4',
         storage,
+        features: { inContextMemory: true },
       });
-
-      const inContextPlugin2 = new InContextMemoryPluginNextGen();
-      ctx2.registerPlugin(inContextPlugin2);
 
       await ctx2.load('with-plugins');
 
+      const inContextPlugin2 = ctx2.getPlugin<InContextMemoryPluginNextGen>('in_context_memory')!;
       const value = inContextPlugin2.get('key1');
       expect(value).toEqual({ data: 123 });
 

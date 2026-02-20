@@ -65,7 +65,7 @@ const PRIORITY_VALUES: Record<InContextPriority, number> = {
 
 const DEFAULT_CONFIG = {
   maxEntries: 20,
-  maxTotalTokens: 4000,
+  maxTotalTokens: 40000,
   defaultPriority: 'normal' as InContextPriority,
   showTimestamps: false,
 };

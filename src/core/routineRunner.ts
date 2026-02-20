@@ -31,6 +31,8 @@ import type { Message, OutputItem } from '../domain/entities/Message.js';
 import type { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { extractJSON } from '../utils/jsonExtractor.js';
 import { logger } from '../infrastructure/observability/Logger.js';
+import type { InContextMemoryPluginNextGen } from './context-nextgen/plugins/InContextMemoryPluginNextGen.js';
+import type { WorkingMemoryPluginNextGen } from './context-nextgen/plugins/WorkingMemoryPluginNextGen.js';
 
 // ============================================================================
 // Types
@@ -167,6 +169,13 @@ function defaultTaskPrompt(task: Task): string {
     parts.push('');
   }
 
+  if (task.dependsOn.length > 0) {
+    parts.push('Note: Results from prerequisite tasks are available in your live context.');
+    parts.push('Small results appear directly; larger results are in working memory — use memory_retrieve to access them.');
+    parts.push('Review the plan overview and dependency results before starting.');
+    parts.push('');
+  }
+
   parts.push('After completing the work, store key results in memory once, then respond with a text summary (no more tool calls).');
 
   return parts.join('\n');
@@ -287,6 +296,180 @@ async function collectValidationContext(
     workingMemoryIndex,
     toolCallLog,
   };
+}
+
+// ============================================================================
+// Routine Context Injection
+// ============================================================================
+
+/**
+ * Simple token estimator: ~4 chars per token.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Build a compact plan overview showing all tasks with statuses and dependencies.
+ */
+function buildPlanOverview(execution: RoutineExecution, definition: RoutineDefinition, currentTaskId?: string): string {
+  const parts: string[] = [];
+  const progress = execution.progress ?? 0;
+
+  parts.push(`Routine: ${definition.name}`);
+  if (definition.description) {
+    parts.push(`Goal: ${definition.description}`);
+  }
+  parts.push(`Progress: ${Math.round(progress * 100)}%`);
+  parts.push('');
+  parts.push('Tasks:');
+
+  for (const task of execution.plan.tasks) {
+    let statusIcon: string;
+    switch (task.status) {
+      case 'completed': statusIcon = '[x]'; break;
+      case 'in_progress': statusIcon = '[>]'; break;
+      case 'failed': statusIcon = '[!]'; break;
+      case 'skipped': statusIcon = '[-]'; break;
+      default: statusIcon = '[ ]';
+    }
+
+    let line = `${statusIcon} ${task.name}`;
+
+    if (task.dependsOn.length > 0) {
+      const depNames = task.dependsOn
+        .map((depId) => execution.plan.tasks.find((t) => t.id === depId)?.name ?? depId)
+        .join(', ');
+      line += ` (after: ${depNames})`;
+    }
+
+    if (task.id === currentTaskId) {
+      line += '  ← CURRENT';
+    }
+
+    parts.push(line);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Inject routine context (plan overview + dependency results) into ICM/WM
+ * before each task runs.
+ *
+ * Strategy:
+ * - Plan overview → ICM as __routine_plan (high priority)
+ * - Small dep results (< 5000 tokens) → ICM as __dep_result_{depId}
+ * - Large dep results (>= 5000 tokens) → WM as __dep_result_{depId}
+ * - Dependency summary note → ICM as __routine_deps
+ */
+async function injectRoutineContext(
+  agent: Agent,
+  execution: RoutineExecution,
+  definition: RoutineDefinition,
+  currentTask: Task
+): Promise<void> {
+  const icmPlugin = agent.context.getPlugin('in_context_memory') as InContextMemoryPluginNextGen | null;
+  const wmPlugin = agent.context.memory as WorkingMemoryPluginNextGen | null;
+
+  if (!icmPlugin && !wmPlugin) {
+    logger.warn('injectRoutineContext: No ICM or WM plugin available — skipping context injection');
+    return;
+  }
+
+  // 1. Inject plan overview into ICM
+  const planOverview = buildPlanOverview(execution, definition, currentTask.id);
+  if (icmPlugin) {
+    icmPlugin.set('__routine_plan', 'Routine plan overview with task statuses', planOverview, 'high');
+  }
+
+  // 2. Clean up previous task's dependency keys
+  if (icmPlugin) {
+    for (const entry of icmPlugin.list()) {
+      if (entry.key.startsWith('__dep_result_') || entry.key === '__routine_deps') {
+        icmPlugin.delete(entry.key);
+      }
+    }
+  }
+  if (wmPlugin) {
+    const { entries: wmEntries } = await wmPlugin.query();
+    for (const entry of wmEntries) {
+      if (entry.key.startsWith('__dep_result_') || entry.key.startsWith('findings/__dep_result_')) {
+        await wmPlugin.delete(entry.key);
+      }
+    }
+  }
+
+  // 3. Inject dependency results
+  if (currentTask.dependsOn.length === 0) return;
+
+  const inContextDeps: string[] = [];
+  const workingMemoryDeps: string[] = [];
+
+  for (const depId of currentTask.dependsOn) {
+    const depTask = execution.plan.tasks.find((t) => t.id === depId);
+    if (!depTask?.result?.output) continue;
+
+    const output = typeof depTask.result.output === 'string'
+      ? depTask.result.output
+      : JSON.stringify(depTask.result.output);
+
+    const tokens = estimateTokens(output);
+    const depKey = `__dep_result_${depId}`;
+    const depLabel = `Result from task "${depTask.name}"`;
+
+    if (tokens < 5000 && icmPlugin) {
+      // Small result → ICM (directly in context)
+      icmPlugin.set(depKey, depLabel, output, 'high');
+      inContextDeps.push(depTask.name);
+    } else if (wmPlugin) {
+      // Large result → WM (accessible via memory_retrieve)
+      await wmPlugin.store(depKey, depLabel, output, { tier: 'findings' });
+      workingMemoryDeps.push(depTask.name);
+    } else if (icmPlugin) {
+      // No WM available, truncate and put in ICM
+      const truncated = output.slice(0, 20000) + '\n... (truncated, full result not available)';
+      icmPlugin.set(depKey, depLabel, truncated, 'high');
+      inContextDeps.push(depTask.name + ' (truncated)');
+    }
+  }
+
+  // 4. Inject dependency summary note
+  if (icmPlugin && (inContextDeps.length > 0 || workingMemoryDeps.length > 0)) {
+    const summaryParts: string[] = ['Dependency results available:'];
+    if (inContextDeps.length > 0) {
+      summaryParts.push(`In context (visible now): ${inContextDeps.join(', ')}`);
+    }
+    if (workingMemoryDeps.length > 0) {
+      summaryParts.push(`In working memory (use memory_retrieve): ${workingMemoryDeps.join(', ')}`);
+    }
+    icmPlugin.set('__routine_deps', 'Dependency results location guide', summaryParts.join('\n'), 'high');
+  }
+}
+
+/**
+ * Clean up all routine-managed keys from ICM and WM.
+ */
+async function cleanupRoutineContext(agent: Agent): Promise<void> {
+  const icmPlugin = agent.context.getPlugin('in_context_memory') as InContextMemoryPluginNextGen | null;
+  const wmPlugin = agent.context.memory as WorkingMemoryPluginNextGen | null;
+
+  if (icmPlugin) {
+    for (const entry of icmPlugin.list()) {
+      if (entry.key.startsWith('__routine_') || entry.key.startsWith('__dep_result_')) {
+        icmPlugin.delete(entry.key);
+      }
+    }
+  }
+
+  if (wmPlugin) {
+    const { entries: wmEntries } = await wmPlugin.query();
+    for (const entry of wmEntries) {
+      if (entry.key.startsWith('__dep_result_') || entry.key.startsWith('findings/__dep_result_')) {
+        await wmPlugin.delete(entry.key);
+      }
+    }
+  }
 }
 
 // ============================================================================
@@ -528,6 +711,9 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       // Helper to get the live task reference (updateTaskStatus returns new objects)
       const getTask = () => execution.plan.tasks[taskIndex]!;
 
+      // Inject routine context (plan overview + dependency results) before task runs
+      await injectRoutineContext(agent, execution, definition, getTask());
+
       // Retry loop
       // First attempt is already counted by updateTaskStatus(task, 'in_progress') above.
       // Loop until task succeeds, fails definitively, or exhausts maxAttempts.
@@ -673,6 +859,9 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
 
     return execution;
   } finally {
+    // Clean up routine-managed keys from ICM/WM (important for reused agents)
+    try { await cleanupRoutineContext(agent); } catch { /* ignore cleanup errors */ }
+
     // Unregister routine-specific hooks from existing agent
     for (const { name, hook } of registeredHooks) {
       try { agent.unregisterHook(name as any, hook as any); } catch { /* ignore */ }

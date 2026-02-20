@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-19
+**Generated:** 2026-02-20
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -18,17 +18,17 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Video Generation](#video-generation) (18 items)
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (26 items)
-- [Tools & Function Calling](#tools-function-calling) (119 items)
+- [Session Management](#session-management) (29 items)
+- [Tools & Function Calling](#tools-function-calling) (125 items)
 - [Streaming](#streaming) (15 items)
 - [Model Registry](#model-registry) (10 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
 - [Utilities](#utilities) (8 items)
-- [Interfaces](#interfaces) (44 items)
+- [Interfaces](#interfaces) (45 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (241 items)
+- [Other](#other) (265 items)
 
 ## Core
 
@@ -422,6 +422,48 @@ isPaused(): boolean
 ```typescript
 isCancelled(): boolean
 ```
+
+**Returns:** `boolean`
+
+#### `clearConversation()`
+
+Clear conversation history, resetting the context for a fresh interaction.
+Plugins (working memory, in-context memory, etc.) are NOT affected.
+
+```typescript
+clearConversation(reason?: string): void
+```
+
+**Parameters:**
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `registerHook()`
+
+Register a hook on the agent. Can be called after creation.
+
+```typescript
+registerHook(name: HookName, hook: Function): void
+```
+
+**Parameters:**
+- `name`: `"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check"`
+- `hook`: `Function`
+
+**Returns:** `void`
+
+#### `unregisterHook()`
+
+Unregister a previously registered hook by reference.
+
+```typescript
+unregisterHook(name: HookName, hook: Function): boolean
+```
+
+**Parameters:**
+- `name`: `"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check"`
+- `hook`: `Function`
 
 **Returns:** `boolean`
 
@@ -6910,7 +6952,7 @@ Index entry (lightweight, always in context)
 
 ### Plan `interface`
 
-📍 [`src/domain/entities/Task.ts:305`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:315`](src/domain/entities/Task.ts)
 
 Execution plan - a goal with steps to achieve it
 
@@ -6944,7 +6986,7 @@ Execution plan - a goal with steps to achieve it
 
 ### PlanConcurrency `interface`
 
-📍 [`src/domain/entities/Task.ts:289`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:299`](src/domain/entities/Task.ts)
 
 Plan concurrency settings
 
@@ -6966,7 +7008,7 @@ Plan concurrency settings
 
 ### PlanInput `interface`
 
-📍 [`src/domain/entities/Task.ts:344`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:354`](src/domain/entities/Task.ts)
 
 Input for creating a plan
 
@@ -7070,7 +7112,7 @@ Research plan for systematic research
 
 ### Task `interface`
 
-📍 [`src/domain/entities/Task.ts:220`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:226`](src/domain/entities/Task.ts)
 
 A single unit of work
 
@@ -7088,6 +7130,7 @@ A single unit of work
 | `condition?` | `condition?: TaskCondition;` | Condition for execution |
 | `execution?` | `execution?: TaskExecution;` | Execution settings |
 | `validation?` | `validation?: TaskValidation;` | Completion validation settings |
+| `suggestedTools?` | `suggestedTools?: string[];` | Tool names the LLM should prefer for this task (advisory, not enforced) |
 | `expectedOutput?` | `expectedOutput?: string;` | Optional expected output description |
 | `result?` | `result?: {
     success: boolean;
@@ -7144,6 +7187,8 @@ Task execution settings
 | `parallel?` | `parallel?: boolean;` | Can run in parallel with other parallel tasks |
 | `maxConcurrency?` | `maxConcurrency?: number;` | Max concurrent if this spawns sub-work |
 | `priority?` | `priority?: number;` | Priority (higher = executed first) |
+| `maxIterations?` | `maxIterations?: number;` | Maximum LLM iterations (tool-call loops) per agent.run() for this task.
+Prevents runaway agents. Default: 15. |
 | `raceProtection?` | `raceProtection?: boolean;` | If true (default), re-check condition immediately before LLM call
 to protect against race conditions when parallel tasks modify memory.
 Set to false to skip re-check for performance if you know condition won't change. |
@@ -7173,7 +7218,7 @@ Task failure info for parallel execution
 
 ### TaskInput `interface`
 
-📍 [`src/domain/entities/Task.ts:272`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:281`](src/domain/entities/Task.ts)
 
 Input for creating a task
 
@@ -7189,6 +7234,7 @@ Input for creating a task
 | `externalDependency?` | `externalDependency?: ExternalDependency;` | - |
 | `condition?` | `condition?: TaskCondition;` | - |
 | `execution?` | `execution?: TaskExecution;` | - |
+| `suggestedTools?` | `suggestedTools?: string[];` | - |
 | `validation?` | `validation?: TaskValidation;` | - |
 | `expectedOutput?` | `expectedOutput?: string;` | - |
 | `maxAttempts?` | `maxAttempts?: number;` | - |
@@ -7200,7 +7246,7 @@ Input for creating a task
 
 ### TaskValidation `interface`
 
-📍 [`src/domain/entities/Task.ts:131`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:137`](src/domain/entities/Task.ts)
 
 Task completion validation settings
 
@@ -7242,8 +7288,8 @@ Runs AFTER LLM reflection, can override the result. |
 - 'strict': Validation failure marks task as failed (default)
 - 'warn': Validation failure logs warning but task still completes |
 | `skipReflection?` | `skipReflection?: boolean;` | Skip LLM self-reflection validation.
-Set to true if you only want programmatic validation (memory keys, hooks).
-Default: false (reflection is enabled when completionCriteria is set) |
+LLM validation is opt-in: set to `false` to enable it (requires completionCriteria).
+Default: undefined (treated as true — validation auto-passes). |
 
 </details>
 
@@ -7251,7 +7297,7 @@ Default: false (reflection is enabled when completionCriteria is set) |
 
 ### TaskValidationResult `interface`
 
-📍 [`src/domain/entities/Task.ts:193`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:199`](src/domain/entities/Task.ts)
 
 Result of task validation (returned by LLM reflection)
 
@@ -7568,7 +7614,7 @@ export function calculateEntrySize(value: unknown): number
 
 ### canTaskExecute `function`
 
-📍 [`src/domain/entities/Task.ts:461`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:472`](src/domain/entities/Task.ts)
 
 Check if a task can be executed (dependencies met, status is pending)
 
@@ -7580,7 +7626,7 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createPlan `function`
 
-📍 [`src/domain/entities/Task.ts:394`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:405`](src/domain/entities/Task.ts)
 
 Create a plan with tasks
 
@@ -7592,7 +7638,7 @@ export function createPlan(input: PlanInput): Plan
 
 ### createTask `function`
 
-📍 [`src/domain/entities/Task.ts:367`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:377`](src/domain/entities/Task.ts)
 
 Create a task with defaults
 
@@ -7604,7 +7650,7 @@ export function createTask(input: TaskInput): Task
 
 ### detectDependencyCycle `function`
 
-📍 [`src/domain/entities/Task.ts:668`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:679`](src/domain/entities/Task.ts)
 
 Detect dependency cycles in tasks using depth-first search
 
@@ -7616,7 +7662,7 @@ export function detectDependencyCycle(tasks: Task[]): string[] | null
 
 ### evaluateCondition `function`
 
-📍 [`src/domain/entities/Task.ts:525`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:536`](src/domain/entities/Task.ts)
 
 Evaluate a task condition against memory
 
@@ -7679,7 +7725,7 @@ export async function generateSimplePlan(
 
 ### getNextExecutableTasks `function`
 
-📍 [`src/domain/entities/Task.ts:483`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:494`](src/domain/entities/Task.ts)
 
 Get the next tasks that can be executed
 
@@ -7691,7 +7737,7 @@ export function getNextExecutableTasks(plan: Plan): Task[]
 
 ### getTaskDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:622`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:633`](src/domain/entities/Task.ts)
 
 Get the dependency tasks for a task
 
@@ -7727,7 +7773,7 @@ export function isTaskAwareScope(scope: MemoryScope): scope is TaskAwareScope
 
 ### isTaskBlocked `function`
 
-📍 [`src/domain/entities/Task.ts:601`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:612`](src/domain/entities/Task.ts)
 
 Check if a task is blocked by dependencies
 
@@ -7763,7 +7809,7 @@ export function isTerminalStatus(status: TaskStatus): boolean
 
 ### resolveDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:636`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:647`](src/domain/entities/Task.ts)
 
 Resolve task name dependencies to task IDs
 Modifies taskInputs in place
@@ -7802,7 +7848,7 @@ export function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope):
 
 ### updateTaskStatus `function`
 
-📍 [`src/domain/entities/Task.ts:573`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:584`](src/domain/entities/Task.ts)
 
 Update task status and timestamps
 
@@ -9376,6 +9422,116 @@ getAgentId(): string
 
 ---
 
+### FileRoutineDefinitionStorage `class`
+
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:112`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+
+File-based storage for routine definitions.
+
+Single instance handles all users. UserId is passed to each method.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: FileRoutineDefinitionStorageConfig =
+```
+
+**Parameters:**
+- `config`: `FileRoutineDefinitionStorageConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `save()`
+
+```typescript
+async save(userId: string | undefined, definition: RoutineDefinition): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `definition`: `RoutineDefinition`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `load()`
+
+```typescript
+async load(userId: string | undefined, id: string): Promise&lt;RoutineDefinition | null&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `id`: `string`
+
+**Returns:** `Promise&lt;RoutineDefinition | null&gt;`
+
+#### `delete()`
+
+```typescript
+async delete(userId: string | undefined, id: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `id`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+```typescript
+async exists(userId: string | undefined, id: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `id`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `list()`
+
+```typescript
+async list(userId: string | undefined, options?:
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `options`: `{ tags?: string[] | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;RoutineDefinition[]&gt;`
+
+#### `getPath()`
+
+```typescript
+getPath(userId: string | undefined): string
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `string`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `baseDirectory` | `baseDirectory: string` | - |
+| `prettyPrint` | `prettyPrint: boolean` | - |
+
+</details>
+
+---
+
 ### FileStorage `class`
 
 📍 [`src/connectors/oauth/infrastructure/storage/FileStorage.ts:17`](src/connectors/oauth/infrastructure/storage/FileStorage.ts)
@@ -9727,6 +9883,24 @@ Configuration for FilePersistentInstructionsStorage
 
 ---
 
+### FileRoutineDefinitionStorageConfig `interface`
+
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:25`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+
+Configuration for FileRoutineDefinitionStorage
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `baseDirectory?` | `baseDirectory?: string;` | Override the base directory (default: ~/.oneringai/users) |
+| `prettyPrint?` | `prettyPrint?: boolean;` | Pretty-print JSON (default: true) |
+
+</details>
+
+---
+
 ### FileStorageConfig `interface`
 
 📍 [`src/connectors/oauth/infrastructure/storage/FileStorage.ts:12`](src/connectors/oauth/infrastructure/storage/FileStorage.ts)
@@ -9881,6 +10055,20 @@ Factory function for creating FileMediaStorage instances
 
 ```typescript
 export function createFileMediaStorage(config?: FileMediaStorageConfig): FileMediaStorage
+```
+
+---
+
+### createFileRoutineDefinitionStorage `function`
+
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:381`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+
+Create a FileRoutineDefinitionStorage with default configuration
+
+```typescript
+export function createFileRoutineDefinitionStorage(
+  config?: FileRoutineDefinitionStorageConfig
+): FileRoutineDefinitionStorage
 ```
 
 ---
@@ -13302,6 +13490,21 @@ export function createDesktopWindowListTool(config?: DesktopToolConfig): ToolFun
 
 ---
 
+### createDraftEmailTool `function`
+
+📍 [`src/tools/microsoft/createDraftEmail.ts:29`](src/tools/microsoft/createDraftEmail.ts)
+
+Create a Microsoft Graph create_draft_email tool
+
+```typescript
+export function createDraftEmailTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;CreateDraftEmailArgs, MicrosoftDraftEmailResult&gt;
+```
+
+---
+
 ### createEditFileTool `function`
 
 📍 [`src/tools/filesystem/editFile.ts:42`](src/tools/filesystem/editFile.ts)
@@ -13310,6 +13513,21 @@ Create an Edit File tool with the given configuration
 
 ```typescript
 export function createEditFileTool(config: FilesystemToolConfig =
+```
+
+---
+
+### createEditMeetingTool `function`
+
+📍 [`src/tools/microsoft/editMeeting.ts:33`](src/tools/microsoft/editMeeting.ts)
+
+Create a Microsoft Graph edit_meeting tool
+
+```typescript
+export function createEditMeetingTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;EditMeetingArgs, MicrosoftEditMeetingResult&gt;
 ```
 
 ---
@@ -13329,6 +13547,36 @@ the agent's userId from ToolContext.
 export function createExecuteJavaScriptTool(
   options?: ExecuteJavaScriptToolOptions,
 ): ToolFunction&lt;ExecuteJSArgs, ExecuteJSResult&gt;
+```
+
+---
+
+### createFindMeetingSlotsTool `function`
+
+📍 [`src/tools/microsoft/findMeetingSlots.ts:30`](src/tools/microsoft/findMeetingSlots.ts)
+
+Create a Microsoft Graph find_meeting_slots tool
+
+```typescript
+export function createFindMeetingSlotsTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;FindMeetingSlotsArgs, MicrosoftFindSlotsResult&gt;
+```
+
+---
+
+### createGetMeetingTranscriptTool `function`
+
+📍 [`src/tools/microsoft/getMeetingTranscript.ts:51`](src/tools/microsoft/getMeetingTranscript.ts)
+
+Create a Microsoft Graph get_meeting_transcript tool
+
+```typescript
+export function createGetMeetingTranscriptTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;GetMeetingTranscriptArgs, MicrosoftGetTranscriptResult&gt;
 ```
 
 ---
@@ -13395,6 +13643,21 @@ Create a List Directory tool with the given configuration
 
 ```typescript
 export function createListDirectoryTool(config: FilesystemToolConfig =
+```
+
+---
+
+### createMeetingTool `function`
+
+📍 [`src/tools/microsoft/createMeeting.ts:32`](src/tools/microsoft/createMeeting.ts)
+
+Create a Microsoft Graph create_meeting tool
+
+```typescript
+export function createMeetingTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;CreateMeetingArgs, MicrosoftCreateMeetingResult&gt;
 ```
 
 ---
@@ -13467,6 +13730,21 @@ export function createSearchFilesTool(
   connector: Connector,
   userId?: string
 ): ToolFunction&lt;SearchFilesArgs, GitHubSearchFilesResult&gt;
+```
+
+---
+
+### createSendEmailTool `function`
+
+📍 [`src/tools/microsoft/sendEmail.ts:28`](src/tools/microsoft/sendEmail.ts)
+
+Create a Microsoft Graph send_email tool
+
+```typescript
+export function createSendEmailTool(
+  connector: Connector,
+  userId?: string
+): ToolFunction&lt;SendEmailArgs, MicrosoftSendEmailResult&gt;
 ```
 
 ---
@@ -20421,6 +20699,93 @@ validateConfig(): Promise&lt;boolean&gt;;
 
 ---
 
+### IRoutineDefinitionStorage `interface`
+
+📍 [`src/domain/interfaces/IRoutineDefinitionStorage.ts:10`](src/domain/interfaces/IRoutineDefinitionStorage.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `save()`
+
+```typescript
+save(userId: string | undefined, definition: RoutineDefinition): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `definition`: `RoutineDefinition`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `load()`
+
+```typescript
+load(userId: string | undefined, id: string): Promise&lt;RoutineDefinition | null&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `id`: `string`
+
+**Returns:** `Promise&lt;RoutineDefinition | null&gt;`
+
+#### `delete()`
+
+```typescript
+delete(userId: string | undefined, id: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `id`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `exists()`
+
+```typescript
+exists(userId: string | undefined, id: string): Promise&lt;boolean&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `id`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `list()`
+
+```typescript
+list(userId: string | undefined, options?: {
+    tags?: string[];
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise&lt;RoutineDefinition[]&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `options`: `{ tags?: string[] | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;RoutineDefinition[]&gt;`
+
+#### `getPath()`
+
+```typescript
+getPath(userId: string | undefined): string;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+
+**Returns:** `string`
+
+</details>
+
+---
+
 ### ISpeechToTextProvider `interface`
 
 📍 [`src/domain/interfaces/IAudioProvider.ts:152`](src/domain/interfaces/IAudioProvider.ts)
@@ -22661,6 +23026,21 @@ register(name: HookName, hook: Hook&lt;any, any&gt;): void
 
 **Returns:** `void`
 
+#### `unregister()`
+
+Unregister a specific hook function by reference.
+Returns true if the hook was found and removed.
+
+```typescript
+unregister(name: HookName, hook: Hook&lt;any, any&gt;): boolean
+```
+
+**Parameters:**
+- `name`: `"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check"`
+- `hook`: `Hook&lt;any, any&gt;`
+
+**Returns:** `boolean`
+
 #### `executeHooks()`
 
 Execute hooks for a given name
@@ -23952,7 +24332,7 @@ async search(query: string, options: SearchOptions =
 
 ### StorageRegistry `class`
 
-📍 [`src/core/StorageRegistry.ts:86`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:88`](src/core/StorageRegistry.ts)
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -25643,6 +26023,50 @@ Result of a file edit operation
 | `replacements?` | `replacements?: number;` | - |
 | `error?` | `error?: string;` | - |
 | `diff?` | `diff?: string;` | - |
+
+</details>
+
+---
+
+### ExecuteRoutineOptions `interface`
+
+📍 [`src/core/routineRunner.ts:49`](src/core/routineRunner.ts)
+
+Options for executing a routine.
+
+Two modes:
+1. **New agent**: Pass `connector` + `model` (+ optional `tools`, `hooks`).
+   An agent is created internally and destroyed after execution.
+2. **Existing agent**: Pass `agent` (a pre-created Agent instance).
+   The agent is NOT destroyed after execution — caller owns its lifecycle.
+   The agent's existing connector, model, tools, and hooks are used.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `definition` | `definition: RoutineDefinition;` | Routine definition to execute |
+| `agent?` | `agent?: Agent;` | Pre-created Agent instance. When provided, `connector`/`model`/`tools` are ignored.
+The agent is NOT destroyed after execution — caller manages its lifecycle. |
+| `connector?` | `connector?: string;` | Connector name — required when `agent` is not provided |
+| `model?` | `model?: string;` | Model ID — required when `agent` is not provided |
+| `tools?` | `tools?: ToolFunction[];` | Additional tools — only used when creating a new agent (no `agent` provided) |
+| `hooks?` | `hooks?: HookConfig;` | Hooks — applied to agent for the duration of routine execution.
+ For new agents: baked in at creation. For existing agents: registered before
+ execution and unregistered after. |
+| `onTaskStarted?` | `onTaskStarted?: (task: Task, execution: RoutineExecution) =&gt; void;` | Called when a task starts executing (set to in_progress) |
+| `onTaskComplete?` | `onTaskComplete?: (task: Task, execution: RoutineExecution) =&gt; void;` | Called when a task completes successfully |
+| `onTaskFailed?` | `onTaskFailed?: (task: Task, execution: RoutineExecution) =&gt; void;` | Called when a task fails |
+| `onTaskValidation?` | `onTaskValidation?: (task: Task, result: TaskValidationResult, execution: RoutineExecution) =&gt; void;` | Called after each validation attempt (whether pass or fail) |
+| `prompts?` | `prompts?: {
+    /** Override system prompt builder. Receives definition, should return full system prompt. */
+    system?: (definition: RoutineDefinition) =&gt; string;
+    /** Override task prompt builder. Receives task, should return the user message for that task. */
+    task?: (task: Task) =&gt; string;
+    /** Override validation prompt builder. Receives task + validation context (response, memory state, tool calls). */
+    validation?: (task: Task, context: ValidationContext) =&gt; string;
+  };` | Configurable prompts (all have sensible defaults) |
 
 </details>
 
@@ -27342,6 +27766,24 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ---
 
+### MeetingSlotSuggestion `interface`
+
+📍 [`src/tools/microsoft/types.ts:307`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `start` | `start: string;` | - |
+| `end` | `end: string;` | - |
+| `confidence` | `confidence: string;` | - |
+| `attendeeAvailability` | `attendeeAvailability: { attendee: string; availability: string }[];` | - |
+
+</details>
+
+---
+
 ### Message `interface`
 
 📍 [`src/domain/entities/Message.ts:13`](src/domain/entities/Message.ts)
@@ -27355,6 +27797,113 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 | `id?` | `id?: string;` | - |
 | `role` | `role: MessageRole;` | - |
 | `content` | `content: Content[];` | - |
+
+</details>
+
+---
+
+### MicrosoftCreateMeetingResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:278`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `eventId?` | `eventId?: string;` | - |
+| `webLink?` | `webLink?: string;` | - |
+| `onlineMeetingUrl?` | `onlineMeetingUrl?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftDraftEmailResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:266`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `draftId?` | `draftId?: string;` | - |
+| `webLink?` | `webLink?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftEditMeetingResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:286`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `eventId?` | `eventId?: string;` | - |
+| `webLink?` | `webLink?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftFindSlotsResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:300`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `slots?` | `slots?: MeetingSlotSuggestion[];` | - |
+| `emptySuggestionsReason?` | `emptySuggestionsReason?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftGetTranscriptResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:293`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `transcript?` | `transcript?: string;` | - |
+| `meetingSubject?` | `meetingSubject?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftSendEmailResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:273`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `error?` | `error?: string;` | - |
 
 </details>
 
@@ -27687,6 +28236,97 @@ Research execution result
     processDurationMs: number;
     synthesizeDurationMs: number;
   };` | Execution metrics |
+
+</details>
+
+---
+
+### RoutineDefinition `interface`
+
+📍 [`src/domain/entities/Routine.ts:21`](src/domain/entities/Routine.ts)
+
+A reusable routine definition (template).
+
+Defines what to do but has no runtime state.
+Multiple RoutineExecutions can be created from one RoutineDefinition.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | Unique routine identifier |
+| `name` | `name: string;` | Human-readable name |
+| `description` | `description: string;` | Description of what this routine accomplishes |
+| `version?` | `version?: string;` | Version string for tracking routine evolution |
+| `tasks` | `tasks: TaskInput[];` | Task templates in execution order (dependencies may override order) |
+| `requiredTools?` | `requiredTools?: string[];` | Tool names that must be available before starting |
+| `requiredPlugins?` | `requiredPlugins?: string[];` | Plugin names that must be enabled before starting (e.g. 'working_memory') |
+| `instructions?` | `instructions?: string;` | Additional instructions injected into system prompt when routine is active |
+| `concurrency?` | `concurrency?: PlanConcurrency;` | Concurrency settings for task execution |
+| `allowDynamicTasks?` | `allowDynamicTasks?: boolean;` | Whether the LLM can dynamically add/modify tasks during execution. Default: false |
+| `tags?` | `tags?: string[];` | Tags for categorization and filtering |
+| `author?` | `author?: string;` | Author/creator |
+| `createdAt` | `createdAt: string;` | When the definition was created (ISO string) |
+| `updatedAt` | `updatedAt: string;` | When the definition was last updated (ISO string) |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Metadata for extensions |
+
+</details>
+
+---
+
+### RoutineDefinitionInput `interface`
+
+📍 [`src/domain/entities/Routine.ts:72`](src/domain/entities/Routine.ts)
+
+Input for creating a RoutineDefinition.
+id, createdAt, updatedAt are auto-generated if not provided.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id?` | `id?: string;` | - |
+| `name` | `name: string;` | - |
+| `description` | `description: string;` | - |
+| `version?` | `version?: string;` | - |
+| `tasks` | `tasks: TaskInput[];` | - |
+| `requiredTools?` | `requiredTools?: string[];` | - |
+| `requiredPlugins?` | `requiredPlugins?: string[];` | - |
+| `instructions?` | `instructions?: string;` | - |
+| `concurrency?` | `concurrency?: PlanConcurrency;` | - |
+| `allowDynamicTasks?` | `allowDynamicTasks?: boolean;` | - |
+| `tags?` | `tags?: string[];` | - |
+| `author?` | `author?: string;` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
+### RoutineExecution `interface`
+
+📍 [`src/domain/entities/Routine.ts:107`](src/domain/entities/Routine.ts)
+
+Runtime state when executing a routine.
+Created from a RoutineDefinition, delegates task management to Plan.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | Unique execution ID |
+| `routineId` | `routineId: string;` | Reference to the routine definition ID |
+| `plan` | `plan: Plan;` | The live plan managing task execution (created via createPlan) |
+| `status` | `status: RoutineExecutionStatus;` | Current execution status |
+| `progress` | `progress: number;` | Overall progress (0-100) based on completed tasks |
+| `startedAt?` | `startedAt?: number;` | Timestamps |
+| `completedAt?` | `completedAt?: number;` | - |
+| `lastUpdatedAt` | `lastUpdatedAt: number;` | - |
+| `error?` | `error?: string;` | Error message if failed |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Metadata |
 
 </details>
 
@@ -28121,7 +28761,7 @@ Stdio transport configuration
 
 ### StorageConfig `interface`
 
-📍 [`src/core/StorageRegistry.ts:67`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:68`](src/core/StorageRegistry.ts)
 
 Storage configuration map.
 
@@ -28143,6 +28783,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 | `persistentInstructions` | `persistentInstructions: (agentId: string, context?: StorageContext) =&gt; IPersistentInstructionsStorage;` | - |
 | `workingMemory` | `workingMemory: (context?: StorageContext) =&gt; IMemoryStorage;` | - |
 | `userInfo` | `userInfo: (context?: StorageContext) =&gt; IUserInfoStorage;` | - |
+| `routineDefinitions` | `routineDefinitions: (context?: StorageContext) =&gt; IRoutineDefinitionStorage;` | - |
 
 </details>
 
@@ -28199,6 +28840,28 @@ Full strategy registry entry (includes class reference)
 | `maxTotalSize?` | `maxTotalSize?: number;` | Maximum total size across all entries in bytes (default: 100000 / ~100KB) |
 | `maxEntries?` | `maxEntries?: number;` | Maximum number of entries (default: 100) |
 | `userId?` | `userId?: string;` | User ID for storage isolation (resolved from AgentContextNextGen._userId) |
+
+</details>
+
+---
+
+### ValidationContext `interface`
+
+📍 [`src/core/routineRunner.ts:101`](src/core/routineRunner.ts)
+
+Context snapshot passed to the validation prompt builder.
+Contains everything the validator needs to evaluate task completion
+WITHOUT conversation history.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `responseText` | `responseText: string;` | Agent's final text output |
+| `inContextMemory` | `inContextMemory: string | null;` | Current in-context memory entries (key-value pairs set via context_set) |
+| `workingMemoryIndex` | `workingMemoryIndex: string | null;` | Current working memory index (keys + descriptions of stored data) |
+| `toolCallLog` | `toolCallLog: string;` | Formatted log of all tool calls made during this task execution |
 
 </details>
 
@@ -28684,6 +29347,23 @@ type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 ---
 
+### RoutineExecutionStatus `type`
+
+📍 [`src/domain/entities/Routine.ts:95`](src/domain/entities/Routine.ts)
+
+Execution status for a routine run
+
+```typescript
+type RoutineExecutionStatus = | 'pending'     // Created but not started
+  | 'running'     // Currently executing
+  | 'paused'      // Manually paused
+  | 'completed'   // All tasks completed successfully
+  | 'failed'      // Failed (unrecoverable)
+  | 'cancelled'
+```
+
+---
+
 ### ScrapeFeature `type`
 
 📍 [`src/capabilities/scrape/ScrapeProvider.ts:129`](src/capabilities/scrape/ScrapeProvider.ts)
@@ -28745,7 +29425,7 @@ type ServiceType = (typeof SERVICE_DEFINITIONS)[number]['id']
 
 ### StorageContext `type`
 
-📍 [`src/core/StorageRegistry.ts:58`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:59`](src/core/StorageRegistry.ts)
 
 Opaque context passed to per-agent storage factories.
 
@@ -28799,6 +29479,32 @@ export function buildQueryString(params: Record&lt;string, string | number | boo
 
 ---
 
+### createRoutineDefinition `function`
+
+📍 [`src/domain/entities/Routine.ts:143`](src/domain/entities/Routine.ts)
+
+Create a RoutineDefinition with defaults.
+Validates task dependency references and detects cycles.
+
+```typescript
+export function createRoutineDefinition(input: RoutineDefinitionInput): RoutineDefinition
+```
+
+---
+
+### createRoutineExecution `function`
+
+📍 [`src/domain/entities/Routine.ts:193`](src/domain/entities/Routine.ts)
+
+Create a RoutineExecution from a RoutineDefinition.
+Instantiates all tasks into a Plan via createPlan().
+
+```typescript
+export function createRoutineExecution(definition: RoutineDefinition): RoutineExecution
+```
+
+---
+
 ### detectServiceFromURL `function`
 
 📍 [`src/domain/entities/Services.ts:503`](src/domain/entities/Services.ts)
@@ -28807,6 +29513,36 @@ Detect service type from a URL
 
 ```typescript
 export function detectServiceFromURL(url: string): string | undefined
+```
+
+---
+
+### executeRoutine `function`
+
+📍 [`src/core/routineRunner.ts:388`](src/core/routineRunner.ts)
+
+Execute a routine definition.
+
+Creates an Agent with working memory + in-context memory enabled, then runs
+each task in dependency order. Between tasks, conversation history is cleared
+but memory plugins persist, allowing tasks to share data via memory.
+
+```typescript
+export async function executeRoutine(options: ExecuteRoutineOptions): Promise&lt;RoutineExecution&gt;
+```
+
+**Example:**
+
+```typescript
+const execution = await executeRoutine({
+  definition: myRoutine,
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myCustomTool],
+  onTaskComplete: (task) => console.log(`✓ ${task.name}`),
+});
+
+console.log(execution.status); // 'completed' | 'failed'
 ```
 
 ---
@@ -28836,6 +29572,32 @@ const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
 // In web_scrape tool
 const SCRAPE_SERVICE_TYPES = ['zenrows', 'jina-reader', 'firecrawl', 'scrapingbee'];
 const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
+```
+
+---
+
+### formatAttendees `function`
+
+📍 [`src/tools/microsoft/types.ts:179`](src/tools/microsoft/types.ts)
+
+Convert an array of email addresses (any format) to Microsoft Graph attendee format.
+Normalizes input first, so it's safe to pass LLM output directly.
+
+```typescript
+export function formatAttendees(emails: unknown[]):
+```
+
+---
+
+### formatRecipients `function`
+
+📍 [`src/tools/microsoft/types.ts:171`](src/tools/microsoft/types.ts)
+
+Convert an array of email addresses (any format) to Microsoft Graph recipient format.
+Normalizes input first, so it's safe to pass LLM output directly.
+
+```typescript
+export function formatRecipients(emails: unknown[]):
 ```
 
 ---
@@ -28901,6 +29663,18 @@ export function getRegisteredScrapeProviders(): string[]
 
 ---
 
+### getRoutineProgress `function`
+
+📍 [`src/domain/entities/Routine.ts:222`](src/domain/entities/Routine.ts)
+
+Compute routine progress (0-100) from plan task statuses.
+
+```typescript
+export function getRoutineProgress(execution: RoutineExecution): number
+```
+
+---
+
 ### getServiceDefinition `function`
 
 📍 [`src/domain/entities/Services.ts:525`](src/domain/entities/Services.ts)
@@ -28933,6 +29707,22 @@ Get all services in a category
 
 ```typescript
 export function getServicesByCategory(category: ServiceCategory): ServiceDefinition[]
+```
+
+---
+
+### getUserPathPrefix `function`
+
+📍 [`src/tools/microsoft/types.ts:21`](src/tools/microsoft/types.ts)
+
+Get the user path prefix for Microsoft Graph API requests.
+
+- OAuth `authorization_code` flow (delegated): returns `/me` (ignores targetUser)
+- OAuth `client_credentials` flow (application): returns `/users/${targetUser}` (requires targetUser)
+- API key / other: returns `/me`
+
+```typescript
+export function getUserPathPrefix(connector: Connector, targetUser?: string): string
 ```
 
 ---
@@ -28978,6 +29768,26 @@ export function isKnownService(serviceId: string): boolean
 
 ---
 
+### isTeamsMeetingUrl `function`
+
+📍 [`src/tools/microsoft/types.ts:197`](src/tools/microsoft/types.ts)
+
+Check if a meeting ID input is a Teams join URL.
+
+Teams join URLs look like:
+- `https://teams.microsoft.com/l/meetup-join/19%3ameeting_...`
+- `https://teams.live.com/l/meetup-join/...`
+
+IMPORTANT: A Teams join URL does NOT contain the Graph API meeting ID.
+To resolve a URL to a meeting ID, use `resolveMeetingId()` which calls
+`GET /me/onlineMeetings?$filter=JoinWebUrl eq '{url}'`.
+
+```typescript
+export function isTeamsMeetingUrl(input: string): boolean
+```
+
+---
+
 ### killBackgroundProcess `function`
 
 📍 [`src/tools/shell/bash.ts:347`](src/tools/shell/bash.ts)
@@ -29011,6 +29821,46 @@ Merge text pieces into a single markdown string
 
 ```typescript
 export function mergeTextPieces(pieces: DocumentPiece[]): string
+```
+
+---
+
+### microsoftFetch `function`
+
+📍 [`src/tools/microsoft/types.ts:74`](src/tools/microsoft/types.ts)
+
+Make an authenticated Microsoft Graph API request through the connector.
+
+Adds standard headers and parses JSON response.
+Handles empty response bodies (e.g., sendMail returns 202 with no body).
+Throws MicrosoftAPIError on non-ok responses.
+
+```typescript
+export async function microsoftFetch&lt;T = unknown&gt;(
+  connector: Connector,
+  endpoint: string,
+  options?: MicrosoftFetchOptions
+): Promise&lt;T&gt;
+```
+
+---
+
+### normalizeEmails `function`
+
+📍 [`src/tools/microsoft/types.ts:147`](src/tools/microsoft/types.ts)
+
+Normalize an email array from any format the LLM might send into plain strings.
+
+Accepts:
+- Plain strings: `["alice@contoso.com"]`
+- Graph recipient objects: `[{ emailAddress: { address: "alice@contoso.com" } }]`
+- Graph attendee objects: `[{ emailAddress: { address: "alice@contoso.com", name: "Alice" }, type: "required" }]`
+- Bare email objects: `[{ address: "alice@contoso.com" }]` or `[{ email: "alice@contoso.com" }]`
+
+Always returns `string[]` of email addresses.
+
+```typescript
+export function normalizeEmails(input: unknown[]): string[]
 ```
 
 ---
@@ -29097,6 +29947,26 @@ export function resolveMaxContextTokens(
   model: string | undefined,
   fallback: number
 ): number
+```
+
+---
+
+### resolveMeetingId `function`
+
+📍 [`src/tools/microsoft/types.ts:223`](src/tools/microsoft/types.ts)
+
+Resolve a meeting input (ID or Teams URL) to a Graph API online meeting ID.
+
+- Raw meeting IDs are passed through as-is
+- Teams join URLs are resolved via `GET /me/onlineMeetings?$filter=JoinWebUrl eq '{url}'`
+
+```typescript
+export async function resolveMeetingId(
+  connector: Connector,
+  input: string,
+  prefix: string,
+  effectiveUserId?: string
+): Promise&lt;
 ```
 
 ---

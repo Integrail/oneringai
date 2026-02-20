@@ -25,7 +25,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 1000,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const compactedListener = vi.fn();
@@ -59,7 +59,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 1000,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Fill to about 50% capacity (well below 70% threshold)
@@ -87,7 +87,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 600,
         responseReserve: 100,
         strategy: 'default', // 70% threshold
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Fill context well beyond 75% capacity with longer messages
@@ -214,7 +214,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 600,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Create a tool use/result pair
@@ -281,7 +281,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 800,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Create multiple tool pairs
@@ -358,7 +358,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 600,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Create a mock non-compactable plugin
@@ -435,7 +435,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 2000, // Larger to fit tool definitions
         responseReserve: 200,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -500,7 +500,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 2000, // Larger context to fit tool definitions
         responseReserve: 200,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -534,7 +534,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 800,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       // Fill context
@@ -570,7 +570,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 2000, // Larger to fit tool definitions
         responseReserve: 200,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       const memoryPlugin = new WorkingMemoryPluginNextGen();
@@ -613,7 +613,7 @@ describe('Context Compaction Edge Cases', () => {
         maxContextTokens: 800,
         responseReserve: 100,
         strategy: 'default',
-        features: { workingMemory: false },
+        features: { workingMemory: false, inContextMemory: false },
       });
 
       ctx.addUserMessage('First message');

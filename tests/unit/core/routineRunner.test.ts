@@ -215,12 +215,15 @@ describe('executeRoutine', () => {
       const executionOrder: string[] = [];
 
       // Track which task prompt is being processed
-      mockGenerate.mockImplementation(async (opts: { input: Array<{ content?: Array<{ text?: string }> }> }) => {
-        // Extract task name from the prompt
-        const inputText = JSON.stringify(opts.input);
-        if (inputText.includes('Task A')) executionOrder.push('A');
-        else if (inputText.includes('Task B')) executionOrder.push('B');
-        else if (inputText.includes('Task C')) executionOrder.push('C');
+      mockGenerate.mockImplementation(async (opts: { input: Array<{ role?: string; content?: Array<{ text?: string }> }> }) => {
+        // Extract task name from the LAST user message (the task prompt),
+        // not the full input which includes plan overview with all task names
+        const userMessages = opts.input.filter((m: { role?: string }) => m.role === 'user');
+        const lastUserMsg = userMessages[userMessages.length - 1];
+        const lastUserText = JSON.stringify(lastUserMsg?.content ?? []);
+        if (lastUserText.includes('Current Task: Task A')) executionOrder.push('A');
+        else if (lastUserText.includes('Current Task: Task B')) executionOrder.push('B');
+        else if (lastUserText.includes('Current Task: Task C')) executionOrder.push('C');
         return makeTextResponse('Done');
       });
 

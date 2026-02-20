@@ -486,7 +486,7 @@ export interface ContextFeatures {
  */
 export const DEFAULT_FEATURES: Required<ContextFeatures> = {
   workingMemory: true,
-  inContextMemory: false,
+  inContextMemory: true,
   persistentInstructions: false,
   userInfo: false,
 };

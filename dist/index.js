@@ -14473,7 +14473,7 @@ var PRIORITY_VALUES = {
 };
 var DEFAULT_CONFIG = {
   maxEntries: 20,
-  maxTotalTokens: 4e3,
+  maxTotalTokens: 4e4,
   defaultPriority: "normal",
   showTimestamps: false
 };
@@ -16658,7 +16658,7 @@ var StrategyRegistry = class {
 // src/core/context-nextgen/types.ts
 var DEFAULT_FEATURES = {
   workingMemory: true,
-  inContextMemory: false,
+  inContextMemory: true,
   persistentInstructions: false,
   userInfo: false
 };
@@ -23899,6 +23899,12 @@ function defaultTaskPrompt(task) {
     }
     parts.push("");
   }
+  if (task.dependsOn.length > 0) {
+    parts.push("Note: Results from prerequisite tasks are available in your live context.");
+    parts.push("Small results appear directly; larger results are in working memory \u2014 use memory_retrieve to access them.");
+    parts.push("Review the plan overview and dependency results before starting.");
+    parts.push("");
+  }
   parts.push("After completing the work, store key results in memory once, then respond with a text summary (no more tool calls).");
   return parts.join("\n");
 }
@@ -23981,6 +23987,127 @@ async function collectValidationContext(agent, responseText) {
     workingMemoryIndex,
     toolCallLog
   };
+}
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+function buildPlanOverview(execution, definition, currentTaskId) {
+  const parts = [];
+  const progress = execution.progress ?? 0;
+  parts.push(`Routine: ${definition.name}`);
+  if (definition.description) {
+    parts.push(`Goal: ${definition.description}`);
+  }
+  parts.push(`Progress: ${Math.round(progress * 100)}%`);
+  parts.push("");
+  parts.push("Tasks:");
+  for (const task of execution.plan.tasks) {
+    let statusIcon;
+    switch (task.status) {
+      case "completed":
+        statusIcon = "[x]";
+        break;
+      case "in_progress":
+        statusIcon = "[>]";
+        break;
+      case "failed":
+        statusIcon = "[!]";
+        break;
+      case "skipped":
+        statusIcon = "[-]";
+        break;
+      default:
+        statusIcon = "[ ]";
+    }
+    let line = `${statusIcon} ${task.name}`;
+    if (task.dependsOn.length > 0) {
+      const depNames = task.dependsOn.map((depId) => execution.plan.tasks.find((t) => t.id === depId)?.name ?? depId).join(", ");
+      line += ` (after: ${depNames})`;
+    }
+    if (task.id === currentTaskId) {
+      line += "  \u2190 CURRENT";
+    }
+    parts.push(line);
+  }
+  return parts.join("\n");
+}
+async function injectRoutineContext(agent, execution, definition, currentTask) {
+  const icmPlugin = agent.context.getPlugin("in_context_memory");
+  const wmPlugin = agent.context.memory;
+  if (!icmPlugin && !wmPlugin) {
+    logger.warn("injectRoutineContext: No ICM or WM plugin available \u2014 skipping context injection");
+    return;
+  }
+  const planOverview = buildPlanOverview(execution, definition, currentTask.id);
+  if (icmPlugin) {
+    icmPlugin.set("__routine_plan", "Routine plan overview with task statuses", planOverview, "high");
+  }
+  if (icmPlugin) {
+    for (const entry of icmPlugin.list()) {
+      if (entry.key.startsWith("__dep_result_") || entry.key === "__routine_deps") {
+        icmPlugin.delete(entry.key);
+      }
+    }
+  }
+  if (wmPlugin) {
+    const { entries: wmEntries } = await wmPlugin.query();
+    for (const entry of wmEntries) {
+      if (entry.key.startsWith("__dep_result_") || entry.key.startsWith("findings/__dep_result_")) {
+        await wmPlugin.delete(entry.key);
+      }
+    }
+  }
+  if (currentTask.dependsOn.length === 0) return;
+  const inContextDeps = [];
+  const workingMemoryDeps = [];
+  for (const depId of currentTask.dependsOn) {
+    const depTask = execution.plan.tasks.find((t) => t.id === depId);
+    if (!depTask?.result?.output) continue;
+    const output = typeof depTask.result.output === "string" ? depTask.result.output : JSON.stringify(depTask.result.output);
+    const tokens = estimateTokens(output);
+    const depKey = `__dep_result_${depId}`;
+    const depLabel = `Result from task "${depTask.name}"`;
+    if (tokens < 5e3 && icmPlugin) {
+      icmPlugin.set(depKey, depLabel, output, "high");
+      inContextDeps.push(depTask.name);
+    } else if (wmPlugin) {
+      await wmPlugin.store(depKey, depLabel, output, { tier: "findings" });
+      workingMemoryDeps.push(depTask.name);
+    } else if (icmPlugin) {
+      const truncated = output.slice(0, 2e4) + "\n... (truncated, full result not available)";
+      icmPlugin.set(depKey, depLabel, truncated, "high");
+      inContextDeps.push(depTask.name + " (truncated)");
+    }
+  }
+  if (icmPlugin && (inContextDeps.length > 0 || workingMemoryDeps.length > 0)) {
+    const summaryParts = ["Dependency results available:"];
+    if (inContextDeps.length > 0) {
+      summaryParts.push(`In context (visible now): ${inContextDeps.join(", ")}`);
+    }
+    if (workingMemoryDeps.length > 0) {
+      summaryParts.push(`In working memory (use memory_retrieve): ${workingMemoryDeps.join(", ")}`);
+    }
+    icmPlugin.set("__routine_deps", "Dependency results location guide", summaryParts.join("\n"), "high");
+  }
+}
+async function cleanupRoutineContext(agent) {
+  const icmPlugin = agent.context.getPlugin("in_context_memory");
+  const wmPlugin = agent.context.memory;
+  if (icmPlugin) {
+    for (const entry of icmPlugin.list()) {
+      if (entry.key.startsWith("__routine_") || entry.key.startsWith("__dep_result_")) {
+        icmPlugin.delete(entry.key);
+      }
+    }
+  }
+  if (wmPlugin) {
+    const { entries: wmEntries } = await wmPlugin.query();
+    for (const entry of wmEntries) {
+      if (entry.key.startsWith("__dep_result_") || entry.key.startsWith("findings/__dep_result_")) {
+        await wmPlugin.delete(entry.key);
+      }
+    }
+  }
 }
 async function validateTaskCompletion(agent, task, responseText, validationPromptBuilder) {
   const hasExplicitValidation = task.validation?.skipReflection === false && task.validation?.completionCriteria && task.validation.completionCriteria.length > 0;
@@ -24127,6 +24254,7 @@ async function executeRoutine(options) {
       };
       agent.registerHook("pause:check", iterationLimiter);
       const getTask = () => execution.plan.tasks[taskIndex];
+      await injectRoutineContext(agent, execution, definition, getTask());
       while (!taskCompleted) {
         try {
           const taskPrompt = buildTaskPrompt(getTask());
@@ -24229,6 +24357,10 @@ async function executeRoutine(options) {
     );
     return execution;
   } finally {
+    try {
+      await cleanupRoutineContext(agent);
+    } catch {
+    }
     for (const { name, hook } of registeredHooks) {
       try {
         agent.unregisterHook(name, hook);
