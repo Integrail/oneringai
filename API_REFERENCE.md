@@ -26030,7 +26030,7 @@ Result of a file edit operation
 
 ### ExecuteRoutineOptions `interface`
 
-📍 [`src/core/routineRunner.ts:49`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:51`](src/core/routineRunner.ts)
 
 Options for executing a routine.
 
@@ -28847,7 +28847,7 @@ Full strategy registry entry (includes class reference)
 
 ### ValidationContext `interface`
 
-📍 [`src/core/routineRunner.ts:101`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:103`](src/core/routineRunner.ts)
 
 Context snapshot passed to the validation prompt builder.
 Contains everything the validator needs to evaluate task completion
@@ -29519,7 +29519,7 @@ export function detectServiceFromURL(url: string): string | undefined
 
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:388`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:571`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 
@@ -30071,7 +30071,7 @@ Default configuration values
 | Property | Type | Description |
 |----------|------|-------------|
 | `maxEntries` | `20` | - |
-| `maxTotalTokens` | `4000` | - |
+| `maxTotalTokens` | `40000` | - |
 | `defaultPriority` | `'normal' as InContextPriority` | - |
 | `showTimestamps` | `false` | - |
 
@@ -30108,7 +30108,7 @@ Default feature configuration
 | Property | Type | Description |
 |----------|------|-------------|
 | `workingMemory` | `true` | - |
-| `inContextMemory` | `false` | - |
+| `inContextMemory` | `true` | - |
 | `persistentInstructions` | `false` | - |
 | `userInfo` | `false` | - |
 
