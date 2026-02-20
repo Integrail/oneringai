@@ -13437,6 +13437,219 @@ interface CreatePRArgs {
 declare function createCreatePRTool(connector: Connector, userId?: string): ToolFunction<CreatePRArgs, GitHubCreatePRResult>;
 
 /**
+ * Microsoft Graph Tools - Shared Types and Helpers
+ *
+ * Foundation for all Microsoft Graph connector tools.
+ * Provides authenticated fetch, delegated/app mode switching, and result types.
+ */
+
+/**
+ * Get the user path prefix for Microsoft Graph API requests.
+ *
+ * - OAuth `authorization_code` flow (delegated): returns `/me` (ignores targetUser)
+ * - OAuth `client_credentials` flow (application): returns `/users/${targetUser}` (requires targetUser)
+ * - API key / other: returns `/me`
+ */
+declare function getUserPathPrefix(connector: Connector, targetUser?: string): string;
+/**
+ * Options for microsoftFetch
+ */
+interface MicrosoftFetchOptions {
+    method?: string;
+    body?: unknown;
+    userId?: string;
+    queryParams?: Record<string, string | number | boolean>;
+    accept?: string;
+}
+/**
+ * Make an authenticated Microsoft Graph API request through the connector.
+ *
+ * Adds standard headers and parses JSON response.
+ * Handles empty response bodies (e.g., sendMail returns 202 with no body).
+ * Throws MicrosoftAPIError on non-ok responses.
+ */
+declare function microsoftFetch<T = unknown>(connector: Connector, endpoint: string, options?: MicrosoftFetchOptions): Promise<T>;
+/**
+ * Convert an array of email addresses to Microsoft Graph recipient format.
+ */
+declare function formatRecipients(emails: string[]): {
+    emailAddress: {
+        address: string;
+    };
+}[];
+/**
+ * Parse a meeting ID from a Teams meeting URL or raw meeting ID.
+ *
+ * Accepts:
+ * - Raw meeting IDs (passed through)
+ * - Teams meeting URLs: `https://teams.microsoft.com/l/meetup-join/19%3ameeting_...`
+ */
+declare function parseMeetingId(input: string): string;
+interface MicrosoftDraftEmailResult {
+    success: boolean;
+    draftId?: string;
+    webLink?: string;
+    error?: string;
+}
+interface MicrosoftSendEmailResult {
+    success: boolean;
+    error?: string;
+}
+interface MicrosoftCreateMeetingResult {
+    success: boolean;
+    eventId?: string;
+    webLink?: string;
+    onlineMeetingUrl?: string;
+    error?: string;
+}
+interface MicrosoftEditMeetingResult {
+    success: boolean;
+    eventId?: string;
+    webLink?: string;
+    error?: string;
+}
+interface MicrosoftGetTranscriptResult {
+    success: boolean;
+    transcript?: string;
+    meetingSubject?: string;
+    error?: string;
+}
+interface MicrosoftFindSlotsResult {
+    success: boolean;
+    slots?: MeetingSlotSuggestion[];
+    emptySuggestionsReason?: string;
+    error?: string;
+}
+interface MeetingSlotSuggestion {
+    start: string;
+    end: string;
+    confidence: string;
+    attendeeAvailability: {
+        attendee: string;
+        availability: string;
+    }[];
+}
+
+/**
+ * Microsoft Graph - Create Draft Email Tool
+ *
+ * Create a draft email or draft reply in the user's mailbox.
+ */
+
+interface CreateDraftEmailArgs {
+    to: string[];
+    subject: string;
+    body: string;
+    cc?: string[];
+    replyToMessageId?: string;
+    targetUser?: string;
+}
+/**
+ * Create a Microsoft Graph create_draft_email tool
+ */
+declare function createDraftEmailTool(connector: Connector, userId?: string): ToolFunction<CreateDraftEmailArgs, MicrosoftDraftEmailResult>;
+
+/**
+ * Microsoft Graph - Send Email Tool
+ *
+ * Send an email or reply to an existing message.
+ */
+
+interface SendEmailArgs {
+    to: string[];
+    subject: string;
+    body: string;
+    cc?: string[];
+    replyToMessageId?: string;
+    targetUser?: string;
+}
+/**
+ * Create a Microsoft Graph send_email tool
+ */
+declare function createSendEmailTool(connector: Connector, userId?: string): ToolFunction<SendEmailArgs, MicrosoftSendEmailResult>;
+
+/**
+ * Microsoft Graph - Create Meeting Tool
+ *
+ * Create a calendar event with optional Teams online meeting.
+ */
+
+interface CreateMeetingArgs {
+    subject: string;
+    startDateTime: string;
+    endDateTime: string;
+    attendees: string[];
+    body?: string;
+    isOnlineMeeting?: boolean;
+    location?: string;
+    timeZone?: string;
+    targetUser?: string;
+}
+/**
+ * Create a Microsoft Graph create_meeting tool
+ */
+declare function createMeetingTool(connector: Connector, userId?: string): ToolFunction<CreateMeetingArgs, MicrosoftCreateMeetingResult>;
+
+/**
+ * Microsoft Graph - Edit Meeting Tool
+ *
+ * Update an existing calendar event.
+ */
+
+interface EditMeetingArgs {
+    eventId: string;
+    subject?: string;
+    startDateTime?: string;
+    endDateTime?: string;
+    attendees?: string[];
+    body?: string;
+    isOnlineMeeting?: boolean;
+    location?: string;
+    timeZone?: string;
+    targetUser?: string;
+}
+/**
+ * Create a Microsoft Graph edit_meeting tool
+ */
+declare function createEditMeetingTool(connector: Connector, userId?: string): ToolFunction<EditMeetingArgs, MicrosoftEditMeetingResult>;
+
+/**
+ * Microsoft Graph - Get Meeting Transcript Tool
+ *
+ * Retrieve the transcript from a Teams online meeting.
+ * Requires OnlineMeetingTranscript.Read.All permission.
+ */
+
+interface GetMeetingTranscriptArgs {
+    meetingId: string;
+    targetUser?: string;
+}
+/**
+ * Create a Microsoft Graph get_meeting_transcript tool
+ */
+declare function createGetMeetingTranscriptTool(connector: Connector, userId?: string): ToolFunction<GetMeetingTranscriptArgs, MicrosoftGetTranscriptResult>;
+
+/**
+ * Microsoft Graph - Find Meeting Slots Tool
+ *
+ * Find available meeting time slots for a set of attendees.
+ */
+
+interface FindMeetingSlotsArgs {
+    attendees: string[];
+    startDateTime: string;
+    endDateTime: string;
+    duration: number;
+    timeZone?: string;
+    maxResults?: number;
+    targetUser?: string;
+}
+/**
+ * Create a Microsoft Graph find_meeting_slots tool
+ */
+declare function createFindMeetingSlotsTool(connector: Connector, userId?: string): ToolFunction<FindMeetingSlotsArgs, MicrosoftFindSlotsResult>;
+
+/**
  * Desktop Automation Tools - Types
  *
  * Interfaces and types for OS-level desktop automation (screenshot, mouse, keyboard, windows).
@@ -13814,7 +14027,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-19T21:06:04.757Z
+ * Generated at: 2026-02-20T11:05:32.372Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -14253,6 +14466,13 @@ type index_IDesktopDriver = IDesktopDriver;
 type index_IDocumentTransformer = IDocumentTransformer;
 type index_IFormatHandler = IFormatHandler;
 type index_ImageFilterOptions = ImageFilterOptions;
+type index_MeetingSlotSuggestion = MeetingSlotSuggestion;
+type index_MicrosoftCreateMeetingResult = MicrosoftCreateMeetingResult;
+type index_MicrosoftDraftEmailResult = MicrosoftDraftEmailResult;
+type index_MicrosoftEditMeetingResult = MicrosoftEditMeetingResult;
+type index_MicrosoftFindSlotsResult = MicrosoftFindSlotsResult;
+type index_MicrosoftGetTranscriptResult = MicrosoftGetTranscriptResult;
+type index_MicrosoftSendEmailResult = MicrosoftSendEmailResult;
 type index_MouseButton = MouseButton;
 type index_NutTreeDriver = NutTreeDriver;
 declare const index_NutTreeDriver: typeof NutTreeDriver;
@@ -14287,19 +14507,25 @@ declare const index_createDesktopMouseScrollTool: typeof createDesktopMouseScrol
 declare const index_createDesktopScreenshotTool: typeof createDesktopScreenshotTool;
 declare const index_createDesktopWindowFocusTool: typeof createDesktopWindowFocusTool;
 declare const index_createDesktopWindowListTool: typeof createDesktopWindowListTool;
+declare const index_createDraftEmailTool: typeof createDraftEmailTool;
 declare const index_createEditFileTool: typeof createEditFileTool;
+declare const index_createEditMeetingTool: typeof createEditMeetingTool;
 declare const index_createExecuteJavaScriptTool: typeof createExecuteJavaScriptTool;
+declare const index_createFindMeetingSlotsTool: typeof createFindMeetingSlotsTool;
+declare const index_createGetMeetingTranscriptTool: typeof createGetMeetingTranscriptTool;
 declare const index_createGetPRTool: typeof createGetPRTool;
 declare const index_createGitHubReadFileTool: typeof createGitHubReadFileTool;
 declare const index_createGlobTool: typeof createGlobTool;
 declare const index_createGrepTool: typeof createGrepTool;
 declare const index_createImageGenerationTool: typeof createImageGenerationTool;
 declare const index_createListDirectoryTool: typeof createListDirectoryTool;
+declare const index_createMeetingTool: typeof createMeetingTool;
 declare const index_createPRCommentsTool: typeof createPRCommentsTool;
 declare const index_createPRFilesTool: typeof createPRFilesTool;
 declare const index_createReadFileTool: typeof createReadFileTool;
 declare const index_createSearchCodeTool: typeof createSearchCodeTool;
 declare const index_createSearchFilesTool: typeof createSearchFilesTool;
+declare const index_createSendEmailTool: typeof createSendEmailTool;
 declare const index_createSpeechToTextTool: typeof createSpeechToTextTool;
 declare const index_createTextToSpeechTool: typeof createTextToSpeechTool;
 declare const index_createVideoTools: typeof createVideoTools;
@@ -14329,6 +14555,7 @@ declare const index_editFile: typeof editFile;
 declare const index_executeInVM: typeof executeInVM;
 declare const index_executeJavaScript: typeof executeJavaScript;
 declare const index_expandTilde: typeof expandTilde;
+declare const index_formatRecipients: typeof formatRecipients;
 declare const index_getAllBuiltInTools: typeof getAllBuiltInTools;
 declare const index_getBackgroundOutput: typeof getBackgroundOutput;
 declare const index_getDesktopDriver: typeof getDesktopDriver;
@@ -14339,6 +14566,7 @@ declare const index_getToolCategories: typeof getToolCategories;
 declare const index_getToolRegistry: typeof getToolRegistry;
 declare const index_getToolsByCategory: typeof getToolsByCategory;
 declare const index_getToolsRequiringConnector: typeof getToolsRequiringConnector;
+declare const index_getUserPathPrefix: typeof getUserPathPrefix;
 declare const index_glob: typeof glob;
 declare const index_grep: typeof grep;
 declare const index_hydrateCustomTool: typeof hydrateCustomTool;
@@ -14348,7 +14576,9 @@ declare const index_jsonManipulator: typeof jsonManipulator;
 declare const index_killBackgroundProcess: typeof killBackgroundProcess;
 declare const index_listDirectory: typeof listDirectory;
 declare const index_mergeTextPieces: typeof mergeTextPieces;
+declare const index_microsoftFetch: typeof microsoftFetch;
 declare const index_parseKeyCombo: typeof parseKeyCombo;
+declare const index_parseMeetingId: typeof parseMeetingId;
 declare const index_parseRepository: typeof parseRepository;
 declare const index_readFile: typeof readFile;
 declare const index_resetDefaultDriver: typeof resetDefaultDriver;
@@ -14360,7 +14590,7 @@ declare const index_validatePath: typeof validatePath;
 declare const index_webFetch: typeof webFetch;
 declare const index_writeFile: typeof writeFile;
 declare namespace index {
-  export { type index_BashResult as BashResult, type index_ConnectorToolEntry as ConnectorToolEntry, index_ConnectorTools as ConnectorTools, type index_CustomToolMetaToolsOptions as CustomToolMetaToolsOptions, index_DEFAULT_DESKTOP_CONFIG as DEFAULT_DESKTOP_CONFIG, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, index_DESKTOP_TOOL_NAMES as DESKTOP_TOOL_NAMES, type index_DesktopGetCursorResult as DesktopGetCursorResult, type index_DesktopGetScreenSizeResult as DesktopGetScreenSizeResult, type index_DesktopKeyboardKeyArgs as DesktopKeyboardKeyArgs, type index_DesktopKeyboardKeyResult as DesktopKeyboardKeyResult, type index_DesktopKeyboardTypeArgs as DesktopKeyboardTypeArgs, type index_DesktopKeyboardTypeResult as DesktopKeyboardTypeResult, type index_DesktopMouseClickArgs as DesktopMouseClickArgs, type index_DesktopMouseClickResult as DesktopMouseClickResult, type index_DesktopMouseDragArgs as DesktopMouseDragArgs, type index_DesktopMouseDragResult as DesktopMouseDragResult, type index_DesktopMouseMoveArgs as DesktopMouseMoveArgs, type index_DesktopMouseMoveResult as DesktopMouseMoveResult, type index_DesktopMouseScrollArgs as DesktopMouseScrollArgs, type index_DesktopMouseScrollResult as DesktopMouseScrollResult, type index_DesktopPoint as DesktopPoint, type index_DesktopScreenSize as DesktopScreenSize, type index_DesktopScreenshot as DesktopScreenshot, type index_DesktopScreenshotArgs as DesktopScreenshotArgs, type index_DesktopScreenshotResult as DesktopScreenshotResult, type index_DesktopToolConfig as DesktopToolConfig, type index_DesktopToolName as DesktopToolName, type index_DesktopWindow as DesktopWindow, type index_DesktopWindowFocusArgs as DesktopWindowFocusArgs, type index_DesktopWindowFocusResult as DesktopWindowFocusResult, type index_DesktopWindowListResult as DesktopWindowListResult, type index_DocumentFamily as DocumentFamily, type index_DocumentFormat as DocumentFormat, type index_DocumentImagePiece as DocumentImagePiece, type index_DocumentMetadata as DocumentMetadata, type index_DocumentPiece as DocumentPiece, type index_DocumentReadOptions as DocumentReadOptions, index_DocumentReader as DocumentReader, type index_DocumentReaderConfig as DocumentReaderConfig, type index_DocumentResult as DocumentResult, type index_DocumentSource as DocumentSource, type index_DocumentTextPiece as DocumentTextPiece, type index_DocumentToContentOptions as DocumentToContentOptions, type index_EditFileResult as EditFileResult, FileMediaStorage as FileMediaOutputHandler, type index_FilesystemToolConfig as FilesystemToolConfig, type index_FormatDetectionResult as FormatDetectionResult, index_FormatDetector as FormatDetector, type index_GenericAPICallArgs as GenericAPICallArgs, type index_GenericAPICallResult as GenericAPICallResult, type index_GenericAPIToolOptions as GenericAPIToolOptions, type index_GitHubCreatePRResult as GitHubCreatePRResult, type index_GitHubGetPRResult as GitHubGetPRResult, type index_GitHubPRCommentEntry as GitHubPRCommentEntry, type index_GitHubPRCommentsResult as GitHubPRCommentsResult, type index_GitHubPRFilesResult as GitHubPRFilesResult, type index_GitHubReadFileResult as GitHubReadFileResult, type index_GitHubRepository as GitHubRepository, type index_GitHubSearchCodeResult as GitHubSearchCodeResult, type index_GitHubSearchFilesResult as GitHubSearchFilesResult, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type index_HydrateOptions as HydrateOptions, type index_IDesktopDriver as IDesktopDriver, type index_IDocumentTransformer as IDocumentTransformer, type index_IFormatHandler as IFormatHandler, type IMediaStorage as IMediaOutputHandler, type index_ImageFilterOptions as ImageFilterOptions, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type index_MouseButton as MouseButton, index_NutTreeDriver as NutTreeDriver, type index_ReadFileResult as ReadFileResult, type index_SearchResult as SearchResult, type index_ServiceToolFactory as ServiceToolFactory, type index_ShellToolConfig as ShellToolConfig, type index_ToolCategory as ToolCategory, index_ToolRegistry as ToolRegistry, type index_ToolRegistryEntry as ToolRegistryEntry, type index_WriteFileResult as WriteFileResult, index_applyHumanDelay as applyHumanDelay, index_bash as bash, index_createBashTool as createBashTool, index_createCreatePRTool as createCreatePRTool, index_createCustomToolDelete as createCustomToolDelete, index_createCustomToolDraft as createCustomToolDraft, index_createCustomToolList as createCustomToolList, index_createCustomToolLoad as createCustomToolLoad, index_createCustomToolMetaTools as createCustomToolMetaTools, index_createCustomToolSave as createCustomToolSave, index_createCustomToolTest as createCustomToolTest, index_createDesktopGetCursorTool as createDesktopGetCursorTool, index_createDesktopGetScreenSizeTool as createDesktopGetScreenSizeTool, index_createDesktopKeyboardKeyTool as createDesktopKeyboardKeyTool, index_createDesktopKeyboardTypeTool as createDesktopKeyboardTypeTool, index_createDesktopMouseClickTool as createDesktopMouseClickTool, index_createDesktopMouseDragTool as createDesktopMouseDragTool, index_createDesktopMouseMoveTool as createDesktopMouseMoveTool, index_createDesktopMouseScrollTool as createDesktopMouseScrollTool, index_createDesktopScreenshotTool as createDesktopScreenshotTool, index_createDesktopWindowFocusTool as createDesktopWindowFocusTool, index_createDesktopWindowListTool as createDesktopWindowListTool, index_createEditFileTool as createEditFileTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createGetPRTool as createGetPRTool, index_createGitHubReadFileTool as createGitHubReadFileTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createImageGenerationTool as createImageGenerationTool, index_createListDirectoryTool as createListDirectoryTool, index_createPRCommentsTool as createPRCommentsTool, index_createPRFilesTool as createPRFilesTool, index_createReadFileTool as createReadFileTool, index_createSearchCodeTool as createSearchCodeTool, index_createSearchFilesTool as createSearchFilesTool, index_createSpeechToTextTool as createSpeechToTextTool, index_createTextToSpeechTool as createTextToSpeechTool, index_createVideoTools as createVideoTools, index_createWebScrapeTool as createWebScrapeTool, index_createWebSearchTool as createWebSearchTool, index_createWriteFileTool as createWriteFileTool, index_customToolDelete as customToolDelete, index_customToolDraft as customToolDraft, index_customToolList as customToolList, index_customToolLoad as customToolLoad, index_customToolSave as customToolSave, index_customToolTest as customToolTest, index_desktopGetCursor as desktopGetCursor, index_desktopGetScreenSize as desktopGetScreenSize, index_desktopKeyboardKey as desktopKeyboardKey, index_desktopKeyboardType as desktopKeyboardType, index_desktopMouseClick as desktopMouseClick, index_desktopMouseDrag as desktopMouseDrag, index_desktopMouseMove as desktopMouseMove, index_desktopMouseScroll as desktopMouseScroll, index_desktopScreenshot as desktopScreenshot, index_desktopTools as desktopTools, index_desktopWindowFocus as desktopWindowFocus, index_desktopWindowList as desktopWindowList, index_developerTools as developerTools, index_editFile as editFile, index_executeInVM as executeInVM, index_executeJavaScript as executeJavaScript, index_expandTilde as expandTilde, index_getAllBuiltInTools as getAllBuiltInTools, index_getBackgroundOutput as getBackgroundOutput, index_getDesktopDriver as getDesktopDriver, index_getMediaOutputHandler as getMediaOutputHandler, index_getMediaStorage as getMediaStorage, index_getToolByName as getToolByName, index_getToolCategories as getToolCategories, index_getToolRegistry as getToolRegistry, index_getToolsByCategory as getToolsByCategory, index_getToolsRequiringConnector as getToolsRequiringConnector, index_glob as glob, index_grep as grep, index_hydrateCustomTool as hydrateCustomTool, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_mergeTextPieces as mergeTextPieces, index_parseKeyCombo as parseKeyCombo, index_parseRepository as parseRepository, index_readFile as readFile, index_resetDefaultDriver as resetDefaultDriver, index_resolveRepository as resolveRepository, index_setMediaOutputHandler as setMediaOutputHandler, index_setMediaStorage as setMediaStorage, index_toolRegistry as toolRegistry, index_validatePath as validatePath, index_webFetch as webFetch, index_writeFile as writeFile };
+  export { type index_BashResult as BashResult, type index_ConnectorToolEntry as ConnectorToolEntry, index_ConnectorTools as ConnectorTools, type index_CustomToolMetaToolsOptions as CustomToolMetaToolsOptions, index_DEFAULT_DESKTOP_CONFIG as DEFAULT_DESKTOP_CONFIG, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, index_DESKTOP_TOOL_NAMES as DESKTOP_TOOL_NAMES, type index_DesktopGetCursorResult as DesktopGetCursorResult, type index_DesktopGetScreenSizeResult as DesktopGetScreenSizeResult, type index_DesktopKeyboardKeyArgs as DesktopKeyboardKeyArgs, type index_DesktopKeyboardKeyResult as DesktopKeyboardKeyResult, type index_DesktopKeyboardTypeArgs as DesktopKeyboardTypeArgs, type index_DesktopKeyboardTypeResult as DesktopKeyboardTypeResult, type index_DesktopMouseClickArgs as DesktopMouseClickArgs, type index_DesktopMouseClickResult as DesktopMouseClickResult, type index_DesktopMouseDragArgs as DesktopMouseDragArgs, type index_DesktopMouseDragResult as DesktopMouseDragResult, type index_DesktopMouseMoveArgs as DesktopMouseMoveArgs, type index_DesktopMouseMoveResult as DesktopMouseMoveResult, type index_DesktopMouseScrollArgs as DesktopMouseScrollArgs, type index_DesktopMouseScrollResult as DesktopMouseScrollResult, type index_DesktopPoint as DesktopPoint, type index_DesktopScreenSize as DesktopScreenSize, type index_DesktopScreenshot as DesktopScreenshot, type index_DesktopScreenshotArgs as DesktopScreenshotArgs, type index_DesktopScreenshotResult as DesktopScreenshotResult, type index_DesktopToolConfig as DesktopToolConfig, type index_DesktopToolName as DesktopToolName, type index_DesktopWindow as DesktopWindow, type index_DesktopWindowFocusArgs as DesktopWindowFocusArgs, type index_DesktopWindowFocusResult as DesktopWindowFocusResult, type index_DesktopWindowListResult as DesktopWindowListResult, type index_DocumentFamily as DocumentFamily, type index_DocumentFormat as DocumentFormat, type index_DocumentImagePiece as DocumentImagePiece, type index_DocumentMetadata as DocumentMetadata, type index_DocumentPiece as DocumentPiece, type index_DocumentReadOptions as DocumentReadOptions, index_DocumentReader as DocumentReader, type index_DocumentReaderConfig as DocumentReaderConfig, type index_DocumentResult as DocumentResult, type index_DocumentSource as DocumentSource, type index_DocumentTextPiece as DocumentTextPiece, type index_DocumentToContentOptions as DocumentToContentOptions, type index_EditFileResult as EditFileResult, FileMediaStorage as FileMediaOutputHandler, type index_FilesystemToolConfig as FilesystemToolConfig, type index_FormatDetectionResult as FormatDetectionResult, index_FormatDetector as FormatDetector, type index_GenericAPICallArgs as GenericAPICallArgs, type index_GenericAPICallResult as GenericAPICallResult, type index_GenericAPIToolOptions as GenericAPIToolOptions, type index_GitHubCreatePRResult as GitHubCreatePRResult, type index_GitHubGetPRResult as GitHubGetPRResult, type index_GitHubPRCommentEntry as GitHubPRCommentEntry, type index_GitHubPRCommentsResult as GitHubPRCommentsResult, type index_GitHubPRFilesResult as GitHubPRFilesResult, type index_GitHubReadFileResult as GitHubReadFileResult, type index_GitHubRepository as GitHubRepository, type index_GitHubSearchCodeResult as GitHubSearchCodeResult, type index_GitHubSearchFilesResult as GitHubSearchFilesResult, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type index_HydrateOptions as HydrateOptions, type index_IDesktopDriver as IDesktopDriver, type index_IDocumentTransformer as IDocumentTransformer, type index_IFormatHandler as IFormatHandler, type IMediaStorage as IMediaOutputHandler, type index_ImageFilterOptions as ImageFilterOptions, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type index_MeetingSlotSuggestion as MeetingSlotSuggestion, type index_MicrosoftCreateMeetingResult as MicrosoftCreateMeetingResult, type index_MicrosoftDraftEmailResult as MicrosoftDraftEmailResult, type index_MicrosoftEditMeetingResult as MicrosoftEditMeetingResult, type index_MicrosoftFindSlotsResult as MicrosoftFindSlotsResult, type index_MicrosoftGetTranscriptResult as MicrosoftGetTranscriptResult, type index_MicrosoftSendEmailResult as MicrosoftSendEmailResult, type index_MouseButton as MouseButton, index_NutTreeDriver as NutTreeDriver, type index_ReadFileResult as ReadFileResult, type index_SearchResult as SearchResult, type index_ServiceToolFactory as ServiceToolFactory, type index_ShellToolConfig as ShellToolConfig, type index_ToolCategory as ToolCategory, index_ToolRegistry as ToolRegistry, type index_ToolRegistryEntry as ToolRegistryEntry, type index_WriteFileResult as WriteFileResult, index_applyHumanDelay as applyHumanDelay, index_bash as bash, index_createBashTool as createBashTool, index_createCreatePRTool as createCreatePRTool, index_createCustomToolDelete as createCustomToolDelete, index_createCustomToolDraft as createCustomToolDraft, index_createCustomToolList as createCustomToolList, index_createCustomToolLoad as createCustomToolLoad, index_createCustomToolMetaTools as createCustomToolMetaTools, index_createCustomToolSave as createCustomToolSave, index_createCustomToolTest as createCustomToolTest, index_createDesktopGetCursorTool as createDesktopGetCursorTool, index_createDesktopGetScreenSizeTool as createDesktopGetScreenSizeTool, index_createDesktopKeyboardKeyTool as createDesktopKeyboardKeyTool, index_createDesktopKeyboardTypeTool as createDesktopKeyboardTypeTool, index_createDesktopMouseClickTool as createDesktopMouseClickTool, index_createDesktopMouseDragTool as createDesktopMouseDragTool, index_createDesktopMouseMoveTool as createDesktopMouseMoveTool, index_createDesktopMouseScrollTool as createDesktopMouseScrollTool, index_createDesktopScreenshotTool as createDesktopScreenshotTool, index_createDesktopWindowFocusTool as createDesktopWindowFocusTool, index_createDesktopWindowListTool as createDesktopWindowListTool, index_createDraftEmailTool as createDraftEmailTool, index_createEditFileTool as createEditFileTool, index_createEditMeetingTool as createEditMeetingTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createFindMeetingSlotsTool as createFindMeetingSlotsTool, index_createGetMeetingTranscriptTool as createGetMeetingTranscriptTool, index_createGetPRTool as createGetPRTool, index_createGitHubReadFileTool as createGitHubReadFileTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createImageGenerationTool as createImageGenerationTool, index_createListDirectoryTool as createListDirectoryTool, index_createMeetingTool as createMeetingTool, index_createPRCommentsTool as createPRCommentsTool, index_createPRFilesTool as createPRFilesTool, index_createReadFileTool as createReadFileTool, index_createSearchCodeTool as createSearchCodeTool, index_createSearchFilesTool as createSearchFilesTool, index_createSendEmailTool as createSendEmailTool, index_createSpeechToTextTool as createSpeechToTextTool, index_createTextToSpeechTool as createTextToSpeechTool, index_createVideoTools as createVideoTools, index_createWebScrapeTool as createWebScrapeTool, index_createWebSearchTool as createWebSearchTool, index_createWriteFileTool as createWriteFileTool, index_customToolDelete as customToolDelete, index_customToolDraft as customToolDraft, index_customToolList as customToolList, index_customToolLoad as customToolLoad, index_customToolSave as customToolSave, index_customToolTest as customToolTest, index_desktopGetCursor as desktopGetCursor, index_desktopGetScreenSize as desktopGetScreenSize, index_desktopKeyboardKey as desktopKeyboardKey, index_desktopKeyboardType as desktopKeyboardType, index_desktopMouseClick as desktopMouseClick, index_desktopMouseDrag as desktopMouseDrag, index_desktopMouseMove as desktopMouseMove, index_desktopMouseScroll as desktopMouseScroll, index_desktopScreenshot as desktopScreenshot, index_desktopTools as desktopTools, index_desktopWindowFocus as desktopWindowFocus, index_desktopWindowList as desktopWindowList, index_developerTools as developerTools, index_editFile as editFile, index_executeInVM as executeInVM, index_executeJavaScript as executeJavaScript, index_expandTilde as expandTilde, index_formatRecipients as formatRecipients, index_getAllBuiltInTools as getAllBuiltInTools, index_getBackgroundOutput as getBackgroundOutput, index_getDesktopDriver as getDesktopDriver, index_getMediaOutputHandler as getMediaOutputHandler, index_getMediaStorage as getMediaStorage, index_getToolByName as getToolByName, index_getToolCategories as getToolCategories, index_getToolRegistry as getToolRegistry, index_getToolsByCategory as getToolsByCategory, index_getToolsRequiringConnector as getToolsRequiringConnector, index_getUserPathPrefix as getUserPathPrefix, index_glob as glob, index_grep as grep, index_hydrateCustomTool as hydrateCustomTool, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_mergeTextPieces as mergeTextPieces, index_microsoftFetch as microsoftFetch, index_parseKeyCombo as parseKeyCombo, index_parseMeetingId as parseMeetingId, index_parseRepository as parseRepository, index_readFile as readFile, index_resetDefaultDriver as resetDefaultDriver, index_resolveRepository as resolveRepository, index_setMediaOutputHandler as setMediaOutputHandler, index_setMediaStorage as setMediaStorage, index_toolRegistry as toolRegistry, index_validatePath as validatePath, index_webFetch as webFetch, index_writeFile as writeFile };
 }
 
 /**

@@ -175,6 +175,35 @@ export type {
 } from './github/index.js';
 
 // ============================================================================
+// Microsoft Graph Tools (Auto-registered with ConnectorTools for Microsoft service)
+// ============================================================================
+
+export {
+  // Tool factories
+  createDraftEmailTool,
+  createSendEmailTool,
+  createMeetingTool,
+  createEditMeetingTool,
+  createGetMeetingTranscriptTool,
+  createFindMeetingSlotsTool,
+  // Utilities
+  getUserPathPrefix,
+  microsoftFetch,
+  formatRecipients,
+  parseMeetingId,
+} from './microsoft/index.js';
+
+export type {
+  MicrosoftDraftEmailResult,
+  MicrosoftSendEmailResult,
+  MicrosoftCreateMeetingResult,
+  MicrosoftEditMeetingResult,
+  MicrosoftGetTranscriptResult,
+  MicrosoftFindSlotsResult,
+  MeetingSlotSuggestion,
+} from './microsoft/index.js';
+
+// ============================================================================
 // Desktop Automation Tools
 // ============================================================================
 

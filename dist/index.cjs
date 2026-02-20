@@ -43073,19 +43073,25 @@ __export(tools_exports, {
   createDesktopScreenshotTool: () => createDesktopScreenshotTool,
   createDesktopWindowFocusTool: () => createDesktopWindowFocusTool,
   createDesktopWindowListTool: () => createDesktopWindowListTool,
+  createDraftEmailTool: () => createDraftEmailTool,
   createEditFileTool: () => createEditFileTool,
+  createEditMeetingTool: () => createEditMeetingTool,
   createExecuteJavaScriptTool: () => createExecuteJavaScriptTool,
+  createFindMeetingSlotsTool: () => createFindMeetingSlotsTool,
+  createGetMeetingTranscriptTool: () => createGetMeetingTranscriptTool,
   createGetPRTool: () => createGetPRTool,
   createGitHubReadFileTool: () => createGitHubReadFileTool,
   createGlobTool: () => createGlobTool,
   createGrepTool: () => createGrepTool,
   createImageGenerationTool: () => createImageGenerationTool,
   createListDirectoryTool: () => createListDirectoryTool,
+  createMeetingTool: () => createMeetingTool,
   createPRCommentsTool: () => createPRCommentsTool,
   createPRFilesTool: () => createPRFilesTool,
   createReadFileTool: () => createReadFileTool,
   createSearchCodeTool: () => createSearchCodeTool,
   createSearchFilesTool: () => createSearchFilesTool,
+  createSendEmailTool: () => createSendEmailTool,
   createSpeechToTextTool: () => createSpeechToTextTool,
   createTextToSpeechTool: () => createTextToSpeechTool,
   createVideoTools: () => createVideoTools,
@@ -43115,6 +43121,7 @@ __export(tools_exports, {
   executeInVM: () => executeInVM,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
+  formatRecipients: () => formatRecipients,
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
   getDesktopDriver: () => getDesktopDriver,
@@ -43125,6 +43132,7 @@ __export(tools_exports, {
   getToolRegistry: () => getToolRegistry,
   getToolsByCategory: () => getToolsByCategory,
   getToolsRequiringConnector: () => getToolsRequiringConnector,
+  getUserPathPrefix: () => getUserPathPrefix,
   glob: () => glob,
   grep: () => grep,
   hydrateCustomTool: () => hydrateCustomTool,
@@ -43134,7 +43142,9 @@ __export(tools_exports, {
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   mergeTextPieces: () => mergeTextPieces,
+  microsoftFetch: () => microsoftFetch,
   parseKeyCombo: () => parseKeyCombo,
+  parseMeetingId: () => parseMeetingId,
   parseRepository: () => parseRepository,
   readFile: () => readFile5,
   resetDefaultDriver: () => resetDefaultDriver,
@@ -47218,6 +47228,798 @@ function registerGitHubTools() {
 
 // src/tools/github/index.ts
 registerGitHubTools();
+
+// src/tools/microsoft/types.ts
+function getUserPathPrefix(connector, targetUser) {
+  const auth2 = connector.config.auth;
+  if (auth2.type === "oauth" && auth2.flow === "client_credentials") {
+    if (!targetUser) {
+      throw new Error(
+        'targetUser is required when using client_credentials (application) flow. Provide a user ID or UPN (e.g., "user@domain.com").'
+      );
+    }
+    return `/users/${targetUser}`;
+  }
+  return "/me";
+}
+var MicrosoftAPIError = class extends Error {
+  constructor(status, statusText, body) {
+    const msg = typeof body === "object" && body !== null && "error" in body ? body.error?.message ?? statusText : statusText;
+    super(`Microsoft Graph API error ${status}: ${msg}`);
+    this.status = status;
+    this.statusText = statusText;
+    this.body = body;
+    this.name = "MicrosoftAPIError";
+  }
+};
+async function microsoftFetch(connector, endpoint, options) {
+  let url2 = endpoint;
+  if (options?.queryParams && Object.keys(options.queryParams).length > 0) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(options.queryParams)) {
+      params.append(key, String(value));
+    }
+    url2 += (url2.includes("?") ? "&" : "?") + params.toString();
+  }
+  const headers = {
+    "Accept": options?.accept ?? "application/json"
+  };
+  if (options?.body) {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await connector.fetch(
+    url2,
+    {
+      method: options?.method ?? "GET",
+      headers,
+      body: options?.body ? JSON.stringify(options.body) : void 0
+    },
+    options?.userId
+  );
+  const text = await response.text();
+  if (!response.ok) {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+    throw new MicrosoftAPIError(response.status, response.statusText, data);
+  }
+  if (!text || text.trim().length === 0) {
+    return void 0;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+function formatRecipients(emails) {
+  return emails.map((address) => ({ emailAddress: { address } }));
+}
+function parseMeetingId(input) {
+  if (!input || input.trim().length === 0) {
+    throw new Error("Meeting ID cannot be empty");
+  }
+  const trimmed = input.trim();
+  try {
+    const url2 = new URL(trimmed);
+    if (url2.hostname === "teams.microsoft.com" || url2.hostname === "teams.live.com") {
+      const segments = url2.pathname.split("/").filter(Boolean);
+      const joinIndex = segments.indexOf("meetup-join");
+      if (joinIndex >= 0 && segments.length > joinIndex + 1) {
+        return decodeURIComponent(segments[joinIndex + 1]);
+      }
+    }
+  } catch {
+  }
+  return trimmed;
+}
+
+// src/tools/microsoft/createDraftEmail.ts
+function createDraftEmailTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "create_draft_email",
+        description: `Create a draft email or draft reply in the user's Outlook mailbox via Microsoft Graph. The draft is saved but NOT sent \u2014 use send_email to send immediately instead.
+
+USAGE:
+- New draft: provide to, subject, and body (HTML content, e.g. "<p>Hello!</p>")
+- Reply draft: also provide replyToMessageId (the Graph message ID of the original email) to create a threaded reply draft
+- The body field accepts HTML \u2014 use <p>, <br>, <ul>, <b>, etc. for formatting
+
+EXAMPLES:
+- New draft: { "to": ["alice@contoso.com"], "subject": "Project update", "body": "<p>Hi Alice,</p><p>Here is the update.</p>" }
+- Reply draft: { "to": ["alice@contoso.com"], "subject": "Re: Project update", "body": "<p>Thanks for the info!</p>", "replyToMessageId": "AAMkADI1..." }
+- With CC: { "to": ["alice@contoso.com"], "subject": "Meeting notes", "body": "<p>Notes attached.</p>", "cc": ["bob@contoso.com"] }`,
+        parameters: {
+          type: "object",
+          properties: {
+            to: {
+              type: "array",
+              items: { type: "string" },
+              description: "Recipient email addresses"
+            },
+            subject: {
+              type: "string",
+              description: 'Email subject line (use "Re: ..." prefix for replies)'
+            },
+            body: {
+              type: "string",
+              description: 'Email body as HTML content (e.g. "<p>Hello!</p>"). Use HTML tags for formatting.'
+            },
+            cc: {
+              type: "array",
+              items: { type: "string" },
+              description: "CC recipient email addresses (optional)"
+            },
+            replyToMessageId: {
+              type: "string",
+              description: 'Microsoft Graph message ID of the email to reply to (e.g. "AAMkADI1..."). When set, creates a threaded reply draft instead of a new draft.'
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+            }
+          },
+          required: ["to", "subject", "body"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const action = args.replyToMessageId ? "Reply draft" : "Draft";
+      return `${action} to ${args.to.join(", ")}: ${args.subject}`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Create a draft email via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      try {
+        const prefix = getUserPathPrefix(connector, args.targetUser);
+        if (args.replyToMessageId) {
+          const replyDraft = await microsoftFetch(
+            connector,
+            `${prefix}/messages/${args.replyToMessageId}/createReply`,
+            { method: "POST", userId: effectiveUserId, body: {} }
+          );
+          const updated = await microsoftFetch(
+            connector,
+            `${prefix}/messages/${replyDraft.id}`,
+            {
+              method: "PATCH",
+              userId: effectiveUserId,
+              body: {
+                subject: args.subject,
+                body: { contentType: "HTML", content: args.body },
+                toRecipients: formatRecipients(args.to),
+                ...args.cc && { ccRecipients: formatRecipients(args.cc) }
+              }
+            }
+          );
+          return {
+            success: true,
+            draftId: updated.id,
+            webLink: updated.webLink
+          };
+        }
+        const draft = await microsoftFetch(
+          connector,
+          `${prefix}/messages`,
+          {
+            method: "POST",
+            userId: effectiveUserId,
+            body: {
+              isDraft: true,
+              subject: args.subject,
+              body: { contentType: "HTML", content: args.body },
+              toRecipients: formatRecipients(args.to),
+              ...args.cc && { ccRecipients: formatRecipients(args.cc) }
+            }
+          }
+        );
+        return {
+          success: true,
+          draftId: draft.id,
+          webLink: draft.webLink
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to create draft email: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/microsoft/sendEmail.ts
+function createSendEmailTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "send_email",
+        description: `Send an email immediately or reply to an existing message via Microsoft Graph (Outlook). The email is sent right away \u2014 use create_draft_email to save a draft instead.
+
+USAGE:
+- New email: provide to, subject, and body (HTML content, e.g. "<p>Hello!</p>")
+- Reply: also provide replyToMessageId (the Graph message ID of the original email) to send a threaded reply
+- The body field accepts HTML \u2014 use <p>, <br>, <ul>, <b>, etc. for formatting
+
+EXAMPLES:
+- Send email: { "to": ["alice@contoso.com"], "subject": "Meeting tomorrow", "body": "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>" }
+- Reply: { "to": ["alice@contoso.com"], "subject": "Re: Meeting tomorrow", "body": "<p>Confirmed, see you then!</p>", "replyToMessageId": "AAMkADI1..." }
+- With CC: { "to": ["alice@contoso.com"], "subject": "Update", "body": "<p>FYI</p>", "cc": ["bob@contoso.com"] }`,
+        parameters: {
+          type: "object",
+          properties: {
+            to: {
+              type: "array",
+              items: { type: "string" },
+              description: "Recipient email addresses"
+            },
+            subject: {
+              type: "string",
+              description: 'Email subject line (use "Re: ..." prefix for replies)'
+            },
+            body: {
+              type: "string",
+              description: 'Email body as HTML content (e.g. "<p>Hello!</p>"). Use HTML tags for formatting.'
+            },
+            cc: {
+              type: "array",
+              items: { type: "string" },
+              description: "CC recipient email addresses (optional)"
+            },
+            replyToMessageId: {
+              type: "string",
+              description: 'Microsoft Graph message ID of the email to reply to (e.g. "AAMkADI1..."). When set, sends a threaded reply instead of a new email.'
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+            }
+          },
+          required: ["to", "subject", "body"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const action = args.replyToMessageId ? "Reply" : "Send";
+      return `${action} to ${args.to.join(", ")}: ${args.subject}`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Send an email via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      try {
+        const prefix = getUserPathPrefix(connector, args.targetUser);
+        if (args.replyToMessageId) {
+          await microsoftFetch(
+            connector,
+            `${prefix}/messages/${args.replyToMessageId}/reply`,
+            {
+              method: "POST",
+              userId: effectiveUserId,
+              body: {
+                message: {
+                  toRecipients: formatRecipients(args.to),
+                  ...args.cc && { ccRecipients: formatRecipients(args.cc) }
+                },
+                comment: args.body
+              }
+            }
+          );
+        } else {
+          await microsoftFetch(
+            connector,
+            `${prefix}/sendMail`,
+            {
+              method: "POST",
+              userId: effectiveUserId,
+              body: {
+                message: {
+                  subject: args.subject,
+                  body: { contentType: "HTML", content: args.body },
+                  toRecipients: formatRecipients(args.to),
+                  ...args.cc && { ccRecipients: formatRecipients(args.cc) }
+                },
+                saveToSentItems: true
+              }
+            }
+          );
+        }
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to send email: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/microsoft/createMeeting.ts
+function createMeetingTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "create_meeting",
+        description: `Create a calendar event on the user's Outlook calendar via Microsoft Graph, optionally with a Teams online meeting link.
+
+USAGE:
+- Provide subject, start/end times (ISO 8601 without timezone suffix \u2014 timezone is set separately via the timeZone param), and attendees
+- Set isOnlineMeeting: true to generate a Teams meeting link automatically
+- Attendees receive an Outlook calendar invitation
+
+EXAMPLES:
+- Simple meeting: { "subject": "Standup", "startDateTime": "2025-01-15T09:00:00", "endDateTime": "2025-01-15T09:30:00", "attendees": ["alice@contoso.com"], "timeZone": "America/New_York" }
+- Teams meeting: { "subject": "Sprint Review", "startDateTime": "2025-01-15T14:00:00", "endDateTime": "2025-01-15T15:00:00", "attendees": ["alice@contoso.com", "bob@contoso.com"], "isOnlineMeeting": true }
+- With location and body: { "subject": "1:1", "startDateTime": "2025-01-15T10:00:00", "endDateTime": "2025-01-15T10:30:00", "attendees": ["alice@contoso.com"], "location": "Room 201", "body": "<p>Weekly sync</p>" }`,
+        parameters: {
+          type: "object",
+          properties: {
+            subject: {
+              type: "string",
+              description: "Meeting title"
+            },
+            startDateTime: {
+              type: "string",
+              description: 'Start date and time in ISO 8601 format (e.g., "2025-01-15T09:00:00")'
+            },
+            endDateTime: {
+              type: "string",
+              description: 'End date and time in ISO 8601 format (e.g., "2025-01-15T09:30:00")'
+            },
+            attendees: {
+              type: "array",
+              items: { type: "string" },
+              description: "Attendee email addresses"
+            },
+            body: {
+              type: "string",
+              description: 'Meeting description as HTML content (e.g. "<p>Agenda: ...</p>"). Shown in the calendar invitation.'
+            },
+            isOnlineMeeting: {
+              type: "boolean",
+              description: "When true, generates a Teams online meeting link. Default: false."
+            },
+            location: {
+              type: "string",
+              description: 'Physical location or room name (e.g. "Conference Room A")'
+            },
+            timeZone: {
+              type: "string",
+              description: 'IANA timezone for start/end times (e.g. "America/New_York", "Europe/London"). Default: "UTC".'
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+            }
+          },
+          required: ["subject", "startDateTime", "endDateTime", "attendees"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      return `Create meeting: ${args.subject} (${args.attendees.length} attendees)`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Create a calendar event via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      try {
+        const prefix = getUserPathPrefix(connector, args.targetUser);
+        const tz = args.timeZone ?? "UTC";
+        const eventBody = {
+          subject: args.subject,
+          start: { dateTime: args.startDateTime, timeZone: tz },
+          end: { dateTime: args.endDateTime, timeZone: tz },
+          attendees: args.attendees.map((email) => ({
+            emailAddress: { address: email },
+            type: "required"
+          }))
+        };
+        if (args.body) {
+          eventBody.body = { contentType: "HTML", content: args.body };
+        }
+        if (args.isOnlineMeeting) {
+          eventBody.isOnlineMeeting = true;
+          eventBody.onlineMeetingProvider = "teamsForBusiness";
+        }
+        if (args.location) {
+          eventBody.location = { displayName: args.location };
+        }
+        const event = await microsoftFetch(
+          connector,
+          `${prefix}/events`,
+          { method: "POST", userId: effectiveUserId, body: eventBody }
+        );
+        return {
+          success: true,
+          eventId: event.id,
+          webLink: event.webLink,
+          onlineMeetingUrl: event.onlineMeeting?.joinUrl
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to create meeting: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/microsoft/editMeeting.ts
+function createEditMeetingTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "edit_meeting",
+        description: `Update an existing Outlook calendar event via Microsoft Graph. Only the fields you provide will be changed \u2014 omitted fields keep their current values.
+
+IMPORTANT: The "attendees" field REPLACES the entire attendee list. Include all desired attendees (both new and existing), not just the ones you want to add.
+
+USAGE:
+- Provide eventId (from create_meeting result or calendar event) and only the fields to change
+- Get the eventId from a previous create_meeting call or from the user's calendar
+
+EXAMPLES:
+- Reschedule: { "eventId": "AAMkADI1...", "startDateTime": "2025-01-15T10:00:00", "endDateTime": "2025-01-15T10:30:00", "timeZone": "America/New_York" }
+- Change attendees: { "eventId": "AAMkADI1...", "attendees": ["alice@contoso.com", "charlie@contoso.com"] }
+- Add Teams link: { "eventId": "AAMkADI1...", "isOnlineMeeting": true }
+- Update title: { "eventId": "AAMkADI1...", "subject": "Updated: Sprint Review" }`,
+        parameters: {
+          type: "object",
+          properties: {
+            eventId: {
+              type: "string",
+              description: 'Calendar event ID to update (from create_meeting result or Graph API, e.g. "AAMkADI1...")'
+            },
+            subject: {
+              type: "string",
+              description: "New meeting title"
+            },
+            startDateTime: {
+              type: "string",
+              description: "New start date and time in ISO 8601 format"
+            },
+            endDateTime: {
+              type: "string",
+              description: "New end date and time in ISO 8601 format"
+            },
+            attendees: {
+              type: "array",
+              items: { type: "string" },
+              description: "Full replacement attendee list (email addresses). Include ALL desired attendees, not just new ones."
+            },
+            body: {
+              type: "string",
+              description: "New meeting description as HTML content"
+            },
+            isOnlineMeeting: {
+              type: "boolean",
+              description: "Set to true to add a Teams meeting link, or false to remove it"
+            },
+            location: {
+              type: "string",
+              description: "New physical location or room name"
+            },
+            timeZone: {
+              type: "string",
+              description: 'IANA timezone for start/end times (e.g. "America/New_York"). Default: "UTC".'
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+            }
+          },
+          required: ["eventId"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      const fields = ["subject", "startDateTime", "endDateTime", "attendees", "body", "location"];
+      const changed = fields.filter((f) => args[f] !== void 0);
+      return `Edit meeting ${args.eventId.slice(0, 12)}... (${changed.join(", ") || "no changes"})`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "medium",
+      approvalMessage: `Update a calendar event via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      try {
+        const prefix = getUserPathPrefix(connector, args.targetUser);
+        const tz = args.timeZone ?? "UTC";
+        const patchBody = {};
+        if (args.subject !== void 0) patchBody.subject = args.subject;
+        if (args.body !== void 0) patchBody.body = { contentType: "HTML", content: args.body };
+        if (args.startDateTime !== void 0) patchBody.start = { dateTime: args.startDateTime, timeZone: tz };
+        if (args.endDateTime !== void 0) patchBody.end = { dateTime: args.endDateTime, timeZone: tz };
+        if (args.attendees !== void 0) {
+          patchBody.attendees = args.attendees.map((email) => ({
+            emailAddress: { address: email },
+            type: "required"
+          }));
+        }
+        if (args.isOnlineMeeting !== void 0) {
+          patchBody.isOnlineMeeting = args.isOnlineMeeting;
+          if (args.isOnlineMeeting) {
+            patchBody.onlineMeetingProvider = "teamsForBusiness";
+          }
+        }
+        if (args.location !== void 0) {
+          patchBody.location = { displayName: args.location };
+        }
+        const event = await microsoftFetch(
+          connector,
+          `${prefix}/events/${args.eventId}`,
+          { method: "PATCH", userId: effectiveUserId, body: patchBody }
+        );
+        return {
+          success: true,
+          eventId: event.id,
+          webLink: event.webLink
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to edit meeting: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/microsoft/getMeetingTranscript.ts
+function parseVttToText(vtt) {
+  const lines = vtt.split("\n");
+  const textLines = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed === "WEBVTT" || trimmed.startsWith("NOTE") || /^\d+$/.test(trimmed) || /^\d{2}:\d{2}/.test(trimmed)) {
+      continue;
+    }
+    textLines.push(trimmed);
+  }
+  return textLines.join("\n");
+}
+function createGetMeetingTranscriptTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "get_meeting_transcript",
+        description: `Retrieve the transcript from a Teams online meeting via Microsoft Graph. Returns plain text with speaker labels (VTT timestamps are stripped).
+
+NOTE: Requires the OnlineMeetingTranscript.Read.All permission. Transcription must have been enabled during the meeting.
+
+USAGE:
+- Provide the Teams online meeting ID (NOT the calendar event ID \u2014 this is different) or a Teams meeting join URL
+- The meetingId can be found in the Teams meeting details or extracted from the join URL
+
+EXAMPLES:
+- By meeting ID: { "meetingId": "MSo1N2Y5ZGFjYy03MWJmLTQ3NDMtYjQxMy01M2EdFGkdRWHJlQ" }
+- By Teams join URL: { "meetingId": "https://teams.microsoft.com/l/meetup-join/19%3ameeting_MjA5YjFi..." }`,
+        parameters: {
+          type: "object",
+          properties: {
+            meetingId: {
+              type: "string",
+              description: 'Teams online meeting ID (e.g. "MSo1N2Y5...") or Teams meeting join URL. This is NOT the calendar event ID.'
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+            }
+          },
+          required: ["meetingId"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      return `Get transcript for meeting ${args.meetingId.slice(0, 20)}...`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Get a meeting transcript via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      try {
+        const prefix = getUserPathPrefix(connector, args.targetUser);
+        const meetingId = parseMeetingId(args.meetingId);
+        const transcriptList = await microsoftFetch(
+          connector,
+          `${prefix}/onlineMeetings/${meetingId}/transcripts`,
+          { userId: effectiveUserId }
+        );
+        if (!transcriptList.value || transcriptList.value.length === 0) {
+          return {
+            success: false,
+            error: "No transcripts found for this meeting. The meeting may not have had transcription enabled."
+          };
+        }
+        const transcriptId = transcriptList.value[0].id;
+        const contentUrl = `${prefix}/onlineMeetings/${meetingId}/transcripts/${transcriptId}/content`;
+        const response = await connector.fetch(
+          contentUrl + "?$format=text/vtt",
+          { method: "GET", headers: { "Accept": "text/vtt" } },
+          effectiveUserId
+        );
+        if (!response.ok) {
+          const errorText = await response.text();
+          return {
+            success: false,
+            error: `Failed to fetch transcript content: ${response.status} ${errorText}`
+          };
+        }
+        const vttContent = await response.text();
+        const transcript = parseVttToText(vttContent);
+        return {
+          success: true,
+          transcript
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to get meeting transcript: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/microsoft/findMeetingSlots.ts
+function createFindMeetingSlotsTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "find_meeting_slots",
+        description: `Find available meeting time slots when all attendees are free, via Microsoft Graph. Checks each attendee's Outlook calendar and suggests times when everyone is available.
+
+USAGE:
+- Provide attendee emails, a search window (start/end datetimes), and desired meeting duration in minutes
+- Returns up to maxResults (default: 5) suggested time slots ranked by confidence, with per-attendee availability
+- If no slots are found, returns an emptySuggestionsReason explaining why
+
+EXAMPLES:
+- Find 30min slot this week: { "attendees": ["alice@contoso.com", "bob@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-15T18:00:00", "duration": 30, "timeZone": "America/New_York" }
+- Find 1hr slot across days: { "attendees": ["alice@contoso.com"], "startDateTime": "2025-01-15T08:00:00", "endDateTime": "2025-01-17T18:00:00", "duration": 60, "maxResults": 10 }`,
+        parameters: {
+          type: "object",
+          properties: {
+            attendees: {
+              type: "array",
+              items: { type: "string" },
+              description: "Attendee email addresses to check availability for"
+            },
+            startDateTime: {
+              type: "string",
+              description: 'Search window start in ISO 8601 format (e.g. "2025-01-15T08:00:00")'
+            },
+            endDateTime: {
+              type: "string",
+              description: 'Search window end in ISO 8601 format (e.g. "2025-01-15T18:00:00"). Can span multiple days.'
+            },
+            duration: {
+              type: "number",
+              description: "Desired meeting duration in minutes (e.g. 30, 60)"
+            },
+            timeZone: {
+              type: "string",
+              description: 'IANA timezone for start/end times (e.g. "America/New_York"). Default: "UTC".'
+            },
+            maxResults: {
+              type: "number",
+              description: "Maximum number of time slot suggestions to return. Default: 5."
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email (UPN) to act on behalf of. Only needed for app-only (client_credentials) auth. Ignored in delegated auth."
+            }
+          },
+          required: ["attendees", "startDateTime", "endDateTime", "duration"]
+        }
+      }
+    },
+    describeCall: (args) => {
+      return `Find ${args.duration}min slots for ${args.attendees.length} attendees`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Find meeting time slots via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      try {
+        const prefix = getUserPathPrefix(connector, args.targetUser);
+        const tz = args.timeZone ?? "UTC";
+        const result = await microsoftFetch(
+          connector,
+          `${prefix}/findMeetingTimes`,
+          {
+            method: "POST",
+            userId: effectiveUserId,
+            body: {
+              attendees: args.attendees.map((email) => ({
+                emailAddress: { address: email },
+                type: "required"
+              })),
+              timeConstraint: {
+                timeslots: [
+                  {
+                    start: { dateTime: args.startDateTime, timeZone: tz },
+                    end: { dateTime: args.endDateTime, timeZone: tz }
+                  }
+                ]
+              },
+              meetingDuration: `PT${args.duration}M`,
+              maxCandidates: args.maxResults ?? 5
+            }
+          }
+        );
+        const slots = (result.meetingTimeSuggestions ?? []).map((s) => ({
+          start: s.meetingTimeSlot.start.dateTime,
+          end: s.meetingTimeSlot.end.dateTime,
+          confidence: String(s.confidence),
+          attendeeAvailability: (s.attendeeAvailability ?? []).map((a) => ({
+            attendee: a.attendee.emailAddress.address,
+            availability: a.availability
+          }))
+        }));
+        return {
+          success: true,
+          slots,
+          emptySuggestionsReason: result.emptySuggestionsReason
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to find meeting slots: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+
+// src/tools/microsoft/register.ts
+function registerMicrosoftTools() {
+  ConnectorTools.registerService("microsoft", (connector, userId) => {
+    return [
+      createDraftEmailTool(connector, userId),
+      createSendEmailTool(connector, userId),
+      createMeetingTool(connector, userId),
+      createEditMeetingTool(connector, userId),
+      createGetMeetingTranscriptTool(connector, userId),
+      createFindMeetingSlotsTool(connector, userId)
+    ];
+  });
+}
+
+// src/tools/microsoft/index.ts
+registerMicrosoftTools();
 
 // src/tools/desktop/types.ts
 var DEFAULT_DESKTOP_CONFIG = {
