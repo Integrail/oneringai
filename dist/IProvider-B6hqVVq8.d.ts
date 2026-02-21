@@ -1,4 +1,4 @@
-import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
+import { V as Vendor } from './Vendor-DYh_bzwo.js';
 
 /**
  * Connector - Represents authenticated connection to ANY API
@@ -11,7 +11,7 @@ import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
  */
 
 /**
- * No authentication (for testing/mock providers)
+ * No authentication (for testing/mock providers and local services like Ollama)
  */
 interface NoneConnectorAuth {
     type: 'none';

@@ -103,8 +103,11 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
    * Emergency compaction when context exceeds threshold.
    *
    * Strategy:
-   * 1. Run consolidate() first to move tool results to memory
+   * 1. Run consolidate() first to move tool results to memory (if working memory available)
    * 2. If still need space, apply rolling window (remove oldest messages)
+   *
+   * Gracefully degrades: if working memory plugin is not registered,
+   * skips step 1 and only uses rolling window compaction.
    */
   async compact(context: CompactionContext, targetToFree: number): Promise<CompactionResult> {
     const log: string[] = [];
@@ -114,7 +117,7 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
 
     log.push(`Algorithmic compaction started: need to free ~${targetToFree} tokens`);
 
-    // 1. Run consolidate first to move large tool results to memory
+    // 1. Run consolidate first to move large tool results to memory (if available)
     const consolidateResult = await this.consolidate(context);
     if (consolidateResult.performed) {
       tokensFreed += Math.abs(consolidateResult.tokensChanged);
@@ -122,7 +125,7 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
     }
 
     // 2. If still need more space, apply rolling window
-    let remaining = targetToFree - tokensFreed;
+    const remaining = targetToFree - tokensFreed;
     if (remaining > 0 && context.conversation.length > 0) {
       log.push(`Rolling window: need to free ~${remaining} more tokens`);
       const result = await this.applyRollingWindow(context, remaining, log);
@@ -139,8 +142,11 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
    * Post-cycle consolidation.
    *
    * 1. Find all tool pairs in conversation
-   * 2. Move large tool results (> threshold) to Working Memory
+   * 2. Move large tool results (> threshold) to Working Memory (if available)
    * 3. Limit remaining tool pairs to maxToolPairs
+   *
+   * Gracefully degrades: if working memory is not available, skips step 2
+   * and only limits tool pairs + removes excess via rolling window.
    */
   async consolidate(context: CompactionContext): Promise<ConsolidationResult> {
     const log: string[] = [];
@@ -155,28 +161,30 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
 
     const indicesToRemove: number[] = [];
 
-    // 1. Move large results to memory
-    for (const pair of toolPairs) {
-      if (pair.resultSizeBytes > this.toolResultSizeThreshold) {
-        const key = this.generateKey(pair.toolName, pair.toolUseId);
-        const desc = this.generateDescription(pair.toolName, pair.toolArgs);
+    // 1. Move large results to memory (only if working memory is available)
+    if (memory) {
+      for (const pair of toolPairs) {
+        if (pair.resultSizeBytes > this.toolResultSizeThreshold) {
+          const key = this.generateKey(pair.toolName, pair.toolUseId);
+          const desc = this.generateDescription(pair.toolName, pair.toolArgs);
 
-        await memory.store(key, desc, pair.resultContent, {
-          tier: 'raw',
-          priority: 'normal',
-        });
+          await memory.store(key, desc, pair.resultContent, {
+            tier: 'raw',
+            priority: 'normal',
+          });
 
-        // Mark both messages for removal
-        if (!indicesToRemove.includes(pair.toolUseIndex)) {
-          indicesToRemove.push(pair.toolUseIndex);
+          // Mark both messages for removal
+          if (!indicesToRemove.includes(pair.toolUseIndex)) {
+            indicesToRemove.push(pair.toolUseIndex);
+          }
+          if (!indicesToRemove.includes(pair.toolResultIndex)) {
+            indicesToRemove.push(pair.toolResultIndex);
+          }
+
+          log.push(
+            `Moved ${pair.toolName} result (${this.formatBytes(pair.resultSizeBytes)}) to memory: ${key}`
+          );
         }
-        if (!indicesToRemove.includes(pair.toolResultIndex)) {
-          indicesToRemove.push(pair.toolResultIndex);
-        }
-
-        log.push(
-          `Moved ${pair.toolName} result (${this.formatBytes(pair.resultSizeBytes)}) to memory: ${key}`
-        );
       }
     }
 
@@ -213,15 +221,12 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
   }
 
   /**
-   * Get the Working Memory plugin from context.
-   * @throws Error if plugin is not available
+   * Get the Working Memory plugin from context, or null if not available.
+   * When null, the strategy degrades gracefully (skips memory operations).
    */
-  private getWorkingMemory(context: CompactionContext): WorkingMemoryPluginNextGen {
+  private getWorkingMemory(context: CompactionContext): WorkingMemoryPluginNextGen | null {
     const plugin = context.plugins.find(p => p.name === 'working_memory');
-    if (!plugin) {
-      throw new Error('AlgorithmicCompactionStrategy requires working_memory plugin');
-    }
-    return plugin as WorkingMemoryPluginNextGen;
+    return plugin ? (plugin as WorkingMemoryPluginNextGen) : null;
   }
 
   /**

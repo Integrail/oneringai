@@ -3,6 +3,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import type { IContextSnapshot, IViewContextData } from '@everworker/oneringai';
 
 /**
  * Everworker Backend Profile
@@ -292,6 +293,8 @@ export interface HoseaAPI {
     }>>;
     add: (config: unknown) => Promise<{ success: boolean; error?: string }>;
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;
+    update: (name: string, updates: { apiKey?: string; baseURL?: string }) => Promise<{ success: boolean; error?: string }>;
+    fetchModels: (vendor: string, apiKey?: string, baseURL?: string, existingConnectorName?: string) => Promise<{ success: boolean; models?: string[]; error?: string }>;
   };
 
   // Everworker Backend
@@ -545,83 +548,10 @@ export interface HoseaAPI {
   };
 
   // Internals monitoring (Look Inside)
+  // Returns IContextSnapshot from @everworker/oneringai core library
   internals: {
-    getAll: () => Promise<{
-      available: boolean;
-      agentName: string | null;
-      context: {
-        totalTokens: number;
-        maxTokens: number;
-        utilizationPercent: number;
-        messagesCount: number;
-        toolCallsCount: number;
-        strategy: string;
-      } | null;
-      cache: {
-        entries: number;
-        hits: number;
-        misses: number;
-        hitRate: number;
-        ttlMs: number;
-      } | null;
-      memory: {
-        totalEntries: number;
-        totalSizeBytes: number;
-        utilizationPercent: number;
-        entries: Array<{
-          key: string;
-          description: string;
-          scope: string;
-          priority: string;
-          sizeBytes: number;
-          updatedAt: number;
-        }>;
-      } | null;
-      inContextMemory: {
-        enabled: boolean;
-        entries: Array<{
-          key: string;
-          description: string;
-          priority: string;
-          updatedAt: number;
-          value: unknown;
-        }>;
-        maxEntries: number;
-        maxTokens: number;
-      } | null;
-      tools: Array<{
-        name: string;
-        description: string;
-        enabled: boolean;
-        callCount: number;
-        namespace?: string;
-      }>;
-      toolCalls: Array<{
-        id: string;
-        name: string;
-        args: unknown;
-        result?: unknown;
-        error?: string;
-        durationMs: number;
-        timestamp: number;
-      }>;
-      // New fields for prompt inspection
-      systemPrompt: string | null;
-      persistentInstructions: {
-        content: string;
-        path: string;
-        length: number;
-        enabled: boolean;
-      } | null;
-      // Token breakdown for detailed context inspection
-      tokenBreakdown: {
-        total: number;
-        reserved: number;
-        used: number;
-        available: number;
-        components: Array<{ name: string; tokens: number; percent: number }>;
-      } | null;
-    }>;
+    /** Get snapshot for legacy single agent */
+    getAll: () => Promise<IContextSnapshot>;
     getContextStats: () => Promise<{
       available: boolean;
       totalTokens: number;
@@ -640,93 +570,12 @@ export interface HoseaAPI {
       updatedAt: number;
       value?: unknown;
     }>>;
-    getPreparedContext: (instanceId?: string) => Promise<{
-      available: boolean;
-      components: Array<{
-        name: string;
-        content: string;
-        tokenEstimate: number;
-      }>;
-      totalTokens: number;
-      rawContext: string;
-    }>;
+    /** Get prepared context (IViewContextData) */
+    getPreparedContext: (instanceId?: string) => Promise<IViewContextData>;
     getMemoryValue: (key: string) => Promise<unknown>;
     forceCompact: () => Promise<{ success: boolean; tokensFreed: number; error?: string }>;
-    // Instance-aware methods (optional instanceId - if null, uses legacy single agent)
-    getAllForInstance: (instanceId: string | null) => Promise<{
-      available: boolean;
-      agentName: string | null;
-      context: {
-        totalTokens: number;
-        maxTokens: number;
-        utilizationPercent: number;
-        messagesCount: number;
-        toolCallsCount: number;
-        strategy: string;
-      } | null;
-      cache: {
-        entries: number;
-        hits: number;
-        misses: number;
-        hitRate: number;
-        ttlMs: number;
-      } | null;
-      memory: {
-        totalEntries: number;
-        totalSizeBytes: number;
-        utilizationPercent: number;
-        entries: Array<{
-          key: string;
-          description: string;
-          scope: string;
-          priority: string;
-          sizeBytes: number;
-          updatedAt: number;
-        }>;
-      } | null;
-      inContextMemory: {
-        enabled: boolean;
-        entries: Array<{
-          key: string;
-          description: string;
-          priority: string;
-          updatedAt: number;
-          value: unknown;
-        }>;
-        maxEntries: number;
-        maxTokens: number;
-      } | null;
-      tools: Array<{
-        name: string;
-        description: string;
-        enabled: boolean;
-        callCount: number;
-        namespace?: string;
-      }>;
-      toolCalls: Array<{
-        id: string;
-        name: string;
-        args: unknown;
-        result?: unknown;
-        error?: string;
-        durationMs: number;
-        timestamp: number;
-      }>;
-      systemPrompt: string | null;
-      persistentInstructions: {
-        content: string;
-        path: string;
-        length: number;
-        enabled: boolean;
-      } | null;
-      tokenBreakdown: {
-        total: number;
-        reserved: number;
-        used: number;
-        available: number;
-        components: Array<{ name: string; tokens: number; percent: number }>;
-      } | null;
-    }>;
+    /** Instance-aware methods */
+    getAllForInstance: (instanceId: string | null) => Promise<IContextSnapshot>;
     getMemoryValueForInstance: (instanceId: string | null, key: string) => Promise<unknown>;
     forceCompactForInstance: (instanceId: string | null) => Promise<{ success: boolean; tokensFreed: number; error?: string }>;
   };
@@ -1327,6 +1176,8 @@ const api: HoseaAPI = {
     list: () => ipcRenderer.invoke('connector:list'),
     add: (config) => ipcRenderer.invoke('connector:add', config),
     delete: (name) => ipcRenderer.invoke('connector:delete', name),
+    update: (name, updates) => ipcRenderer.invoke('connector:update', name, updates),
+    fetchModels: (vendor, apiKey?, baseURL?, existingConnectorName?) => ipcRenderer.invoke('connector:fetch-models', vendor, apiKey, baseURL, existingConnectorName),
   },
 
   everworker: {

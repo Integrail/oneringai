@@ -148,7 +148,7 @@ function extractProviderConfig(connector: Connector): ProviderConfig {
   if (auth.type === 'api_key') {
     apiKey = auth.apiKey;
   } else if (auth.type === 'none') {
-    // For testing/mock providers
+    // For testing/mock providers and local services like Ollama
     apiKey = 'mock-key';
   } else if (auth.type === 'oauth') {
     // For OAuth, we'd need to get the token asynchronously

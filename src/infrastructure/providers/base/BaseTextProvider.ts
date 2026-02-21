@@ -195,9 +195,12 @@ export abstract class BaseTextProvider extends BaseProvider implements ITextProv
   }
 
   /**
-   * List available models (optional)
+   * List available models from the provider's API.
+   * Default returns empty array; providers override when they have SDK support.
    */
-  async listModels?(): Promise<string[]>;
+  async listModels(): Promise<string[]> {
+    return [];
+  }
 
   /**
    * Clean up provider resources (circuit breaker listeners, etc.)

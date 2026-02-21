@@ -380,6 +380,115 @@ describeIfAnthropic('Anthropic Converter - multi-turn tool calls', () => {
 });
 
 // ============================================================================
+// Ollama Converter Tests (local, OpenAI-compatible)
+// ============================================================================
+
+interface OllamaTagsResponse {
+  models: Array<{ name: string; model: string }>;
+}
+
+async function getFirstOllamaModel(): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch('http://localhost:11434/api/tags', { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+    const data = (await response.json()) as OllamaTagsResponse;
+    if (!data.models || data.models.length === 0) return null;
+    const preferred = data.models.find((m) => m.name.startsWith('qwen3'));
+    return preferred ? preferred.model : data.models[0].model;
+  } catch {
+    return null;
+  }
+}
+
+let ollamaModel: string | null = null;
+try {
+  ollamaModel = await getFirstOllamaModel();
+} catch {
+  ollamaModel = null;
+}
+
+const OLLAMA_AVAILABLE = ollamaModel !== null;
+const describeIfOllama = OLLAMA_AVAILABLE ? describe : describe.skip;
+
+describeIfOllama('Ollama Converter - multi-turn tool calls', () => {
+  beforeAll(() => {
+    Connector.create({
+      name: 'ollama-converter-test',
+      vendor: Vendor.Ollama,
+      auth: { type: 'none' },
+    });
+  });
+
+  afterAll(() => {
+    Connector.clear();
+  });
+
+  beforeEach(() => {
+    toolCallCount = 0;
+  });
+
+  it('should handle sequential tool calls', async () => {
+    const agent = Agent.create({
+      connector: 'ollama-converter-test',
+      model: ollamaModel!,
+      tools: [sequentialTool],
+    });
+    agent.context.tools.disable('context_stats');
+    agent.context.tools.disable('memory_store');
+    agent.context.tools.disable('memory_retrieve');
+    agent.context.tools.disable('memory_delete');
+    agent.context.tools.disable('memory_list');
+
+    const response = await agent.run(
+      'Use the get_step_data tool to get all 3 steps in sequence. ' +
+      'First call step 1, then step 2, then step 3. Report the final token from step 3.'
+    );
+
+    expect(response.status).toBe('completed');
+    expect(response.output_text).toBeDefined();
+    expect(response.output_text!.toLowerCase()).toContain('ghi');
+  }, 180000);
+
+  it('should handle counter tool with multiple invocations', async () => {
+    const agent = Agent.create({
+      connector: 'ollama-converter-test',
+      model: ollamaModel!,
+      tools: [counterTool],
+    });
+    agent.context.tools.disable('context_stats');
+    agent.context.tools.disable('memory_store');
+    agent.context.tools.disable('memory_retrieve');
+    agent.context.tools.disable('memory_delete');
+    agent.context.tools.disable('memory_list');
+
+    const response = await agent.run(
+      'Use the increment_counter tool three times. First with amount 5, then amount 3, then amount 2. ' +
+      'Tell me the final count.'
+    );
+
+    expect(response.status).toBe('completed');
+    expect(response.output_text).toBeDefined();
+    expect(response.output_text).toMatch(/10/);
+    expect(toolCallCount).toBe(10);
+  }, 180000);
+
+  it('should handle chat without tools', async () => {
+    const agent = Agent.create({
+      connector: 'ollama-converter-test',
+      model: ollamaModel!,
+    });
+
+    const response = await agent.runDirect('What is 2 + 2? Answer with just the number.');
+
+    expect(response.status).toBe('completed');
+    expect(response.output_text).toContain('4');
+  }, 120000);
+});
+
+// ============================================================================
 // Cross-Provider Consistency Tests
 // ============================================================================
 
@@ -403,6 +512,13 @@ describeIfAllKeys('Cross-Provider Converter Consistency', () => {
       vendor: Vendor.Anthropic,
       auth: { type: 'api_key', apiKey: ANTHROPIC_API_KEY! },
     });
+    if (OLLAMA_AVAILABLE) {
+      Connector.create({
+        name: 'ollama-cross-conv',
+        vendor: Vendor.Ollama,
+        auth: { type: 'none' },
+      });
+    }
   });
 
   afterAll(() => {
@@ -410,11 +526,14 @@ describeIfAllKeys('Cross-Provider Converter Consistency', () => {
   });
 
   it('all providers should handle tool call/result cycle correctly', async () => {
-    const configs = [
+    const configs: Array<{ connector: string; model: string; name: string }> = [
       { connector: 'openai-cross-conv', model: 'gpt-4o-mini', name: 'OpenAI' },
       { connector: 'google-cross-conv', model: 'gemini-2.0-flash', name: 'Google' },
       { connector: 'anthropic-cross-conv', model: 'claude-3-5-haiku-20241022', name: 'Anthropic' },
     ];
+    if (OLLAMA_AVAILABLE) {
+      configs.push({ connector: 'ollama-cross-conv', model: ollamaModel!, name: 'Ollama' });
+    }
 
     for (const config of configs) {
       toolCallCount = 0;
@@ -439,11 +558,14 @@ describeIfAllKeys('Cross-Provider Converter Consistency', () => {
   }, 180000);
 
   it('all providers should preserve tool call IDs across turns', async () => {
-    const configs = [
+    const configs: Array<{ connector: string; model: string; name: string }> = [
       { connector: 'openai-cross-conv', model: 'gpt-4o-mini', name: 'OpenAI' },
       { connector: 'google-cross-conv', model: 'gemini-2.0-flash', name: 'Google' },
       { connector: 'anthropic-cross-conv', model: 'claude-3-5-haiku-20241022', name: 'Anthropic' },
     ];
+    if (OLLAMA_AVAILABLE) {
+      configs.push({ connector: 'ollama-cross-conv', model: ollamaModel!, name: 'Ollama' });
+    }
 
     for (const config of configs) {
       const agent = Agent.create({

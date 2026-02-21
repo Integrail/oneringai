@@ -87,7 +87,14 @@ export type {
   // Strategy Registry types
   StrategyInfo,
   StrategyRegistryEntry,
+  // Snapshot types
+  IContextSnapshot,
+  IPluginSnapshot,
+  IToolSnapshot,
+  IViewContextData,
+  IViewContextComponent,
 } from './context-nextgen/index.js';
+export { formatPluginDisplayName } from './context-nextgen/index.js';
 
 // Lifecycle hooks and direct call types (from BaseAgent)
 export type {

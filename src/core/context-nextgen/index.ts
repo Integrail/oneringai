@@ -37,6 +37,16 @@ export {
   DEFAULT_CONFIG,
 } from './types.js';
 
+// Snapshot types (for "Look Inside" UIs)
+export { formatPluginDisplayName } from './snapshot.js';
+export type {
+  IContextSnapshot,
+  IPluginSnapshot,
+  IToolSnapshot,
+  IViewContextData,
+  IViewContextComponent,
+} from './snapshot.js';
+
 // Base plugin class
 export { BasePluginNextGen, simpleTokenEstimator } from './BasePluginNextGen.js';
 

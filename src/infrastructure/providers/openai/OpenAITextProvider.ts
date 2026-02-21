@@ -179,6 +179,17 @@ export class OpenAITextProvider extends BaseTextProvider {
 
 
   /**
+   * List available models from the OpenAI API
+   */
+  async listModels(): Promise<string[]> {
+    const models: string[] = [];
+    for await (const model of this.client.models.list()) {
+      models.push(model.id);
+    }
+    return models.sort();
+  }
+
+  /**
    * Handle OpenAI-specific errors
    */
   private handleError(error: any, model?: string): never {

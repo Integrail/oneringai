@@ -688,6 +688,39 @@ export abstract class BaseAgent<
     });
   }
 
+  // ===== Model Discovery =====
+
+  /**
+   * List available models from the provider's API.
+   * Useful for discovering models dynamically (e.g., Ollama local models).
+   */
+  async listModels(): Promise<string[]> {
+    return this._provider.listModels();
+  }
+
+  // ===== Snapshot / Inspection =====
+
+  /**
+   * Get a complete, serializable snapshot of the agent's context state.
+   *
+   * Convenience method that auto-wires tool usage stats from ToolManager.
+   * Used by UI "Look Inside" panels.
+   */
+  async getSnapshot(): Promise<import('./context-nextgen/snapshot.js').IContextSnapshot> {
+    const stats = this._agentContext.tools.getStats();
+    return this._agentContext.getSnapshot({ mostUsed: stats.mostUsed });
+  }
+
+  /**
+   * Get a human-readable breakdown of the prepared context.
+   *
+   * Convenience method that delegates to AgentContextNextGen.
+   * Used by "View Full Context" UI panels.
+   */
+  async getViewContext(): Promise<import('./context-nextgen/snapshot.js').IViewContextData> {
+    return this._agentContext.getViewContext();
+  }
+
   // ===== Direct LLM Access (Bypasses AgentContext) =====
 
   /**

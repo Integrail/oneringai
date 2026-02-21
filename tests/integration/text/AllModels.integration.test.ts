@@ -256,6 +256,70 @@ describeGoogle(`Google Models (${googleModels.length} total)`, () => {
 });
 
 // ============================================================================
+// Ollama Models (local, not registry-driven)
+// ============================================================================
+
+interface OllamaTagsResponse {
+  models: Array<{ name: string; model: string }>;
+}
+
+async function getOllamaModels(): Promise<string[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch('http://localhost:11434/api/tags', { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) return [];
+    const data = (await response.json()) as OllamaTagsResponse;
+    return (data.models || []).map((m) => m.model);
+  } catch {
+    return [];
+  }
+}
+
+let ollamaModels: string[] = [];
+try {
+  ollamaModels = await getOllamaModels();
+} catch {
+  ollamaModels = [];
+}
+
+const HAS_OLLAMA = ollamaModels.length > 0;
+const describeOllama = HAS_OLLAMA ? describe : describe.skip;
+
+describeOllama(`Ollama Models (${ollamaModels.length} total)`, () => {
+  beforeAll(() => {
+    if (!HAS_OLLAMA) {
+      console.warn('⚠️  Ollama not running, skipping Ollama tests');
+      return;
+    }
+
+    Connector.create({
+      name: 'ollama-all-models',
+      vendor: Vendor.Ollama,
+      auth: { type: 'none' },
+    });
+
+    console.log(`\n⬛ Testing ${ollamaModels.length} Ollama models:`);
+    ollamaModels.forEach((m) => console.log(`   - ${m}`));
+  });
+
+  afterAll(() => {
+    Connector.clear();
+  });
+
+  ollamaModels.forEach((modelName) => {
+    it(
+      `${modelName} should respond to greeting`,
+      async () => {
+        await testModel('ollama-all-models', modelName);
+      },
+      MODEL_TEST_TIMEOUT
+    );
+  });
+});
+
+// ============================================================================
 // Model Registry Validation Tests (always run)
 // ============================================================================
 

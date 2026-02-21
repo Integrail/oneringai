@@ -55,7 +55,7 @@ export interface ITextProvider extends IProvider {
   getModelCapabilities(model: string): ModelCapabilities;
 
   /**
-   * List available models
+   * List available models from the provider's API
    */
-  listModels?(): Promise<string[]>;
+  listModels(): Promise<string[]>;
 }

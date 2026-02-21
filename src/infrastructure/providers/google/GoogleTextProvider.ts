@@ -174,6 +174,20 @@ export class GoogleTextProvider extends BaseTextProvider {
   }
 
   /**
+   * List available models from the Google Gemini API
+   */
+  async listModels(): Promise<string[]> {
+    const models: string[] = [];
+    const pager = await this.client.models.list();
+    for await (const model of pager) {
+      // Google model names are like "models/gemini-2.0-flash" — strip the prefix
+      const name = model.name?.replace(/^models\//, '') ?? '';
+      if (name) models.push(name);
+    }
+    return models.sort();
+  }
+
+  /**
    * Handle Google-specific errors
    */
   private handleError(error: any, model?: string): never {

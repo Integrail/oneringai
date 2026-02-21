@@ -531,45 +531,42 @@ describe('AgentContextNextGen', () => {
       ctx.destroy();
     });
 
-    it('should throw when required plugin is missing at creation', () => {
-      expect(() => {
-        AgentContextNextGen.create({
-          model: 'gpt-4',
-          features: { workingMemory: false, inContextMemory: false }, // Disabled!
-          compactionStrategy: new PluginDependentStrategy(),
-        });
-      }).toThrow(/requires plugins that are not registered/);
+    it('should warn (not throw) when required plugin is missing at creation', () => {
+      // Should not throw — strategy degrades gracefully
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        features: { workingMemory: false, inContextMemory: false }, // Disabled!
+        compactionStrategy: new PluginDependentStrategy(),
+      });
+
+      expect(ctx.compactionStrategy.name).toBe('plugin-dependent');
+      ctx.destroy();
     });
 
-    it('should throw when required plugin is missing on setCompactionStrategy', () => {
+    it('should warn (not throw) when required plugin is missing on setCompactionStrategy', () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
         features: { workingMemory: false, inContextMemory: false },
       });
 
-      expect(() => {
-        ctx.setCompactionStrategy(new PluginDependentStrategy());
-      }).toThrow(/requires plugins that are not registered.*working_memory/);
+      // Should not throw — strategy degrades gracefully
+      ctx.setCompactionStrategy(new PluginDependentStrategy());
+      expect(ctx.compactionStrategy.name).toBe('plugin-dependent');
 
       ctx.destroy();
     });
 
-    it('should list available plugins in error message', () => {
+    it('should allow strategy when required plugin is missing with other plugins present', () => {
       const ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         strategy: 'default',
         features: { workingMemory: false, inContextMemory: true },
       });
 
-      try {
-        ctx.setCompactionStrategy(new PluginDependentStrategy());
-        expect.fail('Should have thrown');
-      } catch (e) {
-        const error = e as Error;
-        expect(error.message).toContain('working_memory');
-        expect(error.message).toContain('in_context_memory'); // Available plugin listed
-      }
+      // Should not throw — strategy degrades gracefully
+      ctx.setCompactionStrategy(new PluginDependentStrategy());
+      expect(ctx.compactionStrategy.name).toBe('plugin-dependent');
 
       ctx.destroy();
     });

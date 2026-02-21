@@ -391,9 +391,10 @@ describe('AlgorithmicCompactionStrategy', () => {
     });
   });
 
-  describe('Error Handling', () => {
-    it('should throw if working_memory plugin is missing', async () => {
-      // Create context without working_memory plugin
+  describe('Graceful Degradation', () => {
+    it('should skip memory operations when working_memory plugin is missing', async () => {
+      // Create context without working_memory plugin but with large tool results
+      const removeMessages = vi.fn().mockResolvedValue(100);
       const context = {
         budget: { maxTokens: 128000 },
         conversation: [
@@ -403,14 +404,18 @@ describe('AlgorithmicCompactionStrategy', () => {
         currentInput: [],
         plugins: [], // No plugins!
         strategyName: 'algorithmic',
-        removeMessages: vi.fn(),
+        removeMessages,
         compactPlugin: vi.fn(),
-        estimateTokens: vi.fn(),
+        estimateTokens: vi.fn().mockReturnValue(50),
       } as unknown as CompactionContext;
 
       const strategy = new AlgorithmicCompactionStrategy();
 
-      await expect(strategy.consolidate(context)).rejects.toThrow(/working_memory/);
+      // Should not throw — degrades gracefully (skips memory, only limits tool pairs)
+      const result = await strategy.consolidate(context);
+      expect(result).toBeDefined();
+      // With only 1 pair and default maxToolPairs=10, nothing should be removed
+      expect(result.performed).toBe(false);
     });
   });
 });

@@ -184,6 +184,10 @@ export function AgentEditorPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const connectorVersion = useConnectorVersion();
 
+  // Live models fetched from the connector's API (e.g. Ollama)
+  const [liveModels, setLiveModels] = useState<string[]>([]);
+  const [loadingLiveModels, setLoadingLiveModels] = useState(false);
+
   // Load data on mount (and when connectors change via EW profile switch)
   useEffect(() => {
     async function loadData() {
@@ -247,7 +251,36 @@ export function AgentEditorPage(): React.ReactElement {
     loadData();
   }, [isEditMode, agentId, connectorVersion]);
 
-  // Get models for selected connector's vendor
+  // Fetch live models from the connector's API when connector changes
+  useEffect(() => {
+    if (!formData.connector) {
+      setLiveModels([]);
+      return;
+    }
+    const connector = connectors.find((c) => c.name === formData.connector);
+    if (!connector) {
+      setLiveModels([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingLiveModels(true);
+    window.hosea.connector
+      .fetchModels(connector.vendor, undefined, undefined, connector.name)
+      .then((result) => {
+        if (!cancelled) {
+          setLiveModels(result.success && result.models ? result.models : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLiveModels([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLiveModels(false);
+      });
+    return () => { cancelled = true; };
+  }, [formData.connector, connectors]);
+
+  // Get models for selected connector's vendor (from static registry)
   const getModelsForConnector = useCallback((): ModelInfo[] => {
     const connector = connectors.find((c) => c.name === formData.connector);
     if (!connector) return [];
@@ -257,6 +290,12 @@ export function AgentEditorPage(): React.ReactElement {
     );
     return vendorModels?.models || [];
   }, [connectors, formData.connector, modelsByVendor]);
+
+  // Live models not already in the registry
+  const extraLiveModels = useMemo(() => {
+    const registryIds = new Set(getModelsForConnector().map((m) => m.id));
+    return liveModels.filter((id) => !registryIds.has(id));
+  }, [liveModels, getModelsForConnector]);
 
   // Update maxContextTokens when model changes
   useEffect(() => {
@@ -691,7 +730,14 @@ export function AgentEditorPage(): React.ReactElement {
 
                 <Col md={6}>
                   <Form.Group>
-                    <Form.Label>Model</Form.Label>
+                    <Form.Label>
+                      Model
+                      {loadingLiveModels && (
+                        <span className="text-muted ms-2" style={{ fontSize: '0.8rem' }}>
+                          (fetching live models...)
+                        </span>
+                      )}
+                    </Form.Label>
                     <Form.Select
                       value={formData.model}
                       onChange={(e) =>
@@ -704,11 +750,24 @@ export function AgentEditorPage(): React.ReactElement {
                           ? 'Select model...'
                           : 'Select a connector first'}
                       </option>
-                      {getModelsForConnector().map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({(m.contextWindow / 1000).toFixed(0)}K context)
-                        </option>
-                      ))}
+                      {getModelsForConnector().length > 0 && (
+                        <optgroup label="Known Models">
+                          {getModelsForConnector().map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({(m.contextWindow / 1000).toFixed(0)}K context)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {extraLiveModels.length > 0 && (
+                        <optgroup label="Available from Provider">
+                          {extraLiveModels.map((id) => (
+                            <option key={id} value={id}>
+                              {id}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </Form.Select>
                     {formData.model && (
                       <Form.Text className="text-muted">

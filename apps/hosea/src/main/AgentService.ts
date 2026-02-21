@@ -17,7 +17,6 @@ import {
   AgentContextNextGen,
   // NextGen plugins for inspector
   InContextMemoryPluginNextGen,
-  PersistentInstructionsPluginNextGen,
   ImageGeneration,
   VideoGeneration,
   getModelsByVendor,
@@ -70,9 +69,12 @@ import {
   type ContextBudget,
   type AgentContextNextGenConfig,
   type StrategyInfo,
+  type IContextSnapshot,
+  type IViewContextData,
   ConnectorTools,
   ToolRegistry,
   FileStorage,
+  createProvider,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import {
@@ -88,10 +90,7 @@ import { OAuthCallbackServer } from './OAuthCallbackServer.js';
 interface StoredConnectorConfig {
   name: string;
   vendor: string;
-  auth: {
-    type: 'api_key';
-    apiKey: string;
-  };
+  auth: { type: 'api_key'; apiKey: string } | { type: 'none' };
   baseURL?: string;
   models?: string[];
   /** Where this connector comes from: 'local' (user-configured) or 'everworker' (synced from EW backend) */
@@ -1964,6 +1963,15 @@ export class AgentService {
       const filePath = join(this.dataDir, 'connectors', `${connectorConfig.name}.json`);
       await writeFile(filePath, JSON.stringify(connectorConfig, null, 2));
 
+      // Register with the Connector library so it's immediately usable
+      if (Connector.has(connectorConfig.name)) Connector.remove(connectorConfig.name);
+      Connector.create({
+        name: connectorConfig.name,
+        vendor: connectorConfig.vendor as Vendor,
+        auth: connectorConfig.auth,
+        baseURL: connectorConfig.baseURL,
+      });
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1993,6 +2001,88 @@ export class AgentService {
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
+    }
+  }
+
+  async updateConnector(
+    name: string,
+    updates: { apiKey?: string; baseURL?: string }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const existing = this.connectors.get(name);
+      if (!existing) {
+        return { success: false, error: `Connector "${name}" not found` };
+      }
+
+      if (updates.apiKey !== undefined) {
+        existing.auth = { type: 'api_key', apiKey: updates.apiKey };
+      }
+      if (updates.baseURL !== undefined) {
+        existing.baseURL = updates.baseURL || undefined;
+      }
+      existing.updatedAt = Date.now();
+
+      this.connectors.set(name, existing);
+
+      // Save to file
+      const filePath = join(this.dataDir, 'connectors', `${name}.json`);
+      await writeFile(filePath, JSON.stringify(existing, null, 2));
+
+      // Re-register with library
+      if (Connector.has(name)) Connector.remove(name);
+      Connector.create({
+        name,
+        vendor: existing.vendor as Vendor,
+        auth: existing.auth,
+        baseURL: existing.baseURL,
+      });
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  async fetchAvailableModels(
+    vendor: string,
+    apiKey?: string,
+    baseURL?: string,
+    existingConnectorName?: string
+  ): Promise<{ success: boolean; models?: string[]; error?: string }> {
+    // If no new API key and an existing connector is registered, use it directly
+    if (!apiKey && existingConnectorName && Connector.has(existingConnectorName)) {
+      try {
+        const connector = Connector.get(existingConnectorName);
+        const provider = createProvider(connector);
+        const models = await provider.listModels();
+        return { success: true, models };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+
+    const tempName = `__temp_fetch_models_${Date.now()}`;
+    try {
+      const auth = apiKey
+        ? { type: 'api_key' as const, apiKey }
+        : { type: 'none' as const };
+
+      Connector.create({
+        name: tempName,
+        vendor: vendor as Vendor,
+        auth,
+        baseURL: baseURL || undefined,
+      });
+
+      const connector = Connector.get(tempName);
+      const provider = createProvider(connector);
+      const models = await provider.listModels();
+
+      return { success: true, models };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (Connector.has(tempName)) Connector.remove(tempName);
     }
   }
 
@@ -3992,123 +4082,27 @@ export class AgentService {
   }
 
   /**
-   * Get internals for a specific instance
-   * If instanceId is null, falls back to legacy single agent behavior
+   * Get a context snapshot for a specific instance.
+   * If instanceId is null, falls back to legacy single agent behavior.
+   * Returns IContextSnapshot from the core library.
    */
-  async getInternalsForInstance(instanceId: string | null): Promise<{
-    available: boolean;
-    agentName: string | null;
-    context: {
-      totalTokens: number;
-      maxTokens: number;
-      utilizationPercent: number;
-      messagesCount: number;
-      toolCallsCount: number;
-      strategy: string;
-    } | null;
-    cache: {
-      entries: number;
-      hits: number;
-      misses: number;
-      hitRate: number;
-      ttlMs: number;
-    } | null;
-    memory: {
-      totalEntries: number;
-      totalSizeBytes: number;
-      utilizationPercent: number;
-      entries: Array<{
-        key: string;
-        description: string;
-        scope: string;
-        priority: string;
-        sizeBytes: number;
-        updatedAt: number;
-      }>;
-    } | null;
-    inContextMemory: {
-      enabled: boolean;
-      entries: Array<{
-        key: string;
-        description: string;
-        priority: string;
-        updatedAt: number;
-        value: unknown;
-      }>;
-      maxEntries: number;
-      maxTokens: number;
-    } | null;
-    tools: Array<{
-      name: string;
-      description: string;
-      enabled: boolean;
-      callCount: number;
-      namespace?: string;
-    }>;
-    toolCalls: Array<{
-      id: string;
-      name: string;
-      args: unknown;
-      result?: unknown;
-      error?: string;
-      durationMs: number;
-      timestamp: number;
-    }>;
-    systemPrompt: string | null;
-    persistentInstructions: {
-      content: string;
-      path: string;
-      length: number;
-      enabled: boolean;
-    } | null;
-    tokenBreakdown: {
-      total: number;
-      reserved: number;
-      used: number;
-      available: number;
-      components: Array<{ name: string; tokens: number; percent: number }>;
-    } | null;
-    compactionLog: Array<{
-      timestamp: number;
-      tokensToFree: number;
-      message: string;
-    }>;
-  }> {
-    // Get the agent - either from instance or legacy single agent
-    let agent: Agent | null = null;
-    let agentConfigId: string | null = null;
+  async getSnapshotForInstance(instanceId: string | null): Promise<IContextSnapshot> {
+    const agent = this.resolveAgent(instanceId);
+    if (!agent) {
+      return { available: false, agentId: '', model: '', features: {} as any, budget: {} as any, strategy: '', messagesCount: 0, toolCallsCount: 0, systemPrompt: null, plugins: [], tools: [] };
+    }
+    return agent.getSnapshot();
+  }
 
+  /**
+   * Helper to resolve an Agent from instanceId or fallback to legacy single agent.
+   */
+  private resolveAgent(instanceId: string | null): Agent | null {
     if (instanceId) {
       const instance = this.instances.get(instanceId);
-      if (instance) {
-        agent = instance.agent;
-        agentConfigId = instance.agentConfigId;
-      }
-    } else {
-      // Fallback to legacy single agent
-      agent = this.agent;
-      agentConfigId = this.getActiveAgent()?.id || null;
+      return instance?.agent ?? null;
     }
-
-    if (!agent) {
-      return {
-        available: false,
-        agentName: null,
-        context: null,
-        cache: null,
-        memory: null,
-        inContextMemory: null,
-        tools: [],
-        toolCalls: [],
-        systemPrompt: null,
-        persistentInstructions: null,
-        tokenBreakdown: null,
-        compactionLog: [],
-      };
-    }
-
-    // Delegate to the common helper (pass instanceId for compaction log lookup)
-    return this.getInternalsForAgent(agent, agentConfigId, instanceId || 'default');
+    return this.agent;
   }
 
   /**
@@ -4175,299 +4169,7 @@ export class AgentService {
     }
   }
 
-  /**
-   * Helper to get internals from an agent (NextGen)
-   */
-  private async getInternalsForAgent(
-    agent: Agent,
-    agentConfigId: string | null,
-    instanceId: string = 'default'
-  ): Promise<{
-    available: boolean;
-    agentName: string | null;
-    context: {
-      totalTokens: number;
-      maxTokens: number;
-      utilizationPercent: number;
-      messagesCount: number;
-      toolCallsCount: number;
-      strategy: string;
-    } | null;
-    cache: {
-      entries: number;
-      hits: number;
-      misses: number;
-      hitRate: number;
-      ttlMs: number;
-    } | null;
-    memory: {
-      totalEntries: number;
-      totalSizeBytes: number;
-      utilizationPercent: number;
-      entries: Array<{
-        key: string;
-        description: string;
-        scope: string;
-        priority: string;
-        sizeBytes: number;
-        updatedAt: number;
-      }>;
-    } | null;
-    inContextMemory: {
-      enabled: boolean;
-      entries: Array<{
-        key: string;
-        description: string;
-        priority: string;
-        updatedAt: number;
-        value: unknown;
-      }>;
-      maxEntries: number;
-      maxTokens: number;
-    } | null;
-    tools: Array<{
-      name: string;
-      description: string;
-      enabled: boolean;
-      callCount: number;
-      namespace?: string;
-    }>;
-    toolCalls: Array<{
-      id: string;
-      name: string;
-      args: unknown;
-      result?: unknown;
-      error?: string;
-      durationMs: number;
-      timestamp: number;
-    }>;
-    systemPrompt: string | null;
-    persistentInstructions: {
-      content: string;
-      path: string;
-      length: number;
-      enabled: boolean;
-    } | null;
-    tokenBreakdown: {
-      total: number;
-      reserved: number;
-      used: number;
-      available: number;
-      components: Array<{ name: string; tokens: number; percent: number }>;
-    } | null;
-    compactionLog: Array<{
-      timestamp: number;
-      tokensToFree: number;
-      message: string;
-    }>;
-  }> {
-    try {
-      // NextGen context uses AgentContextNextGen
-      const ctx = agent.context as AgentContextNextGen;
-
-      // Calculate budget using NextGen API
-      const budget = await ctx.calculateBudget();
-
-      // Get context stats
-      const contextStats = {
-        totalTokens: budget.totalUsed,
-        maxTokens: budget.maxTokens,
-        utilizationPercent: budget.utilizationPercent,
-        messagesCount: ctx.getConversationLength(),
-        toolCallsCount: 0, // NextGen doesn't track tool calls in context
-        strategy: ctx.strategy,
-      };
-
-      // Cache is not available in NextGen - return null
-      const cacheStats = null;
-
-      // Get working memory via NextGen plugin API
-      let memoryData = null;
-      if (ctx.features.workingMemory && ctx.memory) {
-        const memState = ctx.memory.getState();
-        const totalSizeBytes = memState.entries.reduce((sum, e) => sum + (e.sizeBytes || 0), 0);
-        const maxSizeBytes = 25 * 1024 * 1024; // Default max
-        memoryData = {
-          totalEntries: memState.entries.length,
-          totalSizeBytes,
-          utilizationPercent: (totalSizeBytes / maxSizeBytes) * 100,
-          entries: memState.entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            scope: String(typeof e.scope === 'object' ? JSON.stringify(e.scope) : e.scope),
-            priority: e.basePriority || 'normal',
-            sizeBytes: e.sizeBytes || 0,
-            updatedAt: Date.now(),
-          })),
-        };
-      }
-
-      // Get in-context memory via NextGen plugin API
-      const inContextEnabled = ctx.features.inContextMemory;
-      const inContextPlugin = ctx.getPlugin<InContextMemoryPluginNextGen>('in_context_memory');
-      let inContextData: {
-        enabled: boolean;
-        entries: Array<{
-          key: string;
-          description: string;
-          priority: string;
-          updatedAt: number;
-          value: unknown;
-        }>;
-        maxEntries: number;
-        maxTokens: number;
-      } = {
-        enabled: inContextEnabled,
-        entries: [],
-        maxEntries: 20,
-        maxTokens: 4000,
-      };
-
-      if (inContextPlugin) {
-        const entries = inContextPlugin.list();
-        inContextData = {
-          enabled: true,
-          entries: entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            priority: e.priority,
-            updatedAt: e.updatedAt,
-            value: inContextPlugin.get(e.key),
-          })),
-          maxEntries: 20, // Default
-          maxTokens: 4000, // Default
-        };
-      }
-
-      // Get tools with stats
-      const toolStats = agent.tools.getStats();
-      const allTools = agent.tools.getAll();
-      const toolsWithStats = allTools.map((tool: ToolFunction) => {
-        const name = tool.definition.function.name;
-        const usageInfo = toolStats.mostUsed.find((u: { name: string; count: number }) => u.name === name);
-        return {
-          name,
-          description: tool.definition.function.description || '',
-          enabled: agent.tools.isEnabled(name),
-          callCount: usageInfo?.count || 0,
-          namespace: undefined,
-        };
-      });
-
-      // Tool calls history is not tracked in NextGen context
-      const toolCalls: Array<{
-        id: string;
-        name: string;
-        args: unknown;
-        result?: unknown;
-        error?: string;
-        durationMs: number;
-        timestamp: number;
-      }> = [];
-
-      // Get agent config for name
-      const agentConfig = agentConfigId ? this.agents.get(agentConfigId) : null;
-
-      // Get system prompt
-      const systemPrompt = ctx.systemPrompt || null;
-
-      // Get persistent instructions via NextGen plugin API
-      // Note: PersistentInstructionsPluginNextGen stores at ~/.oneringai/agents/<agentId>/custom_instructions.md
-      const effectiveAgentId = agentConfigId || 'default';
-      const persistentInstructionsPath = join(homedir(), '.oneringai', 'agents', effectiveAgentId, 'custom_instructions.md');
-      let persistentInstructionsData: {
-        content: string;
-        path: string;
-        length: number;
-        enabled: boolean;
-      };
-      const persistentPlugin = ctx.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions');
-      if (persistentPlugin) {
-        const content = await persistentPlugin.getContent();
-        const contentStr = content || '';
-        persistentInstructionsData = {
-          content: contentStr,
-          path: persistentInstructionsPath,
-          length: contentStr.length,
-          enabled: true,
-        };
-      } else {
-        persistentInstructionsData = {
-          content: '',
-          path: persistentInstructionsPath,
-          length: 0,
-          enabled: false,
-        };
-      }
-
-      // Build token breakdown from NextGen budget
-      // Note: pluginContents is a Record<string, number>, so we need to flatten it
-      const flatBreakdown: Array<{ name: string; tokens: number }> = [];
-      for (const [name, value] of Object.entries(budget.breakdown)) {
-        if (name === 'pluginContents' && typeof value === 'object' && value !== null) {
-          // Flatten plugin contents into individual entries
-          for (const [pluginName, pluginTokens] of Object.entries(value as Record<string, number>)) {
-            if (typeof pluginTokens === 'number' && pluginTokens > 0) {
-              flatBreakdown.push({
-                name: `Plugin: ${pluginName.split(/(?=[A-Z])|_/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}`,
-                tokens: pluginTokens,
-              });
-            }
-          }
-        } else if (typeof value === 'number' && value > 0) {
-          flatBreakdown.push({
-            name: name.split(/(?=[A-Z])|_/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '),
-            tokens: value,
-          });
-        }
-      }
-      const components = flatBreakdown
-        .map((item) => ({
-          ...item,
-          percent: budget.totalUsed > 0 ? (item.tokens / budget.totalUsed) * 100 : 0,
-        }))
-        .sort((a, b) => b.tokens - a.tokens);
-
-      const tokenBreakdown = {
-        total: budget.maxTokens,
-        reserved: budget.responseReserve,
-        used: budget.totalUsed,
-        available: budget.available,
-        components,
-      };
-
-      return {
-        available: true,
-        agentName: agentConfig?.name || 'Default Assistant',
-        context: contextStats,
-        cache: cacheStats,
-        memory: memoryData,
-        inContextMemory: inContextData,
-        tools: toolsWithStats,
-        toolCalls,
-        systemPrompt,
-        persistentInstructions: persistentInstructionsData,
-        tokenBreakdown,
-        compactionLog: this.compactionLogs.get(instanceId) || [],
-      };
-    } catch (error) {
-      console.error('Error getting internals:', error);
-      return {
-        available: false,
-        agentName: null,
-        context: null,
-        cache: null,
-        memory: null,
-        inContextMemory: null,
-        tools: [],
-        toolCalls: [],
-        systemPrompt: null,
-        persistentInstructions: null,
-        tokenBreakdown: null,
-        compactionLog: [],
-      };
-    }
-  }
+  // NOTE: getInternalsForAgent() removed — replaced by agent.getSnapshot() from core library
 
   // ============ Internals Monitoring (Look Inside) ============
 
@@ -4476,109 +4178,11 @@ export class AgentService {
    */
 
   /**
-   * Get all agent internals in one call (for Look Inside panel)
+   * Get snapshot for legacy single agent (for backwards compat).
+   * Delegates to getSnapshotForInstance(null).
    */
-  async getInternals(): Promise<{
-    available: boolean;
-    agentName: string | null;
-    context: {
-      totalTokens: number;
-      maxTokens: number;
-      utilizationPercent: number;
-      messagesCount: number;
-      toolCallsCount: number;
-      strategy: string;
-    } | null;
-    cache: {
-      entries: number;
-      hits: number;
-      misses: number;
-      hitRate: number;
-      ttlMs: number;
-    } | null;
-    memory: {
-      totalEntries: number;
-      totalSizeBytes: number;
-      utilizationPercent: number;
-      entries: Array<{
-        key: string;
-        description: string;
-        scope: string;
-        priority: string;
-        sizeBytes: number;
-        updatedAt: number;
-      }>;
-    } | null;
-    inContextMemory: {
-      enabled: boolean;
-      entries: Array<{
-        key: string;
-        description: string;
-        priority: string;
-        updatedAt: number;
-        value: unknown;
-      }>;
-      maxEntries: number;
-      maxTokens: number;
-    } | null;
-    tools: Array<{
-      name: string;
-      description: string;
-      enabled: boolean;
-      callCount: number;
-      namespace?: string;
-    }>;
-    toolCalls: Array<{
-      id: string;
-      name: string;
-      args: unknown;
-      result?: unknown;
-      error?: string;
-      durationMs: number;
-      timestamp: number;
-    }>;
-    // New fields for prompt inspection
-    systemPrompt: string | null;
-    persistentInstructions: {
-      content: string;
-      path: string;
-      length: number;
-      enabled: boolean;
-    } | null;
-    // Token breakdown for detailed context inspection
-    tokenBreakdown: {
-      total: number;
-      reserved: number;
-      used: number;
-      available: number;
-      components: Array<{ name: string; tokens: number; percent: number }>;
-    } | null;
-    compactionLog: Array<{
-      timestamp: number;
-      tokensToFree: number;
-      message: string;
-    }>;
-  }> {
-    // Delegate to the helper method (NextGen refactored to avoid duplication)
-    if (!this.agent) {
-      return {
-        available: false,
-        agentName: null,
-        context: null,
-        cache: null,
-        memory: null,
-        inContextMemory: null,
-        tools: [],
-        toolCalls: [],
-        systemPrompt: null,
-        persistentInstructions: null,
-        tokenBreakdown: null,
-        compactionLog: [],
-      };
-    }
-
-    const activeAgent = this.getActiveAgent();
-    return this.getInternalsForAgent(this.agent, activeAgent?.id || null, 'default');
+  async getInternals(): Promise<IContextSnapshot> {
+    return this.getSnapshotForInstance(null);
   }
 
   /**
@@ -4670,232 +4274,35 @@ export class AgentService {
   }
 
   /**
-   * Get the full prepared context as it would be sent to the LLM
-   * NextGen returns the actual InputItem[] array that goes to the LLM
+   * Get the full prepared context (View Context).
+   * Uses agent.getViewContext() from the core library.
    */
-  async getPreparedContext(): Promise<{
-    available: boolean;
-    components: Array<{
-      name: string;
-      content: string;
-      tokenEstimate: number;
-    }>;
-    totalTokens: number;
-    rawContext: string;
-  }> {
+  async getPreparedContext(): Promise<IViewContextData> {
     if (!this.agent) {
-      return {
-        available: false,
-        components: [],
-        totalTokens: 0,
-        rawContext: '',
-      };
+      return { available: false, components: [], totalTokens: 0, rawContext: '' };
     }
-
     try {
-      // NextGen context - prepare() returns { input: InputItem[], budget, ... }
-      const ctx = this.agent.context as AgentContextNextGen;
-      const prepared = await ctx.prepare();
-
-      // Build components from the actual InputItem[] array
-      const components: Array<{ name: string; content: string; tokenEstimate: number }> = [];
-
-      for (let i = 0; i < prepared.input.length; i++) {
-        const item = prepared.input[i];
-        let name = `Item ${i + 1}`;
-        let content = '';
-
-        // InputItem can be Message or other types
-        if ('role' in item) {
-          const role = (item as { role: string }).role;
-          name = role === 'developer' ? 'System Message' :
-                 role === 'user' ? 'User Message' :
-                 role === 'assistant' ? 'Assistant Message' :
-                 `${role} Message`;
-
-          // Get content from the item
-          if ('content' in item) {
-            const itemContent = (item as { content: unknown }).content;
-            if (typeof itemContent === 'string') {
-              content = itemContent;
-            } else if (Array.isArray(itemContent)) {
-              // Content blocks array (NextGen uses input_text, output_text, tool_use, tool_result)
-              content = itemContent.map((block: unknown) => {
-                if (typeof block === 'string') return block;
-                if (typeof block === 'object' && block !== null) {
-                  const b = block as Record<string, unknown>;
-                  // Handle NextGen content types
-                  if ((b.type === 'text' || b.type === 'input_text' || b.type === 'output_text') && typeof b.text === 'string') {
-                    return b.text;
-                  }
-                  if (b.type === 'tool_use') {
-                    const args = b.arguments || b.input || '{}';
-                    return `[Tool Call: ${b.name}]\nArguments: ${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}`;
-                  }
-                  if (b.type === 'tool_result') {
-                    const resultContent = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2);
-                    const truncated = resultContent.length > 500 ? resultContent.substring(0, 500) + '... [truncated]' : resultContent;
-                    return `[Tool Result: ${b.tool_use_id}]\n${truncated}`;
-                  }
-                  return JSON.stringify(b, null, 2);
-                }
-                return String(block);
-              }).join('\n\n');
-            } else if (itemContent && typeof itemContent === 'object') {
-              content = JSON.stringify(itemContent, null, 2);
-            }
-          }
-        } else {
-          // Other input item types
-          content = JSON.stringify(item, null, 2);
-        }
-
-        if (content) {
-          components.push({
-            name,
-            content,
-            tokenEstimate: Math.ceil(content.length / 4),
-          });
-        }
-      }
-
-      // Build raw context representation
-      const rawContext = components.map(c => {
-        const separator = '='.repeat(60);
-        return `${separator}\n## ${c.name} (~${c.tokenEstimate} tokens)\n${separator}\n\n${c.content}`;
-      }).join('\n\n');
-
-      const totalTokens = prepared.budget.totalUsed;
-
-      return {
-        available: true,
-        components,
-        totalTokens,
-        rawContext,
-      };
+      return await this.agent.getViewContext();
     } catch (error) {
       console.error('Error getting prepared context:', error);
-      return {
-        available: false,
-        components: [],
-        totalTokens: 0,
-        rawContext: `Error: ${error}`,
-      };
+      return { available: false, components: [], totalTokens: 0, rawContext: `Error: ${error}` };
     }
   }
 
   /**
-   * Get prepared context for a specific instance (multi-tab support)
+   * Get prepared context for a specific instance (multi-tab support).
+   * Uses agent.getViewContext() from the core library.
    */
-  async getPreparedContextForInstance(instanceId: string): Promise<{
-    available: boolean;
-    components: Array<{
-      name: string;
-      content: string;
-      tokenEstimate: number;
-    }>;
-    totalTokens: number;
-    rawContext: string;
-  }> {
+  async getPreparedContextForInstance(instanceId: string): Promise<IViewContextData> {
     const instance = this.instances.get(instanceId);
     if (!instance) {
-      return {
-        available: false,
-        components: [],
-        totalTokens: 0,
-        rawContext: `Instance "${instanceId}" not found`,
-      };
+      return { available: false, components: [], totalTokens: 0, rawContext: `Instance "${instanceId}" not found` };
     }
-
     try {
-      // NextGen context - prepare() returns { input: InputItem[], budget, ... }
-      const ctx = instance.agent.context as AgentContextNextGen;
-      const prepared = await ctx.prepare();
-
-      // Build components from the actual InputItem[] array
-      const components: Array<{ name: string; content: string; tokenEstimate: number }> = [];
-
-      for (let i = 0; i < prepared.input.length; i++) {
-        const item = prepared.input[i];
-        let name = `Item ${i + 1}`;
-        let content = '';
-
-        // InputItem can be Message or other types
-        if ('role' in item) {
-          const role = (item as { role: string }).role;
-          name = role === 'developer' ? 'System Message' :
-                 role === 'user' ? 'User Message' :
-                 role === 'assistant' ? 'Assistant Message' :
-                 `${role} Message`;
-
-          // Get content from the item
-          if ('content' in item) {
-            const itemContent = (item as { content: unknown }).content;
-            if (typeof itemContent === 'string') {
-              content = itemContent;
-            } else if (Array.isArray(itemContent)) {
-              // Content blocks array (NextGen uses input_text, output_text, tool_use, tool_result)
-              content = itemContent.map((block: unknown) => {
-                if (typeof block === 'string') return block;
-                if (typeof block === 'object' && block !== null) {
-                  const b = block as Record<string, unknown>;
-                  // Handle NextGen content types
-                  if ((b.type === 'text' || b.type === 'input_text' || b.type === 'output_text') && typeof b.text === 'string') {
-                    return b.text;
-                  }
-                  if (b.type === 'tool_use') {
-                    const args = b.arguments || b.input || '{}';
-                    return `[Tool Call: ${b.name}]\nArguments: ${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}`;
-                  }
-                  if (b.type === 'tool_result') {
-                    const resultContent = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2);
-                    const truncated = resultContent.length > 500 ? resultContent.substring(0, 500) + '... [truncated]' : resultContent;
-                    return `[Tool Result: ${b.tool_use_id}]\n${truncated}`;
-                  }
-                  return JSON.stringify(b, null, 2);
-                }
-                return String(block);
-              }).join('\n\n');
-            } else if (itemContent && typeof itemContent === 'object') {
-              content = JSON.stringify(itemContent, null, 2);
-            }
-          }
-        } else {
-          // Other input item types
-          content = JSON.stringify(item, null, 2);
-        }
-
-        if (content) {
-          components.push({
-            name,
-            content,
-            tokenEstimate: Math.ceil(content.length / 4),
-          });
-        }
-      }
-
-      // Build raw context representation
-      const rawContext = components.map(c => {
-        const separator = '='.repeat(60);
-        return `${separator}\n## ${c.name} (~${c.tokenEstimate} tokens)\n${separator}\n\n${c.content}`;
-      }).join('\n\n');
-
-      const totalTokens = prepared.budget.totalUsed;
-
-      return {
-        available: true,
-        components,
-        totalTokens,
-        rawContext,
-      };
+      return await instance.agent.getViewContext();
     } catch (error) {
       console.error('Error getting prepared context for instance:', error);
-      return {
-        available: false,
-        components: [],
-        totalTokens: 0,
-        rawContext: `Error: ${error}`,
-      };
+      return { available: false, components: [], totalTokens: 0, rawContext: `Error: ${error}` };
     }
   }
 

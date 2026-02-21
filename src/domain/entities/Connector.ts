@@ -11,7 +11,7 @@
 import type { Vendor } from '../../core/Vendor.js';
 
 /**
- * No authentication (for testing/mock providers)
+ * No authentication (for testing/mock providers and local services like Ollama)
  */
 export interface NoneConnectorAuth {
   type: 'none';
@@ -26,6 +26,7 @@ export type ConnectorAuth =
   | APIKeyConnectorAuth
   | JWTConnectorAuth
   | NoneConnectorAuth;
+
 
 /**
  * OAuth 2.0 authentication for connectors

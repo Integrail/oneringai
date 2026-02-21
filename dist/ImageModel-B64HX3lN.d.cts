@@ -1,4 +1,4 @@
-import { e as IProvider, b as Connector } from './IProvider-Br817mKc.cjs';
+import { e as IProvider, b as Connector } from './IProvider-CNJqZItJ.cjs';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 
 /**

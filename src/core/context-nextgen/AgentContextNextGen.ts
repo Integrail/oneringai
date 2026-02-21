@@ -27,6 +27,7 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { ToolManager } from '../ToolManager.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
 import { getModelInfo } from '../../domain/entities/Model.js';
 import type { InputItem, Message } from '../../domain/entities/Message.js';
 import { MessageRole } from '../../domain/entities/Message.js';
@@ -52,6 +53,14 @@ import type {
   CompactionContext,
   ConsolidationResult,
 } from './types.js';
+import type {
+  IContextSnapshot,
+  IPluginSnapshot,
+  IToolSnapshot,
+  IViewContextData,
+  IViewContextComponent,
+} from './snapshot.js';
+import { formatPluginDisplayName } from './snapshot.js';
 import type { IContextStorage, StoredContextSession } from '../../domain/interfaces/IContextStorage.js';
 import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
 import { Connector } from '../Connector.js';
@@ -282,7 +291,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /**
    * Validate that a strategy's required plugins are registered.
-   * @throws Error if any required plugin is missing
+   * Logs a warning if required plugins are missing — the strategy should degrade gracefully.
    */
   private validateStrategyDependencies(strategy: ICompactionStrategy): void {
     if (!strategy.requiredPlugins?.length) return;
@@ -291,9 +300,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     const missing = strategy.requiredPlugins.filter(name => !availablePlugins.has(name));
 
     if (missing.length > 0) {
-      throw new Error(
-        `Strategy '${strategy.name}' requires plugins that are not registered: ${missing.join(', ')}. ` +
-        `Available plugins: ${Array.from(availablePlugins).join(', ') || 'none'}`
+      logger.warn(
+        { strategy: strategy.name, missing, available: Array.from(availablePlugins) },
+        `Strategy '${strategy.name}' recommends plugins that are not registered: ${missing.join(', ')}. ` +
+        `Strategy will degrade gracefully.`
       );
     }
   }
@@ -1722,6 +1732,215 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    */
   get strategy(): string {
     return this._compactionStrategy.name;
+  }
+
+  /**
+   * Get a complete, serializable snapshot of the context state.
+   *
+   * Returns all data needed by UI "Look Inside" panels without reaching
+   * into plugin internals. Plugin data is auto-discovered from the plugin
+   * registry — new/custom plugins appear automatically.
+   *
+   * @param toolStats - Optional tool usage stats (from ToolManager.getStats())
+   * @returns Serializable context snapshot
+   */
+  async getSnapshot(toolStats?: { mostUsed?: Array<{ name: string; count: number }> }): Promise<IContextSnapshot> {
+    // Helper to ensure plugin contents are JSON-serializable (Maps → arrays, await Promises)
+    const resolveContents = async (raw: unknown): Promise<unknown> => {
+      // Await if getContents() returned a Promise (e.g., WorkingMemory)
+      const resolved = raw instanceof Promise ? await raw : raw;
+      // Convert Maps to arrays for JSON transport (Meteor DDP, etc.)
+      if (resolved instanceof Map) return Array.from(resolved.values());
+      return resolved;
+    };
+    if (this._destroyed) {
+      const emptyBudget: ContextBudget = this._cachedBudget ?? {
+        maxTokens: this._maxContextTokens,
+        responseReserve: this._config.responseReserve,
+        systemMessageTokens: 0,
+        toolsTokens: 0,
+        conversationTokens: 0,
+        currentInputTokens: 0,
+        totalUsed: 0,
+        available: this._maxContextTokens - this._config.responseReserve,
+        utilizationPercent: 0,
+        breakdown: {
+          systemPrompt: 0,
+          persistentInstructions: 0,
+          pluginInstructions: 0,
+          pluginContents: {},
+          tools: 0,
+          conversation: 0,
+          currentInput: 0,
+        },
+      };
+      return {
+        available: false,
+        agentId: this._agentId,
+        model: this._config.model,
+        features: this._config.features,
+        budget: emptyBudget,
+        strategy: this._compactionStrategy.name,
+        messagesCount: 0,
+        toolCallsCount: 0,
+        systemPrompt: null,
+        plugins: [],
+        tools: [],
+      };
+    }
+
+    const budget = await this.calculateBudget();
+
+    // Build plugin snapshots from registry (auto-discovery)
+    const plugins: IPluginSnapshot[] = [];
+    for (const plugin of this._plugins.values()) {
+      let formattedContent: string | null = null;
+      try {
+        formattedContent = await plugin.getContent();
+      } catch {
+        // Plugin content may fail — don't break snapshot
+      }
+
+      plugins.push({
+        name: plugin.name,
+        displayName: formatPluginDisplayName(plugin.name),
+        enabled: true,
+        tokenSize: plugin.getTokenSize(),
+        instructionsTokenSize: plugin.getInstructionsTokenSize(),
+        compactable: plugin.isCompactable(),
+        contents: await resolveContents(plugin.getContents()),
+        formattedContent,
+      });
+    }
+
+    // Build tool snapshots
+    const usageCounts = new Map<string, number>();
+    if (toolStats?.mostUsed) {
+      for (const { name, count } of toolStats.mostUsed) {
+        usageCounts.set(name, count);
+      }
+    }
+
+    const tools: IToolSnapshot[] = [];
+    for (const toolName of this._tools.list()) {
+      const reg = this._tools.getRegistration(toolName);
+      if (!reg) continue;
+
+      tools.push({
+        name: toolName,
+        description: reg.tool.definition.function.description || '',
+        enabled: reg.enabled,
+        callCount: reg.metadata.usageCount ?? usageCounts.get(toolName) ?? 0,
+        namespace: reg.namespace || undefined,
+      });
+    }
+
+    // Count tool calls in conversation
+    let toolCallsCount = 0;
+    for (const item of this._conversation) {
+      if (item.type === 'message' && item.role === MessageRole.ASSISTANT) {
+        for (const c of item.content) {
+          if (c.type === ContentType.TOOL_USE) toolCallsCount++;
+        }
+      }
+    }
+
+    return {
+      available: true,
+      agentId: this._agentId,
+      model: this._config.model,
+      features: this._config.features,
+      budget,
+      strategy: this._compactionStrategy.name,
+      messagesCount: this._conversation.length,
+      toolCallsCount,
+      systemPrompt: this._systemPrompt ?? null,
+      plugins,
+      tools,
+    };
+  }
+
+  /**
+   * Get a human-readable breakdown of the prepared context.
+   *
+   * Calls `prepare()` internally, then maps each InputItem to a named
+   * component with content text and token estimate. Used by "View Full Context" UIs.
+   *
+   * @returns View context data with components and raw text for "Copy All"
+   */
+  async getViewContext(): Promise<IViewContextData> {
+    if (this._destroyed) {
+      return { available: false, components: [], totalTokens: 0, rawContext: '' };
+    }
+
+    const { input, budget } = await this.prepare();
+
+    const components: IViewContextComponent[] = [];
+    let rawParts: string[] = [];
+
+    for (const item of input) {
+      if (item.type === 'compaction') {
+        components.push({
+          name: 'Compaction Block',
+          content: '[Compacted content]',
+          tokenEstimate: 0,
+        });
+        continue;
+      }
+
+      // item.type === 'message'
+      const msg = item;
+      const roleName = msg.role === MessageRole.DEVELOPER
+        ? 'System Message'
+        : msg.role === MessageRole.USER
+          ? 'User Message'
+          : 'Assistant Message';
+
+      // Process each content block
+      for (const block of msg.content) {
+        let name = roleName;
+        let text = '';
+
+        switch (block.type) {
+          case ContentType.INPUT_TEXT:
+            text = block.text;
+            break;
+          case ContentType.OUTPUT_TEXT:
+            text = block.text;
+            break;
+          case ContentType.TOOL_USE:
+            name = `Tool Call: ${block.name}`;
+            text = `${block.name}(${block.arguments})`;
+            break;
+          case ContentType.TOOL_RESULT:
+            name = `Tool Result: ${block.tool_use_id}`;
+            text = typeof block.content === 'string'
+              ? block.content
+              : JSON.stringify(block.content, null, 2);
+            if (block.error) text = `[Error] ${block.error}\n${text}`;
+            break;
+          case ContentType.INPUT_IMAGE_URL:
+            name = 'Image Input';
+            text = `[Image: ${block.image_url.url.substring(0, 100)}...]`;
+            break;
+          case ContentType.INPUT_FILE:
+            name = 'File Input';
+            text = `[File: ${block.file_id}]`;
+            break;
+        }
+
+        const tokenEstimate = this._estimator.estimateTokens(text);
+        components.push({ name, content: text, tokenEstimate });
+        rawParts.push(`--- ${name} ---\n${text}`);
+      }
+    }
+
+    return {
+      available: true,
+      components,
+      totalTokens: budget.totalUsed,
+      rawContext: rawParts.join('\n\n'),
+    };
   }
 
   // ============================================================================

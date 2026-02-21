@@ -1,4 +1,4 @@
-import { I as IConnectorRegistry, e as IProvider } from './IProvider-BUbU5UwV.js';
+import { I as IConnectorRegistry, e as IProvider } from './IProvider-B6hqVVq8.js';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -813,9 +813,9 @@ interface ITextProvider extends IProvider {
      */
     getModelCapabilities(model: string): ModelCapabilities;
     /**
-     * List available models
+     * List available models from the provider's API
      */
-    listModels?(): Promise<string[]>;
+    listModels(): Promise<string[]>;
 }
 
 /**

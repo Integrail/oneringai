@@ -276,6 +276,14 @@ async function setupIPC(): Promise<void> {
     return agentService!.deleteConnector(name);
   }));
 
+  ipcMain.handle('connector:update', readyHandler(async (_event, name: string, updates: { apiKey?: string; baseURL?: string }) => {
+    return agentService!.updateConnector(name, updates);
+  }));
+
+  ipcMain.handle('connector:fetch-models', readyHandler(async (_event, vendor: string, apiKey?: string, baseURL?: string, existingConnectorName?: string) => {
+    return agentService!.fetchAvailableModels(vendor, apiKey, baseURL, existingConnectorName);
+  }));
+
   // Model operations
   ipcMain.handle('model:list', async () => {
     return agentService!.listModels();
@@ -566,10 +574,9 @@ async function setupIPC(): Promise<void> {
   });
 
   // Internals monitoring (Look Inside)
-  // Legacy handlers (no instanceId) - for backwards compatibility
+  // Returns IContextSnapshot from core library
   ipcMain.handle('internals:get-all', async (_event, instanceId?: string) => {
-    // Support optional instanceId parameter
-    return agentService!.getInternalsForInstance(instanceId || null);
+    return agentService!.getSnapshotForInstance(instanceId || null);
   });
 
   ipcMain.handle('internals:get-context-stats', async () => {

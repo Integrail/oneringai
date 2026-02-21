@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button, Modal, Form, Alert, Badge, Spinner } from 'react-bootstrap';
-import { Plus, Brain, Key, Trash2, Check, Cloud, Monitor } from 'lucide-react';
+import { Plus, Brain, Key, Trash2, Check, Cloud, Monitor, RefreshCw, Globe } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useConnectorVersion } from '../App';
 
@@ -22,7 +22,10 @@ const vendorInfo: Record<string, { color: string; label: string }> = {
   anthropic: { color: '#d4a27f', label: 'Anthropic' },
   google: { color: '#4285f4', label: 'Google' },
   grok: { color: '#1da1f2', label: 'Grok (xAI)' },
+  ollama: { color: '#000000', label: 'Ollama' },
 };
+
+const isNoAuthVendor = (vendor: string) => vendor === 'ollama';
 
 export function LLMConnectorsPage(): React.ReactElement {
   const [connectors, setConnectors] = useState<ConnectorConfig[]>([]);
@@ -31,8 +34,22 @@ export function LLMConnectorsPage(): React.ReactElement {
     name: '',
     vendor: 'openai',
     apiKey: '',
+    baseURL: '',
   });
   const connectorVersion = useConnectorVersion();
+
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingConnector, setEditingConnector] = useState<ConnectorConfig | null>(null);
+  const [editApiKey, setEditApiKey] = useState('');
+  const [editBaseURL, setEditBaseURL] = useState('');
+  const [editError, setEditError] = useState('');
+
+  // Fetch models state (shared between add and edit modals)
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchError, setFetchError] = useState('');
+  const [addError, setAddError] = useState('');
 
   useEffect(() => {
     loadConnectors();
@@ -43,22 +60,88 @@ export function LLMConnectorsPage(): React.ReactElement {
     setConnectors(list);
   };
 
+  const handleFetchModels = async (vendor: string, apiKey?: string, baseURL?: string, existingConnectorName?: string) => {
+    setFetchingModels(true);
+    setFetchError('');
+    setFetchedModels([]);
+    try {
+      const result = await window.hosea.connector.fetchModels(
+        vendor,
+        apiKey || undefined,
+        baseURL || undefined,
+        existingConnectorName
+      );
+      if (result.success && result.models) {
+        setFetchedModels(result.models);
+      } else {
+        setFetchError(result.error || 'Failed to fetch models');
+      }
+    } catch (error) {
+      setFetchError(String(error));
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
   const handleAddConnector = async () => {
-    if (!newConnector.name || !newConnector.apiKey) return;
+    const isNoAuth = isNoAuthVendor(newConnector.vendor);
+    if (!newConnector.name || (!isNoAuth && !newConnector.apiKey)) return;
+
+    setAddError('');
+    const auth = isNoAuth
+      ? { type: 'none' as const }
+      : { type: 'api_key' as const, apiKey: newConnector.apiKey };
 
     const result = await window.hosea.connector.add({
       name: newConnector.name,
       vendor: newConnector.vendor,
-      auth: {
-        type: 'api_key',
-        apiKey: newConnector.apiKey,
-      },
+      auth,
+      baseURL: newConnector.baseURL || undefined,
+      models: fetchedModels.length > 0 ? fetchedModels : undefined,
     });
 
     if (result.success) {
       setShowAddModal(false);
-      setNewConnector({ name: '', vendor: 'openai', apiKey: '' });
+      setNewConnector({ name: '', vendor: 'openai', apiKey: '', baseURL: '' });
+      setFetchedModels([]);
+      setFetchError('');
+      setAddError('');
       loadConnectors();
+    } else {
+      setAddError(result.error || 'Failed to add provider');
+    }
+  };
+
+  const handleOpenEditModal = (connector: ConnectorConfig) => {
+    setEditingConnector(connector);
+    setEditApiKey('');
+    setEditBaseURL('');
+    setEditError('');
+    setFetchedModels(connector.models || []);
+    setFetchError('');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateConnector = async () => {
+    if (!editingConnector) return;
+
+    setEditError('');
+    const updates: { apiKey?: string; baseURL?: string } = {};
+    if (editApiKey) updates.apiKey = editApiKey;
+    if (editBaseURL !== '') updates.baseURL = editBaseURL;
+
+    if (Object.keys(updates).length === 0) {
+      setEditError('No changes to save');
+      return;
+    }
+
+    const result = await window.hosea.connector.update(editingConnector.name, updates);
+    if (result.success) {
+      setShowEditModal(false);
+      setEditingConnector(null);
+      loadConnectors();
+    } else {
+      setEditError(result.error || 'Failed to update connector');
     }
   };
 
@@ -78,6 +161,16 @@ export function LLMConnectorsPage(): React.ReactElement {
       alert(String(error));
     }
   };
+
+  const resetAddModal = () => {
+    setShowAddModal(false);
+    setNewConnector({ name: '', vendor: 'openai', apiKey: '', baseURL: '' });
+    setFetchedModels([]);
+    setFetchError('');
+    setAddError('');
+  };
+
+  const isAddNoAuth = isNoAuthVendor(newConnector.vendor);
 
   return (
     <div className="page">
@@ -143,7 +236,7 @@ export function LLMConnectorsPage(): React.ReactElement {
                         </Badge>
                       )}
                     </div>
-                    {isEW && connector.models && connector.models.length > 0 && (
+                    {connector.models && connector.models.length > 0 && (
                       <div className="mt-2" style={{ fontSize: '0.75rem' }}>
                         <span className="text-muted">Models: </span>
                         {connector.models.slice(0, 3).map((m) => (
@@ -159,7 +252,11 @@ export function LLMConnectorsPage(): React.ReactElement {
                   </div>
                   <div className="card__footer">
                     {!isEW && (
-                      <Button variant="outline-secondary" size="sm">
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        onClick={() => handleOpenEditModal(connector)}
+                      >
                         <Key size={14} className="me-1" />
                         Update Key
                       </Button>
@@ -184,7 +281,7 @@ export function LLMConnectorsPage(): React.ReactElement {
       </div>
 
       {/* Add Modal */}
-      <Modal show={showAddModal} onHide={() => setShowAddModal(false)} centered>
+      <Modal show={showAddModal} onHide={resetAddModal} centered>
         <Modal.Header closeButton>
           <Modal.Title>Add LLM Provider</Modal.Title>
         </Modal.Header>
@@ -202,7 +299,11 @@ export function LLMConnectorsPage(): React.ReactElement {
             <Form.Label>Provider</Form.Label>
             <Form.Select
               value={newConnector.vendor}
-              onChange={(e) => setNewConnector({ ...newConnector, vendor: e.target.value })}
+              onChange={(e) => {
+                setNewConnector({ ...newConnector, vendor: e.target.value, apiKey: '', baseURL: '' });
+                setFetchedModels([]);
+                setFetchError('');
+              }}
             >
               {Object.entries(vendorInfo).map(([key, info]) => (
                 <option key={key} value={key}>
@@ -211,22 +312,185 @@ export function LLMConnectorsPage(): React.ReactElement {
               ))}
             </Form.Select>
           </Form.Group>
-          <Form.Group>
-            <Form.Label>API Key</Form.Label>
-            <Form.Control
-              type="password"
-              placeholder="sk-..."
-              value={newConnector.apiKey}
-              onChange={(e) => setNewConnector({ ...newConnector, apiKey: e.target.value })}
-            />
-          </Form.Group>
+          {!isAddNoAuth && (
+            <Form.Group className="mb-3">
+              <Form.Label>API Key</Form.Label>
+              <Form.Control
+                type="password"
+                placeholder="sk-..."
+                value={newConnector.apiKey}
+                onChange={(e) => setNewConnector({ ...newConnector, apiKey: e.target.value })}
+              />
+            </Form.Group>
+          )}
+          {(isAddNoAuth || newConnector.vendor === 'ollama') && (
+            <Form.Group className="mb-3">
+              <Form.Label>
+                <Globe size={14} className="me-1" />
+                Base URL <span className="text-muted">(optional)</span>
+              </Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="http://localhost:11434/v1"
+                value={newConnector.baseURL}
+                onChange={(e) => setNewConnector({ ...newConnector, baseURL: e.target.value })}
+              />
+              <Form.Text className="text-muted">
+                Leave blank to use the default endpoint
+              </Form.Text>
+            </Form.Group>
+          )}
+
+          {/* Fetch Models */}
+          <div className="mb-2">
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              disabled={fetchingModels || (!isAddNoAuth && !newConnector.apiKey)}
+              onClick={() => handleFetchModels(newConnector.vendor, newConnector.apiKey, newConnector.baseURL)}
+            >
+              {fetchingModels ? (
+                <>
+                  <Spinner size="sm" animation="border" className="me-1" />
+                  Fetching...
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={14} className="me-1" />
+                  Fetch Models
+                </>
+              )}
+            </Button>
+          </div>
+          {fetchError && (
+            <Alert variant="warning" className="py-1 px-2 mb-2" style={{ fontSize: '0.8rem' }}>
+              {fetchError}
+            </Alert>
+          )}
+          {fetchedModels.length > 0 && (
+            <div className="mb-2" style={{ fontSize: '0.8rem', maxHeight: '120px', overflowY: 'auto' }}>
+              <span className="text-muted">Available models ({fetchedModels.length}): </span>
+              <div className="d-flex flex-wrap gap-1 mt-1">
+                {fetchedModels.map((m) => (
+                  <Badge key={m} bg="light" text="dark" style={{ fontSize: '0.7rem' }}>
+                    {m}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {addError && (
+            <Alert variant="danger" className="py-1 px-2 mb-0 mt-2" style={{ fontSize: '0.8rem' }}>
+              {addError}
+            </Alert>
+          )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowAddModal(false)}>
+          <Button variant="secondary" onClick={resetAddModal}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleAddConnector}>
+          <Button
+            variant="primary"
+            onClick={handleAddConnector}
+            disabled={!newConnector.name || (!isAddNoAuth && !newConnector.apiKey)}
+          >
             Add Provider
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal show={showEditModal} onHide={() => setShowEditModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Update Provider — {editingConnector?.name}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {editingConnector && !isNoAuthVendor(editingConnector.vendor) && (
+            <Form.Group className="mb-3">
+              <Form.Label>New API Key</Form.Label>
+              <Form.Control
+                type="password"
+                placeholder="Enter new API key..."
+                value={editApiKey}
+                onChange={(e) => setEditApiKey(e.target.value)}
+              />
+              <Form.Text className="text-muted">
+                Leave blank to keep the existing key
+              </Form.Text>
+            </Form.Group>
+          )}
+          {editingConnector && editingConnector.vendor === 'ollama' && (
+            <Form.Group className="mb-3">
+              <Form.Label>
+                <Globe size={14} className="me-1" />
+                Base URL
+              </Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="http://localhost:11434/v1"
+                value={editBaseURL}
+                onChange={(e) => setEditBaseURL(e.target.value)}
+              />
+            </Form.Group>
+          )}
+
+          {/* Fetch Models in edit modal */}
+          {editingConnector && (
+            <div className="mb-2">
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                disabled={fetchingModels}
+                onClick={() => handleFetchModels(
+                  editingConnector.vendor,
+                  editApiKey || undefined,
+                  editBaseURL || undefined,
+                  editingConnector.name
+                )}
+              >
+                {fetchingModels ? (
+                  <>
+                    <Spinner size="sm" animation="border" className="me-1" />
+                    Fetching...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={14} className="me-1" />
+                    Fetch Models
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+          {fetchError && (
+            <Alert variant="warning" className="py-1 px-2 mb-2" style={{ fontSize: '0.8rem' }}>
+              {fetchError}
+            </Alert>
+          )}
+          {fetchedModels.length > 0 && (
+            <div className="mb-2" style={{ fontSize: '0.8rem', maxHeight: '120px', overflowY: 'auto' }}>
+              <span className="text-muted">Available models ({fetchedModels.length}): </span>
+              <div className="d-flex flex-wrap gap-1 mt-1">
+                {fetchedModels.map((m) => (
+                  <Badge key={m} bg="light" text="dark" style={{ fontSize: '0.7rem' }}>
+                    {m}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {editError && (
+            <Alert variant="danger" className="py-1 px-2 mb-0 mt-2" style={{ fontSize: '0.8rem' }}>
+              {editError}
+            </Alert>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleUpdateConnector}>
+            Save Changes
           </Button>
         </Modal.Footer>
       </Modal>

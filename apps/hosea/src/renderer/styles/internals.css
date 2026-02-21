@@ -543,3 +543,25 @@ pre.memory-entry__value {
 .json-viewer__expand-btn:hover {
   color: var(--color-gray-600);
 }
+
+/* ============================================================================
+   Hosea overrides for shared @everworker/react-ui Look Inside panel
+   ============================================================================ */
+
+.hosea-look-inside .look-inside-panel {
+  --li-bg: var(--color-white);
+  --li-bg-secondary: var(--color-gray-50);
+  --li-bg-tertiary: var(--color-gray-200);
+  --li-text: var(--color-gray-800);
+  --li-text-muted: var(--color-gray-500);
+  --li-border: var(--color-gray-200);
+  --li-accent: var(--color-primary);
+  --li-success: var(--color-success);
+  --li-warning: var(--color-warning);
+  --li-danger: var(--color-danger);
+  --li-code-bg: var(--color-gray-50);
+  border: none;
+  border-radius: 0;
+  height: 100%;
+  overflow-y: auto;
+}

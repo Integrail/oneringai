@@ -3,7 +3,6 @@ export { Chat } from './Chat';
 export { Message } from './Message';
 export { SetupModal, SettingsModal } from './modals';
 export { ToolCallDisplay, InlineToolCall, type ToolCallInfo } from './ToolCallDisplay';
-export { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from './InternalsPanel';
 export { SidebarPanel, SIDEBAR_PANEL_DEFAULT_WIDTH } from './SidebarPanel';
 export { InternalsContent } from './InternalsContent';
 export { DynamicUIPanel } from './DynamicUIPanel';

@@ -81,7 +81,14 @@ export type {
   // Strategy Registry types
   StrategyInfo,
   StrategyRegistryEntry,
+  // Snapshot types (for "Look Inside" UIs)
+  IContextSnapshot,
+  IPluginSnapshot,
+  IToolSnapshot,
+  IViewContextData,
+  IViewContextComponent,
 } from './core/index.js';
+export { formatPluginDisplayName } from './core/index.js';
 
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';

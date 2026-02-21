@@ -50,6 +50,27 @@ export class GenericOpenAIProvider extends OpenAITextProvider {
   }
 
   /**
+   * Override API key validation for generic providers.
+   * Services like Ollama don't require authentication, so accept any key including mock/placeholder keys.
+   */
+  protected override validateApiKey(): { isValid: boolean; warning?: string } {
+    // Generic providers (Ollama, local models, etc.) may not need real API keys
+    // Accept any non-undefined apiKey, including 'mock-key' from auth: { type: 'none' }
+    return { isValid: true };
+  }
+
+  /**
+   * Override listModels for error safety — some OpenAI-compatible APIs may not support /v1/models
+   */
+  async listModels(): Promise<string[]> {
+    try {
+      return await super.listModels();
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Override model capabilities for generic providers (registry-driven with conservative defaults)
    */
   getModelCapabilities(model: string): ModelCapabilities {

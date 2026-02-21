@@ -11943,6 +11943,9 @@ var ToolManager = class extends eventemitter3.EventEmitter {
   }
 };
 
+// src/core/context-nextgen/AgentContextNextGen.ts
+init_Logger();
+
 // src/core/Vendor.ts
 var Vendor = {
   OpenAI: "openai",
@@ -13577,6 +13580,11 @@ var BasePluginNextGen = class {
   restoreState(_state) {
   }
 };
+
+// src/core/context-nextgen/snapshot.ts
+function formatPluginDisplayName(name) {
+  return name.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
 
 // src/core/context-nextgen/AgentContextNextGen.ts
 init_Connector();
@@ -16256,8 +16264,11 @@ var AlgorithmicCompactionStrategy = class {
    * Emergency compaction when context exceeds threshold.
    *
    * Strategy:
-   * 1. Run consolidate() first to move tool results to memory
+   * 1. Run consolidate() first to move tool results to memory (if working memory available)
    * 2. If still need space, apply rolling window (remove oldest messages)
+   *
+   * Gracefully degrades: if working memory plugin is not registered,
+   * skips step 1 and only uses rolling window compaction.
    */
   async compact(context, targetToFree) {
     const log = [];
@@ -16270,7 +16281,7 @@ var AlgorithmicCompactionStrategy = class {
       tokensFreed += Math.abs(consolidateResult.tokensChanged);
       log.push(...consolidateResult.actions);
     }
-    let remaining = targetToFree - tokensFreed;
+    const remaining = targetToFree - tokensFreed;
     if (remaining > 0 && context.conversation.length > 0) {
       log.push(`Rolling window: need to free ~${remaining} more tokens`);
       const result = await this.applyRollingWindow(context, remaining, log);
@@ -16284,8 +16295,11 @@ var AlgorithmicCompactionStrategy = class {
    * Post-cycle consolidation.
    *
    * 1. Find all tool pairs in conversation
-   * 2. Move large tool results (> threshold) to Working Memory
+   * 2. Move large tool results (> threshold) to Working Memory (if available)
    * 3. Limit remaining tool pairs to maxToolPairs
+   *
+   * Gracefully degrades: if working memory is not available, skips step 2
+   * and only limits tool pairs + removes excess via rolling window.
    */
   async consolidate(context) {
     const log = [];
@@ -16296,23 +16310,25 @@ var AlgorithmicCompactionStrategy = class {
       return { performed: false, tokensChanged: 0, actions: [] };
     }
     const indicesToRemove = [];
-    for (const pair of toolPairs) {
-      if (pair.resultSizeBytes > this.toolResultSizeThreshold) {
-        const key = this.generateKey(pair.toolName, pair.toolUseId);
-        const desc = this.generateDescription(pair.toolName, pair.toolArgs);
-        await memory.store(key, desc, pair.resultContent, {
-          tier: "raw",
-          priority: "normal"
-        });
-        if (!indicesToRemove.includes(pair.toolUseIndex)) {
-          indicesToRemove.push(pair.toolUseIndex);
+    if (memory) {
+      for (const pair of toolPairs) {
+        if (pair.resultSizeBytes > this.toolResultSizeThreshold) {
+          const key = this.generateKey(pair.toolName, pair.toolUseId);
+          const desc = this.generateDescription(pair.toolName, pair.toolArgs);
+          await memory.store(key, desc, pair.resultContent, {
+            tier: "raw",
+            priority: "normal"
+          });
+          if (!indicesToRemove.includes(pair.toolUseIndex)) {
+            indicesToRemove.push(pair.toolUseIndex);
+          }
+          if (!indicesToRemove.includes(pair.toolResultIndex)) {
+            indicesToRemove.push(pair.toolResultIndex);
+          }
+          log.push(
+            `Moved ${pair.toolName} result (${this.formatBytes(pair.resultSizeBytes)}) to memory: ${key}`
+          );
         }
-        if (!indicesToRemove.includes(pair.toolResultIndex)) {
-          indicesToRemove.push(pair.toolResultIndex);
-        }
-        log.push(
-          `Moved ${pair.toolName} result (${this.formatBytes(pair.resultSizeBytes)}) to memory: ${key}`
-        );
       }
     }
     const remainingPairs = toolPairs.filter(
@@ -16341,15 +16357,12 @@ var AlgorithmicCompactionStrategy = class {
     };
   }
   /**
-   * Get the Working Memory plugin from context.
-   * @throws Error if plugin is not available
+   * Get the Working Memory plugin from context, or null if not available.
+   * When null, the strategy degrades gracefully (skips memory operations).
    */
   getWorkingMemory(context) {
     const plugin = context.plugins.find((p) => p.name === "working_memory");
-    if (!plugin) {
-      throw new Error("AlgorithmicCompactionStrategy requires working_memory plugin");
-    }
-    return plugin;
+    return plugin ? plugin : null;
   }
   /**
    * Find all tool_use/tool_result pairs in conversation.
@@ -16821,15 +16834,16 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
   }
   /**
    * Validate that a strategy's required plugins are registered.
-   * @throws Error if any required plugin is missing
+   * Logs a warning if required plugins are missing — the strategy should degrade gracefully.
    */
   validateStrategyDependencies(strategy) {
     if (!strategy.requiredPlugins?.length) return;
     const availablePlugins = new Set(this._plugins.keys());
     const missing = strategy.requiredPlugins.filter((name) => !availablePlugins.has(name));
     if (missing.length > 0) {
-      throw new Error(
-        `Strategy '${strategy.name}' requires plugins that are not registered: ${missing.join(", ")}. Available plugins: ${Array.from(availablePlugins).join(", ") || "none"}`
+      exports.logger.warn(
+        { strategy: strategy.name, missing, available: Array.from(availablePlugins) },
+        `Strategy '${strategy.name}' recommends plugins that are not registered: ${missing.join(", ")}. Strategy will degrade gracefully.`
       );
     }
   }
@@ -17950,6 +17964,184 @@ ${content}`);
   get strategy() {
     return this._compactionStrategy.name;
   }
+  /**
+   * Get a complete, serializable snapshot of the context state.
+   *
+   * Returns all data needed by UI "Look Inside" panels without reaching
+   * into plugin internals. Plugin data is auto-discovered from the plugin
+   * registry — new/custom plugins appear automatically.
+   *
+   * @param toolStats - Optional tool usage stats (from ToolManager.getStats())
+   * @returns Serializable context snapshot
+   */
+  async getSnapshot(toolStats) {
+    const resolveContents = async (raw) => {
+      const resolved = raw instanceof Promise ? await raw : raw;
+      if (resolved instanceof Map) return Array.from(resolved.values());
+      return resolved;
+    };
+    if (this._destroyed) {
+      const emptyBudget = this._cachedBudget ?? {
+        maxTokens: this._maxContextTokens,
+        responseReserve: this._config.responseReserve,
+        systemMessageTokens: 0,
+        toolsTokens: 0,
+        conversationTokens: 0,
+        currentInputTokens: 0,
+        totalUsed: 0,
+        available: this._maxContextTokens - this._config.responseReserve,
+        utilizationPercent: 0,
+        breakdown: {
+          systemPrompt: 0,
+          persistentInstructions: 0,
+          pluginInstructions: 0,
+          pluginContents: {},
+          tools: 0,
+          conversation: 0,
+          currentInput: 0
+        }
+      };
+      return {
+        available: false,
+        agentId: this._agentId,
+        model: this._config.model,
+        features: this._config.features,
+        budget: emptyBudget,
+        strategy: this._compactionStrategy.name,
+        messagesCount: 0,
+        toolCallsCount: 0,
+        systemPrompt: null,
+        plugins: [],
+        tools: []
+      };
+    }
+    const budget = await this.calculateBudget();
+    const plugins = [];
+    for (const plugin of this._plugins.values()) {
+      let formattedContent = null;
+      try {
+        formattedContent = await plugin.getContent();
+      } catch {
+      }
+      plugins.push({
+        name: plugin.name,
+        displayName: formatPluginDisplayName(plugin.name),
+        enabled: true,
+        tokenSize: plugin.getTokenSize(),
+        instructionsTokenSize: plugin.getInstructionsTokenSize(),
+        compactable: plugin.isCompactable(),
+        contents: await resolveContents(plugin.getContents()),
+        formattedContent
+      });
+    }
+    const usageCounts = /* @__PURE__ */ new Map();
+    if (toolStats?.mostUsed) {
+      for (const { name, count } of toolStats.mostUsed) {
+        usageCounts.set(name, count);
+      }
+    }
+    const tools = [];
+    for (const toolName of this._tools.list()) {
+      const reg = this._tools.getRegistration(toolName);
+      if (!reg) continue;
+      tools.push({
+        name: toolName,
+        description: reg.tool.definition.function.description || "",
+        enabled: reg.enabled,
+        callCount: reg.metadata.usageCount ?? usageCounts.get(toolName) ?? 0,
+        namespace: reg.namespace || void 0
+      });
+    }
+    let toolCallsCount = 0;
+    for (const item of this._conversation) {
+      if (item.type === "message" && item.role === "assistant" /* ASSISTANT */) {
+        for (const c of item.content) {
+          if (c.type === "tool_use" /* TOOL_USE */) toolCallsCount++;
+        }
+      }
+    }
+    return {
+      available: true,
+      agentId: this._agentId,
+      model: this._config.model,
+      features: this._config.features,
+      budget,
+      strategy: this._compactionStrategy.name,
+      messagesCount: this._conversation.length,
+      toolCallsCount,
+      systemPrompt: this._systemPrompt ?? null,
+      plugins,
+      tools
+    };
+  }
+  /**
+   * Get a human-readable breakdown of the prepared context.
+   *
+   * Calls `prepare()` internally, then maps each InputItem to a named
+   * component with content text and token estimate. Used by "View Full Context" UIs.
+   *
+   * @returns View context data with components and raw text for "Copy All"
+   */
+  async getViewContext() {
+    if (this._destroyed) {
+      return { available: false, components: [], totalTokens: 0, rawContext: "" };
+    }
+    const { input, budget } = await this.prepare();
+    const components = [];
+    let rawParts = [];
+    for (const item of input) {
+      if (item.type === "compaction") {
+        components.push({
+          name: "Compaction Block",
+          content: "[Compacted content]",
+          tokenEstimate: 0
+        });
+        continue;
+      }
+      const msg = item;
+      const roleName = msg.role === "developer" /* DEVELOPER */ ? "System Message" : msg.role === "user" /* USER */ ? "User Message" : "Assistant Message";
+      for (const block of msg.content) {
+        let name = roleName;
+        let text = "";
+        switch (block.type) {
+          case "input_text" /* INPUT_TEXT */:
+            text = block.text;
+            break;
+          case "output_text" /* OUTPUT_TEXT */:
+            text = block.text;
+            break;
+          case "tool_use" /* TOOL_USE */:
+            name = `Tool Call: ${block.name}`;
+            text = `${block.name}(${block.arguments})`;
+            break;
+          case "tool_result" /* TOOL_RESULT */:
+            name = `Tool Result: ${block.tool_use_id}`;
+            text = typeof block.content === "string" ? block.content : JSON.stringify(block.content, null, 2);
+            if (block.error) text = `[Error] ${block.error}
+${text}`;
+            break;
+          case "input_image_url" /* INPUT_IMAGE_URL */:
+            name = "Image Input";
+            text = `[Image: ${block.image_url.url.substring(0, 100)}...]`;
+            break;
+          case "input_file" /* INPUT_FILE */:
+            name = "File Input";
+            text = `[File: ${block.file_id}]`;
+            break;
+        }
+        const tokenEstimate = this._estimator.estimateTokens(text);
+        components.push({ name, content: text, tokenEstimate });
+        rawParts.push(`--- ${name} ---
+${text}`);
+      }
+    }
+    return {
+      available: true,
+      components,
+      totalTokens: budget.totalUsed,
+      rawContext: rawParts.join("\n\n")
+    };
+  }
   // ============================================================================
   // Utilities
   // ============================================================================
@@ -18207,6 +18399,13 @@ var BaseTextProvider = class extends BaseProvider {
       }
     }
     return textParts.join("\n");
+  }
+  /**
+   * List available models from the provider's API.
+   * Default returns empty array; providers override when they have SDK support.
+   */
+  async listModels() {
+    return [];
   }
   /**
    * Clean up provider resources (circuit breaker listeners, etc.)
@@ -18813,6 +19012,16 @@ var OpenAITextProvider = class extends BaseTextProvider {
       maxInputTokens: 128e3,
       maxOutputTokens: 16384
     });
+  }
+  /**
+   * List available models from the OpenAI API
+   */
+  async listModels() {
+    const models = [];
+    for await (const model of this.client.models.list()) {
+      models.push(model.id);
+    }
+    return models.sort();
   }
   /**
    * Handle OpenAI-specific errors
@@ -19753,6 +19962,16 @@ var AnthropicTextProvider = class extends BaseTextProvider {
     return caps;
   }
   /**
+   * List available models from the Anthropic API
+   */
+  async listModels() {
+    const models = [];
+    for await (const model of this.client.models.list()) {
+      models.push(model.id);
+    }
+    return models.sort();
+  }
+  /**
    * Handle Anthropic-specific errors
    */
   handleError(error, model) {
@@ -20543,6 +20762,18 @@ var GoogleTextProvider = class extends BaseTextProvider {
     });
   }
   /**
+   * List available models from the Google Gemini API
+   */
+  async listModels() {
+    const models = [];
+    const pager = await this.client.models.list();
+    for await (const model of pager) {
+      const name = model.name?.replace(/^models\//, "") ?? "";
+      if (name) models.push(name);
+    }
+    return models.sort();
+  }
+  /**
    * Handle Google-specific errors
    */
   handleError(error, model) {
@@ -20650,6 +20881,18 @@ var VertexAITextProvider = class extends BaseTextProvider {
     });
   }
   /**
+   * List available models from the Vertex AI API
+   */
+  async listModels() {
+    const models = [];
+    const pager = await this.client.models.list();
+    for await (const model of pager) {
+      const name = model.name?.replace(/^models\//, "") ?? "";
+      if (name) models.push(name);
+    }
+    return models.sort();
+  }
+  /**
    * Handle Vertex AI-specific errors
    */
   handleError(error, model) {
@@ -20692,6 +20935,23 @@ var GenericOpenAIProvider = class extends OpenAITextProvider {
         videos: false,
         audio: false
       };
+    }
+  }
+  /**
+   * Override API key validation for generic providers.
+   * Services like Ollama don't require authentication, so accept any key including mock/placeholder keys.
+   */
+  validateApiKey() {
+    return { isValid: true };
+  }
+  /**
+   * Override listModels for error safety — some OpenAI-compatible APIs may not support /v1/models
+   */
+  async listModels() {
+    try {
+      return await super.listModels();
+    } catch {
+      return [];
     }
   }
   /**
@@ -21137,6 +21397,34 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
       }
       return tool.definition;
     });
+  }
+  // ===== Model Discovery =====
+  /**
+   * List available models from the provider's API.
+   * Useful for discovering models dynamically (e.g., Ollama local models).
+   */
+  async listModels() {
+    return this._provider.listModels();
+  }
+  // ===== Snapshot / Inspection =====
+  /**
+   * Get a complete, serializable snapshot of the agent's context state.
+   *
+   * Convenience method that auto-wires tool usage stats from ToolManager.
+   * Used by UI "Look Inside" panels.
+   */
+  async getSnapshot() {
+    const stats = this._agentContext.tools.getStats();
+    return this._agentContext.getSnapshot({ mostUsed: stats.mostUsed });
+  }
+  /**
+   * Get a human-readable breakdown of the prepared context.
+   *
+   * Convenience method that delegates to AgentContextNextGen.
+   * Used by "View Full Context" UI panels.
+   */
+  async getViewContext() {
+    return this._agentContext.getViewContext();
   }
   // ===== Direct LLM Access (Bypasses AgentContext) =====
   /**
@@ -50500,6 +50788,7 @@ exports.findConnectorByServiceTypes = findConnectorByServiceTypes;
 exports.forPlan = forPlan;
 exports.forTasks = forTasks;
 exports.formatAttendees = formatAttendees;
+exports.formatPluginDisplayName = formatPluginDisplayName;
 exports.formatRecipients = formatRecipients;
 exports.generateEncryptionKey = generateEncryptionKey;
 exports.generateSimplePlan = generateSimplePlan;
