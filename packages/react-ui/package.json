@@ -32,7 +32,8 @@
     "react-dom": ">=18.0.0"
   },
   "dependencies": {
-    "@everworker/oneringai": "file:../../"
+    "@everworker/oneringai": "file:../../",
+    "@swc/helpers": "^0.5.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
