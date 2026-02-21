@@ -7,9 +7,11 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   external: ['react', 'react-dom', '@everworker/oneringai'],
+  // Use esbuild for JSX (not SWC) to avoid @swc/helpers runtime dependency
   esbuildOptions(options) {
     options.jsx = 'automatic';
   },
+  noExternal: ['@swc/helpers'],
   async onSuccess() {
     // Copy CSS to dist
     const fs = await import('fs');
