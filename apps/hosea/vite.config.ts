@@ -19,4 +19,9 @@ export default defineConfig({
       '@': resolve(__dirname, 'src/renderer'),
     },
   },
+  // Pre-bundle optional peer deps from @everworker/react-ui so Vite can
+  // resolve their dynamic imports (import("mermaid") etc.) in dev mode.
+  optimizeDeps: {
+    include: ['mermaid', 'markmap-lib', 'markmap-view', 'react-vega', 'vega-lite'],
+  },
 });
