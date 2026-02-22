@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Zap, Layout } from 'lucide-react';
+import { useDynamicUIChangeDetection } from '@everworker/react-ui';
+import type { InContextEntry } from '@everworker/oneringai';
 import { InternalsContent } from './InternalsContent';
 import { DynamicUIPanel } from './DynamicUIPanel';
 import { ContextDisplayPanel } from './ContextDisplayPanel';
@@ -111,6 +113,11 @@ export function SidebarPanel({
 
   const [contextMaximized, setContextMaximized] = useState(false);
 
+  // Highlight detection: flash entry card when value changes
+  const highlightKey = useDynamicUIChangeDetection(
+    (contextEntries ?? []) as unknown as InContextEntry[],
+  );
+
   if (!isOpen) return null;
 
   return (
@@ -164,6 +171,7 @@ export function SidebarPanel({
             {contextEntries && pinnedContextKeys && onPinContextKey && (
               <ContextDisplayPanel
                 entries={contextEntries}
+                highlightKey={highlightKey}
                 pinnedKeys={pinnedContextKeys}
                 onPinToggle={onPinContextKey}
                 onMaximizedChange={setContextMaximized}

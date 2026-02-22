@@ -6,6 +6,7 @@ import '@everworker/react-ui/styles';
 import '@everworker/react-ui/styles/markdown';
 import '@everworker/react-ui/styles/chat';
 import '@everworker/react-ui/styles/thinking';
+import '@everworker/react-ui/styles/context-display';
 import './styles/global.css';
 
 const container = document.getElementById('root');

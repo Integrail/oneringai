@@ -1,5 +1,5 @@
 import React$1, { ReactNode, Component, ErrorInfo } from 'react';
-import { IPluginSnapshot, IContextSnapshot, IViewContextData, ContextBudget, IToolSnapshot } from '@everworker/oneringai';
+import { IPluginSnapshot, IContextSnapshot, IViewContextData, ContextBudget, IToolSnapshot, InContextEntry } from '@everworker/oneringai';
 export { IContextSnapshot, IPluginSnapshot, IToolSnapshot, IViewContextComponent, IViewContextData } from '@everworker/oneringai';
 import * as react_jsx_runtime from 'react/jsx-runtime';
 
@@ -549,4 +549,97 @@ declare const ExportMessage: React$1.FC<IExportMessageProps>;
 
 declare const ThinkingBlock: React$1.FC<IThinkingBlockProps>;
 
-export { ChatControls, CodeBlock, type CodeBlockProps, CollapsibleSection, type CollapsibleSectionProps, ContextWindowSection, ExecutionProgress, ExportMessage, GenericPluginSection, type IChatControlsProps, type IChatMessage, type IExecutionProgressProps, type IExportMessageProps, type IMessageListProps, type IStreamingTextProps, type IThinkingBlockProps, type IToolCallCardProps, type IToolCallInfo, InContextMemoryRenderer, InlineToolCall, LookInsidePanel, type LookInsidePanelProps, MarkdownRenderer, type MarkdownRendererProps, MarkmapRenderer, type MarkmapRendererProps, MermaidDiagram, type MermaidDiagramProps, MessageList, PersistentInstructionsRenderer, type PluginRenderer, type PluginRendererProps, RenderErrorBoundary, type RenderErrorBoundaryProps, StreamingText, SystemPromptSection, ThinkingBlock, TokenBreakdownSection, ToolCallCard, ToolsSection, UserInfoRenderer, VegaChart, type VegaChartProps, ViewContextContent, type ViewContextContentProps, WorkingMemoryRenderer, formatBytes, formatNumber, formatPluginName, formatTimestamp, getPluginRenderer, getRegisteredPluginNames, getUtilizationColor, getUtilizationLabel, registerPluginRenderer, truncateText, useMarkdownContext };
+type ExportFormat = 'pdf' | 'docx';
+interface ExportContext {
+    /** DOM element containing all entries (for screenshot/capture) */
+    element: HTMLElement | null;
+    /** Combined markdown content of all entries */
+    markdownContent: string;
+}
+interface IContextDisplayPanelProps {
+    entries: InContextEntry[];
+    /** Key of entry to highlight and scroll to (use useDynamicUIChangeDetection hook) */
+    highlightKey?: string | null;
+    /** Panel title (default: "Current Context") */
+    title?: string;
+    /** localStorage key prefix for order persistence (default: 'rui-context-order') */
+    storageKey?: string;
+    className?: string;
+    /** Enable drag-and-drop reordering (default: true) */
+    enableDragAndDrop?: boolean;
+    /** Enable inline markdown editing (default: false, requires onSaveEntry) */
+    enableEditing?: boolean;
+    /** Enable export dropdown (default: false, requires onExport) */
+    enableExport?: boolean;
+    /** Called when user saves an edited entry */
+    onSaveEntry?: (key: string, newValue: string) => Promise<void>;
+    /** Called when user exports (app provides PDF/DOCX logic) */
+    onExport?: (format: ExportFormat, ctx: ExportContext) => Promise<void>;
+    /** If provided, shows pin buttons on each card */
+    onPinToggle?: (key: string, pinned: boolean) => void;
+    /** Currently pinned entry keys */
+    pinnedKeys?: string[];
+    /** Called when maximize state changes */
+    onMaximizedChange?: (isMaximized: boolean) => void;
+    /** Custom filter (overrides default showInUI filter) */
+    filterEntries?: (entries: InContextEntry[]) => InContextEntry[];
+    /** Ref to the entries container DOM element (for export capture) */
+    entriesRef?: React.RefObject<HTMLDivElement>;
+}
+
+declare const ContextDisplayPanel: React$1.FC<IContextDisplayPanelProps>;
+
+interface IContextEntryCardProps {
+    entry: InContextEntry;
+    isCollapsed: boolean;
+    isMaximized: boolean;
+    isHighlighted: boolean;
+    forceExpanded: boolean;
+    enableDragAndDrop: boolean;
+    isDragging: boolean;
+    dropPosition: 'above' | 'below' | null;
+    onDragStart: (key: string, e: React$1.DragEvent) => void;
+    onDragOver: (key: string, e: React$1.DragEvent) => void;
+    onDragLeave: () => void;
+    onDrop: (key: string, e: React$1.DragEvent) => void;
+    onDragEnd: () => void;
+    enableEditing: boolean;
+    onSaveEntry?: (key: string, newValue: string) => Promise<void>;
+    isPinned?: boolean;
+    onPinToggle?: (key: string, pinned: boolean) => void;
+    onCollapseToggle: (key: string) => void;
+    onMaximizeToggle: (key: string) => void;
+}
+declare const ContextEntryCard: React$1.FC<IContextEntryCardProps>;
+
+/**
+ * Hook to detect new/updated visible entries in the Dynamic UI.
+ * Must be used in an always-mounted parent component (NOT inside ContextDisplayPanel,
+ * which may be conditionally rendered based on active tab).
+ *
+ * Returns the key of the most recently changed entry (auto-clears after timeout).
+ */
+declare function useDynamicUIChangeDetection(entries: InContextEntry[], onEntryChanged?: (key: string) => void): string | null;
+
+interface UseOrderPersistenceResult {
+    sortedEntries: InContextEntry[];
+    orderedKeys: string[];
+    setOrderedKeys: React.Dispatch<React.SetStateAction<string[]>>;
+    saveCurrentOrder: (keys: string[]) => void;
+}
+/**
+ * Hook for persisting drag-and-drop order to localStorage.
+ * Returns sorted entries respecting persisted order.
+ */
+declare function useOrderPersistence(visibleEntries: InContextEntry[], storageKey?: string): UseOrderPersistenceResult;
+
+/**
+ * Format a value for markdown display.
+ * - Strings are rendered as markdown directly.
+ * - Objects/arrays are shown as JSON code blocks (truncated if too large).
+ * - Primitives are shown as inline text.
+ * - Handles circular references and non-serializable values gracefully.
+ */
+declare function formatValueForDisplay(value: unknown): string;
+
+export { ChatControls, CodeBlock, type CodeBlockProps, CollapsibleSection, type CollapsibleSectionProps, ContextDisplayPanel, ContextEntryCard, ContextWindowSection, ExecutionProgress, type ExportContext, type ExportFormat, ExportMessage, GenericPluginSection, type IChatControlsProps, type IChatMessage, type IContextDisplayPanelProps, type IExecutionProgressProps, type IExportMessageProps, type IMessageListProps, type IStreamingTextProps, type IThinkingBlockProps, type IToolCallCardProps, type IToolCallInfo, InContextMemoryRenderer, InlineToolCall, LookInsidePanel, type LookInsidePanelProps, MarkdownRenderer, type MarkdownRendererProps, MarkmapRenderer, type MarkmapRendererProps, MermaidDiagram, type MermaidDiagramProps, MessageList, PersistentInstructionsRenderer, type PluginRenderer, type PluginRendererProps, RenderErrorBoundary, type RenderErrorBoundaryProps, StreamingText, SystemPromptSection, ThinkingBlock, TokenBreakdownSection, ToolCallCard, ToolsSection, UserInfoRenderer, VegaChart, type VegaChartProps, ViewContextContent, type ViewContextContentProps, WorkingMemoryRenderer, formatBytes, formatNumber, formatPluginName, formatTimestamp, formatValueForDisplay, getPluginRenderer, getRegisteredPluginNames, getUtilizationColor, getUtilizationLabel, registerPluginRenderer, truncateText, useDynamicUIChangeDetection, useMarkdownContext, useOrderPersistence };

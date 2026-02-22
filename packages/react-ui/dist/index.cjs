@@ -333,6 +333,8 @@ __export(index_exports, {
   ChatControls: () => ChatControls,
   CodeBlock: () => CodeBlock,
   CollapsibleSection: () => CollapsibleSection,
+  ContextDisplayPanel: () => ContextDisplayPanel,
+  ContextEntryCard: () => ContextEntryCard,
   ContextWindowSection: () => ContextWindowSection,
   ExecutionProgress: () => ExecutionProgress,
   ExportMessage: () => ExportMessage,
@@ -360,13 +362,16 @@ __export(index_exports, {
   formatNumber: () => formatNumber,
   formatPluginName: () => formatPluginName,
   formatTimestamp: () => formatTimestamp,
+  formatValueForDisplay: () => formatValueForDisplay,
   getPluginRenderer: () => getPluginRenderer,
   getRegisteredPluginNames: () => getRegisteredPluginNames,
   getUtilizationColor: () => getUtilizationColor,
   getUtilizationLabel: () => getUtilizationLabel,
   registerPluginRenderer: () => registerPluginRenderer,
   truncateText: () => truncateText,
-  useMarkdownContext: () => useMarkdownContext
+  useDynamicUIChangeDetection: () => useDynamicUIChangeDetection,
+  useMarkdownContext: () => useMarkdownContext,
+  useOrderPersistence: () => useOrderPersistence
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -2032,11 +2037,575 @@ var ExportMessage = ({
   ] });
 };
 ExportMessage.displayName = "ExportMessage";
+
+// src/context-display/ContextDisplayPanel.tsx
+var import_react19 = require("react");
+var import_lucide_react10 = require("lucide-react");
+
+// src/context-display/ContextEntryCard.tsx
+var import_react17 = require("react");
+var import_lucide_react9 = require("lucide-react");
+
+// src/context-display/utils.ts
+var MAX_JSON_LENGTH = 5e4;
+function formatValueForDisplay(value) {
+  if (typeof value === "string") return value;
+  if (value === null || value === void 0) return String(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value instanceof Date) return value.toISOString();
+  try {
+    const json = JSON.stringify(value, null, 2);
+    if (json.length > MAX_JSON_LENGTH) {
+      return "```json\n" + json.slice(0, MAX_JSON_LENGTH) + "\n... (truncated)\n```";
+    }
+    return "```json\n" + json + "\n```";
+  } catch {
+    return "`[Object \u2014 cannot serialize]`";
+  }
+}
+var PRIORITY_CLASSES = {
+  low: "cdp-priority--low",
+  normal: "cdp-priority--normal",
+  high: "cdp-priority--high",
+  critical: "cdp-priority--critical"
+};
+
+// src/context-display/ContextEntryCard.tsx
+var import_jsx_runtime26 = require("react/jsx-runtime");
+var MIN_TEXTAREA_ROWS = 6;
+var ContextEntryCard = ({
+  entry,
+  isCollapsed,
+  isMaximized,
+  isHighlighted,
+  forceExpanded,
+  enableDragAndDrop,
+  isDragging,
+  dropPosition,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  enableEditing,
+  onSaveEntry,
+  isPinned,
+  onPinToggle,
+  onCollapseToggle,
+  onMaximizeToggle
+}) => {
+  const displayValue = (0, import_react17.useMemo)(() => formatValueForDisplay(entry.value), [entry.value]);
+  const [isEditing, setIsEditing] = (0, import_react17.useState)(false);
+  const [editValue, setEditValue] = (0, import_react17.useState)(displayValue);
+  const [isSaving, setIsSaving] = (0, import_react17.useState)(false);
+  (0, import_react17.useEffect)(() => {
+    setEditValue(displayValue);
+  }, [displayValue]);
+  const hasChanges = editValue !== displayValue;
+  const isDragDisabled = !enableDragAndDrop || forceExpanded || isMaximized;
+  const handleSave = (0, import_react17.useCallback)(async () => {
+    if (!onSaveEntry || !hasChanges) return;
+    setIsSaving(true);
+    try {
+      await onSaveEntry(entry.key, editValue);
+      setIsEditing(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ContextEntryCard] Save failed:", message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [onSaveEntry, entry.key, editValue, hasChanges]);
+  const handleEditToggle = (0, import_react17.useCallback)(() => {
+    if (isEditing && hasChanges) {
+      setEditValue(displayValue);
+    }
+    setIsEditing((prev) => !prev);
+  }, [isEditing, hasChanges, displayValue]);
+  const handleKeyDown = (0, import_react17.useCallback)(
+    (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onCollapseToggle(entry.key);
+      }
+    },
+    [entry.key, onCollapseToggle]
+  );
+  const cardClasses = [
+    "cdp-card",
+    isHighlighted && !forceExpanded ? "cdp-card--highlight" : "",
+    isMaximized && !forceExpanded ? "cdp-card--maximized" : "",
+    isCollapsed ? "cdp-card--collapsed" : "",
+    isPinned ? "cdp-card--pinned" : "",
+    forceExpanded ? "cdp-card--export" : "",
+    isDragging ? "cdp-card--dragging" : "",
+    dropPosition === "above" ? "cdp-card--drop-above" : "",
+    dropPosition === "below" ? "cdp-card--drop-below" : ""
+  ].filter(Boolean).join(" ");
+  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+    "div",
+    {
+      "data-entry-key": entry.key,
+      className: cardClasses,
+      role: "listitem",
+      draggable: !isDragDisabled,
+      onDragStart: (e) => !isDragDisabled && onDragStart(entry.key, e),
+      onDragOver: (e) => !isDragDisabled && onDragOver(entry.key, e),
+      onDragLeave: !isDragDisabled ? onDragLeave : void 0,
+      onDrop: (e) => !isDragDisabled && onDrop(entry.key, e),
+      onDragEnd: !isDragDisabled ? onDragEnd : void 0,
+      children: [
+        !forceExpanded && /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+          "div",
+          {
+            className: "cdp-card__header",
+            role: "button",
+            tabIndex: 0,
+            "aria-expanded": !isCollapsed,
+            onClick: () => onCollapseToggle(entry.key),
+            onKeyDown: handleKeyDown,
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "cdp-card__title", children: [
+                !isDragDisabled && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+                  "span",
+                  {
+                    className: "cdp-drag-handle",
+                    onClick: (e) => e.stopPropagation(),
+                    title: "Drag to reorder",
+                    children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.GripVertical, { size: 12 })
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "cdp-card__collapse-icon", children: isCollapsed ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.ChevronRight, { size: 12 }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.ChevronDown, { size: 12 }) }),
+                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+                  "span",
+                  {
+                    className: "cdp-card__key",
+                    title: `${entry.key}${entry.priority ? ` [${entry.priority}]` : ""}`,
+                    children: entry.description || entry.key
+                  }
+                ),
+                entry.priority && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: `cdp-priority ${PRIORITY_CLASSES[entry.priority] || ""}`, children: entry.priority })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+                "div",
+                {
+                  className: "cdp-card__actions",
+                  role: "toolbar",
+                  "aria-label": "Entry actions",
+                  onClick: (e) => e.stopPropagation(),
+                  children: [
+                    isEditing && hasChanges && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+                      "button",
+                      {
+                        className: "cdp-action-btn cdp-action-btn--save",
+                        onClick: handleSave,
+                        disabled: isSaving,
+                        title: "Save changes",
+                        children: isSaving ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.Loader2, { size: 14, className: "cdp-spinner" }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.Check, { size: 14 })
+                      }
+                    ),
+                    enableEditing && !forceExpanded && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+                      "button",
+                      {
+                        className: `cdp-action-btn ${isEditing ? "cdp-action-btn--active" : ""}`,
+                        onClick: handleEditToggle,
+                        title: isEditing ? "Exit edit mode" : "Edit raw markdown",
+                        children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.Pencil, { size: 14 })
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+                      "button",
+                      {
+                        className: `cdp-action-btn ${isMaximized ? "cdp-action-btn--active" : ""}`,
+                        onClick: () => onMaximizeToggle(entry.key),
+                        title: isMaximized ? "Exit full view" : "Full view",
+                        children: isMaximized ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.Minimize2, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.Maximize2, { size: 14 })
+                      }
+                    ),
+                    onPinToggle && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+                      "button",
+                      {
+                        className: `cdp-action-btn ${isPinned ? "cdp-action-btn--active" : ""}`,
+                        onClick: () => onPinToggle(entry.key, !isPinned),
+                        title: isPinned ? "Unpin (stop always showing)" : "Pin (always show this entry)",
+                        children: isPinned ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.Pin, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(import_lucide_react9.PinOff, { size: 14 })
+                      }
+                    )
+                  ]
+                }
+              )
+            ]
+          }
+        ),
+        !isCollapsed && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "cdp-card__body", children: isEditing ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+          "textarea",
+          {
+            className: "cdp-edit-textarea",
+            value: editValue,
+            onChange: (e) => setEditValue(e.target.value),
+            rows: Math.max(MIN_TEXTAREA_ROWS, editValue.split("\n").length + 1),
+            disabled: isSaving,
+            "aria-label": `Edit ${entry.key}`
+          }
+        ) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "cdp-card__markdown", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(MarkdownRenderer, { content: displayValue }) }) })
+      ]
+    }
+  );
+};
+
+// src/context-display/useOrderPersistence.ts
+var import_react18 = require("react");
+var DEFAULT_STORAGE_KEY = "rui-context-order";
+function loadSavedOrder(storageKey) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+  }
+  return [];
+}
+function saveOrder(storageKey, keys) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(keys));
+  } catch {
+  }
+}
+function reconcileOrder(savedOrder, currentKeys) {
+  const currentSet = new Set(currentKeys);
+  const result = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const key of savedOrder) {
+    if (currentSet.has(key) && !seen.has(key)) {
+      result.push(key);
+      seen.add(key);
+    }
+  }
+  for (const key of currentKeys) {
+    if (!seen.has(key)) {
+      result.push(key);
+    }
+  }
+  return result;
+}
+function useOrderPersistence(visibleEntries, storageKey = DEFAULT_STORAGE_KEY) {
+  const [orderedKeys, setOrderedKeys] = (0, import_react18.useState)(() => loadSavedOrder(storageKey));
+  const { sortedEntries, reconciledOrder } = (0, import_react18.useMemo)(() => {
+    const currentKeys = visibleEntries.map((e) => e.key);
+    const reconciled = reconcileOrder(orderedKeys, currentKeys);
+    const entryMap = new Map(visibleEntries.map((e) => [e.key, e]));
+    const sorted = reconciled.map((key) => entryMap.get(key)).filter((e) => e !== void 0);
+    return { sortedEntries: sorted, reconciledOrder: reconciled };
+  }, [visibleEntries, orderedKeys]);
+  (0, import_react18.useEffect)(() => {
+    if (reconciledOrder.length !== orderedKeys.length || reconciledOrder.some((k, i) => k !== orderedKeys[i])) {
+      setOrderedKeys(reconciledOrder);
+      saveOrder(storageKey, reconciledOrder);
+    }
+  }, [reconciledOrder, orderedKeys, storageKey]);
+  const saveCurrentOrder = (keys) => {
+    setOrderedKeys(keys);
+    saveOrder(storageKey, keys);
+  };
+  return { sortedEntries, orderedKeys, setOrderedKeys, saveCurrentOrder };
+}
+
+// src/context-display/ContextDisplayPanel.tsx
+var import_jsx_runtime27 = require("react/jsx-runtime");
+var ContextDisplayPanel = ({
+  entries,
+  highlightKey,
+  title = "Current Context",
+  storageKey = "rui-context-order",
+  className,
+  enableDragAndDrop = true,
+  enableEditing = false,
+  enableExport = false,
+  onSaveEntry,
+  onExport,
+  onPinToggle,
+  pinnedKeys,
+  onMaximizedChange,
+  filterEntries,
+  entriesRef: externalEntriesRef
+}) => {
+  const [collapsedKeys, setCollapsedKeys] = (0, import_react19.useState)(/* @__PURE__ */ new Set());
+  const [maximizedKey, setMaximizedKey] = (0, import_react19.useState)(null);
+  const [pendingExportFormat, setPendingExportFormat] = (0, import_react19.useState)(null);
+  const [draggedKey, setDraggedKey] = (0, import_react19.useState)(null);
+  const [dropTarget, setDropTarget] = (0, import_react19.useState)(null);
+  const [exportDropdownOpen, setExportDropdownOpen] = (0, import_react19.useState)(false);
+  const internalEntriesRef = (0, import_react19.useRef)(null);
+  const dropdownRef = (0, import_react19.useRef)(null);
+  const actualEntriesRef = externalEntriesRef || internalEntriesRef;
+  const pinnedSet = (0, import_react19.useMemo)(() => new Set(pinnedKeys ?? []), [pinnedKeys]);
+  const visibleEntries = (0, import_react19.useMemo)(() => {
+    if (filterEntries) return filterEntries(entries);
+    return entries.filter((e) => e.showInUI);
+  }, [entries, filterEntries]);
+  const { sortedEntries, orderedKeys, setOrderedKeys, saveCurrentOrder } = useOrderPersistence(visibleEntries, storageKey);
+  const displayedEntries = enableDragAndDrop ? sortedEntries : visibleEntries;
+  (0, import_react19.useEffect)(() => {
+    if (!highlightKey) return;
+    requestAnimationFrame(() => {
+      const el = actualEntriesRef.current?.querySelector(
+        `[data-entry-key="${CSS.escape(highlightKey)}"]`
+      );
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [highlightKey, actualEntriesRef]);
+  (0, import_react19.useEffect)(() => {
+    if (!exportDropdownOpen) return;
+    const handleClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setExportDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [exportDropdownOpen]);
+  const combinedMarkdown = (0, import_react19.useMemo)(
+    () => displayedEntries.map((e) => {
+      const header = `## ${e.description || e.key}`;
+      const priority = e.priority ? ` \`[${e.priority}]\`` : "";
+      return `${header}${priority}
+
+${formatValueForDisplay(e.value)}`;
+    }).join("\n\n---\n\n"),
+    [displayedEntries]
+  );
+  (0, import_react19.useEffect)(() => {
+    if (!pendingExportFormat || !onExport) return;
+    const frameId = requestAnimationFrame(() => {
+      const doExport = async () => {
+        try {
+          await onExport(pendingExportFormat, {
+            element: actualEntriesRef.current,
+            markdownContent: combinedMarkdown
+          });
+        } catch (err) {
+          console.error("Export failed:", err);
+        } finally {
+          setPendingExportFormat(null);
+        }
+      };
+      doExport();
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [pendingExportFormat, combinedMarkdown, onExport, actualEntriesRef]);
+  const handleCollapseToggle = (0, import_react19.useCallback)((key) => {
+    setCollapsedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const handleMaximizeToggle = (0, import_react19.useCallback)(
+    (key) => {
+      setMaximizedKey((prev) => {
+        const next = prev === key ? null : key;
+        onMaximizedChange?.(next !== null);
+        return next;
+      });
+    },
+    [onMaximizedChange]
+  );
+  const handleDragStart = (0, import_react19.useCallback)((key, e) => {
+    setDraggedKey(key);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", key);
+  }, []);
+  const handleDragOver = (0, import_react19.useCallback)((key, e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    setDropTarget({ key, position: e.clientY < midY ? "above" : "below" });
+  }, []);
+  const handleDragLeave = (0, import_react19.useCallback)(() => {
+    setDropTarget(null);
+  }, []);
+  const handleDrop = (0, import_react19.useCallback)(
+    (targetKey, e) => {
+      e.preventDefault();
+      const sourceKey = e.dataTransfer.getData("text/plain");
+      if (!sourceKey || sourceKey === targetKey) {
+        setDraggedKey(null);
+        setDropTarget(null);
+        return;
+      }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const insertAfter = e.clientY >= rect.top + rect.height / 2;
+      setOrderedKeys((prev) => {
+        const next = prev.filter((k) => k !== sourceKey);
+        const targetIdx = next.indexOf(targetKey);
+        if (targetIdx === -1) return prev;
+        const insertIdx = insertAfter ? targetIdx + 1 : targetIdx;
+        next.splice(insertIdx, 0, sourceKey);
+        saveCurrentOrder(next);
+        return next;
+      });
+      setDraggedKey(null);
+      setDropTarget(null);
+    },
+    [setOrderedKeys, saveCurrentOrder]
+  );
+  const handleDragEnd = (0, import_react19.useCallback)(() => {
+    setDraggedKey(null);
+    setDropTarget(null);
+  }, []);
+  if (visibleEntries.length === 0) return null;
+  const isExporting = !!pendingExportFormat;
+  const isMaximized = maximizedKey !== null;
+  const entriesToRender = isExporting ? displayedEntries : isMaximized ? displayedEntries.filter((e) => e.key === maximizedKey) : displayedEntries;
+  const panelClasses = [
+    "cdp-panel",
+    isMaximized && !isExporting ? "cdp-panel--maximized" : "",
+    className ?? ""
+  ].filter(Boolean).join(" ");
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: panelClasses, children: [
+    !isExporting && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "cdp-header", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(import_lucide_react10.Database, { size: 14, className: "cdp-header__icon" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "cdp-header__title", children: title }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "cdp-header__count", children: visibleEntries.length }),
+      enableExport && onExport && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "cdp-export", ref: dropdownRef, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          "button",
+          {
+            className: "cdp-action-btn cdp-export__trigger",
+            onClick: () => setExportDropdownOpen((prev) => !prev),
+            disabled: isExporting,
+            title: pendingExportFormat ? `Exporting to ${String(pendingExportFormat).toUpperCase()}...` : "Export",
+            children: isExporting ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(import_lucide_react10.Loader2, { size: 14, className: "cdp-spinner" }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(import_lucide_react10.Upload, { size: 14 })
+          }
+        ),
+        exportDropdownOpen && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "cdp-export__menu", role: "menu", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+            "button",
+            {
+              className: "cdp-export__item",
+              role: "menuitem",
+              onClick: () => {
+                setPendingExportFormat("pdf");
+                setExportDropdownOpen(false);
+              },
+              children: "Export as PDF"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+            "button",
+            {
+              className: "cdp-export__item",
+              role: "menuitem",
+              onClick: () => {
+                setPendingExportFormat("docx");
+                setExportDropdownOpen(false);
+              },
+              children: "Export as DOCX"
+            }
+          )
+        ] })
+      ] }),
+      isMaximized && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+        "button",
+        {
+          className: "cdp-header__exit-maximize",
+          onClick: () => {
+            setMaximizedKey(null);
+            onMaximizedChange?.(false);
+          },
+          title: "Exit full view",
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(import_lucide_react10.Minimize2, { size: 12 }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Exit" })
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+      "div",
+      {
+        ref: actualEntriesRef,
+        className: "cdp-entries",
+        role: "list",
+        "aria-label": "Context entries",
+        children: entriesToRender.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          ContextEntryCard,
+          {
+            entry,
+            isCollapsed: isExporting ? false : collapsedKeys.has(entry.key),
+            isMaximized: isExporting ? false : maximizedKey === entry.key,
+            isHighlighted: highlightKey === entry.key,
+            forceExpanded: isExporting,
+            enableDragAndDrop: enableDragAndDrop && !isExporting && !isMaximized,
+            isDragging: draggedKey === entry.key,
+            dropPosition: dropTarget?.key === entry.key ? dropTarget.position : null,
+            enableEditing: enableEditing && !isExporting,
+            onSaveEntry,
+            isPinned: pinnedSet.has(entry.key),
+            onPinToggle,
+            onCollapseToggle: handleCollapseToggle,
+            onMaximizeToggle: handleMaximizeToggle,
+            onDragStart: handleDragStart,
+            onDragOver: handleDragOver,
+            onDragLeave: handleDragLeave,
+            onDrop: handleDrop,
+            onDragEnd: handleDragEnd
+          },
+          entry.key
+        ))
+      }
+    )
+  ] });
+};
+
+// src/context-display/useDynamicUIChangeDetection.ts
+var import_react20 = require("react");
+var HIGHLIGHT_DURATION_MS = 1500;
+function useDynamicUIChangeDetection(entries, onEntryChanged) {
+  const prevEntriesRef = (0, import_react20.useRef)(/* @__PURE__ */ new Map());
+  const [highlightKey, setHighlightKey] = (0, import_react20.useState)(null);
+  const timeoutRef = (0, import_react20.useRef)(null);
+  (0, import_react20.useEffect)(() => {
+    const visible = entries.filter((e) => e.showInUI);
+    const prev = prevEntriesRef.current;
+    let changedKey = null;
+    for (const entry of visible) {
+      const prevUpdatedAt = prev.get(entry.key);
+      if (prevUpdatedAt === void 0 || prevUpdatedAt !== entry.updatedAt) {
+        changedKey = entry.key;
+        break;
+      }
+    }
+    const next = /* @__PURE__ */ new Map();
+    for (const entry of visible) {
+      next.set(entry.key, entry.updatedAt);
+    }
+    prevEntriesRef.current = next;
+    if (changedKey) {
+      onEntryChanged?.(changedKey);
+      setHighlightKey(changedKey);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setHighlightKey(null), HIGHLIGHT_DURATION_MS);
+    }
+  }, [entries, onEntryChanged]);
+  (0, import_react20.useEffect)(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+  return highlightKey;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ChatControls,
   CodeBlock,
   CollapsibleSection,
+  ContextDisplayPanel,
+  ContextEntryCard,
   ContextWindowSection,
   ExecutionProgress,
   ExportMessage,
@@ -2064,12 +2633,15 @@ ExportMessage.displayName = "ExportMessage";
   formatNumber,
   formatPluginName,
   formatTimestamp,
+  formatValueForDisplay,
   getPluginRenderer,
   getRegisteredPluginNames,
   getUtilizationColor,
   getUtilizationLabel,
   registerPluginRenderer,
   truncateText,
-  useMarkdownContext
+  useDynamicUIChangeDetection,
+  useMarkdownContext,
+  useOrderPersistence
 });
 //# sourceMappingURL=index.cjs.map

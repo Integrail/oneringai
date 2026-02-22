@@ -9,6 +9,8 @@
  * - response.output_item.content.added
  * - response.output_item.content.delta (text/arguments)
  * - response.output_item.done
+ * - response.reasoning_text.delta / response.reasoning_text.done
+ * - response.reasoning_summary_text.delta / response.reasoning_summary_text.done
  * - response.done
  */
 
@@ -32,6 +34,8 @@ export class OpenAIResponsesStreamConverter {
     const toolCallBuffers = new Map<string, { id: string; name: string; args: string }>();
     // Track reasoning content
     const reasoningBuffers = new Map<string, string[]>();
+    // Track items that already emitted REASONING_DONE (avoid duplicates)
+    const reasoningDoneEmitted = new Set<string>();
 
     for await (const event of stream) {
       // Debug logging
@@ -132,10 +136,11 @@ export class OpenAIResponsesStreamConverter {
           break;
         }
 
-        case 'response.reasoning_summary_text.delta': {
-          // Reasoning summary delta from OpenAI
+        case 'response.reasoning_summary_text.delta':
+        case 'response.reasoning_text.delta': {
+          // Reasoning delta from OpenAI (both full reasoning text and summary)
           const reasoningEvent = event as {
-            type: 'response.reasoning_summary_text.delta';
+            type: string;
             output_index?: number;
             item_id?: string;
             delta?: string;
@@ -156,22 +161,41 @@ export class OpenAIResponsesStreamConverter {
           break;
         }
 
+        case 'response.reasoning_text.done': {
+          // Full reasoning text completed — emit reasoning done
+          const doneEvent = event as ResponsesAPI.ResponseReasoningTextDoneEvent;
+          const outputIdx = doneEvent.output_index.toString();
+          const rBuf = reasoningBuffers.get(outputIdx);
+          const thinkingText = rBuf ? rBuf.join('') : doneEvent.text || '';
+          reasoningDoneEmitted.add(outputIdx);
+
+          yield {
+            type: StreamEventType.REASONING_DONE,
+            response_id: responseId,
+            item_id: doneEvent.item_id || `reasoning_${responseId}`,
+            thinking: thinkingText,
+          } as ReasoningDoneEvent;
+          break;
+        }
+
         case 'response.output_item.done': {
           const doneEvent = event as ResponsesAPI.ResponseOutputItemDoneEvent;
           const item = doneEvent.item;
 
-          // If reasoning item is done, emit reasoning done
+          // If reasoning item is done, emit reasoning done (only if not already emitted by reasoning_text.done)
           if (item.type === 'reasoning') {
             const outputIdx = doneEvent.output_index.toString();
-            const rBuf = reasoningBuffers.get(outputIdx);
-            const thinkingText = rBuf ? rBuf.join('') : '';
+            if (!reasoningDoneEmitted.has(outputIdx)) {
+              const rBuf = reasoningBuffers.get(outputIdx);
+              const thinkingText = rBuf ? rBuf.join('') : '';
 
-            yield {
-              type: StreamEventType.REASONING_DONE,
-              response_id: responseId,
-              item_id: (item as any).id || `reasoning_${responseId}`,
-              thinking: thinkingText,
-            } as ReasoningDoneEvent;
+              yield {
+                type: StreamEventType.REASONING_DONE,
+                response_id: responseId,
+                item_id: (item as any).id || `reasoning_${responseId}`,
+                thinking: thinkingText,
+              } as ReasoningDoneEvent;
+            }
           }
 
           // If function call is done, emit arguments complete

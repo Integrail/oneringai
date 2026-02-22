@@ -20,7 +20,8 @@
     "./styles": "./dist/look-inside.css",
     "./styles/markdown": "./dist/markdown.css",
     "./styles/chat": "./dist/chat.css",
-    "./styles/thinking": "./dist/thinking.css"
+    "./styles/thinking": "./dist/thinking.css",
+    "./styles/context-display": "./dist/context-display.css"
   },
   "files": [
     "dist"

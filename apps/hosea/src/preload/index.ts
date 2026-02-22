@@ -139,8 +139,8 @@ export interface ContextEntryForUI {
   key: string;
   description: string;
   value: unknown;
-  priority: string;
-  showInUI: boolean;
+  priority: 'low' | 'normal' | 'high' | 'critical';
+  showInUI?: boolean;
   updatedAt: number;
 }
 

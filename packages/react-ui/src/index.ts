@@ -16,3 +16,6 @@ export * from './markdown/index';
 
 // Chat UI components
 export * from './chat/index';
+
+// Context Display components
+export * from './context-display/index';

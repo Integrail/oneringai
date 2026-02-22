@@ -31,6 +31,7 @@ export default defineConfig({
       { src: 'src/markdown/markdown.css', dest: 'dist/markdown.css' },
       { src: 'src/chat/chat.css', dest: 'dist/chat.css' },
       { src: 'src/chat/thinking.css', dest: 'dist/thinking.css' },
+      { src: 'src/context-display/context-display.css', dest: 'dist/context-display.css' },
     ];
 
     for (const { src, dest } of cssFiles) {

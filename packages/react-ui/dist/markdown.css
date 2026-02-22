@@ -19,7 +19,7 @@
   --rui-font-size-sm: 0.8125rem;
   --rui-font-size-xs: 0.75rem;
   --rui-font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Monaco, Consolas, monospace;
-  --rui-line-height-relaxed: 1.7;
+  --rui-line-height-relaxed: 1.5;
   --rui-color-text: #1f2937;
   --rui-color-text-muted: #6b7280;
   --rui-color-bg: #ffffff;
@@ -50,7 +50,7 @@
 
 /* Paragraphs */
 .markdown-paragraph {
-  margin: 0 0 var(--rui-spacing-4);
+  margin: 0 0 var(--rui-spacing-2);
 }
 .markdown-paragraph:last-child {
   margin-bottom: 0;

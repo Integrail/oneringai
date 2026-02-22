@@ -1665,10 +1665,585 @@ var ExportMessage = ({
   ] });
 };
 ExportMessage.displayName = "ExportMessage";
+
+// src/context-display/ContextDisplayPanel.tsx
+import { useCallback as useCallback10, useEffect as useEffect7, useMemo as useMemo7, useRef as useRef5, useState as useState12 } from "react";
+import { Database, Minimize2 as Minimize22, Upload as Upload2, Loader2 as Loader23 } from "lucide-react";
+
+// src/context-display/ContextEntryCard.tsx
+import { useCallback as useCallback9, useEffect as useEffect5, useMemo as useMemo5, useState as useState10 } from "react";
+import {
+  ChevronDown as ChevronDown4,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  GripVertical,
+  Pencil,
+  Check as Check4,
+  Pin,
+  PinOff,
+  Loader2 as Loader22
+} from "lucide-react";
+
+// src/context-display/utils.ts
+var MAX_JSON_LENGTH = 5e4;
+function formatValueForDisplay(value) {
+  if (typeof value === "string") return value;
+  if (value === null || value === void 0) return String(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value instanceof Date) return value.toISOString();
+  try {
+    const json = JSON.stringify(value, null, 2);
+    if (json.length > MAX_JSON_LENGTH) {
+      return "```json\n" + json.slice(0, MAX_JSON_LENGTH) + "\n... (truncated)\n```";
+    }
+    return "```json\n" + json + "\n```";
+  } catch {
+    return "`[Object \u2014 cannot serialize]`";
+  }
+}
+var PRIORITY_CLASSES = {
+  low: "cdp-priority--low",
+  normal: "cdp-priority--normal",
+  high: "cdp-priority--high",
+  critical: "cdp-priority--critical"
+};
+
+// src/context-display/ContextEntryCard.tsx
+import { jsx as jsx23, jsxs as jsxs21 } from "react/jsx-runtime";
+var MIN_TEXTAREA_ROWS = 6;
+var ContextEntryCard = ({
+  entry,
+  isCollapsed,
+  isMaximized,
+  isHighlighted,
+  forceExpanded,
+  enableDragAndDrop,
+  isDragging,
+  dropPosition,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  enableEditing,
+  onSaveEntry,
+  isPinned,
+  onPinToggle,
+  onCollapseToggle,
+  onMaximizeToggle
+}) => {
+  const displayValue = useMemo5(() => formatValueForDisplay(entry.value), [entry.value]);
+  const [isEditing, setIsEditing] = useState10(false);
+  const [editValue, setEditValue] = useState10(displayValue);
+  const [isSaving, setIsSaving] = useState10(false);
+  useEffect5(() => {
+    setEditValue(displayValue);
+  }, [displayValue]);
+  const hasChanges = editValue !== displayValue;
+  const isDragDisabled = !enableDragAndDrop || forceExpanded || isMaximized;
+  const handleSave = useCallback9(async () => {
+    if (!onSaveEntry || !hasChanges) return;
+    setIsSaving(true);
+    try {
+      await onSaveEntry(entry.key, editValue);
+      setIsEditing(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ContextEntryCard] Save failed:", message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [onSaveEntry, entry.key, editValue, hasChanges]);
+  const handleEditToggle = useCallback9(() => {
+    if (isEditing && hasChanges) {
+      setEditValue(displayValue);
+    }
+    setIsEditing((prev) => !prev);
+  }, [isEditing, hasChanges, displayValue]);
+  const handleKeyDown = useCallback9(
+    (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onCollapseToggle(entry.key);
+      }
+    },
+    [entry.key, onCollapseToggle]
+  );
+  const cardClasses = [
+    "cdp-card",
+    isHighlighted && !forceExpanded ? "cdp-card--highlight" : "",
+    isMaximized && !forceExpanded ? "cdp-card--maximized" : "",
+    isCollapsed ? "cdp-card--collapsed" : "",
+    isPinned ? "cdp-card--pinned" : "",
+    forceExpanded ? "cdp-card--export" : "",
+    isDragging ? "cdp-card--dragging" : "",
+    dropPosition === "above" ? "cdp-card--drop-above" : "",
+    dropPosition === "below" ? "cdp-card--drop-below" : ""
+  ].filter(Boolean).join(" ");
+  return /* @__PURE__ */ jsxs21(
+    "div",
+    {
+      "data-entry-key": entry.key,
+      className: cardClasses,
+      role: "listitem",
+      draggable: !isDragDisabled,
+      onDragStart: (e) => !isDragDisabled && onDragStart(entry.key, e),
+      onDragOver: (e) => !isDragDisabled && onDragOver(entry.key, e),
+      onDragLeave: !isDragDisabled ? onDragLeave : void 0,
+      onDrop: (e) => !isDragDisabled && onDrop(entry.key, e),
+      onDragEnd: !isDragDisabled ? onDragEnd : void 0,
+      children: [
+        !forceExpanded && /* @__PURE__ */ jsxs21(
+          "div",
+          {
+            className: "cdp-card__header",
+            role: "button",
+            tabIndex: 0,
+            "aria-expanded": !isCollapsed,
+            onClick: () => onCollapseToggle(entry.key),
+            onKeyDown: handleKeyDown,
+            children: [
+              /* @__PURE__ */ jsxs21("div", { className: "cdp-card__title", children: [
+                !isDragDisabled && /* @__PURE__ */ jsx23(
+                  "span",
+                  {
+                    className: "cdp-drag-handle",
+                    onClick: (e) => e.stopPropagation(),
+                    title: "Drag to reorder",
+                    children: /* @__PURE__ */ jsx23(GripVertical, { size: 12 })
+                  }
+                ),
+                /* @__PURE__ */ jsx23("span", { className: "cdp-card__collapse-icon", children: isCollapsed ? /* @__PURE__ */ jsx23(ChevronRight, { size: 12 }) : /* @__PURE__ */ jsx23(ChevronDown4, { size: 12 }) }),
+                /* @__PURE__ */ jsx23(
+                  "span",
+                  {
+                    className: "cdp-card__key",
+                    title: `${entry.key}${entry.priority ? ` [${entry.priority}]` : ""}`,
+                    children: entry.description || entry.key
+                  }
+                ),
+                entry.priority && /* @__PURE__ */ jsx23("span", { className: `cdp-priority ${PRIORITY_CLASSES[entry.priority] || ""}`, children: entry.priority })
+              ] }),
+              /* @__PURE__ */ jsxs21(
+                "div",
+                {
+                  className: "cdp-card__actions",
+                  role: "toolbar",
+                  "aria-label": "Entry actions",
+                  onClick: (e) => e.stopPropagation(),
+                  children: [
+                    isEditing && hasChanges && /* @__PURE__ */ jsx23(
+                      "button",
+                      {
+                        className: "cdp-action-btn cdp-action-btn--save",
+                        onClick: handleSave,
+                        disabled: isSaving,
+                        title: "Save changes",
+                        children: isSaving ? /* @__PURE__ */ jsx23(Loader22, { size: 14, className: "cdp-spinner" }) : /* @__PURE__ */ jsx23(Check4, { size: 14 })
+                      }
+                    ),
+                    enableEditing && !forceExpanded && /* @__PURE__ */ jsx23(
+                      "button",
+                      {
+                        className: `cdp-action-btn ${isEditing ? "cdp-action-btn--active" : ""}`,
+                        onClick: handleEditToggle,
+                        title: isEditing ? "Exit edit mode" : "Edit raw markdown",
+                        children: /* @__PURE__ */ jsx23(Pencil, { size: 14 })
+                      }
+                    ),
+                    /* @__PURE__ */ jsx23(
+                      "button",
+                      {
+                        className: `cdp-action-btn ${isMaximized ? "cdp-action-btn--active" : ""}`,
+                        onClick: () => onMaximizeToggle(entry.key),
+                        title: isMaximized ? "Exit full view" : "Full view",
+                        children: isMaximized ? /* @__PURE__ */ jsx23(Minimize2, { size: 14 }) : /* @__PURE__ */ jsx23(Maximize2, { size: 14 })
+                      }
+                    ),
+                    onPinToggle && /* @__PURE__ */ jsx23(
+                      "button",
+                      {
+                        className: `cdp-action-btn ${isPinned ? "cdp-action-btn--active" : ""}`,
+                        onClick: () => onPinToggle(entry.key, !isPinned),
+                        title: isPinned ? "Unpin (stop always showing)" : "Pin (always show this entry)",
+                        children: isPinned ? /* @__PURE__ */ jsx23(Pin, { size: 14 }) : /* @__PURE__ */ jsx23(PinOff, { size: 14 })
+                      }
+                    )
+                  ]
+                }
+              )
+            ]
+          }
+        ),
+        !isCollapsed && /* @__PURE__ */ jsx23("div", { className: "cdp-card__body", children: isEditing ? /* @__PURE__ */ jsx23(
+          "textarea",
+          {
+            className: "cdp-edit-textarea",
+            value: editValue,
+            onChange: (e) => setEditValue(e.target.value),
+            rows: Math.max(MIN_TEXTAREA_ROWS, editValue.split("\n").length + 1),
+            disabled: isSaving,
+            "aria-label": `Edit ${entry.key}`
+          }
+        ) : /* @__PURE__ */ jsx23("div", { className: "cdp-card__markdown", children: /* @__PURE__ */ jsx23(MarkdownRenderer, { content: displayValue }) }) })
+      ]
+    }
+  );
+};
+
+// src/context-display/useOrderPersistence.ts
+import { useEffect as useEffect6, useMemo as useMemo6, useState as useState11 } from "react";
+var DEFAULT_STORAGE_KEY = "rui-context-order";
+function loadSavedOrder(storageKey) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+  }
+  return [];
+}
+function saveOrder(storageKey, keys) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(keys));
+  } catch {
+  }
+}
+function reconcileOrder(savedOrder, currentKeys) {
+  const currentSet = new Set(currentKeys);
+  const result = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const key of savedOrder) {
+    if (currentSet.has(key) && !seen.has(key)) {
+      result.push(key);
+      seen.add(key);
+    }
+  }
+  for (const key of currentKeys) {
+    if (!seen.has(key)) {
+      result.push(key);
+    }
+  }
+  return result;
+}
+function useOrderPersistence(visibleEntries, storageKey = DEFAULT_STORAGE_KEY) {
+  const [orderedKeys, setOrderedKeys] = useState11(() => loadSavedOrder(storageKey));
+  const { sortedEntries, reconciledOrder } = useMemo6(() => {
+    const currentKeys = visibleEntries.map((e) => e.key);
+    const reconciled = reconcileOrder(orderedKeys, currentKeys);
+    const entryMap = new Map(visibleEntries.map((e) => [e.key, e]));
+    const sorted = reconciled.map((key) => entryMap.get(key)).filter((e) => e !== void 0);
+    return { sortedEntries: sorted, reconciledOrder: reconciled };
+  }, [visibleEntries, orderedKeys]);
+  useEffect6(() => {
+    if (reconciledOrder.length !== orderedKeys.length || reconciledOrder.some((k, i) => k !== orderedKeys[i])) {
+      setOrderedKeys(reconciledOrder);
+      saveOrder(storageKey, reconciledOrder);
+    }
+  }, [reconciledOrder, orderedKeys, storageKey]);
+  const saveCurrentOrder = (keys) => {
+    setOrderedKeys(keys);
+    saveOrder(storageKey, keys);
+  };
+  return { sortedEntries, orderedKeys, setOrderedKeys, saveCurrentOrder };
+}
+
+// src/context-display/ContextDisplayPanel.tsx
+import { jsx as jsx24, jsxs as jsxs22 } from "react/jsx-runtime";
+var ContextDisplayPanel = ({
+  entries,
+  highlightKey,
+  title = "Current Context",
+  storageKey = "rui-context-order",
+  className,
+  enableDragAndDrop = true,
+  enableEditing = false,
+  enableExport = false,
+  onSaveEntry,
+  onExport,
+  onPinToggle,
+  pinnedKeys,
+  onMaximizedChange,
+  filterEntries,
+  entriesRef: externalEntriesRef
+}) => {
+  const [collapsedKeys, setCollapsedKeys] = useState12(/* @__PURE__ */ new Set());
+  const [maximizedKey, setMaximizedKey] = useState12(null);
+  const [pendingExportFormat, setPendingExportFormat] = useState12(null);
+  const [draggedKey, setDraggedKey] = useState12(null);
+  const [dropTarget, setDropTarget] = useState12(null);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState12(false);
+  const internalEntriesRef = useRef5(null);
+  const dropdownRef = useRef5(null);
+  const actualEntriesRef = externalEntriesRef || internalEntriesRef;
+  const pinnedSet = useMemo7(() => new Set(pinnedKeys ?? []), [pinnedKeys]);
+  const visibleEntries = useMemo7(() => {
+    if (filterEntries) return filterEntries(entries);
+    return entries.filter((e) => e.showInUI);
+  }, [entries, filterEntries]);
+  const { sortedEntries, orderedKeys, setOrderedKeys, saveCurrentOrder } = useOrderPersistence(visibleEntries, storageKey);
+  const displayedEntries = enableDragAndDrop ? sortedEntries : visibleEntries;
+  useEffect7(() => {
+    if (!highlightKey) return;
+    requestAnimationFrame(() => {
+      const el = actualEntriesRef.current?.querySelector(
+        `[data-entry-key="${CSS.escape(highlightKey)}"]`
+      );
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [highlightKey, actualEntriesRef]);
+  useEffect7(() => {
+    if (!exportDropdownOpen) return;
+    const handleClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setExportDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [exportDropdownOpen]);
+  const combinedMarkdown = useMemo7(
+    () => displayedEntries.map((e) => {
+      const header = `## ${e.description || e.key}`;
+      const priority = e.priority ? ` \`[${e.priority}]\`` : "";
+      return `${header}${priority}
+
+${formatValueForDisplay(e.value)}`;
+    }).join("\n\n---\n\n"),
+    [displayedEntries]
+  );
+  useEffect7(() => {
+    if (!pendingExportFormat || !onExport) return;
+    const frameId = requestAnimationFrame(() => {
+      const doExport = async () => {
+        try {
+          await onExport(pendingExportFormat, {
+            element: actualEntriesRef.current,
+            markdownContent: combinedMarkdown
+          });
+        } catch (err) {
+          console.error("Export failed:", err);
+        } finally {
+          setPendingExportFormat(null);
+        }
+      };
+      doExport();
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [pendingExportFormat, combinedMarkdown, onExport, actualEntriesRef]);
+  const handleCollapseToggle = useCallback10((key) => {
+    setCollapsedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const handleMaximizeToggle = useCallback10(
+    (key) => {
+      setMaximizedKey((prev) => {
+        const next = prev === key ? null : key;
+        onMaximizedChange?.(next !== null);
+        return next;
+      });
+    },
+    [onMaximizedChange]
+  );
+  const handleDragStart = useCallback10((key, e) => {
+    setDraggedKey(key);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", key);
+  }, []);
+  const handleDragOver = useCallback10((key, e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    setDropTarget({ key, position: e.clientY < midY ? "above" : "below" });
+  }, []);
+  const handleDragLeave = useCallback10(() => {
+    setDropTarget(null);
+  }, []);
+  const handleDrop = useCallback10(
+    (targetKey, e) => {
+      e.preventDefault();
+      const sourceKey = e.dataTransfer.getData("text/plain");
+      if (!sourceKey || sourceKey === targetKey) {
+        setDraggedKey(null);
+        setDropTarget(null);
+        return;
+      }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const insertAfter = e.clientY >= rect.top + rect.height / 2;
+      setOrderedKeys((prev) => {
+        const next = prev.filter((k) => k !== sourceKey);
+        const targetIdx = next.indexOf(targetKey);
+        if (targetIdx === -1) return prev;
+        const insertIdx = insertAfter ? targetIdx + 1 : targetIdx;
+        next.splice(insertIdx, 0, sourceKey);
+        saveCurrentOrder(next);
+        return next;
+      });
+      setDraggedKey(null);
+      setDropTarget(null);
+    },
+    [setOrderedKeys, saveCurrentOrder]
+  );
+  const handleDragEnd = useCallback10(() => {
+    setDraggedKey(null);
+    setDropTarget(null);
+  }, []);
+  if (visibleEntries.length === 0) return null;
+  const isExporting = !!pendingExportFormat;
+  const isMaximized = maximizedKey !== null;
+  const entriesToRender = isExporting ? displayedEntries : isMaximized ? displayedEntries.filter((e) => e.key === maximizedKey) : displayedEntries;
+  const panelClasses = [
+    "cdp-panel",
+    isMaximized && !isExporting ? "cdp-panel--maximized" : "",
+    className ?? ""
+  ].filter(Boolean).join(" ");
+  return /* @__PURE__ */ jsxs22("div", { className: panelClasses, children: [
+    !isExporting && /* @__PURE__ */ jsxs22("div", { className: "cdp-header", children: [
+      /* @__PURE__ */ jsx24(Database, { size: 14, className: "cdp-header__icon" }),
+      /* @__PURE__ */ jsx24("span", { className: "cdp-header__title", children: title }),
+      /* @__PURE__ */ jsx24("span", { className: "cdp-header__count", children: visibleEntries.length }),
+      enableExport && onExport && /* @__PURE__ */ jsxs22("div", { className: "cdp-export", ref: dropdownRef, children: [
+        /* @__PURE__ */ jsx24(
+          "button",
+          {
+            className: "cdp-action-btn cdp-export__trigger",
+            onClick: () => setExportDropdownOpen((prev) => !prev),
+            disabled: isExporting,
+            title: pendingExportFormat ? `Exporting to ${String(pendingExportFormat).toUpperCase()}...` : "Export",
+            children: isExporting ? /* @__PURE__ */ jsx24(Loader23, { size: 14, className: "cdp-spinner" }) : /* @__PURE__ */ jsx24(Upload2, { size: 14 })
+          }
+        ),
+        exportDropdownOpen && /* @__PURE__ */ jsxs22("div", { className: "cdp-export__menu", role: "menu", children: [
+          /* @__PURE__ */ jsx24(
+            "button",
+            {
+              className: "cdp-export__item",
+              role: "menuitem",
+              onClick: () => {
+                setPendingExportFormat("pdf");
+                setExportDropdownOpen(false);
+              },
+              children: "Export as PDF"
+            }
+          ),
+          /* @__PURE__ */ jsx24(
+            "button",
+            {
+              className: "cdp-export__item",
+              role: "menuitem",
+              onClick: () => {
+                setPendingExportFormat("docx");
+                setExportDropdownOpen(false);
+              },
+              children: "Export as DOCX"
+            }
+          )
+        ] })
+      ] }),
+      isMaximized && /* @__PURE__ */ jsxs22(
+        "button",
+        {
+          className: "cdp-header__exit-maximize",
+          onClick: () => {
+            setMaximizedKey(null);
+            onMaximizedChange?.(false);
+          },
+          title: "Exit full view",
+          children: [
+            /* @__PURE__ */ jsx24(Minimize22, { size: 12 }),
+            /* @__PURE__ */ jsx24("span", { children: "Exit" })
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsx24(
+      "div",
+      {
+        ref: actualEntriesRef,
+        className: "cdp-entries",
+        role: "list",
+        "aria-label": "Context entries",
+        children: entriesToRender.map((entry) => /* @__PURE__ */ jsx24(
+          ContextEntryCard,
+          {
+            entry,
+            isCollapsed: isExporting ? false : collapsedKeys.has(entry.key),
+            isMaximized: isExporting ? false : maximizedKey === entry.key,
+            isHighlighted: highlightKey === entry.key,
+            forceExpanded: isExporting,
+            enableDragAndDrop: enableDragAndDrop && !isExporting && !isMaximized,
+            isDragging: draggedKey === entry.key,
+            dropPosition: dropTarget?.key === entry.key ? dropTarget.position : null,
+            enableEditing: enableEditing && !isExporting,
+            onSaveEntry,
+            isPinned: pinnedSet.has(entry.key),
+            onPinToggle,
+            onCollapseToggle: handleCollapseToggle,
+            onMaximizeToggle: handleMaximizeToggle,
+            onDragStart: handleDragStart,
+            onDragOver: handleDragOver,
+            onDragLeave: handleDragLeave,
+            onDrop: handleDrop,
+            onDragEnd: handleDragEnd
+          },
+          entry.key
+        ))
+      }
+    )
+  ] });
+};
+
+// src/context-display/useDynamicUIChangeDetection.ts
+import { useEffect as useEffect8, useRef as useRef6, useState as useState13 } from "react";
+var HIGHLIGHT_DURATION_MS = 1500;
+function useDynamicUIChangeDetection(entries, onEntryChanged) {
+  const prevEntriesRef = useRef6(/* @__PURE__ */ new Map());
+  const [highlightKey, setHighlightKey] = useState13(null);
+  const timeoutRef = useRef6(null);
+  useEffect8(() => {
+    const visible = entries.filter((e) => e.showInUI);
+    const prev = prevEntriesRef.current;
+    let changedKey = null;
+    for (const entry of visible) {
+      const prevUpdatedAt = prev.get(entry.key);
+      if (prevUpdatedAt === void 0 || prevUpdatedAt !== entry.updatedAt) {
+        changedKey = entry.key;
+        break;
+      }
+    }
+    const next = /* @__PURE__ */ new Map();
+    for (const entry of visible) {
+      next.set(entry.key, entry.updatedAt);
+    }
+    prevEntriesRef.current = next;
+    if (changedKey) {
+      onEntryChanged?.(changedKey);
+      setHighlightKey(changedKey);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setHighlightKey(null), HIGHLIGHT_DURATION_MS);
+    }
+  }, [entries, onEntryChanged]);
+  useEffect8(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+  return highlightKey;
+}
 export {
   ChatControls,
   CodeBlock,
   CollapsibleSection,
+  ContextDisplayPanel,
+  ContextEntryCard,
   ContextWindowSection,
   ExecutionProgress,
   ExportMessage,
@@ -1696,12 +2271,15 @@ export {
   formatNumber,
   formatPluginName,
   formatTimestamp,
+  formatValueForDisplay,
   getPluginRenderer,
   getRegisteredPluginNames,
   getUtilizationColor,
   getUtilizationLabel,
   registerPluginRenderer,
   truncateText,
-  useMarkdownContext
+  useDynamicUIChangeDetection,
+  useMarkdownContext,
+  useOrderPersistence
 };
 //# sourceMappingURL=index.js.map

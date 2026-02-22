@@ -18752,6 +18752,7 @@ var OpenAIResponsesStreamConverter = class {
     const activeItems = /* @__PURE__ */ new Map();
     const toolCallBuffers = /* @__PURE__ */ new Map();
     const reasoningBuffers = /* @__PURE__ */ new Map();
+    const reasoningDoneEmitted = /* @__PURE__ */ new Set();
     for await (const event of stream) {
       if (process.env.DEBUG_OPENAI) {
         console.error("[DEBUG] Responses API event:", event.type);
@@ -18836,7 +18837,8 @@ var OpenAIResponsesStreamConverter = class {
           }
           break;
         }
-        case "response.reasoning_summary_text.delta": {
+        case "response.reasoning_summary_text.delta":
+        case "response.reasoning_text.delta": {
           const reasoningEvent = event;
           const outputIdx = reasoningEvent.output_index?.toString();
           const buffer = outputIdx ? reasoningBuffers.get(outputIdx) : void 0;
@@ -18852,19 +18854,35 @@ var OpenAIResponsesStreamConverter = class {
           };
           break;
         }
+        case "response.reasoning_text.done": {
+          const doneEvent = event;
+          const outputIdx = doneEvent.output_index.toString();
+          const rBuf = reasoningBuffers.get(outputIdx);
+          const thinkingText = rBuf ? rBuf.join("") : doneEvent.text || "";
+          reasoningDoneEmitted.add(outputIdx);
+          yield {
+            type: "response.reasoning.done" /* REASONING_DONE */,
+            response_id: responseId,
+            item_id: doneEvent.item_id || `reasoning_${responseId}`,
+            thinking: thinkingText
+          };
+          break;
+        }
         case "response.output_item.done": {
           const doneEvent = event;
           const item = doneEvent.item;
           if (item.type === "reasoning") {
             const outputIdx = doneEvent.output_index.toString();
-            const rBuf = reasoningBuffers.get(outputIdx);
-            const thinkingText = rBuf ? rBuf.join("") : "";
-            yield {
-              type: "response.reasoning.done" /* REASONING_DONE */,
-              response_id: responseId,
-              item_id: item.id || `reasoning_${responseId}`,
-              thinking: thinkingText
-            };
+            if (!reasoningDoneEmitted.has(outputIdx)) {
+              const rBuf = reasoningBuffers.get(outputIdx);
+              const thinkingText = rBuf ? rBuf.join("") : "";
+              yield {
+                type: "response.reasoning.done" /* REASONING_DONE */,
+                response_id: responseId,
+                item_id: item.id || `reasoning_${responseId}`,
+                thinking: thinkingText
+              };
+            }
           }
           if (item.type === "function_call") {
             const functionCall = item;
