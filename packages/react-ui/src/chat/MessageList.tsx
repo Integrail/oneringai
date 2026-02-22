@@ -155,8 +155,8 @@ export const MessageList: React.FC<IMessageListProps> = memo(
       const container = containerRef.current;
       const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
 
-      if (isNearBottom && endRef.current) {
-        endRef.current.scrollIntoView({ behavior: 'smooth' });
+      if (isNearBottom) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
       }
     }, [messages, streamingText, streamingThinking, autoScroll]);
 

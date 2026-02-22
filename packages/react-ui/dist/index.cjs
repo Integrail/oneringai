@@ -1751,8 +1751,8 @@ var MessageList = (0, import_react13.memo)(
       if (!autoScroll || !containerRef.current) return;
       const container = containerRef.current;
       const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-      if (isNearBottom && endRef.current) {
-        endRef.current.scrollIntoView({ behavior: "smooth" });
+      if (isNearBottom) {
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
       }
     }, [messages, streamingText, streamingThinking, autoScroll]);
     return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: `rui-message-list ${className}`, ref: containerRef, children: [
@@ -2349,12 +2349,35 @@ var ContextDisplayPanel = ({
   const displayedEntries = enableDragAndDrop ? sortedEntries : visibleEntries;
   (0, import_react19.useEffect)(() => {
     if (!highlightKey) return;
+    let cancelled = false;
     requestAnimationFrame(() => {
-      const el = actualEntriesRef.current?.querySelector(
-        `[data-entry-key="${CSS.escape(highlightKey)}"]`
-      );
-      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const el = actualEntriesRef.current?.querySelector(
+          `[data-entry-key="${CSS.escape(highlightKey)}"]`
+        );
+        if (!el) return;
+        let scrollParent = el.parentElement;
+        while (scrollParent) {
+          const style = getComputedStyle(scrollParent);
+          if (style.overflowY === "auto" || style.overflowY === "scroll") break;
+          scrollParent = scrollParent.parentElement;
+        }
+        if (!scrollParent) return;
+        const elRect = el.getBoundingClientRect();
+        const parentRect = scrollParent.getBoundingClientRect();
+        if (elRect.top < parentRect.top || elRect.bottom > parentRect.bottom) {
+          scrollParent.scrollTo({
+            top: scrollParent.scrollTop + (elRect.top - parentRect.top) - 16,
+            behavior: "smooth"
+          });
+        }
+      });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [highlightKey, actualEntriesRef]);
   (0, import_react19.useEffect)(() => {
     if (!exportDropdownOpen) return;

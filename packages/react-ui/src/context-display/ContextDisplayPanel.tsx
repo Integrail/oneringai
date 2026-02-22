@@ -47,15 +47,42 @@ export const ContextDisplayPanel: React.FC<IContextDisplayPanelProps> = ({
 
   const displayedEntries = enableDragAndDrop ? sortedEntries : visibleEntries;
 
-  // Scroll to highlighted entry
+  // Scroll to highlighted entry within the nearest scrollable ancestor
   useEffect(() => {
     if (!highlightKey) return;
+    // Double rAF: first rAF runs after React commit, second after browser paint.
+    // Needed when panel just mounted (tab switch) and layout isn't computed yet.
+    let cancelled = false;
     requestAnimationFrame(() => {
-      const el = actualEntriesRef.current?.querySelector(
-        `[data-entry-key="${CSS.escape(highlightKey)}"]`,
-      );
-      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const el = actualEntriesRef.current?.querySelector(
+          `[data-entry-key="${CSS.escape(highlightKey)}"]`,
+        ) as HTMLElement | null;
+        if (!el) return;
+
+        // Walk up DOM to find nearest scrollable ancestor (not the window)
+        let scrollParent: HTMLElement | null = el.parentElement;
+        while (scrollParent) {
+          const style = getComputedStyle(scrollParent);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
+          scrollParent = scrollParent.parentElement;
+        }
+        if (!scrollParent) return;
+
+        // Scroll so the element is visible within the container
+        const elRect = el.getBoundingClientRect();
+        const parentRect = scrollParent.getBoundingClientRect();
+        if (elRect.top < parentRect.top || elRect.bottom > parentRect.bottom) {
+          scrollParent.scrollTo({
+            top: scrollParent.scrollTop + (elRect.top - parentRect.top) - 16,
+            behavior: 'smooth',
+          });
+        }
+      });
     });
+    return () => { cancelled = true; };
   }, [highlightKey, actualEntriesRef]);
 
   // Close export dropdown on outside click
