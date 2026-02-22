@@ -501,6 +501,6 @@ for (const tool of ToolRegistry.getAllTools()) {
 
 ---
 
-**Version**: 0.4.0
+**Version**: 0.4.2
 **Total Tools**: 10 built-in (Filesystem: 6, Shell: 1, Web: 1, Code: 1, JSON: 1) + ConnectorTools (web search, web scrape, multimedia, GitHub)
 **All tools**: Type-safe, well-documented, production-ready

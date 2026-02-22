@@ -69,6 +69,10 @@ Or read the more detailed installation / setup instructions [here](https://githu
 
 Better to see once and then dig in the code! :)
 
+## YOUetal
+
+Showcasing another amazing "built with oneringai": ["no saas" agentic business team](https://youetal.ai)
+
 ## Features
 
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
@@ -1704,4 +1708,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.3.2 | **Last Updated:** 2026-02-19 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.4.2 | **Last Updated:** 2026-02-22 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
