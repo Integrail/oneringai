@@ -27,6 +27,7 @@ export interface LLMResponse {
   model: string;
   output: OutputItem[];
   output_text?: string; // Aggregated text output (SDK convenience)
+  thinking?: string;   // Aggregated thinking/reasoning text (convenience, parallel to output_text)
   usage: TokenUsage;
   error?: {
     type: string;

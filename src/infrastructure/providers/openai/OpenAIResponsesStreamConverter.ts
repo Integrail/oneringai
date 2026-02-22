@@ -13,7 +13,7 @@
  */
 
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
-import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
+import { StreamEvent, StreamEventType, ReasoningDeltaEvent, ReasoningDoneEvent } from '../../../domain/entities/StreamEvent.js';
 
 type ResponseStreamEvent = ResponsesAPI.ResponseStreamEvent;
 
@@ -30,6 +30,8 @@ export class OpenAIResponsesStreamConverter {
     // Track active items and tool calls
     const activeItems = new Map<string, { type: string; toolCallId?: string; toolName?: string }>();
     const toolCallBuffers = new Map<string, { id: string; name: string; args: string }>();
+    // Track reasoning content
+    const reasoningBuffers = new Map<string, string[]>();
 
     for await (const event of stream) {
       // Debug logging
@@ -55,6 +57,14 @@ export class OpenAIResponsesStreamConverter {
           activeItems.set(addedEvent.output_index.toString(), {
             type: item.type,
           });
+
+          // If it's a reasoning item, track it
+          if (item.type === 'reasoning') {
+            activeItems.set(addedEvent.output_index.toString(), {
+              type: 'reasoning',
+            });
+            reasoningBuffers.set(addedEvent.output_index.toString(), []);
+          }
 
           // If it's a function call, track it
           if (item.type === 'function_call') {
@@ -122,9 +132,47 @@ export class OpenAIResponsesStreamConverter {
           break;
         }
 
+        case 'response.reasoning_summary_text.delta': {
+          // Reasoning summary delta from OpenAI
+          const reasoningEvent = event as {
+            type: 'response.reasoning_summary_text.delta';
+            output_index?: number;
+            item_id?: string;
+            delta?: string;
+          };
+          const outputIdx = reasoningEvent.output_index?.toString();
+          const buffer = outputIdx ? reasoningBuffers.get(outputIdx) : undefined;
+          if (buffer) {
+            buffer.push(reasoningEvent.delta || '');
+          }
+
+          yield {
+            type: StreamEventType.REASONING_DELTA,
+            response_id: responseId,
+            item_id: reasoningEvent.item_id || `reasoning_${responseId}`,
+            delta: reasoningEvent.delta || '',
+            sequence_number: sequenceNumber++,
+          } as ReasoningDeltaEvent;
+          break;
+        }
+
         case 'response.output_item.done': {
           const doneEvent = event as ResponsesAPI.ResponseOutputItemDoneEvent;
           const item = doneEvent.item;
+
+          // If reasoning item is done, emit reasoning done
+          if (item.type === 'reasoning') {
+            const outputIdx = doneEvent.output_index.toString();
+            const rBuf = reasoningBuffers.get(outputIdx);
+            const thinkingText = rBuf ? rBuf.join('') : '';
+
+            yield {
+              type: StreamEventType.REASONING_DONE,
+              response_id: responseId,
+              item_id: (item as any).id || `reasoning_${responseId}`,
+              thinking: thinkingText,
+            } as ReasoningDoneEvent;
+          }
 
           // If function call is done, emit arguments complete
           if (item.type === 'function_call') {
@@ -164,6 +212,11 @@ export class OpenAIResponsesStreamConverter {
               input_tokens: response.usage?.input_tokens || 0,
               output_tokens: response.usage?.output_tokens || 0,
               total_tokens: response.usage?.total_tokens || 0,
+              ...((response.usage as any)?.output_tokens_details?.reasoning_tokens != null && {
+                output_tokens_details: {
+                  reasoning_tokens: (response.usage as any).output_tokens_details.reasoning_tokens,
+                },
+              }),
             },
             iterations: 1,
           };

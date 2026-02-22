@@ -1,7 +1,7 @@
 import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, c as ConnectorConfig, d as ITokenStorage, e as IProvider, f as ConnectorFetchOptions, P as ProviderCapabilities, S as StoredToken$1, g as ConnectorAuth, h as ConnectorConfigResult } from './IProvider-CNJqZItJ.cjs';
 export { A as APIKeyConnectorAuth, D as DEFAULT_BASE_DELAY_MS, i as DEFAULT_CONNECTOR_TIMEOUT, j as DEFAULT_MAX_DELAY_MS, k as DEFAULT_MAX_RETRIES, l as DEFAULT_RETRYABLE_STATUSES, J as JWTConnectorAuth, O as OAuthConnectorAuth } from './IProvider-CNJqZItJ.cjs';
-import { I as InputItem, T as ToolFunction, M as MemoryEntry, a as MemoryScope, b as Tool, c as ToolContext, d as ToolPermissionConfig$1, e as ToolCall, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as HookName, o as StaleEntryInfo, p as PriorityContext, q as MemoryIndex, r as TaskStatusForMemory, s as WorkingMemoryAccess, t as TokenUsage, u as StreamEventType, v as TextGenerateOptions, w as ModelCapabilities, x as MessageRole } from './index-D-CUaRzT.cjs';
-export { y as AfterToolContext, z as AgentEventName, B as AgenticLoopEventName, D as AgenticLoopEvents, G as ApprovalResult, J as ApproveToolContext, K as BeforeToolContext, N as BuiltInTool, Q as CompactionItem, R as ContentType, U as DEFAULT_MEMORY_CONFIG, V as ErrorEvent, X as ExecutionConfig, Y as Hook, Z as HookManager, _ as InputImageContent, $ as InputTextContent, a0 as IterationCompleteEvent, a1 as JSONSchema, a2 as MEMORY_PRIORITY_VALUES, a3 as MemoryEntryInput, a4 as MemoryIndexEntry, a5 as Message, a6 as ModifyingHook, a7 as OutputTextContent, a8 as OutputTextDeltaEvent, a9 as OutputTextDoneEvent, aa as ReasoningItem, ab as ResponseCompleteEvent, ac as ResponseCreatedEvent, ad as ResponseInProgressEvent, ae as SimpleScope, af as TaskAwareScope, ag as ToolCallArgumentsDeltaEvent, ah as ToolCallArgumentsDoneEvent, ai as ToolCallStartEvent, aj as ToolCallState, ak as ToolExecutionContext, al as ToolExecutionDoneEvent, am as ToolExecutionStartEvent, an as ToolModification, ao as ToolResultContent, ap as ToolUseContent, aq as calculateEntrySize, ar as defaultDescribeCall, as as forPlan, at as forTasks, au as getToolCallDescription, av as isErrorEvent, aw as isOutputTextDelta, ax as isResponseComplete, ay as isSimpleScope, az as isStreamEvent, aA as isTaskAwareScope, aB as isTerminalMemoryStatus, aC as isToolCallArgumentsDelta, aD as isToolCallArgumentsDone, aE as isToolCallStart, aF as scopeEquals, aG as scopeMatches } from './index-D-CUaRzT.cjs';
+import { I as InputItem, T as ToolFunction, M as MemoryEntry, a as MemoryScope, b as Tool, c as ToolContext, d as ToolPermissionConfig$1, e as ToolCall, W as WorkingMemoryConfig, P as PriorityCalculator, f as MemoryPriority, g as MemoryTier, C as Content, O as OutputItem, h as ToolResult, i as ITextProvider, F as FunctionToolDefinition, L as LLMResponse, S as StreamEvent, H as HookConfig, j as HistoryMode, A as AgentEvents, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as HookName, o as StaleEntryInfo, p as PriorityContext, q as MemoryIndex, r as TaskStatusForMemory, s as WorkingMemoryAccess, t as TokenUsage, u as StreamEventType, v as TextGenerateOptions, w as ModelCapabilities, x as MessageRole } from './index-BMjyFNJQ.cjs';
+export { y as AfterToolContext, z as AgentEventName, B as AgenticLoopEventName, D as AgenticLoopEvents, G as ApprovalResult, J as ApproveToolContext, K as BeforeToolContext, N as BuiltInTool, Q as CompactionItem, R as ContentType, U as DEFAULT_MEMORY_CONFIG, V as ErrorEvent, X as ExecutionConfig, Y as Hook, Z as HookManager, _ as InputImageContent, $ as InputTextContent, a0 as IterationCompleteEvent, a1 as JSONSchema, a2 as MEMORY_PRIORITY_VALUES, a3 as MemoryEntryInput, a4 as MemoryIndexEntry, a5 as Message, a6 as ModifyingHook, a7 as OutputTextContent, a8 as OutputTextDeltaEvent, a9 as OutputTextDoneEvent, aa as ReasoningDeltaEvent, ab as ReasoningDoneEvent, ac as ReasoningItem, ad as ResponseCompleteEvent, ae as ResponseCreatedEvent, af as ResponseInProgressEvent, ag as SimpleScope, ah as TaskAwareScope, ai as ThinkingContent, aj as ToolCallArgumentsDeltaEvent, ak as ToolCallArgumentsDoneEvent, al as ToolCallStartEvent, am as ToolCallState, an as ToolExecutionContext, ao as ToolExecutionDoneEvent, ap as ToolExecutionStartEvent, aq as ToolModification, ar as ToolResultContent, as as ToolUseContent, at as calculateEntrySize, au as defaultDescribeCall, av as forPlan, aw as forTasks, ax as getToolCallDescription, ay as isErrorEvent, az as isOutputTextDelta, aA as isReasoningDelta, aB as isReasoningDone, aC as isResponseComplete, aD as isSimpleScope, aE as isStreamEvent, aF as isTaskAwareScope, aG as isTerminalMemoryStatus, aH as isToolCallArgumentsDelta, aI as isToolCallArgumentsDone, aJ as isToolCallStart, aK as scopeEquals, aL as scopeMatches } from './index-BMjyFNJQ.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 export { a as VENDORS, i as isVendor } from './Vendor-DYh_bzwo.cjs';
@@ -3742,6 +3742,8 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     private readonly _storage?;
     /** Destroyed flag */
     private _destroyed;
+    /** Last thinking/reasoning content from the most recent assistant response */
+    private _lastThinking;
     /** Cached budget from last prepare() call */
     private _cachedBudget;
     /** Callback for beforeCompaction hook (set by Agent) */
@@ -3800,6 +3802,11 @@ declare class AgentContextNextGen extends EventEmitter<ContextEvents> {
     get sessionId(): string | null;
     /** Get storage (null if not configured) */
     get storage(): IContextStorage | null;
+    /**
+     * Get the last thinking/reasoning content from the most recent assistant response.
+     * Updated on every assistant response, always available regardless of persistence setting.
+     */
+    get lastThinking(): string | null;
     /** Get max context tokens */
     get maxContextTokens(): number;
     /** Get response reserve tokens */
@@ -4613,6 +4620,14 @@ interface AgentConfig$1 extends BaseAgentConfig {
     temperature?: number;
     /** Maximum iterations for tool calling loop */
     maxIterations?: number;
+    /** Vendor-agnostic thinking/reasoning configuration */
+    thinking?: {
+        enabled: boolean;
+        /** Budget in tokens for thinking (Anthropic & Google) */
+        budgetTokens?: number;
+        /** Reasoning effort level (OpenAI) */
+        effort?: 'low' | 'medium' | 'high';
+    };
     /** Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') */
     vendorOptions?: Record<string, unknown>;
     /**
@@ -10464,6 +10479,7 @@ declare class StreamState {
     model: string;
     createdAt: number;
     private textBuffers;
+    private reasoningBuffers;
     private toolCallBuffers;
     private completedToolCalls;
     private toolResults;
@@ -10488,6 +10504,22 @@ declare class StreamState {
      * Get all accumulated text (all items concatenated)
      */
     getAllText(): string;
+    /**
+     * Accumulate reasoning delta for a specific item
+     */
+    accumulateReasoningDelta(itemId: string, delta: string): void;
+    /**
+     * Get complete accumulated reasoning for an item
+     */
+    getCompleteReasoning(itemId: string): string;
+    /**
+     * Get all accumulated reasoning (all items concatenated)
+     */
+    getAllReasoning(): string;
+    /**
+     * Check if stream has any accumulated reasoning
+     */
+    hasReasoning(): boolean;
     /**
      * Start accumulating tool call arguments
      */
@@ -10592,6 +10624,7 @@ declare class StreamState {
         model: string;
         createdAt: number;
         textBuffers: Map<string, string[]>;
+        reasoningBuffers: Map<string, string[]>;
         toolCallBuffers: Map<string, ToolCallBuffer>;
         completedToolCalls: ToolCall[];
         toolResults: Map<string, any>;
@@ -10636,6 +10669,23 @@ declare class StreamHelpers {
      * Accumulate text from stream into a single string
      */
     static accumulateText(stream: AsyncIterableIterator<StreamEvent>): Promise<string>;
+    /**
+     * Get only reasoning/thinking deltas from stream
+     * Filters out all other event types
+     */
+    static thinkingOnly(stream: AsyncIterableIterator<StreamEvent>): AsyncIterableIterator<string>;
+    /**
+     * Get both text and thinking deltas from stream
+     * Yields tagged objects so consumers can distinguish them
+     */
+    static textAndThinking(stream: AsyncIterableIterator<StreamEvent>): AsyncIterableIterator<{
+        type: 'text' | 'thinking';
+        delta: string;
+    }>;
+    /**
+     * Accumulate all thinking/reasoning content from stream into a single string
+     */
+    static accumulateThinking(stream: AsyncIterableIterator<StreamEvent>): Promise<string>;
     /**
      * Buffer stream events into batches
      */
@@ -14252,7 +14302,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-21T20:38:29.987Z
+ * Generated at: 2026-02-22T13:03:20.298Z
  *
  * To regenerate: npm run generate:tools
  */

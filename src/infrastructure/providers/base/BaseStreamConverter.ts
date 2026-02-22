@@ -56,6 +56,9 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
   /** Buffers for accumulating tool call arguments */
   protected toolCallBuffers: Map<string, ToolCallBuffer> = new Map();
 
+  /** Buffer for accumulating reasoning/thinking content */
+  protected reasoningBuffer: string = '';
+
   // ==========================================================================
   // Abstract Methods (must be implemented by subclasses)
   // ==========================================================================
@@ -114,6 +117,7 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
     this.sequenceNumber = 0;
     this.usage = { inputTokens: 0, outputTokens: 0 };
     this.toolCallBuffers.clear();
+    this.reasoningBuffer = '';
   }
 
   /**
@@ -176,6 +180,38 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
       content_index: options?.contentIndex ?? 0,
       delta,
       sequence_number: this.nextSequence(),
+    };
+  }
+
+  /**
+   * Create REASONING_DELTA event and accumulate reasoning buffer
+   */
+  protected emitReasoningDelta(
+    delta: string,
+    itemId?: string
+  ): StreamEvent {
+    this.reasoningBuffer += delta;
+    return {
+      type: StreamEventType.REASONING_DELTA,
+      response_id: this.responseId,
+      item_id: itemId || `reasoning_${this.responseId}`,
+      delta,
+      sequence_number: this.nextSequence(),
+    };
+  }
+
+  /**
+   * Create REASONING_DONE event with accumulated reasoning
+   */
+  protected emitReasoningDone(itemId?: string): StreamEvent {
+    const id = itemId || `reasoning_${this.responseId}`;
+    const thinking = this.reasoningBuffer;
+    this.reasoningBuffer = '';
+    return {
+      type: StreamEventType.REASONING_DONE,
+      response_id: this.responseId,
+      item_id: id,
+      thinking,
     };
   }
 

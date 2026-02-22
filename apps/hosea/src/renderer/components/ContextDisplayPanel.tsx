@@ -12,7 +12,7 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pin, PinOff, Database, ChevronDown, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
-import { MarkdownRenderer } from './markdown';
+import { MarkdownRenderer } from '@everworker/react-ui';
 import type { ContextEntryForUI } from '../../preload/index';
 
 interface ContextDisplayPanelProps {

@@ -27,6 +27,9 @@ export class StreamState {
   // Text accumulation: item_id -> text chunks
   private textBuffers: Map<string, string[]>;
 
+  // Reasoning accumulation: item_id -> reasoning chunks
+  private reasoningBuffers: Map<string, string[]>;
+
   // Tool call accumulation: tool_call_id -> buffer
   private toolCallBuffers: Map<string, ToolCallBuffer>;
 
@@ -54,6 +57,7 @@ export class StreamState {
     this.createdAt = createdAt || Date.now();
 
     this.textBuffers = new Map();
+    this.reasoningBuffers = new Map();
     this.toolCallBuffers = new Map();
     this.completedToolCalls = [];
     this.toolResults = new Map();
@@ -101,6 +105,43 @@ export class StreamState {
       allText.push(chunks.join(''));
     }
     return allText.join('');
+  }
+
+  /**
+   * Accumulate reasoning delta for a specific item
+   */
+  accumulateReasoningDelta(itemId: string, delta: string): void {
+    if (!this.reasoningBuffers.has(itemId)) {
+      this.reasoningBuffers.set(itemId, []);
+    }
+    this.reasoningBuffers.get(itemId)!.push(delta);
+    this.totalChunks++;
+  }
+
+  /**
+   * Get complete accumulated reasoning for an item
+   */
+  getCompleteReasoning(itemId: string): string {
+    const chunks = this.reasoningBuffers.get(itemId);
+    return chunks ? chunks.join('') : '';
+  }
+
+  /**
+   * Get all accumulated reasoning (all items concatenated)
+   */
+  getAllReasoning(): string {
+    const allReasoning: string[] = [];
+    for (const chunks of this.reasoningBuffers.values()) {
+      allReasoning.push(chunks.join(''));
+    }
+    return allReasoning.join('');
+  }
+
+  /**
+   * Check if stream has any accumulated reasoning
+   */
+  hasReasoning(): boolean {
+    return this.reasoningBuffers.size > 0;
   }
 
   /**
@@ -291,6 +332,7 @@ export class StreamState {
    */
   clear(): void {
     this.textBuffers.clear();
+    this.reasoningBuffers.clear();
     this.toolCallBuffers.clear();
     this.completedToolCalls = [];
     this.toolResults.clear();
@@ -305,6 +347,7 @@ export class StreamState {
       model: this.model,
       createdAt: this.createdAt,
       textBuffers: new Map(this.textBuffers),
+      reasoningBuffers: new Map(this.reasoningBuffers),
       toolCallBuffers: new Map(this.toolCallBuffers),
       completedToolCalls: [...this.completedToolCalls],
       toolResults: new Map(this.toolResults),

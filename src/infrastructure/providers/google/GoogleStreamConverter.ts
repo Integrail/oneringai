@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'crypto';
 import { GenerateContentResponse } from '@google/genai';
-import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
+import { StreamEvent, StreamEventType, ReasoningDeltaEvent, ReasoningDoneEvent } from '../../../domain/entities/StreamEvent.js';
 
 /**
  * Converts Google Gemini streaming responses to our unified StreamEvent format
@@ -16,6 +16,8 @@ export class GoogleStreamConverter {
   private isFirst: boolean = true;
   private toolCallBuffers: Map<string, { name: string; args: string; signature?: string }> = new Map();
   private hadToolCalls: boolean = false;
+  private reasoningBuffer: string = '';
+  private wasThinking: boolean = false;
 
   // External storage for thought signatures (shared with GoogleConverter)
   private thoughtSignatureStorage: Map<string, string> | null = null;
@@ -50,6 +52,8 @@ export class GoogleStreamConverter {
     this.isFirst = true;
     this.toolCallBuffers.clear();
     this.hadToolCalls = false;
+    this.reasoningBuffer = '';
+    this.wasThinking = false;
 
     let lastUsage: { input_tokens: number; output_tokens: number; total_tokens: number } = {
       input_tokens: 0,
@@ -79,6 +83,18 @@ export class GoogleStreamConverter {
       for (const event of events) {
         yield event;
       }
+    }
+
+    // Emit reasoning done if we were still in thinking mode
+    if (this.wasThinking && this.reasoningBuffer) {
+      yield {
+        type: StreamEventType.REASONING_DONE,
+        response_id: this.responseId,
+        item_id: `thinking_${this.responseId}`,
+        thinking: this.reasoningBuffer,
+      } as ReasoningDoneEvent;
+      this.reasoningBuffer = '';
+      this.wasThinking = false;
     }
 
     // Emit completion for any pending tool calls
@@ -128,7 +144,34 @@ export class GoogleStreamConverter {
     if (!candidate?.content?.parts) return events;
 
     for (const part of candidate.content.parts) {
-      if (part.text) {
+      const isThought = 'thought' in part && (part as any).thought === true;
+
+      if (isThought && part.text) {
+        // Thought/thinking delta from Gemini
+        // If we were not thinking before, this is a new thinking block
+        this.wasThinking = true;
+        this.reasoningBuffer += part.text;
+
+        events.push({
+          type: StreamEventType.REASONING_DELTA,
+          response_id: this.responseId,
+          item_id: `thinking_${this.responseId}`,
+          delta: part.text,
+          sequence_number: this.sequenceNumber++,
+        } as ReasoningDeltaEvent);
+      } else if (part.text) {
+        // If we were thinking and now we're not, emit reasoning done
+        if (this.wasThinking) {
+          this.wasThinking = false;
+          events.push({
+            type: StreamEventType.REASONING_DONE,
+            response_id: this.responseId,
+            item_id: `thinking_${this.responseId}`,
+            thinking: this.reasoningBuffer,
+          } as ReasoningDoneEvent);
+          this.reasoningBuffer = '';
+        }
+
         // Text delta
         events.push({
           type: StreamEventType.OUTPUT_TEXT_DELTA,
@@ -248,6 +291,8 @@ export class GoogleStreamConverter {
     this.isFirst = true;
     this.toolCallBuffers.clear();
     this.hadToolCalls = false;
+    this.reasoningBuffer = '';
+    this.wasThinking = false;
   }
 
   /**

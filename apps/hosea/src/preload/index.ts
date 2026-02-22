@@ -149,6 +149,8 @@ export interface ContextEntryForUI {
  */
 export type StreamChunk =
   | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'thinking_done'; content: string }
   | { type: 'tool_start'; tool: string; args: Record<string, unknown>; description: string }
   | { type: 'tool_end'; tool: string; durationMs?: number }
   | { type: 'tool_error'; tool: string; error: string }

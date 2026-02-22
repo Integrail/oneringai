@@ -15,6 +15,7 @@
 import { InputItem, MessageRole } from '../../../domain/entities/Message.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { Tool } from '../../../domain/entities/Tool.js';
+import { ContentType } from '../../../domain/entities/Content.js';
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
 
 type ResponsesAPIInputItem = ResponsesAPI.ResponseInputItem;
@@ -201,16 +202,27 @@ export class OpenAIResponsesConverter {
           arguments: functionCall.arguments,
         });
       } else if (item.type === 'reasoning') {
-        // Add reasoning item to output (GPT-5 models)
+        // Extract reasoning summary as ThinkingContent (unified thinking API)
         const reasoning = item as ResponsesAPI.ResponseReasoningItem;
-        // Store reasoning summary in output for visibility
         if (reasoning.summary) {
-          content.push({
-            type: 'reasoning',
-            summary: reasoning.summary,
-            // effort field may not exist in all versions
-            ...(('effort' in reasoning) && { effort: (reasoning as any).effort }),
-          });
+          let summaryText: string;
+          if (typeof reasoning.summary === 'string') {
+            summaryText = reasoning.summary;
+          } else if (Array.isArray(reasoning.summary)) {
+            summaryText = reasoning.summary
+              .map((s: any) => s.text || '')
+              .filter(Boolean)
+              .join('\n');
+          } else {
+            summaryText = '';
+          }
+          if (summaryText) {
+            content.push({
+              type: ContentType.THINKING,
+              thinking: summaryText,
+              persistInHistory: false,
+            });
+          }
         }
       }
     }
@@ -240,10 +252,23 @@ export class OpenAIResponsesConverter {
         },
       ],
       output_text: outputText,
+      // Extract thinking text from content for convenience field
+      ...((() => {
+        const thinkingTexts = content
+          .filter((c: any) => c.type === ContentType.THINKING)
+          .map((c: any) => c.thinking as string)
+          .filter(Boolean);
+        return thinkingTexts.length > 0 ? { thinking: thinkingTexts.join('\n') } : {};
+      })()),
       usage: {
         input_tokens: response.usage?.input_tokens || 0,
         output_tokens: response.usage?.output_tokens || 0,
         total_tokens: response.usage?.total_tokens || 0,
+        ...((response.usage as any)?.output_tokens_details?.reasoning_tokens != null && {
+          output_tokens_details: {
+            reasoning_tokens: (response.usage as any).output_tokens_details.reasoning_tokens,
+          },
+        }),
       },
     };
   }

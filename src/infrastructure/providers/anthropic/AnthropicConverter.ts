@@ -17,6 +17,7 @@ import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool } from '../../../domain/entities/Tool.js';
 import { convertToolsToStandardFormat, transformForAnthropic, ProviderToolFormat } from '../shared/ToolConversionUtils.js';
 import { mapAnthropicStatus, ResponseStatus } from '../shared/ResponseBuilder.js';
+import { validateThinkingConfig } from '../shared/validateThinkingConfig.js';
 
 export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreateParams, Anthropic.Message> {
   readonly providerName = 'anthropic';
@@ -44,8 +45,18 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       params.tools = tools;
     }
 
-    // Add temperature if provided
-    if (options.temperature !== undefined) {
+    // Add thinking/reasoning support
+    if (options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      const budgetTokens = options.thinking.budgetTokens || 10000;
+      (params as any).thinking = {
+        type: 'enabled',
+        budget_tokens: budgetTokens,
+      };
+      // Anthropic requires temperature=1 when thinking is enabled
+      params.temperature = 1;
+    } else if (options.temperature !== undefined) {
+      // Only set temperature if thinking is not enabled
       params.temperature = options.temperature;
     }
 
@@ -97,6 +108,15 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         content.push(this.createText(block.text));
       } else if (block.type === 'tool_use') {
         content.push(this.createToolUse(block.id, block.name, block.input as Record<string, unknown>));
+      } else if (block.type === 'thinking') {
+        // Anthropic thinking block - must persist in history for round-tripping
+        const thinkingBlock = block as { type: 'thinking'; thinking: string; signature: string };
+        content.push({
+          type: ContentType.THINKING,
+          thinking: thinkingBlock.thinking || '',
+          signature: thinkingBlock.signature,
+          persistInHistory: true,
+        });
       }
     }
 
@@ -197,6 +217,22 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
             name: toolContent.name,
             input: parsedInput as Record<string, unknown>,
           });
+          break;
+        }
+
+        case ContentType.THINKING: {
+          // Round-trip thinking blocks back to Anthropic format.
+          // Only include blocks that have a valid signature — Anthropic requires it.
+          // Streaming-path thinking blocks lack signatures and cannot be round-tripped;
+          // non-streaming responses (via convertResponse) always carry signatures.
+          const thinkingContent = c as { thinking: string; signature?: string };
+          if (thinkingContent.signature) {
+            blocks.push({
+              type: 'thinking',
+              thinking: thinkingContent.thinking,
+              signature: thinkingContent.signature,
+            } as any);
+          }
           break;
         }
       }

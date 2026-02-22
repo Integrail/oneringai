@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, createContext, useContext, useEffect, useRef } from 'react';
-import type { ToolCallInfo } from '../components/ToolCallDisplay';
+import type { IChatMessage, IToolCallInfo } from '@everworker/react-ui';
 import type { Plan, StreamChunk, DynamicUIContent, ContextEntryForUI } from '../../preload/index';
 
 // Sidebar tab type
@@ -14,15 +14,9 @@ export type SidebarTab = 'look_inside' | 'dynamic_ui';
 
 // ============ Types ============
 
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-  isStreaming?: boolean;
-  toolCalls?: ToolCallInfo[];
-  error?: string;
-}
+// Re-export shared types for backwards compat
+export type Message = IChatMessage;
+export type ToolCallInfo = IToolCallInfo;
 
 export interface TabState {
   instanceId: string;
@@ -31,7 +25,8 @@ export interface TabState {
   title: string;
   messages: Message[];
   streamingContent: string;
-  activeToolCalls: Map<string, ToolCallInfo>;
+  streamingThinking: string;
+  activeToolCalls: Map<string, IToolCallInfo>;
   activePlan: Plan | null;
   isLoading: boolean;
   status: {
@@ -134,7 +129,28 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         const newTabs = new Map(prevTabs);
         const updatedTab = { ...tab };
 
-        if (chunk.type === 'text' && chunk.content) {
+        if (chunk.type === 'thinking' && chunk.content) {
+          updatedTab.streamingThinking = (tab.streamingThinking || '') + chunk.content;
+
+          // Update the streaming message's thinking field
+          const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
+          if (lastMsg?.isStreaming) {
+            updatedTab.messages = [
+              ...updatedTab.messages.slice(0, -1),
+              { ...lastMsg, thinking: updatedTab.streamingThinking },
+            ];
+          }
+        } else if (chunk.type === 'thinking_done') {
+          const finalThinking = updatedTab.streamingThinking || chunk.content || '';
+          const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
+          if (lastMsg?.isStreaming) {
+            updatedTab.messages = [
+              ...updatedTab.messages.slice(0, -1),
+              { ...lastMsg, thinking: finalThinking },
+            ];
+          }
+          updatedTab.streamingThinking = '';
+        } else if (chunk.type === 'text' && chunk.content) {
           updatedTab.streamingContent = tab.streamingContent + chunk.content;
 
           // Update the streaming message content
@@ -146,7 +162,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
             ];
           }
         } else if (chunk.type === 'tool_start') {
-          const toolCall: ToolCallInfo = {
+          const toolCall: IToolCallInfo = {
             id: `${chunk.tool}-${Date.now()}`,
             name: chunk.tool,
             args: chunk.args,
@@ -321,6 +337,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         }
 
         updatedTab.streamingContent = '';
+        updatedTab.streamingThinking = '';
         updatedTab.activeToolCalls = new Map();
         updatedTab.isLoading = false;
 
@@ -363,6 +380,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         title: tabTitle,
         messages: [],
         streamingContent: '',
+        streamingThinking: '',
         activeToolCalls: new Map(),
         activePlan: null,
         isLoading: false,

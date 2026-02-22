@@ -34,6 +34,12 @@
   padding: 0 var(--spacing-6);
 }
 
+/* Override shared MessageList scroll — parent .chat__messages handles scrolling */
+.chat__messages .rui-message-list {
+  overflow-y: visible;
+  padding: 0;
+}
+
 /* Welcome Screen */
 .chat__welcome {
   text-align: center;

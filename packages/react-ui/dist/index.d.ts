@@ -1,6 +1,7 @@
-import React$1, { ReactNode } from 'react';
+import React$1, { ReactNode, Component, ErrorInfo } from 'react';
 import { IPluginSnapshot, IContextSnapshot, IViewContextData, ContextBudget, IToolSnapshot } from '@everworker/oneringai';
 export { IContextSnapshot, IPluginSnapshot, IToolSnapshot, IViewContextComponent, IViewContextData } from '@everworker/oneringai';
+import * as react_jsx_runtime from 'react/jsx-runtime';
 
 /**
  * UI prop types for Look Inside components.
@@ -245,4 +246,307 @@ declare function formatPluginName(name: string): string;
  */
 declare function formatTimestamp(ts: number): string;
 
-export { CollapsibleSection, type CollapsibleSectionProps, ContextWindowSection, GenericPluginSection, InContextMemoryRenderer, LookInsidePanel, type LookInsidePanelProps, PersistentInstructionsRenderer, type PluginRenderer, type PluginRendererProps, SystemPromptSection, TokenBreakdownSection, ToolsSection, UserInfoRenderer, ViewContextContent, type ViewContextContentProps, WorkingMemoryRenderer, formatBytes, formatNumber, formatPluginName, formatTimestamp, getPluginRenderer, getRegisteredPluginNames, getUtilizationColor, getUtilizationLabel, registerPluginRenderer, truncateText };
+/**
+ * Shared types for the markdown rendering components.
+ */
+interface MarkdownRendererProps {
+    /** The markdown content string to render */
+    content?: string;
+    /** Alternate way to pass content (backwards compat with v25 pattern) */
+    children?: string;
+    /** Additional CSS class name */
+    className?: string;
+    /** Whether the content is currently being streamed (delays special block rendering) */
+    isStreaming?: boolean;
+}
+interface CodeBlockProps {
+    /** Programming language identifier */
+    language: string;
+    /** The code string content */
+    code: string;
+    /** Whether the parent markdown is streaming */
+    isStreaming?: boolean;
+}
+interface MermaidDiagramProps {
+    /** Mermaid diagram code */
+    code: string;
+    /** Callback when rendering fails */
+    onError?: (error: Error) => void;
+}
+interface VegaChartProps {
+    /** Vega or Vega-Lite JSON specification string */
+    code: string;
+    /** Whether the spec is Vega-Lite (default: true) */
+    isLite?: boolean;
+    /** Callback when rendering fails */
+    onError?: (error: Error) => void;
+}
+interface MarkmapRendererProps {
+    /** Markdown content for the mindmap */
+    code: string;
+    /** Callback when rendering fails */
+    onError?: (error: Error) => void;
+}
+interface RenderErrorBoundaryProps {
+    children: React.ReactNode;
+    /** Message shown when rendering fails */
+    fallbackMessage?: string;
+    /** Label for the renderer type (e.g. "mermaid diagram") */
+    rendererType?: string;
+}
+
+/**
+ * Rich Markdown Renderer with support for:
+ * - GitHub Flavored Markdown (tables, strikethrough, autolinks)
+ * - Syntax-highlighted code blocks with special renderers
+ * - LaTeX math (inline and block) with robust preprocessing
+ * - Mermaid diagrams, Markmap mindmaps, Vega/Vega-Lite charts
+ *
+ * Merged from Hosea (streaming context, audio/video detection, clean structure)
+ * and v25 (advanced math preprocessing, box-drawing table conversion, pipe escaping).
+ */
+
+interface MarkdownContextValue {
+    isStreaming: boolean;
+}
+declare const useMarkdownContext: () => MarkdownContextValue;
+declare const MarkdownRenderer: React$1.NamedExoticComponent<MarkdownRendererProps>;
+
+/**
+ * Code Block Component with syntax highlighting and special renderers.
+ *
+ * Supports: standard code, mermaid diagrams, vega/vega-lite charts, markmap mindmaps.
+ * Special blocks (vega, mermaid, markmap) only render after streaming completes
+ * to avoid parse errors from incomplete JSON/syntax.
+ *
+ * Based on Hosea's CodeBlock (streaming-aware, lazy-loaded special renderers)
+ * with Hosea's copy button UX.
+ */
+
+declare function CodeBlock({ language, code, isStreaming }: CodeBlockProps): React$1.ReactElement;
+
+/**
+ * Mermaid Diagram Renderer
+ * Renders mermaid diagram code into SVG.
+ *
+ * Requires `mermaid` as an optional peer dependency.
+ */
+
+declare function MermaidDiagram({ code, onError }: MermaidDiagramProps): React$1.ReactElement;
+
+/**
+ * Vega/Vega-Lite Chart Renderer
+ * Renders Vega or Vega-Lite JSON specifications as interactive charts.
+ *
+ * Requires `react-vega` and `vega-lite` as optional peer dependencies.
+ */
+
+declare function VegaChart({ code, isLite, onError, }: VegaChartProps): React$1.ReactElement;
+
+/**
+ * Markmap Mindmap Renderer
+ * Renders markdown content as an interactive mindmap.
+ *
+ * Requires `markmap-lib` and `markmap-view` as optional peer dependencies.
+ */
+
+declare function MarkmapRenderer({ code, onError, }: MarkmapRendererProps): React$1.ReactElement;
+
+interface Props {
+    children: ReactNode;
+    fallbackMessage?: string;
+    rendererType?: string;
+}
+interface State {
+    hasError: boolean;
+    error?: Error;
+}
+declare class RenderErrorBoundary extends Component<Props, State> {
+    constructor(props: Props);
+    static getDerivedStateFromError(error: Error): State;
+    componentDidCatch(error: Error, _errorInfo: ErrorInfo): void;
+    private isBenignError;
+    render(): string | number | boolean | Iterable<React$1.ReactNode> | react_jsx_runtime.JSX.Element | null | undefined;
+}
+
+/**
+ * Shared chat UI types.
+ * Both apps can use these directly or extend them with app-specific fields.
+ */
+/** Base message type — apps can extend with their own fields */
+interface IChatMessage {
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    timestamp?: number | Date;
+    isStreaming?: boolean;
+    /** Thinking/reasoning content from the LLM */
+    thinking?: string;
+    /** Tool calls associated with this message */
+    toolCalls?: IToolCallInfo[];
+    /** Error message if the response failed */
+    error?: string;
+}
+/** Shared tool call type (superset of both apps) */
+interface IToolCallInfo {
+    id: string;
+    name: string;
+    description?: string;
+    args?: Record<string, unknown>;
+    status: 'pending' | 'running' | 'complete' | 'error';
+    durationMs?: number;
+    result?: unknown;
+    error?: string;
+}
+/** Props for StreamingText */
+interface IStreamingTextProps {
+    text: string;
+    isStreaming?: boolean;
+    renderMarkdown?: boolean;
+    className?: string;
+    showCursor?: boolean;
+}
+/** Props for ToolCallCard */
+interface IToolCallCardProps {
+    tool: IToolCallInfo;
+    expanded?: boolean;
+    className?: string;
+}
+/** Props for ExecutionProgress */
+interface IExecutionProgressProps {
+    tools: IToolCallInfo[];
+    activeCount: number;
+    isComplete: boolean;
+}
+/** Props for ChatControls */
+interface IChatControlsProps {
+    isRunning?: boolean;
+    isPaused?: boolean;
+    hasError?: boolean;
+    onPause?: () => void;
+    onResume?: () => void;
+    onCancel?: () => void;
+    disabled?: boolean;
+    className?: string;
+    size?: 'sm' | 'lg';
+}
+/** Props for ExportMessage */
+interface IExportMessageProps {
+    messageElement: HTMLElement | null;
+    markdownContent?: string;
+    onExport?: (format: 'pdf' | 'docx') => Promise<void>;
+    className?: string;
+    disabled?: boolean;
+}
+/** Props for ThinkingBlock */
+interface IThinkingBlockProps {
+    content: string;
+    isStreaming?: boolean;
+    defaultCollapsed?: boolean;
+    className?: string;
+}
+/** Props for MessageList */
+interface IMessageListProps {
+    messages: IChatMessage[];
+    streamingText?: string;
+    streamingThinking?: string;
+    isStreaming?: boolean;
+    autoScroll?: boolean;
+    hideThinking?: boolean;
+    className?: string;
+    renderMessage?: (message: IChatMessage, index: number) => React.ReactNode;
+    onCopyMessage?: (content: string) => void;
+    onExport?: (message: IChatMessage, element: HTMLElement) => void;
+}
+
+/**
+ * MessageList — Displays a list of chat messages with rich rendering.
+ *
+ * Features:
+ * - Markdown rendering with math, diagrams, charts, code highlighting
+ * - Streaming text support with animated cursor
+ * - ThinkingBlock for thinking-capable models
+ * - Tool call display
+ * - Copy message content
+ * - Auto-scroll to bottom
+ *
+ * Merged from v25 (standalone component) + Hosea (smart auto-scroll).
+ */
+
+/**
+ * Main message list component.
+ */
+declare const MessageList: React$1.FC<IMessageListProps>;
+
+/**
+ * StreamingText — Renders streaming text with a typing indicator.
+ *
+ * Displays text that accumulates in real-time during streaming,
+ * with an animated cursor to indicate active streaming.
+ */
+
+declare const StreamingText: React$1.FC<IStreamingTextProps>;
+
+/**
+ * ToolCallCard — Displays tool call information.
+ *
+ * Merged from:
+ * - Hosea's ToolCallDisplay (category colors, icons, inline variant)
+ * - v25's ToolCallCard (expandable details, args/result display)
+ */
+
+declare const ToolCallCard: React$1.FC<IToolCallCardProps>;
+/**
+ * Inline tool call display for embedding in message content.
+ */
+interface InlineToolCallProps {
+    name: string;
+    description: string;
+    status: 'pending' | 'running' | 'complete' | 'error';
+}
+declare function InlineToolCall({ name, description, status }: InlineToolCallProps): React$1.ReactElement;
+
+/**
+ * ExecutionProgress — Inline progress indicator for agent execution.
+ *
+ * Shows dynamic header with running tool name or cycling status messages.
+ * Collapsed by default, expandable to show full ToolCallCard list.
+ *
+ * From v25, adapted to use framework-agnostic CSS classes.
+ */
+
+declare const ExecutionProgress: React$1.FC<IExecutionProgressProps>;
+
+/**
+ * ChatControls — Execution control buttons for chat.
+ *
+ * Provides pause/resume/cancel controls for agent execution.
+ * Framework-agnostic: uses plain HTML buttons with CSS classes.
+ */
+
+declare const ChatControls: React$1.FC<IChatControlsProps>;
+
+/**
+ * ExportMessage — Export button with dropdown for PDF/DOCX export.
+ *
+ * The actual export logic is injectable via `onExport` prop so each app
+ * can provide its own PDF/DOCX generation (v25 has corporate templates, Hosea may differ).
+ * If no onExport is provided, the button is hidden.
+ */
+
+declare const ExportMessage: React$1.FC<IExportMessageProps>;
+
+/**
+ * ThinkingBlock — Collapsible display for LLM thinking/reasoning content.
+ *
+ * NEW component that surfaces the thinking text from thinking-capable models
+ * (Claude with extended thinking, OpenAI with reasoning, etc.).
+ *
+ * - Collapsed: Shows "Thinking..." with chevron, animated dots while streaming
+ * - Expanded: Grey-tinted scrollable block with the thinking text
+ * - Uses CSS variables on `.thinking-block` for easy theming
+ */
+
+declare const ThinkingBlock: React$1.FC<IThinkingBlockProps>;
+
+export { ChatControls, CodeBlock, type CodeBlockProps, CollapsibleSection, type CollapsibleSectionProps, ContextWindowSection, ExecutionProgress, ExportMessage, GenericPluginSection, type IChatControlsProps, type IChatMessage, type IExecutionProgressProps, type IExportMessageProps, type IMessageListProps, type IStreamingTextProps, type IThinkingBlockProps, type IToolCallCardProps, type IToolCallInfo, InContextMemoryRenderer, InlineToolCall, LookInsidePanel, type LookInsidePanelProps, MarkdownRenderer, type MarkdownRendererProps, MarkmapRenderer, type MarkmapRendererProps, MermaidDiagram, type MermaidDiagramProps, MessageList, PersistentInstructionsRenderer, type PluginRenderer, type PluginRendererProps, RenderErrorBoundary, type RenderErrorBoundaryProps, StreamingText, SystemPromptSection, ThinkingBlock, TokenBreakdownSection, ToolCallCard, ToolsSection, UserInfoRenderer, VegaChart, type VegaChartProps, ViewContextContent, type ViewContextContentProps, WorkingMemoryRenderer, formatBytes, formatNumber, formatPluginName, formatTimestamp, getPluginRenderer, getRegisteredPluginNames, getUtilizationColor, getUtilizationLabel, registerPluginRenderer, truncateText, useMarkdownContext };

@@ -81,8 +81,9 @@ export function buildLLMResponse(options: ResponseBuilderOptions): LLMResponse {
     },
   ];
 
-  // Extract text from content
+  // Extract text and thinking from content
   const outputText = extractTextFromContent(content);
+  const thinking = extractThinkingFromContent(content);
 
   return {
     id: responseId,
@@ -92,6 +93,7 @@ export function buildLLMResponse(options: ResponseBuilderOptions): LLMResponse {
     model,
     output,
     output_text: outputText,
+    ...(thinking && { thinking }),
     usage: {
       input_tokens: usage.inputTokens,
       output_tokens: usage.outputTokens,
@@ -113,6 +115,20 @@ export function extractTextFromContent(content: Content[]): string {
     )
     .map((c) => c.text)
     .join('\n');
+}
+
+/**
+ * Extract thinking/reasoning content from a Content array
+ *
+ * @param content - Content array to extract thinking from
+ * @returns Concatenated thinking text, or undefined if none
+ */
+export function extractThinkingFromContent(content: Content[]): string | undefined {
+  const thinkingTexts = content
+    .filter((c) => c.type === ContentType.THINKING)
+    .map((c) => (c as any).thinking as string)
+    .filter(Boolean);
+  return thinkingTexts.length > 0 ? thinkingTexts.join('\n') : undefined;
 }
 
 /**

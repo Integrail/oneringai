@@ -451,6 +451,7 @@ export type {
   OutputTextContent,
   ToolUseContent,
   ToolResultContent,
+  ThinkingContent,
 } from './domain/entities/Content.js';
 
 // Messages
@@ -559,6 +560,8 @@ export type {
   ResponseInProgressEvent,
   OutputTextDeltaEvent,
   OutputTextDoneEvent,
+  ReasoningDeltaEvent,
+  ReasoningDoneEvent,
   ToolCallStartEvent,
   ToolCallArgumentsDeltaEvent,
   ToolCallArgumentsDoneEvent,
@@ -571,6 +574,8 @@ export type {
 export {
   isStreamEvent,
   isOutputTextDelta,
+  isReasoningDelta,
+  isReasoningDone,
   isToolCallStart,
   isToolCallArgumentsDelta,
   isToolCallArgumentsDone,

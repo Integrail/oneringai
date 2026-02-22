@@ -13,6 +13,7 @@ import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole } from '../../../domain/entities/Message.js';
 import { convertToolsToStandardFormat } from '../shared/ToolConversionUtils.js';
+import { validateThinkingConfig } from '../shared/validateThinkingConfig.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool } from '../../../domain/entities/Tool.js';
 import { fetchImageAsBase64 } from '../../../utils/imageUtils.js';
@@ -100,6 +101,12 @@ export class GoogleConverter {
     if (options.vendorOptions?.thinkingLevel) {
       request.generationConfig.thinkingConfig = {
         thinkingLevel: options.vendorOptions.thinkingLevel,
+      };
+    } else if (options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      // Unified thinking API: set thinkingBudget from thinking.budgetTokens
+      request.generationConfig.thinkingConfig = {
+        thinkingBudget: options.thinking.budgetTokens || 8192,
       };
     }
 
@@ -380,7 +387,14 @@ export class GoogleConverter {
     const content: Content[] = [];
 
     for (const part of parts) {
-      if ('text' in part && part.text) {
+      // Check for thought/thinking parts (Gemini 3+ with thinking enabled)
+      if ('thought' in part && (part as any).thought === true && 'text' in part && part.text) {
+        content.push({
+          type: ContentType.THINKING,
+          thinking: part.text,
+          persistInHistory: false,
+        });
+      } else if ('text' in part && part.text) {
         content.push(createTextContent(part.text));
       } else if ('functionCall' in part && part.functionCall) {
         const toolId = generateToolCallId('google');

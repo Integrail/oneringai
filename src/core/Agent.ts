@@ -14,7 +14,7 @@ import { ExecutionContext, HistoryMode } from '../capabilities/agents/ExecutionC
 import { HookManager } from '../capabilities/agents/HookManager.js';
 import { InputItem, MessageRole, OutputItem } from '../domain/entities/Message.js';
 import { AgentResponse } from '../domain/entities/Response.js';
-import { StreamEvent, StreamEventType, isToolCallArgumentsDone } from '../domain/entities/StreamEvent.js';
+import { StreamEvent, StreamEventType, isToolCallArgumentsDone, isReasoningDelta } from '../domain/entities/StreamEvent.js';
 import { StreamState } from '../domain/entities/StreamState.js';
 import { Tool, ToolCall, ToolCallState, ToolResult } from '../domain/entities/Tool.js';
 import { Content, ContentType } from '../domain/entities/Content.js';
@@ -23,6 +23,7 @@ import type { HookConfig, HookName } from '../capabilities/agents/types/HookType
 import { AgentEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import { TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
+import { Vendor } from './Vendor.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { PermissionCheckContext } from './permissions/types.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
@@ -53,6 +54,15 @@ export interface AgentConfig extends BaseAgentConfig {
 
   /** Maximum iterations for tool calling loop */
   maxIterations?: number;
+
+  /** Vendor-agnostic thinking/reasoning configuration */
+  thinking?: {
+    enabled: boolean;
+    /** Budget in tokens for thinking (Anthropic & Google) */
+    budgetTokens?: number;
+    /** Reasoning effort level (OpenAI) */
+    effort?: 'low' | 'medium' | 'high';
+  };
 
   /** Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') */
   vendorOptions?: Record<string, unknown>;
@@ -717,6 +727,23 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     const assistantText = streamState.getAllText();
     const assistantContent: Content[] = [];
 
+    // Add thinking content if reasoning was accumulated
+    if (streamState.hasReasoning()) {
+      const reasoning = streamState.getAllReasoning();
+      if (reasoning) {
+        // Use actual connector vendor for reliable detection
+        const isAnthropic = this.connector.vendor === Vendor.Anthropic;
+        assistantContent.push({
+          type: ContentType.THINKING,
+          thinking: reasoning,
+          // Streaming doesn't carry Anthropic signatures, so signature is undefined here.
+          // Non-streaming responses (via convertResponse) capture signatures correctly.
+          signature: undefined,
+          persistInHistory: isAnthropic,
+        });
+      }
+    }
+
     if (assistantText && assistantText.trim()) {
       assistantContent.push({
         type: ContentType.OUTPUT_TEXT,
@@ -1035,6 +1062,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       tools: this.getEnabledToolDefinitions(),
       tool_choice: 'auto',
       temperature: this._config.temperature,
+      thinking: this._config.thinking,
       vendorOptions: this._config.vendorOptions,
     };
 
@@ -1129,6 +1157,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       tools: this.getEnabledToolDefinitions(),
       tool_choice: 'auto',
       temperature: this._config.temperature,
+      thinking: this._config.thinking,
       vendorOptions: this._config.vendorOptions,
     };
 
@@ -1153,7 +1182,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Stream from provider
       for await (const event of this._provider.streamGenerate(generateOptions)) {
         // Update stream state based on event
-        if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
+        if (isReasoningDelta(event)) {
+          streamState.accumulateReasoningDelta(event.item_id, event.delta);
+        } else if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
           streamState.accumulateTextDelta(event.item_id, event.delta);
         } else if (event.type === StreamEventType.TOOL_CALL_START) {
           streamState.startToolCall(event.tool_call_id, event.tool_name);

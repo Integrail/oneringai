@@ -1,3 +1,13 @@
+import {
+  MermaidDiagram
+} from "./chunk-GBLSWHXJ.js";
+import {
+  VegaChart
+} from "./chunk-N55F3EJH.js";
+import {
+  MarkmapRenderer
+} from "./chunk-SZK4XR7R.js";
+
 // src/look-inside/LookInsidePanel.tsx
 import { useMemo as useMemo2, useState as useState3, useCallback as useCallback2, useRef } from "react";
 
@@ -634,17 +644,1052 @@ var ViewContextContent = ({
     ] }, index)) })
   ] });
 };
+
+// src/markdown/MarkdownRenderer.tsx
+import { useMemo as useMemo3, memo, createContext, useContext } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+
+// src/markdown/CodeBlock.tsx
+import { useState as useState4, useCallback as useCallback3, Suspense, lazy, useEffect } from "react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Copy, Check, AlertCircle, Loader } from "lucide-react";
+import { jsx as jsx13, jsxs as jsxs12 } from "react/jsx-runtime";
+var MermaidDiagram2 = lazy(() => import("./MermaidDiagram-QSOVXU2H.js"));
+var VegaChart2 = lazy(() => import("./VegaChart-VO2SBQLR.js"));
+var MarkmapRenderer2 = lazy(() => import("./MarkmapRenderer-B7N4CNXA.js"));
+var LoadingFallback = () => /* @__PURE__ */ jsxs12("div", { className: "code-block__loading", children: [
+  /* @__PURE__ */ jsx13("div", { className: "rui-spinner", role: "status", children: /* @__PURE__ */ jsx13("span", { className: "rui-visually-hidden", children: "Loading..." }) }),
+  /* @__PURE__ */ jsx13("span", { children: "Rendering..." })
+] });
+var StreamingPreview = ({ language, code }) => /* @__PURE__ */ jsxs12("div", { className: "code-block__streaming-preview", children: [
+  /* @__PURE__ */ jsxs12("div", { className: "code-block__streaming-header", children: [
+    /* @__PURE__ */ jsx13(Loader, { size: 14, className: "code-block__streaming-spinner" }),
+    /* @__PURE__ */ jsxs12("span", { children: [
+      "Receiving ",
+      language,
+      " content..."
+    ] })
+  ] }),
+  /* @__PURE__ */ jsx13("pre", { className: "code-block__streaming-code", children: code })
+] });
+var ErrorFallback = ({ error, code }) => /* @__PURE__ */ jsxs12("div", { className: "code-block__error", children: [
+  /* @__PURE__ */ jsxs12("div", { className: "code-block__error-header", children: [
+    /* @__PURE__ */ jsx13(AlertCircle, { size: 16 }),
+    /* @__PURE__ */ jsx13("span", { children: "Rendering Error" })
+  ] }),
+  /* @__PURE__ */ jsx13("p", { className: "code-block__error-message", children: error }),
+  /* @__PURE__ */ jsx13("pre", { className: "code-block__error-code", children: code })
+] });
+var isSpecialBlock = (lang) => {
+  const specialLangs = ["mermaid", "vega", "vega-lite", "markmap", "mindmap"];
+  return specialLangs.includes(lang.toLowerCase());
+};
+function CodeBlock({ language, code, isStreaming = false }) {
+  const [copied, setCopied] = useState4(false);
+  const [error, setError] = useState4(null);
+  const [shouldRender, setShouldRender] = useState4(!isStreaming);
+  const normalizedLang = language.toLowerCase();
+  const isSpecial = isSpecialBlock(normalizedLang);
+  useEffect(() => {
+    if (!isStreaming && isSpecial) {
+      setError(null);
+      setShouldRender(true);
+    } else if (isStreaming && isSpecial) {
+      setShouldRender(false);
+    }
+  }, [isStreaming, isSpecial, code]);
+  const handleCopy = useCallback3(async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2e3);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, [code]);
+  const handleError = useCallback3((err) => {
+    setError(err.message);
+  }, []);
+  if (normalizedLang === "mermaid") {
+    return /* @__PURE__ */ jsxs12("div", { className: "code-block code-block--mermaid", children: [
+      /* @__PURE__ */ jsxs12("div", { className: "code-block__header", children: [
+        /* @__PURE__ */ jsx13("span", { className: "code-block__language", children: "mermaid" }),
+        /* @__PURE__ */ jsx13("button", { className: "code-block__copy", onClick: handleCopy, title: "Copy code", children: copied ? /* @__PURE__ */ jsx13(Check, { size: 14 }) : /* @__PURE__ */ jsx13(Copy, { size: 14 }) })
+      ] }),
+      isStreaming || !shouldRender ? /* @__PURE__ */ jsx13(StreamingPreview, { language: "mermaid", code }) : error ? /* @__PURE__ */ jsx13(ErrorFallback, { error, code }) : /* @__PURE__ */ jsx13(Suspense, { fallback: /* @__PURE__ */ jsx13(LoadingFallback, {}), children: /* @__PURE__ */ jsx13(MermaidDiagram2, { code, onError: handleError }) })
+    ] });
+  }
+  if (normalizedLang === "vega" || normalizedLang === "vega-lite") {
+    return /* @__PURE__ */ jsxs12("div", { className: `code-block code-block--${normalizedLang}`, children: [
+      /* @__PURE__ */ jsxs12("div", { className: "code-block__header", children: [
+        /* @__PURE__ */ jsx13("span", { className: "code-block__language", children: normalizedLang }),
+        /* @__PURE__ */ jsx13("button", { className: "code-block__copy", onClick: handleCopy, title: "Copy code", children: copied ? /* @__PURE__ */ jsx13(Check, { size: 14 }) : /* @__PURE__ */ jsx13(Copy, { size: 14 }) })
+      ] }),
+      isStreaming || !shouldRender ? /* @__PURE__ */ jsx13(StreamingPreview, { language: normalizedLang, code }) : error ? /* @__PURE__ */ jsx13(ErrorFallback, { error, code }) : /* @__PURE__ */ jsx13(Suspense, { fallback: /* @__PURE__ */ jsx13(LoadingFallback, {}), children: /* @__PURE__ */ jsx13(VegaChart2, { code, isLite: normalizedLang === "vega-lite", onError: handleError }) })
+    ] });
+  }
+  if (normalizedLang === "markmap" || normalizedLang === "mindmap") {
+    return /* @__PURE__ */ jsxs12("div", { className: "code-block code-block--markmap", children: [
+      /* @__PURE__ */ jsxs12("div", { className: "code-block__header", children: [
+        /* @__PURE__ */ jsx13("span", { className: "code-block__language", children: "mindmap" }),
+        /* @__PURE__ */ jsx13("button", { className: "code-block__copy", onClick: handleCopy, title: "Copy code", children: copied ? /* @__PURE__ */ jsx13(Check, { size: 14 }) : /* @__PURE__ */ jsx13(Copy, { size: 14 }) })
+      ] }),
+      isStreaming || !shouldRender ? /* @__PURE__ */ jsx13(StreamingPreview, { language: "markmap", code }) : error ? /* @__PURE__ */ jsx13(ErrorFallback, { error, code }) : /* @__PURE__ */ jsx13(Suspense, { fallback: /* @__PURE__ */ jsx13(LoadingFallback, {}), children: /* @__PURE__ */ jsx13(MarkmapRenderer2, { code, onError: handleError }) })
+    ] });
+  }
+  return /* @__PURE__ */ jsxs12("div", { className: "code-block", children: [
+    /* @__PURE__ */ jsxs12("div", { className: "code-block__header", children: [
+      /* @__PURE__ */ jsx13("span", { className: "code-block__language", children: language || "text" }),
+      /* @__PURE__ */ jsx13("button", { className: "code-block__copy", onClick: handleCopy, title: "Copy code", children: copied ? /* @__PURE__ */ jsx13(Check, { size: 14 }) : /* @__PURE__ */ jsx13(Copy, { size: 14 }) })
+    ] }),
+    /* @__PURE__ */ jsx13(
+      SyntaxHighlighter,
+      {
+        style: oneDark,
+        language: normalizedLang || "text",
+        PreTag: "div",
+        className: "code-block__content",
+        showLineNumbers: code.split("\n").length > 5,
+        wrapLines: true,
+        customStyle: {
+          margin: 0,
+          borderRadius: "0 0 8px 8px",
+          fontSize: "13px"
+        },
+        children: code
+      }
+    )
+  ] });
+}
+
+// src/markdown/MarkdownRenderer.tsx
+import { jsx as jsx14 } from "react/jsx-runtime";
+var MarkdownContext = createContext({ isStreaming: false });
+var useMarkdownContext = () => useContext(MarkdownContext);
+function findMatchingBrace(text, startIndex) {
+  let depth = 0;
+  for (let i = startIndex; i < text.length; i++) {
+    if (i > 0 && text[i - 1] === "\\") {
+      let backslashCount = 0;
+      let j = i - 1;
+      while (j >= 0 && text[j] === "\\") {
+        backslashCount++;
+        j--;
+      }
+      if (backslashCount % 2 === 1) continue;
+    }
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+function escapeDollarsInTextCommands(mathContent) {
+  const textCommands = ["text", "mathrm", "mbox", "textrm", "textsf", "texttt", "textnormal", "textsc"];
+  let result = mathContent;
+  for (const cmd of textCommands) {
+    const cmdPattern = `\\${cmd}{`;
+    let searchPos = 0;
+    while (true) {
+      const cmdStart = result.indexOf(cmdPattern, searchPos);
+      if (cmdStart === -1) break;
+      const braceStart = cmdStart + cmdPattern.length;
+      const braceEnd = findMatchingBrace(result, braceStart - 1);
+      if (braceEnd === -1) {
+        searchPos = braceStart;
+        continue;
+      }
+      const textContent = result.substring(braceStart, braceEnd);
+      let escapedContent = "";
+      let i = 0;
+      while (i < textContent.length) {
+        if (textContent[i] === "$") {
+          if (i < textContent.length - 1 && textContent[i + 1] === "$") {
+            escapedContent += "$$";
+            i += 2;
+            continue;
+          }
+          const dollarStart = i;
+          i++;
+          const closingDollar = textContent.indexOf("$", i);
+          if (closingDollar !== -1 && (closingDollar === textContent.length - 1 || textContent[closingDollar + 1] !== "$")) {
+            const mathExpr = textContent.substring(dollarStart + 1, closingDollar);
+            escapedContent += `\\(${mathExpr}\\)`;
+            i = closingDollar + 1;
+          } else {
+            escapedContent += "$";
+            i++;
+          }
+        } else {
+          escapedContent += textContent[i];
+          i++;
+        }
+      }
+      if (escapedContent !== textContent) {
+        result = result.substring(0, braceStart) + escapedContent + result.substring(braceEnd);
+        searchPos = braceStart + escapedContent.length;
+      } else {
+        searchPos = braceEnd + 1;
+      }
+    }
+  }
+  return result;
+}
+function convertBoxDrawingTables(text) {
+  const lines = text.split("\n");
+  const result = [];
+  const BOX_BORDER_CHARS = /[┌┐└┘├┤┬┴┼─╔╗╚╝╠╣╦╩╬═]/;
+  const BOX_DATA_CHAR = /[│║]/;
+  const isBoxLine = (line) => BOX_DATA_CHAR.test(line) || BOX_BORDER_CHARS.test(line);
+  const isBorderLine = (line) => {
+    const trimmed = line.trim();
+    return BOX_BORDER_CHARS.test(trimmed) && !BOX_DATA_CHAR.test(trimmed) && /^[┌┐└┘├┤┬┴┼─╔╗╚╝╠╣╦╩╬═\s]+$/.test(trimmed);
+  };
+  const isDataLine = (line) => BOX_DATA_CHAR.test(line);
+  const extractCells = (line) => {
+    const parts = line.split(/[│║]/);
+    return parts.length >= 3 ? parts.slice(1, -1).map((c) => c.trim()) : parts.map((c) => c.trim());
+  };
+  const convertBlock = (blockLines) => {
+    const mergedRows = [];
+    let currentGroup = [];
+    const flushGroup = () => {
+      if (currentGroup.length === 0) return;
+      const colCount2 = currentGroup[0].length;
+      const merged = Array(colCount2).fill("");
+      for (const cellRow of currentGroup) {
+        for (let c = 0; c < colCount2 && c < cellRow.length; c++) {
+          if (cellRow[c]) merged[c] = merged[c] ? `${merged[c]} ${cellRow[c]}` : cellRow[c];
+        }
+      }
+      mergedRows.push(merged);
+      currentGroup = [];
+    };
+    for (const line of blockLines) {
+      if (isBorderLine(line)) {
+        flushGroup();
+        continue;
+      }
+      if (isDataLine(line)) currentGroup.push(extractCells(line));
+    }
+    flushGroup();
+    if (mergedRows.length === 0) return blockLines;
+    const colCount = mergedRows[0].length;
+    const gfmLines = [];
+    gfmLines.push(`| ${mergedRows[0].map((c) => c || " ").join(" | ")} |`);
+    gfmLines.push(`|${Array(colCount).fill("---").join("|")}|`);
+    for (let i2 = 1; i2 < mergedRows.length; i2++) {
+      const row = mergedRows[i2].slice(0, colCount);
+      while (row.length < colCount) row.push("");
+      gfmLines.push(`| ${row.join(" | ")} |`);
+    }
+    return gfmLines;
+  };
+  let i = 0;
+  while (i < lines.length) {
+    if (isBoxLine(lines[i])) {
+      const blockStart = i;
+      while (i < lines.length && isBoxLine(lines[i])) i++;
+      result.push(...convertBlock(lines.slice(blockStart, i)));
+    } else {
+      result.push(lines[i]);
+      i++;
+    }
+  }
+  return result.join("\n");
+}
+function preprocessMarkdown(content) {
+  if (!content || typeof content !== "string") return "";
+  let processed = content;
+  const codeBlocks = [];
+  let codeBlockIndex = 0;
+  processed = processed.replace(/```[\w]*\n?[\s\S]*?```/g, (match) => {
+    const placeholder = `__CODE_BLOCK_PLACEHOLDER_${codeBlockIndex}__`;
+    codeBlocks.push({ placeholder, content: match });
+    codeBlockIndex++;
+    return placeholder;
+  });
+  processed = convertBoxDrawingTables(processed);
+  processed = processed.replace(/\r\n/g, "\n");
+  processed = processed.replace(/\\verb\|([^\r\n|]*?)\|/g, (_match, body) => {
+    const escaped = String(body).replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$");
+    return `\`${escaped}\``;
+  });
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, mathContent) => {
+    const lines = match.split("\n");
+    if (lines.length >= 3 && lines[0].trim() === "$$" && lines[lines.length - 1].trim() === "$$") {
+      return match;
+    }
+    if (!mathContent || typeof mathContent !== "string") return match;
+    try {
+      const normalized = mathContent.trim().replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n");
+      return `
+
+$$
+${normalized}
+$$
+
+`;
+    } catch {
+      return match;
+    }
+  });
+  processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (_match, mathContent) => {
+    if (!mathContent || typeof mathContent !== "string") return _match;
+    try {
+      const normalized = mathContent.trim().replace(/\s+/g, " ");
+      return `
+
+$$
+${normalized}
+$$
+
+`;
+    } catch {
+      return _match;
+    }
+  });
+  let inlineMathIndex = 0;
+  const inlineMathGroups = [];
+  while (true) {
+    const openPos = processed.indexOf("\\(", inlineMathIndex);
+    if (openPos === -1) break;
+    const closePos = processed.indexOf("\\)", openPos + 2);
+    if (closePos === -1) break;
+    const mathContent = processed.substring(openPos + 2, closePos).trim();
+    let normalized = escapeDollarsInTextCommands(mathContent);
+    if (normalized) {
+      inlineMathGroups.push({ start: openPos, end: closePos + 2, parts: [normalized] });
+    }
+    inlineMathIndex = closePos + 2;
+  }
+  inlineMathGroups.reverse().forEach(({ start, end, parts }) => {
+    const combined = parts.join(" ");
+    processed = `${processed.substring(0, start)}$${combined}$${processed.substring(end)}`;
+  });
+  codeBlocks.forEach(({ placeholder, content: content2 }) => {
+    processed = processed.replace(placeholder, () => content2);
+  });
+  return processed;
+}
+var AUDIO_EXTENSIONS = [".mp3", ".wav", ".ogg", ".aac", ".flac", ".opus", ".pcm", ".webm"];
+var VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov"];
+function hasExtension(url, extensions) {
+  const lower = url.toLowerCase().split("?")[0];
+  return extensions.some((ext) => lower.endsWith(ext));
+}
+function CodeComponent({ className, children }) {
+  const { isStreaming } = useMarkdownContext();
+  const match = /language-(\w+)/.exec(className || "");
+  const language = match ? match[1] : "";
+  const code = String(children).replace(/\n$/, "");
+  const isInline = !match && !code.includes("\n");
+  if (isInline) {
+    return /* @__PURE__ */ jsx14("code", { className: "inline-code", children });
+  }
+  return /* @__PURE__ */ jsx14(CodeBlock, { language, code, isStreaming });
+}
+var markdownComponents = {
+  code: CodeComponent,
+  table({ children }) {
+    return /* @__PURE__ */ jsx14("div", { className: "table-responsive", children: /* @__PURE__ */ jsx14("table", { className: "markdown-table", children }) });
+  },
+  a({ href, children, ...props }) {
+    if (href && hasExtension(href, AUDIO_EXTENSIONS)) {
+      return /* @__PURE__ */ jsx14("audio", { controls: true, className: "markdown-audio", children: /* @__PURE__ */ jsx14("source", { src: href }) });
+    }
+    if (href && hasExtension(href, VIDEO_EXTENSIONS)) {
+      return /* @__PURE__ */ jsx14("video", { controls: true, className: "markdown-video", children: /* @__PURE__ */ jsx14("source", { src: href }) });
+    }
+    return /* @__PURE__ */ jsx14("a", { href, target: "_blank", rel: "noopener noreferrer", ...props, children });
+  },
+  img({ src, alt, ...props }) {
+    if (src && hasExtension(src, AUDIO_EXTENSIONS)) {
+      return /* @__PURE__ */ jsx14("audio", { controls: true, className: "markdown-audio", children: /* @__PURE__ */ jsx14("source", { src }) });
+    }
+    if (src && hasExtension(src, VIDEO_EXTENSIONS)) {
+      return /* @__PURE__ */ jsx14("video", { controls: true, className: "markdown-video", children: /* @__PURE__ */ jsx14("source", { src }) });
+    }
+    return /* @__PURE__ */ jsx14("img", { src, alt: alt || "", className: "markdown-image", loading: "lazy", ...props });
+  },
+  blockquote({ children }) {
+    return /* @__PURE__ */ jsx14("blockquote", { className: "markdown-blockquote", children });
+  },
+  hr() {
+    return /* @__PURE__ */ jsx14("hr", { className: "markdown-hr" });
+  },
+  ul({ children }) {
+    return /* @__PURE__ */ jsx14("ul", { className: "markdown-list", children });
+  },
+  ol({ children }) {
+    return /* @__PURE__ */ jsx14("ol", { className: "markdown-list markdown-list--ordered", children });
+  },
+  h1({ children }) {
+    return /* @__PURE__ */ jsx14("h1", { className: "markdown-heading markdown-h1", children });
+  },
+  h2({ children }) {
+    return /* @__PURE__ */ jsx14("h2", { className: "markdown-heading markdown-h2", children });
+  },
+  h3({ children }) {
+    return /* @__PURE__ */ jsx14("h3", { className: "markdown-heading markdown-h3", children });
+  },
+  h4({ children }) {
+    return /* @__PURE__ */ jsx14("h4", { className: "markdown-heading markdown-h4", children });
+  },
+  h5({ children }) {
+    return /* @__PURE__ */ jsx14("h5", { className: "markdown-heading markdown-h5", children });
+  },
+  h6({ children }) {
+    return /* @__PURE__ */ jsx14("h6", { className: "markdown-heading markdown-h6", children });
+  },
+  p({ children }) {
+    return /* @__PURE__ */ jsx14("p", { className: "markdown-paragraph", children });
+  }
+};
+var KATEX_MACROS = {
+  "\\arcsinh": "\\operatorname{arcsinh}",
+  "\\arccosh": "\\operatorname{arccosh}",
+  "\\arctanh": "\\operatorname{arctanh}",
+  "\\arccoth": "\\operatorname{arccoth}",
+  "\\arcsech": "\\operatorname{arcsech}",
+  "\\arccsch": "\\operatorname{arccsch}",
+  "\\sgn": "\\operatorname{sgn}"
+};
+var MarkdownRenderer = memo(function MarkdownRenderer2({
+  content,
+  children,
+  className = "",
+  isStreaming = false
+}) {
+  const rawContent = content ?? children ?? "";
+  const processedContent = useMemo3(() => {
+    try {
+      return preprocessMarkdown(rawContent);
+    } catch (error) {
+      console.error("Error preprocessing markdown:", error);
+      return rawContent;
+    }
+  }, [rawContent]);
+  const contextValue = useMemo3(() => ({ isStreaming }), [isStreaming]);
+  return /* @__PURE__ */ jsx14(MarkdownContext.Provider, { value: contextValue, children: /* @__PURE__ */ jsx14("div", { className: `markdown-content ${className}`, children: /* @__PURE__ */ jsx14(
+    ReactMarkdown,
+    {
+      remarkPlugins: [remarkGfm, remarkMath],
+      rehypePlugins: [
+        [rehypeKatex, {
+          throwOnError: false,
+          strict: false,
+          trust: true,
+          macros: KATEX_MACROS
+        }]
+      ],
+      components: markdownComponents,
+      children: processedContent
+    }
+  ) }) });
+});
+
+// src/markdown/RenderErrorBoundary.tsx
+import { Component } from "react";
+import { jsx as jsx15, jsxs as jsxs13 } from "react/jsx-runtime";
+var RenderErrorBoundary = class extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, _errorInfo) {
+    if (!this.isBenignError(error)) {
+      console.warn(
+        `Renderer error (${this.props.rendererType || "unknown"}):`,
+        error.message
+      );
+    }
+  }
+  isBenignError(error) {
+    const benignPatterns = [
+      /translate\(NaN,NaN\)/,
+      /Expected number/,
+      /katex/i,
+      /vega/i,
+      /mermaid/i,
+      /markmap/i
+    ];
+    return benignPatterns.some((pattern) => pattern.test(error.message));
+  }
+  render() {
+    if (this.state.hasError) {
+      const rendererType = this.props.rendererType || "content";
+      const fallbackMessage = this.props.fallbackMessage || `Error rendering ${rendererType}`;
+      return /* @__PURE__ */ jsx15("div", { className: "render-error-boundary", children: /* @__PURE__ */ jsxs13("small", { children: [
+        /* @__PURE__ */ jsx15("strong", { children: fallbackMessage }),
+        /* @__PURE__ */ jsx15("div", { className: "render-error-boundary__detail", children: "The content may contain formatting issues that prevent proper rendering." })
+      ] }) });
+    }
+    return this.props.children;
+  }
+};
+
+// src/chat/MessageList.tsx
+import { memo as memo5, useRef as useRef2, useEffect as useEffect2, useState as useState7, useCallback as useCallback6 } from "react";
+import { Copy as Copy2, Check as Check3 } from "lucide-react";
+
+// src/chat/StreamingText.tsx
+import { memo as memo2 } from "react";
+import { jsx as jsx16, jsxs as jsxs14 } from "react/jsx-runtime";
+var StreamingText = memo2(
+  ({ text, isStreaming = false, renderMarkdown = true, className = "", showCursor = true }) => {
+    if (!text && !isStreaming) {
+      return null;
+    }
+    const cursorElement = isStreaming && showCursor && /* @__PURE__ */ jsx16("span", { className: "streaming-cursor", "aria-hidden": "true", children: "|" });
+    return /* @__PURE__ */ jsx16("div", { className: `streaming-text ${className}`, children: renderMarkdown ? /* @__PURE__ */ jsxs14("div", { className: "streaming-text__markdown", children: [
+      /* @__PURE__ */ jsx16(MarkdownRenderer, { content: text, isStreaming }),
+      cursorElement
+    ] }) : /* @__PURE__ */ jsxs14("div", { className: "streaming-text__plain", children: [
+      text,
+      cursorElement
+    ] }) });
+  }
+);
+StreamingText.displayName = "StreamingText";
+
+// src/chat/ThinkingBlock.tsx
+import { memo as memo3, useState as useState5, useCallback as useCallback4 } from "react";
+import { ChevronDown, ChevronUp, Brain } from "lucide-react";
+import { jsx as jsx17, jsxs as jsxs15 } from "react/jsx-runtime";
+var ThinkingBlock = memo3(
+  ({ content, isStreaming = false, defaultCollapsed = true, className = "" }) => {
+    const [collapsed, setCollapsed] = useState5(defaultCollapsed);
+    const toggle = useCallback4(() => setCollapsed((prev) => !prev), []);
+    if (!content && !isStreaming) {
+      return null;
+    }
+    return /* @__PURE__ */ jsxs15("div", { className: `thinking-block ${isStreaming ? "thinking-block--streaming" : ""} ${className}`, children: [
+      /* @__PURE__ */ jsxs15("button", { className: "thinking-block__header", onClick: toggle, children: [
+        /* @__PURE__ */ jsx17(Brain, { size: 14, className: "thinking-block__icon" }),
+        /* @__PURE__ */ jsx17("span", { className: "thinking-block__label", children: isStreaming ? /* @__PURE__ */ jsx17("span", { className: "thinking-block__dots", children: "Thinking" }) : "Thought process" }),
+        /* @__PURE__ */ jsx17("span", { className: "thinking-block__chevron", children: collapsed ? /* @__PURE__ */ jsx17(ChevronDown, { size: 14 }) : /* @__PURE__ */ jsx17(ChevronUp, { size: 14 }) })
+      ] }),
+      !collapsed && /* @__PURE__ */ jsx17("div", { className: "thinking-block__content", children: /* @__PURE__ */ jsx17("pre", { className: "thinking-block__text", children: content }) })
+    ] });
+  }
+);
+ThinkingBlock.displayName = "ThinkingBlock";
+
+// src/chat/ToolCallCard.tsx
+import { memo as memo4, useState as useState6, useCallback as useCallback5 } from "react";
+import { Wrench, Check as Check2, AlertCircle as AlertCircle2, Loader as Loader2, Clock, ChevronDown as ChevronDown2, ChevronUp as ChevronUp2 } from "lucide-react";
+import { jsx as jsx18, jsxs as jsxs16 } from "react/jsx-runtime";
+var TOOL_CATEGORIES = {
+  read_file: { category: "File", color: "#3b82f6" },
+  write_file: { category: "File", color: "#3b82f6" },
+  edit_file: { category: "File", color: "#3b82f6" },
+  glob: { category: "File", color: "#3b82f6" },
+  grep: { category: "File", color: "#3b82f6" },
+  list_directory: { category: "File", color: "#3b82f6" },
+  bash: { category: "Shell", color: "#10b981" },
+  web_search: { category: "Web", color: "#8b5cf6" },
+  web_scrape: { category: "Web", color: "#8b5cf6" },
+  web_fetch: { category: "Web", color: "#8b5cf6" },
+  memory_store: { category: "Memory", color: "#f59e0b" },
+  memory_retrieve: { category: "Memory", color: "#f59e0b" },
+  memory_list: { category: "Memory", color: "#f59e0b" },
+  memory_delete: { category: "Memory", color: "#f59e0b" },
+  context_set: { category: "Context", color: "#ec4899" },
+  context_get: { category: "Context", color: "#ec4899" },
+  context_delete: { category: "Context", color: "#ec4899" },
+  context_list: { category: "Context", color: "#ec4899" }
+};
+function getToolInfo(name) {
+  return TOOL_CATEGORIES[name] || { category: "Tool", color: "#6b7280" };
+}
+function formatDuration(ms) {
+  if (ms < 1e3) return `${ms}ms`;
+  return `${(ms / 1e3).toFixed(1)}s`;
+}
+function truncateString(str, maxLength) {
+  if (str.length <= maxLength) return str;
+  return str.slice(0, maxLength - 3) + "...";
+}
+function formatJson(obj) {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return String(obj);
+  }
+}
+var ToolCallCard = memo4(
+  ({ tool, expanded: initialExpanded = false, className = "" }) => {
+    const [expanded, setExpanded] = useState6(initialExpanded);
+    const { name, description, status, durationMs, error, args, result } = tool;
+    const { category, color } = getToolInfo(name);
+    const hasDetails = args || result !== void 0 || error;
+    const toggleExpand = useCallback5(() => {
+      if (hasDetails) setExpanded((prev) => !prev);
+    }, [hasDetails]);
+    const statusIcon = {
+      pending: null,
+      running: /* @__PURE__ */ jsx18(Loader2, { size: 14, className: "tool-call__status-icon tool-call__status-icon--spin" }),
+      complete: /* @__PURE__ */ jsx18(Check2, { size: 14, className: "tool-call__status-icon tool-call__status-icon--success" }),
+      error: /* @__PURE__ */ jsx18(AlertCircle2, { size: 14, className: "tool-call__status-icon tool-call__status-icon--error" })
+    }[status];
+    return /* @__PURE__ */ jsxs16("div", { className: `tool-call tool-call--${status} ${className}`, children: [
+      /* @__PURE__ */ jsxs16(
+        "div",
+        {
+          className: "tool-call__header",
+          onClick: toggleExpand,
+          style: { cursor: hasDetails ? "pointer" : "default" },
+          children: [
+            /* @__PURE__ */ jsx18("div", { className: "tool-call__icon", style: { backgroundColor: color }, children: /* @__PURE__ */ jsx18(Wrench, { size: 12 }) }),
+            /* @__PURE__ */ jsx18("span", { className: "tool-call__category", style: { color }, children: category }),
+            /* @__PURE__ */ jsx18("span", { className: "tool-call__name", children: name }),
+            description && /* @__PURE__ */ jsx18("span", { className: "tool-call__description", title: description, children: truncateString(description, 100) }),
+            /* @__PURE__ */ jsxs16("div", { className: "tool-call__status", children: [
+              statusIcon,
+              status === "complete" && durationMs !== void 0 && /* @__PURE__ */ jsxs16("span", { className: "tool-call__duration", children: [
+                /* @__PURE__ */ jsx18(Clock, { size: 12 }),
+                formatDuration(durationMs)
+              ] })
+            ] }),
+            error && /* @__PURE__ */ jsx18("span", { className: "tool-call__error-badge", children: "error" }),
+            hasDetails && /* @__PURE__ */ jsx18("span", { className: "tool-call__chevron", children: expanded ? /* @__PURE__ */ jsx18(ChevronUp2, { size: 14 }) : /* @__PURE__ */ jsx18(ChevronDown2, { size: 14 }) })
+          ]
+        }
+      ),
+      error && !expanded && /* @__PURE__ */ jsx18("div", { className: "tool-call__error", children: error }),
+      expanded && /* @__PURE__ */ jsxs16("div", { className: "tool-call__details", children: [
+        args && /* @__PURE__ */ jsxs16("div", { className: "tool-call__detail-section", children: [
+          /* @__PURE__ */ jsx18("span", { className: "tool-call__detail-label", children: "Args:" }),
+          /* @__PURE__ */ jsx18("pre", { className: "tool-call__detail-pre", children: formatJson(args) })
+        ] }),
+        status === "complete" && result !== void 0 && /* @__PURE__ */ jsxs16("div", { className: "tool-call__detail-section", children: [
+          /* @__PURE__ */ jsx18("span", { className: "tool-call__detail-label", children: "Result:" }),
+          /* @__PURE__ */ jsx18("pre", { className: "tool-call__detail-pre", children: formatJson(result) })
+        ] }),
+        error && /* @__PURE__ */ jsxs16("div", { className: "tool-call__detail-section", children: [
+          /* @__PURE__ */ jsx18("span", { className: "tool-call__detail-label tool-call__detail-label--error", children: "Error:" }),
+          /* @__PURE__ */ jsx18("span", { className: "tool-call__error", children: error })
+        ] })
+      ] })
+    ] });
+  }
+);
+ToolCallCard.displayName = "ToolCallCard";
+function InlineToolCall({ name, description, status }) {
+  const { category, color } = getToolInfo(name);
+  return /* @__PURE__ */ jsxs16("span", { className: `inline-tool-call inline-tool-call--${status}`, children: [
+    /* @__PURE__ */ jsxs16("span", { className: "inline-tool-call__badge", style: { backgroundColor: color }, children: [
+      /* @__PURE__ */ jsx18(Wrench, { size: 10 }),
+      /* @__PURE__ */ jsx18("span", { className: "inline-tool-call__category", children: category })
+    ] }),
+    /* @__PURE__ */ jsx18("span", { className: "inline-tool-call__name", children: name }),
+    description && /* @__PURE__ */ jsx18("span", { className: "inline-tool-call__description", children: truncateString(description, 50) }),
+    status === "running" && /* @__PURE__ */ jsx18(Loader2, { size: 12, className: "inline-tool-call__spinner" })
+  ] });
+}
+
+// src/chat/MessageList.tsx
+import { jsx as jsx19, jsxs as jsxs17 } from "react/jsx-runtime";
+var MessageWithControls = memo5(({ message, index, onCopyMessage }) => {
+  const [isHovered, setIsHovered] = useState7(false);
+  const [copied, setCopied] = useState7(false);
+  const isUser = message.role === "user";
+  const isSystem = message.role === "system";
+  const isAssistant = message.role === "assistant";
+  const handleCopy = useCallback6(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2e3);
+      onCopyMessage?.(message.content);
+    } catch (err) {
+      console.error("Failed to copy message:", err);
+    }
+  }, [message.content, onCopyMessage]);
+  if (isUser) {
+    return /* @__PURE__ */ jsx19("div", { className: "rui-message rui-message--user", children: /* @__PURE__ */ jsx19("div", { className: "rui-message__bubble", children: message.content }) });
+  }
+  if (isSystem) {
+    return /* @__PURE__ */ jsx19("div", { className: "rui-message rui-message--system", children: /* @__PURE__ */ jsx19("div", { className: "rui-message__content", children: /* @__PURE__ */ jsx19("small", { className: "rui-message__system-text", children: message.content }) }) });
+  }
+  return /* @__PURE__ */ jsxs17(
+    "div",
+    {
+      className: "rui-message rui-message--assistant",
+      onMouseEnter: () => setIsHovered(true),
+      onMouseLeave: () => setIsHovered(false),
+      children: [
+        message.thinking && /* @__PURE__ */ jsx19(
+          ThinkingBlock,
+          {
+            content: message.thinking,
+            isStreaming: message.isStreaming
+          }
+        ),
+        message.toolCalls && message.toolCalls.length > 0 && /* @__PURE__ */ jsx19("div", { className: "rui-message__tool-calls", children: message.toolCalls.map((tc) => /* @__PURE__ */ jsx19(ToolCallCard, { tool: tc }, tc.id)) }),
+        message.error && /* @__PURE__ */ jsx19("div", { className: "rui-message__error", children: message.error }),
+        message.content && /* @__PURE__ */ jsx19("div", { className: "rui-message__content", children: /* @__PURE__ */ jsx19(
+          RenderErrorBoundary,
+          {
+            rendererType: "markdown message",
+            fallbackMessage: "Error rendering message content",
+            children: /* @__PURE__ */ jsx19(MarkdownRenderer, { content: message.content, isStreaming: message.isStreaming })
+          }
+        ) }),
+        message.timestamp && /* @__PURE__ */ jsx19("div", { className: "rui-message__time", children: new Date(message.timestamp).toLocaleTimeString() }),
+        isAssistant && isHovered && message.content && /* @__PURE__ */ jsx19("div", { className: "rui-message__controls", children: /* @__PURE__ */ jsx19(
+          "button",
+          {
+            className: "rui-message__control-btn",
+            onClick: handleCopy,
+            title: "Copy markdown content",
+            children: copied ? /* @__PURE__ */ jsx19(Check3, { size: 12 }) : /* @__PURE__ */ jsx19(Copy2, { size: 12 })
+          }
+        ) })
+      ]
+    }
+  );
+});
+MessageWithControls.displayName = "MessageWithControls";
+var MessageList = memo5(
+  ({
+    messages,
+    streamingText = "",
+    streamingThinking = "",
+    isStreaming = false,
+    autoScroll = true,
+    hideThinking = false,
+    className = "",
+    renderMessage,
+    onCopyMessage
+  }) => {
+    const endRef = useRef2(null);
+    const containerRef = useRef2(null);
+    useEffect2(() => {
+      if (!autoScroll || !containerRef.current) return;
+      const container = containerRef.current;
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      if (isNearBottom && endRef.current) {
+        endRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    }, [messages, streamingText, streamingThinking, autoScroll]);
+    return /* @__PURE__ */ jsxs17("div", { className: `rui-message-list ${className}`, ref: containerRef, children: [
+      messages.map(
+        (message, index) => renderMessage ? renderMessage(message, index) : /* @__PURE__ */ jsx19(
+          MessageWithControls,
+          {
+            message,
+            index,
+            onCopyMessage
+          },
+          message.id || index
+        )
+      ),
+      streamingThinking && !hideThinking && /* @__PURE__ */ jsx19(ThinkingBlock, { content: streamingThinking, isStreaming }),
+      (streamingText || isStreaming && !hideThinking && !streamingThinking) && /* @__PURE__ */ jsx19("div", { className: "rui-message rui-message--assistant", children: /* @__PURE__ */ jsx19("div", { className: "rui-message__content", children: streamingText ? /* @__PURE__ */ jsx19(
+        StreamingText,
+        {
+          text: streamingText,
+          isStreaming,
+          renderMarkdown: true
+        }
+      ) : isStreaming && /* @__PURE__ */ jsx19("span", { className: "rui-message__thinking-dots", children: "Thinking" }) }) }),
+      /* @__PURE__ */ jsx19("div", { ref: endRef })
+    ] });
+  }
+);
+MessageList.displayName = "MessageList";
+
+// src/chat/ExecutionProgress.tsx
+import { memo as memo6, useEffect as useEffect3, useMemo as useMemo4, useRef as useRef3, useState as useState8, useCallback as useCallback7 } from "react";
+import { CheckCircle, Loader as Loader3, ChevronDown as ChevronDown3, ChevronUp as ChevronUp3 } from "lucide-react";
+import { jsx as jsx20, jsxs as jsxs18 } from "react/jsx-runtime";
+var CYCLING_INITIAL_MESSAGES = [
+  "Analyzing your request...",
+  "Consulting my expertise...",
+  "Processing information...",
+  "Considering the details...",
+  "Processing your request...",
+  "Analyzing the task...",
+  "Reviewing the information...",
+  "Thinking this through...",
+  "Gathering my thoughts...",
+  "Focusing on your question..."
+];
+var CYCLING_PROCESSING_MESSAGES = [
+  "Thinking through the best approach...",
+  "Coordinating next steps...",
+  "Evaluating options...",
+  "Working on this...",
+  "Piecing this together...",
+  "Working through the details...",
+  "Evaluating next steps...",
+  "Ensuring accuracy...",
+  "Reviewing related items...",
+  "Verifying assumptions..."
+];
+var getRandomInterval = () => Math.floor(Math.random() * 3e3) + 2e3;
+var formatToolName = (name) => {
+  let display = name.replace(/^(github-EW_|mcp_|v25_)/, "");
+  display = display.replace(/_/g, " ");
+  return display;
+};
+var getActiveDescription = (tools) => {
+  const running = tools.filter((t) => t.status === "running");
+  if (running.length === 0) return null;
+  const latest = running[running.length - 1];
+  return latest.description || `Running ${formatToolName(latest.name)}`;
+};
+var ExecutionProgress = memo6(
+  ({ tools, activeCount, isComplete }) => {
+    const [expanded, setExpanded] = useState8(false);
+    const [cyclingMessage, setCyclingMessage] = useState8(CYCLING_INITIAL_MESSAGES[0]);
+    const timerRef = useRef3(null);
+    useEffect3(() => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (isComplete || activeCount > 0) return;
+      const interval = getRandomInterval();
+      timerRef.current = setTimeout(() => {
+        setCyclingMessage((prev) => {
+          const pool = tools.length > 0 ? CYCLING_PROCESSING_MESSAGES : CYCLING_INITIAL_MESSAGES;
+          const filtered = pool.filter((m) => m !== prev);
+          return filtered[Math.floor(Math.random() * filtered.length)];
+        });
+      }, interval);
+      return () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+      };
+    }, [cyclingMessage, isComplete, activeCount, tools.length]);
+    useEffect3(() => {
+      if (tools.length > 0) {
+        setCyclingMessage((prev) => {
+          if (CYCLING_INITIAL_MESSAGES.includes(prev)) {
+            return CYCLING_PROCESSING_MESSAGES[Math.floor(Math.random() * CYCLING_PROCESSING_MESSAGES.length)];
+          }
+          return prev;
+        });
+      }
+    }, [tools.length > 0]);
+    const headerTitle = useMemo4(() => {
+      if (isComplete) return tools.length === 0 ? "Finished" : "Work Summary";
+      const activeDesc = getActiveDescription(tools);
+      if (activeDesc) return activeDesc;
+      return cyclingMessage;
+    }, [isComplete, tools, cyclingMessage]);
+    const runningToolName = useMemo4(() => {
+      const running = tools.filter((t) => t.status === "running");
+      return running.length > 0 ? running[running.length - 1].name : null;
+    }, [tools]);
+    const toggleExpanded = useCallback7(() => setExpanded((prev) => !prev), []);
+    const hasTools = tools.length > 0;
+    return /* @__PURE__ */ jsxs18("div", { className: "execution-progress", children: [
+      /* @__PURE__ */ jsxs18(
+        "div",
+        {
+          className: "execution-progress__header",
+          onClick: hasTools ? toggleExpanded : void 0,
+          style: { cursor: hasTools ? "pointer" : "default" },
+          children: [
+            isComplete ? /* @__PURE__ */ jsx20(CheckCircle, { size: 16, className: "execution-progress__icon execution-progress__icon--success" }) : /* @__PURE__ */ jsx20(Loader3, { size: 16, className: "execution-progress__icon execution-progress__icon--spin" }),
+            !isComplete && runningToolName && /* @__PURE__ */ jsx20("span", { className: "execution-progress__tool-badge", children: runningToolName }),
+            /* @__PURE__ */ jsx20("span", { className: "execution-progress__title", children: headerTitle }),
+            !isComplete && tools.length > 1 && /* @__PURE__ */ jsxs18("span", { className: "execution-progress__count", children: [
+              "(",
+              tools.length,
+              " tools)"
+            ] }),
+            hasTools && /* @__PURE__ */ jsx20("span", { className: "execution-progress__chevron", children: expanded ? /* @__PURE__ */ jsx20(ChevronUp3, { size: 14 }) : /* @__PURE__ */ jsx20(ChevronDown3, { size: 14 }) })
+          ]
+        }
+      ),
+      expanded && hasTools && /* @__PURE__ */ jsx20("div", { className: "execution-progress__body", children: tools.map((tool) => /* @__PURE__ */ jsx20(ToolCallCard, { tool }, tool.id)) })
+    ] });
+  }
+);
+ExecutionProgress.displayName = "ExecutionProgress";
+
+// src/chat/ChatControls.tsx
+import { memo as memo7 } from "react";
+import { Pause, Play, XCircle, Loader as Loader4 } from "lucide-react";
+import { jsx as jsx21, jsxs as jsxs19 } from "react/jsx-runtime";
+var ChatControls = memo7(
+  ({
+    isRunning = false,
+    isPaused = false,
+    hasError = false,
+    onPause,
+    onResume,
+    onCancel,
+    disabled = false,
+    className = "",
+    size
+  }) => {
+    if (!isRunning && !isPaused) {
+      return null;
+    }
+    const sizeClass = size ? `chat-controls--${size}` : "";
+    return /* @__PURE__ */ jsxs19("div", { className: `chat-controls ${sizeClass} ${className}`, children: [
+      /* @__PURE__ */ jsxs19("div", { className: "chat-controls__buttons", children: [
+        isPaused ? /* @__PURE__ */ jsxs19(
+          "button",
+          {
+            className: "chat-controls__btn chat-controls__btn--resume",
+            onClick: onResume,
+            disabled: disabled || !onResume,
+            title: "Resume execution",
+            children: [
+              /* @__PURE__ */ jsx21(Play, { size: 14 }),
+              /* @__PURE__ */ jsx21("span", { children: "Resume" })
+            ]
+          }
+        ) : /* @__PURE__ */ jsxs19(
+          "button",
+          {
+            className: "chat-controls__btn chat-controls__btn--pause",
+            onClick: onPause,
+            disabled: disabled || !onPause || !isRunning,
+            title: "Pause execution",
+            children: [
+              /* @__PURE__ */ jsx21(Pause, { size: 14 }),
+              /* @__PURE__ */ jsx21("span", { children: "Pause" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs19(
+          "button",
+          {
+            className: "chat-controls__btn chat-controls__btn--cancel",
+            onClick: onCancel,
+            disabled: disabled || !onCancel,
+            title: "Cancel execution",
+            children: [
+              /* @__PURE__ */ jsx21(XCircle, { size: 14 }),
+              /* @__PURE__ */ jsx21("span", { children: "Cancel" })
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx21("div", { className: "chat-controls__status", children: isPaused ? /* @__PURE__ */ jsxs19("span", { className: "chat-controls__status-text chat-controls__status-text--paused", children: [
+        /* @__PURE__ */ jsx21(Pause, { size: 14 }),
+        " Paused"
+      ] }) : isRunning ? /* @__PURE__ */ jsxs19("span", { className: "chat-controls__status-text chat-controls__status-text--running", children: [
+        /* @__PURE__ */ jsx21(Loader4, { size: 14, className: "chat-controls__spinner" }),
+        " Running"
+      ] }) : hasError ? /* @__PURE__ */ jsx21("span", { className: "chat-controls__status-text chat-controls__status-text--error", children: "Error" }) : null })
+    ] });
+  }
+);
+ChatControls.displayName = "ChatControls";
+
+// src/chat/ExportMessage.tsx
+import { useState as useState9, useCallback as useCallback8, useRef as useRef4, useEffect as useEffect4 } from "react";
+import { Upload, Loader as Loader5 } from "lucide-react";
+import { jsx as jsx22, jsxs as jsxs20 } from "react/jsx-runtime";
+var ExportMessage = ({
+  messageElement,
+  markdownContent,
+  onExport,
+  className = "",
+  disabled = false
+}) => {
+  const [isExporting, setIsExporting] = useState9(false);
+  const [showMenu, setShowMenu] = useState9(false);
+  const menuRef = useRef4(null);
+  useEffect4(() => {
+    if (!showMenu) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMenu]);
+  const handleExport = useCallback8(async (format) => {
+    if (!onExport) return;
+    try {
+      setIsExporting(true);
+      setShowMenu(false);
+      await onExport(format);
+    } catch (err) {
+      console.error(`${format.toUpperCase()} export failed:`, err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [onExport]);
+  if (!onExport) return null;
+  return /* @__PURE__ */ jsxs20("div", { className: `export-message ${className}`, ref: menuRef, children: [
+    /* @__PURE__ */ jsx22(
+      "button",
+      {
+        className: "export-message__btn",
+        onClick: () => setShowMenu(!showMenu),
+        disabled: disabled || isExporting,
+        title: "Export this message",
+        children: isExporting ? /* @__PURE__ */ jsx22(Loader5, { size: 14, className: "export-message__spinner" }) : /* @__PURE__ */ jsx22(Upload, { size: 14 })
+      }
+    ),
+    showMenu && /* @__PURE__ */ jsxs20("div", { className: "export-message__menu", children: [
+      /* @__PURE__ */ jsx22(
+        "button",
+        {
+          className: "export-message__menu-item",
+          onClick: () => handleExport("pdf"),
+          disabled: isExporting,
+          children: "Export as PDF"
+        }
+      ),
+      /* @__PURE__ */ jsx22(
+        "button",
+        {
+          className: "export-message__menu-item",
+          onClick: () => handleExport("docx"),
+          disabled: isExporting,
+          children: "Export as DOCX"
+        }
+      )
+    ] })
+  ] });
+};
+ExportMessage.displayName = "ExportMessage";
 export {
+  ChatControls,
+  CodeBlock,
   CollapsibleSection,
   ContextWindowSection,
+  ExecutionProgress,
+  ExportMessage,
   GenericPluginSection,
   InContextMemoryRenderer,
+  InlineToolCall,
   LookInsidePanel,
+  MarkdownRenderer,
+  MarkmapRenderer,
+  MermaidDiagram,
+  MessageList,
   PersistentInstructionsRenderer,
+  RenderErrorBoundary,
+  StreamingText,
   SystemPromptSection,
+  ThinkingBlock,
   TokenBreakdownSection,
+  ToolCallCard,
   ToolsSection,
   UserInfoRenderer,
+  VegaChart,
   ViewContextContent,
   WorkingMemoryRenderer,
   formatBytes,
@@ -656,6 +1701,7 @@ export {
   getUtilizationColor,
   getUtilizationLabel,
   registerPluginRenderer,
-  truncateText
+  truncateText,
+  useMarkdownContext
 };
 //# sourceMappingURL=index.js.map

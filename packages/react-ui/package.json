@@ -17,7 +17,10 @@
         "default": "./dist/index.cjs"
       }
     },
-    "./styles": "./dist/look-inside.css"
+    "./styles": "./dist/look-inside.css",
+    "./styles/markdown": "./dist/markdown.css",
+    "./styles/chat": "./dist/chat.css",
+    "./styles/thinking": "./dist/thinking.css"
   },
   "files": [
     "dist"
@@ -29,7 +32,28 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
+    "react-dom": ">=18.0.0",
+    "react-markdown": ">=9.0.0",
+    "remark-gfm": ">=4.0.0",
+    "remark-math": ">=6.0.0",
+    "rehype-katex": ">=7.0.0",
+    "katex": ">=0.16.0",
+    "react-syntax-highlighter": ">=15.0.0",
+    "lucide-react": ">=0.300.0"
+  },
+  "peerDependenciesMeta": {
+    "react-markdown": { "optional": false },
+    "remark-gfm": { "optional": false },
+    "remark-math": { "optional": false },
+    "rehype-katex": { "optional": false },
+    "katex": { "optional": false },
+    "react-syntax-highlighter": { "optional": false },
+    "lucide-react": { "optional": false },
+    "mermaid": { "optional": true },
+    "react-vega": { "optional": true },
+    "vega-lite": { "optional": true },
+    "markmap-lib": { "optional": true },
+    "markmap-view": { "optional": true }
   },
   "dependencies": {
     "@everworker/oneringai": "file:../../",
@@ -40,6 +64,14 @@
     "@types/react-dom": "^18.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-markdown": "^9.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-math": "^6.0.0",
+    "rehype-katex": "^7.0.0",
+    "katex": "^0.16.0",
+    "react-syntax-highlighter": "^15.5.0",
+    "@types/react-syntax-highlighter": "^15.5.0",
+    "lucide-react": "^0.400.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0"
   }

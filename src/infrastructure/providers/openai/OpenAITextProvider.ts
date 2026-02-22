@@ -19,6 +19,7 @@ import { OpenAIResponsesStreamConverter } from './OpenAIResponsesStreamConverter
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
 import { getModelInfo } from '../../../domain/entities/Model.js';
 import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
+import { validateThinkingConfig } from '../shared/validateThinkingConfig.js';
 
 export class OpenAITextProvider extends BaseTextProvider {
   readonly name: string = 'openai';
@@ -100,6 +101,9 @@ export class OpenAITextProvider extends BaseTextProvider {
           ...(options.metadata && { metadata: options.metadata }),
         };
 
+        // Add reasoning config from unified thinking option
+        this.applyReasoningConfig(params, options);
+
         // Call Responses API
         const response = await this.client.responses.create(params);
 
@@ -151,6 +155,9 @@ export class OpenAITextProvider extends BaseTextProvider {
         stream: true,
       };
 
+      // Add reasoning config from unified thinking option
+      this.applyReasoningConfig(params, options);
+
       // Call Responses API with streaming
       const stream = await this.client.responses.create(params) as any;
 
@@ -187,6 +194,18 @@ export class OpenAITextProvider extends BaseTextProvider {
       models.push(model.id);
     }
     return models.sort();
+  }
+
+  /**
+   * Apply reasoning config from unified thinking option to request params
+   */
+  private applyReasoningConfig(params: any, options: TextGenerateOptions): void {
+    if (options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      params.reasoning = {
+        effort: options.thinking.effort || 'medium',
+      };
+    }
   }
 
   /**

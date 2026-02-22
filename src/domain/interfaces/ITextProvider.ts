@@ -23,6 +23,14 @@ export interface TextGenerateOptions {
   parallel_tool_calls?: boolean;
   previous_response_id?: string;
   metadata?: Record<string, string>;
+  /** Vendor-agnostic thinking/reasoning configuration */
+  thinking?: {
+    enabled: boolean;
+    /** Budget in tokens for thinking (Anthropic & Google) */
+    budgetTokens?: number;
+    /** Reasoning effort level (OpenAI) */
+    effort?: 'low' | 'medium' | 'high';
+  };
   /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
   vendorOptions?: Record<string, any>;
 }

@@ -95,7 +95,10 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
     const block = event.content_block;
 
     // Track block type
-    if (block.type === 'text') {
+    if (block.type === 'thinking') {
+      this.contentBlockIndex.set(index, { type: 'thinking' });
+      return []; // No event needed, thinking will come in deltas
+    } else if (block.type === 'text') {
       this.contentBlockIndex.set(index, { type: 'text' });
       return []; // No event needed, text will come in deltas
     } else if (block.type === 'tool_use') {
@@ -121,7 +124,13 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
 
     if (!blockInfo) return [];
 
-    if (delta.type === 'text_delta') {
+    if (delta.type === 'thinking_delta') {
+      // Anthropic thinking delta
+      const thinkingDelta = delta as { type: 'thinking_delta'; thinking: string };
+      return [
+        this.emitReasoningDelta(thinkingDelta.thinking || '', `thinking_${this.responseId}`),
+      ];
+    } else if (delta.type === 'text_delta') {
       return [
         this.emitTextDelta(delta.text, {
           itemId: `msg_${this.responseId}`,
@@ -144,6 +153,11 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
     const blockInfo = this.contentBlockIndex.get(index);
 
     if (!blockInfo) return [];
+
+    // If this was a thinking block, emit reasoning done
+    if (blockInfo.type === 'thinking') {
+      return [this.emitReasoningDone(`thinking_${this.responseId}`)];
+    }
 
     // If this was a tool use block, emit arguments done
     if (blockInfo.type === 'tool_use') {

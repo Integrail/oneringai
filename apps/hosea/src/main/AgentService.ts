@@ -401,6 +401,8 @@ export interface Plan {
  */
 export type StreamChunk =
   | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'thinking_done'; content: string }
   | { type: 'tool_start'; tool: string; args: Record<string, unknown>; description: string }
   | { type: 'tool_end'; tool: string; durationMs?: number }
   | { type: 'tool_error'; tool: string; error: string }
@@ -3917,8 +3919,17 @@ export class AgentService {
           // StreamEventType: response.output_text.delta, response.tool_execution.start, etc.
           // Legacy: text:delta, tool:start, etc.
 
+          // Thinking/reasoning events
+          if (e.type === 'response.reasoning.delta') {
+            const delta = (e as any).delta || '';
+            yield { type: 'thinking', content: delta };
+          }
+          else if (e.type === 'response.reasoning.done') {
+            const thinking = (e as any).thinking || '';
+            yield { type: 'thinking_done', content: thinking };
+          }
           // Text events
-          if (e.type === 'text:delta' || e.type === 'response.output_text.delta') {
+          else if (e.type === 'text:delta' || e.type === 'response.output_text.delta') {
             if (!suppressText) {
               const delta = (e as any).delta || '';
               yield { type: 'text', content: delta };

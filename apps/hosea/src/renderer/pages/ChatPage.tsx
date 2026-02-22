@@ -6,8 +6,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Alert, Button, Spinner } from 'react-bootstrap';
 import { Send, Square, Bot, User, Copy, Share, AlertCircle } from 'lucide-react';
-import { MarkdownRenderer } from '../components/markdown';
-import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
+import {
+  MessageList,
+  ExecutionProgress,
+  MarkdownRenderer,
+  ThinkingBlock,
+  ToolCallCard,
+  type IChatMessage,
+} from '@everworker/react-ui';
 import { SidebarPanel, SIDEBAR_PANEL_DEFAULT_WIDTH } from '../components/SidebarPanel';
 import { PlanDisplay } from '../components/plan';
 import { TabBar, NewTabModal } from '../components/tabs';
@@ -121,12 +127,103 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
     }
   }, []);
 
-  const formatTime = (timestamp: number) => {
+  const formatTime = (timestamp: number | Date | undefined) => {
+    if (!timestamp) return '';
     return new Date(timestamp).toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
     });
   };
+
+  // Custom message renderer preserving Hosea's visual style
+  const renderHoseaMessage = useCallback((message: IChatMessage, index: number) => {
+    if (message.role === 'user') {
+      return (
+        <div key={message.id || index} className="message message--user">
+          <div className="message__content">
+            <div className="message__text">{message.content}</div>
+            <div className="message__time">{formatTime(message.timestamp)}</div>
+          </div>
+          <div className="message__avatar">
+            <User size={16} />
+          </div>
+        </div>
+      );
+    }
+
+    if (message.role === 'system') {
+      return (
+        <div key={message.id || index} className="message message--system">
+          <div className="message__content">
+            <div className="message__text">{message.content}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // Assistant message
+    return (
+      <div key={message.id || index} className="message message--assistant">
+        <div className="message__header">
+          <div className="message__avatar">
+            <Bot size={16} />
+          </div>
+        </div>
+        <div className="message__content">
+          {/* Error display */}
+          {message.error && (
+            <Alert variant="danger" className="message__error mb-2">
+              <AlertCircle size={16} className="me-2" />
+              <span>{message.error}</span>
+            </Alert>
+          )}
+
+          {/* Thinking block */}
+          {message.thinking && (
+            <ThinkingBlock content={message.thinking} isStreaming={message.isStreaming} />
+          )}
+
+          {/* Tool calls */}
+          {message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="message__tool-calls">
+              {message.toolCalls.map((toolCall) => (
+                <ToolCallCard key={toolCall.id} tool={toolCall} />
+              ))}
+            </div>
+          )}
+
+          {/* Text content */}
+          {message.content ? (
+            <div className="message__text">
+              <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
+            </div>
+          ) : (
+            !message.error && message.isStreaming && !message.toolCalls?.length && (
+              <div className="message__streaming-indicator">
+                <Spinner animation="border" size="sm" />
+                <span>Thinking...</span>
+              </div>
+            )
+          )}
+        </div>
+        {message.content && !message.isStreaming && (
+          <div className="message__actions">
+            <button
+              className="message__action-btn"
+              onClick={() => handleCopyMessage(message.content)}
+              title="Copy message"
+            >
+              <Copy size={14} />
+            </button>
+            <button className="message__action-btn" title="Share">
+              <Share size={14} />
+            </button>
+          </div>
+        )}
+        <div className="message__time">{formatTime(message.timestamp)}</div>
+      </div>
+    );
+  }, [handleCopyMessage]);
 
   // Plan handlers that send messages
   const handleApprovePlan = useCallback(() => {
@@ -150,95 +247,8 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
     onSend(`Feedback on the plan: ${feedback}`);
   }, [tab.activePlan, onSend]);
 
-  const renderUserMessage = (message: Message) => (
-    <div key={message.id} className="message message--user">
-      <div className="message__content">
-        <div className="message__text">{message.content}</div>
-        <div className="message__time">{formatTime(message.timestamp)}</div>
-      </div>
-      <div className="message__avatar">
-        <User size={16} />
-      </div>
-    </div>
-  );
-
-  const renderAssistantMessage = (message: Message) => (
-    <div key={message.id} className="message message--assistant">
-      <div className="message__header">
-        <div className="message__avatar">
-          <Bot size={16} />
-        </div>
-      </div>
-      <div className="message__content">
-        {/* Error display */}
-        {message.error && (
-          <Alert variant="danger" className="message__error mb-2">
-            <AlertCircle size={16} className="me-2" />
-            <span>{message.error}</span>
-          </Alert>
-        )}
-
-        {/* Tool calls section */}
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="message__tool-calls">
-            {message.toolCalls.map((toolCall) => (
-              <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
-            ))}
-          </div>
-        )}
-
-        {/* Text content */}
-        {message.content ? (
-          <div className="message__text">
-            <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
-          </div>
-        ) : (
-          !message.error && message.isStreaming && !message.toolCalls?.length && (
-            <div className="message__streaming-indicator">
-              <Spinner animation="border" size="sm" />
-              <span>Thinking...</span>
-            </div>
-          )
-        )}
-      </div>
-      {message.content && !message.isStreaming && (
-        <div className="message__actions">
-          <button
-            className="message__action-btn"
-            onClick={() => handleCopyMessage(message.content)}
-            title="Copy message"
-          >
-            <Copy size={14} />
-          </button>
-          <button className="message__action-btn" title="Share">
-            <Share size={14} />
-          </button>
-        </div>
-      )}
-      <div className="message__time">{formatTime(message.timestamp)}</div>
-    </div>
-  );
-
-  const renderSystemMessage = (message: Message) => (
-    <div key={message.id} className="message message--system">
-      <div className="message__content">
-        <div className="message__text">{message.content}</div>
-      </div>
-    </div>
-  );
-
-  const renderMessage = (message: Message) => {
-    switch (message.role) {
-      case 'user':
-        return renderUserMessage(message);
-      case 'assistant':
-        return renderAssistantMessage(message);
-      case 'system':
-        return renderSystemMessage(message);
-      default:
-        return null;
-    }
-  };
+  // Compute active tool calls for ExecutionProgress
+  const activeToolCallsArray = Array.from(tab.activeToolCalls.values());
 
   return (
     <>
@@ -254,6 +264,15 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
             isRejecting={planLoading === 'rejecting'}
           />
         </div>
+      )}
+
+      {/* Execution Progress */}
+      {activeToolCallsArray.length > 0 && (
+        <ExecutionProgress
+          tools={activeToolCallsArray}
+          activeCount={activeToolCallsArray.length}
+          isComplete={!tab.isLoading}
+        />
       )}
 
       <div
@@ -279,10 +298,16 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
             )}
           </div>
         ) : (
-          <div className="chat__messages-inner">
-            {tab.messages.map(renderMessage)}
-            <div ref={messagesEndRef} />
-          </div>
+          <MessageList
+            messages={tab.messages}
+            streamingThinking={tab.streamingThinking}
+            isStreaming={tab.isLoading}
+            autoScroll={!userHasScrolled}
+            onCopyMessage={handleCopyMessage}
+            renderMessage={renderHoseaMessage}
+            hideThinking
+            className="chat__messages-inner"
+          />
         )}
       </div>
 

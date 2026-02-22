@@ -10,7 +10,8 @@ declare enum ContentType {
     INPUT_FILE = "input_file",
     OUTPUT_TEXT = "output_text",
     TOOL_USE = "tool_use",
-    TOOL_RESULT = "tool_result"
+    TOOL_RESULT = "tool_result",
+    THINKING = "thinking"
 }
 interface BaseContent {
     type: ContentType;
@@ -56,7 +57,16 @@ interface ToolResultContent extends BaseContent {
         mediaType: string;
     }>;
 }
-type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
+interface ThinkingContent extends BaseContent {
+    type: ContentType.THINKING;
+    thinking: string;
+    /** Anthropic's opaque signature for round-tripping thinking blocks */
+    signature?: string;
+    /** Whether this thinking block should be persisted in conversation history.
+     *  Anthropic requires it (true), OpenAI/Google do not (false). */
+    persistInHistory: boolean;
+}
+type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent | ThinkingContent;
 
 /**
  * Message entity based on OpenAI Responses API format
@@ -590,6 +600,7 @@ interface LLMResponse {
     model: string;
     output: OutputItem[];
     output_text?: string;
+    thinking?: string;
     usage: TokenUsage;
     error?: {
         type: string;
@@ -618,6 +629,8 @@ declare enum StreamEventType {
     TOOL_EXECUTION_START = "response.tool_execution.start",
     TOOL_EXECUTION_DONE = "response.tool_execution.done",
     ITERATION_COMPLETE = "response.iteration.complete",
+    REASONING_DELTA = "response.reasoning.delta",
+    REASONING_DONE = "response.reasoning.done",
     RESPONSE_COMPLETE = "response.complete",
     ERROR = "response.error"
 }
@@ -732,6 +745,23 @@ interface ResponseCompleteEvent extends BaseStreamEvent {
     duration_ms?: number;
 }
 /**
+ * Reasoning/thinking delta - incremental reasoning output
+ */
+interface ReasoningDeltaEvent extends BaseStreamEvent {
+    type: StreamEventType.REASONING_DELTA;
+    item_id: string;
+    delta: string;
+    sequence_number: number;
+}
+/**
+ * Reasoning/thinking complete for this item
+ */
+interface ReasoningDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.REASONING_DONE;
+    item_id: string;
+    thinking: string;
+}
+/**
  * Error event
  */
 interface ErrorEvent extends BaseStreamEvent {
@@ -747,7 +777,7 @@ interface ErrorEvent extends BaseStreamEvent {
  * Union type of all stream events
  * Discriminated by 'type' field for type narrowing
  */
-type StreamEvent = ResponseCreatedEvent | ResponseInProgressEvent | OutputTextDeltaEvent | OutputTextDoneEvent | ToolCallStartEvent | ToolCallArgumentsDeltaEvent | ToolCallArgumentsDoneEvent | ToolExecutionStartEvent | ToolExecutionDoneEvent | IterationCompleteEvent$1 | ResponseCompleteEvent | ErrorEvent;
+type StreamEvent = ResponseCreatedEvent | ResponseInProgressEvent | OutputTextDeltaEvent | OutputTextDoneEvent | ReasoningDeltaEvent | ReasoningDoneEvent | ToolCallStartEvent | ToolCallArgumentsDeltaEvent | ToolCallArgumentsDoneEvent | ToolExecutionStartEvent | ToolExecutionDoneEvent | IterationCompleteEvent$1 | ResponseCompleteEvent | ErrorEvent;
 /**
  * Type guard to check if event is a specific type
  */
@@ -759,6 +789,8 @@ declare function isOutputTextDelta(event: StreamEvent): event is OutputTextDelta
 declare function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent;
 declare function isToolCallArgumentsDelta(event: StreamEvent): event is ToolCallArgumentsDeltaEvent;
 declare function isToolCallArgumentsDone(event: StreamEvent): event is ToolCallArgumentsDoneEvent;
+declare function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEvent;
+declare function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent;
 declare function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent;
 declare function isErrorEvent(event: StreamEvent): event is ErrorEvent;
 
@@ -786,6 +818,14 @@ interface TextGenerateOptions {
     parallel_tool_calls?: boolean;
     previous_response_id?: string;
     metadata?: Record<string, string>;
+    /** Vendor-agnostic thinking/reasoning configuration */
+    thinking?: {
+        enabled: boolean;
+        /** Budget in tokens for thinking (Anthropic & Google) */
+        budgetTokens?: number;
+        /** Reasoning effort level (OpenAI) */
+        effort?: 'low' | 'medium' | 'high';
+    };
     /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
     vendorOptions?: Record<string, any>;
 }
@@ -1354,4 +1394,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type InputTextContent as $, type AgentEvents as A, type AgenticLoopEventName as B, type Content as C, type AgenticLoopEvents as D, ExecutionContext as E, type FunctionToolDefinition as F, type ApprovalResult as G, type HookConfig as H, type InputItem as I, type ApproveToolContext as J, type BeforeToolContext as K, type LLMResponse as L, type MemoryEntry as M, type BuiltInTool as N, type OutputItem as O, type PriorityCalculator as P, type CompactionItem as Q, ContentType as R, type StreamEvent as S, type ToolFunction as T, DEFAULT_MEMORY_CONFIG as U, type ErrorEvent as V, type WorkingMemoryConfig as W, type ExecutionConfig as X, type Hook as Y, HookManager as Z, type InputImageContent as _, type MemoryScope as a, type IterationCompleteEvent$1 as a0, type JSONSchema as a1, MEMORY_PRIORITY_VALUES as a2, type MemoryEntryInput as a3, type MemoryIndexEntry as a4, type Message as a5, type ModifyingHook as a6, type OutputTextContent as a7, type OutputTextDeltaEvent as a8, type OutputTextDoneEvent as a9, isTaskAwareScope as aA, isTerminalMemoryStatus as aB, isToolCallArgumentsDelta as aC, isToolCallArgumentsDone as aD, isToolCallStart as aE, scopeEquals as aF, scopeMatches as aG, type ExecutionCompleteEvent as aH, type ExecutionStartEvent as aI, type LLMRequestEvent as aJ, type LLMResponseEvent as aK, type ToolCompleteEvent as aL, type ToolStartEvent as aM, type ReasoningItem as aa, type ResponseCompleteEvent as ab, type ResponseCreatedEvent as ac, type ResponseInProgressEvent as ad, type SimpleScope as ae, type TaskAwareScope as af, type ToolCallArgumentsDeltaEvent as ag, type ToolCallArgumentsDoneEvent as ah, type ToolCallStartEvent as ai, ToolCallState as aj, type ToolExecutionContext as ak, type ToolExecutionDoneEvent as al, type ToolExecutionStartEvent as am, type ToolModification as an, type ToolResultContent as ao, type ToolUseContent as ap, calculateEntrySize as aq, defaultDescribeCall as ar, forPlan as as, forTasks as at, getToolCallDescription as au, isErrorEvent as av, isOutputTextDelta as aw, isResponseComplete as ax, isSimpleScope as ay, isStreamEvent as az, type Tool as b, type ToolContext as c, type ToolPermissionConfig as d, type ToolCall as e, type MemoryPriority as f, type MemoryTier as g, type ToolResult as h, type ITextProvider as i, type HistoryMode as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type HookName as n, type StaleEntryInfo as o, type PriorityContext as p, type MemoryIndex as q, type TaskStatusForMemory as r, type WorkingMemoryAccess as s, type TokenUsage as t, StreamEventType as u, type TextGenerateOptions as v, type ModelCapabilities as w, MessageRole as x, type AfterToolContext as y, type AgentEventName as z };
+export { type InputTextContent as $, type AgentEvents as A, type AgenticLoopEventName as B, type Content as C, type AgenticLoopEvents as D, ExecutionContext as E, type FunctionToolDefinition as F, type ApprovalResult as G, type HookConfig as H, type InputItem as I, type ApproveToolContext as J, type BeforeToolContext as K, type LLMResponse as L, type MemoryEntry as M, type BuiltInTool as N, type OutputItem as O, type PriorityCalculator as P, type CompactionItem as Q, ContentType as R, type StreamEvent as S, type ToolFunction as T, DEFAULT_MEMORY_CONFIG as U, type ErrorEvent as V, type WorkingMemoryConfig as W, type ExecutionConfig as X, type Hook as Y, HookManager as Z, type InputImageContent as _, type MemoryScope as a, type IterationCompleteEvent$1 as a0, type JSONSchema as a1, MEMORY_PRIORITY_VALUES as a2, type MemoryEntryInput as a3, type MemoryIndexEntry as a4, type Message as a5, type ModifyingHook as a6, type OutputTextContent as a7, type OutputTextDeltaEvent as a8, type OutputTextDoneEvent as a9, isReasoningDelta as aA, isReasoningDone as aB, isResponseComplete as aC, isSimpleScope as aD, isStreamEvent as aE, isTaskAwareScope as aF, isTerminalMemoryStatus as aG, isToolCallArgumentsDelta as aH, isToolCallArgumentsDone as aI, isToolCallStart as aJ, scopeEquals as aK, scopeMatches as aL, type ExecutionCompleteEvent as aM, type ExecutionStartEvent as aN, type LLMRequestEvent as aO, type LLMResponseEvent as aP, type ToolCompleteEvent as aQ, type ToolStartEvent as aR, type ReasoningDeltaEvent as aa, type ReasoningDoneEvent as ab, type ReasoningItem as ac, type ResponseCompleteEvent as ad, type ResponseCreatedEvent as ae, type ResponseInProgressEvent as af, type SimpleScope as ag, type TaskAwareScope as ah, type ThinkingContent as ai, type ToolCallArgumentsDeltaEvent as aj, type ToolCallArgumentsDoneEvent as ak, type ToolCallStartEvent as al, ToolCallState as am, type ToolExecutionContext as an, type ToolExecutionDoneEvent as ao, type ToolExecutionStartEvent as ap, type ToolModification as aq, type ToolResultContent as ar, type ToolUseContent as as, calculateEntrySize as at, defaultDescribeCall as au, forPlan as av, forTasks as aw, getToolCallDescription as ax, isErrorEvent as ay, isOutputTextDelta as az, type Tool as b, type ToolContext as c, type ToolPermissionConfig as d, type ToolCall as e, type MemoryPriority as f, type MemoryTier as g, type ToolResult as h, type ITextProvider as i, type HistoryMode as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type HookName as n, type StaleEntryInfo as o, type PriorityContext as p, type MemoryIndex as q, type TaskStatusForMemory as r, type WorkingMemoryAccess as s, type TokenUsage as t, StreamEventType as u, type TextGenerateOptions as v, type ModelCapabilities as w, MessageRole as x, type AfterToolContext as y, type AgentEventName as z };

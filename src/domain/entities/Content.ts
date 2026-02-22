@@ -9,6 +9,7 @@ export enum ContentType {
   OUTPUT_TEXT = 'output_text',
   TOOL_USE = 'tool_use',
   TOOL_RESULT = 'tool_result',
+  THINKING = 'thinking',
 }
 
 export interface BaseContent {
@@ -59,10 +60,21 @@ export interface ToolResultContent extends BaseContent {
   __images?: Array<{ base64: string; mediaType: string }>;
 }
 
+export interface ThinkingContent extends BaseContent {
+  type: ContentType.THINKING;
+  thinking: string;
+  /** Anthropic's opaque signature for round-tripping thinking blocks */
+  signature?: string;
+  /** Whether this thinking block should be persisted in conversation history.
+   *  Anthropic requires it (true), OpenAI/Google do not (false). */
+  persistInHistory: boolean;
+}
+
 export type Content =
   | InputTextContent
   | InputImageContent
   | InputFileContent
   | OutputTextContent
   | ToolUseContent
-  | ToolResultContent;
+  | ToolResultContent
+  | ThinkingContent;

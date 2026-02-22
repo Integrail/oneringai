@@ -169,6 +169,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Destroyed flag */
   private _destroyed = false;
 
+  /** Last thinking/reasoning content from the most recent assistant response */
+  private _lastThinking: string | null = null;
+
   /** Cached budget from last prepare() call */
   private _cachedBudget: ContextBudget | null = null;
 
@@ -445,6 +448,14 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     return this._storage ?? null;
   }
 
+  /**
+   * Get the last thinking/reasoning content from the most recent assistant response.
+   * Updated on every assistant response, always available regardless of persistence setting.
+   */
+  get lastThinking(): string | null {
+    return this._lastThinking;
+  }
+
   /** Get max context tokens */
   get maxContextTokens(): number {
     return this._maxContextTokens;
@@ -668,6 +679,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     // Build assistant message
     const id = this.generateId();
     const contentArray: Content[] = [];
+    let thinkingText: string | null = null;
 
     for (const item of output) {
       if (item.type === 'message' && 'content' in item) {
@@ -681,14 +693,24 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
             });
           } else if (c.type === ContentType.TOOL_USE) {
             contentArray.push(c);
+          } else if (c.type === ContentType.THINKING) {
+            // Capture thinking text regardless of persistence
+            const thinking = c as import('../../domain/entities/Content.js').ThinkingContent;
+            thinkingText = thinking.thinking;
+            // Only persist in history when the vendor requires it (e.g., Anthropic)
+            if (thinking.persistInHistory) {
+              contentArray.push(c);
+            }
           }
         }
       } else if (item.type === 'compaction' || item.type === 'reasoning') {
         // Skip compaction and reasoning items for now
-        // They can be added if needed later
         continue;
       }
     }
+
+    // Always update lastThinking (available for inspection via property)
+    this._lastThinking = thinkingText;
 
     // Only add if there's content
     if (contentArray.length > 0) {
@@ -809,6 +831,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    */
   async prepare(): Promise<PreparedContext> {
     this.assertNotDestroyed();
+
+    // Reset lastThinking at start of each turn to prevent stale data
+    this._lastThinking = null;
 
     const compactionLog: string[] = [];
 
@@ -1106,6 +1131,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
             total += this._estimateImageTokens();
           }
         }
+      } else if (c.type === ContentType.THINKING) {
+        total += this._estimator.estimateTokens((c as any).thinking || '');
       } else if (c.type === ContentType.INPUT_IMAGE_URL) {
         const imgContent = c as any;
         const detail = imgContent.image_url?.detail;
@@ -1926,6 +1953,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
           case ContentType.INPUT_FILE:
             name = 'File Input';
             text = `[File: ${block.file_id}]`;
+            break;
+          case ContentType.THINKING:
+            name = 'Thinking';
+            text = (block as any).thinking || '';
             break;
         }
 

@@ -13319,6 +13319,7 @@ var ContentType = /* @__PURE__ */ ((ContentType2) => {
   ContentType2["OUTPUT_TEXT"] = "output_text";
   ContentType2["TOOL_USE"] = "tool_use";
   ContentType2["TOOL_RESULT"] = "tool_result";
+  ContentType2["THINKING"] = "thinking";
   return ContentType2;
 })(ContentType || {});
 
@@ -16747,6 +16748,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
   _storage;
   /** Destroyed flag */
   _destroyed = false;
+  /** Last thinking/reasoning content from the most recent assistant response */
+  _lastThinking = null;
   /** Cached budget from last prepare() call */
   _cachedBudget = null;
   /** Callback for beforeCompaction hook (set by Agent) */
@@ -16959,6 +16962,13 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
   get storage() {
     return this._storage ?? null;
   }
+  /**
+   * Get the last thinking/reasoning content from the most recent assistant response.
+   * Updated on every assistant response, always available regardless of persistence setting.
+   */
+  get lastThinking() {
+    return this._lastThinking;
+  }
   /** Get max context tokens */
   get maxContextTokens() {
     return this._maxContextTokens;
@@ -17140,6 +17150,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
     }
     const id = this.generateId();
     const contentArray = [];
+    let thinkingText = null;
     for (const item of output) {
       if (item.type === "message" && "content" in item) {
         const msg = item;
@@ -17151,12 +17162,19 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
             });
           } else if (c.type === "tool_use" /* TOOL_USE */) {
             contentArray.push(c);
+          } else if (c.type === "thinking" /* THINKING */) {
+            const thinking = c;
+            thinkingText = thinking.thinking;
+            if (thinking.persistInHistory) {
+              contentArray.push(c);
+            }
           }
         }
       } else if (item.type === "compaction" || item.type === "reasoning") {
         continue;
       }
     }
+    this._lastThinking = thinkingText;
     if (contentArray.length > 0) {
       const message = {
         type: "message",
@@ -17255,6 +17273,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends eventemitter3.Event
    */
   async prepare() {
     this.assertNotDestroyed();
+    this._lastThinking = null;
     const compactionLog = [];
     const toolsTokens = this.calculateToolsTokens();
     const availableForContent = this._maxContextTokens - this._config.responseReserve - toolsTokens;
@@ -17467,6 +17486,8 @@ ${content}`);
             total += this._estimateImageTokens();
           }
         }
+      } else if (c.type === "thinking" /* THINKING */) {
+        total += this._estimator.estimateTokens(c.thinking || "");
       } else if (c.type === "input_image_url" /* INPUT_IMAGE_URL */) {
         const imgContent = c;
         const detail = imgContent.image_url?.detail;
@@ -18128,6 +18149,10 @@ ${text}`;
             name = "File Input";
             text = `[File: ${block.file_id}]`;
             break;
+          case "thinking" /* THINKING */:
+            name = "Thinking";
+            text = block.thinking || "";
+            break;
         }
         const tokenEstimate = this._estimator.estimateTokens(text);
         components.push({ name, content: text, tokenEstimate });
@@ -18559,12 +18584,21 @@ var OpenAIResponsesConverter = class {
       } else if (item.type === "reasoning") {
         const reasoning = item;
         if (reasoning.summary) {
-          content.push({
-            type: "reasoning",
-            summary: reasoning.summary,
-            // effort field may not exist in all versions
-            ..."effort" in reasoning && { effort: reasoning.effort }
-          });
+          let summaryText;
+          if (typeof reasoning.summary === "string") {
+            summaryText = reasoning.summary;
+          } else if (Array.isArray(reasoning.summary)) {
+            summaryText = reasoning.summary.map((s) => s.text || "").filter(Boolean).join("\n");
+          } else {
+            summaryText = "";
+          }
+          if (summaryText) {
+            content.push({
+              type: "thinking" /* THINKING */,
+              thinking: summaryText,
+              persistInHistory: false
+            });
+          }
         }
       }
     }
@@ -18587,10 +18621,20 @@ var OpenAIResponsesConverter = class {
         }
       ],
       output_text: outputText,
+      // Extract thinking text from content for convenience field
+      ...(() => {
+        const thinkingTexts = content.filter((c) => c.type === "thinking" /* THINKING */).map((c) => c.thinking).filter(Boolean);
+        return thinkingTexts.length > 0 ? { thinking: thinkingTexts.join("\n") } : {};
+      })(),
       usage: {
         input_tokens: response.usage?.input_tokens || 0,
         output_tokens: response.usage?.output_tokens || 0,
-        total_tokens: response.usage?.total_tokens || 0
+        total_tokens: response.usage?.total_tokens || 0,
+        ...response.usage?.output_tokens_details?.reasoning_tokens != null && {
+          output_tokens_details: {
+            reasoning_tokens: response.usage.output_tokens_details.reasoning_tokens
+          }
+        }
       }
     };
   }
@@ -18695,6 +18739,8 @@ var StreamEventType = /* @__PURE__ */ ((StreamEventType2) => {
   StreamEventType2["TOOL_EXECUTION_START"] = "response.tool_execution.start";
   StreamEventType2["TOOL_EXECUTION_DONE"] = "response.tool_execution.done";
   StreamEventType2["ITERATION_COMPLETE"] = "response.iteration.complete";
+  StreamEventType2["REASONING_DELTA"] = "response.reasoning.delta";
+  StreamEventType2["REASONING_DONE"] = "response.reasoning.done";
   StreamEventType2["RESPONSE_COMPLETE"] = "response.complete";
   StreamEventType2["ERROR"] = "response.error";
   return StreamEventType2;
@@ -18714,6 +18760,12 @@ function isToolCallArgumentsDelta(event) {
 function isToolCallArgumentsDone(event) {
   return event.type === "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */;
 }
+function isReasoningDelta(event) {
+  return event.type === "response.reasoning.delta" /* REASONING_DELTA */;
+}
+function isReasoningDone(event) {
+  return event.type === "response.reasoning.done" /* REASONING_DONE */;
+}
 function isResponseComplete(event) {
   return event.type === "response.complete" /* RESPONSE_COMPLETE */;
 }
@@ -18731,6 +18783,7 @@ var OpenAIResponsesStreamConverter = class {
     let sequenceNumber = 0;
     const activeItems = /* @__PURE__ */ new Map();
     const toolCallBuffers = /* @__PURE__ */ new Map();
+    const reasoningBuffers = /* @__PURE__ */ new Map();
     for await (const event of stream) {
       if (process.env.DEBUG_OPENAI) {
         console.error("[DEBUG] Responses API event:", event.type);
@@ -18752,6 +18805,12 @@ var OpenAIResponsesStreamConverter = class {
           activeItems.set(addedEvent.output_index.toString(), {
             type: item.type
           });
+          if (item.type === "reasoning") {
+            activeItems.set(addedEvent.output_index.toString(), {
+              type: "reasoning"
+            });
+            reasoningBuffers.set(addedEvent.output_index.toString(), []);
+          }
           if (item.type === "function_call") {
             const functionCall = item;
             const toolCallId = functionCall.call_id;
@@ -18809,9 +18868,36 @@ var OpenAIResponsesStreamConverter = class {
           }
           break;
         }
+        case "response.reasoning_summary_text.delta": {
+          const reasoningEvent = event;
+          const outputIdx = reasoningEvent.output_index?.toString();
+          const buffer = outputIdx ? reasoningBuffers.get(outputIdx) : void 0;
+          if (buffer) {
+            buffer.push(reasoningEvent.delta || "");
+          }
+          yield {
+            type: "response.reasoning.delta" /* REASONING_DELTA */,
+            response_id: responseId,
+            item_id: reasoningEvent.item_id || `reasoning_${responseId}`,
+            delta: reasoningEvent.delta || "",
+            sequence_number: sequenceNumber++
+          };
+          break;
+        }
         case "response.output_item.done": {
           const doneEvent = event;
           const item = doneEvent.item;
+          if (item.type === "reasoning") {
+            const outputIdx = doneEvent.output_index.toString();
+            const rBuf = reasoningBuffers.get(outputIdx);
+            const thinkingText = rBuf ? rBuf.join("") : "";
+            yield {
+              type: "response.reasoning.done" /* REASONING_DONE */,
+              response_id: responseId,
+              item_id: item.id || `reasoning_${responseId}`,
+              thinking: thinkingText
+            };
+          }
           if (item.type === "function_call") {
             const functionCall = item;
             const buffer = toolCallBuffers.get(functionCall.call_id);
@@ -18843,7 +18929,12 @@ var OpenAIResponsesStreamConverter = class {
             usage: {
               input_tokens: response.usage?.input_tokens || 0,
               output_tokens: response.usage?.output_tokens || 0,
-              total_tokens: response.usage?.total_tokens || 0
+              total_tokens: response.usage?.total_tokens || 0,
+              ...response.usage?.output_tokens_details?.reasoning_tokens != null && {
+                output_tokens_details: {
+                  reasoning_tokens: response.usage.output_tokens_details.reasoning_tokens
+                }
+              }
             },
             iterations: 1
           };
@@ -18882,6 +18973,26 @@ function resolveMaxContextTokens(model, fallback) {
   if (!model) return fallback;
   const info = getModelInfo(model);
   return info ? info.features.input.tokens : fallback;
+}
+
+// src/infrastructure/providers/shared/validateThinkingConfig.ts
+function validateThinkingConfig(thinking) {
+  if (!thinking.enabled) return;
+  if (thinking.budgetTokens !== void 0) {
+    if (typeof thinking.budgetTokens !== "number" || thinking.budgetTokens < 1) {
+      throw new Error(
+        `Invalid thinking budgetTokens: ${thinking.budgetTokens}. Must be a positive number.`
+      );
+    }
+  }
+  if (thinking.effort !== void 0) {
+    const validEfforts = ["low", "medium", "high"];
+    if (!validEfforts.includes(thinking.effort)) {
+      throw new Error(
+        `Invalid thinking effort: '${thinking.effort}'. Must be one of: ${validEfforts.join(", ")}`
+      );
+    }
+  }
 }
 
 // src/infrastructure/providers/openai/OpenAITextProvider.ts
@@ -18951,6 +19062,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
           },
           ...options.metadata && { metadata: options.metadata }
         };
+        this.applyReasoningConfig(params, options);
         const response = await this.client.responses.create(params);
         return this.converter.convertResponse(response);
       } catch (error) {
@@ -18992,6 +19104,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
         ...options.metadata && { metadata: options.metadata },
         stream: true
       };
+      this.applyReasoningConfig(params, options);
       const stream = await this.client.responses.create(params);
       yield* this.streamConverter.convertStream(stream);
     } catch (error) {
@@ -19022,6 +19135,17 @@ var OpenAITextProvider = class extends BaseTextProvider {
       models.push(model.id);
     }
     return models.sort();
+  }
+  /**
+   * Apply reasoning config from unified thinking option to request params
+   */
+  applyReasoningConfig(params, options) {
+    if (options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      params.reasoning = {
+        effort: options.thinking.effort || "medium"
+      };
+    }
   }
   /**
    * Handle OpenAI-specific errors
@@ -19065,6 +19189,7 @@ function buildLLMResponse(options) {
     }
   ];
   const outputText = extractTextFromContent(content);
+  const thinking = extractThinkingFromContent(content);
   return {
     id: responseId,
     object: "response",
@@ -19073,6 +19198,7 @@ function buildLLMResponse(options) {
     model,
     output,
     output_text: outputText,
+    ...thinking && { thinking },
     usage: {
       input_tokens: usage.inputTokens,
       output_tokens: usage.outputTokens,
@@ -19084,6 +19210,10 @@ function extractTextFromContent(content) {
   return content.filter(
     (c) => c.type === "output_text" /* OUTPUT_TEXT */
   ).map((c) => c.text).join("\n");
+}
+function extractThinkingFromContent(content) {
+  const thinkingTexts = content.filter((c) => c.type === "thinking" /* THINKING */).map((c) => c.thinking).filter(Boolean);
+  return thinkingTexts.length > 0 ? thinkingTexts.join("\n") : void 0;
 }
 function createTextContent(text) {
   return {
@@ -19334,7 +19464,15 @@ var AnthropicConverter = class extends BaseConverter {
     if (tools && tools.length > 0) {
       params.tools = tools;
     }
-    if (options.temperature !== void 0) {
+    if (options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      const budgetTokens = options.thinking.budgetTokens || 1e4;
+      params.thinking = {
+        type: "enabled",
+        budget_tokens: budgetTokens
+      };
+      params.temperature = 1;
+    } else if (options.temperature !== void 0) {
       params.temperature = options.temperature;
     }
     return params;
@@ -19380,6 +19518,14 @@ var AnthropicConverter = class extends BaseConverter {
         content.push(this.createText(block.text));
       } else if (block.type === "tool_use") {
         content.push(this.createToolUse(block.id, block.name, block.input));
+      } else if (block.type === "thinking") {
+        const thinkingBlock = block;
+        content.push({
+          type: "thinking" /* THINKING */,
+          thinking: thinkingBlock.thinking || "",
+          signature: thinkingBlock.signature,
+          persistInHistory: true
+        });
       }
     }
     return content;
@@ -19456,6 +19602,17 @@ var AnthropicConverter = class extends BaseConverter {
             name: toolContent.name,
             input: parsedInput
           });
+          break;
+        }
+        case "thinking" /* THINKING */: {
+          const thinkingContent = c;
+          if (thinkingContent.signature) {
+            blocks.push({
+              type: "thinking",
+              thinking: thinkingContent.thinking,
+              signature: thinkingContent.signature
+            });
+          }
           break;
         }
       }
@@ -19590,6 +19747,8 @@ var BaseStreamConverter = class {
   usage = { inputTokens: 0, outputTokens: 0 };
   /** Buffers for accumulating tool call arguments */
   toolCallBuffers = /* @__PURE__ */ new Map();
+  /** Buffer for accumulating reasoning/thinking content */
+  reasoningBuffer = "";
   // ==========================================================================
   // Public API
   // ==========================================================================
@@ -19624,6 +19783,7 @@ var BaseStreamConverter = class {
     this.sequenceNumber = 0;
     this.usage = { inputTokens: 0, outputTokens: 0 };
     this.toolCallBuffers.clear();
+    this.reasoningBuffer = "";
   }
   /**
    * Reset converter state for a new stream
@@ -19676,6 +19836,33 @@ var BaseStreamConverter = class {
       content_index: options?.contentIndex ?? 0,
       delta,
       sequence_number: this.nextSequence()
+    };
+  }
+  /**
+   * Create REASONING_DELTA event and accumulate reasoning buffer
+   */
+  emitReasoningDelta(delta, itemId) {
+    this.reasoningBuffer += delta;
+    return {
+      type: "response.reasoning.delta" /* REASONING_DELTA */,
+      response_id: this.responseId,
+      item_id: itemId || `reasoning_${this.responseId}`,
+      delta,
+      sequence_number: this.nextSequence()
+    };
+  }
+  /**
+   * Create REASONING_DONE event with accumulated reasoning
+   */
+  emitReasoningDone(itemId) {
+    const id = itemId || `reasoning_${this.responseId}`;
+    const thinking = this.reasoningBuffer;
+    this.reasoningBuffer = "";
+    return {
+      type: "response.reasoning.done" /* REASONING_DONE */,
+      response_id: this.responseId,
+      item_id: id,
+      thinking
     };
   }
   /**
@@ -19822,7 +20009,10 @@ var AnthropicStreamConverter = class extends BaseStreamConverter {
   handleContentBlockStart(event) {
     const index = event.index;
     const block = event.content_block;
-    if (block.type === "text") {
+    if (block.type === "thinking") {
+      this.contentBlockIndex.set(index, { type: "thinking" });
+      return [];
+    } else if (block.type === "text") {
       this.contentBlockIndex.set(index, { type: "text" });
       return [];
     } else if (block.type === "tool_use") {
@@ -19843,7 +20033,12 @@ var AnthropicStreamConverter = class extends BaseStreamConverter {
     const delta = event.delta;
     const blockInfo = this.contentBlockIndex.get(index);
     if (!blockInfo) return [];
-    if (delta.type === "text_delta") {
+    if (delta.type === "thinking_delta") {
+      const thinkingDelta = delta;
+      return [
+        this.emitReasoningDelta(thinkingDelta.thinking || "", `thinking_${this.responseId}`)
+      ];
+    } else if (delta.type === "text_delta") {
       return [
         this.emitTextDelta(delta.text, {
           itemId: `msg_${this.responseId}`,
@@ -19863,6 +20058,9 @@ var AnthropicStreamConverter = class extends BaseStreamConverter {
     const index = event.index;
     const blockInfo = this.contentBlockIndex.get(index);
     if (!blockInfo) return [];
+    if (blockInfo.type === "thinking") {
+      return [this.emitReasoningDone(`thinking_${this.responseId}`)];
+    }
     if (blockInfo.type === "tool_use") {
       return [this.emitToolCallArgsDone(blockInfo.id || "", blockInfo.name)];
     }
@@ -20149,6 +20347,11 @@ var GoogleConverter = class {
       request.generationConfig.thinkingConfig = {
         thinkingLevel: options.vendorOptions.thinkingLevel
       };
+    } else if (options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      request.generationConfig.thinkingConfig = {
+        thinkingBudget: options.thinking.budgetTokens || 8192
+      };
     }
     if (tools && tools.length > 0) {
       request.generationConfig.allowCodeExecution = false;
@@ -20364,7 +20567,13 @@ var GoogleConverter = class {
   convertGeminiPartsToContent(parts) {
     const content = [];
     for (const part of parts) {
-      if ("text" in part && part.text) {
+      if ("thought" in part && part.thought === true && "text" in part && part.text) {
+        content.push({
+          type: "thinking" /* THINKING */,
+          thinking: part.text,
+          persistInHistory: false
+        });
+      } else if ("text" in part && part.text) {
         content.push(createTextContent(part.text));
       } else if ("functionCall" in part && part.functionCall) {
         const toolId = generateToolCallId("google");
@@ -20442,6 +20651,8 @@ var GoogleStreamConverter = class {
   isFirst = true;
   toolCallBuffers = /* @__PURE__ */ new Map();
   hadToolCalls = false;
+  reasoningBuffer = "";
+  wasThinking = false;
   // External storage for thought signatures (shared with GoogleConverter)
   thoughtSignatureStorage = null;
   // External storage for tool call ID → name mapping (shared with GoogleConverter)
@@ -20469,6 +20680,8 @@ var GoogleStreamConverter = class {
     this.isFirst = true;
     this.toolCallBuffers.clear();
     this.hadToolCalls = false;
+    this.reasoningBuffer = "";
+    this.wasThinking = false;
     let lastUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -20493,6 +20706,16 @@ var GoogleStreamConverter = class {
       for (const event of events) {
         yield event;
       }
+    }
+    if (this.wasThinking && this.reasoningBuffer) {
+      yield {
+        type: "response.reasoning.done" /* REASONING_DONE */,
+        response_id: this.responseId,
+        item_id: `thinking_${this.responseId}`,
+        thinking: this.reasoningBuffer
+      };
+      this.reasoningBuffer = "";
+      this.wasThinking = false;
     }
     if (this.toolCallBuffers.size > 0) {
       for (const [toolCallId, buffer] of this.toolCallBuffers) {
@@ -20533,7 +20756,28 @@ var GoogleStreamConverter = class {
     const candidate = chunk.candidates?.[0];
     if (!candidate?.content?.parts) return events;
     for (const part of candidate.content.parts) {
-      if (part.text) {
+      const isThought = "thought" in part && part.thought === true;
+      if (isThought && part.text) {
+        this.wasThinking = true;
+        this.reasoningBuffer += part.text;
+        events.push({
+          type: "response.reasoning.delta" /* REASONING_DELTA */,
+          response_id: this.responseId,
+          item_id: `thinking_${this.responseId}`,
+          delta: part.text,
+          sequence_number: this.sequenceNumber++
+        });
+      } else if (part.text) {
+        if (this.wasThinking) {
+          this.wasThinking = false;
+          events.push({
+            type: "response.reasoning.done" /* REASONING_DONE */,
+            response_id: this.responseId,
+            item_id: `thinking_${this.responseId}`,
+            thinking: this.reasoningBuffer
+          });
+          this.reasoningBuffer = "";
+        }
         events.push({
           type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
           response_id: this.responseId,
@@ -20632,6 +20876,8 @@ var GoogleStreamConverter = class {
     this.isFirst = true;
     this.toolCallBuffers.clear();
     this.hadToolCalls = false;
+    this.reasoningBuffer = "";
+    this.wasThinking = false;
   }
   /**
    * Reset converter state for a new stream
@@ -22189,6 +22435,8 @@ var StreamState = class {
   createdAt;
   // Text accumulation: item_id -> text chunks
   textBuffers;
+  // Reasoning accumulation: item_id -> reasoning chunks
+  reasoningBuffers;
   // Tool call accumulation: tool_call_id -> buffer
   toolCallBuffers;
   // Completed tool calls
@@ -22210,6 +22458,7 @@ var StreamState = class {
     this.model = model;
     this.createdAt = createdAt || Date.now();
     this.textBuffers = /* @__PURE__ */ new Map();
+    this.reasoningBuffers = /* @__PURE__ */ new Map();
     this.toolCallBuffers = /* @__PURE__ */ new Map();
     this.completedToolCalls = [];
     this.toolResults = /* @__PURE__ */ new Map();
@@ -22252,6 +22501,39 @@ var StreamState = class {
       allText.push(chunks.join(""));
     }
     return allText.join("");
+  }
+  /**
+   * Accumulate reasoning delta for a specific item
+   */
+  accumulateReasoningDelta(itemId, delta) {
+    if (!this.reasoningBuffers.has(itemId)) {
+      this.reasoningBuffers.set(itemId, []);
+    }
+    this.reasoningBuffers.get(itemId).push(delta);
+    this.totalChunks++;
+  }
+  /**
+   * Get complete accumulated reasoning for an item
+   */
+  getCompleteReasoning(itemId) {
+    const chunks = this.reasoningBuffers.get(itemId);
+    return chunks ? chunks.join("") : "";
+  }
+  /**
+   * Get all accumulated reasoning (all items concatenated)
+   */
+  getAllReasoning() {
+    const allReasoning = [];
+    for (const chunks of this.reasoningBuffers.values()) {
+      allReasoning.push(chunks.join(""));
+    }
+    return allReasoning.join("");
+  }
+  /**
+   * Check if stream has any accumulated reasoning
+   */
+  hasReasoning() {
+    return this.reasoningBuffers.size > 0;
   }
   /**
    * Start accumulating tool call arguments
@@ -22421,6 +22703,7 @@ var StreamState = class {
    */
   clear() {
     this.textBuffers.clear();
+    this.reasoningBuffers.clear();
     this.toolCallBuffers.clear();
     this.completedToolCalls = [];
     this.toolResults.clear();
@@ -22434,6 +22717,7 @@ var StreamState = class {
       model: this.model,
       createdAt: this.createdAt,
       textBuffers: new Map(this.textBuffers),
+      reasoningBuffers: new Map(this.reasoningBuffers),
       toolCallBuffers: new Map(this.toolCallBuffers),
       completedToolCalls: [...this.completedToolCalls],
       toolResults: new Map(this.toolResults),
@@ -22863,6 +23147,20 @@ var Agent = class _Agent extends BaseAgent {
   _addStreamingAssistantMessage(streamState, toolCalls) {
     const assistantText = streamState.getAllText();
     const assistantContent = [];
+    if (streamState.hasReasoning()) {
+      const reasoning = streamState.getAllReasoning();
+      if (reasoning) {
+        const isAnthropic = this.connector.vendor === Vendor.Anthropic;
+        assistantContent.push({
+          type: "thinking" /* THINKING */,
+          thinking: reasoning,
+          // Streaming doesn't carry Anthropic signatures, so signature is undefined here.
+          // Non-streaming responses (via convertResponse) capture signatures correctly.
+          signature: void 0,
+          persistInHistory: isAnthropic
+        });
+      }
+    }
     if (assistantText && assistantText.trim()) {
       assistantContent.push({
         type: "output_text" /* OUTPUT_TEXT */,
@@ -23101,6 +23399,7 @@ var Agent = class _Agent extends BaseAgent {
       tools: this.getEnabledToolDefinitions(),
       tool_choice: "auto",
       temperature: this._config.temperature,
+      thinking: this._config.thinking,
       vendorOptions: this._config.vendorOptions
     };
     const beforeLLM = await this.hookManager.executeHooks("before:llm", {
@@ -23166,6 +23465,7 @@ var Agent = class _Agent extends BaseAgent {
       tools: this.getEnabledToolDefinitions(),
       tool_choice: "auto",
       temperature: this._config.temperature,
+      thinking: this._config.thinking,
       vendorOptions: this._config.vendorOptions
     };
     await this.hookManager.executeHooks("before:llm", {
@@ -23183,7 +23483,9 @@ var Agent = class _Agent extends BaseAgent {
     });
     try {
       for await (const event of this._provider.streamGenerate(generateOptions)) {
-        if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
+        if (isReasoningDelta(event)) {
+          streamState.accumulateReasoningDelta(event.item_id, event.delta);
+        } else if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
           streamState.accumulateTextDelta(event.item_id, event.delta);
         } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
           streamState.startToolCall(event.tool_call_id, event.tool_name);
@@ -39209,6 +39511,42 @@ var StreamHelpers = class {
     return chunks.join("");
   }
   /**
+   * Get only reasoning/thinking deltas from stream
+   * Filters out all other event types
+   */
+  static async *thinkingOnly(stream) {
+    for await (const event of stream) {
+      if (isReasoningDelta(event)) {
+        yield event.delta;
+      }
+    }
+  }
+  /**
+   * Get both text and thinking deltas from stream
+   * Yields tagged objects so consumers can distinguish them
+   */
+  static async *textAndThinking(stream) {
+    for await (const event of stream) {
+      if (isOutputTextDelta(event)) {
+        yield { type: "text", delta: event.delta };
+      } else if (isReasoningDelta(event)) {
+        yield { type: "thinking", delta: event.delta };
+      }
+    }
+  }
+  /**
+   * Accumulate all thinking/reasoning content from stream into a single string
+   */
+  static async accumulateThinking(stream) {
+    const chunks = [];
+    for await (const event of stream) {
+      if (isReasoningDelta(event)) {
+        chunks.push(event.delta);
+      }
+    }
+    return chunks.join("");
+  }
+  /**
    * Buffer stream events into batches
    */
   static async *bufferEvents(stream, batchSize) {
@@ -39267,6 +39605,11 @@ var StreamHelpers = class {
       case "response.output_text.delta" /* OUTPUT_TEXT_DELTA */:
         state.accumulateTextDelta(event.item_id, event.delta);
         break;
+      case "response.reasoning.delta" /* REASONING_DELTA */:
+        state.accumulateReasoningDelta(event.item_id, event.delta);
+        break;
+      case "response.reasoning.done" /* REASONING_DONE */:
+        break;
       case "response.tool_call.start" /* TOOL_CALL_START */:
         state.startToolCall(event.tool_call_id, event.tool_name);
         break;
@@ -39297,20 +39640,35 @@ var StreamHelpers = class {
    */
   static reconstructLLMResponse(state) {
     const output = [];
+    const contentParts = [];
+    let thinkingText;
+    if (state.hasReasoning()) {
+      const reasoning = state.getAllReasoning();
+      if (reasoning) {
+        thinkingText = reasoning;
+        contentParts.push({
+          type: "thinking" /* THINKING */,
+          thinking: reasoning,
+          persistInHistory: false
+          // Vendor-agnostic default; caller can adjust
+        });
+      }
+    }
     if (state.hasText()) {
       const textContent = state.getAllText();
       if (textContent) {
-        output.push({
-          type: "message",
-          role: "assistant" /* ASSISTANT */,
-          content: [
-            {
-              type: "output_text" /* OUTPUT_TEXT */,
-              text: textContent
-            }
-          ]
+        contentParts.push({
+          type: "output_text" /* OUTPUT_TEXT */,
+          text: textContent
         });
       }
+    }
+    if (contentParts.length > 0) {
+      output.push({
+        type: "message",
+        role: "assistant" /* ASSISTANT */,
+        content: contentParts
+      });
     }
     const toolCalls = state.getCompletedToolCalls();
     if (toolCalls.length > 0) {
@@ -39340,6 +39698,7 @@ var StreamHelpers = class {
       model: state.model,
       output,
       output_text: outputText,
+      thinking: thinkingText,
       usage: state.usage
     };
   }
@@ -50857,6 +51216,8 @@ exports.isErrorEvent = isErrorEvent;
 exports.isExcludedExtension = isExcludedExtension;
 exports.isKnownService = isKnownService;
 exports.isOutputTextDelta = isOutputTextDelta;
+exports.isReasoningDelta = isReasoningDelta;
+exports.isReasoningDone = isReasoningDone;
 exports.isResponseComplete = isResponseComplete;
 exports.isSimpleScope = isSimpleScope;
 exports.isStreamEvent = isStreamEvent;

@@ -129,7 +129,9 @@ describe('OpenAIResponsesConverter', () => {
       // Should extract message ID from the message item, not reasoning item
       expect(result.output[0].id).toBe('msg_67890');
       expect(result.output[0].content).toHaveLength(2);
-      expect(result.output[0].content[0].type).toBe('reasoning');
+      expect(result.output[0].content[0].type).toBe('thinking');
+      expect((result.output[0].content[0] as any).thinking).toBe('Let me think about this step by step...');
+      expect((result.output[0].content[0] as any).persistInHistory).toBe(false);
       expect(result.output[0].content[1].type).toBe('output_text');
     });
 

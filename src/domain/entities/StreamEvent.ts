@@ -19,6 +19,8 @@ export enum StreamEventType {
   TOOL_EXECUTION_START = 'response.tool_execution.start',
   TOOL_EXECUTION_DONE = 'response.tool_execution.done',
   ITERATION_COMPLETE = 'response.iteration.complete',
+  REASONING_DELTA = 'response.reasoning.delta',
+  REASONING_DONE = 'response.reasoning.done',
   RESPONSE_COMPLETE = 'response.complete',
   ERROR = 'response.error',
 }
@@ -146,6 +148,25 @@ export interface ResponseCompleteEvent extends BaseStreamEvent {
 }
 
 /**
+ * Reasoning/thinking delta - incremental reasoning output
+ */
+export interface ReasoningDeltaEvent extends BaseStreamEvent {
+  type: StreamEventType.REASONING_DELTA;
+  item_id: string;
+  delta: string;
+  sequence_number: number;
+}
+
+/**
+ * Reasoning/thinking complete for this item
+ */
+export interface ReasoningDoneEvent extends BaseStreamEvent {
+  type: StreamEventType.REASONING_DONE;
+  item_id: string;
+  thinking: string; // Complete accumulated thinking
+}
+
+/**
  * Error event
  */
 export interface ErrorEvent extends BaseStreamEvent {
@@ -167,6 +188,8 @@ export type StreamEvent =
   | ResponseInProgressEvent
   | OutputTextDeltaEvent
   | OutputTextDoneEvent
+  | ReasoningDeltaEvent
+  | ReasoningDoneEvent
   | ToolCallStartEvent
   | ToolCallArgumentsDeltaEvent
   | ToolCallArgumentsDoneEvent
@@ -207,6 +230,14 @@ export function isToolCallArgumentsDone(
   event: StreamEvent
 ): event is ToolCallArgumentsDoneEvent {
   return event.type === StreamEventType.TOOL_CALL_ARGUMENTS_DONE;
+}
+
+export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEvent {
+  return event.type === StreamEventType.REASONING_DELTA;
+}
+
+export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent {
+  return event.type === StreamEventType.REASONING_DONE;
 }
 
 export function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent {

@@ -6,6 +6,7 @@ import {
   StreamEvent,
   StreamEventType,
   isOutputTextDelta,
+  isReasoningDelta,
 } from '../../domain/entities/StreamEvent.js';
 import { StreamState } from '../../domain/entities/StreamState.js';
 import { LLMResponse, OutputItem } from '../../domain/entities/Response.js';
@@ -82,6 +83,53 @@ export class StreamHelpers {
 
     for await (const event of stream) {
       if (isOutputTextDelta(event)) {
+        chunks.push(event.delta);
+      }
+    }
+
+    return chunks.join('');
+  }
+
+  /**
+   * Get only reasoning/thinking deltas from stream
+   * Filters out all other event types
+   */
+  static async *thinkingOnly(
+    stream: AsyncIterableIterator<StreamEvent>
+  ): AsyncIterableIterator<string> {
+    for await (const event of stream) {
+      if (isReasoningDelta(event)) {
+        yield event.delta;
+      }
+    }
+  }
+
+  /**
+   * Get both text and thinking deltas from stream
+   * Yields tagged objects so consumers can distinguish them
+   */
+  static async *textAndThinking(
+    stream: AsyncIterableIterator<StreamEvent>
+  ): AsyncIterableIterator<{ type: 'text' | 'thinking'; delta: string }> {
+    for await (const event of stream) {
+      if (isOutputTextDelta(event)) {
+        yield { type: 'text', delta: event.delta };
+      } else if (isReasoningDelta(event)) {
+        yield { type: 'thinking', delta: event.delta };
+      }
+    }
+  }
+
+  /**
+   * Accumulate all thinking/reasoning content from stream into a single string
+   */
+  static async accumulateThinking(
+    stream: AsyncIterableIterator<StreamEvent>
+  ): Promise<string> {
+    const chunks: string[] = [];
+
+    for await (const event of stream) {
+      if (isReasoningDelta(event)) {
         chunks.push(event.delta);
       }
     }
@@ -171,6 +219,14 @@ export class StreamHelpers {
         state.accumulateTextDelta(event.item_id, event.delta);
         break;
 
+      case StreamEventType.REASONING_DELTA:
+        state.accumulateReasoningDelta(event.item_id, event.delta);
+        break;
+
+      case StreamEventType.REASONING_DONE:
+        // Reasoning done - no specific state update needed (already accumulated via deltas)
+        break;
+
       case StreamEventType.TOOL_CALL_START:
         state.startToolCall(event.tool_call_id, event.tool_name);
         break;
@@ -208,22 +264,40 @@ export class StreamHelpers {
    */
   private static reconstructLLMResponse(state: StreamState): LLMResponse {
     const output: OutputItem[] = [];
+    const contentParts: any[] = [];
 
-    // Add text messages
+    // Add reasoning/thinking content if accumulated
+    let thinkingText: string | undefined;
+    if (state.hasReasoning()) {
+      const reasoning = state.getAllReasoning();
+      if (reasoning) {
+        thinkingText = reasoning;
+        contentParts.push({
+          type: ContentType.THINKING,
+          thinking: reasoning,
+          persistInHistory: false, // Vendor-agnostic default; caller can adjust
+        });
+      }
+    }
+
+    // Add text content
     if (state.hasText()) {
       const textContent = state.getAllText();
       if (textContent) {
-        output.push({
-          type: 'message' as const,
-          role: MessageRole.ASSISTANT,
-          content: [
-            {
-              type: ContentType.OUTPUT_TEXT,
-              text: textContent,
-            },
-          ],
+        contentParts.push({
+          type: ContentType.OUTPUT_TEXT,
+          text: textContent,
         });
       }
+    }
+
+    // Build message from accumulated content parts
+    if (contentParts.length > 0) {
+      output.push({
+        type: 'message' as const,
+        role: MessageRole.ASSISTANT,
+        content: contentParts,
+      });
     }
 
     // Add tool calls to output
@@ -262,6 +336,7 @@ export class StreamHelpers {
       model: state.model,
       output,
       output_text: outputText,
+      thinking: thinkingText,
       usage: state.usage,
     };
   }
