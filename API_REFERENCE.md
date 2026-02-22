@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-20
+**Generated:** 2026-02-22
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -19,8 +19,8 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Task Agents](#task-agents) (77 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (29 items)
-- [Tools & Function Calling](#tools-function-calling) (125 items)
-- [Streaming](#streaming) (15 items)
+- [Tools & Function Calling](#tools-function-calling) (126 items)
+- [Streaming](#streaming) (19 items)
 - [Model Registry](#model-registry) (10 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (45 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (265 items)
+- [Other](#other) (271 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:130`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:140`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -879,7 +879,7 @@ isDisposed(): boolean
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:47`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:48`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -891,6 +891,13 @@ Agent configuration - extends BaseAgentConfig with Agent-specific options
 | `instructions?` | `instructions?: string;` | System instructions for the agent |
 | `temperature?` | `temperature?: number;` | Temperature for generation |
 | `maxIterations?` | `maxIterations?: number;` | Maximum iterations for tool calling loop |
+| `thinking?` | `thinking?: {
+    enabled: boolean;
+    /** Budget in tokens for thinking (Anthropic & Google) */
+    budgetTokens?: number;
+    /** Reasoning effort level (OpenAI) */
+    effort?: 'low' | 'medium' | 'high';
+  };` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') |
 | `context?` | `context?: AgentContextNextGen | AgentContextNextGenConfig;` | Optional unified context management.
 When provided (as AgentContextNextGen instance or config), Agent will:
@@ -945,7 +952,7 @@ Fetch options with additional connector-specific settings
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:42`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:43`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -2683,7 +2690,7 @@ Image model pricing
 
 ### InputImageContent `interface`
 
-📍 [`src/domain/entities/Content.ts:23`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:24`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7188,7 +7195,7 @@ Task execution settings
 | `maxConcurrency?` | `maxConcurrency?: number;` | Max concurrent if this spawns sub-work |
 | `priority?` | `priority?: number;` | Priority (higher = executed first) |
 | `maxIterations?` | `maxIterations?: number;` | Maximum LLM iterations (tool-call loops) per agent.run() for this task.
-Prevents runaway agents. Default: 15. |
+Prevents runaway agents. Default: 50. |
 | `raceProtection?` | `raceProtection?: boolean;` | If true (default), re-check condition immediately before LLM call
 to protect against race conditions when parallel tasks modify memory.
 Set to false to skip re-check for performance if you know condition won't change. |
@@ -12512,6 +12519,27 @@ listTools(): string[];
 
 ---
 
+### IToolSnapshot `interface`
+
+📍 [`src/core/context-nextgen/snapshot.ts:98`](src/core/context-nextgen/snapshot.ts)
+
+Snapshot of a single tool's registration state.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Tool name |
+| `description` | `description: string;` | Tool description |
+| `enabled` | `enabled: boolean;` | Whether the tool is currently enabled |
+| `callCount` | `callCount: number;` | Number of times this tool has been called |
+| `namespace?` | `namespace?: string;` | Tool namespace (if registered with one) |
+
+</details>
+
+---
+
 ### JSONSchema `interface`
 
 📍 [`src/domain/entities/Tool.ts:11`](src/domain/entities/Tool.ts)
@@ -12663,7 +12691,7 @@ Default: true |
 
 ### ToolCallArgumentsDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:85`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:87`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments delta - incremental JSON
 
@@ -12685,7 +12713,7 @@ Tool call arguments delta - incremental JSON
 
 ### ToolCallArgumentsDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:97`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:99`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments complete
 
@@ -12706,7 +12734,7 @@ Tool call arguments complete
 
 ### ToolCallStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:75`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:77`](src/domain/entities/StreamEvent.ts)
 
 Tool call detected and starting
 
@@ -12786,7 +12814,7 @@ Tool execution context - tracks all tool calls in a generation
 
 ### ToolExecutionDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:118`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:120`](src/domain/entities/StreamEvent.ts)
 
 Tool execution complete
 
@@ -12827,7 +12855,7 @@ Default: true (if crypto.randomUUID is available) |
 
 ### ToolExecutionStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:108`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:110`](src/domain/entities/StreamEvent.ts)
 
 Tool execution starting
 
@@ -13103,7 +13131,7 @@ Metadata for a tool in the registry
 
 ### ToolResultContent `interface`
 
-📍 [`src/domain/entities/Content.ts:49`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:50`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13144,7 +13172,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### ToolUseContent `interface`
 
-📍 [`src/domain/entities/Content.ts:42`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:43`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13953,7 +13981,7 @@ export function hydrateCustomTool(
 
 ### isToolCallArgumentsDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:200`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:223`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDelta(
@@ -13965,7 +13993,7 @@ export function isToolCallArgumentsDelta(
 
 ### isToolCallArgumentsDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:206`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:229`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDone(
@@ -13977,7 +14005,7 @@ export function isToolCallArgumentsDone(
 
 ### isToolCallStart `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:196`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:219`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
@@ -14010,7 +14038,7 @@ Real-time streaming of agent responses
 
 ### StreamHelpers `class`
 
-📍 [`src/capabilities/agents/StreamHelpers.ts:18`](src/capabilities/agents/StreamHelpers.ts)
+📍 [`src/capabilities/agents/StreamHelpers.ts:19`](src/capabilities/agents/StreamHelpers.ts)
 
 Helper class for consuming and processing streams
 
@@ -14072,6 +14100,53 @@ Accumulate text from stream into a single string
 
 ```typescript
 static async accumulateText(
+    stream: AsyncIterableIterator&lt;StreamEvent&gt;
+  ): Promise&lt;string&gt;
+```
+
+**Parameters:**
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `static thinkingOnly()`
+
+Get only reasoning/thinking deltas from stream
+Filters out all other event types
+
+```typescript
+static async *thinkingOnly(
+    stream: AsyncIterableIterator&lt;StreamEvent&gt;
+  ): AsyncIterableIterator&lt;string&gt;
+```
+
+**Parameters:**
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+**Returns:** `AsyncIterableIterator&lt;string&gt;`
+
+#### `static textAndThinking()`
+
+Get both text and thinking deltas from stream
+Yields tagged objects so consumers can distinguish them
+
+```typescript
+static async *textAndThinking(
+    stream: AsyncIterableIterator&lt;StreamEvent&gt;
+  ): AsyncIterableIterator&lt;
+```
+
+**Parameters:**
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+**Returns:** `AsyncIterableIterator&lt;{ type: "thinking" | "text"; delta: string; }&gt;`
+
+#### `static accumulateThinking()`
+
+Accumulate all thinking/reasoning content from stream into a single string
+
+```typescript
+static async accumulateThinking(
     stream: AsyncIterableIterator&lt;StreamEvent&gt;
   ): Promise&lt;string&gt;
 ```
@@ -14215,6 +14290,53 @@ getAllText(): string
 ```
 
 **Returns:** `string`
+
+#### `accumulateReasoningDelta()`
+
+Accumulate reasoning delta for a specific item
+
+```typescript
+accumulateReasoningDelta(itemId: string, delta: string): void
+```
+
+**Parameters:**
+- `itemId`: `string`
+- `delta`: `string`
+
+**Returns:** `void`
+
+#### `getCompleteReasoning()`
+
+Get complete accumulated reasoning for an item
+
+```typescript
+getCompleteReasoning(itemId: string): string
+```
+
+**Parameters:**
+- `itemId`: `string`
+
+**Returns:** `string`
+
+#### `getAllReasoning()`
+
+Get all accumulated reasoning (all items concatenated)
+
+```typescript
+getAllReasoning(): string
+```
+
+**Returns:** `string`
+
+#### `hasReasoning()`
+
+Check if stream has any accumulated reasoning
+
+```typescript
+hasReasoning(): boolean
+```
+
+**Returns:** `boolean`
 
 #### `startToolCall()`
 
@@ -14453,7 +14575,7 @@ Create a snapshot for checkpointing (error recovery)
 createSnapshot()
 ```
 
-**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; startTime: Date; endTime: Date | undefined; }`
+**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; startTime: Date; endTime: Date | undefined; }`
 
 </details>
 
@@ -14466,6 +14588,7 @@ createSnapshot()
 | `model` | `model: string` | - |
 | `createdAt` | `createdAt: number` | - |
 | `textBuffers` | `textBuffers: Map&lt;string, string[]&gt;` | - |
+| `reasoningBuffers` | `reasoningBuffers: Map&lt;string, string[]&gt;` | - |
 | `toolCallBuffers` | `toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;` | - |
 | `completedToolCalls` | `completedToolCalls: ToolCall[]` | - |
 | `toolResults` | `toolResults: Map&lt;string, any&gt;` | - |
@@ -14484,7 +14607,7 @@ createSnapshot()
 
 ### ErrorEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:151`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:172`](src/domain/entities/StreamEvent.ts)
 
 Error event
 
@@ -14507,7 +14630,7 @@ Error event
 
 ### IterationCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:130`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:132`](src/domain/entities/StreamEvent.ts)
 
 Iteration complete - end of agentic loop iteration
 
@@ -14527,7 +14650,7 @@ Iteration complete - end of agentic loop iteration
 
 ### OutputTextDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:53`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:55`](src/domain/entities/StreamEvent.ts)
 
 Text delta - incremental text output
 
@@ -14549,7 +14672,7 @@ Text delta - incremental text output
 
 ### OutputTextDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:65`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:67`](src/domain/entities/StreamEvent.ts)
 
 Text output complete for this item
 
@@ -14567,9 +14690,48 @@ Text output complete for this item
 
 ---
 
+### ReasoningDeltaEvent `interface`
+
+📍 [`src/domain/entities/StreamEvent.ts:153`](src/domain/entities/StreamEvent.ts)
+
+Reasoning/thinking delta - incremental reasoning output
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: StreamEventType.REASONING_DELTA;` | - |
+| `item_id` | `item_id: string;` | - |
+| `delta` | `delta: string;` | - |
+| `sequence_number` | `sequence_number: number;` | - |
+
+</details>
+
+---
+
+### ReasoningDoneEvent `interface`
+
+📍 [`src/domain/entities/StreamEvent.ts:163`](src/domain/entities/StreamEvent.ts)
+
+Reasoning/thinking complete for this item
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: StreamEventType.REASONING_DONE;` | - |
+| `item_id` | `item_id: string;` | - |
+| `thinking` | `thinking: string;` | - |
+
+</details>
+
+---
+
 ### ResponseCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:140`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:142`](src/domain/entities/StreamEvent.ts)
 
 Response complete - final event
 
@@ -14590,7 +14752,7 @@ Response complete - final event
 
 ### ResponseCreatedEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:37`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:39`](src/domain/entities/StreamEvent.ts)
 
 Response created - first event in stream
 
@@ -14609,7 +14771,7 @@ Response created - first event in stream
 
 ### ResponseInProgressEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:46`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:48`](src/domain/entities/StreamEvent.ts)
 
 Response in progress
 
@@ -14645,6 +14807,8 @@ Stream event type enum
 | `TOOL_EXECUTION_START` | `response.tool_execution.start` | - |
 | `TOOL_EXECUTION_DONE` | `response.tool_execution.done` | - |
 | `ITERATION_COMPLETE` | `response.iteration.complete` | - |
+| `REASONING_DELTA` | `response.reasoning.delta` | - |
+| `REASONING_DONE` | `response.reasoning.done` | - |
 | `RESPONSE_COMPLETE` | `response.complete` | - |
 | `ERROR` | `response.error` | - |
 
@@ -14654,7 +14818,7 @@ Stream event type enum
 
 ### StreamEvent `type`
 
-📍 [`src/domain/entities/StreamEvent.ts:165`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:186`](src/domain/entities/StreamEvent.ts)
 
 Union type of all stream events
 Discriminated by 'type' field for type narrowing
@@ -14664,6 +14828,8 @@ type StreamEvent = | ResponseCreatedEvent
   | ResponseInProgressEvent
   | OutputTextDeltaEvent
   | OutputTextDoneEvent
+  | ReasoningDeltaEvent
+  | ReasoningDoneEvent
   | ToolCallStartEvent
   | ToolCallArgumentsDeltaEvent
   | ToolCallArgumentsDoneEvent
@@ -14678,7 +14844,7 @@ type StreamEvent = | ResponseCreatedEvent
 
 ### isErrorEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:216`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:247`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isErrorEvent(event: StreamEvent): event is ErrorEvent
@@ -14688,7 +14854,7 @@ export function isErrorEvent(event: StreamEvent): event is ErrorEvent
 
 ### isOutputTextDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:192`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:215`](src/domain/entities/StreamEvent.ts)
 
 Type guards for specific events
 
@@ -14698,9 +14864,29 @@ export function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaE
 
 ---
 
+### isReasoningDelta `function`
+
+📍 [`src/domain/entities/StreamEvent.ts:235`](src/domain/entities/StreamEvent.ts)
+
+```typescript
+export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEvent
+```
+
+---
+
+### isReasoningDone `function`
+
+📍 [`src/domain/entities/StreamEvent.ts:239`](src/domain/entities/StreamEvent.ts)
+
+```typescript
+export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
+```
+
+---
+
 ### isResponseComplete `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:212`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:243`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent
@@ -14710,7 +14896,7 @@ export function isResponseComplete(event: StreamEvent): event is ResponseComplet
 
 ### isStreamEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:182`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:205`](src/domain/entities/StreamEvent.ts)
 
 Type guard to check if event is a specific type
 
@@ -14892,7 +15078,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### ModelCapabilities `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:30`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:38`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16487,7 +16673,7 @@ hasToken(key: string): Promise&lt;boolean&gt;;
 
 ### OAuthConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:34`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:35`](src/domain/entities/Connector.ts)
 
 OAuth 2.0 authentication for connectors
 Supports multiple OAuth flows
@@ -20827,7 +21013,7 @@ translate?(options: STTOptions): Promise&lt;STTResponse&gt;;
 
 ### ITextProvider `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:40`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:48`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -20872,12 +21058,12 @@ getModelCapabilities(model: string): ModelCapabilities;
 
 **Returns:** `ModelCapabilities`
 
-#### `listModels()?`
+#### `listModels()`
 
-List available models
+List available models from the provider's API
 
 ```typescript
-listModels?(): Promise&lt;string[]&gt;;
+listModels(): Promise&lt;string[]&gt;;
 ```
 
 **Returns:** `Promise&lt;string[]&gt;`
@@ -21261,6 +21447,13 @@ Wrapper for stored connector configuration with metadata
 | `parallel_tool_calls?` | `parallel_tool_calls?: boolean;` | - |
 | `previous_response_id?` | `previous_response_id?: string;` | - |
 | `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+| `thinking?` | `thinking?: {
+    enabled: boolean;
+    /** Budget in tokens for thinking (Anthropic & Google) */
+    budgetTokens?: number;
+    /** Reasoning effort level (OpenAI) */
+    effort?: 'low' | 'medium' | 'high';
+  };` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) |
 
 </details>
@@ -21706,6 +21899,17 @@ protected normalizeInputToString(input: string | any[]): string
 
 **Returns:** `string`
 
+#### `listModels()`
+
+List available models from the provider's API.
+Default returns empty array; providers override when they have SDK support.
+
+```typescript
+async listModels(): Promise&lt;string[]&gt;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
+
 #### `destroy()`
 
 Clean up provider resources (circuit breaker listeners, etc.)
@@ -21735,7 +21939,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:109`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:118`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -22168,6 +22372,36 @@ async calculateBudget(): Promise&lt;ContextBudget&gt;
 ```
 
 **Returns:** `Promise&lt;ContextBudget&gt;`
+
+#### `getSnapshot()`
+
+Get a complete, serializable snapshot of the context state.
+
+Returns all data needed by UI "Look Inside" panels without reaching
+into plugin internals. Plugin data is auto-discovered from the plugin
+registry — new/custom plugins appear automatically.
+
+```typescript
+async getSnapshot(toolStats?:
+```
+
+**Parameters:**
+- `toolStats`: `{ mostUsed?: { name: string; count: number; }[] | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;IContextSnapshot&gt;`
+
+#### `getViewContext()`
+
+Get a human-readable breakdown of the prepared context.
+
+Calls `prepare()` internally, then maps each InputItem to a named
+component with content text and token estimate. Used by "View Full Context" UIs.
+
+```typescript
+async getViewContext(): Promise&lt;IViewContextData&gt;
+```
+
+**Returns:** `Promise&lt;IViewContextData&gt;`
 
 #### `destroy()`
 
@@ -24937,7 +25171,7 @@ Full agent state - everything needed to resume
 
 ### APIKeyConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:68`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:69`](src/domain/entities/Connector.ts)
 
 Static API key authentication
 For services like OpenAI, Anthropic, many SaaS APIs
@@ -25234,7 +25468,7 @@ Result of compact() operation.
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:104`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:105`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -25303,7 +25537,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:201`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:202`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -26919,6 +27153,34 @@ restoreState(state: unknown): void;
 
 ---
 
+### IContextSnapshot `interface`
+
+📍 [`src/core/context-nextgen/snapshot.ts:21`](src/core/context-nextgen/snapshot.ts)
+
+Complete snapshot of an agent's context state.
+Returned by `AgentContextNextGen.getSnapshot()` and `BaseAgent.getSnapshot()`.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `available` | `available: boolean;` | Whether the context is available (not destroyed) |
+| `agentId` | `agentId: string;` | Agent ID |
+| `model` | `model: string;` | Model name |
+| `features` | `features: Required&lt;ContextFeatures&gt;;` | Feature flags |
+| `budget` | `budget: ContextBudget;` | Token budget breakdown |
+| `strategy` | `strategy: string;` | Compaction strategy name |
+| `messagesCount` | `messagesCount: number;` | Number of messages in conversation history |
+| `toolCallsCount` | `toolCallsCount: number;` | Number of tool calls in conversation |
+| `systemPrompt` | `systemPrompt: string | null;` | System prompt (null if not set) |
+| `plugins` | `plugins: IPluginSnapshot[];` | All registered plugins with their current state |
+| `tools` | `tools: IToolSnapshot[];` | All registered tools |
+
+</details>
+
+---
+
 ### IDesktopDriver `interface`
 
 📍 [`src/tools/desktop/types.ts:57`](src/tools/desktop/types.ts)
@@ -27170,7 +27432,7 @@ handle(
 
 ### InputTextContent `interface`
 
-📍 [`src/domain/entities/Content.ts:18`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:19`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -27179,6 +27441,32 @@ handle(
 |----------|------|-------------|
 | `type` | `type: ContentType.INPUT_TEXT;` | - |
 | `text` | `text: string;` | - |
+
+</details>
+
+---
+
+### IPluginSnapshot `interface`
+
+📍 [`src/core/context-nextgen/snapshot.ts:65`](src/core/context-nextgen/snapshot.ts)
+
+Snapshot of a single plugin's state.
+`contents` is the raw data from `plugin.getContents()` (plugin-specific shape).
+`formattedContent` is the human-readable string from `plugin.getContent()`.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Plugin identifier (e.g., 'working_memory') |
+| `displayName` | `displayName: string;` | Human-readable display name (e.g., 'Working Memory') |
+| `enabled` | `enabled: boolean;` | Whether this plugin is active |
+| `tokenSize` | `tokenSize: number;` | Current token size of plugin content |
+| `instructionsTokenSize` | `instructionsTokenSize: number;` | Token size of plugin instructions |
+| `compactable` | `compactable: boolean;` | Whether this plugin supports compaction |
+| `contents` | `contents: unknown;` | Raw plugin data (entries, state, etc.) |
+| `formattedContent` | `formattedContent: string | null;` | Human-readable formatted content (Markdown) |
 
 </details>
 
@@ -27451,6 +27739,46 @@ estimateImageTokens?(width?: number, height?: number, detail?: string): number;
 
 ---
 
+### IViewContextComponent `interface`
+
+📍 [`src/core/context-nextgen/snapshot.ts:140`](src/core/context-nextgen/snapshot.ts)
+
+A single component of the prepared context.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Component name (e.g., 'System Message', 'User Message', 'Tool Call: search') |
+| `content` | `content: string;` | Human-readable text content |
+| `tokenEstimate` | `tokenEstimate: number;` | Estimated token count for this component |
+
+</details>
+
+---
+
+### IViewContextData `interface`
+
+📍 [`src/core/context-nextgen/snapshot.ts:123`](src/core/context-nextgen/snapshot.ts)
+
+Human-readable breakdown of the prepared context.
+Used by "View Full Context" UI panels.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `available` | `available: boolean;` | Whether the data is available |
+| `components` | `components: IViewContextComponent[];` | Ordered list of context components |
+| `totalTokens` | `totalTokens: number;` | Total estimated tokens across all components |
+| `rawContext` | `rawContext: string;` | All components concatenated (for "Copy All" functionality) |
+
+</details>
+
+---
+
 ### IVoiceInfo `interface`
 
 📍 [`src/domain/entities/SharedVoices.ts:10`](src/domain/entities/SharedVoices.ts)
@@ -27479,7 +27807,7 @@ Eliminates duplication across TTS model registries
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:85`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:86`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -27520,6 +27848,7 @@ For service accounts (Google, Salesforce)
 | `model` | `model: string;` | - |
 | `output` | `output: OutputItem[];` | - |
 | `output_text?` | `output_text?: string;` | - |
+| `thinking?` | `thinking?: string;` | - |
 | `usage` | `usage: TokenUsage;` | - |
 | `error?` | `error?: {
     type: string;
@@ -27911,7 +28240,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### OutputTextContent `interface`
 
-📍 [`src/domain/entities/Content.ts:36`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:37`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28827,6 +29156,25 @@ Full strategy registry entry (includes class reference)
 
 ---
 
+### ThinkingContent `interface`
+
+📍 [`src/domain/entities/Content.ts:63`](src/domain/entities/Content.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: ContentType.THINKING;` | - |
+| `thinking` | `thinking: string;` | - |
+| `signature?` | `signature?: string;` | Anthropic's opaque signature for round-tripping thinking blocks |
+| `persistInHistory` | `persistInHistory: boolean;` | Whether this thinking block should be persisted in conversation history.
+ Anthropic requires it (true), OpenAI/Google do not (false). |
+
+</details>
+
+---
+
 ### UserInfoPluginConfig `interface`
 
 📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:35`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
@@ -28932,6 +29280,7 @@ Content types based on OpenAI Responses API format
 | `OUTPUT_TEXT` | `output_text` | - |
 | `TOOL_USE` | `tool_use` | - |
 | `TOOL_RESULT` | `tool_result` | - |
+| `THINKING` | `thinking` | - |
 
 </details>
 
@@ -28989,7 +29338,7 @@ type AgenticLoopEventName = keyof AgenticLoopEvents
 
 ### AgentResponse `type`
 
-📍 [`src/domain/entities/Response.ts:38`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:39`](src/domain/entities/Response.ts)
 
 ```typescript
 type AgentResponse = LLMResponse
@@ -29075,7 +29424,7 @@ type ConnectorAuth = | OAuthConnectorAuth
 
 ### Content `type`
 
-📍 [`src/domain/entities/Content.ts:62`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:73`](src/domain/entities/Content.ts)
 
 ```typescript
 type Content = | InputTextContent
@@ -29084,6 +29433,7 @@ type Content = | InputTextContent
   | OutputTextContent
   | ToolUseContent
   | ToolResultContent
+  | ThinkingContent
 ```
 
 ---
@@ -29585,6 +29935,19 @@ Normalizes input first, so it's safe to pass LLM output directly.
 
 ```typescript
 export function formatAttendees(emails: unknown[]):
+```
+
+---
+
+### formatPluginDisplayName `function`
+
+📍 [`src/core/context-nextgen/snapshot.ts:159`](src/core/context-nextgen/snapshot.ts)
+
+Convert a plugin name to a human-readable display name.
+e.g., 'working_memory' → 'Working Memory'
+
+```typescript
+export function formatPluginDisplayName(name: string): string
 ```
 
 ---
