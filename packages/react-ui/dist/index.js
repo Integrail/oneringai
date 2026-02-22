@@ -1,12 +1,13 @@
 import {
   MermaidDiagram
-} from "./chunk-GBLSWHXJ.js";
+} from "./chunk-5CMNPM2A.js";
 import {
   VegaChart
-} from "./chunk-N55F3EJH.js";
+} from "./chunk-BWWK7EO5.js";
 import {
   MarkmapRenderer
-} from "./chunk-SZK4XR7R.js";
+} from "./chunk-WCSWA75O.js";
+import "./chunk-74H4V4J6.js";
 
 // src/look-inside/LookInsidePanel.tsx
 import { useMemo as useMemo2, useState as useState3, useCallback as useCallback2, useRef } from "react";
@@ -658,9 +659,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check, AlertCircle, Loader } from "lucide-react";
 import { jsx as jsx13, jsxs as jsxs12 } from "react/jsx-runtime";
-var MermaidDiagram2 = lazy(() => import("./MermaidDiagram-QSOVXU2H.js"));
-var VegaChart2 = lazy(() => import("./VegaChart-VO2SBQLR.js"));
-var MarkmapRenderer2 = lazy(() => import("./MarkmapRenderer-B7N4CNXA.js"));
+var MermaidDiagram2 = lazy(() => import("./MermaidDiagram-ETZ2OGIM.js"));
+var VegaChart2 = lazy(() => import("./VegaChart-2BKGB64O.js"));
+var MarkmapRenderer2 = lazy(() => import("./MarkmapRenderer-RW6RDLQU.js"));
 var LoadingFallback = () => /* @__PURE__ */ jsxs12("div", { className: "code-block__loading", children: [
   /* @__PURE__ */ jsx13("div", { className: "rui-spinner", role: "status", children: /* @__PURE__ */ jsx13("span", { className: "rui-visually-hidden", children: "Loading..." }) }),
   /* @__PURE__ */ jsx13("span", { children: "Rendering..." })

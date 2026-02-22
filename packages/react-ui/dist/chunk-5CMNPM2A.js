@@ -1,3 +1,7 @@
+import {
+  importOptional
+} from "./chunk-74H4V4J6.js";
+
 // src/markdown/MermaidDiagram.tsx
 import { useEffect, useRef, useState, useId } from "react";
 import { jsx } from "react/jsx-runtime";
@@ -15,7 +19,7 @@ function MermaidDiagram({ code, onError }) {
       }
       try {
         setIsRendering(true);
-        const mermaid = (await import("mermaid")).default;
+        const mermaid = (await importOptional("mermaid")).default;
         mermaid.initialize({
           startOnLoad: false,
           theme: "default",
@@ -74,4 +78,4 @@ export {
   MermaidDiagram,
   MermaidDiagram_default
 };
-//# sourceMappingURL=chunk-GBLSWHXJ.js.map
+//# sourceMappingURL=chunk-5CMNPM2A.js.map

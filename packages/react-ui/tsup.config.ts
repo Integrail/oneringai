@@ -12,8 +12,9 @@ export default defineConfig({
     'react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex',
     'react-syntax-highlighter', 'react-syntax-highlighter/dist/esm/styles/prism',
     'lucide-react',
-    // Optional peer dependencies
-    'mermaid', 'react-vega', 'vega-lite', 'markmap-lib', 'markmap-view',
+    // Note: mermaid, markmap-lib, markmap-view, react-vega, vega-lite are
+    // imported via importOptional() which uses new Function() to prevent
+    // downstream bundlers from statically resolving them. No need to externalize.
     'react-bootstrap', 'react-bootstrap-icons',
   ],
   // Use esbuild for JSX (not SWC) to avoid @swc/helpers runtime dependency

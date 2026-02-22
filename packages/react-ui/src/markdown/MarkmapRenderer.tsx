@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import type { MarkmapRendererProps } from './types';
+import { importOptional } from './importOptional';
 
 export function MarkmapRenderer({
   code,
@@ -37,8 +38,8 @@ export function MarkmapRenderer({
 
       try {
         // Dynamic imports — optional peer deps
-        const { Transformer } = await import('markmap-lib');
-        const { Markmap, loadCSS, loadJS } = await import('markmap-view');
+        const { Transformer } = await importOptional('markmap-lib');
+        const { Markmap, loadCSS, loadJS } = await importOptional('markmap-view');
 
         const transformer = new Transformer();
         const { root, features } = transformer.transform(code);
