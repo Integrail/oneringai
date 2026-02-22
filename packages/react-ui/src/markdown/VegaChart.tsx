@@ -7,7 +7,6 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import type { VegaChartProps } from './types';
-import { importOptional } from './importOptional';
 
 export function VegaChart({
   code,
@@ -21,8 +20,8 @@ export function VegaChart({
 
   // Dynamic import of react-vega (optional peer dep)
   useEffect(() => {
-    importOptional('react-vega')
-      .then((mod: { VegaLite: React.ComponentType<{ spec: unknown; actions?: Record<string, boolean>; onError?: (error: Error) => void }> }) => setVegaLiteComp(() => mod.VegaLite))
+    import('react-vega')
+      .then((mod) => setVegaLiteComp(() => mod.VegaLite))
       .catch(() => {
         setParseError('react-vega is not installed. Install it to render Vega charts.');
       });

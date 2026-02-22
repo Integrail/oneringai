@@ -1,7 +1,3 @@
-import {
-  importOptional
-} from "./chunk-74H4V4J6.js";
-
 // src/markdown/VegaChart.tsx
 import { useEffect, useRef, useState, useMemo } from "react";
 import { jsx, jsxs } from "react/jsx-runtime";
@@ -15,7 +11,7 @@ function VegaChart({
   const [parseError, setParseError] = useState(null);
   const [VegaLiteComp, setVegaLiteComp] = useState(null);
   useEffect(() => {
-    importOptional("react-vega").then((mod) => setVegaLiteComp(() => mod.VegaLite)).catch(() => {
+    import("react-vega").then((mod) => setVegaLiteComp(() => mod.VegaLite)).catch(() => {
       setParseError("react-vega is not installed. Install it to render Vega charts.");
     });
   }, []);
@@ -79,4 +75,4 @@ export {
   VegaChart,
   VegaChart_default
 };
-//# sourceMappingURL=chunk-BWWK7EO5.js.map
+//# sourceMappingURL=chunk-N55F3EJH.js.map

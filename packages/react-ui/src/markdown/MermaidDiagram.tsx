@@ -7,7 +7,6 @@
 
 import React, { useEffect, useRef, useState, useId } from 'react';
 import type { MermaidDiagramProps } from './types';
-import { importOptional } from './importOptional';
 
 export function MermaidDiagram({ code, onError }: MermaidDiagramProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,7 +27,7 @@ export function MermaidDiagram({ code, onError }: MermaidDiagramProps): React.Re
         setIsRendering(true);
 
         // Dynamic import — mermaid is an optional peer dep
-        const mermaid = (await importOptional('mermaid')).default;
+        const mermaid = (await import('mermaid')).default;
 
         mermaid.initialize({
           startOnLoad: false,

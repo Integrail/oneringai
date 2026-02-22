@@ -30,16 +30,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/markdown/importOptional.ts
-async function importOptional(specifier) {
-  return new Function("s", "return import(s)")(specifier);
-}
-var init_importOptional = __esm({
-  "src/markdown/importOptional.ts"() {
-    "use strict";
-  }
-});
-
 // src/markdown/MermaidDiagram.tsx
 var MermaidDiagram_exports = {};
 __export(MermaidDiagram_exports, {
@@ -60,7 +50,7 @@ function MermaidDiagram({ code, onError }) {
       }
       try {
         setIsRendering(true);
-        const mermaid = (await importOptional("mermaid")).default;
+        const mermaid = (await import("mermaid")).default;
         mermaid.initialize({
           startOnLoad: false,
           theme: "default",
@@ -118,7 +108,6 @@ var init_MermaidDiagram = __esm({
   "src/markdown/MermaidDiagram.tsx"() {
     "use strict";
     import_react4 = require("react");
-    init_importOptional();
     import_jsx_runtime13 = require("react/jsx-runtime");
     MermaidDiagram_default = MermaidDiagram;
   }
@@ -140,7 +129,7 @@ function VegaChart({
   const [parseError, setParseError] = (0, import_react5.useState)(null);
   const [VegaLiteComp, setVegaLiteComp] = (0, import_react5.useState)(null);
   (0, import_react5.useEffect)(() => {
-    importOptional("react-vega").then((mod) => setVegaLiteComp(() => mod.VegaLite)).catch(() => {
+    import("react-vega").then((mod) => setVegaLiteComp(() => mod.VegaLite)).catch(() => {
       setParseError("react-vega is not installed. Install it to render Vega charts.");
     });
   }, []);
@@ -203,7 +192,6 @@ var init_VegaChart = __esm({
   "src/markdown/VegaChart.tsx"() {
     "use strict";
     import_react5 = require("react");
-    init_importOptional();
     import_jsx_runtime14 = require("react/jsx-runtime");
     VegaChart_default = VegaChart;
   }
@@ -238,8 +226,8 @@ function MarkmapRenderer({
     const renderMarkmap = async () => {
       if (!svgRef.current || !code.trim()) return;
       try {
-        const { Transformer } = await importOptional("markmap-lib");
-        const { Markmap, loadCSS, loadJS } = await importOptional("markmap-view");
+        const { Transformer } = await import("markmap-lib");
+        const { Markmap, loadCSS, loadJS } = await import("markmap-view");
         const transformer = new Transformer();
         const { root, features } = transformer.transform(code);
         const { styles, scripts } = transformer.getUsedAssets(features);
@@ -334,7 +322,6 @@ var init_MarkmapRenderer = __esm({
     "use strict";
     import_react6 = require("react");
     import_lucide_react = require("lucide-react");
-    init_importOptional();
     import_jsx_runtime15 = require("react/jsx-runtime");
     MarkmapRenderer_default = MarkmapRenderer;
   }

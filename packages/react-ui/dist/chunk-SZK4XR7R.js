@@ -1,7 +1,3 @@
-import {
-  importOptional
-} from "./chunk-74H4V4J6.js";
-
 // src/markdown/MarkmapRenderer.tsx
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
@@ -29,8 +25,8 @@ function MarkmapRenderer({
     const renderMarkmap = async () => {
       if (!svgRef.current || !code.trim()) return;
       try {
-        const { Transformer } = await importOptional("markmap-lib");
-        const { Markmap, loadCSS, loadJS } = await importOptional("markmap-view");
+        const { Transformer } = await import("markmap-lib");
+        const { Markmap, loadCSS, loadJS } = await import("markmap-view");
         const transformer = new Transformer();
         const { root, features } = transformer.transform(code);
         const { styles, scripts } = transformer.getUsedAssets(features);
@@ -125,4 +121,4 @@ export {
   MarkmapRenderer,
   MarkmapRenderer_default
 };
-//# sourceMappingURL=chunk-WCSWA75O.js.map
+//# sourceMappingURL=chunk-SZK4XR7R.js.map

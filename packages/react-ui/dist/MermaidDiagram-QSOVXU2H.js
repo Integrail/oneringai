@@ -1,10 +1,9 @@
 import {
   MermaidDiagram,
   MermaidDiagram_default
-} from "./chunk-5CMNPM2A.js";
-import "./chunk-74H4V4J6.js";
+} from "./chunk-GBLSWHXJ.js";
 export {
   MermaidDiagram,
   MermaidDiagram_default as default
 };
-//# sourceMappingURL=MermaidDiagram-ETZ2OGIM.js.map
+//# sourceMappingURL=MermaidDiagram-QSOVXU2H.js.map
