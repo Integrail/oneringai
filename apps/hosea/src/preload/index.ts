@@ -6,6 +6,44 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { IContextSnapshot, IViewContextData, RoutineDefinition, RoutineDefinitionInput } from '@everworker/oneringai';
 
 /**
+ * Ollama types (mirrored from OllamaService to avoid cross-module imports)
+ */
+export interface OllamaModel {
+  name: string;
+  size: number;
+  digest: string;
+  modifiedAt: string;
+}
+
+export type OllamaStatus =
+  | 'not_installed'
+  | 'downloading'
+  | 'installed'
+  | 'starting'
+  | 'running'
+  | 'stopped'
+  | 'error';
+
+export interface OllamaState {
+  status: OllamaStatus;
+  isExternalInstance: boolean;
+  externalBinaryPath?: string;
+  version: string;
+  autoStart: boolean;
+  models: OllamaModel[];
+  error?: string;
+  downloadProgress?: { percent: number; downloaded: number; total: number };
+  pullProgress?: { model: string; percent: number; status: string };
+  systemInfo: {
+    totalRAMGB: number;
+    platform: string;
+    arch: string;
+    recommendedModel: string;
+    recommendedModelReason: string;
+  };
+}
+
+/**
  * Everworker Backend Profile
  */
 export interface EverworkerProfile {
@@ -376,6 +414,7 @@ export interface HoseaAPI {
   // App info
   app: {
     getVersion: () => Promise<string>;
+    getIsDev: () => Promise<boolean>;
   };
 
   // License
@@ -1130,6 +1169,27 @@ export interface HoseaAPI {
     execute: (instanceId: string, routineId: string) => Promise<{ executionId: string }>;
     cancelExecution: (instanceId: string) => Promise<void>;
   };
+
+  // Ollama (Local AI)
+  ollama: {
+    getState: () => Promise<OllamaState>;
+    detect: () => Promise<OllamaState>;
+    download: () => Promise<{ success: boolean; error?: string }>;
+    start: () => Promise<{ success: boolean; error?: string }>;
+    stop: () => Promise<{ success: boolean; error?: string }>;
+    listModels: () => Promise<OllamaModel[]>;
+    pullModel: (name: string) => Promise<{ success: boolean; error?: string }>;
+    deleteModel: (name: string) => Promise<{ success: boolean; error?: string }>;
+    setAutoStart: (enabled: boolean) => Promise<{ success: boolean }>;
+    ensureConnector: () => Promise<{ success: boolean; error?: string }>;
+    /** DEV ONLY: Reset state to not_installed for testing download flow */
+    resetForTesting: () => Promise<{ success: boolean }>;
+    // Push event listeners
+    onStateChanged: (callback: (state: OllamaState) => void) => void;
+    onDownloadProgress: (callback: (progress: { percent: number; downloaded: number; total: number }) => void) => void;
+    onPullProgress: (callback: (progress: { model: string; percent: number; status: string }) => void) => void;
+    removeListeners: () => void;
+  };
 }
 
 // Expose to renderer
@@ -1243,6 +1303,7 @@ const api: HoseaAPI = {
   // App info
   app: {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
+    getIsDev: () => ipcRenderer.invoke('app:get-is-dev'),
   },
 
   // License
@@ -1436,6 +1497,37 @@ const api: HoseaAPI = {
     validate: (input) => ipcRenderer.invoke('routine:validate', input),
     execute: (instanceId, routineId) => ipcRenderer.invoke('routine:execute', instanceId, routineId),
     cancelExecution: (instanceId) => ipcRenderer.invoke('routine:cancel-execution', instanceId),
+  },
+
+  ollama: {
+    getState: () => ipcRenderer.invoke('ollama:get-state'),
+    detect: () => ipcRenderer.invoke('ollama:detect'),
+    download: () => ipcRenderer.invoke('ollama:download'),
+    start: () => ipcRenderer.invoke('ollama:start'),
+    stop: () => ipcRenderer.invoke('ollama:stop'),
+    listModels: () => ipcRenderer.invoke('ollama:list-models'),
+    pullModel: (name) => ipcRenderer.invoke('ollama:pull-model', name),
+    deleteModel: (name) => ipcRenderer.invoke('ollama:delete-model', name),
+    setAutoStart: (enabled) => ipcRenderer.invoke('ollama:set-auto-start', enabled),
+    ensureConnector: () => ipcRenderer.invoke('ollama:ensure-connector'),
+    resetForTesting: () => ipcRenderer.invoke('ollama:reset-for-testing'),
+    onStateChanged: (callback) => {
+      ipcRenderer.removeAllListeners('ollama:state-changed');
+      ipcRenderer.on('ollama:state-changed', (_event, state) => callback(state));
+    },
+    onDownloadProgress: (callback) => {
+      ipcRenderer.removeAllListeners('ollama:download-progress');
+      ipcRenderer.on('ollama:download-progress', (_event, progress) => callback(progress));
+    },
+    onPullProgress: (callback) => {
+      ipcRenderer.removeAllListeners('ollama:pull-progress');
+      ipcRenderer.on('ollama:pull-progress', (_event, progress) => callback(progress));
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('ollama:state-changed');
+      ipcRenderer.removeAllListeners('ollama:download-progress');
+      ipcRenderer.removeAllListeners('ollama:pull-progress');
+    },
   },
 };
 

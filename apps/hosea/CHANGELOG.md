@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Local AI with Ollama** — Run AI models locally without API keys or cloud services
+  - **OllamaService** (main process) — Full lifecycle management: auto-detect existing installations, download binary (~70MB), start/stop server, pull/delete models
+  - **Smart model recommendations** — Based on system RAM: qwen3:8b (<12GB), qwen3:14b (12-24GB), qwen3:30b (24GB+)
+  - **Settings > Local AI** — New settings tab with full Ollama management: status, model list, pull/delete, auto-start toggle, system info
+  - **Onboarding integration** — SetupModal now shows "Run Locally with Ollama" as a first-class option alongside "Add API Key" for new users with no connectors
+  - **LLM Connectors page** — Managed Ollama connector shows "Managed by HOSEA" badge; hint banner for users without Ollama set up
+  - **External Ollama detection** — If Ollama is already installed or running externally, HOSEA detects and reuses it without redundant downloads
+  - **Auto-start** — Optional auto-start on HOSEA launch (enabled by default)
+  - **IPC + Preload bridge** — Full `window.hosea.ollama` API with push events for download progress, pull progress, and state changes
+  - Binary stored at `~/.everworker/hosea/ollama/`, config at `~/.everworker/hosea/ollama-config.json`
+  - Supports macOS (arm64/x64), Linux (amd64/arm64); Windows download stubbed with manual install fallback
 - **OAuth Scope Selector** — New `ScopeSelector` component in the connector creation and edit forms. Replaces the plain-text scope input with a checkbox-based selector showing template-defined scopes with human-readable descriptions. All template scopes are pre-checked by default. Users can toggle individual scopes on/off and add custom scopes via a text input. Available in both the Create Connector page and the Edit Connector modal.
 - **Automatic OAuth Flow for Vendor Connectors** — One-click OAuth authorization for any vendor that requires OAuth (QuickBooks, GitHub OAuth, Ramp, etc.)
   - `OAuthCallbackServer` — Temporary localhost HTTP server on port 19876 catches OAuth redirects. Users register `http://localhost:19876/oauth/callback` once with their provider.

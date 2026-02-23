@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button, Modal, Form, Alert, Badge, Spinner } from 'react-bootstrap';
-import { Plus, Brain, Key, Trash2, Check, Cloud, Monitor, RefreshCw, Globe } from 'lucide-react';
+import { Plus, Brain, Key, Trash2, Check, Cloud, Monitor, RefreshCw, Globe, Cpu } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useConnectorVersion } from '../App';
 
@@ -201,82 +201,103 @@ export function LLMConnectorsPage(): React.ReactElement {
             </Button>
           </div>
         ) : (
-          <div className="grid grid--auto">
-            {connectors.map((connector) => {
-              const info = vendorInfo[connector.vendor] || {
-                color: '#64748b',
-                label: connector.vendor,
-              };
-              const isEW = connector.source === 'everworker';
-              return (
-                <div key={connector.name} className="card connector-card">
-                  <div className="card__body">
-                    <div
-                      className="connector-card__icon"
-                      style={{ backgroundColor: `${info.color}15`, color: info.color }}
-                    >
-                      <Brain size={24} />
-                    </div>
-                    <h3 className="connector-card__name">{connector.name}</h3>
-                    <p className="connector-card__vendor">{info.label}</p>
-                    <div className="connector-card__status d-flex gap-2 align-items-center flex-wrap">
-                      <span className="badge badge--success">
-                        <Check size={12} />
-                        Connected
-                      </span>
-                      {isEW ? (
-                        <Badge bg="info" className="d-flex align-items-center gap-1">
-                          <Cloud size={10} />
-                          EW
-                        </Badge>
-                      ) : (
-                        <Badge bg="secondary" className="d-flex align-items-center gap-1">
-                          <Monitor size={10} />
-                          Local
-                        </Badge>
-                      )}
-                    </div>
-                    {connector.models && connector.models.length > 0 && (
-                      <div className="mt-2" style={{ fontSize: '0.75rem' }}>
-                        <span className="text-muted">Models: </span>
-                        {connector.models.slice(0, 3).map((m) => (
-                          <Badge key={m} bg="light" text="dark" className="me-1" style={{ fontSize: '0.7rem' }}>
-                            {m}
+          <>
+            <div className="grid grid--auto">
+              {connectors.map((connector) => {
+                const info = vendorInfo[connector.vendor] || {
+                  color: '#64748b',
+                  label: connector.vendor,
+                };
+                const isEW = connector.source === 'everworker';
+                const isManagedOllama = connector.name === 'ollama-local' && connector.vendor === 'ollama';
+                return (
+                  <div key={connector.name} className="card connector-card">
+                    <div className="card__body">
+                      <div
+                        className="connector-card__icon"
+                        style={{ backgroundColor: `${info.color}15`, color: info.color }}
+                      >
+                        {isManagedOllama ? <Cpu size={24} /> : <Brain size={24} />}
+                      </div>
+                      <h3 className="connector-card__name">{connector.name}</h3>
+                      <p className="connector-card__vendor">{info.label}</p>
+                      <div className="connector-card__status d-flex gap-2 align-items-center flex-wrap">
+                        <span className="badge badge--success">
+                          <Check size={12} />
+                          Connected
+                        </span>
+                        {isManagedOllama ? (
+                          <Badge bg="success" className="d-flex align-items-center gap-1">
+                            <Cpu size={10} />
+                            Managed
                           </Badge>
-                        ))}
-                        {connector.models.length > 3 && (
-                          <span className="text-muted">+{connector.models.length - 3} more</span>
+                        ) : isEW ? (
+                          <Badge bg="info" className="d-flex align-items-center gap-1">
+                            <Cloud size={10} />
+                            EW
+                          </Badge>
+                        ) : (
+                          <Badge bg="secondary" className="d-flex align-items-center gap-1">
+                            <Monitor size={10} />
+                            Local
+                          </Badge>
                         )}
                       </div>
-                    )}
+                      {connector.models && connector.models.length > 0 && (
+                        <div className="mt-2" style={{ fontSize: '0.75rem' }}>
+                          <span className="text-muted">Models: </span>
+                          {connector.models.slice(0, 3).map((m) => (
+                            <Badge key={m} bg="light" text="dark" className="me-1" style={{ fontSize: '0.7rem' }}>
+                              {m}
+                            </Badge>
+                          ))}
+                          {connector.models.length > 3 && (
+                            <span className="text-muted">+{connector.models.length - 3} more</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="card__footer">
+                      {isManagedOllama ? (
+                        <small className="text-muted">{'Managed by HOSEA \u2014 Settings > Local AI'}</small>
+                      ) : !isEW ? (
+                        <Button
+                          variant="outline-secondary"
+                          size="sm"
+                          onClick={() => handleOpenEditModal(connector)}
+                        >
+                          <Key size={14} className="me-1" />
+                          Update Key
+                        </Button>
+                      ) : (
+                        <small className="text-muted">Managed by Everworker</small>
+                      )}
+                      {!isManagedOllama && (
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={() => handleDeleteConnector(connector.name)}
+                          title={isEW ? 'Remove local copy (will return on next sync)' : 'Delete connector'}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="card__footer">
-                    {!isEW && (
-                      <Button
-                        variant="outline-secondary"
-                        size="sm"
-                        onClick={() => handleOpenEditModal(connector)}
-                      >
-                        <Key size={14} className="me-1" />
-                        Update Key
-                      </Button>
-                    )}
-                    {isEW && (
-                      <small className="text-muted">Managed by Everworker</small>
-                    )}
-                    <Button
-                      variant="outline-danger"
-                      size="sm"
-                      onClick={() => handleDeleteConnector(connector.name)}
-                      title={isEW ? 'Remove local copy (will return on next sync)' : 'Delete connector'}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+
+            {/* Hint banner for local AI if no Ollama connector */}
+            {connectors.every((c) => c.name !== 'ollama-local') && (
+              <div className="mt-3 p-2 text-center text-muted small border rounded">
+                <Cpu size={14} className="me-1" />
+                {'Want to run AI locally without API keys? Go to '}
+                <strong>{'Settings > Local AI'}</strong>
+                {' to set up Ollama.'}
+              </div>
+            )}
+          </>
         )}
       </div>
 

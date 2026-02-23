@@ -593,6 +593,8 @@ export class AgentService {
   private routineStorage = new FileRoutineDefinitionStorage();
   // Browser service reference (set by main process)
   private browserService: BrowserService | null = null;
+  // Ollama service reference (set by main process)
+  private ollamaService: import('./OllamaService.js').OllamaService | null = null;
   // Vendor OAuth service for authorization_code and client_credentials flows
   private vendorOAuthService = new VendorOAuthService();
   // Unified tool catalog (combines oneringai + hosea tools)
@@ -904,6 +906,13 @@ export class AgentService {
       await this.loadAgents();
       await this.migrateAgentsToNextGen();
       await this.loadMCPServers();
+
+      // Initialize Ollama auto-detect + auto-start (non-blocking)
+      if (this.ollamaService) {
+        this.ollamaService.initialize().catch(err => {
+          logger.warn(`[initializeHeavy] Ollama initialization failed (non-blocking): ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }
 
       this._isReady = true;
       this._readyResolve();
@@ -3535,6 +3544,14 @@ export class AgentService {
     // Update the browser tool provider so tools can be created
     this.browserToolProvider.setBrowserService(browserService);
     console.log('[AgentService] BrowserService connected');
+  }
+
+  /**
+   * Set the OllamaService reference for local AI management
+   */
+  setOllamaService(ollamaService: import('./OllamaService.js').OllamaService): void {
+    this.ollamaService = ollamaService;
+    console.log('[AgentService] OllamaService connected');
   }
 
   /**

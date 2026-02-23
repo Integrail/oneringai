@@ -9,6 +9,11 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
+    rollupOptions: {
+      // Optional peer deps from @everworker/react-ui — loaded via dynamic import()
+      // and may not be installed. Externalize so Rollup doesn't fail on them.
+      external: ['mermaid', 'markmap-lib', 'markmap-view', 'react-vega', 'vega-lite'],
+    },
   },
   server: {
     port: 5173,

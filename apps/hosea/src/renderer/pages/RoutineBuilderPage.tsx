@@ -71,7 +71,7 @@ export function RoutineBuilderPage(): React.ReactElement {
 
   // Load existing routine
   useEffect(() => {
-    if (isNew) return;
+    if (isNew || !routineId) return;
     (async () => {
       try {
         const routine = await window.hosea.routine.get(routineId);
@@ -260,8 +260,10 @@ export function RoutineBuilderPage(): React.ReactElement {
 
   if (loading) {
     return (
-      <div className="page-container text-center py-5">
-        <Spinner animation="border" size="sm" /> Loading routine...
+      <div className="page">
+        <div className="page__content page__content--centered">
+          <Spinner animation="border" size="sm" /> Loading routine...
+        </div>
       </div>
     );
   }
@@ -269,15 +271,15 @@ export function RoutineBuilderPage(): React.ReactElement {
   const otherTaskNames = (idx: number) => tasks.filter((_, i) => i !== idx).map(t => t.name).filter(Boolean);
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div className="d-flex align-items-center gap-2">
+    <div className="page">
+      <div className="page__header">
+        <div className="page__header-left">
           <Button variant="outline-secondary" size="sm" onClick={goBack}>
             <ArrowLeft size={16} />
           </Button>
-          <h2 className="page-title mb-0">{isNew ? 'New Routine' : 'Edit Routine'}</h2>
+          <h2 className="page__title">{isNew ? 'New Routine' : 'Edit Routine'}</h2>
         </div>
-        <div className="d-flex gap-2">
+        <div className="page__header-right">
           <Button variant="outline-secondary" onClick={() => navigate('routines')}>Cancel</Button>
           <Button variant="primary" onClick={handleSave} disabled={saving || !name.trim()}>
             {saving ? <><Spinner animation="border" size="sm" className="me-1" /> Saving...</> : <><Save size={16} className="me-1" /> Save</>}
@@ -285,10 +287,11 @@ export function RoutineBuilderPage(): React.ReactElement {
         </div>
       </div>
 
-      {validationError && <Alert variant="danger" className="mb-3" dismissible onClose={() => setValidationError(null)}>{validationError}</Alert>}
-      {saveSuccess && <Alert variant="success" className="mb-3">Routine saved successfully!</Alert>}
+      <div className="page__content">
+        {validationError && <Alert variant="danger" className="mb-3" dismissible onClose={() => setValidationError(null)}>{validationError}</Alert>}
+        {saveSuccess && <Alert variant="success" className="mb-3">Routine saved successfully!</Alert>}
 
-      <div style={{ maxWidth: 900 }}>
+        <div style={{ maxWidth: 900 }}>
         {/* Basic Info */}
         <section className="mb-4">
           <h5>Basic Info</h5>
@@ -430,6 +433,7 @@ export function RoutineBuilderPage(): React.ReactElement {
             </div>
           </div>
         </section>
+        </div>
       </div>
     </div>
   );

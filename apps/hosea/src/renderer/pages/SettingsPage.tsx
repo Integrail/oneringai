@@ -4,8 +4,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Nav, ButtonGroup, Button, Row, Col, Badge, Spinner, Alert, Modal } from 'react-bootstrap';
-import { Monitor, Palette, Bell, Shield, Info, Code, Cloud, RefreshCw, CheckCircle, XCircle, Plus, Pencil, Trash2, Zap, LogIn, User, Clock } from 'lucide-react';
+import { Monitor, Palette, Bell, Shield, Info, Code, Cloud, RefreshCw, CheckCircle, XCircle, Plus, Pencil, Trash2, Zap, LogIn, User, Clock, Cpu } from 'lucide-react';
 import { PageHeader } from '../components/layout';
+import { OllamaSetupPanel } from '../components/ollama/OllamaSetupPanel';
 import type { EverworkerProfile, EverworkerProfilesConfig } from '../../preload/index';
 
 type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent';
@@ -304,6 +305,7 @@ export function SettingsPage(): React.ReactElement {
   const sections = [
     { id: 'appearance', label: 'Appearance', icon: <Palette size={18} /> },
     { id: 'behavior', label: 'Behavior', icon: <Monitor size={18} /> },
+    { id: 'local-ai', label: 'Local AI', icon: <Cpu size={18} /> },
     { id: 'everworker', label: 'Everworker Backend', icon: <Cloud size={18} /> },
     { id: 'developer', label: 'Developer', icon: <Code size={18} /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
@@ -399,6 +401,16 @@ export function SettingsPage(): React.ReactElement {
                     </Form.Text>
                   </Card.Body>
                 </Card>
+              </div>
+            )}
+
+            {activeSection === 'local-ai' && (
+              <div>
+                <h3 className="h5 mb-1">Local AI</h3>
+                <p className="text-muted mb-4">
+                  Run AI models locally on your machine using Ollama. No API keys or cloud services needed.
+                </p>
+                <OllamaSetupPanel />
               </div>
             )}
 

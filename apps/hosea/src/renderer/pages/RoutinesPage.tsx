@@ -75,17 +75,22 @@ export function RoutinesPage(): React.ReactElement {
   };
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Routines</h2>
-          <p className="text-muted mb-0">Create and manage automated task workflows</p>
+    <div className="page">
+      <div className="page__header">
+        <div className="page__header-left">
+          <div>
+            <h2 className="page__title">Routines</h2>
+            <p className="page__subtitle">Create and manage automated task workflows</p>
+          </div>
         </div>
-        <Button variant="primary" onClick={handleCreate}>
-          <Plus size={16} className="me-1" /> New Routine
-        </Button>
+        <div className="page__header-right">
+          <Button variant="primary" onClick={handleCreate}>
+            <Plus size={16} className="me-1" /> New Routine
+          </Button>
+        </div>
       </div>
 
+      <div className="page__content">
       {/* Toolbar */}
       <div className="d-flex gap-2 mb-3 align-items-center">
         <div className="position-relative flex-grow-1" style={{ maxWidth: 400 }}>
@@ -241,6 +246,7 @@ export function RoutinesPage(): React.ReactElement {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

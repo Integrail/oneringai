@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, Alert, Spinner } from 'react-bootstrap';
+import { Key, Cpu } from 'lucide-react';
+import { OllamaSetupPanel } from '../ollama/OllamaSetupPanel';
 
 interface SetupModalProps {
   show: boolean;
@@ -35,7 +37,7 @@ export function SetupModal({
   onHide,
   onComplete,
 }: SetupModalProps): React.ReactElement {
-  const [step, setStep] = useState<'connector' | 'model' | 'new-connector'>('connector');
+  const [step, setStep] = useState<'choice' | 'connector' | 'model' | 'new-connector' | 'local-ai'>('connector');
   const [connectors, setConnectors] = useState<ConnectorConfig[]>([]);
   const [models, setModels] = useState<ModelGroup[]>([]);
   const [selectedConnector, setSelectedConnector] = useState('');
@@ -66,7 +68,8 @@ export function SetupModal({
       setModels(modelList);
 
       if (connectorList.length === 0) {
-        setStep('new-connector');
+        // No connectors — show choice between cloud and local
+        setStep('choice');
       } else {
         setStep('connector');
       }
@@ -158,6 +161,28 @@ export function SetupModal({
     }
   };
 
+  // Handle Ollama ready: connector + model are set up
+  const handleOllamaReady = async (connectorName: string, firstModel: string) => {
+    setSelectedConnector(connectorName);
+    setSelectedModel(firstModel);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await window.hosea.agentConfig.createDefault(connectorName, firstModel);
+      if (result.success) {
+        onComplete();
+      } else {
+        setError(result.error || 'Failed to create agent');
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getModelsForVendor = () => {
     const connector = connectors.find((c) => c.name === selectedConnector);
     if (!connector) return [];
@@ -166,6 +191,64 @@ export function SetupModal({
     );
     return vendorModels?.models || [];
   };
+
+  // ============ Choice Screen (no connectors) ============
+  const renderChoiceStep = () => (
+    <>
+      <Modal.Body>
+        <p className="text-muted mb-4">Choose how you'd like to use AI with HOSEA:</p>
+
+        <div className="d-grid gap-3">
+          <Button
+            variant="outline-primary"
+            className="text-start p-3"
+            onClick={() => setStep('new-connector')}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <Key size={24} />
+              <div>
+                <strong>Add API Key</strong>
+                <div className="text-muted small">
+                  Connect to OpenAI, Anthropic, Google, or other cloud providers
+                </div>
+              </div>
+            </div>
+          </Button>
+
+          <Button
+            variant="outline-success"
+            className="text-start p-3"
+            onClick={() => setStep('local-ai')}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <Cpu size={24} />
+              <div>
+                <strong>Run Locally with Ollama</strong>
+                <div className="text-muted small">
+                  Free, private, no API keys needed. Runs on your computer.
+                </div>
+              </div>
+            </div>
+          </Button>
+        </div>
+      </Modal.Body>
+    </>
+  );
+
+  // ============ Local AI Setup ============
+  const renderLocalAIStep = () => (
+    <>
+      <Modal.Body>
+        <OllamaSetupPanel compact onReady={handleOllamaReady} />
+        {error && <Alert variant="danger" className="mt-3">{error}</Alert>}
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="outline-secondary" onClick={() => setStep('choice')}>
+          Back
+        </Button>
+      </Modal.Footer>
+    </>
+  );
 
   const renderConnectorStep = () => (
     <>
@@ -249,8 +332,12 @@ export function SetupModal({
         {error && <Alert variant="danger">{error}</Alert>}
       </Modal.Body>
       <Modal.Footer>
-        {connectors.length > 0 && (
+        {connectors.length > 0 ? (
           <Button variant="outline-secondary" onClick={() => setStep('connector')}>
+            Back
+          </Button>
+        ) : (
+          <Button variant="outline-secondary" onClick={() => setStep('choice')}>
             Back
           </Button>
         )}
@@ -309,14 +396,20 @@ export function SetupModal({
     );
   };
 
+  const getTitle = () => {
+    switch (step) {
+      case 'choice': return 'Welcome to HOSEA';
+      case 'connector': return 'Select Connector';
+      case 'new-connector': return 'Add Connector';
+      case 'model': return 'Select Model';
+      case 'local-ai': return 'Set Up Local AI';
+    }
+  };
+
   return (
-    <Modal show={show} onHide={onHide} centered backdrop="static">
+    <Modal show={show} onHide={onHide} centered backdrop="static" size={step === 'local-ai' ? 'lg' : undefined}>
       <Modal.Header closeButton={connectors.length > 0}>
-        <Modal.Title>
-          {step === 'connector' && 'Select Connector'}
-          {step === 'new-connector' && 'Add Connector'}
-          {step === 'model' && 'Select Model'}
-        </Modal.Title>
+        <Modal.Title>{getTitle()}</Modal.Title>
       </Modal.Header>
 
       {loading && step === 'connector' ? (
@@ -326,6 +419,8 @@ export function SetupModal({
         </Modal.Body>
       ) : (
         <>
+          {step === 'choice' && renderChoiceStep()}
+          {step === 'local-ai' && renderLocalAIStep()}
           {step === 'connector' && renderConnectorStep()}
           {step === 'new-connector' && renderNewConnectorStep()}
           {step === 'model' && renderModelStep()}

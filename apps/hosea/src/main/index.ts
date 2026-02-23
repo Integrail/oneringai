@@ -13,6 +13,7 @@ import { AgentService } from './AgentService.js';
 import { BrowserService } from './BrowserService.js';
 import { AutoUpdaterService } from './AutoUpdaterService.js';
 import { EWAuthService } from './EWAuthService.js';
+import { OllamaService } from './OllamaService.js';
 import type { Rectangle } from './browser/types.js';
 
 /**
@@ -36,6 +37,7 @@ let agentService: AgentService | null = null;
 let browserService: BrowserService | null = null;
 const ewAuthService = new EWAuthService();
 let autoUpdaterService: AutoUpdaterService | null = null;
+let ollamaService: OllamaService | null = null;
 
 // Simple JSON-based settings (avoids ESM-only electron-store dependency)
 function getSettingsPath(): string {
@@ -546,6 +548,9 @@ async function setupIPC(): Promise<void> {
     return app.getVersion();
   });
 
+  // Dev mode check
+  ipcMain.handle('app:get-is-dev', () => isDev);
+
   // License acceptance
   ipcMain.handle('license:get-status', () => {
     const settings = readSettings();
@@ -721,6 +726,7 @@ async function setupIPC(): Promise<void> {
   }));
 
   ipcMain.handle('routine:get', readyHandler(async (_event, id: string) => {
+    if (!id) return null;
     return agentService!.getRoutine(id);
   }));
 
@@ -845,6 +851,110 @@ async function setupIPC(): Promise<void> {
     }
     return browserService.hasBrowser(instanceId);
   });
+
+  // ============ Ollama IPC Handlers ============
+
+  ollamaService = new OllamaService();
+
+  // Wire push events to renderer
+  ollamaService.setCallbacks({
+    onStateChanged: (state) => {
+      mainWindow?.webContents.send('ollama:state-changed', state);
+    },
+    onDownloadProgress: (progress) => {
+      mainWindow?.webContents.send('ollama:download-progress', progress);
+    },
+    onPullProgress: (progress) => {
+      mainWindow?.webContents.send('ollama:pull-progress', progress);
+    },
+  });
+
+  // Give AgentService a reference
+  agentService!.setOllamaService(ollamaService);
+
+  ipcMain.handle('ollama:get-state', async () => {
+    return ollamaService!.getState();
+  });
+
+  ipcMain.handle('ollama:detect', async () => {
+    return ollamaService!.detect();
+  });
+
+  ipcMain.handle('ollama:download', async () => {
+    try {
+      await ollamaService!.download();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama:start', async () => {
+    try {
+      await ollamaService!.start();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama:stop', async () => {
+    try {
+      await ollamaService!.stop();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama:list-models', async () => {
+    try {
+      return ollamaService!.listModels();
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('ollama:pull-model', async (_event, name: string) => {
+    try {
+      await ollamaService!.pullModel(name);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama:delete-model', async (_event, name: string) => {
+    try {
+      await ollamaService!.deleteModel(name);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('ollama:set-auto-start', async (_event, enabled: boolean) => {
+    await ollamaService!.setAutoStart(enabled);
+    return { success: true };
+  });
+
+  // DEV ONLY: Reset Ollama state for testing the download flow
+  if (isDev) {
+    ipcMain.handle('ollama:reset-for-testing', async () => {
+      ollamaService!.resetForTesting();
+      return { success: true };
+    });
+  }
+
+  ipcMain.handle('ollama:ensure-connector', readyHandler(async () => {
+    try {
+      const connConfig = ollamaService!.getConnectorConfig();
+      const result = await agentService!.addConnector(connConfig);
+      return result;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }));
 
   // Initialize auto-updater (only in production)
   if (!isDev) {
@@ -1074,6 +1184,9 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   // Cleanup
+  if (ollamaService) {
+    await ollamaService.destroy();
+  }
   if (browserService) {
     await browserService.destroyAll();
   }
