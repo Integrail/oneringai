@@ -14,6 +14,7 @@ import { BrowserService } from './BrowserService.js';
 import { AutoUpdaterService } from './AutoUpdaterService.js';
 import { EWAuthService } from './EWAuthService.js';
 import { OllamaService } from './OllamaService.js';
+import { sendTelemetryPing } from './telemetry.js';
 import type { Rectangle } from './browser/types.js';
 
 /**
@@ -551,6 +552,19 @@ async function setupIPC(): Promise<void> {
   // Dev mode check
   ipcMain.handle('app:get-is-dev', () => isDev);
 
+  // What's New
+  ipcMain.handle('whatsnew:get-last-seen', () => {
+    const settings = readSettings();
+    return (settings.lastSeenWhatsNew as string) || null;
+  });
+
+  ipcMain.handle('whatsnew:mark-seen', (_event, version: string) => {
+    const settings = readSettings();
+    settings.lastSeenWhatsNew = version;
+    writeSettings(settings);
+    return { success: true };
+  });
+
   // License acceptance
   ipcMain.handle('license:get-status', () => {
     const settings = readSettings();
@@ -565,6 +579,22 @@ async function setupIPC(): Promise<void> {
     const settings = readSettings();
     settings.licenseAcceptedVersion = '2.0';
     settings.licenseAcceptedAt = Date.now();
+    writeSettings(settings);
+    return { success: true };
+  });
+
+  // Telemetry operations
+  ipcMain.handle('telemetry:get-status', () => {
+    const settings = readSettings();
+    return {
+      enabled: settings.telemetryEnabled !== false,
+      installationId: (settings.installationId as string) || null,
+    };
+  });
+
+  ipcMain.handle('telemetry:set-enabled', (_event, enabled: boolean) => {
+    const settings = readSettings();
+    settings.telemetryEnabled = enabled;
     writeSettings(settings);
     return { success: true };
   });
@@ -1161,6 +1191,14 @@ app.whenReady().then(async () => {
     // Notify renderer that service is fully ready
     mainWindow?.webContents.send('service:ready');
     console.log('[HOSEA] Service fully initialized, notified renderer');
+
+    // Send telemetry ping (fire-and-forget, after heavy init so it doesn't delay startup)
+    try {
+      const settings = readSettings();
+      sendTelemetryPing(settings, writeSettings);
+    } catch {
+      // Telemetry should never break the app
+    }
   });
 
   app.on('activate', async () => {

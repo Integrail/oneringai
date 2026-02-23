@@ -411,10 +411,22 @@ export interface HoseaAPI {
     removeTokenExpiryListener: () => void;
   };
 
+  // Telemetry
+  telemetry: {
+    getStatus: () => Promise<{ enabled: boolean; installationId: string | null }>;
+    setEnabled: (enabled: boolean) => Promise<{ success: boolean }>;
+  };
+
   // App info
   app: {
     getVersion: () => Promise<string>;
     getIsDev: () => Promise<boolean>;
+  };
+
+  // What's New
+  whatsnew: {
+    getLastSeen: () => Promise<string | null>;
+    markSeen: (version: string) => Promise<{ success: boolean }>;
   };
 
   // License
@@ -1300,10 +1312,22 @@ const api: HoseaAPI = {
     },
   },
 
+  // Telemetry
+  telemetry: {
+    getStatus: () => ipcRenderer.invoke('telemetry:get-status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('telemetry:set-enabled', enabled),
+  },
+
   // App info
   app: {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
     getIsDev: () => ipcRenderer.invoke('app:get-is-dev'),
+  },
+
+  // What's New
+  whatsnew: {
+    getLastSeen: () => ipcRenderer.invoke('whatsnew:get-last-seen'),
+    markSeen: (version: string) => ipcRenderer.invoke('whatsnew:mark-seen', version),
   },
 
   // License

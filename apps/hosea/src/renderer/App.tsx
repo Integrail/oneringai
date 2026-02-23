@@ -23,6 +23,8 @@ import {
 } from './pages';
 import { SetupModal } from './components/modals/SetupModal';
 import { LicenseAcceptanceModal } from './components/modals/LicenseAcceptanceModal';
+import { WhatsNewModal } from './components/modals/WhatsNewModal';
+import { whatsNewEntries } from './whatsnew';
 import { UpdateNotification } from './components/UpdateNotification';
 import {
   NavigationContext,
@@ -143,6 +145,8 @@ function AppContent(): React.ReactElement {
   const [connectorVersion, setConnectorVersion] = useState(0);
   const [serviceReady, setServiceReady] = useState(false);
   const [licenseAccepted, setLicenseAccepted] = useState<boolean | null>(null); // null = loading
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [whatsNewChecked, setWhatsNewChecked] = useState(false);
 
   // Check license acceptance on mount
   useEffect(() => {
@@ -150,6 +154,33 @@ function AppContent(): React.ReactElement {
       setLicenseAccepted(status.accepted);
     });
   }, []);
+
+  // Check What's New after license is accepted
+  useEffect(() => {
+    if (!licenseAccepted) return;
+
+    const checkWhatsNew = async () => {
+      const latestEntry = whatsNewEntries[0];
+      if (!latestEntry) {
+        setWhatsNewChecked(true);
+        return;
+      }
+      try {
+        const dismissed = await window.hosea.whatsnew.getLastSeen();
+        console.log('[WhatsNew] latest entry:', latestEntry.version, 'dismissed:', dismissed);
+        if (dismissed !== latestEntry.version) {
+          setShowWhatsNew(true);
+        }
+      } catch (error) {
+        // IPC not available (preload not rebuilt?) — show anyway
+        console.warn('[WhatsNew] IPC error, showing popup anyway:', error);
+        setShowWhatsNew(true);
+      }
+      setWhatsNewChecked(true);
+    };
+
+    checkWhatsNew();
+  }, [licenseAccepted]);
 
   // Listen for service readiness (non-blocking startup)
   useEffect(() => {
@@ -305,6 +336,21 @@ function AppContent(): React.ReactElement {
     }
   };
 
+  // Handle What's New close — only persist dismissal if user ticked the checkbox
+  const handleWhatsNewClose = useCallback(async (dontShowAgain: boolean) => {
+    setShowWhatsNew(false);
+    if (dontShowAgain) {
+      const latestEntry = whatsNewEntries[0];
+      if (latestEntry) {
+        try {
+          await window.hosea.whatsnew.markSeen(latestEntry.version);
+        } catch (error) {
+          console.error('Error saving What\'s New state:', error);
+        }
+      }
+    }
+  }, []);
+
   // Handle license acceptance
   const handleLicenseAccept = useCallback(async () => {
     await window.hosea.license.accept();
@@ -336,13 +382,16 @@ function AppContent(): React.ReactElement {
     );
   }
 
-  // Show loading spinner while initializing
+  // Show loading spinner while initializing (but allow What's New modal to overlay)
   if (isInitializing) {
     return (
-      <div className="app-loading">
-        <Spinner animation="border" variant="primary" />
-        <p className="mt-3 text-muted">Starting HOSEA...</p>
-      </div>
+      <>
+        <div className="app-loading">
+          <Spinner animation="border" variant="primary" />
+          <p className="mt-3 text-muted">Starting HOSEA...</p>
+        </div>
+        <WhatsNewModal show={showWhatsNew} onClose={handleWhatsNewClose} />
+      </>
     );
   }
 
@@ -367,6 +416,9 @@ function AppContent(): React.ReactElement {
             onHide={() => setShowSetup(false)}
             onComplete={handleSetupComplete}
           />
+
+          {/* What's New modal (non-blocking overlay) */}
+          <WhatsNewModal show={showWhatsNew} onClose={handleWhatsNewClose} />
 
           {/* Auto-update notification */}
           <UpdateNotification />

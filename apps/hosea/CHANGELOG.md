@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **What's New Popup** — Shows release highlights after every version update. Appears once after the license acceptance step. Includes a version dropdown to browse previous releases. Content is stored as markdown files in `src/renderer/whatsnew/` and bundled at build time via Vite `?raw` imports.
 - **Local AI with Ollama** — Run AI models locally without API keys or cloud services
   - **OllamaService** (main process) — Full lifecycle management: auto-detect existing installations, download binary (~70MB), start/stop server, pull/delete models
   - **Smart model recommendations** — Based on system RAM: qwen3:8b (<12GB), qwen3:14b (12-24GB), qwen3:30b (24GB+)
