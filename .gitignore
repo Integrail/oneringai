@@ -34,3 +34,6 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# Blog drafts
+blog/

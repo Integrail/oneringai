@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Hosea: Routines** — Full routine/workflow support in Hosea. Routines are multi-step automated task sequences that run on a chat tab's agent instance. Includes:
+  - **Routines Page** — List all routines with search, sort (name/date), and card/list view toggle. Duplicate and delete routines directly from the list.
+  - **Routine Builder** — Visual editor for creating/editing routine definitions. Sections: basic info (name, description, version, author, tags), LLM instructions, task list with accordion editor (name, description, dependencies as clickable badges, suggested tools, expected output, max attempts, optional validation with completion criteria and min score), and settings (concurrency mode, dynamic tasks toggle, required tools/plugins).
+  - **Routines Sidebar Panel** — Third tab in the chat sidebar. Three views: routine list (compact, clickable), routine detail (full info with Execute button), and execution monitor (live progress bar, task status cards with icons, timestamped step log, cancel button).
+  - **Real-time Execution** — Routine execution state flows via StreamChunk events (`routine:started`, `routine:task_started`, `routine:task_completed`, `routine:task_failed`, `routine:step`, `routine:completed`, `routine:failed`). No persistence — execution state is in-memory only, derived from events.
+  - **Chat Input Guard** — Chat input and send button are disabled while a routine is executing on the tab's agent. Placeholder text changes to "Agent is executing a routine...".
+  - **Navigation** — Routines added to main sidebar under "Main" section. New `routines` and `routine-builder` page IDs.
+  - Uses core library types directly (`RoutineDefinition`, `RoutineDefinitionInput`, `TaskInput`, etc.) — no duplicate `*ForUI` types.
+
 ## [0.4.2] - 2026-02-22
 
 ### Added

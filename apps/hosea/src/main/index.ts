@@ -714,6 +714,40 @@ async function setupIPC(): Promise<void> {
     await shell.openExternal(url);
   });
 
+  // ============ Routine IPC Handlers ============
+
+  ipcMain.handle('routine:list', readyHandler(async (_event, options?: { tags?: string[]; search?: string }) => {
+    return agentService!.listRoutines(options);
+  }));
+
+  ipcMain.handle('routine:get', readyHandler(async (_event, id: string) => {
+    return agentService!.getRoutine(id);
+  }));
+
+  ipcMain.handle('routine:save', readyHandler(async (_event, input: unknown) => {
+    return agentService!.saveRoutine(input as any);
+  }));
+
+  ipcMain.handle('routine:delete', readyHandler(async (_event, id: string) => {
+    return agentService!.deleteRoutine(id);
+  }));
+
+  ipcMain.handle('routine:duplicate', readyHandler(async (_event, id: string) => {
+    return agentService!.duplicateRoutine(id);
+  }));
+
+  ipcMain.handle('routine:validate', readyHandler(async (_event, input: unknown) => {
+    return agentService!.validateRoutine(input as any);
+  }));
+
+  ipcMain.handle('routine:execute', readyHandler(async (_event, instanceId: string, routineId: string) => {
+    return agentService!.executeRoutineOnInstance(instanceId, routineId);
+  }));
+
+  ipcMain.handle('routine:cancel-execution', readyHandler(async (_event, instanceId: string) => {
+    agentService!.cancelRoutineExecution(instanceId);
+  }));
+
   // ============ Browser Automation IPC Handlers ============
 
   ipcMain.handle('browser:create', async (_event, instanceId: string) => {

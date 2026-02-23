@@ -10,7 +10,7 @@ import type { ToolFunction, ToolCategory } from '@everworker/oneringai';
 /**
  * Extended category type for Hosea (adds 'browser')
  */
-export type HoseaToolCategory = ToolCategory | 'browser' | 'desktop';
+export type HoseaToolCategory = ToolCategory | 'browser';
 
 /**
  * Context provided when creating tool instances at runtime
@@ -92,6 +92,7 @@ export const CATEGORY_DISPLAY_NAMES: Record<HoseaToolCategory, string> = {
   code: 'Code Execution',
   json: 'JSON',
   connector: 'Connectors',
+  'custom-tools': 'Custom Tools',
   other: 'Other',
   browser: 'Browser Automation',
   desktop: 'Desktop Automation',

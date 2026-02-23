@@ -105,7 +105,7 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
   }, [input]);
 
   const handleSend = useCallback(() => {
-    if (!input.trim() || !tab.status.initialized || tab.isLoading) return;
+    if (!input.trim() || !tab.status.initialized || tab.isLoading || tab.routineExecution?.status === 'running') return;
 
     const content = input.trim();
     setInput('');
@@ -321,11 +321,13 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                tab.status.initialized
-                  ? 'Type a message... (Shift+Enter for new line)'
-                  : 'Connect to an agent first...'
+                tab.routineExecution?.status === 'running'
+                  ? 'Agent is executing a routine...'
+                  : tab.status.initialized
+                    ? 'Type a message... (Shift+Enter for new line)'
+                    : 'Connect to an agent first...'
               }
-              disabled={!tab.status.initialized || tab.isLoading}
+              disabled={!tab.status.initialized || tab.isLoading || tab.routineExecution?.status === 'running'}
               rows={1}
             />
             {tab.isLoading ? (
@@ -339,7 +341,7 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
               <button
                 className="chat__send-btn"
                 onClick={handleSend}
-                disabled={!input.trim() || !tab.status.initialized}
+                disabled={!input.trim() || !tab.status.initialized || tab.routineExecution?.status === 'running'}
               >
                 <Send size={18} />
               </button>
@@ -471,6 +473,7 @@ function ChatPageContent(): React.ReactElement {
         contextEntries={activeTab?.contextEntries || []}
         pinnedContextKeys={activeTab?.pinnedContextKeys || []}
         onPinContextKey={(key, pinned) => pinContextKey(key, pinned)}
+        routineExecution={activeTab?.routineExecution}
       />
 
       {/* New Tab Modal */}

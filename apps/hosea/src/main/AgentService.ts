@@ -75,6 +75,12 @@ import {
   ToolRegistry,
   FileStorage,
   createProvider,
+  // Routines
+  FileRoutineDefinitionStorage,
+  createRoutineDefinition,
+  executeRoutine,
+  type RoutineDefinition,
+  type RoutineDefinitionInput,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import {
@@ -426,7 +432,15 @@ export type StreamChunk =
   // Dynamic UI events (from tool execution plugins)
   | { type: 'ui:set_dynamic_content'; content: DynamicUIContent }
   // In-context memory entries for UI display
-  | { type: 'ui:context_entries'; entries: Array<{ key: string; description: string; value: unknown; priority: string; showInUI: boolean; updatedAt: number }>; pinnedKeys: string[] };
+  | { type: 'ui:context_entries'; entries: Array<{ key: string; description: string; value: unknown; priority: string; showInUI: boolean; updatedAt: number }>; pinnedKeys: string[] }
+  // Routine execution events
+  | { type: 'routine:started'; executionId: string; routineName: string; taskCount: number }
+  | { type: 'routine:task_started'; executionId: string; taskId: string; taskName: string }
+  | { type: 'routine:task_completed'; executionId: string; taskId: string; taskName: string; progress: number; output?: string; validationScore?: number }
+  | { type: 'routine:task_failed'; executionId: string; taskId: string; taskName: string; progress: number; error: string }
+  | { type: 'routine:step'; executionId: string; step: { timestamp: number; taskName: string; type: string; data?: Record<string, unknown> } }
+  | { type: 'routine:completed'; executionId: string; progress: number }
+  | { type: 'routine:failed'; executionId: string; error: string };
 
 /**
  * HOSEA UI Capabilities System Prompt
@@ -575,6 +589,8 @@ export class AgentService {
   private mcpServers: Map<string, StoredMCPServerConfig> = new Map();
   // Multi-tab agent instances (instanceId -> AgentInstance)
   private instances: Map<string, AgentInstance> = new Map();
+  // Routine definition storage
+  private routineStorage = new FileRoutineDefinitionStorage();
   // Browser service reference (set by main process)
   private browserService: BrowserService | null = null;
   // Vendor OAuth service for authorization_code and client_credentials flows
@@ -5002,6 +5018,166 @@ export class AgentService {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
+    }
+  }
+
+  // ============ Routine Methods ============
+
+  async listRoutines(options?: { tags?: string[]; search?: string }): Promise<RoutineDefinition[]> {
+    return this.routineStorage.list(undefined, options);
+  }
+
+  async getRoutine(id: string): Promise<RoutineDefinition | null> {
+    return this.routineStorage.load(undefined, id);
+  }
+
+  async saveRoutine(input: RoutineDefinitionInput): Promise<{ id: string }> {
+    // If input has an id, try to load existing to preserve createdAt
+    let def: RoutineDefinition;
+    if (input.id) {
+      const existing = await this.routineStorage.load(undefined, input.id);
+      if (existing) {
+        // Update existing
+        def = {
+          ...existing,
+          ...input,
+          id: existing.id,
+          createdAt: existing.createdAt,
+          updatedAt: new Date().toISOString(),
+        } as RoutineDefinition;
+      } else {
+        def = createRoutineDefinition(input);
+      }
+    } else {
+      def = createRoutineDefinition(input);
+    }
+    await this.routineStorage.save(undefined, def);
+    return { id: def.id };
+  }
+
+  async deleteRoutine(id: string): Promise<void> {
+    await this.routineStorage.delete(undefined, id);
+  }
+
+  async duplicateRoutine(id: string): Promise<{ id: string }> {
+    const original = await this.routineStorage.load(undefined, id);
+    if (!original) {
+      throw new Error(`Routine "${id}" not found`);
+    }
+    const duplicated = createRoutineDefinition({
+      name: `Copy of ${original.name}`,
+      description: original.description,
+      version: original.version,
+      tasks: original.tasks,
+      requiredTools: original.requiredTools,
+      requiredPlugins: original.requiredPlugins,
+      instructions: original.instructions,
+      concurrency: original.concurrency,
+      allowDynamicTasks: original.allowDynamicTasks,
+      tags: original.tags,
+      author: original.author,
+      metadata: original.metadata,
+    });
+    await this.routineStorage.save(undefined, duplicated);
+    return { id: duplicated.id };
+  }
+
+  validateRoutine(input: RoutineDefinitionInput): { valid: boolean; error?: string } {
+    try {
+      createRoutineDefinition(input);
+      return { valid: true };
+    } catch (error) {
+      return { valid: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async executeRoutineOnInstance(instanceId: string, routineId: string): Promise<{ executionId: string }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Instance "${instanceId}" not found`);
+    }
+
+    const definition = await this.routineStorage.load(undefined, routineId);
+    if (!definition) {
+      throw new Error(`Routine "${routineId}" not found`);
+    }
+
+    const executionId = `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const emitter = this.streamEmitter;
+
+    // Emit started event
+    emitter?.(instanceId, {
+      type: 'routine:started',
+      executionId,
+      routineName: definition.name,
+      taskCount: definition.tasks.length,
+    });
+
+    // Fire-and-forget — execution state flows via stream events
+    executeRoutine({
+      definition,
+      agent: instance.agent,
+      onTaskStarted: (task) => {
+        emitter?.(instanceId, {
+          type: 'routine:task_started',
+          executionId,
+          taskId: task.id,
+          taskName: task.name,
+        });
+      },
+      onTaskComplete: (task, execution) => {
+        emitter?.(instanceId, {
+          type: 'routine:task_completed',
+          executionId,
+          taskId: task.id,
+          taskName: task.name,
+          progress: execution.progress,
+          output: task.result?.output ? String(task.result.output).substring(0, 500) : undefined,
+        });
+      },
+      onTaskFailed: (task, execution) => {
+        emitter?.(instanceId, {
+          type: 'routine:task_failed',
+          executionId,
+          taskId: task.id,
+          taskName: task.name,
+          progress: execution.progress,
+          error: task.result?.error || 'Unknown error',
+        });
+      },
+      onTaskValidation: (task, result) => {
+        emitter?.(instanceId, {
+          type: 'routine:step',
+          executionId,
+          step: {
+            timestamp: Date.now(),
+            taskName: task.name,
+            type: 'validation',
+            data: { score: result.completionScore, passed: result.isComplete, explanation: result.explanation },
+          },
+        });
+      },
+    }).then((execution) => {
+      emitter?.(instanceId, {
+        type: 'routine:completed',
+        executionId,
+        progress: execution.progress,
+      });
+    }).catch((error) => {
+      emitter?.(instanceId, {
+        type: 'routine:failed',
+        executionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+    return { executionId };
+  }
+
+  cancelRoutineExecution(instanceId: string): void {
+    const instance = this.instances.get(instanceId);
+    if (instance && 'cancel' in instance.agent && typeof instance.agent.cancel === 'function') {
+      instance.agent.cancel();
     }
   }
 }

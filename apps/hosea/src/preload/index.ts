@@ -3,7 +3,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { IContextSnapshot, IViewContextData } from '@everworker/oneringai';
+import type { IContextSnapshot, IViewContextData, RoutineDefinition, RoutineDefinitionInput } from '@everworker/oneringai';
 
 /**
  * Everworker Backend Profile
@@ -183,7 +183,15 @@ export type StreamChunk =
   | { type: 'browser:hide' }
   | { type: 'browser:state-update'; state: BrowserStateInfo }
   // Proactive overlay detection (popup/modal appeared)
-  | { type: 'overlay_detected'; overlay: DetectedOverlay; hint: string };
+  | { type: 'overlay_detected'; overlay: DetectedOverlay; hint: string }
+  // Routine execution events (live, in-memory only — not persisted)
+  | { type: 'routine:started'; executionId: string; routineName: string; taskCount: number }
+  | { type: 'routine:task_started'; executionId: string; taskId: string; taskName: string }
+  | { type: 'routine:task_completed'; executionId: string; taskId: string; taskName: string; progress: number; output?: string; validationScore?: number }
+  | { type: 'routine:task_failed'; executionId: string; taskId: string; taskName: string; progress: number; error: string }
+  | { type: 'routine:step'; executionId: string; step: { timestamp: number; taskName: string; type: string; data?: Record<string, unknown> } }
+  | { type: 'routine:completed'; executionId: string; progress: number }
+  | { type: 'routine:failed'; executionId: string; error: string };
 
 /**
  * Browser state info for IPC
@@ -1110,6 +1118,18 @@ export interface HoseaAPI {
     /** Remove all browser listeners */
     removeListeners: () => void;
   };
+
+  // Routines
+  routine: {
+    list: (options?: { tags?: string[]; search?: string }) => Promise<RoutineDefinition[]>;
+    get: (id: string) => Promise<RoutineDefinition | null>;
+    save: (input: RoutineDefinitionInput) => Promise<{ id: string }>;
+    delete: (id: string) => Promise<void>;
+    duplicate: (id: string) => Promise<{ id: string }>;
+    validate: (input: RoutineDefinitionInput) => Promise<{ valid: boolean; error?: string }>;
+    execute: (instanceId: string, routineId: string) => Promise<{ executionId: string }>;
+    cancelExecution: (instanceId: string) => Promise<void>;
+  };
 }
 
 // Expose to renderer
@@ -1405,6 +1425,17 @@ const api: HoseaAPI = {
       ipcRenderer.removeAllListeners('browser:loading');
       ipcRenderer.removeAllListeners('browser:error');
     },
+  },
+
+  routine: {
+    list: (options?) => ipcRenderer.invoke('routine:list', options),
+    get: (id) => ipcRenderer.invoke('routine:get', id),
+    save: (input) => ipcRenderer.invoke('routine:save', input),
+    delete: (id) => ipcRenderer.invoke('routine:delete', id),
+    duplicate: (id) => ipcRenderer.invoke('routine:duplicate', id),
+    validate: (input) => ipcRenderer.invoke('routine:validate', input),
+    execute: (instanceId, routineId) => ipcRenderer.invoke('routine:execute', instanceId, routineId),
+    cancelExecution: (instanceId) => ipcRenderer.invoke('routine:cancel-execution', instanceId),
   },
 };
 

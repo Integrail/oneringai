@@ -15,6 +15,8 @@ export type PageId =
   | 'tool-connectors'
   | 'mcp-servers'
   | 'multimedia-studio'
+  | 'routines'
+  | 'routine-builder'
   | 'internals'
   | 'settings';
 

@@ -10,7 +10,7 @@ import type { IChatMessage, IToolCallInfo } from '@everworker/react-ui';
 import type { Plan, StreamChunk, DynamicUIContent, ContextEntryForUI } from '../../preload/index';
 
 // Sidebar tab type
-export type SidebarTab = 'look_inside' | 'dynamic_ui';
+export type SidebarTab = 'look_inside' | 'dynamic_ui' | 'routines';
 
 // ============ Types ============
 
@@ -42,6 +42,15 @@ export interface TabState {
   // In-context memory entries visible in UI
   contextEntries: ContextEntryForUI[];
   pinnedContextKeys: string[];
+  // Routine execution state (in-memory only, derived from StreamChunk events)
+  routineExecution: {
+    executionId: string;
+    routineName: string;
+    status: 'running' | 'completed' | 'failed' | 'cancelled';
+    progress: number;
+    tasks: Map<string, { name: string; status: string; output?: string; error?: string }>;
+    steps: Array<{ timestamp: number; taskName: string; type: string; data?: Record<string, unknown> }>;
+  } | null;
 }
 
 // Sidebar state interface
@@ -309,6 +318,46 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           // Show notification dot if sidebar not showing dynamic_ui
           updatedTab.hasDynamicUIUpdate = true;
         }
+        // Routine execution events
+        else if (chunk.type === 'routine:started') {
+          updatedTab.routineExecution = {
+            executionId: chunk.executionId,
+            routineName: chunk.routineName,
+            status: 'running',
+            progress: 0,
+            tasks: new Map(),
+            steps: [],
+          };
+          // Auto-open sidebar and switch to routines tab
+          setSidebar(prev => ({ ...prev, isOpen: true, activeTab: 'routines' }));
+        }
+        else if (chunk.type === 'routine:task_started' && updatedTab.routineExecution) {
+          const tasks = new Map(updatedTab.routineExecution.tasks);
+          tasks.set(chunk.taskId, { name: chunk.taskName, status: 'running' });
+          updatedTab.routineExecution = { ...updatedTab.routineExecution, tasks };
+        }
+        else if (chunk.type === 'routine:task_completed' && updatedTab.routineExecution) {
+          const tasks = new Map(updatedTab.routineExecution.tasks);
+          tasks.set(chunk.taskId, { name: chunk.taskName, status: 'completed', output: chunk.output });
+          updatedTab.routineExecution = { ...updatedTab.routineExecution, tasks, progress: chunk.progress };
+        }
+        else if (chunk.type === 'routine:task_failed' && updatedTab.routineExecution) {
+          const tasks = new Map(updatedTab.routineExecution.tasks);
+          tasks.set(chunk.taskId, { name: chunk.taskName, status: 'failed', error: chunk.error });
+          updatedTab.routineExecution = { ...updatedTab.routineExecution, tasks, progress: chunk.progress };
+        }
+        else if (chunk.type === 'routine:step' && updatedTab.routineExecution) {
+          updatedTab.routineExecution = {
+            ...updatedTab.routineExecution,
+            steps: [...updatedTab.routineExecution.steps, chunk.step],
+          };
+        }
+        else if (chunk.type === 'routine:completed' && updatedTab.routineExecution) {
+          updatedTab.routineExecution = { ...updatedTab.routineExecution, status: 'completed', progress: chunk.progress };
+        }
+        else if (chunk.type === 'routine:failed' && updatedTab.routineExecution) {
+          updatedTab.routineExecution = { ...updatedTab.routineExecution, status: 'failed' };
+        }
 
         newTabs.set(tab.instanceId, updatedTab);
         return newTabs;
@@ -395,6 +444,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         hasDynamicUIUpdate: false,
         contextEntries: [],
         pinnedContextKeys: [],
+        routineExecution: null,
       };
 
       // Load pinned context keys for this agent

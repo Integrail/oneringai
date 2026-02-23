@@ -8,5 +8,7 @@ export { ConnectorCreatePage } from './ConnectorCreatePage';
 export { ToolConnectorsPage } from './ToolConnectorsPage';
 export { MCPServersPage } from './MCPServersPage';
 export { MultimediaStudioPage } from './MultimediaStudioPage';
+export { RoutinesPage } from './RoutinesPage';
+export { RoutineBuilderPage } from './RoutineBuilderPage';
 export { InternalsPage } from './InternalsPage';
 export { SettingsPage } from './SettingsPage';

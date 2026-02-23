@@ -4,14 +4,15 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Zap, Layout } from 'lucide-react';
+import { X, Zap, Layout, ListChecks } from 'lucide-react';
 import { useDynamicUIChangeDetection } from '@everworker/react-ui';
 import type { InContextEntry } from '@everworker/oneringai';
 import { InternalsContent } from './InternalsContent';
 import { DynamicUIPanel } from './DynamicUIPanel';
 import { ContextDisplayPanel } from './ContextDisplayPanel';
+import { RoutinesPanel } from './RoutinesPanel';
 import type { DynamicUIContent, ContextEntryForUI } from '../../preload/index';
-import type { SidebarTab } from '../hooks/useTabContext';
+import type { SidebarTab, TabState } from '../hooks/useTabContext';
 
 interface SidebarPanelProps {
   isOpen: boolean;
@@ -34,6 +35,8 @@ interface SidebarPanelProps {
   pinnedContextKeys?: string[];
   /** Callback when user pins/unpins a context key */
   onPinContextKey?: (key: string, pinned: boolean) => void;
+  /** Routine execution state for Routines tab */
+  routineExecution?: TabState['routineExecution'];
 }
 
 const MIN_WIDTH = 280;
@@ -56,6 +59,7 @@ export function SidebarPanel({
   contextEntries,
   pinnedContextKeys,
   onPinContextKey,
+  routineExecution,
 }: SidebarPanelProps): React.ReactElement | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -152,6 +156,16 @@ export function SidebarPanel({
               <span className="sidebar-panel__notification-dot" />
             )}
           </button>
+          <button
+            className={`sidebar-panel__tab ${activeTab === 'routines' ? 'sidebar-panel__tab--active' : ''}`}
+            onClick={() => onTabChange('routines')}
+          >
+            <ListChecks size={14} />
+            <span>Routines</span>
+            {routineExecution?.status === 'running' && activeTab !== 'routines' && (
+              <span className="sidebar-panel__notification-dot" />
+            )}
+          </button>
         </div>
         <button
           className="sidebar-panel__close-btn"
@@ -166,6 +180,11 @@ export function SidebarPanel({
       <div className="sidebar-panel__content">
         {activeTab === 'look_inside' ? (
           <InternalsContent instanceId={instanceId} />
+        ) : activeTab === 'routines' ? (
+          <RoutinesPanel
+            instanceId={instanceId}
+            routineExecution={routineExecution}
+          />
         ) : (
           <>
             {contextEntries && pinnedContextKeys && onPinContextKey && (

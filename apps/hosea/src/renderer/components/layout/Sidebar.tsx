@@ -14,6 +14,7 @@ import {
   Wrench,
   Palette,
   Server,
+  ListChecks,
 } from 'lucide-react';
 import { useNavigation, type PageId } from '../../hooks/useNavigation';
 import logoFull from '../../assets/logo-full.svg';
@@ -37,6 +38,7 @@ const navSections: NavSection[] = [
     items: [
       { id: 'chat', label: 'Chat', icon: <MessageSquare size={20} /> },
       { id: 'agents', label: 'Agents', icon: <Bot size={20} /> },
+      { id: 'routines', label: 'Routines', icon: <ListChecks size={20} /> },
     ],
   },
   {

@@ -16,6 +16,8 @@ import {
   ToolConnectorsPage,
   MCPServersPage,
   MultimediaStudioPage,
+  RoutinesPage,
+  RoutineBuilderPage,
   InternalsPage,
   SettingsPage,
 } from './pages';
@@ -290,6 +292,10 @@ function AppContent(): React.ReactElement {
         return <MCPServersPage />;
       case 'multimedia-studio':
         return <MultimediaStudioPage />;
+      case 'routines':
+        return <RoutinesPage />;
+      case 'routine-builder':
+        return <RoutineBuilderPage />;
       case 'internals':
         return <InternalsPage />;
       case 'settings':
