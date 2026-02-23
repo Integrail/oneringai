@@ -1,6 +1,6 @@
 {
   "name": "@everworker/hosea",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "HOSEA - Human-Oriented System for Engaging Agents - Desktop UI for OneRing AI",
   "author": {
     "name": "Everworker.ai",
@@ -19,7 +19,10 @@
     "build:main": "tsup",
     "build:renderer": "vite build",
     "start": "electron .",
-    "package": "electron-builder",
+    "package": "electron-builder --mac --arm64 && electron-builder --mac --x64 && electron-builder --win --arm64 && electron-builder --linux --arm64 && electron-builder --linux --x64",
+    "package:mac": "electron-builder --mac --arm64 && electron-builder --mac --x64",
+    "package:win": "electron-builder --win --arm64",
+    "package:linux": "electron-builder --linux --arm64 && electron-builder --linux --x64",
     "typecheck": "tsc --noEmit",
     "preversion": "npm run build && npm run typecheck",
     "version": "git add -A",
