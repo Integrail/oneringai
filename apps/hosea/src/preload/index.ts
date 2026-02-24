@@ -190,8 +190,8 @@ export type StreamChunk =
   | { type: 'thinking'; content: string }
   | { type: 'thinking_done'; content: string }
   | { type: 'tool_start'; tool: string; args: Record<string, unknown>; description: string }
-  | { type: 'tool_end'; tool: string; durationMs?: number }
-  | { type: 'tool_error'; tool: string; error: string }
+  | { type: 'tool_end'; tool: string; durationMs?: number; result?: unknown }
+  | { type: 'tool_error'; tool: string; error: string; result?: unknown }
   | { type: 'done' }
   | { type: 'error'; content: string }
   // Plan events

@@ -66,7 +66,7 @@ interface UniversalConnector {
   displayName?: string;
   baseURL?: string;
   status: 'active' | 'error' | 'untested';
-  source?: 'local' | 'everworker';
+  source?: 'local' | 'everworker' | 'built-in';
 }
 
 interface MCPServerInfo {
@@ -171,7 +171,7 @@ export function AgentEditorPage(): React.ReactElement {
   const [saving, setSaving] = useState(false);
 
   // Data from API
-  const [connectors, setConnectors] = useState<{ name: string; vendor: string; source?: 'local' | 'everworker' }[]>([]);
+  const [connectors, setConnectors] = useState<{ name: string; vendor: string; source?: 'local' | 'everworker' | 'built-in' }[]>([]);
   const [modelsByVendor, setModelsByVendor] = useState<
     { vendor: string; models: ModelInfo[] }[]
   >([]);
@@ -380,7 +380,7 @@ export function AgentEditorPage(): React.ReactElement {
 
   // Map connector names to their source (local vs everworker)
   const connectorSourceMap = useMemo(() => {
-    const map = new Map<string, 'local' | 'everworker'>();
+    const map = new Map<string, 'local' | 'everworker' | 'built-in'>();
     for (const c of connectors) {
       if (c.source) map.set(c.name, c.source);
     }

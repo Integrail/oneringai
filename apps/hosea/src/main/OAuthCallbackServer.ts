@@ -30,6 +30,7 @@ export interface CallbackResult {
 
 const PORT = 19876;
 const PATH = '/oauth/callback';
+const LOG_PREFIX = '[OAuthCallback]';
 
 export class OAuthCallbackServer {
   private server: Server | null = null;
@@ -69,9 +70,11 @@ export class OAuthCallbackServer {
       // Create HTTP server
       this.server = createServer((req: IncomingMessage, res: ServerResponse) => {
         const url = new URL(req.url || '/', `http://localhost:${PORT}`);
+        console.log(`${LOG_PREFIX} Incoming request: ${req.method} ${req.url}`);
 
         // Only handle our callback path
         if (url.pathname !== PATH) {
+          console.log(`${LOG_PREFIX}   Ignoring non-callback path: ${url.pathname}`);
           res.writeHead(404);
           res.end('Not found');
           return;
@@ -81,11 +84,13 @@ export class OAuthCallbackServer {
         const errorDescription = url.searchParams.get('error_description');
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
+        console.log(`${LOG_PREFIX}   Callback params: error=${error}, code=${code ? code.substring(0, 20) + '...' : 'null'}, state=${state ? state.substring(0, 20) + '...' : 'null'}`);
 
         // Always respond with HTML so the user sees something
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
 
         if (error) {
+          console.error(`${LOG_PREFIX}   OAuth error from provider: ${error} — ${errorDescription}`);
           res.end(
             `<html><body style="font-family:system-ui,sans-serif;text-align:center;padding:60px;">` +
               `<h2>Authorization Failed</h2>` +
@@ -98,6 +103,7 @@ export class OAuthCallbackServer {
         }
 
         if (!code || !state) {
+          console.error(`${LOG_PREFIX}   Missing code or state in callback`);
           res.end(
             `<html><body style="font-family:system-ui,sans-serif;text-align:center;padding:60px;">` +
               `<h2>Invalid Callback</h2>` +
@@ -109,6 +115,7 @@ export class OAuthCallbackServer {
         }
 
         // Success
+        console.log(`${LOG_PREFIX}   OAuth callback SUCCESS — code and state received`);
         res.end(
           `<html><body style="font-family:system-ui,sans-serif;text-align:center;padding:60px;">` +
             `<h2>Authorization Complete!</h2>` +
@@ -127,7 +134,10 @@ export class OAuthCallbackServer {
       });
 
       // Bind to localhost only (security)
-      this.server.listen(PORT, '127.0.0.1');
+      console.log(`${LOG_PREFIX} Starting server on 127.0.0.1:${PORT}...`);
+      this.server.listen(PORT, '127.0.0.1', () => {
+        console.log(`${LOG_PREFIX} Server listening on http://127.0.0.1:${PORT}${PATH}`);
+      });
 
       this.server.on('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE') {

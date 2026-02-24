@@ -11,7 +11,7 @@ import { useConnectorVersion } from '../App';
 interface ConnectorConfig {
   name: string;
   vendor: string;
-  source?: 'local' | 'everworker';
+  source?: 'local' | 'everworker' | 'built-in';
   models?: string[];
   createdAt: number;
 }

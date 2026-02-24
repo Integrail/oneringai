@@ -23,24 +23,28 @@ export interface BuiltInOAuthApp {
   authTemplateId: string;
   /** Default scopes to request */
   scopes: string[];
+  /** Extra credentials required by the vendor template (e.g., tenantId for Microsoft) */
+  extraCredentials?: Record<string, string>;
 }
 
 /**
  * Hardcoded defaults shipped with the app.
- * Client IDs should be replaced with actual registered app credentials.
  */
 const DEFAULT_OAUTH_APPS: BuiltInOAuthApp[] = [
   {
     vendorId: 'microsoft',
     displayName: 'Microsoft',
-    clientId: 'PLACEHOLDER_MICROSOFT_CLIENT_ID',
+    clientId: '420e7c29-baec-4c10-b055-d5d111d0cb36',
     authTemplateId: 'oauth-user',
     scopes: ['User.Read', 'Mail.Read', 'Calendars.ReadWrite', 'Files.ReadWrite', 'offline_access'],
+    extraCredentials: {
+      tenantId: '6f095f41-a356-4051-95ab-e1ccf165b1a2',
+    },
   },
   {
     vendorId: 'twitter',
     displayName: 'Twitter / X',
-    clientId: 'PLACEHOLDER_TWITTER_CLIENT_ID',
+    clientId: 'R0lxMlUtVUt4R0ZqU1cxellaZVk6MTpjaQ',
     authTemplateId: 'oauth-user',
     scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
   },

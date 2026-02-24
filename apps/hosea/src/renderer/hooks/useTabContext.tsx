@@ -197,7 +197,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           if (lastMsg?.isStreaming && lastMsg.toolCalls) {
             const updatedToolCalls = lastMsg.toolCalls.map(tc =>
               tc.name === chunk.tool && tc.status === 'running'
-                ? { ...tc, status: 'complete' as const, durationMs: chunk.durationMs }
+                ? { ...tc, status: 'complete' as const, durationMs: chunk.durationMs, result: chunk.result }
                 : tc
             );
             updatedTab.messages = [
@@ -210,7 +210,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           if (lastMsg?.isStreaming && lastMsg.toolCalls) {
             const updatedToolCalls = lastMsg.toolCalls.map(tc =>
               tc.name === chunk.tool && tc.status === 'running'
-                ? { ...tc, status: 'error' as const, error: chunk.error }
+                ? { ...tc, status: 'error' as const, error: chunk.error, result: chunk.result }
                 : tc
             );
             updatedTab.messages = [

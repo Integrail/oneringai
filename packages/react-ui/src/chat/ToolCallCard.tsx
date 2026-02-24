@@ -46,8 +46,14 @@ function truncateString(str: string, maxLength: number): string {
   return str.slice(0, maxLength - 3) + '...';
 }
 
-function formatJson(obj: unknown): string {
-  try { return JSON.stringify(obj, null, 2); }
+function formatJson(obj: unknown, maxLength?: number): string {
+  try {
+    const json = JSON.stringify(obj, null, 2);
+    if (maxLength && json.length > maxLength) {
+      return json.slice(0, maxLength) + '\n... (truncated)';
+    }
+    return json;
+  }
   catch { return String(obj); }
 }
 
@@ -120,16 +126,22 @@ export const ToolCallCard: React.FC<IToolCallCardProps> = memo(
                 <pre className="tool-call__detail-pre">{formatJson(args)}</pre>
               </div>
             )}
-            {status === 'complete' && result !== undefined && (
+            {error && (
+              <div className="tool-call__detail-section">
+                <span className="tool-call__detail-label tool-call__detail-label--error">Error:</span>
+                <span className="tool-call__error">{error}</span>
+              </div>
+            )}
+            {error && result !== undefined && (
               <div className="tool-call__detail-section">
                 <span className="tool-call__detail-label">Result:</span>
                 <pre className="tool-call__detail-pre">{formatJson(result)}</pre>
               </div>
             )}
-            {error && (
+            {!error && status === 'complete' && result !== undefined && (
               <div className="tool-call__detail-section">
-                <span className="tool-call__detail-label tool-call__detail-label--error">Error:</span>
-                <span className="tool-call__error">{error}</span>
+                <span className="tool-call__detail-label">Result:</span>
+                <pre className="tool-call__detail-pre">{formatJson(result, 2000)}</pre>
               </div>
             )}
           </div>

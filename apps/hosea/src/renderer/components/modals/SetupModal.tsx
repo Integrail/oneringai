@@ -12,7 +12,7 @@ interface SetupModalProps {
 interface ConnectorConfig {
   name: string;
   vendor: string;
-  source?: 'local' | 'everworker';
+  source?: 'local' | 'everworker' | 'built-in';
   createdAt: number;
 }
 

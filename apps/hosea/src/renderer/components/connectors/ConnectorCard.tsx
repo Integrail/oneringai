@@ -36,7 +36,7 @@ interface StoredUniversalConnector {
   lastTestedAt?: number;
   status: 'active' | 'error' | 'untested';
   legacyServiceType?: string;
-  source?: 'local' | 'everworker';
+  source?: 'local' | 'everworker' | 'built-in';
 }
 
 interface ConnectorCardProps {

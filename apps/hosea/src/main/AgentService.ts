@@ -411,8 +411,8 @@ export type StreamChunk =
   | { type: 'thinking'; content: string }
   | { type: 'thinking_done'; content: string }
   | { type: 'tool_start'; tool: string; args: Record<string, unknown>; description: string }
-  | { type: 'tool_end'; tool: string; durationMs?: number }
-  | { type: 'tool_error'; tool: string; error: string }
+  | { type: 'tool_end'; tool: string; durationMs?: number; result?: unknown }
+  | { type: 'tool_error'; tool: string; error: string; result?: unknown }
   | { type: 'done' }
   | { type: 'error'; content: string }
   // Plan events
@@ -1832,12 +1832,24 @@ export class AgentService {
             args,
             description,
           };
-        } else if (e.type === 'tool:complete') {
-          yield {
-            type: 'tool_end',
-            tool: String(e.name || 'unknown'),
-            durationMs: typeof e.durationMs === 'number' ? e.durationMs : undefined,
-          };
+        } else if (e.type === 'tool:complete' || e.type === 'response.tool_execution.done') {
+          const toolName = String(e.name || e.tool_name || 'unknown');
+          const durationMs = typeof e.durationMs === 'number' ? e.durationMs : (typeof e.execution_time_ms === 'number' ? e.execution_time_ms : undefined);
+          if (e.error) {
+            yield {
+              type: 'tool_error',
+              tool: toolName,
+              error: String(e.error),
+              result: e.result,
+            };
+          } else {
+            yield {
+              type: 'tool_end',
+              tool: toolName,
+              durationMs,
+              result: e.result,
+            };
+          }
         } else if (e.type === 'tool:error') {
           yield {
             type: 'tool_error',
@@ -2563,17 +2575,24 @@ export class AgentService {
     connectorName: string,
     parentWindow?: import('electron').BrowserWindow | null
   ): Promise<{ success: boolean; error?: string }> {
+    console.log(`[OAuthFlow] ── startOAuthFlow ── connector=${connectorName}`);
     const config = this.universalConnectors.get(connectorName);
     if (!config) {
+      console.error(`[OAuthFlow]   Connector "${connectorName}" not found`);
       return { success: false, error: `Connector "${connectorName}" not found` };
     }
 
     const authTemplate = getVendorAuthTemplate(config.vendorId, config.authMethodId);
     if (!authTemplate || authTemplate.type !== 'oauth') {
+      console.error(`[OAuthFlow]   Not an OAuth connector: vendor=${config.vendorId} auth=${config.authMethodId}`);
       return { success: false, error: 'This connector does not use OAuth authentication' };
     }
+    console.log(`[OAuthFlow]   OAuth flow type: ${authTemplate.flow}`);
 
     let result: { success: boolean; error?: string };
+
+    // Determine if this is a built-in connector (use system browser)
+    const useSystemBrowser = config.source === 'built-in';
 
     if (authTemplate.flow === 'client_credentials') {
       result = await this.vendorOAuthService.authorizeClientCredentials(connectorName);
@@ -2581,6 +2600,7 @@ export class AgentService {
       result = await this.vendorOAuthService.authorizeAuthCode({
         connectorName,
         parentWindow,
+        useSystemBrowser,
       });
     } else {
       return { success: false, error: `Unsupported OAuth flow: ${authTemplate.flow}` };
@@ -2591,6 +2611,7 @@ export class AgentService {
     config.lastTestedAt = Date.now();
     config.status = result.success ? 'active' : 'error';
     this.universalConnectors.set(connectorName, config);
+    console.log(`[OAuthFlow]   Result: ${result.success ? 'SUCCESS' : 'FAILED'} — status set to ${config.status}`);
 
     const filePath = join(this.dataDir, 'universal-connectors', `${connectorName}.json`);
     await writeFile(filePath, JSON.stringify(config, null, 2));
@@ -2698,37 +2719,52 @@ export class AgentService {
     vendorId: string,
     parentWindow?: import('electron').BrowserWindow | null
   ): Promise<{ success: boolean; error?: string }> {
+    console.log(`[BuiltInOAuth] ── authorize START ── vendorId=${vendorId}`);
+
     const apps = loadBuiltInOAuthApps();
     const builtInApp = apps.find(a => a.vendorId === vendorId);
     if (!builtInApp) {
+      console.error(`[BuiltInOAuth]   No built-in OAuth app for vendor: ${vendorId}`);
       return { success: false, error: `No built-in OAuth app for vendor: ${vendorId}` };
+    }
+    console.log(`[BuiltInOAuth]   Found app: ${builtInApp.displayName}, clientId=${builtInApp.clientId.substring(0, 20)}...`);
+    console.log(`[BuiltInOAuth]   scopes: ${builtInApp.scopes.join(', ')}`);
+    if (builtInApp.extraCredentials) {
+      console.log(`[BuiltInOAuth]   extraCredentials keys: ${Object.keys(builtInApp.extraCredentials).join(', ')}`);
     }
 
     const vendorInfo = getVendorInfo(vendorId);
     if (!vendorInfo) {
+      console.error(`[BuiltInOAuth]   Unknown vendor: ${vendorId}`);
       return { success: false, error: `Unknown vendor: ${vendorId}` };
     }
 
     const authTemplate = getVendorAuthTemplate(vendorId, builtInApp.authTemplateId);
     if (!authTemplate) {
+      console.error(`[BuiltInOAuth]   Unknown auth template: ${builtInApp.authTemplateId} for vendor ${vendorId}`);
       return { success: false, error: `Unknown auth template: ${builtInApp.authTemplateId} for vendor ${vendorId}` };
     }
+    console.log(`[BuiltInOAuth]   Auth template: ${authTemplate.name} (flow=${authTemplate.type === 'oauth' ? authTemplate.flow : 'n/a'})`);
 
     const connectorName = `ew-${vendorId}`;
 
     // If connector already exists, just re-authorize
     if (this.universalConnectors.has(connectorName)) {
+      console.log(`[BuiltInOAuth]   Connector "${connectorName}" already exists — re-authorizing`);
       return this.startOAuthFlow(connectorName, parentWindow);
     }
 
-    // Create a new connector from template with built-in Client ID
+    // Create a new connector from template with built-in Client ID + extra credentials
     const credentials: Record<string, string> = {
       clientId: builtInApp.clientId,
       scope: builtInApp.scopes.join(' '),
       redirectUri: OAuthCallbackServer.redirectUri,
+      ...builtInApp.extraCredentials,
     };
+    console.log(`[BuiltInOAuth]   Credentials: ${JSON.stringify({ ...credentials, clientId: credentials.clientId.substring(0, 20) + '...' })}`);
 
     try {
+      console.log(`[BuiltInOAuth]   Creating connector "${connectorName}" from template...`);
       createConnectorFromTemplate(
         connectorName,
         vendorId,
@@ -2736,7 +2772,9 @@ export class AgentService {
         credentials,
         { displayName: builtInApp.displayName }
       );
+      console.log(`[BuiltInOAuth]   Connector created ✓`);
     } catch (error) {
+      console.error(`[BuiltInOAuth]   Failed to create connector: ${error}`);
       return { success: false, error: `Failed to create connector: ${error}` };
     }
 
@@ -2758,6 +2796,7 @@ export class AgentService {
     this.universalConnectors.set(connectorName, config);
     const filePath = join(this.dataDir, 'universal-connectors', `${connectorName}.json`);
     await writeFile(filePath, JSON.stringify(config, null, 2));
+    console.log(`[BuiltInOAuth]   Config saved to ${filePath}`);
 
     // Invalidate caches
     ConnectorTools.clearCache();
@@ -2765,6 +2804,7 @@ export class AgentService {
     this.toolCatalog.invalidateCache();
 
     // Start the OAuth flow
+    console.log(`[BuiltInOAuth]   Starting OAuth flow...`);
     return this.startOAuthFlow(connectorName, parentWindow);
   }
 
@@ -4127,11 +4167,12 @@ export class AgentService {
           else if (e.type === 'tool:complete' || e.type === 'response.tool_execution.done') {
             const toolName = (e as any).name || (e as any).tool_name || 'unknown';
             const durationMs = (e as any).durationMs || (e as any).execution_time_ms || 0;
+            const result = (e as any).result;
             // Check for error in tool execution done
             if ((e as any).error) {
-              yield { type: 'tool_error', tool: toolName, error: (e as any).error };
+              yield { type: 'tool_error', tool: toolName, error: (e as any).error, result };
             } else {
-              yield { type: 'tool_end', tool: toolName, durationMs };
+              yield { type: 'tool_end', tool: toolName, durationMs, result };
             }
           }
           // Legacy tool error format

@@ -13,9 +13,11 @@
  * This service is pure orchestration / glue code.
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import { Connector } from '@everworker/oneringai';
 import { OAuthCallbackServer } from './OAuthCallbackServer.js';
+
+const LOG_PREFIX = '[VendorOAuth]';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +35,8 @@ export interface OAuthFlowOptions {
   parentWindow?: BrowserWindow | null;
   /** Timeout in ms (default: 300 000 = 5 min) */
   timeoutMs?: number;
+  /** Use system browser instead of BrowserWindow (recommended — users already logged in) */
+  useSystemBrowser?: boolean;
 }
 
 export interface OAuthTokenStatus {
@@ -63,10 +67,16 @@ export class VendorOAuthService {
    * 6. Clean up and return
    */
   async authorizeAuthCode(options: OAuthFlowOptions): Promise<OAuthFlowResult> {
-    const { connectorName, parentWindow, timeoutMs = 300_000 } = options;
+    const { connectorName, parentWindow, timeoutMs = 300_000, useSystemBrowser = true } = options;
+
+    console.log(`${LOG_PREFIX} ── authorizeAuthCode START ──`);
+    console.log(`${LOG_PREFIX}   connector: ${connectorName}`);
+    console.log(`${LOG_PREFIX}   useSystemBrowser: ${useSystemBrowser}`);
+    console.log(`${LOG_PREFIX}   timeoutMs: ${timeoutMs}`);
 
     // Prevent concurrent flows
     if (this.activeConnector) {
+      console.warn(`${LOG_PREFIX}   BLOCKED — flow already active for "${this.activeConnector}"`);
       return {
         success: false,
         error: `OAuth flow already in progress for "${this.activeConnector}"`,
@@ -78,66 +88,95 @@ export class VendorOAuthService {
     try {
       const connector = Connector.get(connectorName);
       if (!connector) {
+        console.error(`${LOG_PREFIX}   Connector "${connectorName}" not found in registry`);
         return { success: false, error: `Connector "${connectorName}" not found in registry` };
       }
+      console.log(`${LOG_PREFIX}   Connector found in registry ✓`);
 
       // 1. Start callback server
+      console.log(`${LOG_PREFIX}   Starting callback server on ${OAuthCallbackServer.redirectUri}...`);
       this.callbackServer = new OAuthCallbackServer();
       const callbackPromise = this.callbackServer.waitForCallback(timeoutMs);
+      console.log(`${LOG_PREFIX}   Callback server started ✓`);
 
       // 2. Get authorization URL from the core library (generates PKCE + state)
+      console.log(`${LOG_PREFIX}   Calling connector.startAuth() to get authorization URL...`);
       const authUrl = await connector.startAuth();
+      console.log(`${LOG_PREFIX}   Auth URL received: ${authUrl.substring(0, 120)}...`);
 
-      // 3. Open BrowserWindow
-      this.authWindow = new BrowserWindow({
-        width: 900,
-        height: 750,
-        parent: parentWindow ?? undefined,
-        modal: !!parentWindow,
-        show: false,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          // No preload — this is a pure web page (vendor's login form)
-        },
-        title: 'Authorize Application',
-        autoHideMenuBar: true,
-      });
+      // 3. Open auth page (system browser or BrowserWindow)
+      if (useSystemBrowser) {
+        console.log(`${LOG_PREFIX}   Opening system browser...`);
+        await shell.openExternal(authUrl);
+        console.log(`${LOG_PREFIX}   System browser opened ✓`);
+      } else {
+        console.log(`${LOG_PREFIX}   Opening BrowserWindow...`);
+        this.authWindow = new BrowserWindow({
+          width: 900,
+          height: 750,
+          parent: parentWindow ?? undefined,
+          modal: !!parentWindow,
+          show: false,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+          },
+          title: 'Authorize Application',
+          autoHideMenuBar: true,
+        });
 
-      // User closed the window → cancel the flow
-      this.authWindow.on('closed', () => {
-        this.authWindow = null;
-        this.callbackServer?.close();
-      });
+        this.authWindow.on('closed', () => {
+          console.log(`${LOG_PREFIX}   BrowserWindow closed by user`);
+          this.authWindow = null;
+          this.callbackServer?.close();
+        });
 
-      // Show once the page loads
-      this.authWindow.once('ready-to-show', () => {
-        this.authWindow?.show();
-      });
+        this.authWindow.once('ready-to-show', () => {
+          this.authWindow?.show();
+        });
 
-      // Network error → reject
-      this.authWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription) => {
-        if (errorCode === -3) return; // Ignore aborted loads (rapid redirects)
-        this.callbackServer?.close();
-      });
+        this.authWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+          if (errorCode === -3) return;
+          console.error(`${LOG_PREFIX}   BrowserWindow load failed: code=${errorCode} desc=${errorDescription}`);
+          this.callbackServer?.close();
+        });
 
-      // Navigate to vendor's auth page
-      await this.authWindow.loadURL(authUrl);
+        this.authWindow.webContents.on('did-navigate', (_event, url) => {
+          console.log(`${LOG_PREFIX}   BrowserWindow navigated to: ${url.substring(0, 120)}`);
+        });
+
+        await this.authWindow.loadURL(authUrl);
+        console.log(`${LOG_PREFIX}   BrowserWindow loaded auth URL ✓`);
+      }
 
       // 4. Wait for the callback
+      console.log(`${LOG_PREFIX}   Waiting for OAuth callback...`);
       const callbackResult = await callbackPromise;
+      console.log(`${LOG_PREFIX}   Callback received ✓`);
+      console.log(`${LOG_PREFIX}     code: ${callbackResult.code.substring(0, 20)}...`);
+      console.log(`${LOG_PREFIX}     state: ${callbackResult.state.substring(0, 20)}...`);
+      console.log(`${LOG_PREFIX}     fullUrl: ${callbackResult.fullUrl.substring(0, 120)}...`);
 
       // 5. Exchange code for tokens (core library handles PKCE verification, token storage, etc.)
+      console.log(`${LOG_PREFIX}   Calling connector.handleCallback() to exchange code for tokens...`);
       await connector.handleCallback(callbackResult.fullUrl);
+      console.log(`${LOG_PREFIX}   Token exchange complete ✓`);
 
       // 6. Done
       this.destroyWindow();
+      console.log(`${LOG_PREFIX} ── authorizeAuthCode SUCCESS ──`);
       return { success: true };
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`${LOG_PREFIX} ── authorizeAuthCode FAILED ──`);
+      console.error(`${LOG_PREFIX}   error: ${errorMsg}`);
+      if (error instanceof Error && error.stack) {
+        console.error(`${LOG_PREFIX}   stack: ${error.stack}`);
+      }
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMsg,
       };
     } finally {
       this.cleanup();
