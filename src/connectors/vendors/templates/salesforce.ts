@@ -19,14 +19,15 @@ export const salesforceTemplate: VendorTemplate = {
       name: 'OAuth (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'User logs in via Salesforce. Create Connected App in Setup',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'User logs in via Salesforce. Create Connected App in Setup. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://login.salesforce.com/services/oauth2/authorize',
         tokenUrl: 'https://login.salesforce.com/services/oauth2/token',
+        usePKCE: true,
       },
       scopes: ['api', 'refresh_token', 'offline_access', 'chatter_api', 'wave_api', 'full'],
       scopeDescriptions: {

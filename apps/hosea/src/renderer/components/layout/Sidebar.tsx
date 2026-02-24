@@ -2,7 +2,7 @@
  * Sidebar Navigation Component
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MessageSquare,
   Bot,
@@ -15,6 +15,9 @@ import {
   Palette,
   Server,
   ListChecks,
+  Plug,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useNavigation, type PageId } from '../../hooks/useNavigation';
 import logoFull from '../../assets/logo-full.svg';
@@ -32,7 +35,9 @@ interface NavSection {
   items: NavItem[];
 }
 
-const navSections: NavSection[] = [
+const ADVANCED_COLLAPSED_KEY = 'hosea:sidebar:advancedCollapsed';
+
+const mainSections: NavSection[] = [
   {
     label: 'Main',
     items: [
@@ -48,24 +53,71 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    label: 'Connectors',
+    label: 'Connections',
     items: [
-      { id: 'llm-connectors', label: 'LLM Providers', icon: <Brain size={20} /> },
-      { id: 'universal-connectors', label: 'Universal Connectors', icon: <Key size={20} /> },
+      { id: 'connections', label: 'Connections', icon: <Plug size={20} /> },
     ],
   },
-  {
-    label: 'Tools',
-    items: [
-      { id: 'tool-connectors', label: 'Tool Catalog', icon: <Wrench size={20} /> },
-      { id: 'mcp-servers', label: 'MCP Servers', icon: <Server size={20} /> },
-    ],
-  },
+];
+
+const advancedItems: NavItem[] = [
+  { id: 'llm-connectors', label: 'LLM Providers', icon: <Brain size={20} /> },
+  { id: 'universal-connectors', label: 'Universal Connectors', icon: <Key size={20} /> },
+  { id: 'tool-connectors', label: 'Tool Catalog', icon: <Wrench size={20} /> },
+  { id: 'mcp-servers', label: 'MCP Servers', icon: <Server size={20} /> },
 ];
 
 export function Sidebar(): React.ReactElement {
   const [expanded, setExpanded] = useState(true);
   const { state, navigate } = useNavigation();
+  const [advancedCollapsed, setAdvancedCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(ADVANCED_COLLAPSED_KEY) !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  // Auto-expand advanced section if user navigates to an advanced page
+  useEffect(() => {
+    const advancedIds = advancedItems.map(i => i.id);
+    if (advancedIds.includes(state.currentPage)) {
+      setAdvancedCollapsed(false);
+    }
+  }, [state.currentPage]);
+
+  const toggleAdvanced = () => {
+    const next = !advancedCollapsed;
+    setAdvancedCollapsed(next);
+    try {
+      localStorage.setItem(ADVANCED_COLLAPSED_KEY, String(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  const renderNavItem = (item: NavItem) => (
+    <button
+      key={item.id}
+      className={`sidebar__item ${
+        state.currentPage === item.id ? 'sidebar__item--active' : ''
+      }`}
+      onClick={() => navigate(item.id)}
+      type="button"
+      title={!expanded ? item.label : undefined}
+    >
+      <span className="sidebar__item-icon">{item.icon}</span>
+      {expanded && (
+        <>
+          <span className="sidebar__item-text">{item.label}</span>
+          {item.badge !== undefined && (
+            <span className="sidebar__item-badge">{item.badge}</span>
+          )}
+        </>
+      )}
+      {!expanded && <span className="sidebar__tooltip">{item.label}</span>}
+    </button>
+  );
 
   return (
     <aside className={`sidebar ${expanded ? 'sidebar--expanded' : 'sidebar--collapsed'}`}>
@@ -90,33 +142,30 @@ export function Sidebar(): React.ReactElement {
 
       {/* Navigation */}
       <nav className="sidebar__nav">
-        {navSections.map((section) => (
+        {/* Main sections */}
+        {mainSections.map((section) => (
           <div key={section.label} className="sidebar__section">
             {expanded && <div className="sidebar__section-label">{section.label}</div>}
-            {section.items.map((item) => (
-              <button
-                key={item.id}
-                className={`sidebar__item ${
-                  state.currentPage === item.id ? 'sidebar__item--active' : ''
-                }`}
-                onClick={() => navigate(item.id)}
-                type="button"
-                title={!expanded ? item.label : undefined}
-              >
-                <span className="sidebar__item-icon">{item.icon}</span>
-                {expanded && (
-                  <>
-                    <span className="sidebar__item-text">{item.label}</span>
-                    {item.badge !== undefined && (
-                      <span className="sidebar__item-badge">{item.badge}</span>
-                    )}
-                  </>
-                )}
-                {!expanded && <span className="sidebar__tooltip">{item.label}</span>}
-              </button>
-            ))}
+            {section.items.map(renderNavItem)}
           </div>
         ))}
+
+        {/* Advanced section (collapsible) */}
+        <div className="sidebar__section">
+          {expanded ? (
+            <button
+              className="sidebar__section-label sidebar__section-label--collapsible"
+              onClick={toggleAdvanced}
+              type="button"
+            >
+              <span>Advanced</span>
+              {advancedCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+            </button>
+          ) : (
+            <div className="sidebar__divider" />
+          )}
+          {(!advancedCollapsed || !expanded) && advancedItems.map(renderNavItem)}
+        </div>
       </nav>
 
       {/* Footer */}

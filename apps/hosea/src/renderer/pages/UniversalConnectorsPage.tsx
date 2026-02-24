@@ -31,7 +31,7 @@ interface StoredUniversalConnector {
   lastTestedAt?: number;
   status: 'active' | 'error' | 'untested';
   legacyServiceType?: string;
-  source?: 'local' | 'everworker';
+  source?: 'local' | 'everworker' | 'built-in';
 }
 
 interface VendorInfo {
@@ -83,7 +83,8 @@ export function UniversalConnectorsPage(): React.ReactElement {
         window.hosea.universalConnector.listVendors(),
       ]);
 
-      setConnectors(connectorList);
+      // Filter out built-in connectors (managed by Connections page)
+      setConnectors(connectorList.filter(c => c.source !== 'built-in'));
       setVendors(new Map(vendorList.map(v => [v.id, v])));
 
       // Prefetch logos

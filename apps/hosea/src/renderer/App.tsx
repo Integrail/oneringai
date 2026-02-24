@@ -9,6 +9,7 @@ import {
   ChatPage,
   AgentsPage,
   AgentEditorPage,
+  ConnectionsPage,
   LLMConnectorsPage,
   UniversalConnectorsPage,
   ConnectorCatalogPage,
@@ -309,6 +310,8 @@ function AppContent(): React.ReactElement {
         return <AgentsPage />;
       case 'agent-editor':
         return <AgentEditorPage />;
+      case 'connections':
+        return <ConnectionsPage />;
       case 'llm-connectors':
         return <LLMConnectorsPage />;
       case 'universal-connectors':

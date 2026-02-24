@@ -6,7 +6,7 @@
 
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
   Connector,
@@ -92,6 +92,7 @@ import {
 import { HoseaUIPlugin, type DynamicUIContent } from './plugins/index.js';
 import { VendorOAuthService } from './VendorOAuthService.js';
 import { OAuthCallbackServer } from './OAuthCallbackServer.js';
+import { loadBuiltInOAuthApps, type BuiltInOAuthApp } from './built-in-oauth-apps.js';
 
 interface StoredConnectorConfig {
   name: string;
@@ -266,8 +267,8 @@ export interface StoredUniversalConnector {
   status: 'active' | 'error' | 'untested';
   /** For migrated connectors - original serviceType for tool compatibility */
   legacyServiceType?: string;
-  /** Where this connector comes from: 'local' (user-configured) or 'everworker' (synced from EW backend) */
-  source?: 'local' | 'everworker';
+  /** Where this connector comes from: 'local' (user-configured), 'everworker' (synced from EW backend), or 'built-in' (one-click from Connections page) */
+  source?: 'local' | 'everworker' | 'built-in';
 }
 
 /**
@@ -2640,6 +2641,143 @@ export class AgentService {
    */
   getOAuthRedirectUri(): string {
     return OAuthCallbackServer.redirectUri;
+  }
+
+  // ============ Built-in OAuth (Connections Page) ============
+
+  /**
+   * Resolve the default EverWorker URL.
+   * Priority: env var > settings file > hardcoded default.
+   */
+  getDefaultEWUrl(): string {
+    // 1. Env var (dev override)
+    if (process.env.HOSEA_EW_URL) {
+      return process.env.HOSEA_EW_URL;
+    }
+    // 2. Settings file override
+    try {
+      const settingsPath = join(this.dataDir, 'settings.json');
+      if (existsSync(settingsPath)) {
+        const content = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+        if (content.ewDefaultUrl) return content.ewDefaultUrl;
+      }
+    } catch {
+      // ignore
+    }
+    // 3. Hardcoded default
+    return 'https://saas.everworker.ai';
+  }
+
+  /**
+   * List available built-in OAuth apps.
+   */
+  getBuiltInOAuthApps(): BuiltInOAuthApp[] {
+    return loadBuiltInOAuthApps();
+  }
+
+  /**
+   * Get connection status for a built-in OAuth vendor.
+   */
+  getBuiltInOAuthStatus(vendorId: string): { connected: boolean; connectorName?: string } {
+    const connectorName = `ew-${vendorId}`;
+    const config = this.universalConnectors.get(connectorName);
+    if (!config || config.source !== 'built-in') {
+      return { connected: false };
+    }
+    return {
+      connected: config.status === 'active',
+      connectorName,
+    };
+  }
+
+  /**
+   * One-click OAuth authorization for a built-in vendor.
+   * Creates the connector + starts OAuth flow in one step.
+   */
+  async builtInOAuthAuthorize(
+    vendorId: string,
+    parentWindow?: import('electron').BrowserWindow | null
+  ): Promise<{ success: boolean; error?: string }> {
+    const apps = loadBuiltInOAuthApps();
+    const builtInApp = apps.find(a => a.vendorId === vendorId);
+    if (!builtInApp) {
+      return { success: false, error: `No built-in OAuth app for vendor: ${vendorId}` };
+    }
+
+    const vendorInfo = getVendorInfo(vendorId);
+    if (!vendorInfo) {
+      return { success: false, error: `Unknown vendor: ${vendorId}` };
+    }
+
+    const authTemplate = getVendorAuthTemplate(vendorId, builtInApp.authTemplateId);
+    if (!authTemplate) {
+      return { success: false, error: `Unknown auth template: ${builtInApp.authTemplateId} for vendor ${vendorId}` };
+    }
+
+    const connectorName = `ew-${vendorId}`;
+
+    // If connector already exists, just re-authorize
+    if (this.universalConnectors.has(connectorName)) {
+      return this.startOAuthFlow(connectorName, parentWindow);
+    }
+
+    // Create a new connector from template with built-in Client ID
+    const credentials: Record<string, string> = {
+      clientId: builtInApp.clientId,
+      scope: builtInApp.scopes.join(' '),
+      redirectUri: OAuthCallbackServer.redirectUri,
+    };
+
+    try {
+      createConnectorFromTemplate(
+        connectorName,
+        vendorId,
+        builtInApp.authTemplateId,
+        credentials,
+        { displayName: builtInApp.displayName }
+      );
+    } catch (error) {
+      return { success: false, error: `Failed to create connector: ${error}` };
+    }
+
+    // Store as built-in
+    const config: StoredUniversalConnector = {
+      name: connectorName,
+      vendorId,
+      vendorName: vendorInfo.name,
+      authMethodId: builtInApp.authTemplateId,
+      authMethodName: authTemplate.name,
+      credentials,
+      displayName: builtInApp.displayName,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: 'untested',
+      source: 'built-in',
+    };
+
+    this.universalConnectors.set(connectorName, config);
+    const filePath = join(this.dataDir, 'universal-connectors', `${connectorName}.json`);
+    await writeFile(filePath, JSON.stringify(config, null, 2));
+
+    // Invalidate caches
+    ConnectorTools.clearCache();
+    this.oneRingToolProvider.invalidateCache();
+    this.toolCatalog.invalidateCache();
+
+    // Start the OAuth flow
+    return this.startOAuthFlow(connectorName, parentWindow);
+  }
+
+  /**
+   * Disconnect a built-in OAuth connector.
+   */
+  async builtInOAuthDisconnect(vendorId: string): Promise<{ success: boolean; error?: string }> {
+    const connectorName = `ew-${vendorId}`;
+    const config = this.universalConnectors.get(connectorName);
+    if (!config || config.source !== 'built-in') {
+      return { success: false, error: `No built-in connector found for vendor: ${vendorId}` };
+    }
+    return this.deleteUniversalConnector(connectorName);
   }
 
   // ============ MCP Server Management ============

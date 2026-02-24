@@ -22,14 +22,15 @@ export const microsoftTemplate: VendorTemplate = {
       name: 'OAuth (Delegated Permissions)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'User signs in with Microsoft account. Best for accessing user data (mail, calendar, files)',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri', 'tenantId'],
-      optionalFields: ['scope'],
+      description: 'User signs in with Microsoft account. Best for accessing user data (mail, calendar, files). Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri', 'tenantId'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize',
         tokenUrl: 'https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token',
+        usePKCE: true,
       },
       scopes: [
         'User.Read',

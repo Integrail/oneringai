@@ -18,9 +18,9 @@ export const dropboxTemplate: VendorTemplate = {
       name: 'OAuth (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'OAuth app for user authorization. Create app at dropbox.com/developers/apps',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'OAuth app for user authorization. Create app at dropbox.com/developers/apps. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',

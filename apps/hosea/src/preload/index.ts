@@ -335,7 +335,7 @@ export interface HoseaAPI {
     list: () => Promise<Array<{
       name: string;
       vendor: string;
-      source?: 'local' | 'everworker';
+      source?: 'local' | 'everworker' | 'built-in';
       models?: string[];
       createdAt: number;
     }>>;
@@ -343,6 +343,21 @@ export interface HoseaAPI {
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;
     update: (name: string, updates: { apiKey?: string; baseURL?: string }) => Promise<{ success: boolean; error?: string }>;
     fetchModels: (vendor: string, apiKey?: string, baseURL?: string, existingConnectorName?: string) => Promise<{ success: boolean; models?: string[]; error?: string }>;
+  };
+
+  // Built-in OAuth (Connections page — zero-config vendor auth)
+  builtInOAuth: {
+    list: () => Promise<Array<{
+      vendorId: string;
+      displayName: string;
+      clientId: string;
+      authTemplateId: string;
+      scopes: string[];
+    }>>;
+    authorize: (vendorId: string) => Promise<{ success: boolean; error?: string }>;
+    getStatus: (vendorId: string) => Promise<{ connected: boolean; connectorName?: string }>;
+    disconnect: (vendorId: string) => Promise<{ success: boolean; error?: string }>;
+    getDefaultEWUrl: () => Promise<string>;
   };
 
   // Everworker Backend
@@ -737,7 +752,7 @@ export interface HoseaAPI {
       lastTestedAt?: number;
       status: 'active' | 'error' | 'untested';
       legacyServiceType?: string;
-      source?: 'local' | 'everworker';
+      source?: 'local' | 'everworker' | 'built-in';
     }>>;
     get: (name: string) => Promise<{
       name: string;
@@ -753,7 +768,7 @@ export interface HoseaAPI {
       lastTestedAt?: number;
       status: 'active' | 'error' | 'untested';
       legacyServiceType?: string;
-      source?: 'local' | 'everworker';
+      source?: 'local' | 'everworker' | 'built-in';
     } | null>;
     create: (config: {
       name: string;
@@ -1272,6 +1287,14 @@ const api: HoseaAPI = {
     delete: (name) => ipcRenderer.invoke('connector:delete', name),
     update: (name, updates) => ipcRenderer.invoke('connector:update', name, updates),
     fetchModels: (vendor, apiKey?, baseURL?, existingConnectorName?) => ipcRenderer.invoke('connector:fetch-models', vendor, apiKey, baseURL, existingConnectorName),
+  },
+
+  builtInOAuth: {
+    list: () => ipcRenderer.invoke('built-in-oauth:list'),
+    authorize: (vendorId) => ipcRenderer.invoke('built-in-oauth:authorize', vendorId),
+    getStatus: (vendorId) => ipcRenderer.invoke('built-in-oauth:get-status', vendorId),
+    disconnect: (vendorId) => ipcRenderer.invoke('built-in-oauth:disconnect', vendorId),
+    getDefaultEWUrl: () => ipcRenderer.invoke('built-in-oauth:get-default-ew-url'),
   },
 
   everworker: {

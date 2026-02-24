@@ -99,6 +99,15 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://api.telegram.org',
     docsURL: 'https://core.telegram.org/bots/api',
   },
+  {
+    id: 'twitter',
+    name: 'X (Twitter)',
+    category: 'communication',
+    urlPattern: /api\.x\.com|api\.twitter\.com/i,
+    baseURL: 'https://api.x.com/2',
+    docsURL: 'https://developer.x.com/en/docs/x-api',
+    commonScopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+  },
 
   // ============ Development & Project Management ============
   {

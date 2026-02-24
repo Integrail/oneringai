@@ -33,14 +33,15 @@ export const rampTemplate: VendorTemplate = {
       type: 'oauth',
       flow: 'authorization_code',
       description:
-        'OAuth 2.0 authorization code flow for accessing Ramp on behalf of a user',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+        'OAuth 2.0 authorization code flow for accessing Ramp on behalf of a user. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://app.ramp.com/v1/authorize',
         tokenUrl: 'https://api.ramp.com/developer/v1/token',
+        usePKCE: true,
       },
       scopes: [
         'transactions:read',

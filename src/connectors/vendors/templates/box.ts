@@ -18,14 +18,15 @@ export const boxTemplate: VendorTemplate = {
       name: 'OAuth (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'OAuth 2.0 for user authorization. Create app at developer.box.com/console',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'OAuth 2.0 for user authorization. Create app at developer.box.com/console. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://account.box.com/api/oauth2/authorize',
         tokenUrl: 'https://api.box.com/oauth2/token',
+        usePKCE: true,
       },
       scopes: ['root_readwrite', 'manage_users', 'manage_groups', 'manage_enterprise'],
       scopeDescriptions: {

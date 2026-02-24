@@ -30,14 +30,15 @@ export const githubTemplate: VendorTemplate = {
       name: 'OAuth App (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'User logs in via GitHub and grants permissions to your app',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'User logs in via GitHub and grants permissions to your app. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://github.com/login/oauth/authorize',
         tokenUrl: 'https://github.com/login/oauth/access_token',
+        usePKCE: true,
       },
       scopes: ['repo', 'read:user', 'user:email', 'read:org', 'workflow', 'gist', 'notifications', 'delete_repo', 'admin:org'],
       scopeDescriptions: {

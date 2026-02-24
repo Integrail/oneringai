@@ -30,14 +30,15 @@ export const discordTemplate: VendorTemplate = {
       name: 'OAuth (User Token)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'OAuth2 for user authorization - users grant permissions to your app',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'OAuth2 for user authorization - users grant permissions to your app. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://discord.com/api/oauth2/authorize',
         tokenUrl: 'https://discord.com/api/oauth2/token',
+        usePKCE: true,
       },
       scopes: ['identify', 'email', 'guilds', 'guilds.members.read', 'messages.read', 'bot', 'connections'],
       scopeDescriptions: {

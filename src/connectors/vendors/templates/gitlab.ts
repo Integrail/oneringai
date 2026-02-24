@@ -31,14 +31,15 @@ export const gitlabTemplate: VendorTemplate = {
       name: 'OAuth (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'OAuth2 application for user authorization',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'OAuth2 application for user authorization. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://gitlab.com/oauth/authorize',
         tokenUrl: 'https://gitlab.com/oauth/token',
+        usePKCE: true,
       },
       scopes: ['api', 'read_user', 'read_repository', 'write_repository'],
       scopeDescriptions: {

@@ -8,6 +8,7 @@ export type PageId =
   | 'chat'
   | 'agents'
   | 'agent-editor'
+  | 'connections'
   | 'llm-connectors'
   | 'universal-connectors'
   | 'connector-catalog'

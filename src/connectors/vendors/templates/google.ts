@@ -22,14 +22,15 @@ export const googleTemplate: VendorTemplate = {
       name: 'OAuth (User Consent)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'User logs in with Google account. Best for accessing user data (Drive, Gmail, Calendar)',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'User logs in with Google account. Best for accessing user data (Drive, Gmail, Calendar). Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
         tokenUrl: 'https://oauth2.googleapis.com/token',
+        usePKCE: true,
       },
       scopes: [
         'https://www.googleapis.com/auth/drive',

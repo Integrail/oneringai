@@ -37,6 +37,7 @@ export const VENDOR_ICON_MAP: Record<string, string | null> = {
   discord: 'discord',
   slack: 'slack',
   telegram: 'telegram',
+  twitter: 'x',
   'microsoft-teams': 'microsoftteams',
 
   // CRM
@@ -111,6 +112,7 @@ const FALLBACK_PLACEHOLDERS: Record<string, { color: string; letter: string }> =
   // Communication (trademark removed)
   slack: { color: '#4A154B', letter: 'S' },
   'microsoft-teams': { color: '#6264A7', letter: 'T' },
+  twitter: { color: '#000000', letter: 'X' },
 
   // CRM (trademark removed)
   salesforce: { color: '#00A1E0', letter: 'S' },

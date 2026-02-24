@@ -30,9 +30,9 @@ export const airtableTemplate: VendorTemplate = {
       name: 'OAuth (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'OAuth integration for multi-user access. Register at airtable.com/create/oauth',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'OAuth integration for multi-user access. Register at airtable.com/create/oauth. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',

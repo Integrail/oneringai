@@ -30,14 +30,15 @@ export const hubspotTemplate: VendorTemplate = {
       name: 'OAuth (User Authorization)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'Public app OAuth for multi-portal access. Create app at developers.hubspot.com',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope'],
+      description: 'Public app OAuth for multi-portal access. Create app at developers.hubspot.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://app.hubspot.com/oauth/authorize',
         tokenUrl: 'https://api.hubapi.com/oauth/v1/token',
+        usePKCE: true,
       },
       scopes: [
         'crm.objects.contacts.read',

@@ -13,6 +13,7 @@ export { googleTemplate } from './google.js';
 export { slackTemplate } from './slack.js';
 export { discordTemplate } from './discord.js';
 export { telegramTemplate } from './telegram.js';
+export { twitterTemplate } from './twitter.js';
 
 // Development
 export { githubTemplate } from './github.js';
@@ -81,6 +82,7 @@ import { googleTemplate } from './google.js';
 import { slackTemplate } from './slack.js';
 import { discordTemplate } from './discord.js';
 import { telegramTemplate } from './telegram.js';
+import { twitterTemplate } from './twitter.js';
 import { githubTemplate } from './github.js';
 import { gitlabTemplate } from './gitlab.js';
 import { jiraTemplate, confluenceTemplate, bitbucketTemplate, trelloTemplate } from './atlassian.js';
@@ -119,6 +121,7 @@ export const allVendorTemplates: VendorTemplate[] = [
   slackTemplate,
   discordTemplate,
   telegramTemplate,
+  twitterTemplate,
 
   // Development
   githubTemplate,

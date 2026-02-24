@@ -421,6 +421,27 @@ async function setupIPC(): Promise<void> {
     return agentService!.testUniversalConnection(name);
   }));
 
+  // Built-in OAuth operations (Connections page)
+  ipcMain.handle('built-in-oauth:list', async () => {
+    return agentService!.getBuiltInOAuthApps();
+  });
+
+  ipcMain.handle('built-in-oauth:authorize', readyHandler(async (_event, vendorId: string) => {
+    return agentService!.builtInOAuthAuthorize(vendorId, mainWindow);
+  }));
+
+  ipcMain.handle('built-in-oauth:get-status', async (_event, vendorId: string) => {
+    return agentService!.getBuiltInOAuthStatus(vendorId);
+  });
+
+  ipcMain.handle('built-in-oauth:disconnect', readyHandler(async (_event, vendorId: string) => {
+    return agentService!.builtInOAuthDisconnect(vendorId);
+  }));
+
+  ipcMain.handle('built-in-oauth:get-default-ew-url', async () => {
+    return agentService!.getDefaultEWUrl();
+  });
+
   // OAuth flow operations
   ipcMain.handle('oauth:start-flow', readyHandler(async (_event, connectorName: string) => {
     return agentService!.startOAuthFlow(connectorName, mainWindow);

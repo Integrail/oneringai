@@ -31,14 +31,15 @@ export const slackTemplate: VendorTemplate = {
       name: 'OAuth (User Token)',
       type: 'oauth',
       flow: 'authorization_code',
-      description: 'Distributed app - users authorize via Slack OAuth',
-      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
-      optionalFields: ['scope', 'userScope'],
+      description: 'Distributed app - users authorize via Slack OAuth. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret', 'scope', 'userScope'],
       defaults: {
         type: 'oauth',
         flow: 'authorization_code',
         authorizationUrl: 'https://slack.com/oauth/v2/authorize',
         tokenUrl: 'https://slack.com/api/oauth.v2.access',
+        usePKCE: true,
       },
       scopes: ['chat:write', 'channels:read', 'users:read', 'im:write', 'groups:read', 'files:read', 'files:write', 'reactions:read', 'reactions:write', 'team:read'],
       scopeDescriptions: {

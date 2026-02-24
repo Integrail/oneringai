@@ -118,6 +118,21 @@
   white-space: nowrap;
 }
 
+.sidebar__section-label--collapsible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: color var(--transition-fast);
+}
+
+.sidebar__section-label--collapsible:hover {
+  color: var(--color-gray-300);
+}
+
 /* Navigation Item */
 .sidebar__item {
   display: flex;

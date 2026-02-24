@@ -39813,6 +39813,15 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://api.telegram.org",
     docsURL: "https://core.telegram.org/bots/api"
   },
+  {
+    id: "twitter",
+    name: "X (Twitter)",
+    category: "communication",
+    urlPattern: /api\.x\.com|api\.twitter\.com/i,
+    baseURL: "https://api.x.com/2",
+    docsURL: "https://developer.x.com/en/docs/x-api",
+    commonScopes: ["tweet.read", "tweet.write", "users.read", "offline.access"]
+  },
   // ============ Development & Project Management ============
   {
     id: "github",
@@ -41467,14 +41476,15 @@ var microsoftTemplate = {
       name: "OAuth (Delegated Permissions)",
       type: "oauth",
       flow: "authorization_code",
-      description: "User signs in with Microsoft account. Best for accessing user data (mail, calendar, files)",
-      requiredFields: ["clientId", "clientSecret", "redirectUri", "tenantId"],
-      optionalFields: ["scope"],
+      description: "User signs in with Microsoft account. Best for accessing user data (mail, calendar, files). Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri", "tenantId"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize",
-        tokenUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token"
+        tokenUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token",
+        usePKCE: true
       },
       scopes: [
         "User.Read",
@@ -41560,14 +41570,15 @@ var googleTemplate = {
       name: "OAuth (User Consent)",
       type: "oauth",
       flow: "authorization_code",
-      description: "User logs in with Google account. Best for accessing user data (Drive, Gmail, Calendar)",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "User logs in with Google account. Best for accessing user data (Drive, Gmail, Calendar). Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-        tokenUrl: "https://oauth2.googleapis.com/token"
+        tokenUrl: "https://oauth2.googleapis.com/token",
+        usePKCE: true
       },
       scopes: [
         "https://www.googleapis.com/auth/drive",
@@ -41646,14 +41657,15 @@ var slackTemplate = {
       name: "OAuth (User Token)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Distributed app - users authorize via Slack OAuth",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope", "userScope"],
+      description: "Distributed app - users authorize via Slack OAuth. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope", "userScope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://slack.com/oauth/v2/authorize",
-        tokenUrl: "https://slack.com/api/oauth.v2.access"
+        tokenUrl: "https://slack.com/api/oauth.v2.access",
+        usePKCE: true
       },
       scopes: ["chat:write", "channels:read", "users:read", "im:write", "groups:read", "files:read", "files:write", "reactions:read", "reactions:write", "team:read"],
       scopeDescriptions: {
@@ -41699,14 +41711,15 @@ var discordTemplate = {
       name: "OAuth (User Token)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth2 for user authorization - users grant permissions to your app",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth2 for user authorization - users grant permissions to your app. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://discord.com/api/oauth2/authorize",
-        tokenUrl: "https://discord.com/api/oauth2/token"
+        tokenUrl: "https://discord.com/api/oauth2/token",
+        usePKCE: true
       },
       scopes: ["identify", "email", "guilds", "guilds.members.read", "messages.read", "bot", "connections"],
       scopeDescriptions: {
@@ -41748,6 +41761,92 @@ var telegramTemplate = {
   ]
 };
 
+// src/connectors/vendors/templates/twitter.ts
+var twitterTemplate = {
+  id: "twitter",
+  name: "X (Twitter)",
+  serviceType: "twitter",
+  baseURL: "https://api.x.com/2",
+  docsURL: "https://developer.x.com/en/docs/x-api",
+  credentialsSetupURL: "https://developer.x.com/en/portal/dashboard",
+  category: "communication",
+  notes: "X (formerly Twitter) API v2. OAuth 2.0 with PKCE for user-context actions, Bearer Token for app-only access.",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth 2.0 (User Context)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "User authorizes via X login - required for posting tweets, managing likes/follows, and accessing private data. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://x.com/i/oauth2/authorize",
+        tokenUrl: "https://api.x.com/2/oauth2/token",
+        usePKCE: true
+      },
+      scopes: [
+        "tweet.read",
+        "tweet.write",
+        "tweet.moderate.write",
+        "users.read",
+        "follows.read",
+        "follows.write",
+        "like.read",
+        "like.write",
+        "bookmark.read",
+        "bookmark.write",
+        "list.read",
+        "list.write",
+        "block.read",
+        "block.write",
+        "mute.read",
+        "mute.write",
+        "space.read",
+        "dm.read",
+        "dm.write",
+        "offline.access"
+      ],
+      scopeDescriptions: {
+        "tweet.read": "Read tweets and timelines",
+        "tweet.write": "Post and delete tweets",
+        "tweet.moderate.write": "Hide and unhide replies",
+        "users.read": "Read user profile information",
+        "follows.read": "Read following/followers lists",
+        "follows.write": "Follow and unfollow users",
+        "like.read": "Read liked tweets",
+        "like.write": "Like and unlike tweets",
+        "bookmark.read": "Read bookmarked tweets",
+        "bookmark.write": "Bookmark and remove bookmarks",
+        "list.read": "Read lists",
+        "list.write": "Create, edit, and delete lists",
+        "block.read": "Read blocked users",
+        "block.write": "Block and unblock users",
+        "mute.read": "Read muted users",
+        "mute.write": "Mute and unmute users",
+        "space.read": "Read Spaces information",
+        "dm.read": "Read direct messages",
+        "dm.write": "Send direct messages",
+        "offline.access": "Stay connected (refresh token)"
+      }
+    },
+    {
+      id: "bearer-token",
+      name: "Bearer Token (App-Only)",
+      type: "api_key",
+      description: "App-only access using Bearer Token from developer portal. Can read public tweets, users, and spaces but cannot post or access private data.",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    }
+  ]
+};
+
 // src/connectors/vendors/templates/github.ts
 var githubTemplate = {
   id: "github",
@@ -41775,14 +41874,15 @@ var githubTemplate = {
       name: "OAuth App (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "User logs in via GitHub and grants permissions to your app",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "User logs in via GitHub and grants permissions to your app. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://github.com/login/oauth/authorize",
-        tokenUrl: "https://github.com/login/oauth/access_token"
+        tokenUrl: "https://github.com/login/oauth/access_token",
+        usePKCE: true
       },
       scopes: ["repo", "read:user", "user:email", "read:org", "workflow", "gist", "notifications", "delete_repo", "admin:org"],
       scopeDescriptions: {
@@ -41841,14 +41941,15 @@ var gitlabTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth2 application for user authorization",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth2 application for user authorization. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://gitlab.com/oauth/authorize",
-        tokenUrl: "https://gitlab.com/oauth/token"
+        tokenUrl: "https://gitlab.com/oauth/token",
+        usePKCE: true
       },
       scopes: ["api", "read_user", "read_repository", "write_repository"],
       scopeDescriptions: {
@@ -41889,14 +41990,15 @@ var jiraTemplate = {
       name: "OAuth 2.0 (3LO)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Three-legged OAuth for user authorization. Create app at developer.atlassian.com",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "Three-legged OAuth for user authorization. Create app at developer.atlassian.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://auth.atlassian.com/authorize",
-        tokenUrl: "https://auth.atlassian.com/oauth/token"
+        tokenUrl: "https://auth.atlassian.com/oauth/token",
+        usePKCE: true
       },
       scopes: ["read:jira-work", "write:jira-work", "read:jira-user", "manage:jira-project", "manage:jira-configuration"],
       scopeDescriptions: {
@@ -41936,14 +42038,15 @@ var confluenceTemplate = {
       name: "OAuth 2.0 (3LO)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Three-legged OAuth for user authorization",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "Three-legged OAuth for user authorization. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://auth.atlassian.com/authorize",
-        tokenUrl: "https://auth.atlassian.com/oauth/token"
+        tokenUrl: "https://auth.atlassian.com/oauth/token",
+        usePKCE: true
       },
       scopes: ["read:confluence-content.all", "write:confluence-content", "read:confluence-space.summary", "write:confluence-space", "read:confluence-user"],
       scopeDescriptions: {
@@ -41982,14 +42085,15 @@ var bitbucketTemplate = {
       name: "OAuth Consumer",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth consumer for user authorization. Create at Workspace Settings > OAuth consumers",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth consumer for user authorization. Create at Workspace Settings > OAuth consumers. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://bitbucket.org/site/oauth2/authorize",
-        tokenUrl: "https://bitbucket.org/site/oauth2/access_token"
+        tokenUrl: "https://bitbucket.org/site/oauth2/access_token",
+        usePKCE: true
       },
       scopes: ["repository", "repository:write", "pullrequest", "pullrequest:write", "account", "pipeline", "wiki"],
       scopeDescriptions: {
@@ -42031,14 +42135,15 @@ var trelloTemplate = {
       name: "OAuth 1.0a",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth 1.0a for user authorization (legacy)",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth 1.0a for user authorization (legacy). Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://trello.com/1/authorize",
-        tokenUrl: "https://trello.com/1/OAuthGetAccessToken"
+        tokenUrl: "https://trello.com/1/OAuthGetAccessToken",
+        usePKCE: true
       },
       scopes: ["read", "write", "account"],
       scopeDescriptions: {
@@ -42078,14 +42183,15 @@ var linearTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth application for user authorization. Create at Settings > API > OAuth applications",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth application for user authorization. Create at Settings > API > OAuth applications. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://linear.app/oauth/authorize",
-        tokenUrl: "https://api.linear.app/oauth/token"
+        tokenUrl: "https://api.linear.app/oauth/token",
+        usePKCE: true
       },
       scopes: ["read", "write", "issues:create", "comments:create"]
     }
@@ -42119,14 +42225,15 @@ var asanaTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth application for user authorization. Create at developer console",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth application for user authorization. Create at developer console. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://app.asana.com/-/oauth_authorize",
-        tokenUrl: "https://app.asana.com/-/oauth_token"
+        tokenUrl: "https://app.asana.com/-/oauth_token",
+        usePKCE: true
       },
       scopes: ["default"]
     }
@@ -42160,14 +42267,15 @@ var notionTemplate = {
       name: "Public Integration (OAuth)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Public integration for multi-workspace access",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "Public integration for multi-workspace access. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://api.notion.com/v1/oauth/authorize",
-        tokenUrl: "https://api.notion.com/v1/oauth/token"
+        tokenUrl: "https://api.notion.com/v1/oauth/token",
+        usePKCE: true
       }
     }
   ]
@@ -42200,9 +42308,9 @@ var airtableTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth integration for multi-user access. Register at airtable.com/create/oauth",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth integration for multi-user access. Register at airtable.com/create/oauth. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
@@ -42231,14 +42339,15 @@ var salesforceTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "User logs in via Salesforce. Create Connected App in Setup",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "User logs in via Salesforce. Create Connected App in Setup. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://login.salesforce.com/services/oauth2/authorize",
-        tokenUrl: "https://login.salesforce.com/services/oauth2/token"
+        tokenUrl: "https://login.salesforce.com/services/oauth2/token",
+        usePKCE: true
       },
       scopes: ["api", "refresh_token", "offline_access", "chatter_api", "wave_api", "full"],
       scopeDescriptions: {
@@ -42294,14 +42403,15 @@ var hubspotTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Public app OAuth for multi-portal access. Create app at developers.hubspot.com",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "Public app OAuth for multi-portal access. Create app at developers.hubspot.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://app.hubspot.com/oauth/authorize",
-        tokenUrl: "https://api.hubapi.com/oauth/v1/token"
+        tokenUrl: "https://api.hubapi.com/oauth/v1/token",
+        usePKCE: true
       },
       scopes: [
         "crm.objects.contacts.read",
@@ -42354,14 +42464,15 @@ var pipedriveTemplate = {
       name: "OAuth (App Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth app for marketplace distribution. Create at developers.pipedrive.com",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth app for marketplace distribution. Create at developers.pipedrive.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://oauth.pipedrive.com/oauth/authorize",
-        tokenUrl: "https://oauth.pipedrive.com/oauth/token"
+        tokenUrl: "https://oauth.pipedrive.com/oauth/token",
+        usePKCE: true
       }
     }
   ]
@@ -42394,14 +42505,15 @@ var stripeTemplate = {
       name: "OAuth (Stripe Connect)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Stripe Connect for marketplace platforms. Requires Connect setup in dashboard",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "Stripe Connect for marketplace platforms. Requires Connect setup in dashboard. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://connect.stripe.com/oauth/authorize",
-        tokenUrl: "https://connect.stripe.com/oauth/token"
+        tokenUrl: "https://connect.stripe.com/oauth/token",
+        usePKCE: true
       },
       scopes: ["read_write"]
     }
@@ -42451,14 +42563,15 @@ var quickbooksTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "Standard OAuth 2.0 flow for accessing QuickBooks on behalf of a user. Create an app at developer.intuit.com",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "Standard OAuth 2.0 flow for accessing QuickBooks on behalf of a user. Create an app at developer.intuit.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://appcenter.intuit.com/connect/oauth2",
-        tokenUrl: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+        tokenUrl: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+        usePKCE: true
       },
       scopes: ["com.intuit.quickbooks.accounting", "com.intuit.quickbooks.payment"]
     }
@@ -42493,14 +42606,15 @@ var rampTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth 2.0 authorization code flow for accessing Ramp on behalf of a user",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth 2.0 authorization code flow for accessing Ramp on behalf of a user. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://app.ramp.com/v1/authorize",
-        tokenUrl: "https://api.ramp.com/developer/v1/token"
+        tokenUrl: "https://api.ramp.com/developer/v1/token",
+        usePKCE: true
       },
       scopes: [
         "transactions:read",
@@ -42557,9 +42671,9 @@ var dropboxTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth app for user authorization. Create app at dropbox.com/developers/apps",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth app for user authorization. Create app at dropbox.com/developers/apps. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
@@ -42596,14 +42710,15 @@ var boxTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth 2.0 for user authorization. Create app at developer.box.com/console",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth 2.0 for user authorization. Create app at developer.box.com/console. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://account.box.com/api/oauth2/authorize",
-        tokenUrl: "https://api.box.com/oauth2/token"
+        tokenUrl: "https://api.box.com/oauth2/token",
+        usePKCE: true
       },
       scopes: ["root_readwrite", "manage_users", "manage_groups", "manage_enterprise"],
       scopeDescriptions: {
@@ -42681,13 +42796,15 @@ var mailchimpTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth for multi-account access. Register app at mailchimp.com/developer",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      description: "OAuth for multi-account access. Register app at mailchimp.com/developer. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://login.mailchimp.com/oauth2/authorize",
-        tokenUrl: "https://login.mailchimp.com/oauth2/token"
+        tokenUrl: "https://login.mailchimp.com/oauth2/token",
+        usePKCE: true
       }
     }
   ]
@@ -42779,14 +42896,15 @@ var pagerdutyTemplate = {
       name: "OAuth (App Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth app for multi-account access. Register at developer.pagerduty.com",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth app for multi-account access. Register at developer.pagerduty.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://app.pagerduty.com/oauth/authorize",
-        tokenUrl: "https://app.pagerduty.com/oauth/token"
+        tokenUrl: "https://app.pagerduty.com/oauth/token",
+        usePKCE: true
       },
       scopes: ["read", "write"],
       scopeDescriptions: {
@@ -42822,14 +42940,15 @@ var sentryTemplate = {
       name: "OAuth (Integration)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth integration. Create at Organization Settings > Integrations",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
-      optionalFields: ["scope"],
+      description: "OAuth integration. Create at Organization Settings > Integrations. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://sentry.io/oauth/authorize/",
-        tokenUrl: "https://sentry.io/oauth/token/"
+        tokenUrl: "https://sentry.io/oauth/token/",
+        usePKCE: true
       },
       scopes: ["project:read", "project:write", "event:read", "org:read", "member:read"],
       scopeDescriptions: {
@@ -43026,14 +43145,15 @@ var zendeskTemplate = {
       name: "OAuth (User Authorization)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth client for user authorization. Create at Admin > Channels > API > OAuth Clients",
-      requiredFields: ["clientId", "clientSecret", "redirectUri", "subdomain"],
-      optionalFields: ["scope"],
+      description: "OAuth client for user authorization. Create at Admin > Channels > API > OAuth Clients. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri", "subdomain"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://{subdomain}.zendesk.com/oauth/authorizations/new",
-        tokenUrl: "https://{subdomain}.zendesk.com/oauth/tokens"
+        tokenUrl: "https://{subdomain}.zendesk.com/oauth/tokens",
+        usePKCE: true
       },
       scopes: ["read", "write", "tickets:read", "tickets:write"],
       scopeDescriptions: {
@@ -43071,13 +43191,15 @@ var intercomTemplate = {
       name: "OAuth (App Installation)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth for Intercom app marketplace distribution",
-      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      description: "OAuth for Intercom app marketplace distribution. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://app.intercom.com/oauth",
-        tokenUrl: "https://api.intercom.io/auth/eagle/token"
+        tokenUrl: "https://api.intercom.io/auth/eagle/token",
+        usePKCE: true
       }
     }
   ]
@@ -43110,14 +43232,15 @@ var shopifyTemplate = {
       name: "OAuth (Public/Custom App)",
       type: "oauth",
       flow: "authorization_code",
-      description: "OAuth for public apps or per-store custom apps. Create at partners.shopify.com",
-      requiredFields: ["clientId", "clientSecret", "redirectUri", "subdomain"],
-      optionalFields: ["scope"],
+      description: "OAuth for public apps or per-store custom apps. Create at partners.shopify.com. Provide clientSecret for web apps; omit for native/desktop apps (secured via PKCE).",
+      requiredFields: ["clientId", "redirectUri", "subdomain"],
+      optionalFields: ["clientSecret", "scope"],
       defaults: {
         type: "oauth",
         flow: "authorization_code",
         authorizationUrl: "https://{subdomain}.myshopify.com/admin/oauth/authorize",
-        tokenUrl: "https://{subdomain}.myshopify.com/admin/oauth/access_token"
+        tokenUrl: "https://{subdomain}.myshopify.com/admin/oauth/access_token",
+        usePKCE: true
       },
       scopes: ["read_products", "write_products", "read_orders", "write_orders", "read_customers", "write_customers", "read_inventory", "write_inventory", "read_fulfillments", "write_fulfillments"],
       scopeDescriptions: {
@@ -43145,6 +43268,7 @@ var allVendorTemplates = [
   slackTemplate,
   discordTemplate,
   telegramTemplate,
+  twitterTemplate,
   // Development
   githubTemplate,
   gitlabTemplate,
@@ -43204,6 +43328,7 @@ var VENDOR_ICON_MAP = {
   discord: "discord",
   slack: "slack",
   telegram: "telegram",
+  twitter: "x",
   "microsoft-teams": "microsoftteams",
   // CRM
   salesforce: "salesforce",
@@ -43268,6 +43393,7 @@ var FALLBACK_PLACEHOLDERS = {
   // Communication (trademark removed)
   slack: { color: "#4A154B", letter: "S" },
   "microsoft-teams": { color: "#6264A7", letter: "T" },
+  twitter: { color: "#000000", letter: "X" },
   // CRM (trademark removed)
   salesforce: { color: "#00A1E0", letter: "S" },
   pipedrive: { color: "#1A1F26", letter: "P" },
