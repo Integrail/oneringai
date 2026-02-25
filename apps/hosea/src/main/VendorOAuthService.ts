@@ -16,6 +16,7 @@
 import { BrowserWindow, shell } from 'electron';
 import { Connector } from '@everworker/oneringai';
 import { OAuthCallbackServer } from './OAuthCallbackServer.js';
+import { OAuthCallbackServerHttps } from './OAuthCallbackServerHttps.js';
 
 const LOG_PREFIX = '[VendorOAuth]';
 
@@ -37,6 +38,8 @@ export interface OAuthFlowOptions {
   timeoutMs?: number;
   /** Use system browser instead of BrowserWindow (recommended — users already logged in) */
   useSystemBrowser?: boolean;
+  /** Use HTTPS callback server (port 19877) instead of HTTP (port 19876). Required by Slack etc. */
+  useHttps?: boolean;
 }
 
 export interface OAuthTokenStatus {
@@ -51,7 +54,7 @@ export interface OAuthTokenStatus {
 
 export class VendorOAuthService {
   private authWindow: BrowserWindow | null = null;
-  private callbackServer: OAuthCallbackServer | null = null;
+  private callbackServer: OAuthCallbackServer | OAuthCallbackServerHttps | null = null;
   private activeConnector: string | null = null;
 
   // ── authorization_code ──────────────────────────────────────────────
@@ -67,7 +70,7 @@ export class VendorOAuthService {
    * 6. Clean up and return
    */
   async authorizeAuthCode(options: OAuthFlowOptions): Promise<OAuthFlowResult> {
-    const { connectorName, parentWindow, timeoutMs = 300_000, useSystemBrowser = true } = options;
+    const { connectorName, parentWindow, timeoutMs = 300_000, useSystemBrowser = true, useHttps = false } = options;
 
     console.log(`${LOG_PREFIX} ── authorizeAuthCode START ──`);
     console.log(`${LOG_PREFIX}   connector: ${connectorName}`);
@@ -93,9 +96,12 @@ export class VendorOAuthService {
       }
       console.log(`${LOG_PREFIX}   Connector found in registry ✓`);
 
-      // 1. Start callback server
-      console.log(`${LOG_PREFIX}   Starting callback server on ${OAuthCallbackServer.redirectUri}...`);
-      this.callbackServer = new OAuthCallbackServer();
+      // 1. Start callback server (HTTPS for providers that require it, HTTP otherwise)
+      this.callbackServer = useHttps
+        ? new OAuthCallbackServerHttps()
+        : new OAuthCallbackServer();
+      const redirectUri = useHttps ? OAuthCallbackServerHttps.redirectUri : OAuthCallbackServer.redirectUri;
+      console.log(`${LOG_PREFIX}   Starting callback server on ${redirectUri}...`);
       const callbackPromise = this.callbackServer.waitForCallback(timeoutMs);
       console.log(`${LOG_PREFIX}   Callback server started ✓`);
 

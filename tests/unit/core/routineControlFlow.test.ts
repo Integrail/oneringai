@@ -1,0 +1,684 @@
+/**
+ * Routine Control Flow Unit Tests
+ *
+ * Tests for resolveTemplates, readMemoryValue, validateAndResolveInputs,
+ * resolveSubRoutine, executeControlFlow (map, fold, until).
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  resolveTemplates,
+  resolveTaskTemplates,
+  validateAndResolveInputs,
+  readMemoryValue,
+  resolveSubRoutine,
+  executeControlFlow,
+} from '@/core/routineControlFlow.js';
+import type { Task } from '@/domain/entities/Task.js';
+import type { RoutineParameter } from '@/domain/entities/Routine.js';
+import { createRoutineDefinition } from '@/domain/entities/Routine.js';
+import { createTask } from '@/domain/entities/Task.js';
+import type { InContextMemoryPluginNextGen } from '@/core/context-nextgen/plugins/InContextMemoryPluginNextGen.js';
+import type { WorkingMemoryPluginNextGen } from '@/core/context-nextgen/plugins/WorkingMemoryPluginNextGen.js';
+
+// ============================================================================
+// Mock ICM Plugin
+// ============================================================================
+
+function createMockIcm(entries: Record<string, unknown> = {}): InContextMemoryPluginNextGen {
+  const store = new Map<string, unknown>(Object.entries(entries));
+  return {
+    get: vi.fn((key: string) => store.get(key)),
+    set: vi.fn((key: string, _desc: string, value: unknown) => { store.set(key, value); }),
+    delete: vi.fn((key: string) => store.delete(key)),
+    has: vi.fn((key: string) => store.has(key)),
+    list: vi.fn(() => [...store.entries()].map(([key]) => ({ key, description: '', priority: 'normal' as const, updatedAt: Date.now(), showInUI: false }))),
+    clear: vi.fn(() => store.clear()),
+    // Satisfy the interface enough for our tests
+    name: 'in_context_memory',
+    getInstructions: vi.fn(() => ''),
+    getInstructionsTokenSize: vi.fn(() => 0),
+    getContent: vi.fn(() => null),
+    getContentTokenSize: vi.fn(() => 0),
+    getTools: vi.fn(() => []),
+    destroy: vi.fn(),
+    isDestroyed: false,
+    serialize: vi.fn(() => ({ entries: [] })),
+    deserialize: vi.fn(),
+  } as unknown as InContextMemoryPluginNextGen;
+}
+
+// ============================================================================
+// Mock WM Plugin
+// ============================================================================
+
+function createMockWm(entries: Record<string, unknown> = {}): WorkingMemoryPluginNextGen {
+  const store = new Map<string, unknown>(Object.entries(entries));
+  return {
+    retrieve: vi.fn(async (key: string) => store.get(key)),
+    store: vi.fn(async (key: string, _desc: string, value: unknown) => { store.set(key, value); }),
+    delete: vi.fn(async (key: string) => store.delete(key)),
+    query: vi.fn(async () => ({
+      entries: [...store.entries()].map(([key, value]) => ({ key, description: '', value, tier: 'raw' })),
+      totalSize: 0,
+    })),
+    name: 'working_memory',
+    getInstructions: vi.fn(() => ''),
+    getInstructionsTokenSize: vi.fn(() => 0),
+    getContent: vi.fn(() => null),
+    getContentTokenSize: vi.fn(() => 0),
+    getTools: vi.fn(() => []),
+    destroy: vi.fn(),
+    isDestroyed: false,
+  } as unknown as WorkingMemoryPluginNextGen;
+}
+
+// ============================================================================
+// resolveTemplates
+// ============================================================================
+
+describe('resolveTemplates', () => {
+  it('resolves param templates', () => {
+    const result = resolveTemplates('Hello {{param.name}}!', { name: 'World' }, null);
+    expect(result).toBe('Hello World!');
+  });
+
+  it('resolves non-string param values as JSON', () => {
+    const result = resolveTemplates('Count: {{param.count}}', { count: 42 }, null);
+    expect(result).toBe('Count: 42');
+  });
+
+  it('resolves object param values as JSON', () => {
+    const result = resolveTemplates('Data: {{param.obj}}', { obj: { a: 1 } }, null);
+    expect(result).toBe('Data: {"a":1}');
+  });
+
+  it('leaves unresolved param templates as-is', () => {
+    const result = resolveTemplates('Hello {{param.missing}}!', {}, null);
+    expect(result).toBe('Hello {{param.missing}}!');
+  });
+
+  it('resolves map templates from ICM', () => {
+    const icm = createMockIcm({
+      __map_item: 'apple',
+      __map_index: 2,
+      __map_total: 5,
+    });
+    const result = resolveTemplates('Item {{map.item}} at {{map.index}} of {{map.total}}', {}, icm);
+    expect(result).toBe('Item apple at 2 of 5');
+  });
+
+  it('resolves fold templates from ICM', () => {
+    const icm = createMockIcm({ __fold_accumulator: 'running total' });
+    const result = resolveTemplates('Acc: {{fold.accumulator}}', {}, icm);
+    expect(result).toBe('Acc: running total');
+  });
+
+  it('leaves unknown namespaces as-is', () => {
+    const result = resolveTemplates('{{unknown.key}}', {}, null);
+    expect(result).toBe('{{unknown.key}}');
+  });
+
+  it('resolves multiple templates in one string', () => {
+    const icm = createMockIcm({ __map_item: 'X' });
+    const result = resolveTemplates('{{param.a}} and {{map.item}}', { a: 'Y' }, icm);
+    expect(result).toBe('Y and X');
+  });
+});
+
+// ============================================================================
+// resolveTaskTemplates
+// ============================================================================
+
+describe('resolveTaskTemplates', () => {
+  it('resolves templates in task description and expectedOutput', () => {
+    const task = createTask({
+      name: 'test',
+      description: 'Process {{param.item}}',
+      expectedOutput: 'Result for {{param.item}}',
+    });
+    const resolved = resolveTaskTemplates(task, { item: 'foo' }, null);
+    expect(resolved.description).toBe('Process foo');
+    expect(resolved.expectedOutput).toBe('Result for foo');
+  });
+
+  it('returns same task reference when no templates change', () => {
+    const task = createTask({ name: 'test', description: 'No templates here' });
+    const resolved = resolveTaskTemplates(task, {}, null);
+    expect(resolved).toBe(task);
+  });
+});
+
+// ============================================================================
+// validateAndResolveInputs
+// ============================================================================
+
+describe('validateAndResolveInputs', () => {
+  it('returns empty object when no parameters', () => {
+    expect(validateAndResolveInputs(undefined, undefined)).toEqual({});
+  });
+
+  it('passes through inputs when no parameters defined', () => {
+    const inputs = { a: 1, b: 2 };
+    expect(validateAndResolveInputs(undefined, inputs)).toEqual(inputs);
+  });
+
+  it('applies default values for missing optional parameters', () => {
+    const params: RoutineParameter[] = [
+      { name: 'color', description: 'Color', default: 'blue' },
+    ];
+    const result = validateAndResolveInputs(params, {});
+    expect(result.color).toBe('blue');
+  });
+
+  it('does not override provided values with defaults', () => {
+    const params: RoutineParameter[] = [
+      { name: 'color', description: 'Color', default: 'blue' },
+    ];
+    const result = validateAndResolveInputs(params, { color: 'red' });
+    expect(result.color).toBe('red');
+  });
+
+  it('throws for missing required parameters', () => {
+    const params: RoutineParameter[] = [
+      { name: 'target', description: 'Target', required: true },
+    ];
+    expect(() => validateAndResolveInputs(params, {})).toThrow('Missing required parameter: "target"');
+  });
+
+  it('does not throw when required parameter is provided', () => {
+    const params: RoutineParameter[] = [
+      { name: 'target', description: 'Target', required: true },
+    ];
+    expect(() => validateAndResolveInputs(params, { target: 'X' })).not.toThrow();
+  });
+});
+
+// ============================================================================
+// readMemoryValue
+// ============================================================================
+
+describe('readMemoryValue', () => {
+  it('reads from ICM first', async () => {
+    const icm = createMockIcm({ key1: 'from-icm' });
+    const wm = createMockWm({ key1: 'from-wm' });
+    const value = await readMemoryValue('key1', icm, wm);
+    expect(value).toBe('from-icm');
+  });
+
+  it('falls back to WM when not in ICM', async () => {
+    const icm = createMockIcm({});
+    const wm = createMockWm({ key1: 'from-wm' });
+    const value = await readMemoryValue('key1', icm, wm);
+    expect(value).toBe('from-wm');
+  });
+
+  it('returns undefined when not in either', async () => {
+    const icm = createMockIcm({});
+    const wm = createMockWm({});
+    const value = await readMemoryValue('missing', icm, wm);
+    expect(value).toBeUndefined();
+  });
+
+  it('works with null plugins', async () => {
+    const value = await readMemoryValue('key', null, null);
+    expect(value).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// resolveSubRoutine
+// ============================================================================
+
+describe('resolveSubRoutine', () => {
+  it('returns RoutineDefinition as-is', () => {
+    const def = createRoutineDefinition({
+      name: 'sub',
+      description: 'Sub routine',
+      tasks: [{ name: 'task1', description: 'Do something' }],
+    });
+    const result = resolveSubRoutine(def, 'parent');
+    expect(result).toBe(def);
+  });
+
+  it('wraps TaskInput[] into a RoutineDefinition', () => {
+    const tasks = [
+      { name: 'step1', description: 'First step' },
+      { name: 'step2', description: 'Second step' },
+    ];
+    const result = resolveSubRoutine(tasks, 'parent-task');
+    expect(result.name).toBe('parent-task (sub-routine)');
+    expect(result.tasks).toHaveLength(2);
+  });
+});
+
+// ============================================================================
+// executeControlFlow (integration with mocked executeRoutine)
+// ============================================================================
+
+// We need to mock executeRoutine to avoid needing a real Agent
+vi.mock('@/core/routineRunner.js', () => ({
+  executeRoutine: vi.fn(),
+}));
+
+import { executeRoutine } from '@/core/routineRunner.js';
+const mockExecuteRoutine = vi.mocked(executeRoutine);
+
+// Mock agent factory
+function createMockAgent(icmEntries: Record<string, unknown> = {}): any {
+  const icm = createMockIcm(icmEntries);
+  const wm = createMockWm({});
+
+  return {
+    context: {
+      getPlugin: vi.fn((name: string) => {
+        if (name === 'in_context_memory') return icm;
+        return null;
+      }),
+      memory: wm,
+    },
+    // Expose for assertions
+    __icm: icm,
+    __wm: wm,
+  };
+}
+
+function makeCompletedExecution(output: unknown = 'done') {
+  return {
+    id: 'rexec-test',
+    routineId: 'routine-test',
+    plan: {
+      id: 'plan-test',
+      goal: 'test',
+      tasks: [
+        {
+          id: 'task-1',
+          name: 'sub-task',
+          description: 'sub',
+          status: 'completed' as const,
+          dependsOn: [],
+          attempts: 1,
+          maxAttempts: 3,
+          createdAt: Date.now(),
+          lastUpdatedAt: Date.now(),
+          result: { success: true, output },
+        },
+      ],
+      allowDynamicTasks: false,
+      status: 'completed' as const,
+      createdAt: Date.now(),
+      lastUpdatedAt: Date.now(),
+    },
+    status: 'completed' as const,
+    progress: 100,
+    lastUpdatedAt: Date.now(),
+  };
+}
+
+function makeFailedExecution(error = 'sub failed') {
+  return {
+    id: 'rexec-test',
+    routineId: 'routine-test',
+    plan: {
+      id: 'plan-test',
+      goal: 'test',
+      tasks: [
+        {
+          id: 'task-1',
+          name: 'sub-task',
+          description: 'sub',
+          status: 'failed' as const,
+          dependsOn: [],
+          attempts: 1,
+          maxAttempts: 3,
+          createdAt: Date.now(),
+          lastUpdatedAt: Date.now(),
+          result: { success: false, error },
+        },
+      ],
+      allowDynamicTasks: false,
+      status: 'failed' as const,
+      createdAt: Date.now(),
+      lastUpdatedAt: Date.now(),
+    },
+    status: 'failed' as const,
+    progress: 0,
+    error,
+    lastUpdatedAt: Date.now(),
+  };
+}
+
+describe('executeControlFlow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ========== MAP ==========
+
+  describe('map', () => {
+    it('iterates array, calls executeRoutine per element, collects results', async () => {
+      const agent = createMockAgent({ items: ['a', 'b', 'c'] });
+      mockExecuteRoutine
+        .mockResolvedValueOnce(makeCompletedExecution('result-a') as any)
+        .mockResolvedValueOnce(makeCompletedExecution('result-b') as any)
+        .mockResolvedValueOnce(makeCompletedExecution('result-c') as any);
+
+      const task = createTask({
+        name: 'map-test',
+        description: 'Map over items',
+        controlFlow: {
+          type: 'map',
+          sourceKey: 'items',
+          tasks: [{ name: 'process', description: 'Process item' }],
+          resultKey: 'results',
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+
+      expect(result.completed).toBe(true);
+      expect(result.result).toEqual(['result-a', 'result-b', 'result-c']);
+      expect(mockExecuteRoutine).toHaveBeenCalledTimes(3);
+
+      // Verify ICM keys were set per iteration
+      expect(agent.__icm.set).toHaveBeenCalledWith('__map_item', expect.any(String), 'a', 'high');
+      expect(agent.__icm.set).toHaveBeenCalledWith('__map_item', expect.any(String), 'b', 'high');
+      expect(agent.__icm.set).toHaveBeenCalledWith('__map_item', expect.any(String), 'c', 'high');
+
+      // Verify cleanup
+      expect(agent.__icm.delete).toHaveBeenCalledWith('__map_item');
+      expect(agent.__icm.delete).toHaveBeenCalledWith('__map_index');
+      expect(agent.__icm.delete).toHaveBeenCalledWith('__map_total');
+    });
+
+    it('fails if sourceKey is not an array', async () => {
+      const agent = createMockAgent({ items: 'not-an-array' });
+      const task = createTask({
+        name: 'map-test',
+        description: 'Map',
+        controlFlow: { type: 'map', sourceKey: 'items', tasks: [{ name: 's', description: 's' }] },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(false);
+      expect(result.error).toContain('not an array');
+    });
+
+    it('respects maxIterations', async () => {
+      const agent = createMockAgent({ items: [1, 2, 3, 4, 5] });
+      mockExecuteRoutine.mockResolvedValue(makeCompletedExecution('ok') as any);
+
+      const task = createTask({
+        name: 'map-test',
+        description: 'Map',
+        controlFlow: {
+          type: 'map',
+          sourceKey: 'items',
+          tasks: [{ name: 's', description: 's' }],
+          maxIterations: 2,
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(true);
+      expect(mockExecuteRoutine).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails fast on sub-routine failure', async () => {
+      const agent = createMockAgent({ items: [1, 2, 3] });
+      mockExecuteRoutine
+        .mockResolvedValueOnce(makeCompletedExecution('ok') as any)
+        .mockResolvedValueOnce(makeFailedExecution('iteration 1 error') as any);
+
+      const task = createTask({
+        name: 'map-test',
+        description: 'Map',
+        controlFlow: {
+          type: 'map',
+          sourceKey: 'items',
+          tasks: [{ name: 's', description: 's' }],
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(false);
+      expect(result.error).toContain('iteration 1 failed');
+      // Should not have called for third element
+      expect(mockExecuteRoutine).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ========== FOLD ==========
+
+  describe('fold', () => {
+    it('accumulates results across iterations', async () => {
+      const agent = createMockAgent({ numbers: [1, 2, 3] });
+      mockExecuteRoutine
+        .mockResolvedValueOnce(makeCompletedExecution('sum=1') as any)
+        .mockResolvedValueOnce(makeCompletedExecution('sum=3') as any)
+        .mockResolvedValueOnce(makeCompletedExecution('sum=6') as any);
+
+      const task = createTask({
+        name: 'fold-test',
+        description: 'Sum numbers',
+        controlFlow: {
+          type: 'fold',
+          sourceKey: 'numbers',
+          tasks: [{ name: 'add', description: 'Add number' }],
+          initialValue: 0,
+          resultKey: 'total',
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(true);
+      // Last output becomes accumulator
+      expect(result.result).toBe('sum=6');
+      expect(mockExecuteRoutine).toHaveBeenCalledTimes(3);
+
+      // Verify accumulator was set in ICM
+      expect(agent.__icm.set).toHaveBeenCalledWith(
+        '__fold_accumulator',
+        expect.any(String),
+        0, // initialValue
+        'high'
+      );
+
+      // Verify cleanup
+      expect(agent.__icm.delete).toHaveBeenCalledWith('__fold_accumulator');
+    });
+
+    it('uses empty string as valid accumulator (no ICM fallback)', async () => {
+      const agent = createMockAgent({ items: ['a'] });
+
+      // Sub-routine produces empty string output — should be used as accumulator
+      const emptyExecution = makeCompletedExecution('') as any;
+      mockExecuteRoutine.mockImplementation(async (opts: any) => {
+        // Simulate LLM updating accumulator via context_set (should be ignored)
+        agent.__icm.set('__fold_accumulator', 'acc', 'updated-by-llm', 'high');
+        return emptyExecution;
+      });
+
+      const task = createTask({
+        name: 'fold-test',
+        description: 'Fold',
+        controlFlow: {
+          type: 'fold',
+          sourceKey: 'items',
+          tasks: [{ name: 's', description: 's' }],
+          initialValue: 'start',
+          resultKey: 'result',
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(true);
+      // Empty string is a valid accumulator — should NOT fall back to ICM
+      expect(result.result).toBe('');
+    });
+
+    it('reads accumulator from ICM when no task output (null)', async () => {
+      const agent = createMockAgent({ items: ['a'] });
+
+      // Sub-routine has no completed tasks (getSubRoutineOutput returns null)
+      const noOutputExecution = makeCompletedExecution(null) as any;
+      mockExecuteRoutine.mockImplementation(async (opts: any) => {
+        // Simulate LLM updating accumulator via context_set
+        agent.__icm.set('__fold_accumulator', 'acc', 'updated-by-llm', 'high');
+        return noOutputExecution;
+      });
+
+      const task = createTask({
+        name: 'fold-test',
+        description: 'Fold',
+        controlFlow: {
+          type: 'fold',
+          sourceKey: 'items',
+          tasks: [{ name: 's', description: 's' }],
+          initialValue: 'start',
+          resultKey: 'result',
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(true);
+      // No task output (null) → falls back to ICM accumulator
+      expect(result.result).toBe('updated-by-llm');
+    });
+
+    it('fails on sub-routine failure', async () => {
+      const agent = createMockAgent({ items: [1, 2] });
+      mockExecuteRoutine.mockResolvedValueOnce(makeFailedExecution() as any);
+
+      const task = createTask({
+        name: 'fold-test',
+        description: 'Fold',
+        controlFlow: {
+          type: 'fold',
+          sourceKey: 'items',
+          tasks: [{ name: 's', description: 's' }],
+          initialValue: 0,
+          resultKey: 'result',
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(false);
+    });
+  });
+
+  // ========== UNTIL ==========
+
+  describe('until', () => {
+    it('stops when condition is met', async () => {
+      const agent = createMockAgent({});
+      let callCount = 0;
+
+      mockExecuteRoutine.mockImplementation(async () => {
+        callCount++;
+        // After 2nd iteration, set the condition key
+        if (callCount >= 2) {
+          agent.__icm.set('done_flag', 'flag', true, 'high');
+        }
+        return makeCompletedExecution('iteration done') as any;
+      });
+
+      const task = createTask({
+        name: 'until-test',
+        description: 'Until done',
+        controlFlow: {
+          type: 'until',
+          tasks: [{ name: 'step', description: 'Do step' }],
+          condition: { memoryKey: 'done_flag', operator: 'truthy', onFalse: 'skip' },
+          maxIterations: 10,
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(true);
+      expect(mockExecuteRoutine).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails when maxIterations exceeded', async () => {
+      const agent = createMockAgent({});
+      mockExecuteRoutine.mockResolvedValue(makeCompletedExecution('done') as any);
+
+      const task = createTask({
+        name: 'until-test',
+        description: 'Until',
+        controlFlow: {
+          type: 'until',
+          tasks: [{ name: 'step', description: 'Do step' }],
+          condition: { memoryKey: 'never_set', operator: 'truthy', onFalse: 'skip' },
+          maxIterations: 3,
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(false);
+      expect(result.error).toContain('maxIterations');
+      expect(mockExecuteRoutine).toHaveBeenCalledTimes(3);
+    });
+
+    it('sets iterationKey in ICM when configured', async () => {
+      const agent = createMockAgent({});
+      mockExecuteRoutine.mockImplementation(async () => {
+        // Meet condition immediately
+        agent.__icm.set('done', 'd', true, 'high');
+        return makeCompletedExecution() as any;
+      });
+
+      const task = createTask({
+        name: 'until-test',
+        description: 'Until',
+        controlFlow: {
+          type: 'until',
+          tasks: [{ name: 'step', description: 'Do step' }],
+          condition: { memoryKey: 'done', operator: 'truthy', onFalse: 'skip' },
+          maxIterations: 5,
+          iterationKey: '__current_iter',
+        },
+      });
+
+      await executeControlFlow(agent, task, {});
+      expect(agent.__icm.set).toHaveBeenCalledWith('__current_iter', expect.any(String), 0, 'high');
+      // Cleanup
+      expect(agent.__icm.delete).toHaveBeenCalledWith('__current_iter');
+    });
+
+    it('fails fast on sub-routine failure', async () => {
+      const agent = createMockAgent({});
+      mockExecuteRoutine.mockResolvedValueOnce(makeFailedExecution() as any);
+
+      const task = createTask({
+        name: 'until-test',
+        description: 'Until',
+        controlFlow: {
+          type: 'until',
+          tasks: [{ name: 'step', description: 'Do step' }],
+          condition: { memoryKey: 'x', operator: 'truthy', onFalse: 'skip' },
+          maxIterations: 5,
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(false);
+      expect(result.error).toContain('iteration 0 failed');
+    });
+  });
+
+  // ========== Unknown type ==========
+
+  it('returns error for unknown control flow type', async () => {
+    const agent = createMockAgent({});
+    const task = createTask({
+      name: 'bad',
+      description: 'Bad',
+      controlFlow: { type: 'unknown' as any } as any,
+    });
+
+    const result = await executeControlFlow(agent, task, {});
+    expect(result.completed).toBe(false);
+    expect(result.error).toContain('Unknown control flow type');
+  });
+});

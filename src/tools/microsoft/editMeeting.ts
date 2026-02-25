@@ -124,6 +124,7 @@ EXAMPLES:
       context?: ToolContext
     ): Promise<MicrosoftEditMeetingResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         const tz = args.timeZone ?? 'UTC';
@@ -151,7 +152,7 @@ EXAMPLES:
         const event = await microsoftFetch<GraphEventResponse>(
           connector,
           `${prefix}/events/${args.eventId}`,
-          { method: 'PATCH', userId: effectiveUserId, body: patchBody }
+          { method: 'PATCH', userId: effectiveUserId, accountId: effectiveAccountId, body: patchBody }
         );
 
         return {

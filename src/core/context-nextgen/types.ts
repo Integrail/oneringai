@@ -9,6 +9,25 @@ import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IContextStorage as IContextStorageFromDomain } from '../../domain/interfaces/IContextStorage.js';
 
 // ============================================================================
+// Auth Identity
+// ============================================================================
+
+/**
+ * A single auth identity: connector + optional account alias.
+ *
+ * Used to scope agents to specific OAuth accounts. When `accountId` is set,
+ * the identity represents a specific multi-account OAuth session (e.g., 'work'
+ * or 'personal' Microsoft account). When omitted, uses the connector's default account.
+ */
+export interface AuthIdentity {
+  /** Name of the registered connector */
+  connector: string;
+
+  /** Optional account alias for multi-account OAuth (e.g., 'work', 'personal') */
+  accountId?: string;
+}
+
+// ============================================================================
 // Token Estimation
 // ============================================================================
 
@@ -565,12 +584,12 @@ export interface AgentContextNextGenConfig {
   userId?: string;
 
   /**
-   * Restrict this agent to a subset of registered connectors (by name).
-   * When set, only these connectors are visible in ToolContext.connectorRegistry
-   * and in dynamic tool descriptions (e.g., execute_javascript).
+   * Restrict this agent to specific auth identities (connector + optional account alias).
+   * When set, only these identities are visible in ToolContext and tool descriptions.
+   * Each identity produces its own tool set (e.g., microsoft_work_api, microsoft_personal_api).
    * When not set, all connectors visible to the current userId are available.
    */
-  connectors?: string[];
+  identities?: AuthIdentity[];
 
   /** Initial tools to register */
   tools?: ToolFunction[];

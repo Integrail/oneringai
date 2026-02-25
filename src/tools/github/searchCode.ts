@@ -113,6 +113,7 @@ EXAMPLES:
 
     execute: async (args: SearchCodeArgs, context?: ToolContext): Promise<GitHubSearchCodeResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -134,6 +135,7 @@ EXAMPLES:
           `/search/code`,
           {
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             // Request text-match fragments
             accept: 'application/vnd.github.text-match+json',
             queryParams: { q, per_page: perPage },

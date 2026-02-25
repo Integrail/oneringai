@@ -98,6 +98,7 @@ EXAMPLES:
       context?: ToolContext
     ): Promise<MicrosoftDraftEmailResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
 
@@ -106,7 +107,7 @@ EXAMPLES:
           const replyDraft = await microsoftFetch<GraphMessageResponse>(
             connector,
             `${prefix}/messages/${args.replyToMessageId}/createReply`,
-            { method: 'POST', userId: effectiveUserId, body: {} }
+            { method: 'POST', userId: effectiveUserId, accountId: effectiveAccountId, body: {} }
           );
 
           // Update the reply draft with our content
@@ -116,6 +117,7 @@ EXAMPLES:
             {
               method: 'PATCH',
               userId: effectiveUserId,
+              accountId: effectiveAccountId,
               body: {
                 subject: args.subject,
                 body: { contentType: 'HTML', content: args.body },
@@ -139,6 +141,7 @@ EXAMPLES:
           {
             method: 'POST',
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             body: {
               isDraft: true,
               subject: args.subject,

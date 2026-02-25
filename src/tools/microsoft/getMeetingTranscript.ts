@@ -100,18 +100,19 @@ EXAMPLES:
       context?: ToolContext
     ): Promise<MicrosoftGetTranscriptResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
 
         // Resolve meeting ID — handles both raw IDs and Teams join URLs
-        const resolved = await resolveMeetingId(connector, args.meetingId, prefix, effectiveUserId);
+        const resolved = await resolveMeetingId(connector, args.meetingId, prefix, effectiveUserId, effectiveAccountId);
         const meetingId = resolved.meetingId;
 
         // Step 1: List transcripts for the meeting
         const transcriptList = await microsoftFetch<GraphTranscriptListResponse>(
           connector,
           `${prefix}/onlineMeetings/${meetingId}/transcripts`,
-          { userId: effectiveUserId }
+          { userId: effectiveUserId, accountId: effectiveAccountId }
         );
 
         if (!transcriptList.value || transcriptList.value.length === 0) {
@@ -129,7 +130,8 @@ EXAMPLES:
         const response = await connector.fetch(
           contentUrl + '?$format=text/vtt',
           { method: 'GET', headers: { 'Accept': 'text/vtt' } },
-          effectiveUserId
+          effectiveUserId,
+          effectiveAccountId
         );
 
         if (!response.ok) {

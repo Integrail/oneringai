@@ -9,6 +9,25 @@ import type { TaskInput, Plan, PlanConcurrency } from './Task.js';
 import { createPlan, isTerminalStatus } from './Task.js';
 
 // ============================================================================
+// Routine Parameters
+// ============================================================================
+
+/**
+ * A parameter that a routine accepts as input.
+ * Enables parameterized, reusable routines.
+ */
+export interface RoutineParameter {
+  /** Parameter name (used as {{param.name}} in templates) */
+  name: string;
+  /** Human-readable description */
+  description: string;
+  /** Whether this parameter must be provided (default: false) */
+  required?: boolean;
+  /** Default value when not provided */
+  default?: unknown;
+}
+
+// ============================================================================
 // Routine Definition (Template)
 // ============================================================================
 
@@ -49,6 +68,9 @@ export interface RoutineDefinition {
   /** Whether the LLM can dynamically add/modify tasks during execution. Default: false */
   allowDynamicTasks?: boolean;
 
+  /** Input parameters this routine accepts (templates use {{param.name}}) */
+  parameters?: RoutineParameter[];
+
   /** Tags for categorization and filtering */
   tags?: string[];
 
@@ -80,6 +102,7 @@ export interface RoutineDefinitionInput {
   instructions?: string;
   concurrency?: PlanConcurrency;
   allowDynamicTasks?: boolean;
+  parameters?: RoutineParameter[];
   tags?: string[];
   author?: string;
   metadata?: Record<string, unknown>;
@@ -178,6 +201,7 @@ export function createRoutineDefinition(input: RoutineDefinitionInput): RoutineD
     instructions: input.instructions,
     concurrency: input.concurrency,
     allowDynamicTasks: input.allowDynamicTasks ?? false,
+    parameters: input.parameters,
     tags: input.tags,
     author: input.author,
     createdAt: now,

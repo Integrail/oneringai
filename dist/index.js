@@ -19,7 +19,7 @@ import * as z from 'zod/v4';
 import spawn$1 from 'cross-spawn';
 import process2 from 'process';
 import { PassThrough } from 'stream';
-import * as fs18 from 'fs/promises';
+import * as fs17 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import * as simpleIcons from 'simple-icons';
 import { exec, spawn } from 'child_process';
@@ -163,6 +163,12 @@ var init_MemoryStorage = __esm({
       size() {
         return this.tokens.size;
       }
+      /**
+       * List all storage keys (for account enumeration)
+       */
+      async listKeys() {
+        return Array.from(this.tokens.keys());
+      }
     };
   }
 });
@@ -180,14 +186,23 @@ var init_TokenStore = __esm({
         this.storage = storage || new MemoryStorage();
       }
       /**
-       * Get user-scoped storage key
-       * For multi-user support, keys are scoped per user: "provider:userId"
-       * For single-user (backward compatible), userId is omitted or "default"
+       * Get user-scoped (and optionally account-scoped) storage key
+       *
+       * Key format (backward compatible):
+       * - No userId, no accountId  → baseKey
+       * - userId only              → baseKey:userId
+       * - userId + accountId       → baseKey:userId:accountId
+       * - accountId only           → baseKey:default:accountId
        *
        * @param userId - User identifier (optional, defaults to single-user mode)
-       * @returns Storage key scoped to user
+       * @param accountId - Account alias for multi-account support (optional)
+       * @returns Storage key scoped to user and account
        */
-      getScopedKey(userId) {
+      getScopedKey(userId, accountId) {
+        if (accountId) {
+          const userPart = userId && userId !== "default" ? userId : "default";
+          return `${this.baseStorageKey}:${userPart}:${accountId}`;
+        }
         if (!userId || userId === "default") {
           return this.baseStorageKey;
         }
@@ -197,8 +212,9 @@ var init_TokenStore = __esm({
        * Store token (encrypted by storage layer)
        * @param tokenResponse - Token response from OAuth provider
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async storeToken(tokenResponse, userId) {
+      async storeToken(tokenResponse, userId, accountId) {
         if (!tokenResponse.access_token) {
           throw new Error("OAuth response missing required access_token field");
         }
@@ -216,39 +232,46 @@ var init_TokenStore = __esm({
           scope: tokenResponse.scope,
           obtained_at: Date.now()
         };
-        const key = this.getScopedKey(userId);
+        const key = this.getScopedKey(userId, accountId);
         await this.storage.storeToken(key, token);
       }
       /**
        * Get access token
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async getAccessToken(userId) {
-        const key = this.getScopedKey(userId);
+      async getAccessToken(userId, accountId) {
+        const key = this.getScopedKey(userId, accountId);
         const token = await this.storage.getToken(key);
         if (!token) {
-          throw new Error(`No token stored for ${userId ? `user: ${userId}` : "default user"}`);
+          const userLabel = userId ? `user: ${userId}` : "default user";
+          const accountLabel = accountId ? `, account: ${accountId}` : "";
+          throw new Error(`No token stored for ${userLabel}${accountLabel}`);
         }
         return token.access_token;
       }
       /**
        * Get refresh token
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async getRefreshToken(userId) {
-        const key = this.getScopedKey(userId);
+      async getRefreshToken(userId, accountId) {
+        const key = this.getScopedKey(userId, accountId);
         const token = await this.storage.getToken(key);
         if (!token?.refresh_token) {
-          throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : "default user"}`);
+          const userLabel = userId ? `user: ${userId}` : "default user";
+          const accountLabel = accountId ? `, account: ${accountId}` : "";
+          throw new Error(`No refresh token available for ${userLabel}${accountLabel}`);
         }
         return token.refresh_token;
       }
       /**
        * Check if has refresh token
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async hasRefreshToken(userId) {
-        const key = this.getScopedKey(userId);
+      async hasRefreshToken(userId, accountId) {
+        const key = this.getScopedKey(userId, accountId);
         const token = await this.storage.getToken(key);
         return !!token?.refresh_token;
       }
@@ -257,9 +280,10 @@ var init_TokenStore = __esm({
        *
        * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async isValid(bufferSeconds = 300, userId) {
-        const key = this.getScopedKey(userId);
+      async isValid(bufferSeconds = 300, userId, accountId) {
+        const key = this.getScopedKey(userId, accountId);
         const token = await this.storage.getToken(key);
         if (!token) {
           return false;
@@ -271,18 +295,45 @@ var init_TokenStore = __esm({
       /**
        * Clear stored token
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async clear(userId) {
-        const key = this.getScopedKey(userId);
+      async clear(userId, accountId) {
+        const key = this.getScopedKey(userId, accountId);
         await this.storage.deleteToken(key);
       }
       /**
        * Get full token info
        * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async getTokenInfo(userId) {
-        const key = this.getScopedKey(userId);
+      async getTokenInfo(userId, accountId) {
+        const key = this.getScopedKey(userId, accountId);
         return this.storage.getToken(key);
+      }
+      /**
+       * List account aliases for a user on this connector.
+       * Returns account IDs that have stored tokens.
+       *
+       * @param userId - Optional user identifier
+       * @returns Array of account aliases (e.g., ['work', 'personal'])
+       */
+      async listAccounts(userId) {
+        if (!this.storage.listKeys) {
+          return [];
+        }
+        const allKeys = await this.storage.listKeys();
+        const userPart = userId && userId !== "default" ? userId : "default";
+        const prefix = `${this.baseStorageKey}:${userPart}:`;
+        const accounts = [];
+        for (const key of allKeys) {
+          if (key.startsWith(prefix)) {
+            const accountId = key.slice(prefix.length);
+            if (accountId && !accountId.includes(":")) {
+              accounts.push(accountId);
+            }
+          }
+        }
+        return accounts;
       }
     };
   }
@@ -324,20 +375,28 @@ var init_AuthCodePKCE = __esm({
         this.tokenStore = new TokenStore(storageKey, config.storage);
       }
       tokenStore;
-      // Store PKCE data per user with timestamps for cleanup
+      // Store PKCE data per user+account with timestamps for cleanup
       codeVerifiers = /* @__PURE__ */ new Map();
       states = /* @__PURE__ */ new Map();
-      // Store refresh locks per user to prevent concurrent refresh
+      // Store refresh locks per user+account to prevent concurrent refresh
       refreshLocks = /* @__PURE__ */ new Map();
       // PKCE data TTL: 15 minutes (auth flows should complete within this time)
       PKCE_TTL = 15 * 60 * 1e3;
+      /**
+       * Build a map key from userId and accountId for internal PKCE/state/lock maps.
+       */
+      getMapKey(userId, accountId) {
+        const userPart = userId || "default";
+        return accountId ? `${userPart}:${accountId}` : userPart;
+      }
       /**
        * Generate authorization URL for user to visit
        * Opens browser or redirects user to this URL
        *
        * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async getAuthorizationUrl(userId) {
+      async getAuthorizationUrl(userId, accountId) {
         if (!this.config.authorizationUrl) {
           throw new Error("authorizationUrl is required for authorization_code flow");
         }
@@ -345,11 +404,11 @@ var init_AuthCodePKCE = __esm({
           throw new Error("redirectUri is required for authorization_code flow");
         }
         this.cleanupExpiredPKCE();
-        const userKey = userId || "default";
+        const mapKey = this.getMapKey(userId, accountId);
         const { codeVerifier, codeChallenge } = generatePKCE();
-        this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
+        this.codeVerifiers.set(mapKey, { verifier: codeVerifier, timestamp: Date.now() });
         const state = generateState();
-        this.states.set(userKey, { state, timestamp: Date.now() });
+        this.states.set(mapKey, { state, timestamp: Date.now() });
         const params = new URLSearchParams({
           response_type: "code",
           client_id: this.config.clientId,
@@ -363,33 +422,48 @@ var init_AuthCodePKCE = __esm({
           params.append("code_challenge", codeChallenge);
           params.append("code_challenge_method", "S256");
         }
-        const stateWithUser = userId ? `${state}::${userId}` : state;
-        params.set("state", stateWithUser);
+        let stateWithMetadata = state;
+        if (userId || accountId) {
+          stateWithMetadata = `${state}::${userId || ""}`;
+          if (accountId) {
+            stateWithMetadata += `::${accountId}`;
+          }
+        }
+        params.set("state", stateWithMetadata);
         return `${this.config.authorizationUrl}?${params.toString()}`;
       }
       /**
        * Exchange authorization code for access token
        *
        * @param code - Authorization code from callback
-       * @param state - State parameter from callback (for CSRF verification, may include userId)
+       * @param state - State parameter from callback (for CSRF verification, may include userId/accountId)
        * @param userId - User identifier (optional, can be extracted from state)
+       * @param accountId - Account alias (optional, can be extracted from state)
        */
-      async exchangeCode(code, state, userId) {
+      async exchangeCode(code, state, userId, accountId) {
         let actualState = state;
         let actualUserId = userId;
+        let actualAccountId = accountId;
         if (state.includes("::")) {
           const parts = state.split("::");
           actualState = parts[0];
-          actualUserId = parts[1];
+          if (!actualUserId && parts[1]) {
+            actualUserId = parts[1];
+          }
+          if (!actualAccountId && parts[2]) {
+            actualAccountId = parts[2];
+          }
         }
-        const userKey = actualUserId || "default";
-        const stateData = this.states.get(userKey);
+        const mapKey = this.getMapKey(actualUserId, actualAccountId);
+        const stateData = this.states.get(mapKey);
         if (!stateData) {
-          throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+          const label = actualAccountId ? `user ${actualUserId}, account ${actualAccountId}` : `user ${actualUserId}`;
+          throw new Error(`No PKCE state found for ${label}. Authorization flow may have expired (15 min TTL).`);
         }
         const expectedState = stateData.state;
         if (actualState !== expectedState) {
-          throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
+          const label = actualAccountId ? `user ${actualUserId}, account ${actualAccountId}` : `user ${actualUserId}`;
+          throw new Error(`State mismatch for ${label} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
         }
         if (!this.config.redirectUri) {
           throw new Error("redirectUri is required");
@@ -403,7 +477,7 @@ var init_AuthCodePKCE = __esm({
         if (this.config.clientSecret) {
           params.append("client_secret", this.config.clientSecret);
         }
-        const verifierData = this.codeVerifiers.get(userKey);
+        const verifierData = this.codeVerifiers.get(mapKey);
         if (this.config.usePKCE !== false && verifierData) {
           params.append("code_verifier", verifierData.verifier);
         }
@@ -437,39 +511,43 @@ var init_AuthCodePKCE = __esm({
           throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
         }
         const data = await response.json();
-        await this.tokenStore.storeToken(data, actualUserId);
-        this.codeVerifiers.delete(userKey);
-        this.states.delete(userKey);
+        await this.tokenStore.storeToken(data, actualUserId, actualAccountId);
+        this.codeVerifiers.delete(mapKey);
+        this.states.delete(mapKey);
       }
       /**
        * Get valid token (auto-refreshes if needed)
        * @param userId - User identifier for multi-user support
+       * @param accountId - Account alias for multi-account support
        */
-      async getToken(userId) {
-        const key = userId || "default";
-        if (this.refreshLocks.has(key)) {
-          return this.refreshLocks.get(key);
+      async getToken(userId, accountId) {
+        const mapKey = this.getMapKey(userId, accountId);
+        if (this.refreshLocks.has(mapKey)) {
+          return this.refreshLocks.get(mapKey);
         }
-        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
-          return this.tokenStore.getAccessToken(userId);
+        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+          return this.tokenStore.getAccessToken(userId, accountId);
         }
-        if (await this.tokenStore.hasRefreshToken(userId)) {
-          const refreshPromise = this.refreshToken(userId);
-          this.refreshLocks.set(key, refreshPromise);
+        if (await this.tokenStore.hasRefreshToken(userId, accountId)) {
+          const refreshPromise = this.refreshToken(userId, accountId);
+          this.refreshLocks.set(mapKey, refreshPromise);
           try {
             return await refreshPromise;
           } finally {
-            this.refreshLocks.delete(key);
+            this.refreshLocks.delete(mapKey);
           }
         }
-        throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
+        const userLabel = userId ? `user: ${userId}` : "default user";
+        const accountLabel = accountId ? `, account: ${accountId}` : "";
+        throw new Error(`No valid token available for ${userLabel}${accountLabel}. User needs to authorize (call startAuthFlow).`);
       }
       /**
        * Refresh access token using refresh token
        * @param userId - User identifier for multi-user support
+       * @param accountId - Account alias for multi-account support
        */
-      async refreshToken(userId) {
-        const refreshToken = await this.tokenStore.getRefreshToken(userId);
+      async refreshToken(userId, accountId) {
+        const refreshToken = await this.tokenStore.getRefreshToken(userId, accountId);
         const params = new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: refreshToken,
@@ -508,28 +586,30 @@ var init_AuthCodePKCE = __esm({
           throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
         }
         const data = await response.json();
-        await this.tokenStore.storeToken(data, userId);
+        await this.tokenStore.storeToken(data, userId, accountId);
         return data.access_token;
       }
       /**
        * Check if token is valid
        * @param userId - User identifier for multi-user support
+       * @param accountId - Account alias for multi-account support
        */
-      async isTokenValid(userId) {
-        return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
+      async isTokenValid(userId, accountId) {
+        return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
       }
       /**
        * Revoke token (if supported by provider)
        * @param revocationUrl - Optional revocation endpoint
        * @param userId - User identifier for multi-user support
+       * @param accountId - Account alias for multi-account support
        */
-      async revokeToken(revocationUrl, userId) {
+      async revokeToken(revocationUrl, userId, accountId) {
         if (!revocationUrl) {
-          await this.tokenStore.clear(userId);
+          await this.tokenStore.clear(userId, accountId);
           return;
         }
         try {
-          const token = await this.tokenStore.getAccessToken(userId);
+          const token = await this.tokenStore.getAccessToken(userId, accountId);
           await fetch(revocationUrl, {
             method: "POST",
             headers: {
@@ -541,8 +621,15 @@ var init_AuthCodePKCE = __esm({
             })
           });
         } finally {
-          await this.tokenStore.clear(userId);
+          await this.tokenStore.clear(userId, accountId);
         }
+      }
+      /**
+       * List account aliases for a user.
+       * @param userId - User identifier (optional)
+       */
+      async listAccounts(userId) {
+        return this.tokenStore.listAccounts(userId);
       }
       /**
        * Clean up expired PKCE data to prevent memory leaks
@@ -575,17 +662,19 @@ var init_ClientCredentials = __esm({
       tokenStore;
       /**
        * Get token using client credentials
+       * @param userId - User identifier for multi-user support (optional, rarely used for client_credentials)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async getToken() {
-        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-          return this.tokenStore.getAccessToken();
+      async getToken(userId, accountId) {
+        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+          return this.tokenStore.getAccessToken(userId, accountId);
         }
-        return this.requestToken();
+        return this.requestToken(userId, accountId);
       }
       /**
        * Request a new token from the authorization server
        */
-      async requestToken() {
+      async requestToken(userId, accountId) {
         const auth2 = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
           "base64"
         );
@@ -608,22 +697,26 @@ var init_ClientCredentials = __esm({
           throw new Error(`Token request failed: ${response.status} ${response.statusText} - ${error}`);
         }
         const data = await response.json();
-        await this.tokenStore.storeToken(data);
+        await this.tokenStore.storeToken(data, userId, accountId);
         return data.access_token;
       }
       /**
        * Refresh token (client credentials don't use refresh tokens)
        * Just requests a new token
+       * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async refreshToken() {
-        await this.tokenStore.clear();
-        return this.requestToken();
+      async refreshToken(userId, accountId) {
+        await this.tokenStore.clear(userId, accountId);
+        return this.requestToken(userId, accountId);
       }
       /**
        * Check if token is valid
+       * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async isTokenValid() {
-        return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+      async isTokenValid(userId, accountId) {
+        return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
       }
     };
   }
@@ -665,17 +758,19 @@ var init_JWTBearer = __esm({
       }
       /**
        * Get token using JWT Bearer assertion
+       * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async getToken() {
-        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-          return this.tokenStore.getAccessToken();
+      async getToken(userId, accountId) {
+        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+          return this.tokenStore.getAccessToken(userId, accountId);
         }
-        return this.requestToken();
+        return this.requestToken(userId, accountId);
       }
       /**
        * Request token using JWT assertion
        */
-      async requestToken() {
+      async requestToken(userId, accountId) {
         const assertion = await this.generateJWT();
         const params = new URLSearchParams({
           grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -693,21 +788,25 @@ var init_JWTBearer = __esm({
           throw new Error(`JWT Bearer token request failed: ${response.status} ${response.statusText} - ${error}`);
         }
         const data = await response.json();
-        await this.tokenStore.storeToken(data);
+        await this.tokenStore.storeToken(data, userId, accountId);
         return data.access_token;
       }
       /**
        * Refresh token (generate new JWT and request new token)
+       * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async refreshToken() {
-        await this.tokenStore.clear();
-        return this.requestToken();
+      async refreshToken(userId, accountId) {
+        await this.tokenStore.clear(userId, accountId);
+        return this.requestToken(userId, accountId);
       }
       /**
        * Check if token is valid
+       * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async isTokenValid() {
-        return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+      async isTokenValid(userId, accountId) {
+        return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
       }
     };
   }
@@ -787,25 +886,28 @@ var init_OAuthManager = __esm({
        * Automatically refreshes if expired
        *
        * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async getToken(userId) {
-        return this.flow.getToken(userId);
+      async getToken(userId, accountId) {
+        return this.flow.getToken(userId, accountId);
       }
       /**
        * Force refresh the token
        *
        * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async refreshToken(userId) {
-        return this.flow.refreshToken(userId);
+      async refreshToken(userId, accountId) {
+        return this.flow.refreshToken(userId, accountId);
       }
       /**
        * Check if current token is valid
        *
        * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async isTokenValid(userId) {
-        return this.flow.isTokenValid(userId);
+      async isTokenValid(userId, accountId) {
+        return this.flow.isTokenValid(userId, accountId);
       }
       // ==================== Authorization Code Flow Methods ====================
       /**
@@ -813,13 +915,14 @@ var init_OAuthManager = __esm({
        * Returns URL for user to visit
        *
        * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        * @returns Authorization URL for the user to visit
        */
-      async startAuthFlow(userId) {
+      async startAuthFlow(userId, accountId) {
         if (!(this.flow instanceof AuthCodePKCEFlow)) {
           throw new Error("startAuthFlow() is only available for authorization_code flow");
         }
-        return this.flow.getAuthorizationUrl(userId);
+        return this.flow.getAuthorizationUrl(userId, accountId);
       }
       /**
        * Handle OAuth callback (Authorization Code only)
@@ -827,8 +930,9 @@ var init_OAuthManager = __esm({
        *
        * @param callbackUrl - Full callback URL with code and state parameters
        * @param userId - Optional user identifier (can be extracted from state if embedded)
+       * @param accountId - Optional account alias (can be extracted from state if embedded)
        */
-      async handleCallback(callbackUrl, userId) {
+      async handleCallback(callbackUrl, userId, accountId) {
         if (!(this.flow instanceof AuthCodePKCEFlow)) {
           throw new Error("handleCallback() is only available for authorization_code flow");
         }
@@ -841,20 +945,33 @@ var init_OAuthManager = __esm({
         if (!state) {
           throw new Error("Missing state parameter in callback URL");
         }
-        await this.flow.exchangeCode(code, state, userId);
+        await this.flow.exchangeCode(code, state, userId, accountId);
       }
       /**
        * Revoke token (if supported by provider)
        *
        * @param revocationUrl - Optional revocation endpoint URL
        * @param userId - User identifier for multi-user support (optional)
+       * @param accountId - Account alias for multi-account support (optional)
        */
-      async revokeToken(revocationUrl, userId) {
+      async revokeToken(revocationUrl, userId, accountId) {
         if (this.flow instanceof AuthCodePKCEFlow) {
-          await this.flow.revokeToken(revocationUrl, userId);
+          await this.flow.revokeToken(revocationUrl, userId, accountId);
         } else {
           throw new Error("Token revocation not implemented for this flow");
         }
+      }
+      /**
+       * List account aliases for a user (Authorization Code only)
+       *
+       * @param userId - User identifier (optional)
+       * @returns Array of account aliases (e.g., ['work', 'personal'])
+       */
+      async listAccounts(userId) {
+        if (this.flow instanceof AuthCodePKCEFlow) {
+          return this.flow.listAccounts(userId);
+        }
+        return [];
       }
       // ==================== Validation ====================
       validateConfig(config) {
@@ -2061,52 +2178,78 @@ var init_Connector = __esm({
       /**
        * Get the current access token (for OAuth, JWT, or API key)
        * Handles automatic refresh if needed
+       *
+       * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
        */
-      async getToken(userId) {
+      async getToken(userId, accountId) {
         if (this.config.auth.type === "api_key") {
           return this.config.auth.apiKey;
         }
         if (!this.oauthManager) {
           throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
         }
-        return this.oauthManager.getToken(userId);
+        return this.oauthManager.getToken(userId, accountId);
       }
       /**
        * Start OAuth authorization flow
        * Returns the URL to redirect the user to
+       *
+       * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
        */
-      async startAuth(userId) {
+      async startAuth(userId, accountId) {
         if (!this.oauthManager) {
           throw new Error(`Connector '${this.name}' is not an OAuth connector`);
         }
-        return this.oauthManager.startAuthFlow(userId);
+        return this.oauthManager.startAuthFlow(userId, accountId);
       }
       /**
        * Handle OAuth callback
        * Call this after user is redirected back from OAuth provider
+       *
+       * @param callbackUrl - Full callback URL with code and state parameters
+       * @param userId - Optional user identifier (can be extracted from state if embedded)
+       * @param accountId - Optional account alias (can be extracted from state if embedded)
        */
-      async handleCallback(callbackUrl, userId) {
+      async handleCallback(callbackUrl, userId, accountId) {
         if (!this.oauthManager) {
           throw new Error(`Connector '${this.name}' is not an OAuth connector`);
         }
-        await this.oauthManager.handleCallback(callbackUrl, userId);
+        await this.oauthManager.handleCallback(callbackUrl, userId, accountId);
       }
       /**
        * Check if the connector has a valid token
+       *
+       * @param userId - Optional user identifier for multi-user support
+       * @param accountId - Optional account alias for multi-account support
        */
-      async hasValidToken(userId) {
+      async hasValidToken(userId, accountId) {
         try {
           if (this.config.auth.type === "api_key") {
             return true;
           }
           if (this.oauthManager) {
-            const token = await this.oauthManager.getToken(userId);
+            const token = await this.oauthManager.getToken(userId, accountId);
             return !!token;
           }
           return false;
         } catch {
           return false;
         }
+      }
+      /**
+       * List account aliases for a user on this connector.
+       * Only applicable for OAuth connectors with multi-account support.
+       *
+       * @param userId - Optional user identifier
+       * @returns Array of account aliases (e.g., ['work', 'personal'])
+       */
+      async listAccounts(userId) {
+        if (!this.oauthManager) {
+          return [];
+        }
+        return this.oauthManager.listAccounts(userId);
       }
       /**
        * Get vendor-specific options from config
@@ -2151,9 +2294,10 @@ var init_Connector = __esm({
        * @param endpoint - API endpoint (relative to baseURL) or full URL
        * @param options - Fetch options with connector-specific settings
        * @param userId - Optional user ID for multi-user OAuth
+       * @param accountId - Optional account alias for multi-account OAuth
        * @returns Fetch Response
        */
-      async fetch(endpoint, options, userId) {
+      async fetch(endpoint, options, userId, accountId) {
         if (this.disposed) {
           throw new Error(`Connector '${this.name}' has been disposed`);
         }
@@ -2172,7 +2316,7 @@ var init_Connector = __esm({
           this.logRequest(url2, options);
         }
         const doFetch = async () => {
-          const token = await this.getToken(userId);
+          const token = await this.getToken(userId, accountId);
           const auth2 = this.config.auth;
           let headerName = "Authorization";
           let headerValue = `Bearer ${token}`;
@@ -2284,10 +2428,11 @@ var init_Connector = __esm({
        * @param endpoint - API endpoint (relative to baseURL) or full URL
        * @param options - Fetch options with connector-specific settings
        * @param userId - Optional user ID for multi-user OAuth
+       * @param accountId - Optional account alias for multi-account OAuth
        * @returns Parsed JSON response
        */
-      async fetchJSON(endpoint, options, userId) {
-        const response = await this.fetch(endpoint, options, userId);
+      async fetchJSON(endpoint, options, userId, accountId) {
+        const response = await this.fetch(endpoint, options, userId, accountId);
         const text = await response.text();
         let data;
         try {
@@ -11238,12 +11383,14 @@ var ToolManager = class extends EventEmitter {
   }
   /**
    * Register tools produced by a specific connector.
-   * Sets `source: 'connector:<connectorName>'` so agent-level filtering can
-   * restrict which connector tools are visible to a given agent.
+   * Sets `source: 'connector:<connectorName>'` (or `'connector:<name>:<accountId>'` for identity-bound tools)
+   * so agent-level filtering can restrict which connector tools are visible to a given agent.
    */
   registerConnectorTools(connectorName, tools, options = {}) {
+    const { accountId, ...toolOptions } = options;
+    const source = accountId ? `connector:${connectorName}:${accountId}` : `connector:${connectorName}`;
     for (const tool of tools) {
-      this.register(tool, { ...options, source: `connector:${connectorName}` });
+      this.register(tool, { ...toolOptions, source });
     }
   }
   /**
@@ -16735,8 +16882,8 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
   _agentId;
   /** User ID for multi-user scenarios */
   _userId;
-  /** Allowed connector names (when agent is restricted to a subset) */
-  _allowedConnectors;
+  /** Auth identities this agent is scoped to (connector + optional accountId) */
+  _identities;
   /** Storage backend */
   _storage;
   /** Destroyed flag */
@@ -16776,7 +16923,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
     this._userId = config.userId;
-    this._allowedConnectors = config.connectors;
+    this._identities = config.identities;
     const sessionFactory = StorageRegistry.get("sessions");
     const storageCtx = StorageRegistry.getContext() ?? (config.userId ? { userId: config.userId } : void 0);
     this._storage = config.storage ?? (sessionFactory ? sessionFactory(this._agentId, storageCtx) : void 0);
@@ -16848,7 +16995,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
    * Merges with existing ToolContext to preserve other fields (memory, signal, taskId).
    *
    * Connector registry resolution order:
-   * 1. If `connectors` (allowed names) is set → filtered view of global registry
+   * 1. If `identities` is set → filtered view showing only identity connectors
    * 2. If access policy + userId → scoped view via Connector.scoped()
    * 3. Otherwise → full global registry
    */
@@ -16858,6 +17005,7 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
       ...existing,
       agentId: this._agentId,
       userId: this._userId,
+      identities: this._identities,
       connectorRegistry: this.buildConnectorRegistry()
     });
   }
@@ -16865,13 +17013,13 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
    * Build the connector registry appropriate for this agent's config.
    */
   buildConnectorRegistry() {
-    if (this._allowedConnectors?.length) {
-      const allowedSet = new Set(this._allowedConnectors);
+    if (this._identities?.length) {
+      const allowedSet = new Set(this._identities.map((id) => id.connector));
       const base = this._userId && Connector.getAccessPolicy() ? Connector.scoped({ userId: this._userId }) : Connector.asRegistry();
       return {
         get: (name) => {
           if (!allowedSet.has(name)) {
-            const available = this._allowedConnectors.filter((n) => base.has(n)).join(", ") || "none";
+            const available = [...allowedSet].filter((n) => base.has(n)).join(", ") || "none";
             throw new Error(`Connector '${name}' not found. Available: ${available}`);
           }
           return base.get(name);
@@ -16923,13 +17071,13 @@ var AgentContextNextGen = class _AgentContextNextGen extends EventEmitter {
     this._userId = value;
     this.syncToolContext();
   }
-  /** Get the allowed connector names (undefined = all visible connectors) */
-  get connectors() {
-    return this._allowedConnectors;
+  /** Get the auth identities this agent is scoped to (undefined = all visible connectors) */
+  get identities() {
+    return this._identities;
   }
-  /** Set allowed connector names. Updates ToolContext.connectorRegistry. */
-  set connectors(value) {
-    this._allowedConnectors = value;
+  /** Set auth identities. Updates ToolContext.connectorRegistry and identity-aware descriptions. */
+  set identities(value) {
+    this._identities = value;
     this.syncToolContext();
   }
   /** Get/set system prompt */
@@ -21408,7 +21556,7 @@ var BaseAgent = class extends EventEmitter {
       model: config.model,
       agentId: config.name,
       userId: config.userId,
-      connectors: config.connectors,
+      identities: config.identities,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
       // Thread tool execution timeout to ToolManager
@@ -21578,16 +21726,16 @@ var BaseAgent = class extends EventEmitter {
     this._agentContext.userId = value;
   }
   /**
-   * Get the allowed connector names (undefined = all visible connectors).
+   * Get the auth identities this agent is scoped to (undefined = all visible connectors).
    */
-  get connectors() {
-    return this._agentContext.connectors;
+  get identities() {
+    return this._agentContext.identities;
   }
   /**
-   * Restrict this agent to a subset of connectors. Updates ToolContext.connectorRegistry.
+   * Set auth identities at runtime. Updates ToolContext.connectorRegistry and tool descriptions.
    */
-  set connectors(value) {
-    this._agentContext.connectors = value;
+  set identities(value) {
+    this._agentContext.identities = value;
   }
   /**
    * Permission management. Returns ToolPermissionManager for approval control.
@@ -21644,11 +21792,32 @@ var BaseAgent = class extends EventEmitter {
    */
   getEnabledToolDefinitions() {
     const toolContext = this._agentContext.tools.getToolContext();
-    const allowed = this._agentContext.connectors;
+    const identities = this._agentContext.identities;
+    let allowedSources;
+    let allowedConnectorNames;
+    if (identities) {
+      allowedSources = /* @__PURE__ */ new Set();
+      allowedConnectorNames = /* @__PURE__ */ new Set();
+      for (const id of identities) {
+        allowedConnectorNames.add(id.connector);
+        if (id.accountId) {
+          allowedSources.add(`connector:${id.connector}:${id.accountId}`);
+        } else {
+          allowedSources.add(`connector:${id.connector}`);
+          allowedConnectorNames.add(id.connector);
+        }
+      }
+    }
     return this._agentContext.tools.getEnabledRegistrations().filter((reg) => {
-      if (!allowed) return true;
+      if (!allowedSources) return true;
       if (!reg.source?.startsWith("connector:")) return true;
-      return allowed.includes(reg.source.slice("connector:".length));
+      if (allowedSources.has(reg.source)) return true;
+      const sourceParts = reg.source.slice("connector:".length).split(":");
+      const connectorName = sourceParts[0];
+      if (allowedConnectorNames.has(connectorName) && allowedSources.has(`connector:${connectorName}`)) {
+        return true;
+      }
+      return false;
     }).map((reg) => {
       const tool = reg.tool;
       if (tool.descriptionFactory) {
@@ -24035,6 +24204,7 @@ function createTask(input) {
     suggestedTools: input.suggestedTools,
     validation: input.validation,
     expectedOutput: input.expectedOutput,
+    controlFlow: input.controlFlow,
     attempts: 0,
     maxAttempts: input.maxAttempts ?? 3,
     createdAt: now,
@@ -24287,6 +24457,7 @@ function createRoutineDefinition(input) {
     instructions: input.instructions,
     concurrency: input.concurrency,
     allowDynamicTasks: input.allowDynamicTasks ?? false,
+    parameters: input.parameters,
     tags: input.tags,
     author: input.author,
     createdAt: now,
@@ -24502,6 +24673,321 @@ function extractNumber(text, patterns = [
 
 // src/core/routineRunner.ts
 init_Logger();
+
+// src/core/routineControlFlow.ts
+init_Logger();
+var HARD_MAX_ITERATIONS = 1e3;
+var ICM_LARGE_THRESHOLD = 5e3;
+var ROUTINE_KEYS = {
+  /** Plan overview with task statuses (ICM) */
+  PLAN: "__routine_plan",
+  /** Dependency results location guide (ICM) */
+  DEPS: "__routine_deps",
+  /** Prefix for per-dependency result keys (ICM/WM) */
+  DEP_RESULT_PREFIX: "__dep_result_",
+  /** Current map/fold item (ICM) */
+  MAP_ITEM: "__map_item",
+  /** Current map/fold index, 0-based (ICM) */
+  MAP_INDEX: "__map_index",
+  /** Total items in map/fold (ICM) */
+  MAP_TOTAL: "__map_total",
+  /** Running fold accumulator (ICM) */
+  FOLD_ACCUMULATOR: "__fold_accumulator",
+  /** Prefix for large dep results stored in WM findings tier */
+  WM_DEP_FINDINGS_PREFIX: "findings/__dep_result_"
+};
+function resolveTemplates(text, inputs, icmPlugin) {
+  return text.replace(/\{\{(\w+)\.(\w+)\}\}/g, (_match, namespace, key) => {
+    let value;
+    if (namespace === "param") {
+      value = inputs[key];
+    } else if (namespace === "map") {
+      const icmKey = `__map_${key}`;
+      value = icmPlugin?.get(icmKey);
+    } else if (namespace === "fold") {
+      const icmKey = `__fold_${key}`;
+      value = icmPlugin?.get(icmKey);
+    } else {
+      return _match;
+    }
+    if (value === void 0) {
+      return _match;
+    }
+    return typeof value === "string" ? value : JSON.stringify(value);
+  });
+}
+function resolveTaskTemplates(task, inputs, icmPlugin) {
+  const resolvedDescription = resolveTemplates(task.description, inputs, icmPlugin);
+  const resolvedExpectedOutput = task.expectedOutput ? resolveTemplates(task.expectedOutput, inputs, icmPlugin) : task.expectedOutput;
+  if (resolvedDescription === task.description && resolvedExpectedOutput === task.expectedOutput) {
+    return task;
+  }
+  return {
+    ...task,
+    description: resolvedDescription,
+    expectedOutput: resolvedExpectedOutput
+  };
+}
+function validateAndResolveInputs(parameters, inputs) {
+  const resolved = { ...inputs ?? {} };
+  if (!parameters || parameters.length === 0) {
+    return resolved;
+  }
+  for (const param of parameters) {
+    if (resolved[param.name] === void 0) {
+      if (param.required) {
+        throw new Error(`Missing required parameter: "${param.name}"`);
+      }
+      if (param.default !== void 0) {
+        resolved[param.name] = param.default;
+      }
+    }
+  }
+  return resolved;
+}
+async function readMemoryValue(key, icmPlugin, wmPlugin) {
+  if (icmPlugin) {
+    const icmValue = icmPlugin.get(key);
+    if (icmValue !== void 0) return icmValue;
+  }
+  if (wmPlugin) {
+    const wmValue = await wmPlugin.retrieve(key);
+    if (wmValue !== void 0) return wmValue;
+  }
+  return void 0;
+}
+async function storeResult(key, description, value, icmPlugin, wmPlugin) {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value);
+  const estimatedTokens = Math.ceil(serialized.length / 4);
+  if (estimatedTokens < ICM_LARGE_THRESHOLD && icmPlugin) {
+    icmPlugin.set(key, description, value, "high");
+  } else if (wmPlugin) {
+    await wmPlugin.store(key, description, serialized, { tier: "findings" });
+  } else if (icmPlugin) {
+    icmPlugin.set(key, description, value, "high");
+  }
+}
+function resolveSubRoutine(spec, parentTaskName) {
+  if (!Array.isArray(spec)) {
+    return spec;
+  }
+  return createRoutineDefinition({
+    name: `${parentTaskName} (sub-routine)`,
+    description: `Sub-routine of ${parentTaskName}`,
+    tasks: spec
+  });
+}
+function getPlugins(agent) {
+  const icmPlugin = agent.context.getPlugin("in_context_memory");
+  const wmPlugin = agent.context.memory;
+  return { icmPlugin, wmPlugin };
+}
+function cleanMapKeys(icmPlugin) {
+  if (!icmPlugin) return;
+  icmPlugin.delete(ROUTINE_KEYS.MAP_ITEM);
+  icmPlugin.delete(ROUTINE_KEYS.MAP_INDEX);
+  icmPlugin.delete(ROUTINE_KEYS.MAP_TOTAL);
+}
+function cleanFoldKeys(icmPlugin) {
+  if (!icmPlugin) return;
+  cleanMapKeys(icmPlugin);
+  icmPlugin.delete(ROUTINE_KEYS.FOLD_ACCUMULATOR);
+}
+async function readSourceArray(flow, flowType, icmPlugin, wmPlugin) {
+  const sourceValue = await readMemoryValue(flow.sourceKey, icmPlugin, wmPlugin);
+  if (!Array.isArray(sourceValue)) {
+    return {
+      completed: false,
+      error: `${flowType} sourceKey "${flow.sourceKey}" is not an array (got ${typeof sourceValue})`
+    };
+  }
+  const maxIter = Math.min(sourceValue.length, flow.maxIterations ?? sourceValue.length, HARD_MAX_ITERATIONS);
+  return { array: sourceValue, maxIter };
+}
+function prepareSubRoutine(tasks, parentTaskName) {
+  const subRoutine = resolveSubRoutine(tasks, parentTaskName);
+  return {
+    augmented: { ...subRoutine },
+    baseInstructions: subRoutine.instructions ?? ""
+  };
+}
+function getSubRoutineOutput(execution) {
+  const tasks = execution.plan.tasks;
+  for (let i = tasks.length - 1; i >= 0; i--) {
+    if (tasks[i].status === "completed") {
+      return tasks[i].result?.output ?? null;
+    }
+  }
+  return null;
+}
+function setIterationKeys(icmPlugin, item, index, total, label) {
+  if (!icmPlugin) return;
+  icmPlugin.set(ROUTINE_KEYS.MAP_ITEM, `Current ${label} item (${index + 1}/${total})`, item, "high");
+  icmPlugin.set(ROUTINE_KEYS.MAP_INDEX, `Current ${label} index (0-based)`, index, "high");
+  icmPlugin.set(ROUTINE_KEYS.MAP_TOTAL, `Total items in ${label}`, total, "high");
+}
+async function withTimeout(promise, timeoutMs, label) {
+  if (!timeoutMs) return promise;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function handleMap(agent, flow, task, inputs) {
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
+  const log = logger.child({ controlFlow: "map", task: task.name });
+  const sourceResult = await readSourceArray(flow, "Map", icmPlugin, wmPlugin);
+  if ("completed" in sourceResult) return sourceResult;
+  const { array: array3, maxIter } = sourceResult;
+  const results = [];
+  const { augmented, baseInstructions } = prepareSubRoutine(flow.tasks, task.name);
+  log.info({ arrayLength: array3.length, maxIterations: maxIter }, "Starting map iteration");
+  try {
+    for (let i = 0; i < maxIter; i++) {
+      setIterationKeys(icmPlugin, array3[i], i, array3.length, "map");
+      augmented.instructions = [
+        `You are processing item ${i + 1} of ${array3.length} in a map operation.`,
+        "The current item is available in your live context as __map_item.",
+        "Current index (0-based) is in __map_index, total count in __map_total.",
+        "",
+        baseInstructions
+      ].join("\n");
+      const subExecution = await withTimeout(
+        executeRoutine({ definition: augmented, agent, inputs }),
+        flow.iterationTimeoutMs,
+        `Map iteration ${i}`
+      );
+      if (subExecution.status !== "completed") {
+        return {
+          completed: false,
+          error: `Map iteration ${i} failed: ${subExecution.error ?? "sub-routine failed"}`
+        };
+      }
+      results.push(getSubRoutineOutput(subExecution));
+    }
+  } finally {
+    cleanMapKeys(icmPlugin);
+  }
+  if (flow.resultKey) {
+    await storeResult(flow.resultKey, `Map results from "${task.name}"`, results, icmPlugin, wmPlugin);
+  }
+  log.info({ resultCount: results.length }, "Map completed");
+  return { completed: true, result: results };
+}
+async function handleFold(agent, flow, task, inputs) {
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
+  const log = logger.child({ controlFlow: "fold", task: task.name });
+  const sourceResult = await readSourceArray(flow, "Fold", icmPlugin, wmPlugin);
+  if ("completed" in sourceResult) return sourceResult;
+  const { array: array3, maxIter } = sourceResult;
+  let accumulator = flow.initialValue;
+  const { augmented, baseInstructions } = prepareSubRoutine(flow.tasks, task.name);
+  log.info({ arrayLength: array3.length, maxIterations: maxIter }, "Starting fold iteration");
+  try {
+    for (let i = 0; i < maxIter; i++) {
+      setIterationKeys(icmPlugin, array3[i], i, array3.length, "fold");
+      if (icmPlugin) {
+        icmPlugin.set(ROUTINE_KEYS.FOLD_ACCUMULATOR, "Running accumulator \u2014 update via context_set", accumulator, "high");
+      }
+      augmented.instructions = [
+        `You are processing item ${i + 1} of ${array3.length} in a fold/accumulate operation.`,
+        "The current item is in __map_item. The running accumulator is in __fold_accumulator.",
+        "After processing, use context_set to update __fold_accumulator with the new accumulated value.",
+        "Your final text response will also be captured as the result.",
+        "",
+        baseInstructions
+      ].join("\n");
+      const subExecution = await withTimeout(
+        executeRoutine({ definition: augmented, agent, inputs }),
+        flow.iterationTimeoutMs,
+        `Fold iteration ${i}`
+      );
+      if (subExecution.status !== "completed") {
+        return {
+          completed: false,
+          error: `Fold iteration ${i} failed: ${subExecution.error ?? "sub-routine failed"}`
+        };
+      }
+      const taskOutput = getSubRoutineOutput(subExecution);
+      if (taskOutput !== null) {
+        accumulator = taskOutput;
+      } else if (icmPlugin) {
+        const icmAccumulator = icmPlugin.get(ROUTINE_KEYS.FOLD_ACCUMULATOR);
+        if (icmAccumulator !== void 0) {
+          accumulator = icmAccumulator;
+        }
+      }
+    }
+  } finally {
+    cleanFoldKeys(icmPlugin);
+  }
+  await storeResult(flow.resultKey, `Fold result from "${task.name}"`, accumulator, icmPlugin, wmPlugin);
+  log.info("Fold completed");
+  return { completed: true, result: accumulator };
+}
+async function handleUntil(agent, flow, task, inputs) {
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
+  const log = logger.child({ controlFlow: "until", task: task.name });
+  const { augmented, baseInstructions } = prepareSubRoutine(flow.tasks, task.name);
+  log.info({ maxIterations: flow.maxIterations }, "Starting until loop");
+  const memoryAccess = {
+    get: (key) => readMemoryValue(key, icmPlugin, wmPlugin)
+  };
+  try {
+    for (let i = 0; i < flow.maxIterations; i++) {
+      if (flow.iterationKey && icmPlugin) {
+        icmPlugin.set(flow.iterationKey, "Current iteration index", i, "high");
+      }
+      augmented.instructions = [
+        `You are in iteration ${i + 1} of a repeating operation (max ${flow.maxIterations}).`,
+        "Complete the task. The loop will continue until its exit condition is met.",
+        "",
+        baseInstructions
+      ].join("\n");
+      const subExecution = await withTimeout(
+        executeRoutine({ definition: augmented, agent, inputs }),
+        flow.iterationTimeoutMs,
+        `Until iteration ${i}`
+      );
+      if (subExecution.status !== "completed") {
+        return {
+          completed: false,
+          error: `Until iteration ${i} failed: ${subExecution.error ?? "sub-routine failed"}`
+        };
+      }
+      const conditionMet = await evaluateCondition(flow.condition, memoryAccess);
+      if (conditionMet) {
+        log.info({ iteration: i + 1 }, "Until condition met");
+        return { completed: true };
+      }
+    }
+  } finally {
+    if (flow.iterationKey && icmPlugin) {
+      icmPlugin.delete(flow.iterationKey);
+    }
+  }
+  return { completed: false, error: `Until loop: maxIterations (${flow.maxIterations}) exceeded` };
+}
+async function executeControlFlow(agent, task, inputs) {
+  const flow = task.controlFlow;
+  switch (flow.type) {
+    case "map":
+      return handleMap(agent, flow, task, inputs);
+    case "fold":
+      return handleFold(agent, flow, task, inputs);
+    case "until":
+      return handleUntil(agent, flow, task, inputs);
+    default:
+      return { completed: false, error: `Unknown control flow type: ${flow.type}` };
+  }
+}
+
+// src/core/routineRunner.ts
 function defaultSystemPrompt(definition) {
   const parts = [];
   if (definition.instructions) {
@@ -24630,6 +25116,14 @@ async function collectValidationContext(agent, responseText) {
     toolCallLog
   };
 }
+function isTransientError(error) {
+  if (error instanceof ProviderAuthError) return false;
+  if (error instanceof ProviderContextLengthError) return false;
+  if (error instanceof ProviderNotFoundError) return false;
+  if (error instanceof ModelNotSupportedError) return false;
+  if (error instanceof InvalidConfigError) return false;
+  return true;
+}
 function estimateTokens(text) {
   return Math.ceil(text.length / 4);
 }
@@ -24673,32 +25167,42 @@ function buildPlanOverview(execution, definition, currentTaskId) {
   }
   return parts.join("\n");
 }
+async function cleanupMemoryKeys(icmPlugin, wmPlugin, config) {
+  if (icmPlugin) {
+    for (const entry of icmPlugin.list()) {
+      const shouldDelete = config.icmPrefixes.some((p) => entry.key.startsWith(p)) || (config.icmExactKeys?.includes(entry.key) ?? false);
+      if (shouldDelete) icmPlugin.delete(entry.key);
+    }
+  }
+  if (wmPlugin) {
+    const { entries: wmEntries } = await wmPlugin.query();
+    for (const entry of wmEntries) {
+      if (config.wmPrefixes.some((p) => entry.key.startsWith(p))) {
+        await wmPlugin.delete(entry.key);
+      }
+    }
+  }
+}
+var DEP_CLEANUP_CONFIG = {
+  icmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX],
+  icmExactKeys: [ROUTINE_KEYS.DEPS],
+  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX]
+};
+var FULL_CLEANUP_CONFIG = {
+  icmPrefixes: ["__routine_", ROUTINE_KEYS.DEP_RESULT_PREFIX, "__map_", "__fold_"],
+  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX]
+};
 async function injectRoutineContext(agent, execution, definition, currentTask) {
-  const icmPlugin = agent.context.getPlugin("in_context_memory");
-  const wmPlugin = agent.context.memory;
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
   if (!icmPlugin && !wmPlugin) {
     logger.warn("injectRoutineContext: No ICM or WM plugin available \u2014 skipping context injection");
     return;
   }
   const planOverview = buildPlanOverview(execution, definition, currentTask.id);
   if (icmPlugin) {
-    icmPlugin.set("__routine_plan", "Routine plan overview with task statuses", planOverview, "high");
+    icmPlugin.set(ROUTINE_KEYS.PLAN, "Routine plan overview with task statuses", planOverview, "high");
   }
-  if (icmPlugin) {
-    for (const entry of icmPlugin.list()) {
-      if (entry.key.startsWith("__dep_result_") || entry.key === "__routine_deps") {
-        icmPlugin.delete(entry.key);
-      }
-    }
-  }
-  if (wmPlugin) {
-    const { entries: wmEntries } = await wmPlugin.query();
-    for (const entry of wmEntries) {
-      if (entry.key.startsWith("__dep_result_") || entry.key.startsWith("findings/__dep_result_")) {
-        await wmPlugin.delete(entry.key);
-      }
-    }
-  }
+  await cleanupMemoryKeys(icmPlugin, wmPlugin, DEP_CLEANUP_CONFIG);
   if (currentTask.dependsOn.length === 0) return;
   const inContextDeps = [];
   const workingMemoryDeps = [];
@@ -24707,7 +25211,7 @@ async function injectRoutineContext(agent, execution, definition, currentTask) {
     if (!depTask?.result?.output) continue;
     const output = typeof depTask.result.output === "string" ? depTask.result.output : JSON.stringify(depTask.result.output);
     const tokens = estimateTokens(output);
-    const depKey = `__dep_result_${depId}`;
+    const depKey = `${ROUTINE_KEYS.DEP_RESULT_PREFIX}${depId}`;
     const depLabel = `Result from task "${depTask.name}"`;
     if (tokens < 5e3 && icmPlugin) {
       icmPlugin.set(depKey, depLabel, output, "high");
@@ -24729,27 +25233,12 @@ async function injectRoutineContext(agent, execution, definition, currentTask) {
     if (workingMemoryDeps.length > 0) {
       summaryParts.push(`In working memory (use memory_retrieve): ${workingMemoryDeps.join(", ")}`);
     }
-    icmPlugin.set("__routine_deps", "Dependency results location guide", summaryParts.join("\n"), "high");
+    icmPlugin.set(ROUTINE_KEYS.DEPS, "Dependency results location guide", summaryParts.join("\n"), "high");
   }
 }
 async function cleanupRoutineContext(agent) {
-  const icmPlugin = agent.context.getPlugin("in_context_memory");
-  const wmPlugin = agent.context.memory;
-  if (icmPlugin) {
-    for (const entry of icmPlugin.list()) {
-      if (entry.key.startsWith("__routine_") || entry.key.startsWith("__dep_result_")) {
-        icmPlugin.delete(entry.key);
-      }
-    }
-  }
-  if (wmPlugin) {
-    const { entries: wmEntries } = await wmPlugin.query();
-    for (const entry of wmEntries) {
-      if (entry.key.startsWith("__dep_result_") || entry.key.startsWith("findings/__dep_result_")) {
-        await wmPlugin.delete(entry.key);
-      }
-    }
-  }
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
+  await cleanupMemoryKeys(icmPlugin, wmPlugin, FULL_CLEANUP_CONFIG);
 }
 async function validateTaskCompletion(agent, task, responseText, validationPromptBuilder) {
   const hasExplicitValidation = task.validation?.skipReflection === false && task.validation?.completionCriteria && task.validation.completionCriteria.length > 0;
@@ -24798,11 +25287,13 @@ async function executeRoutine(options) {
     onTaskFailed,
     onTaskValidation,
     hooks,
-    prompts
+    prompts,
+    inputs: rawInputs
   } = options;
   if (!existingAgent && (!connector || !model)) {
     throw new Error("executeRoutine requires either `agent` or both `connector` and `model`");
   }
+  const resolvedInputs = validateAndResolveInputs(definition.parameters, rawInputs);
   const ownsAgent = !existingAgent;
   const log = logger.child({ routine: definition.name });
   const execution = createRoutineExecution(definition);
@@ -24895,85 +25386,115 @@ async function executeRoutine(options) {
         return { shouldPause: false };
       };
       agent.registerHook("pause:check", iterationLimiter);
-      const getTask = () => execution.plan.tasks[taskIndex];
-      await injectRoutineContext(agent, execution, definition, getTask());
-      while (!taskCompleted) {
-        try {
-          const taskPrompt = buildTaskPrompt(getTask());
-          const response = await agent.run(taskPrompt);
-          const responseText = response.output_text ?? "";
-          const validationResult = await validateTaskCompletion(
-            agent,
-            getTask(),
-            responseText,
-            buildValidationPrompt
-          );
-          onTaskValidation?.(getTask(), validationResult, execution);
-          if (validationResult.isComplete) {
-            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "completed");
-            execution.plan.tasks[taskIndex].result = {
-              success: true,
-              output: responseText,
-              validationScore: validationResult.completionScore,
-              validationExplanation: validationResult.explanation
-            };
-            taskCompleted = true;
-            log.info(
-              { taskName: getTask().name, score: validationResult.completionScore },
-              "Task completed"
-            );
-            execution.progress = getRoutineProgress(execution);
-            execution.lastUpdatedAt = Date.now();
-            onTaskComplete?.(execution.plan.tasks[taskIndex], execution);
-          } else {
-            log.warn(
-              {
-                taskName: getTask().name,
-                score: validationResult.completionScore,
-                attempt: getTask().attempts,
-                maxAttempts: getTask().maxAttempts
-              },
-              "Task validation failed"
-            );
-            if (getTask().attempts >= getTask().maxAttempts) {
+      try {
+        const getTask = () => execution.plan.tasks[taskIndex];
+        await injectRoutineContext(agent, execution, definition, getTask());
+        const { icmPlugin } = getPlugins(agent);
+        if (getTask().controlFlow) {
+          try {
+            const cfResult = await executeControlFlow(agent, getTask(), resolvedInputs);
+            if (cfResult.completed) {
+              execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "completed");
+              execution.plan.tasks[taskIndex].result = { success: true, output: cfResult.result };
+              taskCompleted = true;
+              execution.progress = getRoutineProgress(execution);
+              execution.lastUpdatedAt = Date.now();
+              onTaskComplete?.(execution.plan.tasks[taskIndex], execution);
+            } else {
               execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "failed");
-              execution.plan.tasks[taskIndex].result = {
-                success: false,
-                error: validationResult.explanation,
-                validationScore: validationResult.completionScore,
-                validationExplanation: validationResult.explanation
-              };
-              break;
+              execution.plan.tasks[taskIndex].result = { success: false, error: cfResult.error };
             }
-            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "in_progress");
-          }
-        } catch (error) {
-          const errorMessage = error.message;
-          log.error({ taskName: getTask().name, error: errorMessage }, "Task execution error");
-          if (getTask().attempts >= getTask().maxAttempts) {
+          } catch (error) {
+            const errorMessage = error.message;
+            log.error({ taskName: getTask().name, error: errorMessage }, "Control flow error");
             execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "failed");
-            execution.plan.tasks[taskIndex].result = {
-              success: false,
-              error: errorMessage
-            };
+            execution.plan.tasks[taskIndex].result = { success: false, error: errorMessage };
+          }
+        } else {
+          while (!taskCompleted) {
+            try {
+              const resolvedTask = resolveTaskTemplates(getTask(), resolvedInputs, icmPlugin);
+              const taskPrompt = buildTaskPrompt(resolvedTask);
+              const response = await agent.run(taskPrompt);
+              const responseText = response.output_text ?? "";
+              const validationResult = await validateTaskCompletion(
+                agent,
+                getTask(),
+                responseText,
+                buildValidationPrompt
+              );
+              onTaskValidation?.(getTask(), validationResult, execution);
+              if (validationResult.isComplete) {
+                execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "completed");
+                execution.plan.tasks[taskIndex].result = {
+                  success: true,
+                  output: responseText,
+                  validationScore: validationResult.completionScore,
+                  validationExplanation: validationResult.explanation
+                };
+                taskCompleted = true;
+                log.info(
+                  { taskName: getTask().name, score: validationResult.completionScore },
+                  "Task completed"
+                );
+                execution.progress = getRoutineProgress(execution);
+                execution.lastUpdatedAt = Date.now();
+                onTaskComplete?.(execution.plan.tasks[taskIndex], execution);
+              } else {
+                log.warn(
+                  {
+                    taskName: getTask().name,
+                    score: validationResult.completionScore,
+                    attempt: getTask().attempts,
+                    maxAttempts: getTask().maxAttempts
+                  },
+                  "Task validation failed"
+                );
+                if (getTask().attempts >= getTask().maxAttempts) {
+                  execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "failed");
+                  execution.plan.tasks[taskIndex].result = {
+                    success: false,
+                    error: validationResult.explanation,
+                    validationScore: validationResult.completionScore,
+                    validationExplanation: validationResult.explanation
+                  };
+                  break;
+                }
+                execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "in_progress");
+              }
+            } catch (error) {
+              const errorMessage = error.message;
+              log.error({ taskName: getTask().name, error: errorMessage }, "Task execution error");
+              if (!isTransientError(error) || getTask().attempts >= getTask().maxAttempts) {
+                execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "failed");
+                execution.plan.tasks[taskIndex].result = {
+                  success: false,
+                  error: errorMessage
+                };
+                break;
+              }
+              execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "in_progress");
+            }
+          }
+        }
+        if (!taskCompleted) {
+          execution.progress = getRoutineProgress(execution);
+          execution.lastUpdatedAt = Date.now();
+          onTaskFailed?.(execution.plan.tasks[taskIndex], execution);
+          if (failureMode === "fail-fast") {
+            execution.status = "failed";
+            execution.error = `Task "${getTask().name}" failed after ${getTask().attempts} attempt(s)`;
+            execution.completedAt = Date.now();
+            execution.lastUpdatedAt = Date.now();
             break;
           }
-          execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "in_progress");
+        }
+      } finally {
+        try {
+          agent.unregisterHook("pause:check", iterationLimiter);
+        } catch {
         }
       }
-      if (!taskCompleted) {
-        execution.progress = getRoutineProgress(execution);
-        execution.lastUpdatedAt = Date.now();
-        onTaskFailed?.(execution.plan.tasks[taskIndex], execution);
-        if (failureMode === "fail-fast") {
-          execution.status = "failed";
-          execution.error = `Task "${getTask().name}" failed after ${getTask().attempts} attempt(s)`;
-          execution.completedAt = Date.now();
-          execution.lastUpdatedAt = Date.now();
-          break;
-        }
-      }
-      agent.unregisterHook("pause:check", iterationLimiter);
       agent.clearConversation("task-boundary");
       nextTasks = getNextExecutableTasks(execution.plan);
     }
@@ -25001,16 +25522,22 @@ async function executeRoutine(options) {
   } finally {
     try {
       await cleanupRoutineContext(agent);
-    } catch {
+    } catch (e) {
+      log.debug({ error: e.message }, "Failed to clean up routine context");
     }
     for (const { name, hook } of registeredHooks) {
       try {
         agent.unregisterHook(name, hook);
-      } catch {
+      } catch (e) {
+        log.debug({ hookName: name, error: e.message }, "Failed to unregister hook");
       }
     }
     if (ownsAgent) {
-      agent.destroy();
+      try {
+        agent.destroy();
+      } catch (e) {
+        log.debug({ error: e.message }, "Failed to destroy agent");
+      }
     }
   }
 }
@@ -31817,7 +32344,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs18.writeFile(filePath, response.audio);
+    await fs17.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -32165,7 +32692,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs18.readFile(filePath);
+    const audio = await fs17.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -38908,10 +39435,10 @@ var FileMediaStorage = class {
   }
   async save(data, metadata) {
     const dir = metadata.userId ? path2.join(this.outputDir, metadata.userId) : this.outputDir;
-    await fs18.mkdir(dir, { recursive: true });
+    await fs17.mkdir(dir, { recursive: true });
     const filename = metadata.suggestedFilename ?? this.generateFilename(metadata);
     const filePath = path2.join(dir, filename);
-    await fs18.writeFile(filePath, data);
+    await fs17.writeFile(filePath, data);
     const format = metadata.format.toLowerCase();
     const mimeType = MIME_TYPES2[format] ?? "application/octet-stream";
     return {
@@ -38922,7 +39449,7 @@ var FileMediaStorage = class {
   }
   async read(location) {
     try {
-      return await fs18.readFile(location);
+      return await fs17.readFile(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return null;
@@ -38932,7 +39459,7 @@ var FileMediaStorage = class {
   }
   async delete(location) {
     try {
-      await fs18.unlink(location);
+      await fs17.unlink(location);
     } catch (err) {
       if (err.code === "ENOENT") {
         return;
@@ -38942,7 +39469,7 @@ var FileMediaStorage = class {
   }
   async exists(location) {
     try {
-      await fs18.access(location);
+      await fs17.access(location);
       return true;
     } catch {
       return false;
@@ -38951,11 +39478,11 @@ var FileMediaStorage = class {
   async list(options) {
     await this.ensureDir();
     let entries = [];
-    const files = await fs18.readdir(this.outputDir);
+    const files = await fs17.readdir(this.outputDir);
     for (const file of files) {
       const filePath = path2.join(this.outputDir, file);
       try {
-        const stat6 = await fs18.stat(filePath);
+        const stat6 = await fs17.stat(filePath);
         if (!stat6.isFile()) continue;
         const ext = path2.extname(file).slice(1).toLowerCase();
         const mimeType = MIME_TYPES2[ext] ?? "application/octet-stream";
@@ -38995,7 +39522,7 @@ var FileMediaStorage = class {
   }
   async ensureDir() {
     if (!this.initialized) {
-      await fs18.mkdir(this.outputDir, { recursive: true });
+      await fs17.mkdir(this.outputDir, { recursive: true });
       this.initialized = true;
     }
   }
@@ -40343,18 +40870,29 @@ var ConnectorTools = class {
    */
   static for(connectorOrName, userId, options) {
     const connector = this.resolveConnector(connectorOrName, options?.registry);
+    const accountId = options?.accountId;
     const tools = [];
+    const namePrefix = accountId ? `${sanitizeToolName(connector.name)}_${sanitizeToolName(accountId)}` : sanitizeToolName(connector.name);
     if (connector.baseURL) {
-      tools.push(this.createGenericAPITool(connector, { userId }));
+      const accountLabel = accountId ? ` (account: ${accountId})` : "";
+      tools.push(this.createGenericAPITool(connector, {
+        userId,
+        accountId,
+        toolName: `${namePrefix}_api`,
+        description: `Make an authenticated API call to ${connector.displayName}${accountLabel}.` + (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : " Provide full URL in endpoint.") + ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.'
+      }));
     }
     const serviceType = this.detectService(connector);
     if (serviceType && this.factories.has(serviceType)) {
       const factory = this.factories.get(serviceType);
       const serviceTools = factory(connector, userId);
       for (const tool of serviceTools) {
-        tool.definition.function.name = `${sanitizeToolName(connector.name)}_${tool.definition.function.name}`;
+        tool.definition.function.name = `${namePrefix}_${tool.definition.function.name}`;
       }
       tools.push(...serviceTools);
+    }
+    if (accountId) {
+      return tools.map((tool) => this.bindAccountId(tool, accountId));
     }
     return tools;
   }
@@ -40505,6 +41043,56 @@ var ConnectorTools = class {
     }
     return connectorOrName;
   }
+  /**
+   * Generate tools for a set of auth identities.
+   * Each identity gets its own tool set with unique name prefixes.
+   *
+   * @param identities - Array of auth identities
+   * @param userId - Optional user ID for multi-user OAuth
+   * @param options - Optional registry for scoped connector lookup
+   * @returns Map of identity key to tool array
+   *
+   * @example
+   * ```typescript
+   * const toolsByIdentity = ConnectorTools.forIdentities([
+   *   { connector: 'microsoft', accountId: 'work' },
+   *   { connector: 'microsoft', accountId: 'personal' },
+   *   { connector: 'github' },
+   * ]);
+   * // Keys: 'microsoft:work', 'microsoft:personal', 'github'
+   * ```
+   */
+  static forIdentities(identities, userId, options) {
+    const result = /* @__PURE__ */ new Map();
+    for (const identity of identities) {
+      const key = identity.accountId ? `${identity.connector}:${identity.accountId}` : identity.connector;
+      try {
+        const tools = this.for(identity.connector, userId, {
+          registry: options?.registry,
+          accountId: identity.accountId
+        });
+        if (tools.length > 0) {
+          result.set(key, tools);
+        }
+      } catch (err) {
+        logger.error(`[ConnectorTools.forIdentities] Error generating tools for identity ${key}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return result;
+  }
+  /**
+   * Wrap a tool to inject accountId into ToolContext at execute time.
+   * This allows identity-bound tools to use the correct account without
+   * modifying every service tool factory.
+   */
+  static bindAccountId(tool, accountId) {
+    return {
+      ...tool,
+      execute: async (args, context) => {
+        return tool.execute(args, { ...context, accountId });
+      }
+    };
+  }
   static createGenericAPITool(connector, options) {
     const toolName = options?.toolName ?? `${sanitizeToolName(connector.name)}_api`;
     const userId = options?.userId;
@@ -40546,6 +41134,7 @@ var ConnectorTools = class {
       },
       execute: async (args, context) => {
         const effectiveUserId = context?.userId ?? userId;
+        const effectiveAccountId = context?.accountId;
         let url2 = args.endpoint;
         if (args.queryParams && Object.keys(args.queryParams).length > 0) {
           const params = new URLSearchParams();
@@ -40578,7 +41167,8 @@ var ConnectorTools = class {
               },
               body: bodyStr
             },
-            effectiveUserId
+            effectiveUserId,
+            effectiveAccountId
           );
           const text = await response.text();
           let data;
@@ -40639,8 +41229,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs18.mkdir(this.directory, { recursive: true });
-      await fs18.chmod(this.directory, 448);
+      await fs17.mkdir(this.directory, { recursive: true });
+      await fs17.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -40654,24 +41244,27 @@ var FileStorage = class {
   async storeToken(key, token) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(key);
-    const plaintext = JSON.stringify(token);
+    const tokenWithKey = { ...token, _storageKey: key };
+    const plaintext = JSON.stringify(tokenWithKey);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs18.writeFile(filePath, encrypted, "utf8");
-    await fs18.chmod(filePath, 384);
+    await fs17.writeFile(filePath, encrypted, "utf8");
+    await fs17.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs18.readFile(filePath, "utf8");
+      const encrypted = await fs17.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
-      return JSON.parse(decrypted);
+      const parsed = JSON.parse(decrypted);
+      const { _storageKey, ...token } = parsed;
+      return token;
     } catch (error) {
       if (error.code === "ENOENT") {
         return null;
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs18.unlink(filePath);
+        await fs17.unlink(filePath);
       } catch {
       }
       return null;
@@ -40680,7 +41273,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs18.unlink(filePath);
+      await fs17.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -40690,10 +41283,36 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs18.access(filePath);
+      await fs17.access(filePath);
       return true;
     } catch {
       return false;
+    }
+  }
+  /**
+   * List all storage keys by decrypting each token file and reading _storageKey.
+   * Falls back to returning hashed filenames for tokens stored before multi-account support.
+   */
+  async listKeys() {
+    try {
+      const files = await fs17.readdir(this.directory);
+      const tokenFiles = files.filter((f) => f.endsWith(".token"));
+      const keys = [];
+      for (const file of tokenFiles) {
+        try {
+          const filePath = path2.join(this.directory, file);
+          const encrypted = await fs17.readFile(filePath, "utf8");
+          const decrypted = decrypt(encrypted, this.encryptionKey);
+          const parsed = JSON.parse(decrypted);
+          if (parsed._storageKey) {
+            keys.push(parsed._storageKey);
+          }
+        } catch {
+        }
+      }
+      return keys;
+    } catch {
+      return [];
     }
   }
   /**
@@ -40701,7 +41320,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs18.readdir(this.directory);
+      const files = await fs17.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -40712,10 +41331,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs18.readdir(this.directory);
+      const files = await fs17.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs18.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs17.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -40725,14 +41344,14 @@ var FileStorage = class {
 
 // src/connectors/authenticatedFetch.ts
 init_Connector();
-async function authenticatedFetch(url2, options, authProvider, userId) {
+async function authenticatedFetch(url2, options, authProvider, userId, accountId) {
   const connector = Connector.get(authProvider);
-  return connector.fetch(url2.toString(), options, userId);
+  return connector.fetch(url2.toString(), options, userId, accountId);
 }
-function createAuthenticatedFetch(authProvider, userId) {
+function createAuthenticatedFetch(authProvider, userId, accountId) {
   const connector = Connector.get(authProvider);
   return async (url2, options) => {
-    return connector.fetch(url2.toString(), options, userId);
+    return connector.fetch(url2.toString(), options, userId, accountId);
   };
 }
 
@@ -41163,14 +41782,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs18.writeFile(filePath, json, "utf8");
-    await fs18.chmod(filePath, 384);
+    await fs17.writeFile(filePath, json, "utf8");
+    await fs17.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs18.readFile(filePath, "utf8");
+      const json = await fs17.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -41183,7 +41802,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs18.unlink(filePath);
+      await fs17.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -41197,7 +41816,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs18.access(filePath);
+      await fs17.access(filePath);
       return true;
     } catch {
       return false;
@@ -41223,13 +41842,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs18.readdir(this.directory);
+      const files = await fs17.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs18.unlink(path2.join(this.directory, f)).catch(() => {
+          (f) => fs17.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -41256,8 +41875,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs18.mkdir(this.directory, { recursive: true });
-      await fs18.chmod(this.directory, 448);
+      await fs17.mkdir(this.directory, { recursive: true });
+      await fs17.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -41268,7 +41887,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs18.readFile(this.indexPath, "utf8");
+      const json = await fs17.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -41286,8 +41905,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs18.writeFile(this.indexPath, json, "utf8");
-    await fs18.chmod(this.indexPath, 384);
+    await fs17.writeFile(this.indexPath, json, "utf8");
+    await fs17.chmod(this.indexPath, 384);
   }
 };
 
@@ -42466,6 +43085,22 @@ var hubspotTemplate = {
         "crm.objects.deals.write": "Create and update deals",
         "tickets": "Read and write support tickets",
         "e-commerce": "Access e-commerce data (products, line items)"
+      }
+    },
+    {
+      id: "oauth-mcp",
+      name: "MCP Auth App (OAuth 2.1)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "HubSpot MCP Auth app using OAuth 2.1 with PKCE. Scopes are auto-granted based on user permissions at install time. Create app at developers.hubspot.com under MCP Auth Apps.",
+      requiredFields: ["clientId", "redirectUri"],
+      optionalFields: ["clientSecret"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://mcp.hubspot.com/oauth/authorize/user",
+        tokenUrl: "https://mcp.hubspot.com/oauth/v1/token",
+        usePKCE: true
       }
     }
   ]
@@ -46597,21 +47232,53 @@ registerWebTools();
 init_Connector();
 var DEFAULT_TIMEOUT = 1e4;
 var DEFAULT_MAX_TIMEOUT = 3e4;
-function formatConnectorEntry(c) {
+function formatConnectorEntry(c, accountId) {
   const parts = [];
   const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
   if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+  if (accountId) parts.push(`Account: "${accountId}"`);
   if (c.config.description) parts.push(c.config.description);
   if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
+  const label = accountId ? `"${c.name}" account "${accountId}"` : `"${c.name}"`;
   const details = parts.map((p) => `     ${p}`).join("\n");
-  return `   \u2022 "${c.name}" (${c.displayName})
+  return `   \u2022 ${label} (${c.displayName})
 ${details}`;
 }
-function generateDescription(context, maxTimeout) {
+function buildIdentityList(context) {
+  const identities = context?.identities;
   const registry = context?.connectorRegistry ?? Connector.asRegistry();
+  if (identities?.length) {
+    const entries = [];
+    for (const id of identities) {
+      try {
+        const connector = registry.get(id.connector);
+        entries.push(formatConnectorEntry(connector, id.accountId));
+      } catch {
+        entries.push(`   \u2022 "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ""} \u2014 not available`);
+      }
+    }
+    return entries.length > 0 ? entries.join("\n\n") : "   No connectors registered.";
+  }
   const connectors = registry.listAll();
-  const connectorList = connectors.length > 0 ? connectors.map(formatConnectorEntry).join("\n\n") : "   No connectors registered.";
+  return connectors.length > 0 ? connectors.map((c) => formatConnectorEntry(c)).join("\n\n") : "   No connectors registered.";
+}
+function hasAccountIds(context) {
+  return !!context?.identities?.some((id) => id.accountId);
+}
+function generateDescription(context, maxTimeout) {
+  const connectorList = buildIdentityList(context);
+  const showAccountId = hasAccountIds(context);
   const timeoutSec = Math.round(maxTimeout / 1e3);
+  const accountIdParam = showAccountId ? `
+     \u2022 accountId (optional): Account alias for multi-account connectors.
+       Required when a connector has multiple accounts (see list below).
+       Example: authenticatedFetch('/v1.0/me', {}, 'microsoft', 'work')` : "";
+  const accountIdExamples = showAccountId ? `
+// Multi-account: specify accountId for connectors with multiple accounts
+const resp = await authenticatedFetch('/v1.0/me', { method: 'GET' }, 'microsoft', 'work');
+const profile = await resp.json();
+output = profile;
+` : "";
   return `Execute JavaScript code in a secure sandbox with authenticated API access to external services.
 
 Use this tool when you need to:
@@ -46622,7 +47289,7 @@ Use this tool when you need to:
 
 SANDBOX API:
 
-1. authenticatedFetch(url, options, connectorName)
+1. authenticatedFetch(url, options, connectorName${showAccountId ? ", accountId?" : ""})
    Makes authenticated HTTP requests using the connector's credentials.
    The current user's identity (userId) is automatically included \u2014 no need to pass it.
    Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
@@ -46633,7 +47300,7 @@ SANDBOX API:
        - Relative: "/user/repos" (resolved against connector's base URL)
      \u2022 options: Standard fetch options { method, headers, body }
        - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
-     \u2022 connectorName: Name of a registered connector (see list below)
+     \u2022 connectorName: Name of a registered connector (see list below)${accountIdParam}
 
    Returns: Promise<Response>
      \u2022 response.ok \u2014 true if status 200-299
@@ -46669,7 +47336,7 @@ const resp = await authenticatedFetch('/chat.postMessage', {
   body: JSON.stringify({ channel: '#general', text: 'Hello!' })
 }, 'slack');
 output = await resp.json();
-
+${accountIdExamples}
 // Data processing (no API needed)
 const items = input.data;
 output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
@@ -46757,9 +47424,10 @@ async function executeInVM(code, input, timeout, logs, userId, registry) {
     },
     // Authenticated fetch — userId auto-injected from ToolContext.
     // Only connectors visible in the scoped registry are accessible.
-    authenticatedFetch: (url2, options, connectorName) => {
+    // Optional 4th param accountId for multi-account OAuth identities.
+    authenticatedFetch: (url2, options, connectorName, accountId) => {
       registry.get(connectorName);
-      return authenticatedFetch(url2, options, connectorName, userId);
+      return authenticatedFetch(url2, options, connectorName, userId, accountId);
     },
     // Standard fetch (no auth)
     fetch: globalThis.fetch,
@@ -47447,7 +48115,8 @@ async function githubFetch(connector, endpoint, options) {
       headers,
       body: options?.body ? JSON.stringify(options.body) : void 0
     },
-    options?.userId
+    options?.userId,
+    options?.accountId
   );
   const text = await response.text();
   let data;
@@ -47529,6 +48198,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -47540,7 +48210,7 @@ EXAMPLES:
           const repoInfo = await githubFetch(
             connector,
             `/repos/${owner}/${repo}`,
-            { userId: effectiveUserId }
+            { userId: effectiveUserId, accountId: effectiveAccountId }
           );
           ref = repoInfo.default_branch;
         }
@@ -47640,6 +48310,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -47657,6 +48328,7 @@ EXAMPLES:
           `/search/code`,
           {
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             // Request text-match fragments
             accept: "application/vnd.github.text-match+json",
             queryParams: { q, per_page: perPage }
@@ -47745,6 +48417,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -47758,7 +48431,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
         const contentResp = await githubFetch(
           connector,
           `/repos/${owner}/${repo}/contents/${args.path}${refParam}`,
-          { userId: effectiveUserId }
+          { userId: effectiveUserId, accountId: effectiveAccountId }
         );
         if (contentResp.type !== "file") {
           return {
@@ -47775,7 +48448,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
           const blob = await githubFetch(
             connector,
             contentResp.git_url,
-            { userId: effectiveUserId }
+            { userId: effectiveUserId, accountId: effectiveAccountId }
           );
           fileContent = Buffer.from(blob.content, "base64").toString("utf-8");
           fileSize = blob.size;
@@ -47864,6 +48537,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -47873,7 +48547,7 @@ EXAMPLES:
         const pr = await githubFetch(
           connector,
           `/repos/${owner}/${repo}/pulls/${args.pull_number}`,
-          { userId: effectiveUserId }
+          { userId: effectiveUserId, accountId: effectiveAccountId }
         );
         return {
           success: true,
@@ -47951,6 +48625,7 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -47962,6 +48637,7 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
           `/repos/${owner}/${repo}/pulls/${args.pull_number}/files`,
           {
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             queryParams: { per_page: 100 }
           }
         );
@@ -48034,6 +48710,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -48041,7 +48718,7 @@ EXAMPLES:
       const { owner, repo } = resolved.repo;
       try {
         const basePath = `/repos/${owner}/${repo}`;
-        const queryOpts = { userId: effectiveUserId, queryParams: { per_page: 100 } };
+        const queryOpts = { userId: effectiveUserId, accountId: effectiveAccountId, queryParams: { per_page: 100 } };
         const [reviewComments, reviews, issueComments] = await Promise.all([
           githubFetch(
             connector,
@@ -48170,6 +48847,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -48182,6 +48860,7 @@ EXAMPLES:
           {
             method: "POST",
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             body: {
               title: args.title,
               body: args.body,
@@ -48273,7 +48952,8 @@ async function microsoftFetch(connector, endpoint, options) {
       headers,
       body: options?.body ? JSON.stringify(options.body) : void 0
     },
-    options?.userId
+    options?.userId,
+    options?.accountId
   );
   const text = await response.text();
   if (!response.ok) {
@@ -48326,7 +49006,7 @@ function isTeamsMeetingUrl(input) {
     return false;
   }
 }
-async function resolveMeetingId(connector, input, prefix, effectiveUserId) {
+async function resolveMeetingId(connector, input, prefix, effectiveUserId, effectiveAccountId) {
   if (!input || input.trim().length === 0) {
     throw new Error("Meeting ID cannot be empty");
   }
@@ -48339,6 +49019,7 @@ async function resolveMeetingId(connector, input, prefix, effectiveUserId) {
     `${prefix}/onlineMeetings`,
     {
       userId: effectiveUserId,
+      accountId: effectiveAccountId,
       queryParams: { "$filter": `JoinWebUrl eq '${trimmed}'` }
     }
   );
@@ -48417,13 +49098,14 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         if (args.replyToMessageId) {
           const replyDraft = await microsoftFetch(
             connector,
             `${prefix}/messages/${args.replyToMessageId}/createReply`,
-            { method: "POST", userId: effectiveUserId, body: {} }
+            { method: "POST", userId: effectiveUserId, accountId: effectiveAccountId, body: {} }
           );
           const updated = await microsoftFetch(
             connector,
@@ -48431,6 +49113,7 @@ EXAMPLES:
             {
               method: "PATCH",
               userId: effectiveUserId,
+              accountId: effectiveAccountId,
               body: {
                 subject: args.subject,
                 body: { contentType: "HTML", content: args.body },
@@ -48451,6 +49134,7 @@ EXAMPLES:
           {
             method: "POST",
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             body: {
               isDraft: true,
               subject: args.subject,
@@ -48539,6 +49223,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         if (args.replyToMessageId) {
@@ -48548,6 +49233,7 @@ EXAMPLES:
             {
               method: "POST",
               userId: effectiveUserId,
+              accountId: effectiveAccountId,
               body: {
                 message: {
                   toRecipients: formatRecipients(args.to),
@@ -48564,6 +49250,7 @@ EXAMPLES:
             {
               method: "POST",
               userId: effectiveUserId,
+              accountId: effectiveAccountId,
               body: {
                 message: {
                   subject: args.subject,
@@ -48663,6 +49350,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         const tz = args.timeZone ?? "UTC";
@@ -48685,7 +49373,7 @@ EXAMPLES:
         const event = await microsoftFetch(
           connector,
           `${prefix}/events`,
-          { method: "POST", userId: effectiveUserId, body: eventBody }
+          { method: "POST", userId: effectiveUserId, accountId: effectiveAccountId, body: eventBody }
         );
         return {
           success: true,
@@ -48789,6 +49477,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         const tz = args.timeZone ?? "UTC";
@@ -48812,7 +49501,7 @@ EXAMPLES:
         const event = await microsoftFetch(
           connector,
           `${prefix}/events/${args.eventId}`,
-          { method: "PATCH", userId: effectiveUserId, body: patchBody }
+          { method: "PATCH", userId: effectiveUserId, accountId: effectiveAccountId, body: patchBody }
         );
         return {
           success: true,
@@ -48885,14 +49574,15 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
-        const resolved = await resolveMeetingId(connector, args.meetingId, prefix, effectiveUserId);
+        const resolved = await resolveMeetingId(connector, args.meetingId, prefix, effectiveUserId, effectiveAccountId);
         const meetingId = resolved.meetingId;
         const transcriptList = await microsoftFetch(
           connector,
           `${prefix}/onlineMeetings/${meetingId}/transcripts`,
-          { userId: effectiveUserId }
+          { userId: effectiveUserId, accountId: effectiveAccountId }
         );
         if (!transcriptList.value || transcriptList.value.length === 0) {
           return {
@@ -48905,7 +49595,8 @@ EXAMPLES:
         const response = await connector.fetch(
           contentUrl + "?$format=text/vtt",
           { method: "GET", headers: { "Accept": "text/vtt" } },
-          effectiveUserId
+          effectiveUserId,
+          effectiveAccountId
         );
         if (!response.ok) {
           const errorText = await response.text();
@@ -48997,6 +49688,7 @@ EXAMPLES:
     },
     execute: async (args, context) => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         const tz = args.timeZone ?? "UTC";
@@ -49006,6 +49698,7 @@ EXAMPLES:
           {
             method: "POST",
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             body: {
               attendees: formatAttendees(args.attendees),
               timeConstraint: {
@@ -49934,27 +50627,42 @@ var customToolDelete = createCustomToolDelete();
 
 // src/tools/custom-tools/sandboxDescription.ts
 init_Connector();
-function formatConnectorEntry2(c) {
+function formatConnectorEntry2(c, accountId) {
   const parts = [];
   const serviceOrVendor = c.serviceType ?? c.vendor ?? void 0;
   if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+  if (accountId) parts.push(`Account: "${accountId}"`);
   if (c.config.description) parts.push(c.config.description);
   if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
+  const label = accountId ? `"${c.name}" account "${accountId}"` : `"${c.name}"`;
   const details = parts.map((p) => `     ${p}`).join("\n");
-  return `   \u2022 "${c.name}" (${c.displayName})
+  return `   \u2022 ${label} (${c.displayName})
 ${details}`;
 }
 function buildConnectorList(context) {
+  const identities = context?.identities;
   const registry = context?.connectorRegistry ?? Connector.asRegistry();
+  if (identities?.length) {
+    const entries = [];
+    for (const id of identities) {
+      try {
+        const connector = registry.get(id.connector);
+        entries.push(formatConnectorEntry2(connector, id.accountId));
+      } catch {
+        entries.push(`   \u2022 "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ""} \u2014 not available`);
+      }
+    }
+    return entries.length > 0 ? entries.join("\n\n") : "   No connectors registered.";
+  }
   const connectors = registry.listAll();
   if (connectors.length === 0) {
     return "   No connectors registered.";
   }
-  return connectors.map(formatConnectorEntry2).join("\n\n");
+  return connectors.map((c) => formatConnectorEntry2(c)).join("\n\n");
 }
 var SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
 
-1. authenticatedFetch(url, options, connectorName)
+1. authenticatedFetch(url, options, connectorName, accountId?)
    Makes authenticated HTTP requests using the connector's credentials.
    Auth headers are added automatically \u2014 DO NOT set Authorization header manually.
 
@@ -49965,6 +50673,7 @@ var SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
      \u2022 options: Standard fetch options { method, headers, body }
        - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
      \u2022 connectorName: Name of a registered connector (see REGISTERED CONNECTORS below)
+     \u2022 accountId (optional): Account alias for multi-account connectors (e.g., 'work', 'personal')
 
    Returns: Promise<Response>
      \u2022 response.ok \u2014 true if status 200-299
@@ -51048,6 +51757,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, formatAttendees, formatPluginDisplayName, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isReasoningDelta, isReasoningDone, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTeamsMeetingUrl, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ROUTINE_KEYS, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, formatAttendees, formatPluginDisplayName, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isReasoningDelta, isReasoningDone, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTeamsMeetingUrl, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, resolveTemplates, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

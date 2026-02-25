@@ -5,6 +5,7 @@
  */
 
 import { DependencyCycleError } from '../errors/AIErrors.js';
+import type { RoutineDefinition } from './Routine.js';
 
 /**
  * Task status lifecycle
@@ -97,6 +98,63 @@ export interface ExternalDependency {
   receivedData?: unknown;
   receivedAt?: number;
 }
+
+// ============================================================================
+// Control Flow Types
+// ============================================================================
+
+/** Sub-routine specification: either inline tasks or a full RoutineDefinition */
+export type SubRoutineSpec = TaskInput[] | RoutineDefinition;
+
+/** Map: execute a sub-routine for each element in an array */
+export interface TaskMapFlow {
+  type: 'map';
+  /** Memory key containing the source array */
+  sourceKey: string;
+  /** Sub-routine to run per element */
+  tasks: SubRoutineSpec;
+  /** Memory key for collected results array */
+  resultKey?: string;
+  /** Cap iterations (default: array.length, hard max: 1000) */
+  maxIterations?: number;
+  /** Timeout per sub-execution iteration in ms (default: no timeout) */
+  iterationTimeoutMs?: number;
+}
+
+/** Fold: accumulate a result across array elements */
+export interface TaskFoldFlow {
+  type: 'fold';
+  /** Memory key containing the source array */
+  sourceKey: string;
+  /** Sub-routine to run per element */
+  tasks: SubRoutineSpec;
+  /** Starting accumulator value */
+  initialValue: unknown;
+  /** Memory key for final accumulated result */
+  resultKey: string;
+  /** Cap iterations (default: array.length, hard max: 1000) */
+  maxIterations?: number;
+  /** Timeout per sub-execution iteration in ms (default: no timeout) */
+  iterationTimeoutMs?: number;
+}
+
+/** Until: repeat a sub-routine until a condition is met */
+export interface TaskUntilFlow {
+  type: 'until';
+  /** Sub-routine to run each iteration */
+  tasks: SubRoutineSpec;
+  /** Checked AFTER each iteration (reuses existing TaskCondition type) */
+  condition: TaskCondition;
+  /** Maximum iterations (required — no default) */
+  maxIterations: number;
+  /** Optional ICM key for current iteration index */
+  iterationKey?: string;
+  /** Timeout per sub-execution iteration in ms (default: no timeout) */
+  iterationTimeoutMs?: number;
+}
+
+/** Union of all control flow types */
+export type TaskControlFlow = TaskMapFlow | TaskFoldFlow | TaskUntilFlow;
 
 /**
  * Task execution settings
@@ -250,6 +308,9 @@ export interface Task {
   /** Optional expected output description */
   expectedOutput?: string;
 
+  /** Control flow: map, fold, or until (replaces normal LLM execution for this task) */
+  controlFlow?: TaskControlFlow;
+
   /** Result after completion */
   result?: {
     success: boolean;
@@ -289,6 +350,7 @@ export interface TaskInput {
   suggestedTools?: string[];
   validation?: TaskValidation;
   expectedOutput?: string;
+  controlFlow?: TaskControlFlow;
   maxAttempts?: number;
   metadata?: Record<string, unknown>;
 }
@@ -390,6 +452,7 @@ export function createTask(input: TaskInput): Task {
     suggestedTools: input.suggestedTools,
     validation: input.validation,
     expectedOutput: input.expectedOutput,
+    controlFlow: input.controlFlow,
     attempts: 0,
     maxAttempts: input.maxAttempts ?? 3,
     createdAt: now,

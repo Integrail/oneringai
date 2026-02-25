@@ -384,12 +384,16 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
 
   /**
    * Register tools produced by a specific connector.
-   * Sets `source: 'connector:<connectorName>'` so agent-level filtering can
-   * restrict which connector tools are visible to a given agent.
+   * Sets `source: 'connector:<connectorName>'` (or `'connector:<name>:<accountId>'` for identity-bound tools)
+   * so agent-level filtering can restrict which connector tools are visible to a given agent.
    */
-  registerConnectorTools(connectorName: string, tools: ToolFunction[], options: Omit<ToolOptions, 'source'> = {}): void {
+  registerConnectorTools(connectorName: string, tools: ToolFunction[], options: Omit<ToolOptions, 'source'> & { accountId?: string } = {}): void {
+    const { accountId, ...toolOptions } = options;
+    const source = accountId
+      ? `connector:${connectorName}:${accountId}`
+      : `connector:${connectorName}`;
     for (const tool of tools) {
-      this.register(tool, { ...options, source: `connector:${connectorName}` });
+      this.register(tool, { ...toolOptions, source });
     }
   }
 

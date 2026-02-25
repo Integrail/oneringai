@@ -1,5 +1,5 @@
 /**
- * OAuth Callback Server
+ * OAuth Callback Server (HTTP)
  *
  * Temporary localhost HTTP server that catches OAuth redirect callbacks.
  * Used by VendorOAuthService to complete the authorization_code flow.
@@ -7,9 +7,12 @@
  * The server listens on a fixed port (19876) and path (/oauth/callback).
  * Users register http://localhost:19876/oauth/callback as the redirect URI
  * in their OAuth provider's app settings.
+ *
+ * HTTP is fine for localhost callbacks — most OAuth providers accept it.
+ * For providers that require HTTPS (e.g., Slack), see OAuthCallbackServerHttps.
  */
 
-import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -134,7 +137,7 @@ export class OAuthCallbackServer {
       });
 
       // Bind to localhost only (security)
-      console.log(`${LOG_PREFIX} Starting server on 127.0.0.1:${PORT}...`);
+      console.log(`${LOG_PREFIX} Starting HTTP server on 127.0.0.1:${PORT}...`);
       this.server.listen(PORT, '127.0.0.1', () => {
         console.log(`${LOG_PREFIX} Server listening on http://127.0.0.1:${PORT}${PATH}`);
       });

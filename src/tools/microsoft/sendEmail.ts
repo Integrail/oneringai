@@ -97,6 +97,7 @@ EXAMPLES:
       context?: ToolContext
     ): Promise<MicrosoftSendEmailResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
 
@@ -108,6 +109,7 @@ EXAMPLES:
             {
               method: 'POST',
               userId: effectiveUserId,
+              accountId: effectiveAccountId,
               body: {
                 message: {
                   toRecipients: formatRecipients(args.to),
@@ -125,6 +127,7 @@ EXAMPLES:
             {
               method: 'POST',
               userId: effectiveUserId,
+              accountId: effectiveAccountId,
               body: {
                 message: {
                   subject: args.subject,

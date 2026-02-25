@@ -13,7 +13,7 @@ import { Connector } from '../core/Connector.js';
 /**
  * Fetch with automatic authentication using connector's configured auth scheme
  *
- * Same API as standard fetch(), but with additional authProvider and optional userId parameters.
+ * Same API as standard fetch(), but with additional authProvider and optional userId/accountId parameters.
  * Authentication is handled automatically based on the connector's configuration:
  * - Bearer tokens (GitHub, Slack, Stripe)
  * - Bot tokens (Discord)
@@ -24,6 +24,7 @@ import { Connector } from '../core/Connector.js';
  * @param options - Standard fetch options (DO NOT set Authorization header - it's added automatically)
  * @param authProvider - Name of registered connector (e.g., 'github', 'slack')
  * @param userId - Optional user identifier for multi-user support (omit for single-user mode)
+ * @param accountId - Optional account alias for multi-account OAuth (e.g., 'work', 'personal')
  * @returns Promise<Response> - Same as standard fetch
  *
  * @example Single-user mode:
@@ -36,32 +37,23 @@ import { Connector } from '../core/Connector.js';
  * const data = await response.json();
  * ```
  *
- * @example With relative URL (uses connector's baseURL):
+ * @example Multi-account mode:
  * ```typescript
  * const response = await authenticatedFetch(
- *   '/user/repos',  // Resolves to https://api.github.com/user/repos
+ *   'https://graph.microsoft.com/v1.0/me',
  *   { method: 'GET' },
- *   'github'
+ *   'microsoft',
+ *   'alice',
+ *   'work'  // Use Alice's work Microsoft account
  * );
- * const repos = await response.json();
- * ```
- *
- * @example Multi-user mode:
- * ```typescript
- * const response = await authenticatedFetch(
- *   '/user/repos',
- *   { method: 'GET' },
- *   'github',
- *   'user123'  // Get token for specific user
- * );
- * const repos = await response.json();
  * ```
  */
 export async function authenticatedFetch(
   url: string | URL,
   options: RequestInit | undefined,
   authProvider: string,
-  userId?: string
+  userId?: string,
+  accountId?: string
 ): Promise<Response> {
   const connector = Connector.get(authProvider);
 
@@ -70,18 +62,19 @@ export async function authenticatedFetch(
   // - API Key: Uses configured headerName and headerPrefix
   //   (e.g., "Authorization: Bot <token>" or "X-Shopify-Access-Token: <token>")
   // Also provides: retry logic, timeout handling, circuit breaker protection
-  return connector.fetch(url.toString(), options, userId);
+  return connector.fetch(url.toString(), options, userId, accountId);
 }
 
 /**
- * Create an authenticated fetch function bound to a specific connector and optionally a user
+ * Create an authenticated fetch function bound to a specific connector and optionally a user/account
  *
  * Useful for creating reusable fetch functions for a specific API and/or user.
  * Uses connector's configured auth scheme (Bearer, Bot, Basic, custom headers).
  *
  * @param authProvider - Name of registered connector
  * @param userId - Optional user identifier to bind to (omit for single-user mode)
- * @returns Fetch function bound to that connector (and user)
+ * @param accountId - Optional account alias for multi-account OAuth (e.g., 'work', 'personal')
+ * @returns Fetch function bound to that connector (and user/account)
  *
  * @example Single-user mode:
  * ```typescript
@@ -92,35 +85,26 @@ export async function authenticatedFetch(
  * const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
  * ```
  *
- * @example With relative URLs:
+ * @example Multi-account mode:
  * ```typescript
- * const githubFetch = createAuthenticatedFetch('github');
+ * // Create fetch for Alice's work Microsoft account
+ * const workFetch = createAuthenticatedFetch('microsoft', 'alice', 'work');
+ * const personalFetch = createAuthenticatedFetch('microsoft', 'alice', 'personal');
  *
- * // Relative URLs resolved against connector's baseURL
- * const repos = await githubFetch('/user/repos');
- * const issues = await githubFetch('/user/issues');
- * ```
- *
- * @example Multi-user mode:
- * ```typescript
- * // Create fetch functions for different users
- * const aliceFetch = createAuthenticatedFetch('github', 'user123');
- * const bobFetch = createAuthenticatedFetch('github', 'user456');
- *
- * // Each uses their own token
- * const aliceRepos = await aliceFetch('/user/repos');
- * const bobRepos = await bobFetch('/user/repos');
+ * const workEmails = await workFetch('/me/messages');
+ * const personalEmails = await personalFetch('/me/messages');
  * ```
  */
 export function createAuthenticatedFetch(
   authProvider: string,
-  userId?: string
+  userId?: string,
+  accountId?: string
 ): (url: string | URL, options?: RequestInit) => Promise<Response> {
   // Validate connector exists at creation time
   const connector = Connector.get(authProvider);
 
   return async (url: string | URL, options?: RequestInit) => {
     // Delegate to connector.fetch() for proper auth handling
-    return connector.fetch(url.toString(), options, userId);
+    return connector.fetch(url.toString(), options, userId, accountId);
   };
 }

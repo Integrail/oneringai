@@ -92,6 +92,7 @@ import {
 import { HoseaUIPlugin, type DynamicUIContent } from './plugins/index.js';
 import { VendorOAuthService } from './VendorOAuthService.js';
 import { OAuthCallbackServer } from './OAuthCallbackServer.js';
+import { OAuthCallbackServerHttps } from './OAuthCallbackServerHttps.js';
 import { loadBuiltInOAuthApps, type BuiltInOAuthApp } from './built-in-oauth-apps.js';
 
 interface StoredConnectorConfig {
@@ -2143,10 +2144,12 @@ export class AgentService {
           const config = JSON.parse(content) as StoredUniversalConnector;
           this.universalConnectors.set(config.name, config);
 
-          // For OAuth authorization_code connectors: ensure redirectUri uses Hosea's callback
+          // For OAuth authorization_code connectors: set default redirectUri if not already stored
           const authTemplate = getVendorAuthTemplate(config.vendorId, config.authMethodId);
           if (authTemplate?.type === 'oauth' && authTemplate.flow === 'authorization_code') {
-            config.credentials.redirectUri = OAuthCallbackServer.redirectUri;
+            if (!config.credentials.redirectUri) {
+              config.credentials.redirectUri = OAuthCallbackServer.redirectUri;
+            }
           }
 
           // Register with the library using createConnectorFromTemplate
@@ -2353,10 +2356,12 @@ export class AgentService {
         return { success: false, error: `Connector "${input.name}" already exists` };
       }
 
-      // For authorization_code OAuth: auto-set redirectUri to Hosea's callback server
+      // For authorization_code OAuth: set default redirectUri if not already provided
       const credentials = { ...input.credentials };
       if (authMethod.type === 'oauth' && authMethod.flow === 'authorization_code') {
-        credentials.redirectUri = OAuthCallbackServer.redirectUri;
+        if (!credentials.redirectUri) {
+          credentials.redirectUri = OAuthCallbackServer.redirectUri;
+        }
       }
 
       // Create connector with library
@@ -2597,10 +2602,12 @@ export class AgentService {
     if (authTemplate.flow === 'client_credentials') {
       result = await this.vendorOAuthService.authorizeClientCredentials(connectorName);
     } else if (authTemplate.flow === 'authorization_code') {
+      const useHttps = config.credentials?.redirectUri?.startsWith('https://') ?? false;
       result = await this.vendorOAuthService.authorizeAuthCode({
         connectorName,
         parentWindow,
         useSystemBrowser,
+        useHttps,
       });
     } else {
       return { success: false, error: `Unsupported OAuth flow: ${authTemplate.flow}` };
@@ -2748,17 +2755,25 @@ export class AgentService {
 
     const connectorName = `ew-${vendorId}`;
 
-    // If connector already exists, just re-authorize
-    if (this.universalConnectors.has(connectorName)) {
+    // If connector already exists, check if the auth template changed.
+    // If so, destroy and recreate to pick up new OAuth URLs/config.
+    const existingConfig = this.universalConnectors.get(connectorName);
+    if (existingConfig && existingConfig.authMethodId === builtInApp.authTemplateId) {
       console.log(`[BuiltInOAuth]   Connector "${connectorName}" already exists — re-authorizing`);
       return this.startOAuthFlow(connectorName, parentWindow);
+    }
+    if (existingConfig) {
+      console.log(`[BuiltInOAuth]   Auth template changed (${existingConfig.authMethodId} → ${builtInApp.authTemplateId}) — recreating connector`);
+      try { Connector.remove(connectorName); } catch { /* already gone */ }
     }
 
     // Create a new connector from template with built-in Client ID + extra credentials
     const credentials: Record<string, string> = {
       clientId: builtInApp.clientId,
       scope: builtInApp.scopes.join(' '),
-      redirectUri: OAuthCallbackServer.redirectUri,
+      redirectUri: builtInApp.requireHttps
+        ? OAuthCallbackServerHttps.redirectUri
+        : OAuthCallbackServer.redirectUri,
       ...builtInApp.extraCredentials,
     };
     console.log(`[BuiltInOAuth]   Credentials: ${JSON.stringify({ ...credentials, clientId: credentials.clientId.substring(0, 20) + '...' })}`);

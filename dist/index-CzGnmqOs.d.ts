@@ -1,4 +1,4 @@
-import { I as IConnectorRegistry, e as IProvider } from './IProvider-B6hqVVq8.js';
+import { I as IConnectorRegistry, e as IProvider } from './IProvider-CxDUGl6n.js';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -367,6 +367,10 @@ interface ToolContext {
     taskId?: string;
     /** User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). */
     userId?: string;
+    /** Account alias for multi-account OAuth — auto-populated from Agent config (accountId). Allows one user to auth multiple external accounts on the same connector (e.g., 'work', 'personal'). */
+    accountId?: string;
+    /** Auth identities this agent is scoped to (for identity-aware tool descriptions) */
+    identities?: AuthIdentity[];
     /** Connector registry scoped to this agent's allowed connectors and userId */
     connectorRegistry?: IConnectorRegistry;
     /** Working memory access (if agent has memory feature enabled) */
@@ -576,6 +580,857 @@ declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: 
  * @returns Human-readable description
  */
 declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
+
+/**
+ * IContextStorage - Storage interface for AgentContext persistence
+ *
+ * Provides persistence operations for AgentContext sessions.
+ * Implementations can use filesystem, database, cloud storage, etc.
+ *
+ * This follows Clean Architecture - the interface is in domain layer,
+ * implementations are in infrastructure layer.
+ */
+
+/**
+ * Serialized context state for persistence.
+ * This is the canonical definition - core layer re-exports this type.
+ */
+interface SerializedContextState {
+    /** Conversation history */
+    conversation: InputItem[];
+    /** Plugin states (keyed by plugin name) */
+    pluginStates: Record<string, unknown>;
+    /** System prompt */
+    systemPrompt?: string;
+    /** Metadata */
+    metadata: {
+        savedAt: number;
+        agentId?: string;
+        userId?: string;
+        model: string;
+    };
+    /** Agent-specific state (for TaskAgent, UniversalAgent, etc.) */
+    agentState?: Record<string, unknown>;
+}
+/**
+ * Session summary for listing (lightweight, no full state)
+ */
+interface ContextSessionSummary {
+    /** Session identifier */
+    sessionId: string;
+    /** When the session was created */
+    createdAt: Date;
+    /** When the session was last saved */
+    lastSavedAt: Date;
+    /** Number of messages in history */
+    messageCount: number;
+    /** Number of memory entries */
+    memoryEntryCount: number;
+    /** Optional metadata */
+    metadata?: ContextSessionMetadata;
+}
+/**
+ * Session metadata (stored with session)
+ */
+interface ContextSessionMetadata {
+    /** Human-readable title */
+    title?: string;
+    /** Auto-generated or user-provided description */
+    description?: string;
+    /** Tags for filtering */
+    tags?: string[];
+    /** Custom key-value data */
+    [key: string]: unknown;
+}
+/**
+ * Full session state wrapper (includes metadata)
+ */
+interface StoredContextSession {
+    /** Format version for migration support */
+    version: number;
+    /** Session identifier */
+    sessionId: string;
+    /** When the session was created */
+    createdAt: string;
+    /** When the session was last saved */
+    lastSavedAt: string;
+    /** The serialized AgentContext state */
+    state: SerializedContextState;
+    /** Session metadata */
+    metadata: ContextSessionMetadata;
+}
+/**
+ * Current format version for stored sessions
+ */
+declare const CONTEXT_SESSION_FORMAT_VERSION = 1;
+/**
+ * Storage interface for AgentContext persistence
+ *
+ * Implementations:
+ * - FileContextStorage: File-based storage at ~/.oneringai/agents/<agentId>/sessions/
+ * - (Future) RedisContextStorage, PostgresContextStorage, S3ContextStorage, etc.
+ */
+interface IContextStorage {
+    /**
+     * Save context state to a session
+     *
+     * @param sessionId - Unique session identifier
+     * @param state - Serialized AgentContext state
+     * @param metadata - Optional session metadata
+     */
+    save(sessionId: string, state: SerializedContextState, metadata?: ContextSessionMetadata): Promise<void>;
+    /**
+     * Load context state from a session
+     *
+     * @param sessionId - Session identifier to load
+     * @returns The stored session, or null if not found
+     */
+    load(sessionId: string): Promise<StoredContextSession | null>;
+    /**
+     * Delete a session
+     *
+     * @param sessionId - Session identifier to delete
+     */
+    delete(sessionId: string): Promise<void>;
+    /**
+     * Check if a session exists
+     *
+     * @param sessionId - Session identifier to check
+     */
+    exists(sessionId: string): Promise<boolean>;
+    /**
+     * List all sessions (summaries only, not full state)
+     *
+     * @param options - Optional filtering and pagination
+     * @returns Array of session summaries, sorted by lastSavedAt descending
+     */
+    list(options?: ContextStorageListOptions): Promise<ContextSessionSummary[]>;
+    /**
+     * Update session metadata without loading full state
+     *
+     * @param sessionId - Session identifier
+     * @param metadata - Metadata to merge (existing keys preserved unless overwritten)
+     */
+    updateMetadata?(sessionId: string, metadata: Partial<ContextSessionMetadata>): Promise<void>;
+    /**
+     * Get the storage path (for display/debugging)
+     * @deprecated Use getLocation() instead - getPath() assumes filesystem storage
+     */
+    getPath(): string;
+    /**
+     * Get a human-readable storage location string (for display/debugging).
+     * Examples: file path, MongoDB URI, Redis key prefix, S3 bucket, etc.
+     * Falls back to getPath() if not implemented.
+     */
+    getLocation?(): string;
+}
+/**
+ * Options for listing sessions
+ */
+interface ContextStorageListOptions {
+    /** Filter by tags (any match) */
+    tags?: string[];
+    /** Filter by creation date range */
+    createdAfter?: Date;
+    createdBefore?: Date;
+    /** Filter by last saved date range */
+    savedAfter?: Date;
+    savedBefore?: Date;
+    /** Maximum number of results */
+    limit?: number;
+    /** Offset for pagination */
+    offset?: number;
+}
+
+/**
+ * AgentContextNextGen - Type Definitions
+ *
+ * Clean, minimal type definitions for the next-generation context manager.
+ */
+
+/**
+ * A single auth identity: connector + optional account alias.
+ *
+ * Used to scope agents to specific OAuth accounts. When `accountId` is set,
+ * the identity represents a specific multi-account OAuth session (e.g., 'work'
+ * or 'personal' Microsoft account). When omitted, uses the connector's default account.
+ */
+interface AuthIdentity {
+    /** Name of the registered connector */
+    connector: string;
+    /** Optional account alias for multi-account OAuth (e.g., 'work', 'personal') */
+    accountId?: string;
+}
+/**
+ * Token estimator interface - used for conversation and input estimation
+ * Plugins handle their own token estimation internally.
+ */
+interface ITokenEstimator {
+    /** Estimate tokens for a string */
+    estimateTokens(text: string): number;
+    /** Estimate tokens for arbitrary data (will be JSON stringified) */
+    estimateDataTokens(data: unknown): number;
+    /**
+     * Estimate tokens for an image. Provider-specific implementations can override.
+     *
+     * Default heuristic (matches OpenAI's image token pricing):
+     * - detail='low': 85 tokens
+     * - detail='high' with known dimensions: 85 + 170 * ceil(w/512) * ceil(h/512)
+     * - Unknown dimensions: ~1000 tokens (conservative default)
+     *
+     * @param width - Image width in pixels (if known)
+     * @param height - Image height in pixels (if known)
+     * @param detail - Image detail level: 'low', 'high', or 'auto' (default 'auto')
+     */
+    estimateImageTokens?(width?: number, height?: number, detail?: string): number;
+}
+/**
+ * Context plugin interface for NextGen context management.
+ *
+ * ## Implementing a Custom Plugin
+ *
+ * 1. **Extend BasePluginNextGen** - provides token caching helpers
+ * 2. **Implement getInstructions()** - return LLM usage guide (static, cached)
+ * 3. **Implement getContent()** - return formatted content (Markdown with `##` header)
+ * 4. **Call updateTokenCache()** - after any state change that affects content
+ * 5. **Implement getTools()** - return tools with `<plugin_prefix>_*` naming
+ *
+ * ## Plugin Contributions
+ *
+ * Plugins provide three types of content to the system message:
+ * 1. **Instructions** - static usage guide for the LLM (NEVER compacted)
+ * 2. **Content** - dynamic plugin data/state (may be compacted)
+ * 3. **Tools** - registered with ToolManager (NEVER compacted)
+ *
+ * ## Token Cache Lifecycle
+ *
+ * Plugins must track their own token size for budget calculation. The pattern:
+ *
+ * ```typescript
+ * // When state changes:
+ * this._entries.set(key, value);
+ * this.invalidateTokenCache();  // Clear cached size
+ *
+ * // In getContent():
+ * const content = this.formatContent();
+ * this.updateTokenCache(this.estimator.estimateTokens(content));  // Update cache
+ * return content;
+ * ```
+ *
+ * ## Content Format
+ *
+ * `getContent()` should return Markdown with a descriptive header:
+ *
+ * ```markdown
+ * ## Plugin Display Name (optional stats)
+ *
+ * Formatted content here...
+ * - Entry 1: value
+ * - Entry 2: value
+ * ```
+ *
+ * Built-in plugins use these headers:
+ * - WorkingMemory: `## Working Memory (N entries)`
+ * - InContextMemory: `## Live Context (N entries)`
+ * - PersistentInstructions: No header (user's raw instructions)
+ *
+ * ## Tool Naming Convention
+ *
+ * Use a consistent prefix based on plugin name:
+ * - `working_memory` plugin → `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
+ * - `in_context_memory` plugin → `context_set`, `context_delete`, `context_list`
+ * - `persistent_instructions` plugin → `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear`
+ *
+ * ## State Serialization
+ *
+ * `getState()` and `restoreState()` are **synchronous** for simplicity.
+ * If your plugin has async data, consider:
+ * - Storing only references/keys in state
+ * - Using a separate async initialization method
+ *
+ * @example
+ * ```typescript
+ * class MyPlugin extends BasePluginNextGen {
+ *   readonly name = 'my_plugin';
+ *   private _data = new Map<string, string>();
+ *
+ *   getInstructions(): string {
+ *     return '## My Plugin\n\nUse my_plugin_set to store data...';
+ *   }
+ *
+ *   async getContent(): Promise<string | null> {
+ *     if (this._data.size === 0) return null;
+ *     const lines = [...this._data].map(([k, v]) => `- ${k}: ${v}`);
+ *     const content = `## My Plugin (${this._data.size} entries)\n\n${lines.join('\n')}`;
+ *     this.updateTokenCache(this.estimator.estimateTokens(content));
+ *     return content;
+ *   }
+ *
+ *   getTools(): ToolFunction[] {
+ *     return [myPluginSetTool, myPluginGetTool];
+ *   }
+ *
+ *   getState(): unknown {
+ *     return { data: Object.fromEntries(this._data) };
+ *   }
+ *
+ *   restoreState(state: unknown): void {
+ *     const s = state as { data: Record<string, string> };
+ *     this._data = new Map(Object.entries(s.data || {}));
+ *     this.invalidateTokenCache();
+ *   }
+ * }
+ * ```
+ */
+interface IContextPluginNextGen {
+    /** Unique plugin name (used for lookup and tool prefixing) */
+    readonly name: string;
+    /**
+     * Get usage instructions for the LLM.
+     *
+     * Returns static text explaining how to use this plugin's tools
+     * and data. This is placed in the system message and is NEVER
+     * compacted - it persists throughout the conversation.
+     *
+     * Instructions should include:
+     * - What the plugin does
+     * - How to use available tools
+     * - Best practices and conventions
+     *
+     * @returns Instructions string or null if no instructions needed
+     *
+     * @example
+     * ```typescript
+     * getInstructions(): string {
+     *   return `## Working Memory
+     *
+     * Use memory_store to save important data for later retrieval.
+     * Use memory_retrieve to recall previously stored data.
+     *
+     * Best practices:
+     * - Use descriptive keys like 'user_preferences' not 'data1'
+     * - Store intermediate results that may be needed later`;
+     * }
+     * ```
+     */
+    getInstructions(): string | null;
+    /**
+     * Get formatted content to include in system message.
+     *
+     * Returns the plugin's current state formatted for LLM consumption.
+     * Should be Markdown with a `## Header`. This content CAN be compacted
+     * if `isCompactable()` returns true.
+     *
+     * **IMPORTANT:** Call `updateTokenCache()` with the content's token size
+     * before returning to keep budget calculations accurate.
+     *
+     * @returns Formatted content string or null if empty
+     *
+     * @example
+     * ```typescript
+     * async getContent(): Promise<string | null> {
+     *   if (this._entries.size === 0) return null;
+     *
+     *   const lines = this._entries.map(e => `- ${e.key}: ${e.value}`);
+     *   const content = `## My Plugin (${this._entries.size} entries)\n\n${lines.join('\n')}`;
+     *
+     *   // IMPORTANT: Update token cache before returning
+     *   this.updateTokenCache(this.estimator.estimateTokens(content));
+     *   return content;
+     * }
+     * ```
+     */
+    getContent(): Promise<string | null>;
+    /**
+     * Get the full raw contents of this plugin for inspection.
+     *
+     * Used by library clients to programmatically inspect plugin state.
+     * Returns the actual data structure, not the formatted string.
+     *
+     * @returns Raw plugin data (entries map, array, etc.)
+     */
+    getContents(): unknown;
+    /**
+     * Get current token size of plugin content.
+     *
+     * Returns the cached token count from the last `updateTokenCache()` call.
+     * This is used for budget calculation in `prepare()`.
+     *
+     * The cache should be updated via `updateTokenCache()` whenever content
+     * changes. If cache is null, returns 0.
+     *
+     * @returns Current token count (0 if no content or cache not set)
+     */
+    getTokenSize(): number;
+    /**
+     * Get token size of instructions (cached after first call).
+     *
+     * Instructions are static, so this is computed once and cached.
+     * Used for budget calculation.
+     *
+     * @returns Token count for instructions (0 if no instructions)
+     */
+    getInstructionsTokenSize(): number;
+    /**
+     * Whether this plugin's content can be compacted when context is tight.
+     *
+     * Return true if the plugin can reduce its content size when requested.
+     * Examples: evicting low-priority entries, summarizing, removing old data.
+     *
+     * Return false if content cannot be reduced (e.g., critical state).
+     *
+     * @returns true if compact() can free tokens
+     */
+    isCompactable(): boolean;
+    /**
+     * Compact plugin content to free tokens.
+     *
+     * Called by compaction strategies when context is too full.
+     * Should attempt to free **approximately** `targetTokensToFree` tokens.
+     *
+     * This is a **best effort** operation:
+     * - May free more or less than requested
+     * - May return 0 if nothing can be compacted (e.g., all entries are critical)
+     * - Should prioritize removing lowest-priority/oldest data first
+     *
+     * Strategies may include:
+     * - Evicting low-priority entries
+     * - Summarizing verbose content
+     * - Removing oldest data
+     * - Truncating large values
+     *
+     * **IMPORTANT:** Call `invalidateTokenCache()` or `updateTokenCache()`
+     * after modifying content.
+     *
+     * @param targetTokensToFree - Approximate tokens to free (best effort)
+     * @returns Actual tokens freed (may be 0 if nothing can be compacted)
+     *
+     * @example
+     * ```typescript
+     * async compact(targetTokensToFree: number): Promise<number> {
+     *   const before = this.getTokenSize();
+     *   let freed = 0;
+     *
+     *   // Remove low-priority entries until target reached
+     *   const sorted = [...this._entries].sort(byPriority);
+     *   for (const entry of sorted) {
+     *     if (entry.priority === 'critical') continue; // Never remove critical
+     *     if (freed >= targetTokensToFree) break;
+     *
+     *     freed += entry.tokens;
+     *     this._entries.delete(entry.key);
+     *   }
+     *
+     *   this.invalidateTokenCache();
+     *   return freed;
+     * }
+     * ```
+     */
+    compact(targetTokensToFree: number): Promise<number>;
+    /**
+     * Get tools provided by this plugin.
+     *
+     * Tools are automatically registered with ToolManager when the plugin
+     * is added to the context. Use a consistent naming convention:
+     * `<prefix>_<action>` (e.g., `memory_store`, `context_set`).
+     *
+     * @returns Array of tool definitions (empty array if no tools)
+     */
+    getTools(): ToolFunction[];
+    /**
+     * Cleanup resources when context is destroyed.
+     *
+     * Called when AgentContextNextGen.destroy() is invoked.
+     * Use for releasing resources, closing connections, etc.
+     */
+    destroy(): void;
+    /**
+     * Serialize plugin state for session persistence.
+     *
+     * **MUST be synchronous.** Return a JSON-serializable object representing
+     * the plugin's current state. This is called when saving a session.
+     *
+     * For plugins with async data (e.g., external storage), return only
+     * references/keys here and handle async restoration separately.
+     *
+     * @returns Serializable state object
+     *
+     * @example
+     * ```typescript
+     * getState(): unknown {
+     *   return {
+     *     entries: [...this._entries].map(([k, v]) => ({ key: k, ...v })),
+     *     version: 1,  // Include version for future migrations
+     *   };
+     * }
+     * ```
+     */
+    getState(): unknown;
+    /**
+     * Restore plugin state from serialized data.
+     *
+     * Called when loading a saved session. The state comes from a previous
+     * `getState()` call on the same plugin type.
+     *
+     * **IMPORTANT:** Call `invalidateTokenCache()` after restoring state
+     * to ensure token counts are recalculated.
+     *
+     * @param state - Previously serialized state from getState()
+     *
+     * @example
+     * ```typescript
+     * restoreState(state: unknown): void {
+     *   const s = state as { entries: Array<{ key: string; value: unknown }> };
+     *   this._entries.clear();
+     *   for (const entry of s.entries || []) {
+     *     this._entries.set(entry.key, entry);
+     *   }
+     *   this.invalidateTokenCache(); // IMPORTANT: refresh token cache
+     * }
+     * ```
+     */
+    restoreState(state: unknown): void;
+}
+/**
+ * Token budget breakdown - clear and simple
+ */
+interface ContextBudget {
+    /** Maximum context tokens for the model */
+    maxTokens: number;
+    /** Tokens reserved for LLM response */
+    responseReserve: number;
+    /** Tokens used by system message (prompt + instructions + plugin content) */
+    systemMessageTokens: number;
+    /** Tokens used by tool definitions (NEVER compacted) */
+    toolsTokens: number;
+    /** Tokens used by conversation history */
+    conversationTokens: number;
+    /** Tokens used by current input (user message or tool results) */
+    currentInputTokens: number;
+    /** Total tokens used */
+    totalUsed: number;
+    /** Available tokens (maxTokens - responseReserve - totalUsed) */
+    available: number;
+    /** Usage percentage (totalUsed / (maxTokens - responseReserve)) */
+    utilizationPercent: number;
+    /** Breakdown by component for debugging */
+    breakdown: {
+        systemPrompt: number;
+        persistentInstructions: number;
+        pluginInstructions: number;
+        pluginContents: Record<string, number>;
+        tools: number;
+        conversation: number;
+        currentInput: number;
+    };
+}
+/**
+ * Result of prepare() - ready for LLM call
+ */
+interface PreparedContext {
+    /** Final input items array for LLM */
+    input: InputItem[];
+    /** Token budget breakdown */
+    budget: ContextBudget;
+    /** Whether compaction was performed */
+    compacted: boolean;
+    /** Log of compaction actions taken */
+    compactionLog: string[];
+}
+/**
+ * Result of handling oversized current input
+ */
+interface OversizedInputResult {
+    /** Whether the input was accepted (possibly truncated) */
+    accepted: boolean;
+    /** Processed content (truncated if needed) */
+    content: string;
+    /** Error message if rejected */
+    error?: string;
+    /** Warning message if truncated */
+    warning?: string;
+    /** Original size in bytes */
+    originalSize: number;
+    /** Final size in bytes */
+    finalSize: number;
+}
+/**
+ * Feature flags for enabling/disabling plugins
+ */
+interface ContextFeatures {
+    /** Enable WorkingMemory plugin (default: true) */
+    workingMemory?: boolean;
+    /** Enable InContextMemory plugin (default: false) */
+    inContextMemory?: boolean;
+    /** Enable PersistentInstructions plugin (default: false) */
+    persistentInstructions?: boolean;
+    /** Enable UserInfo plugin (default: false) */
+    userInfo?: boolean;
+}
+/**
+ * Default feature configuration
+ */
+declare const DEFAULT_FEATURES: Required<ContextFeatures>;
+/**
+ * Plugin configurations for auto-initialization.
+ * When features are enabled, plugins are created with these configs.
+ * The config shapes match each plugin's constructor parameter.
+ */
+interface PluginConfigs {
+    /**
+     * Working memory plugin config (used when features.workingMemory=true).
+     * See WorkingMemoryPluginConfig for full options.
+     */
+    workingMemory?: Record<string, unknown>;
+    /**
+     * In-context memory plugin config (used when features.inContextMemory=true).
+     * See InContextMemoryConfig for full options.
+     */
+    inContextMemory?: Record<string, unknown>;
+    /**
+     * Persistent instructions plugin config (used when features.persistentInstructions=true).
+     * Note: agentId is auto-filled from context config if not provided.
+     * See PersistentInstructionsConfig for full options.
+     */
+    persistentInstructions?: Record<string, unknown>;
+    /**
+     * User info plugin config (used when features.userInfo=true).
+     * See UserInfoPluginConfig for full options.
+     */
+    userInfo?: Record<string, unknown>;
+}
+/**
+ * AgentContextNextGen configuration
+ */
+interface AgentContextNextGenConfig {
+    /** Model name (used for context window lookup) */
+    model: string;
+    /** Maximum context tokens (auto-detected from model if not provided) */
+    maxContextTokens?: number;
+    /** Tokens to reserve for response (default: 4096) */
+    responseReserve?: number;
+    /** System prompt provided by user */
+    systemPrompt?: string;
+    /**
+     * Compaction strategy name (default: 'default').
+     * Used to create strategy from StrategyRegistry if compactionStrategy not provided.
+     */
+    strategy?: string;
+    /**
+     * Custom compaction strategy instance.
+     * If provided, overrides the `strategy` option.
+     */
+    compactionStrategy?: ICompactionStrategy;
+    /** Feature flags */
+    features?: ContextFeatures;
+    /** Agent ID (required for PersistentInstructions) */
+    agentId?: string;
+    /** User ID for multi-user scenarios. Automatically flows to ToolContext for all tool executions. */
+    userId?: string;
+    /**
+     * Restrict this agent to specific auth identities (connector + optional account alias).
+     * When set, only these identities are visible in ToolContext and tool descriptions.
+     * Each identity produces its own tool set (e.g., microsoft_work_api, microsoft_personal_api).
+     * When not set, all connectors visible to the current userId are available.
+     */
+    identities?: AuthIdentity[];
+    /** Initial tools to register */
+    tools?: ToolFunction[];
+    /** Storage for session persistence */
+    storage?: IContextStorage;
+    /** Plugin-specific configurations (used with features flags) */
+    plugins?: PluginConfigs;
+    /**
+     * Hard timeout in milliseconds for any single tool execution.
+     * Acts as a safety net: if a tool's own timeout mechanism fails
+     * (e.g. a child process doesn't exit), this will force-resolve with an error.
+     * Default: 0 (disabled - relies on each tool's own timeout)
+     */
+    toolExecutionTimeout?: number;
+}
+/**
+ * Default configuration values
+ */
+declare const DEFAULT_CONFIG: {
+    responseReserve: number;
+    strategy: string;
+};
+
+/**
+ * Events emitted by AgentContextNextGen
+ */
+interface ContextEvents {
+    /** Emitted when context is prepared */
+    'context:prepared': {
+        budget: ContextBudget;
+        compacted: boolean;
+    };
+    /** Emitted when compaction is performed */
+    'context:compacted': {
+        tokensFreed: number;
+        log: string[];
+    };
+    /** Emitted right after budget is calculated in prepare() - for reactive monitoring */
+    'budget:updated': {
+        budget: ContextBudget;
+        timestamp: number;
+    };
+    /** Emitted when budget reaches warning threshold (>70%) */
+    'budget:warning': {
+        budget: ContextBudget;
+    };
+    /** Emitted when budget reaches critical threshold (>90%) */
+    'budget:critical': {
+        budget: ContextBudget;
+    };
+    /** Emitted when compaction is about to start */
+    'compaction:starting': {
+        budget: ContextBudget;
+        targetTokensToFree: number;
+        timestamp: number;
+    };
+    /** Emitted when current input is too large */
+    'input:oversized': {
+        result: OversizedInputResult;
+    };
+    /** Emitted when a message is added */
+    'message:added': {
+        role: string;
+        index: number;
+    };
+    /** Emitted when conversation is cleared */
+    'conversation:cleared': {
+        reason?: string;
+    };
+}
+/**
+ * Callback type for beforeCompaction hook.
+ * Called before compaction starts, allowing agents to save important data.
+ */
+type BeforeCompactionCallback = (info: {
+    budget: ContextBudget;
+    targetTokensToFree: number;
+    strategy: string;
+}) => Promise<void>;
+/**
+ * Result of compact() operation.
+ */
+interface CompactionResult {
+    /** Tokens actually freed by compaction */
+    tokensFreed: number;
+    /** Number of messages removed from conversation */
+    messagesRemoved: number;
+    /** Names of plugins that were compacted */
+    pluginsCompacted: string[];
+    /** Log of actions taken during compaction */
+    log: string[];
+}
+/**
+ * Result of consolidate() operation.
+ */
+interface ConsolidationResult {
+    /** Whether any consolidation was performed */
+    performed: boolean;
+    /** Net token change (negative = freed, positive = added, e.g., summaries) */
+    tokensChanged: number;
+    /** Description of actions taken */
+    actions: string[];
+}
+/**
+ * Read-only context passed to compaction strategies.
+ * Provides access to data needed for compaction decisions and
+ * controlled methods to modify state.
+ */
+interface CompactionContext {
+    /** Current budget (from prepare) */
+    readonly budget: ContextBudget;
+    /** Current conversation history (read-only) */
+    readonly conversation: ReadonlyArray<InputItem>;
+    /** Current input (read-only) */
+    readonly currentInput: ReadonlyArray<InputItem>;
+    /** Registered plugins (for querying state) */
+    readonly plugins: ReadonlyArray<IContextPluginNextGen>;
+    /** Strategy name for logging */
+    readonly strategyName: string;
+    /**
+     * Remove messages by indices.
+     * Handles tool pair preservation internally.
+     *
+     * @param indices - Array of message indices to remove
+     * @returns Tokens actually freed
+     */
+    removeMessages(indices: number[]): Promise<number>;
+    /**
+     * Compact a specific plugin.
+     *
+     * @param pluginName - Name of the plugin to compact
+     * @param targetTokens - Approximate tokens to free
+     * @returns Tokens actually freed
+     */
+    compactPlugin(pluginName: string, targetTokens: number): Promise<number>;
+    /**
+     * Estimate tokens for an item.
+     *
+     * @param item - Input item to estimate
+     * @returns Estimated token count
+     */
+    estimateTokens(item: InputItem): number;
+}
+/**
+ * Compaction strategy interface.
+ *
+ * Strategies implement two methods:
+ * - `compact()`: Emergency compaction when thresholds exceeded (called from prepare())
+ * - `consolidate()`: Post-cycle cleanup and optimization (called after agentic loop)
+ *
+ * Use `compact()` for quick, threshold-based token reduction.
+ * Use `consolidate()` for more expensive operations like summarization.
+ */
+interface ICompactionStrategy {
+    /** Strategy name (unique identifier) for identification and logging */
+    readonly name: string;
+    /** Human-readable display name for UI */
+    readonly displayName: string;
+    /** Description explaining the strategy behavior */
+    readonly description: string;
+    /** Threshold percentage (0-1) at which compact() is triggered */
+    readonly threshold: number;
+    /**
+     * Plugin names this strategy requires to function.
+     * Validation is performed when strategy is assigned to context.
+     * If any required plugin is missing, an error is thrown.
+     *
+     * @example
+     * ```typescript
+     * readonly requiredPlugins = ['working_memory'] as const;
+     * ```
+     */
+    readonly requiredPlugins?: readonly string[];
+    /**
+     * Emergency compaction - triggered when context usage exceeds threshold.
+     * Called from prepare() when utilization > threshold.
+     *
+     * Should be fast and focus on freeing tokens quickly.
+     *
+     * @param context - Compaction context with controlled access to state
+     * @param targetToFree - Approximate tokens to free
+     * @returns Result describing what was done
+     */
+    compact(context: CompactionContext, targetToFree: number): Promise<CompactionResult>;
+    /**
+     * Post-cycle consolidation - run after agentic cycle completes.
+     * Called from Agent after run()/stream() finishes (before session save).
+     *
+     * Use for more expensive operations:
+     * - Summarizing long conversations
+     * - Memory optimization and deduplication
+     * - Promoting important data to persistent storage
+     *
+     * @param context - Compaction context with controlled access to state
+     * @returns Result describing what was done
+     */
+    consolidate(context: CompactionContext): Promise<ConsolidationResult>;
+}
 
 /**
  * LLM Response entity based on OpenAI Responses API format
@@ -1394,4 +2249,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type InputTextContent as $, type AgentEvents as A, type AgenticLoopEventName as B, type Content as C, type AgenticLoopEvents as D, ExecutionContext as E, type FunctionToolDefinition as F, type ApprovalResult as G, type HookConfig as H, type InputItem as I, type ApproveToolContext as J, type BeforeToolContext as K, type LLMResponse as L, type MemoryEntry as M, type BuiltInTool as N, type OutputItem as O, type PriorityCalculator as P, type CompactionItem as Q, ContentType as R, type StreamEvent as S, type ToolFunction as T, DEFAULT_MEMORY_CONFIG as U, type ErrorEvent as V, type WorkingMemoryConfig as W, type ExecutionConfig as X, type Hook as Y, HookManager as Z, type InputImageContent as _, type MemoryScope as a, type IterationCompleteEvent$1 as a0, type JSONSchema as a1, MEMORY_PRIORITY_VALUES as a2, type MemoryEntryInput as a3, type MemoryIndexEntry as a4, type Message as a5, type ModifyingHook as a6, type OutputTextContent as a7, type OutputTextDeltaEvent as a8, type OutputTextDoneEvent as a9, isReasoningDelta as aA, isReasoningDone as aB, isResponseComplete as aC, isSimpleScope as aD, isStreamEvent as aE, isTaskAwareScope as aF, isTerminalMemoryStatus as aG, isToolCallArgumentsDelta as aH, isToolCallArgumentsDone as aI, isToolCallStart as aJ, scopeEquals as aK, scopeMatches as aL, type ExecutionCompleteEvent as aM, type ExecutionStartEvent as aN, type LLMRequestEvent as aO, type LLMResponseEvent as aP, type ToolCompleteEvent as aQ, type ToolStartEvent as aR, type ReasoningDeltaEvent as aa, type ReasoningDoneEvent as ab, type ReasoningItem as ac, type ResponseCompleteEvent as ad, type ResponseCreatedEvent as ae, type ResponseInProgressEvent as af, type SimpleScope as ag, type TaskAwareScope as ah, type ThinkingContent as ai, type ToolCallArgumentsDeltaEvent as aj, type ToolCallArgumentsDoneEvent as ak, type ToolCallStartEvent as al, ToolCallState as am, type ToolExecutionContext as an, type ToolExecutionDoneEvent as ao, type ToolExecutionStartEvent as ap, type ToolModification as aq, type ToolResultContent as ar, type ToolUseContent as as, calculateEntrySize as at, defaultDescribeCall as au, forPlan as av, forTasks as aw, getToolCallDescription as ax, isErrorEvent as ay, isOutputTextDelta as az, type Tool as b, type ToolContext as c, type ToolPermissionConfig as d, type ToolCall as e, type MemoryPriority as f, type MemoryTier as g, type ToolResult as h, type ITextProvider as i, type HistoryMode as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type HookName as n, type StaleEntryInfo as o, type PriorityContext as p, type MemoryIndex as q, type TaskStatusForMemory as r, type WorkingMemoryAccess as s, type TokenUsage as t, StreamEventType as u, type TextGenerateOptions as v, type ModelCapabilities as w, MessageRole as x, type AfterToolContext as y, type AgentEventName as z };
+export { type TextGenerateOptions as $, type AgentContextNextGenConfig as A, type BeforeCompactionCallback as B, type ContextFeatures as C, type HookName as D, ExecutionContext as E, type FunctionToolDefinition as F, type ITokenEstimator as G, type HookConfig as H, type IContextStorage as I, type CompactionContext as J, type CompactionResult as K, type LLMResponse as L, type MemoryEntry as M, type StaleEntryInfo as N, type OutputItem as O, type PriorityCalculator as P, type PriorityContext as Q, type MemoryIndex as R, type SerializedContextState as S, type Tool as T, type TaskStatusForMemory as U, type WorkingMemoryAccess as V, type WorkingMemoryConfig as W, type ContextStorageListOptions as X, type ContextSessionSummary as Y, type TokenUsage as Z, StreamEventType as _, type MemoryScope as a, isSimpleScope as a$, type ModelCapabilities as a0, MessageRole as a1, type AfterToolContext as a2, type AgentEventName as a3, type AgenticLoopEventName as a4, type AgenticLoopEvents as a5, type ApprovalResult as a6, type ApproveToolContext as a7, type BeforeToolContext as a8, type BuiltInTool as a9, type ReasoningItem as aA, type ResponseCompleteEvent as aB, type ResponseCreatedEvent as aC, type ResponseInProgressEvent as aD, type SimpleScope as aE, type TaskAwareScope as aF, type ThinkingContent as aG, type ToolCallArgumentsDeltaEvent as aH, type ToolCallArgumentsDoneEvent as aI, type ToolCallStartEvent as aJ, ToolCallState as aK, type ToolExecutionContext as aL, type ToolExecutionDoneEvent as aM, type ToolExecutionStartEvent as aN, type ToolModification as aO, type ToolResultContent as aP, type ToolUseContent as aQ, calculateEntrySize as aR, defaultDescribeCall as aS, forPlan as aT, forTasks as aU, getToolCallDescription as aV, isErrorEvent as aW, isOutputTextDelta as aX, isReasoningDelta as aY, isReasoningDone as aZ, isResponseComplete as a_, CONTEXT_SESSION_FORMAT_VERSION as aa, type CompactionItem as ab, ContentType as ac, DEFAULT_CONFIG as ad, DEFAULT_FEATURES as ae, DEFAULT_MEMORY_CONFIG as af, type ErrorEvent as ag, type ExecutionConfig as ah, type Hook as ai, HookManager as aj, type InputImageContent as ak, type InputTextContent as al, type IterationCompleteEvent$1 as am, type JSONSchema as an, MEMORY_PRIORITY_VALUES as ao, type MemoryEntryInput as ap, type MemoryIndexEntry as aq, type Message as ar, type ModifyingHook as as, type OutputTextContent as at, type OutputTextDeltaEvent as au, type OutputTextDoneEvent as av, type OversizedInputResult as aw, type PluginConfigs as ax, type ReasoningDeltaEvent as ay, type ReasoningDoneEvent as az, type ToolFunction as b, isStreamEvent as b0, isTaskAwareScope as b1, isTerminalMemoryStatus as b2, isToolCallArgumentsDelta as b3, isToolCallArgumentsDone as b4, isToolCallStart as b5, scopeEquals as b6, scopeMatches as b7, type ExecutionCompleteEvent as b8, type ExecutionStartEvent as b9, type LLMRequestEvent as ba, type LLMResponseEvent as bb, type ToolCompleteEvent as bc, type ToolStartEvent as bd, type ToolContext as c, type ToolPermissionConfig as d, type ContextBudget as e, type ToolCall as f, type IContextPluginNextGen as g, type MemoryPriority as h, type MemoryTier as i, type ContextEvents as j, type AuthIdentity as k, type ICompactionStrategy as l, type InputItem as m, type Content as n, type PreparedContext as o, type ToolResult as p, type ConsolidationResult as q, type StoredContextSession as r, type ITextProvider as s, type ContextSessionMetadata as t, type StreamEvent as u, type HistoryMode as v, type AgentEvents as w, type AgentResponse as x, type ExecutionMetrics as y, type AuditEntry as z };

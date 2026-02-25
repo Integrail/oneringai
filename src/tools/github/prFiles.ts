@@ -76,6 +76,7 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
 
     execute: async (args: PRFilesArgs, context?: ToolContext): Promise<GitHubPRFilesResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -88,6 +89,7 @@ NOTE: Very large diffs may be truncated by GitHub. Patch content may be absent f
           `/repos/${owner}/${repo}/pulls/${args.pull_number}/files`,
           {
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             queryParams: { per_page: 100 },
           }
         );

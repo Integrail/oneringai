@@ -119,6 +119,12 @@ var MemoryStorage = class {
   size() {
     return this.tokens.size;
   }
+  /**
+   * List all storage keys (for account enumeration)
+   */
+  async listKeys() {
+    return Array.from(this.tokens.keys());
+  }
 };
 
 // src/connectors/oauth/domain/TokenStore.ts
@@ -130,14 +136,23 @@ var TokenStore = class {
     this.storage = storage || new MemoryStorage();
   }
   /**
-   * Get user-scoped storage key
-   * For multi-user support, keys are scoped per user: "provider:userId"
-   * For single-user (backward compatible), userId is omitted or "default"
+   * Get user-scoped (and optionally account-scoped) storage key
+   *
+   * Key format (backward compatible):
+   * - No userId, no accountId  → baseKey
+   * - userId only              → baseKey:userId
+   * - userId + accountId       → baseKey:userId:accountId
+   * - accountId only           → baseKey:default:accountId
    *
    * @param userId - User identifier (optional, defaults to single-user mode)
-   * @returns Storage key scoped to user
+   * @param accountId - Account alias for multi-account support (optional)
+   * @returns Storage key scoped to user and account
    */
-  getScopedKey(userId) {
+  getScopedKey(userId, accountId) {
+    if (accountId) {
+      const userPart = userId && userId !== "default" ? userId : "default";
+      return `${this.baseStorageKey}:${userPart}:${accountId}`;
+    }
     if (!userId || userId === "default") {
       return this.baseStorageKey;
     }
@@ -147,8 +162,9 @@ var TokenStore = class {
    * Store token (encrypted by storage layer)
    * @param tokenResponse - Token response from OAuth provider
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async storeToken(tokenResponse, userId) {
+  async storeToken(tokenResponse, userId, accountId) {
     if (!tokenResponse.access_token) {
       throw new Error("OAuth response missing required access_token field");
     }
@@ -166,39 +182,46 @@ var TokenStore = class {
       scope: tokenResponse.scope,
       obtained_at: Date.now()
     };
-    const key = this.getScopedKey(userId);
+    const key = this.getScopedKey(userId, accountId);
     await this.storage.storeToken(key, token);
   }
   /**
    * Get access token
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async getAccessToken(userId) {
-    const key = this.getScopedKey(userId);
+  async getAccessToken(userId, accountId) {
+    const key = this.getScopedKey(userId, accountId);
     const token = await this.storage.getToken(key);
     if (!token) {
-      throw new Error(`No token stored for ${userId ? `user: ${userId}` : "default user"}`);
+      const userLabel = userId ? `user: ${userId}` : "default user";
+      const accountLabel = accountId ? `, account: ${accountId}` : "";
+      throw new Error(`No token stored for ${userLabel}${accountLabel}`);
     }
     return token.access_token;
   }
   /**
    * Get refresh token
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async getRefreshToken(userId) {
-    const key = this.getScopedKey(userId);
+  async getRefreshToken(userId, accountId) {
+    const key = this.getScopedKey(userId, accountId);
     const token = await this.storage.getToken(key);
     if (!token?.refresh_token) {
-      throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : "default user"}`);
+      const userLabel = userId ? `user: ${userId}` : "default user";
+      const accountLabel = accountId ? `, account: ${accountId}` : "";
+      throw new Error(`No refresh token available for ${userLabel}${accountLabel}`);
     }
     return token.refresh_token;
   }
   /**
    * Check if has refresh token
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async hasRefreshToken(userId) {
-    const key = this.getScopedKey(userId);
+  async hasRefreshToken(userId, accountId) {
+    const key = this.getScopedKey(userId, accountId);
     const token = await this.storage.getToken(key);
     return !!token?.refresh_token;
   }
@@ -207,9 +230,10 @@ var TokenStore = class {
    *
    * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async isValid(bufferSeconds = 300, userId) {
-    const key = this.getScopedKey(userId);
+  async isValid(bufferSeconds = 300, userId, accountId) {
+    const key = this.getScopedKey(userId, accountId);
     const token = await this.storage.getToken(key);
     if (!token) {
       return false;
@@ -221,18 +245,45 @@ var TokenStore = class {
   /**
    * Clear stored token
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async clear(userId) {
-    const key = this.getScopedKey(userId);
+  async clear(userId, accountId) {
+    const key = this.getScopedKey(userId, accountId);
     await this.storage.deleteToken(key);
   }
   /**
    * Get full token info
    * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async getTokenInfo(userId) {
-    const key = this.getScopedKey(userId);
+  async getTokenInfo(userId, accountId) {
+    const key = this.getScopedKey(userId, accountId);
     return this.storage.getToken(key);
+  }
+  /**
+   * List account aliases for a user on this connector.
+   * Returns account IDs that have stored tokens.
+   *
+   * @param userId - Optional user identifier
+   * @returns Array of account aliases (e.g., ['work', 'personal'])
+   */
+  async listAccounts(userId) {
+    if (!this.storage.listKeys) {
+      return [];
+    }
+    const allKeys = await this.storage.listKeys();
+    const userPart = userId && userId !== "default" ? userId : "default";
+    const prefix = `${this.baseStorageKey}:${userPart}:`;
+    const accounts = [];
+    for (const key of allKeys) {
+      if (key.startsWith(prefix)) {
+        const accountId = key.slice(prefix.length);
+        if (accountId && !accountId.includes(":")) {
+          accounts.push(accountId);
+        }
+      }
+    }
+    return accounts;
   }
 };
 function generatePKCE() {
@@ -259,20 +310,28 @@ var AuthCodePKCEFlow = class {
     this.tokenStore = new TokenStore(storageKey, config.storage);
   }
   tokenStore;
-  // Store PKCE data per user with timestamps for cleanup
+  // Store PKCE data per user+account with timestamps for cleanup
   codeVerifiers = /* @__PURE__ */ new Map();
   states = /* @__PURE__ */ new Map();
-  // Store refresh locks per user to prevent concurrent refresh
+  // Store refresh locks per user+account to prevent concurrent refresh
   refreshLocks = /* @__PURE__ */ new Map();
   // PKCE data TTL: 15 minutes (auth flows should complete within this time)
   PKCE_TTL = 15 * 60 * 1e3;
+  /**
+   * Build a map key from userId and accountId for internal PKCE/state/lock maps.
+   */
+  getMapKey(userId, accountId) {
+    const userPart = userId || "default";
+    return accountId ? `${userPart}:${accountId}` : userPart;
+  }
   /**
    * Generate authorization URL for user to visit
    * Opens browser or redirects user to this URL
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getAuthorizationUrl(userId) {
+  async getAuthorizationUrl(userId, accountId) {
     if (!this.config.authorizationUrl) {
       throw new Error("authorizationUrl is required for authorization_code flow");
     }
@@ -280,11 +339,11 @@ var AuthCodePKCEFlow = class {
       throw new Error("redirectUri is required for authorization_code flow");
     }
     this.cleanupExpiredPKCE();
-    const userKey = userId || "default";
+    const mapKey = this.getMapKey(userId, accountId);
     const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
+    this.codeVerifiers.set(mapKey, { verifier: codeVerifier, timestamp: Date.now() });
     const state = generateState();
-    this.states.set(userKey, { state, timestamp: Date.now() });
+    this.states.set(mapKey, { state, timestamp: Date.now() });
     const params = new URLSearchParams({
       response_type: "code",
       client_id: this.config.clientId,
@@ -298,33 +357,48 @@ var AuthCodePKCEFlow = class {
       params.append("code_challenge", codeChallenge);
       params.append("code_challenge_method", "S256");
     }
-    const stateWithUser = userId ? `${state}::${userId}` : state;
-    params.set("state", stateWithUser);
+    let stateWithMetadata = state;
+    if (userId || accountId) {
+      stateWithMetadata = `${state}::${userId || ""}`;
+      if (accountId) {
+        stateWithMetadata += `::${accountId}`;
+      }
+    }
+    params.set("state", stateWithMetadata);
     return `${this.config.authorizationUrl}?${params.toString()}`;
   }
   /**
    * Exchange authorization code for access token
    *
    * @param code - Authorization code from callback
-   * @param state - State parameter from callback (for CSRF verification, may include userId)
+   * @param state - State parameter from callback (for CSRF verification, may include userId/accountId)
    * @param userId - User identifier (optional, can be extracted from state)
+   * @param accountId - Account alias (optional, can be extracted from state)
    */
-  async exchangeCode(code, state, userId) {
+  async exchangeCode(code, state, userId, accountId) {
     let actualState = state;
     let actualUserId = userId;
+    let actualAccountId = accountId;
     if (state.includes("::")) {
       const parts = state.split("::");
       actualState = parts[0];
-      actualUserId = parts[1];
+      if (!actualUserId && parts[1]) {
+        actualUserId = parts[1];
+      }
+      if (!actualAccountId && parts[2]) {
+        actualAccountId = parts[2];
+      }
     }
-    const userKey = actualUserId || "default";
-    const stateData = this.states.get(userKey);
+    const mapKey = this.getMapKey(actualUserId, actualAccountId);
+    const stateData = this.states.get(mapKey);
     if (!stateData) {
-      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+      const label = actualAccountId ? `user ${actualUserId}, account ${actualAccountId}` : `user ${actualUserId}`;
+      throw new Error(`No PKCE state found for ${label}. Authorization flow may have expired (15 min TTL).`);
     }
     const expectedState = stateData.state;
     if (actualState !== expectedState) {
-      throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
+      const label = actualAccountId ? `user ${actualUserId}, account ${actualAccountId}` : `user ${actualUserId}`;
+      throw new Error(`State mismatch for ${label} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
     }
     if (!this.config.redirectUri) {
       throw new Error("redirectUri is required");
@@ -338,7 +412,7 @@ var AuthCodePKCEFlow = class {
     if (this.config.clientSecret) {
       params.append("client_secret", this.config.clientSecret);
     }
-    const verifierData = this.codeVerifiers.get(userKey);
+    const verifierData = this.codeVerifiers.get(mapKey);
     if (this.config.usePKCE !== false && verifierData) {
       params.append("code_verifier", verifierData.verifier);
     }
@@ -372,39 +446,43 @@ var AuthCodePKCEFlow = class {
       throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
     }
     const data = await response.json();
-    await this.tokenStore.storeToken(data, actualUserId);
-    this.codeVerifiers.delete(userKey);
-    this.states.delete(userKey);
+    await this.tokenStore.storeToken(data, actualUserId, actualAccountId);
+    this.codeVerifiers.delete(mapKey);
+    this.states.delete(mapKey);
   }
   /**
    * Get valid token (auto-refreshes if needed)
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async getToken(userId) {
-    const key = userId || "default";
-    if (this.refreshLocks.has(key)) {
-      return this.refreshLocks.get(key);
+  async getToken(userId, accountId) {
+    const mapKey = this.getMapKey(userId, accountId);
+    if (this.refreshLocks.has(mapKey)) {
+      return this.refreshLocks.get(mapKey);
     }
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
-      return this.tokenStore.getAccessToken(userId);
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+      return this.tokenStore.getAccessToken(userId, accountId);
     }
-    if (await this.tokenStore.hasRefreshToken(userId)) {
-      const refreshPromise = this.refreshToken(userId);
-      this.refreshLocks.set(key, refreshPromise);
+    if (await this.tokenStore.hasRefreshToken(userId, accountId)) {
+      const refreshPromise = this.refreshToken(userId, accountId);
+      this.refreshLocks.set(mapKey, refreshPromise);
       try {
         return await refreshPromise;
       } finally {
-        this.refreshLocks.delete(key);
+        this.refreshLocks.delete(mapKey);
       }
     }
-    throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
+    const userLabel = userId ? `user: ${userId}` : "default user";
+    const accountLabel = accountId ? `, account: ${accountId}` : "";
+    throw new Error(`No valid token available for ${userLabel}${accountLabel}. User needs to authorize (call startAuthFlow).`);
   }
   /**
    * Refresh access token using refresh token
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async refreshToken(userId) {
-    const refreshToken = await this.tokenStore.getRefreshToken(userId);
+  async refreshToken(userId, accountId) {
+    const refreshToken = await this.tokenStore.getRefreshToken(userId, accountId);
     const params = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
@@ -443,28 +521,30 @@ var AuthCodePKCEFlow = class {
       throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
     }
     const data = await response.json();
-    await this.tokenStore.storeToken(data, userId);
+    await this.tokenStore.storeToken(data, userId, accountId);
     return data.access_token;
   }
   /**
    * Check if token is valid
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async isTokenValid(userId) {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
+  async isTokenValid(userId, accountId) {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
   }
   /**
    * Revoke token (if supported by provider)
    * @param revocationUrl - Optional revocation endpoint
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async revokeToken(revocationUrl, userId) {
+  async revokeToken(revocationUrl, userId, accountId) {
     if (!revocationUrl) {
-      await this.tokenStore.clear(userId);
+      await this.tokenStore.clear(userId, accountId);
       return;
     }
     try {
-      const token = await this.tokenStore.getAccessToken(userId);
+      const token = await this.tokenStore.getAccessToken(userId, accountId);
       await fetch(revocationUrl, {
         method: "POST",
         headers: {
@@ -476,8 +556,15 @@ var AuthCodePKCEFlow = class {
         })
       });
     } finally {
-      await this.tokenStore.clear(userId);
+      await this.tokenStore.clear(userId, accountId);
     }
+  }
+  /**
+   * List account aliases for a user.
+   * @param userId - User identifier (optional)
+   */
+  async listAccounts(userId) {
+    return this.tokenStore.listAccounts(userId);
   }
   /**
    * Clean up expired PKCE data to prevent memory leaks
@@ -508,17 +595,19 @@ var ClientCredentialsFlow = class {
   tokenStore;
   /**
    * Get token using client credentials
+   * @param userId - User identifier for multi-user support (optional, rarely used for client_credentials)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getToken() {
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
+  async getToken(userId, accountId) {
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+      return this.tokenStore.getAccessToken(userId, accountId);
     }
-    return this.requestToken();
+    return this.requestToken(userId, accountId);
   }
   /**
    * Request a new token from the authorization server
    */
-  async requestToken() {
+  async requestToken(userId, accountId) {
     const auth = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
       "base64"
     );
@@ -541,22 +630,26 @@ var ClientCredentialsFlow = class {
       throw new Error(`Token request failed: ${response.status} ${response.statusText} - ${error}`);
     }
     const data = await response.json();
-    await this.tokenStore.storeToken(data);
+    await this.tokenStore.storeToken(data, userId, accountId);
     return data.access_token;
   }
   /**
    * Refresh token (client credentials don't use refresh tokens)
    * Just requests a new token
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async refreshToken() {
-    await this.tokenStore.clear();
-    return this.requestToken();
+  async refreshToken(userId, accountId) {
+    await this.tokenStore.clear(userId, accountId);
+    return this.requestToken(userId, accountId);
   }
   /**
    * Check if token is valid
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async isTokenValid() {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+  async isTokenValid(userId, accountId) {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
   }
 };
 var JWTBearerFlow = class {
@@ -592,17 +685,19 @@ var JWTBearerFlow = class {
   }
   /**
    * Get token using JWT Bearer assertion
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getToken() {
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
+  async getToken(userId, accountId) {
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+      return this.tokenStore.getAccessToken(userId, accountId);
     }
-    return this.requestToken();
+    return this.requestToken(userId, accountId);
   }
   /**
    * Request token using JWT assertion
    */
-  async requestToken() {
+  async requestToken(userId, accountId) {
     const assertion = await this.generateJWT();
     const params = new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -620,21 +715,25 @@ var JWTBearerFlow = class {
       throw new Error(`JWT Bearer token request failed: ${response.status} ${response.statusText} - ${error}`);
     }
     const data = await response.json();
-    await this.tokenStore.storeToken(data);
+    await this.tokenStore.storeToken(data, userId, accountId);
     return data.access_token;
   }
   /**
    * Refresh token (generate new JWT and request new token)
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async refreshToken() {
-    await this.tokenStore.clear();
-    return this.requestToken();
+  async refreshToken(userId, accountId) {
+    await this.tokenStore.clear(userId, accountId);
+    return this.requestToken(userId, accountId);
   }
   /**
    * Check if token is valid
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async isTokenValid() {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+  async isTokenValid(userId, accountId) {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
   }
 };
 
@@ -700,25 +799,28 @@ var OAuthManager = class {
    * Automatically refreshes if expired
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getToken(userId) {
-    return this.flow.getToken(userId);
+  async getToken(userId, accountId) {
+    return this.flow.getToken(userId, accountId);
   }
   /**
    * Force refresh the token
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async refreshToken(userId) {
-    return this.flow.refreshToken(userId);
+  async refreshToken(userId, accountId) {
+    return this.flow.refreshToken(userId, accountId);
   }
   /**
    * Check if current token is valid
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async isTokenValid(userId) {
-    return this.flow.isTokenValid(userId);
+  async isTokenValid(userId, accountId) {
+    return this.flow.isTokenValid(userId, accountId);
   }
   // ==================== Authorization Code Flow Methods ====================
   /**
@@ -726,13 +828,14 @@ var OAuthManager = class {
    * Returns URL for user to visit
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    * @returns Authorization URL for the user to visit
    */
-  async startAuthFlow(userId) {
+  async startAuthFlow(userId, accountId) {
     if (!(this.flow instanceof AuthCodePKCEFlow)) {
       throw new Error("startAuthFlow() is only available for authorization_code flow");
     }
-    return this.flow.getAuthorizationUrl(userId);
+    return this.flow.getAuthorizationUrl(userId, accountId);
   }
   /**
    * Handle OAuth callback (Authorization Code only)
@@ -740,8 +843,9 @@ var OAuthManager = class {
    *
    * @param callbackUrl - Full callback URL with code and state parameters
    * @param userId - Optional user identifier (can be extracted from state if embedded)
+   * @param accountId - Optional account alias (can be extracted from state if embedded)
    */
-  async handleCallback(callbackUrl, userId) {
+  async handleCallback(callbackUrl, userId, accountId) {
     if (!(this.flow instanceof AuthCodePKCEFlow)) {
       throw new Error("handleCallback() is only available for authorization_code flow");
     }
@@ -754,20 +858,33 @@ var OAuthManager = class {
     if (!state) {
       throw new Error("Missing state parameter in callback URL");
     }
-    await this.flow.exchangeCode(code, state, userId);
+    await this.flow.exchangeCode(code, state, userId, accountId);
   }
   /**
    * Revoke token (if supported by provider)
    *
    * @param revocationUrl - Optional revocation endpoint URL
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async revokeToken(revocationUrl, userId) {
+  async revokeToken(revocationUrl, userId, accountId) {
     if (this.flow instanceof AuthCodePKCEFlow) {
-      await this.flow.revokeToken(revocationUrl, userId);
+      await this.flow.revokeToken(revocationUrl, userId, accountId);
     } else {
       throw new Error("Token revocation not implemented for this flow");
     }
+  }
+  /**
+   * List account aliases for a user (Authorization Code only)
+   *
+   * @param userId - User identifier (optional)
+   * @returns Array of account aliases (e.g., ['work', 'personal'])
+   */
+  async listAccounts(userId) {
+    if (this.flow instanceof AuthCodePKCEFlow) {
+      return this.flow.listAccounts(userId);
+    }
+    return [];
   }
   // ==================== Validation ====================
   validateConfig(config) {
@@ -1884,52 +2001,78 @@ var Connector = class _Connector {
   /**
    * Get the current access token (for OAuth, JWT, or API key)
    * Handles automatic refresh if needed
+   *
+   * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
    */
-  async getToken(userId) {
+  async getToken(userId, accountId) {
     if (this.config.auth.type === "api_key") {
       return this.config.auth.apiKey;
     }
     if (!this.oauthManager) {
       throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
     }
-    return this.oauthManager.getToken(userId);
+    return this.oauthManager.getToken(userId, accountId);
   }
   /**
    * Start OAuth authorization flow
    * Returns the URL to redirect the user to
+   *
+   * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
    */
-  async startAuth(userId) {
+  async startAuth(userId, accountId) {
     if (!this.oauthManager) {
       throw new Error(`Connector '${this.name}' is not an OAuth connector`);
     }
-    return this.oauthManager.startAuthFlow(userId);
+    return this.oauthManager.startAuthFlow(userId, accountId);
   }
   /**
    * Handle OAuth callback
    * Call this after user is redirected back from OAuth provider
+   *
+   * @param callbackUrl - Full callback URL with code and state parameters
+   * @param userId - Optional user identifier (can be extracted from state if embedded)
+   * @param accountId - Optional account alias (can be extracted from state if embedded)
    */
-  async handleCallback(callbackUrl, userId) {
+  async handleCallback(callbackUrl, userId, accountId) {
     if (!this.oauthManager) {
       throw new Error(`Connector '${this.name}' is not an OAuth connector`);
     }
-    await this.oauthManager.handleCallback(callbackUrl, userId);
+    await this.oauthManager.handleCallback(callbackUrl, userId, accountId);
   }
   /**
    * Check if the connector has a valid token
+   *
+   * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async hasValidToken(userId) {
+  async hasValidToken(userId, accountId) {
     try {
       if (this.config.auth.type === "api_key") {
         return true;
       }
       if (this.oauthManager) {
-        const token = await this.oauthManager.getToken(userId);
+        const token = await this.oauthManager.getToken(userId, accountId);
         return !!token;
       }
       return false;
     } catch {
       return false;
     }
+  }
+  /**
+   * List account aliases for a user on this connector.
+   * Only applicable for OAuth connectors with multi-account support.
+   *
+   * @param userId - Optional user identifier
+   * @returns Array of account aliases (e.g., ['work', 'personal'])
+   */
+  async listAccounts(userId) {
+    if (!this.oauthManager) {
+      return [];
+    }
+    return this.oauthManager.listAccounts(userId);
   }
   /**
    * Get vendor-specific options from config
@@ -1974,9 +2117,10 @@ var Connector = class _Connector {
    * @param endpoint - API endpoint (relative to baseURL) or full URL
    * @param options - Fetch options with connector-specific settings
    * @param userId - Optional user ID for multi-user OAuth
+   * @param accountId - Optional account alias for multi-account OAuth
    * @returns Fetch Response
    */
-  async fetch(endpoint, options, userId) {
+  async fetch(endpoint, options, userId, accountId) {
     if (this.disposed) {
       throw new Error(`Connector '${this.name}' has been disposed`);
     }
@@ -1995,7 +2139,7 @@ var Connector = class _Connector {
       this.logRequest(url, options);
     }
     const doFetch = async () => {
-      const token = await this.getToken(userId);
+      const token = await this.getToken(userId, accountId);
       const auth = this.config.auth;
       let headerName = "Authorization";
       let headerValue = `Bearer ${token}`;
@@ -2107,10 +2251,11 @@ var Connector = class _Connector {
    * @param endpoint - API endpoint (relative to baseURL) or full URL
    * @param options - Fetch options with connector-specific settings
    * @param userId - Optional user ID for multi-user OAuth
+   * @param accountId - Optional account alias for multi-account OAuth
    * @returns Parsed JSON response
    */
-  async fetchJSON(endpoint, options, userId) {
-    const response = await this.fetch(endpoint, options, userId);
+  async fetchJSON(endpoint, options, userId, accountId) {
+    const response = await this.fetch(endpoint, options, userId, accountId);
     const text = await response.text();
     let data;
     try {

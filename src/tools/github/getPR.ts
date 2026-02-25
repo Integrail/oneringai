@@ -74,6 +74,7 @@ EXAMPLES:
 
     execute: async (args: GetPRArgs, context?: ToolContext): Promise<GitHubGetPRResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -84,7 +85,7 @@ EXAMPLES:
         const pr = await githubFetch<GitHubPRResponse>(
           connector,
           `/repos/${owner}/${repo}/pulls/${args.pull_number}`,
-          { userId: effectiveUserId }
+          { userId: effectiveUserId, accountId: effectiveAccountId }
         );
 
         return {

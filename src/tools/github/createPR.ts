@@ -108,6 +108,7 @@ EXAMPLES:
 
     execute: async (args: CreatePRArgs, context?: ToolContext): Promise<GitHubCreatePRResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -121,6 +122,7 @@ EXAMPLES:
           {
             method: 'POST',
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             body: {
               title: args.title,
               body: args.body,

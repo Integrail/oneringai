@@ -57,6 +57,7 @@ export {
 export type {
   IContextPluginNextGen,
   ITokenEstimator,
+  AuthIdentity,
   AgentContextNextGenConfig,
   ContextFeatures,
   ContextBudget,

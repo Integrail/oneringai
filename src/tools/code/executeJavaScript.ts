@@ -57,12 +57,15 @@ const DEFAULT_MAX_TIMEOUT = 30000;
  * Shows service type, vendor, base URL, and auth — enough for the agent
  * to decide which connector to use for a given task.
  */
-function formatConnectorEntry(c: Connector): string {
+function formatConnectorEntry(c: Connector, accountId?: string): string {
   const parts: string[] = [];
 
   // Service type or vendor (e.g., "github", "openai")
   const serviceOrVendor = c.serviceType ?? c.vendor ?? undefined;
   if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
+
+  // Account alias (for multi-account identities)
+  if (accountId) parts.push(`Account: "${accountId}"`);
 
   // Description
   if (c.config.description) parts.push(c.config.description);
@@ -70,22 +73,71 @@ function formatConnectorEntry(c: Connector): string {
   // Base URL (skip for LLM connectors without explicit URL)
   if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
 
+  const label = accountId ? `"${c.name}" account "${accountId}"` : `"${c.name}"`;
   const details = parts.map(p => `     ${p}`).join('\n');
-  return `   • "${c.name}" (${c.displayName})\n${details}`;
+  return `   • ${label} (${c.displayName})\n${details}`;
 }
 
 /**
- * Generate the tool description with current connectors from ToolContext.connectorRegistry.
+ * Build the connector/identity list for the description.
+ * If identities are set, list each identity entry (connector + accountId).
+ * Otherwise fall back to listing all connectors from the registry.
+ */
+function buildIdentityList(context: ToolContext | undefined): string {
+  const identities = context?.identities;
+  const registry = context?.connectorRegistry ?? Connector.asRegistry();
+
+  if (identities?.length) {
+    const entries: string[] = [];
+    for (const id of identities) {
+      try {
+        const connector = registry.get(id.connector);
+        entries.push(formatConnectorEntry(connector, id.accountId));
+      } catch {
+        entries.push(`   • "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ''} — not available`);
+      }
+    }
+    return entries.length > 0 ? entries.join('\n\n') : '   No connectors registered.';
+  }
+
+  // Fallback: list all connectors from registry
+  const connectors = registry.listAll();
+  return connectors.length > 0
+    ? connectors.map(c => formatConnectorEntry(c)).join('\n\n')
+    : '   No connectors registered.';
+}
+
+/**
+ * Check if any identity has an accountId (to decide whether to document the 4th param).
+ */
+function hasAccountIds(context: ToolContext | undefined): boolean {
+  return !!context?.identities?.some(id => id.accountId);
+}
+
+/**
+ * Generate the tool description with current connectors/identities from ToolContext.
  * Called dynamically via descriptionFactory when tools are sent to LLM.
  */
 function generateDescription(context: ToolContext | undefined, maxTimeout: number): string {
-  const registry = context?.connectorRegistry ?? Connector.asRegistry();
-  const connectors = registry.listAll();
-  const connectorList = connectors.length > 0
-    ? connectors.map(formatConnectorEntry).join('\n\n')
-    : '   No connectors registered.';
-
+  const connectorList = buildIdentityList(context);
+  const showAccountId = hasAccountIds(context);
   const timeoutSec = Math.round(maxTimeout / 1000);
+
+  const accountIdParam = showAccountId
+    ? `
+     • accountId (optional): Account alias for multi-account connectors.
+       Required when a connector has multiple accounts (see list below).
+       Example: authenticatedFetch('/v1.0/me', {}, 'microsoft', 'work')`
+    : '';
+
+  const accountIdExamples = showAccountId
+    ? `
+// Multi-account: specify accountId for connectors with multiple accounts
+const resp = await authenticatedFetch('/v1.0/me', { method: 'GET' }, 'microsoft', 'work');
+const profile = await resp.json();
+output = profile;
+`
+    : '';
 
   return `Execute JavaScript code in a secure sandbox with authenticated API access to external services.
 
@@ -97,7 +149,7 @@ Use this tool when you need to:
 
 SANDBOX API:
 
-1. authenticatedFetch(url, options, connectorName)
+1. authenticatedFetch(url, options, connectorName${showAccountId ? ', accountId?' : ''})
    Makes authenticated HTTP requests using the connector's credentials.
    The current user's identity (userId) is automatically included — no need to pass it.
    Auth headers are added automatically — DO NOT set Authorization header manually.
@@ -108,7 +160,7 @@ SANDBOX API:
        - Relative: "/user/repos" (resolved against connector's base URL)
      • options: Standard fetch options { method, headers, body }
        - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
-     • connectorName: Name of a registered connector (see list below)
+     • connectorName: Name of a registered connector (see list below)${accountIdParam}
 
    Returns: Promise<Response>
      • response.ok — true if status 200-299
@@ -144,7 +196,7 @@ const resp = await authenticatedFetch('/chat.postMessage', {
   body: JSON.stringify({ channel: '#general', text: 'Hello!' })
 }, 'slack');
 output = await resp.json();
-
+${accountIdExamples}
 // Data processing (no API needed)
 const items = input.data;
 output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
@@ -276,10 +328,11 @@ export async function executeInVM(
 
     // Authenticated fetch — userId auto-injected from ToolContext.
     // Only connectors visible in the scoped registry are accessible.
-    authenticatedFetch: (url: string | URL, options: RequestInit | undefined, connectorName: string) => {
+    // Optional 4th param accountId for multi-account OAuth identities.
+    authenticatedFetch: (url: string | URL, options: RequestInit | undefined, connectorName: string, accountId?: string) => {
       // Verify the connector is accessible in the (possibly scoped) registry
       registry.get(connectorName);
-      return rawAuthenticatedFetch(url, options, connectorName, userId);
+      return rawAuthenticatedFetch(url, options, connectorName, userId, accountId);
     },
 
     // Standard fetch (no auth)

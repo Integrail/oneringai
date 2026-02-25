@@ -57,21 +57,23 @@ export class JWTBearerFlow {
 
   /**
    * Get token using JWT Bearer assertion
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getToken(): Promise<string> {
+  async getToken(userId?: string, accountId?: string): Promise<string> {
     // Return cached token if valid
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+      return this.tokenStore.getAccessToken(userId, accountId);
     }
 
     // Request new token
-    return this.requestToken();
+    return this.requestToken(userId, accountId);
   }
 
   /**
    * Request token using JWT assertion
    */
-  private async requestToken(): Promise<string> {
+  private async requestToken(userId?: string, accountId?: string): Promise<string> {
     // Generate JWT assertion
     const assertion = await this.generateJWT();
 
@@ -97,23 +99,27 @@ export class JWTBearerFlow {
     const data: any = await response.json();
 
     // Store token (encrypted)
-    await this.tokenStore.storeToken(data);
+    await this.tokenStore.storeToken(data, userId, accountId);
 
     return data.access_token;
   }
 
   /**
    * Refresh token (generate new JWT and request new token)
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async refreshToken(): Promise<string> {
-    await this.tokenStore.clear();
-    return this.requestToken();
+  async refreshToken(userId?: string, accountId?: string): Promise<string> {
+    await this.tokenStore.clear(userId, accountId);
+    return this.requestToken(userId, accountId);
   }
 
   /**
    * Check if token is valid
+   * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async isTokenValid(): Promise<boolean> {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+  async isTokenValid(userId?: string, accountId?: string): Promise<boolean> {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
   }
 }

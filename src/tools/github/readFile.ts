@@ -106,6 +106,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
 
     execute: async (args: GitHubReadFileArgs, context?: ToolContext): Promise<GitHubReadFileResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -122,7 +123,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
         const contentResp = await githubFetch<GitHubContentResponse>(
           connector,
           `/repos/${owner}/${repo}/contents/${args.path}${refParam}`,
-          { userId: effectiveUserId }
+          { userId: effectiveUserId, accountId: effectiveAccountId }
         );
 
         if (contentResp.type !== 'file') {
@@ -144,7 +145,7 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
           const blob = await githubFetch<GitHubBlobResponse>(
             connector,
             contentResp.git_url,
-            { userId: effectiveUserId }
+            { userId: effectiveUserId, accountId: effectiveAccountId }
           );
           fileContent = Buffer.from(blob.content, 'base64').toString('utf-8');
           fileSize = blob.size;

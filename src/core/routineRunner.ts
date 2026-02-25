@@ -31,8 +31,14 @@ import type { Message, OutputItem } from '../domain/entities/Message.js';
 import type { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { extractJSON } from '../utils/jsonExtractor.js';
 import { logger } from '../infrastructure/observability/Logger.js';
-import type { InContextMemoryPluginNextGen } from './context-nextgen/plugins/InContextMemoryPluginNextGen.js';
-import type { WorkingMemoryPluginNextGen } from './context-nextgen/plugins/WorkingMemoryPluginNextGen.js';
+import { ProviderAuthError, ProviderContextLengthError, ProviderNotFoundError, ModelNotSupportedError, InvalidConfigError } from '../domain/errors/AIErrors.js';
+import {
+  validateAndResolveInputs,
+  resolveTaskTemplates,
+  executeControlFlow,
+  ROUTINE_KEYS,
+  getPlugins,
+} from './routineControlFlow.js';
 
 // ============================================================================
 // Types
@@ -66,6 +72,9 @@ export interface ExecuteRoutineOptions {
 
   /** Additional tools — only used when creating a new agent (no `agent` provided) */
   tools?: ToolFunction[];
+
+  /** Input parameter values for parameterized routines */
+  inputs?: Record<string, unknown>;
 
   /** Hooks — applied to agent for the duration of routine execution.
    *  For new agents: baked in at creation. For existing agents: registered before
@@ -299,6 +308,25 @@ async function collectValidationContext(
 }
 
 // ============================================================================
+// Error Classification
+// ============================================================================
+
+/**
+ * Determine if an error is transient (worth retrying) or permanent (should fail immediately).
+ * Unknown errors default to transient — safer to retry than to give up prematurely.
+ */
+function isTransientError(error: unknown): boolean {
+  // Permanent errors: configuration, auth, or model issues that won't resolve on retry
+  if (error instanceof ProviderAuthError) return false;
+  if (error instanceof ProviderContextLengthError) return false;
+  if (error instanceof ProviderNotFoundError) return false;
+  if (error instanceof ModelNotSupportedError) return false;
+  if (error instanceof InvalidConfigError) return false;
+  // Everything else (rate limits, timeouts, network errors, etc.) — retry
+  return true;
+}
+
+// ============================================================================
 // Routine Context Injection
 // ============================================================================
 
@@ -354,6 +382,51 @@ function buildPlanOverview(execution: RoutineExecution, definition: RoutineDefin
 }
 
 /**
+ * Delete ICM/WM entries matching given prefix lists.
+ * Shared by injectRoutineContext (dep cleanup) and cleanupRoutineContext (full cleanup).
+ */
+async function cleanupMemoryKeys(
+  icmPlugin: ReturnType<typeof getPlugins>['icmPlugin'],
+  wmPlugin: ReturnType<typeof getPlugins>['wmPlugin'],
+  config: {
+    icmPrefixes: string[];
+    icmExactKeys?: string[];
+    wmPrefixes: string[];
+  }
+): Promise<void> {
+  if (icmPlugin) {
+    for (const entry of icmPlugin.list()) {
+      const shouldDelete =
+        config.icmPrefixes.some((p) => entry.key.startsWith(p)) ||
+        (config.icmExactKeys?.includes(entry.key) ?? false);
+      if (shouldDelete) icmPlugin.delete(entry.key);
+    }
+  }
+
+  if (wmPlugin) {
+    const { entries: wmEntries } = await wmPlugin.query();
+    for (const entry of wmEntries) {
+      if (config.wmPrefixes.some((p) => entry.key.startsWith(p))) {
+        await wmPlugin.delete(entry.key);
+      }
+    }
+  }
+}
+
+/** Prefixes for dependency-only cleanup (between tasks). */
+const DEP_CLEANUP_CONFIG = {
+  icmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX],
+  icmExactKeys: [ROUTINE_KEYS.DEPS],
+  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX],
+};
+
+/** Prefixes for full routine cleanup (after execution). */
+const FULL_CLEANUP_CONFIG = {
+  icmPrefixes: ['__routine_', ROUTINE_KEYS.DEP_RESULT_PREFIX, '__map_', '__fold_'],
+  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX],
+};
+
+/**
  * Inject routine context (plan overview + dependency results) into ICM/WM
  * before each task runs.
  *
@@ -369,8 +442,7 @@ async function injectRoutineContext(
   definition: RoutineDefinition,
   currentTask: Task
 ): Promise<void> {
-  const icmPlugin = agent.context.getPlugin('in_context_memory') as InContextMemoryPluginNextGen | null;
-  const wmPlugin = agent.context.memory as WorkingMemoryPluginNextGen | null;
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
 
   if (!icmPlugin && !wmPlugin) {
     logger.warn('injectRoutineContext: No ICM or WM plugin available — skipping context injection');
@@ -380,25 +452,11 @@ async function injectRoutineContext(
   // 1. Inject plan overview into ICM
   const planOverview = buildPlanOverview(execution, definition, currentTask.id);
   if (icmPlugin) {
-    icmPlugin.set('__routine_plan', 'Routine plan overview with task statuses', planOverview, 'high');
+    icmPlugin.set(ROUTINE_KEYS.PLAN, 'Routine plan overview with task statuses', planOverview, 'high');
   }
 
   // 2. Clean up previous task's dependency keys
-  if (icmPlugin) {
-    for (const entry of icmPlugin.list()) {
-      if (entry.key.startsWith('__dep_result_') || entry.key === '__routine_deps') {
-        icmPlugin.delete(entry.key);
-      }
-    }
-  }
-  if (wmPlugin) {
-    const { entries: wmEntries } = await wmPlugin.query();
-    for (const entry of wmEntries) {
-      if (entry.key.startsWith('__dep_result_') || entry.key.startsWith('findings/__dep_result_')) {
-        await wmPlugin.delete(entry.key);
-      }
-    }
-  }
+  await cleanupMemoryKeys(icmPlugin, wmPlugin, DEP_CLEANUP_CONFIG);
 
   // 3. Inject dependency results
   if (currentTask.dependsOn.length === 0) return;
@@ -415,7 +473,7 @@ async function injectRoutineContext(
       : JSON.stringify(depTask.result.output);
 
     const tokens = estimateTokens(output);
-    const depKey = `__dep_result_${depId}`;
+    const depKey = `${ROUTINE_KEYS.DEP_RESULT_PREFIX}${depId}`;
     const depLabel = `Result from task "${depTask.name}"`;
 
     if (tokens < 5000 && icmPlugin) {
@@ -443,7 +501,7 @@ async function injectRoutineContext(
     if (workingMemoryDeps.length > 0) {
       summaryParts.push(`In working memory (use memory_retrieve): ${workingMemoryDeps.join(', ')}`);
     }
-    icmPlugin.set('__routine_deps', 'Dependency results location guide', summaryParts.join('\n'), 'high');
+    icmPlugin.set(ROUTINE_KEYS.DEPS, 'Dependency results location guide', summaryParts.join('\n'), 'high');
   }
 }
 
@@ -451,25 +509,8 @@ async function injectRoutineContext(
  * Clean up all routine-managed keys from ICM and WM.
  */
 async function cleanupRoutineContext(agent: Agent): Promise<void> {
-  const icmPlugin = agent.context.getPlugin('in_context_memory') as InContextMemoryPluginNextGen | null;
-  const wmPlugin = agent.context.memory as WorkingMemoryPluginNextGen | null;
-
-  if (icmPlugin) {
-    for (const entry of icmPlugin.list()) {
-      if (entry.key.startsWith('__routine_') || entry.key.startsWith('__dep_result_')) {
-        icmPlugin.delete(entry.key);
-      }
-    }
-  }
-
-  if (wmPlugin) {
-    const { entries: wmEntries } = await wmPlugin.query();
-    for (const entry of wmEntries) {
-      if (entry.key.startsWith('__dep_result_') || entry.key.startsWith('findings/__dep_result_')) {
-        await wmPlugin.delete(entry.key);
-      }
-    }
-  }
+  const { icmPlugin, wmPlugin } = getPlugins(agent);
+  await cleanupMemoryKeys(icmPlugin, wmPlugin, FULL_CLEANUP_CONFIG);
 }
 
 // ============================================================================
@@ -581,12 +622,16 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     onTaskValidation,
     hooks,
     prompts,
+    inputs: rawInputs,
   } = options;
 
   // Validate: must provide either `agent` or `connector` + `model`
   if (!existingAgent && (!connector || !model)) {
     throw new Error('executeRoutine requires either `agent` or both `connector` and `model`');
   }
+
+  // Validate and resolve input parameters
+  const resolvedInputs = validateAndResolveInputs(definition.parameters, rawInputs);
 
   const ownsAgent = !existingAgent;
   const log = logger.child({ routine: definition.name });
@@ -708,119 +753,151 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       };
       agent.registerHook('pause:check', iterationLimiter);
 
-      // Helper to get the live task reference (updateTaskStatus returns new objects)
-      const getTask = () => execution.plan.tasks[taskIndex]!;
+      try {
+        // Helper to get the live task reference (updateTaskStatus returns new objects)
+        const getTask = () => execution.plan.tasks[taskIndex]!;
 
-      // Inject routine context (plan overview + dependency results) before task runs
-      await injectRoutineContext(agent, execution, definition, getTask());
+        // Inject routine context (plan overview + dependency results) before task runs
+        await injectRoutineContext(agent, execution, definition, getTask());
 
-      // Retry loop
-      // First attempt is already counted by updateTaskStatus(task, 'in_progress') above.
-      // Loop until task succeeds, fails definitively, or exhausts maxAttempts.
-      while (!taskCompleted) {
-        try {
-          // Build task prompt
-          const taskPrompt = buildTaskPrompt(getTask());
+        // Resolve ICM plugin for template resolution
+        const { icmPlugin } = getPlugins(agent);
 
-          // Run agent
-          const response = await agent.run(taskPrompt);
-          const responseText = response.output_text ?? '';
+        // Control flow branch: map/fold/until handle their own execution
+        if (getTask().controlFlow) {
+          try {
+            const cfResult = await executeControlFlow(agent, getTask(), resolvedInputs);
 
-          // Validate
-          const validationResult = await validateTaskCompletion(
-            agent,
-            getTask(),
-            responseText,
-            buildValidationPrompt
-          );
-
-          // Notify caller of validation result
-          onTaskValidation?.(getTask(), validationResult, execution);
-
-          if (validationResult.isComplete) {
-            // Mark completed
-            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'completed');
-            execution.plan.tasks[taskIndex]!.result = {
-              success: true,
-              output: responseText,
-              validationScore: validationResult.completionScore,
-              validationExplanation: validationResult.explanation,
-            };
-            taskCompleted = true;
-
-            log.info(
-              { taskName: getTask().name, score: validationResult.completionScore },
-              'Task completed'
-            );
-
-            execution.progress = getRoutineProgress(execution);
-            execution.lastUpdatedAt = Date.now();
-            onTaskComplete?.(execution.plan.tasks[taskIndex]!, execution);
-          } else {
-            // Validation failed
-            log.warn(
-              {
-                taskName: getTask().name,
-                score: validationResult.completionScore,
-                attempt: getTask().attempts,
-                maxAttempts: getTask().maxAttempts,
-              },
-              'Task validation failed'
-            );
-
-            if (getTask().attempts >= getTask().maxAttempts) {
-              // Max attempts exceeded — mark failed
+            if (cfResult.completed) {
+              execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'completed');
+              execution.plan.tasks[taskIndex]!.result = { success: true, output: cfResult.result };
+              taskCompleted = true;
+              execution.progress = getRoutineProgress(execution);
+              execution.lastUpdatedAt = Date.now();
+              onTaskComplete?.(execution.plan.tasks[taskIndex]!, execution);
+            } else {
               execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'failed');
-              execution.plan.tasks[taskIndex]!.result = {
-                success: false,
-                error: validationResult.explanation,
-                validationScore: validationResult.completionScore,
-                validationExplanation: validationResult.explanation,
-              };
-              break;
+              execution.plan.tasks[taskIndex]!.result = { success: false, error: cfResult.error };
             }
-
-            // Retry — don't clear conversation so agent can build on previous attempt
-            // Re-set in_progress to increment attempts counter
-            execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'in_progress');
-          }
-        } catch (error) {
-          const errorMessage = (error as Error).message;
-          log.error({ taskName: getTask().name, error: errorMessage }, 'Task execution error');
-
-          if (getTask().attempts >= getTask().maxAttempts) {
-            // Max attempts exceeded — mark failed
+          } catch (error) {
+            const errorMessage = (error as Error).message;
+            log.error({ taskName: getTask().name, error: errorMessage }, 'Control flow error');
             execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'failed');
-            execution.plan.tasks[taskIndex]!.result = {
-              success: false,
-              error: errorMessage,
-            };
+            execution.plan.tasks[taskIndex]!.result = { success: false, error: errorMessage };
+          }
+        } else {
+          // Standard task execution — retry loop
+          // First attempt is already counted by updateTaskStatus(task, 'in_progress') above.
+          // Loop until task succeeds, fails definitively, or exhausts maxAttempts.
+          while (!taskCompleted) {
+            try {
+              // Resolve templates in task description and expectedOutput
+              const resolvedTask = resolveTaskTemplates(getTask(), resolvedInputs, icmPlugin);
+
+              // Build task prompt
+              const taskPrompt = buildTaskPrompt(resolvedTask);
+
+              // Run agent
+              const response = await agent.run(taskPrompt);
+              const responseText = response.output_text ?? '';
+
+              // Validate
+              const validationResult = await validateTaskCompletion(
+                agent,
+                getTask(),
+                responseText,
+                buildValidationPrompt
+              );
+
+              // Notify caller of validation result
+              onTaskValidation?.(getTask(), validationResult, execution);
+
+              if (validationResult.isComplete) {
+                // Mark completed
+                execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'completed');
+                execution.plan.tasks[taskIndex]!.result = {
+                  success: true,
+                  output: responseText,
+                  validationScore: validationResult.completionScore,
+                  validationExplanation: validationResult.explanation,
+                };
+                taskCompleted = true;
+
+                log.info(
+                  { taskName: getTask().name, score: validationResult.completionScore },
+                  'Task completed'
+                );
+
+                execution.progress = getRoutineProgress(execution);
+                execution.lastUpdatedAt = Date.now();
+                onTaskComplete?.(execution.plan.tasks[taskIndex]!, execution);
+              } else {
+                // Validation failed
+                log.warn(
+                  {
+                    taskName: getTask().name,
+                    score: validationResult.completionScore,
+                    attempt: getTask().attempts,
+                    maxAttempts: getTask().maxAttempts,
+                  },
+                  'Task validation failed'
+                );
+
+                if (getTask().attempts >= getTask().maxAttempts) {
+                  // Max attempts exceeded — mark failed
+                  execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'failed');
+                  execution.plan.tasks[taskIndex]!.result = {
+                    success: false,
+                    error: validationResult.explanation,
+                    validationScore: validationResult.completionScore,
+                    validationExplanation: validationResult.explanation,
+                  };
+                  break;
+                }
+
+                // Retry — don't clear conversation so agent can build on previous attempt
+                // Re-set in_progress to increment attempts counter
+                execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'in_progress');
+              }
+            } catch (error) {
+              const errorMessage = (error as Error).message;
+              log.error({ taskName: getTask().name, error: errorMessage }, 'Task execution error');
+
+              if (!isTransientError(error) || getTask().attempts >= getTask().maxAttempts) {
+                // Permanent error or max attempts exceeded — mark failed
+                execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'failed');
+                execution.plan.tasks[taskIndex]!.result = {
+                  success: false,
+                  error: errorMessage,
+                };
+                break;
+              }
+
+              // Transient error — retry
+              execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'in_progress');
+            }
+          }
+        }
+
+        // Handle task failure
+        if (!taskCompleted) {
+          execution.progress = getRoutineProgress(execution);
+          execution.lastUpdatedAt = Date.now();
+          onTaskFailed?.(execution.plan.tasks[taskIndex]!, execution);
+
+          if (failureMode === 'fail-fast') {
+            execution.status = 'failed';
+            execution.error = `Task "${getTask().name}" failed after ${getTask().attempts} attempt(s)`;
+            execution.completedAt = Date.now();
+            execution.lastUpdatedAt = Date.now();
             break;
           }
-
-          // Retry
-          execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'in_progress');
+          // 'continue' mode: skip this task, proceed to next
         }
+      } finally {
+        // Always unregister per-task iteration limiter — even on error/break paths
+        try { agent.unregisterHook('pause:check', iterationLimiter); } catch { /* already unregistered */ }
       }
-
-      // Handle task failure
-      if (!taskCompleted) {
-        execution.progress = getRoutineProgress(execution);
-        execution.lastUpdatedAt = Date.now();
-        onTaskFailed?.(execution.plan.tasks[taskIndex]!, execution);
-
-        if (failureMode === 'fail-fast') {
-          execution.status = 'failed';
-          execution.error = `Task "${getTask().name}" failed after ${getTask().attempts} attempt(s)`;
-          execution.completedAt = Date.now();
-          execution.lastUpdatedAt = Date.now();
-          break;
-        }
-        // 'continue' mode: skip this task, proceed to next
-      }
-
-      // Remove per-task iteration limiter
-      agent.unregisterHook('pause:check', iterationLimiter);
 
       // Clear conversation for next task (memory persists)
       agent.clearConversation('task-boundary');
@@ -860,15 +937,27 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     return execution;
   } finally {
     // Clean up routine-managed keys from ICM/WM (important for reused agents)
-    try { await cleanupRoutineContext(agent); } catch { /* ignore cleanup errors */ }
+    try {
+      await cleanupRoutineContext(agent);
+    } catch (e) {
+      log.debug({ error: (e as Error).message }, 'Failed to clean up routine context');
+    }
 
     // Unregister routine-specific hooks from existing agent
     for (const { name, hook } of registeredHooks) {
-      try { agent.unregisterHook(name as any, hook as any); } catch { /* ignore */ }
+      try {
+        agent.unregisterHook(name as any, hook as any);
+      } catch (e) {
+        log.debug({ hookName: name, error: (e as Error).message }, 'Failed to unregister hook');
+      }
     }
 
     if (ownsAgent) {
-      agent.destroy();
+      try {
+        agent.destroy();
+      } catch (e) {
+        log.debug({ error: (e as Error).message }, 'Failed to destroy agent');
+      }
     }
   }
 }

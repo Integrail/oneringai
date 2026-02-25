@@ -1592,9 +1592,13 @@ function truncateString(str, maxLength) {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength - 3) + "...";
 }
-function formatJson(obj) {
+function formatJson(obj, maxLength) {
   try {
-    return JSON.stringify(obj, null, 2);
+    const json = JSON.stringify(obj, null, 2);
+    if (maxLength && json.length > maxLength) {
+      return json.slice(0, maxLength) + "\n... (truncated)";
+    }
+    return json;
   } catch {
     return String(obj);
   }
@@ -1644,13 +1648,17 @@ var ToolCallCard = (0, import_react12.memo)(
           /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tool-call__detail-label", children: "Args:" }),
           /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("pre", { className: "tool-call__detail-pre", children: formatJson(args) })
         ] }),
-        status === "complete" && result !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "tool-call__detail-section", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tool-call__detail-label", children: "Result:" }),
-          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("pre", { className: "tool-call__detail-pre", children: formatJson(result) })
-        ] }),
         error && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "tool-call__detail-section", children: [
           /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tool-call__detail-label tool-call__detail-label--error", children: "Error:" }),
           /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tool-call__error", children: error })
+        ] }),
+        error && result !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "tool-call__detail-section", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tool-call__detail-label", children: "Result:" }),
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("pre", { className: "tool-call__detail-pre", children: formatJson(result) })
+        ] }),
+        !error && status === "complete" && result !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "tool-call__detail-section", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tool-call__detail-label", children: "Result:" }),
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("pre", { className: "tool-call__detail-pre", children: formatJson(result, 2e3) })
         ] })
       ] })
     ] });

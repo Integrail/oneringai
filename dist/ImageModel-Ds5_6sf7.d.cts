@@ -1,5 +1,5 @@
-import { e as IProvider, b as Connector } from './IProvider-B6hqVVq8.js';
-import { V as Vendor } from './Vendor-DYh_bzwo.js';
+import { e as IProvider, b as Connector } from './IProvider-B8sqUzJG.cjs';
+import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 
 /**
  * Shared types used across all multimodal capabilities

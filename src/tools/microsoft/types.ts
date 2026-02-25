@@ -43,6 +43,7 @@ export interface MicrosoftFetchOptions {
   method?: string;
   body?: unknown;
   userId?: string;
+  accountId?: string;
   queryParams?: Record<string, string | number | boolean>;
   accept?: string;
 }
@@ -102,7 +103,8 @@ export async function microsoftFetch<T = unknown>(
       headers,
       body: options?.body ? JSON.stringify(options.body) : undefined,
     },
-    options?.userId
+    options?.userId,
+    options?.accountId
   );
 
   const text = await response.text();
@@ -224,7 +226,8 @@ export async function resolveMeetingId(
   connector: Connector,
   input: string,
   prefix: string,
-  effectiveUserId?: string
+  effectiveUserId?: string,
+  effectiveAccountId?: string
 ): Promise<{ meetingId: string; subject?: string }> {
   if (!input || input.trim().length === 0) {
     throw new Error('Meeting ID cannot be empty');
@@ -242,6 +245,7 @@ export async function resolveMeetingId(
     `${prefix}/onlineMeetings`,
     {
       userId: effectiveUserId,
+      accountId: effectiveAccountId,
       queryParams: { '$filter': `JoinWebUrl eq '${trimmed}'` },
     }
   );

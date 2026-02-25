@@ -324,8 +324,11 @@ export class Connector {
   /**
    * Get the current access token (for OAuth, JWT, or API key)
    * Handles automatic refresh if needed
+   *
+   * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
    */
-  async getToken(userId?: string): Promise<string> {
+  async getToken(userId?: string, accountId?: string): Promise<string> {
     if (this.config.auth.type === 'api_key') {
       return this.config.auth.apiKey;
     }
@@ -335,47 +338,71 @@ export class Connector {
       throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
     }
 
-    return this.oauthManager.getToken(userId);
+    return this.oauthManager.getToken(userId, accountId);
   }
 
   /**
    * Start OAuth authorization flow
    * Returns the URL to redirect the user to
+   *
+   * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
    */
-  async startAuth(userId?: string): Promise<string> {
+  async startAuth(userId?: string, accountId?: string): Promise<string> {
     if (!this.oauthManager) {
       throw new Error(`Connector '${this.name}' is not an OAuth connector`);
     }
-    return this.oauthManager.startAuthFlow(userId);
+    return this.oauthManager.startAuthFlow(userId, accountId);
   }
 
   /**
    * Handle OAuth callback
    * Call this after user is redirected back from OAuth provider
+   *
+   * @param callbackUrl - Full callback URL with code and state parameters
+   * @param userId - Optional user identifier (can be extracted from state if embedded)
+   * @param accountId - Optional account alias (can be extracted from state if embedded)
    */
-  async handleCallback(callbackUrl: string, userId?: string): Promise<void> {
+  async handleCallback(callbackUrl: string, userId?: string, accountId?: string): Promise<void> {
     if (!this.oauthManager) {
       throw new Error(`Connector '${this.name}' is not an OAuth connector`);
     }
-    await this.oauthManager.handleCallback(callbackUrl, userId);
+    await this.oauthManager.handleCallback(callbackUrl, userId, accountId);
   }
 
   /**
    * Check if the connector has a valid token
+   *
+   * @param userId - Optional user identifier for multi-user support
+   * @param accountId - Optional account alias for multi-account support
    */
-  async hasValidToken(userId?: string): Promise<boolean> {
+  async hasValidToken(userId?: string, accountId?: string): Promise<boolean> {
     try {
       if (this.config.auth.type === 'api_key') {
         return true; // API keys are always "valid" (we don't validate them)
       }
       if (this.oauthManager) {
-        const token = await this.oauthManager.getToken(userId);
+        const token = await this.oauthManager.getToken(userId, accountId);
         return !!token;
       }
       return false;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * List account aliases for a user on this connector.
+   * Only applicable for OAuth connectors with multi-account support.
+   *
+   * @param userId - Optional user identifier
+   * @returns Array of account aliases (e.g., ['work', 'personal'])
+   */
+  async listAccounts(userId?: string): Promise<string[]> {
+    if (!this.oauthManager) {
+      return [];
+    }
+    return this.oauthManager.listAccounts(userId);
   }
 
   /**
@@ -431,12 +458,14 @@ export class Connector {
    * @param endpoint - API endpoint (relative to baseURL) or full URL
    * @param options - Fetch options with connector-specific settings
    * @param userId - Optional user ID for multi-user OAuth
+   * @param accountId - Optional account alias for multi-account OAuth
    * @returns Fetch Response
    */
   async fetch(
     endpoint: string,
     options?: ConnectorFetchOptions,
-    userId?: string
+    userId?: string,
+    accountId?: string
   ): Promise<Response> {
     // Check if disposed
     if (this.disposed) {
@@ -467,7 +496,7 @@ export class Connector {
     // Build the actual fetch function
     const doFetch = async (): Promise<Response> => {
       // Get token (may involve refresh)
-      const token = await this.getToken(userId);
+      const token = await this.getToken(userId, accountId);
       const auth = this.config.auth;
 
       // Build auth header
@@ -620,14 +649,16 @@ export class Connector {
    * @param endpoint - API endpoint (relative to baseURL) or full URL
    * @param options - Fetch options with connector-specific settings
    * @param userId - Optional user ID for multi-user OAuth
+   * @param accountId - Optional account alias for multi-account OAuth
    * @returns Parsed JSON response
    */
   async fetchJSON<T = unknown>(
     endpoint: string,
     options?: ConnectorFetchOptions,
-    userId?: string
+    userId?: string,
+    accountId?: string
   ): Promise<T> {
-    const response = await this.fetch(endpoint, options, userId);
+    const response = await this.fetch(endpoint, options, userId, accountId);
 
     // Try to parse response body
     const text = await response.text();

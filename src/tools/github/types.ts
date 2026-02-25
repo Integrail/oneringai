@@ -100,6 +100,7 @@ export interface GitHubFetchOptions {
   method?: string;
   body?: unknown;
   userId?: string;
+  accountId?: string;
   accept?: string;
   queryParams?: Record<string, string | number | boolean>;
 }
@@ -159,7 +160,8 @@ export async function githubFetch<T = unknown>(
       headers,
       body: options?.body ? JSON.stringify(options.body) : undefined,
     },
-    options?.userId
+    options?.userId,
+    options?.accountId
   );
 
   const text = await response.text();

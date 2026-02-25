@@ -44,27 +44,30 @@ export class OAuthManager {
    * Automatically refreshes if expired
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getToken(userId?: string): Promise<string> {
-    return this.flow.getToken(userId);
+  async getToken(userId?: string, accountId?: string): Promise<string> {
+    return this.flow.getToken(userId, accountId);
   }
 
   /**
    * Force refresh the token
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async refreshToken(userId?: string): Promise<string> {
-    return this.flow.refreshToken(userId);
+  async refreshToken(userId?: string, accountId?: string): Promise<string> {
+    return this.flow.refreshToken(userId, accountId);
   }
 
   /**
    * Check if current token is valid
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async isTokenValid(userId?: string): Promise<boolean> {
-    return this.flow.isTokenValid(userId);
+  async isTokenValid(userId?: string, accountId?: string): Promise<boolean> {
+    return this.flow.isTokenValid(userId, accountId);
   }
 
   // ==================== Authorization Code Flow Methods ====================
@@ -74,14 +77,15 @@ export class OAuthManager {
    * Returns URL for user to visit
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    * @returns Authorization URL for the user to visit
    */
-  async startAuthFlow(userId?: string): Promise<string> {
+  async startAuthFlow(userId?: string, accountId?: string): Promise<string> {
     if (!(this.flow instanceof AuthCodePKCEFlow)) {
       throw new Error('startAuthFlow() is only available for authorization_code flow');
     }
 
-    return this.flow.getAuthorizationUrl(userId);
+    return this.flow.getAuthorizationUrl(userId, accountId);
   }
 
   /**
@@ -90,8 +94,9 @@ export class OAuthManager {
    *
    * @param callbackUrl - Full callback URL with code and state parameters
    * @param userId - Optional user identifier (can be extracted from state if embedded)
+   * @param accountId - Optional account alias (can be extracted from state if embedded)
    */
-  async handleCallback(callbackUrl: string, userId?: string): Promise<void> {
+  async handleCallback(callbackUrl: string, userId?: string, accountId?: string): Promise<void> {
     if (!(this.flow instanceof AuthCodePKCEFlow)) {
       throw new Error('handleCallback() is only available for authorization_code flow');
     }
@@ -108,7 +113,7 @@ export class OAuthManager {
       throw new Error('Missing state parameter in callback URL');
     }
 
-    await this.flow.exchangeCode(code, state, userId);
+    await this.flow.exchangeCode(code, state, userId, accountId);
   }
 
   /**
@@ -116,13 +121,27 @@ export class OAuthManager {
    *
    * @param revocationUrl - Optional revocation endpoint URL
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async revokeToken(revocationUrl?: string, userId?: string): Promise<void> {
+  async revokeToken(revocationUrl?: string, userId?: string, accountId?: string): Promise<void> {
     if (this.flow instanceof AuthCodePKCEFlow) {
-      await this.flow.revokeToken(revocationUrl, userId);
+      await this.flow.revokeToken(revocationUrl, userId, accountId);
     } else {
       throw new Error('Token revocation not implemented for this flow');
     }
+  }
+
+  /**
+   * List account aliases for a user (Authorization Code only)
+   *
+   * @param userId - User identifier (optional)
+   * @returns Array of account aliases (e.g., ['work', 'personal'])
+   */
+  async listAccounts(userId?: string): Promise<string[]> {
+    if (this.flow instanceof AuthCodePKCEFlow) {
+      return this.flow.listAccounts(userId);
+    }
+    return [];
   }
 
   // ==================== Validation ====================

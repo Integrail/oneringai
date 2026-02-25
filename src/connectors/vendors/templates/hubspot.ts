@@ -61,5 +61,21 @@ export const hubspotTemplate: VendorTemplate = {
         'e-commerce': 'Access e-commerce data (products, line items)',
       },
     },
+    {
+      id: 'oauth-mcp',
+      name: 'MCP Auth App (OAuth 2.1)',
+      type: 'oauth',
+      flow: 'authorization_code',
+      description: 'HubSpot MCP Auth app using OAuth 2.1 with PKCE. Scopes are auto-granted based on user permissions at install time. Create app at developers.hubspot.com under MCP Auth Apps.',
+      requiredFields: ['clientId', 'redirectUri'],
+      optionalFields: ['clientSecret'],
+      defaults: {
+        type: 'oauth',
+        flow: 'authorization_code',
+        authorizationUrl: 'https://mcp.hubspot.com/oauth/authorize/user',
+        tokenUrl: 'https://mcp.hubspot.com/oauth/v1/token',
+        usePKCE: true,
+      },
+    },
   ],
 };

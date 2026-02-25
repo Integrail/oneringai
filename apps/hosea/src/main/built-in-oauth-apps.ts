@@ -25,6 +25,8 @@ export interface BuiltInOAuthApp {
   scopes: string[];
   /** Extra credentials required by the vendor template (e.g., tenantId for Microsoft) */
   extraCredentials?: Record<string, string>;
+  /** If true, use HTTPS callback server (port 19877) instead of HTTP (port 19876). Required by Slack etc. */
+  requireHttps?: boolean;
 }
 
 /**
@@ -47,6 +49,29 @@ const DEFAULT_OAUTH_APPS: BuiltInOAuthApp[] = [
     clientId: 'R0lxMlUtVUt4R0ZqU1cxellaZVk6MTpjaQ',
     authTemplateId: 'oauth-user',
     scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+  },
+  {
+    vendorId: 'hubspot',
+    displayName: 'HubSpot',
+    clientId: '16f0288e-d0a7-4ea9-8249-5e92f6d6adec',
+    authTemplateId: 'oauth-mcp',
+    scopes: [],
+    extraCredentials: {
+      appId: '32332286',
+      clientSecret: 'ee5a2f96-2af0-4151-a036-c010ad499f85',
+    },
+  },
+  {
+    vendorId: 'slack',
+    displayName: 'Slack',
+    clientId: '8338321730902.10583366120594',
+    authTemplateId: 'oauth-user',
+    scopes: ['chat:write', 'channels:read', 'users:read', 'im:write', 'groups:read', 'files:read', 'files:write', 'reactions:read', 'reactions:write', 'team:read'],
+    extraCredentials: {
+      clientSecret: 'afec5ce0033bdfe00bf2b1af4ec53c9c',
+      signingSecret: 'f1a50a4b7ef84e9544a43c656b40225b',
+    },
+    requireHttps: true,
   },
 ];
 

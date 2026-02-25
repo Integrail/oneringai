@@ -116,6 +116,7 @@ EXAMPLES:
 
     execute: async (args: SearchFilesArgs, context?: ToolContext): Promise<GitHubSearchFilesResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       const resolved = resolveRepository(args.repository, connector);
       if (!resolved.success) {
         return { success: false, error: resolved.error };
@@ -129,7 +130,7 @@ EXAMPLES:
           const repoInfo = await githubFetch<GitHubRepoResponse>(
             connector,
             `/repos/${owner}/${repo}`,
-            { userId: effectiveUserId }
+            { userId: effectiveUserId, accountId: effectiveAccountId }
           );
           ref = repoInfo.default_branch;
         }

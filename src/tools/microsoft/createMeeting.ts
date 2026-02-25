@@ -113,6 +113,7 @@ EXAMPLES:
       context?: ToolContext
     ): Promise<MicrosoftCreateMeetingResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         const tz = args.timeZone ?? 'UTC';
@@ -138,7 +139,7 @@ EXAMPLES:
         const event = await microsoftFetch<GraphEventResponse>(
           connector,
           `${prefix}/events`,
-          { method: 'POST', userId: effectiveUserId, body: eventBody }
+          { method: 'POST', userId: effectiveUserId, accountId: effectiveAccountId, body: eventBody }
         );
 
         return {

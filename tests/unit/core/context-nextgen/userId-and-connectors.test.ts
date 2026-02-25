@@ -1,15 +1,15 @@
 /**
- * Tests for userId auto-threading and connectors allowlist.
+ * Tests for userId auto-threading and identities-based scoping.
  *
  * Covers:
  * - userId flows from config → AgentContextNextGen → ToolContext
  * - userId setter updates ToolContext reactively
  * - userId persisted in session metadata
- * - connectors allowlist filters ToolContext.connectorRegistry
- * - connectorRegistry built from string names resolves correctly
+ * - identities filter ToolContext.connectorRegistry
+ * - connectorRegistry built from identities resolves correctly
  * - userId scoping via access policy
- * - combination: connectors allowlist + access policy + userId
- * - descriptionFactory receives ToolContext
+ * - combination: identities + access policy + userId
+ * - descriptionFactory receives ToolContext with identities
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -92,7 +92,7 @@ function registerTestConnectors(): void {
 // Tests
 // ============================================================================
 
-describe('userId and connectors', () => {
+describe('userId and identities', () => {
   let ctx: AgentContextNextGen;
 
   beforeEach(() => {
@@ -199,7 +199,7 @@ describe('userId and connectors', () => {
   // ==========================================================================
 
   describe('connectorRegistry on ToolContext', () => {
-    it('should provide global registry when no connectors or policy set', () => {
+    it('should provide global registry when no identities or policy set', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
@@ -224,15 +224,15 @@ describe('userId and connectors', () => {
   });
 
   // ==========================================================================
-  // connectors allowlist
+  // identities scoping
   // ==========================================================================
 
-  describe('connectors allowlist', () => {
-    it('should filter registry to only allowed connector names', () => {
+  describe('identities scoping', () => {
+    it('should filter registry to only identity connector names', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test', 'slack-test'],
+        identities: [{ connector: 'github-test' }, { connector: 'slack-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -240,11 +240,11 @@ describe('userId and connectors', () => {
       expect(registry!.has('stripe-test')).toBe(false);
     });
 
-    it('should allow get() for allowed connectors', () => {
+    it('should allow get() for identity connectors', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test'],
+        identities: [{ connector: 'github-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -253,11 +253,11 @@ describe('userId and connectors', () => {
       expect(connector.displayName).toBe('GitHub Test');
     });
 
-    it('should throw on get() for non-allowed connectors', () => {
+    it('should throw on get() for non-identity connectors', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test'],
+        identities: [{ connector: 'github-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -268,18 +268,18 @@ describe('userId and connectors', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test', 'slack-test'],
+        identities: [{ connector: 'github-test' }, { connector: 'slack-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
       expect(registry!.size()).toBe(2);
     });
 
-    it('should return descriptions only for allowed connectors', () => {
+    it('should return descriptions only for identity connectors', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['slack-test'],
+        identities: [{ connector: 'slack-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -289,11 +289,11 @@ describe('userId and connectors', () => {
       expect(desc).not.toContain('stripe-test');
     });
 
-    it('should return info only for allowed connectors', () => {
+    it('should return info only for identity connectors', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test'],
+        identities: [{ connector: 'github-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -302,11 +302,11 @@ describe('userId and connectors', () => {
       expect(info['github-test'].displayName).toBe('GitHub Test');
     });
 
-    it('should handle non-existent connector names in allowlist gracefully', () => {
+    it('should handle non-existent connector names in identities gracefully', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test', 'nonexistent'],
+        identities: [{ connector: 'github-test' }, { connector: 'nonexistent' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -315,33 +315,65 @@ describe('userId and connectors', () => {
       expect(registry!.has('nonexistent')).toBe(false);
     });
 
-    it('should update registry when connectors setter is called', () => {
+    it('should update registry when identities setter is called', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test'],
+        identities: [{ connector: 'github-test' }],
       });
 
       expect(ctx.tools.getToolContext()?.connectorRegistry!.list()).toEqual(['github-test']);
 
-      ctx.connectors = ['slack-test', 'stripe-test'];
+      ctx.identities = [{ connector: 'slack-test' }, { connector: 'stripe-test' }];
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
       expect(registry!.list().sort()).toEqual(['slack-test', 'stripe-test']);
       expect(registry!.has('github-test')).toBe(false);
     });
 
-    it('should return full registry when connectors cleared to undefined', () => {
+    it('should return full registry when identities cleared to undefined', () => {
       registerTestConnectors();
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
-        connectors: ['github-test'],
+        identities: [{ connector: 'github-test' }],
       });
 
       expect(ctx.tools.getToolContext()?.connectorRegistry!.list()).toEqual(['github-test']);
 
-      ctx.connectors = undefined;
+      ctx.identities = undefined;
       expect(ctx.tools.getToolContext()?.connectorRegistry!.list().sort())
         .toEqual(['github-test', 'slack-test', 'stripe-test']);
+    });
+
+    it('should flow identities to ToolContext', () => {
+      registerTestConnectors();
+      const identities = [
+        { connector: 'github-test' },
+        { connector: 'slack-test', accountId: 'work' },
+      ];
+      ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        identities,
+      });
+
+      const tc = ctx.tools.getToolContext();
+      expect(tc?.identities).toEqual(identities);
+    });
+
+    it('should deduplicate connector names in registry for multi-account identities', () => {
+      registerTestConnectors();
+      ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        identities: [
+          { connector: 'slack-test', accountId: 'work' },
+          { connector: 'slack-test', accountId: 'personal' },
+          { connector: 'github-test' },
+        ],
+      });
+
+      const registry = ctx.tools.getToolContext()?.connectorRegistry;
+      // Registry has unique connector names
+      expect(registry!.list().sort()).toEqual(['github-test', 'slack-test']);
+      expect(registry!.size()).toBe(2);
     });
   });
 
@@ -411,11 +443,11 @@ describe('userId and connectors', () => {
   });
 
   // ==========================================================================
-  // combination: connectors allowlist + access policy
+  // combination: identities + access policy
   // ==========================================================================
 
-  describe('connectors allowlist + access policy', () => {
-    it('should apply allowlist on top of access-policy-scoped view', () => {
+  describe('identities + access policy', () => {
+    it('should apply identities on top of access-policy-scoped view', () => {
       registerTestConnectors();
 
       // Policy: tenant-a sees github-test and slack-test
@@ -427,11 +459,11 @@ describe('userId and connectors', () => {
       };
       Connector.setAccessPolicy(policy);
 
-      // Allowlist further restricts to just github-test
+      // Identities further restrict to just github-test
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         userId: 'tenant-a',
-        connectors: ['github-test'],
+        identities: [{ connector: 'github-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
@@ -439,7 +471,7 @@ describe('userId and connectors', () => {
       expect(registry!.has('slack-test')).toBe(false);
     });
 
-    it('should not allow access to connectors in allowlist but denied by policy', () => {
+    it('should not allow access to identity connectors denied by policy', () => {
       registerTestConnectors();
 
       // Policy: tenant-a sees github-test and slack-test (not stripe-test)
@@ -451,31 +483,32 @@ describe('userId and connectors', () => {
       };
       Connector.setAccessPolicy(policy);
 
-      // Allowlist includes stripe-test, but policy denies it for tenant-a
+      // Identities include stripe-test, but policy denies it for tenant-a
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         userId: 'tenant-a',
-        connectors: ['github-test', 'stripe-test'],
+        identities: [{ connector: 'github-test' }, { connector: 'stripe-test' }],
       });
 
       const registry = ctx.tools.getToolContext()?.connectorRegistry;
-      // stripe-test denied by policy even though it's in the allowlist
+      // stripe-test denied by policy even though it's in identities
       expect(registry!.list()).toEqual(['github-test']);
       expect(registry!.has('stripe-test')).toBe(false);
     });
   });
 
   // ==========================================================================
-  // descriptionFactory receives ToolContext
+  // descriptionFactory receives ToolContext with identities
   // ==========================================================================
 
   describe('descriptionFactory receives ToolContext', () => {
-    it('should call descriptionFactory with current ToolContext', () => {
+    it('should call descriptionFactory with current ToolContext including identities', () => {
       registerTestConnectors();
+      const identities = [{ connector: 'github-test' }];
       ctx = AgentContextNextGen.create({
         model: 'gpt-4',
         userId: 'user-42',
-        connectors: ['github-test'],
+        identities,
       });
 
       let receivedContext: any = null;
@@ -510,7 +543,8 @@ describe('userId and connectors', () => {
       expect(receivedContext?.userId).toBe('user-42');
       expect(receivedContext?.agentId).toBeDefined();
       expect(receivedContext?.connectorRegistry).toBeDefined();
-      // The registry should be scoped to allowed connectors
+      expect(receivedContext?.identities).toEqual(identities);
+      // The registry should be scoped to identity connectors
       expect(receivedContext.connectorRegistry.list()).toEqual(['github-test']);
     });
   });

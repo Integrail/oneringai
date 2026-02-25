@@ -204,6 +204,13 @@ interface ITokenStorage {
      * @returns True if token exists
      */
     hasToken(key: string): Promise<boolean>;
+    /**
+     * List all storage keys (for account enumeration).
+     * Optional — implementations that support it enable multi-account listing.
+     *
+     * @returns Array of all stored token keys
+     */
+    listKeys?(): Promise<string[]>;
 }
 
 /**
@@ -406,22 +413,43 @@ declare class Connector {
     /**
      * Get the current access token (for OAuth, JWT, or API key)
      * Handles automatic refresh if needed
+     *
+     * @param userId - Optional user identifier for multi-user support
+     * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
      */
-    getToken(userId?: string): Promise<string>;
+    getToken(userId?: string, accountId?: string): Promise<string>;
     /**
      * Start OAuth authorization flow
      * Returns the URL to redirect the user to
+     *
+     * @param userId - Optional user identifier for multi-user support
+     * @param accountId - Optional account alias for multi-account support (e.g., 'work', 'personal')
      */
-    startAuth(userId?: string): Promise<string>;
+    startAuth(userId?: string, accountId?: string): Promise<string>;
     /**
      * Handle OAuth callback
      * Call this after user is redirected back from OAuth provider
+     *
+     * @param callbackUrl - Full callback URL with code and state parameters
+     * @param userId - Optional user identifier (can be extracted from state if embedded)
+     * @param accountId - Optional account alias (can be extracted from state if embedded)
      */
-    handleCallback(callbackUrl: string, userId?: string): Promise<void>;
+    handleCallback(callbackUrl: string, userId?: string, accountId?: string): Promise<void>;
     /**
      * Check if the connector has a valid token
+     *
+     * @param userId - Optional user identifier for multi-user support
+     * @param accountId - Optional account alias for multi-account support
      */
-    hasValidToken(userId?: string): Promise<boolean>;
+    hasValidToken(userId?: string, accountId?: string): Promise<boolean>;
+    /**
+     * List account aliases for a user on this connector.
+     * Only applicable for OAuth connectors with multi-account support.
+     *
+     * @param userId - Optional user identifier
+     * @returns Array of account aliases (e.g., ['work', 'personal'])
+     */
+    listAccounts(userId?: string): Promise<string[]>;
     /**
      * Get vendor-specific options from config
      */
@@ -457,9 +485,10 @@ declare class Connector {
      * @param endpoint - API endpoint (relative to baseURL) or full URL
      * @param options - Fetch options with connector-specific settings
      * @param userId - Optional user ID for multi-user OAuth
+     * @param accountId - Optional account alias for multi-account OAuth
      * @returns Fetch Response
      */
-    fetch(endpoint: string, options?: ConnectorFetchOptions, userId?: string): Promise<Response>;
+    fetch(endpoint: string, options?: ConnectorFetchOptions, userId?: string, accountId?: string): Promise<Response>;
     /**
      * Make an authenticated fetch request and parse JSON response
      * Throws on non-OK responses
@@ -467,9 +496,10 @@ declare class Connector {
      * @param endpoint - API endpoint (relative to baseURL) or full URL
      * @param options - Fetch options with connector-specific settings
      * @param userId - Optional user ID for multi-user OAuth
+     * @param accountId - Optional account alias for multi-account OAuth
      * @returns Parsed JSON response
      */
-    fetchJSON<T = unknown>(endpoint: string, options?: ConnectorFetchOptions, userId?: string): Promise<T>;
+    fetchJSON<T = unknown>(endpoint: string, options?: ConnectorFetchOptions, userId?: string, accountId?: string): Promise<T>;
     private sleep;
     private logRequest;
     private logResponse;

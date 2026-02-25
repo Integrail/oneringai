@@ -9,10 +9,10 @@ import type { OAuthConfig } from '../types.js';
 
 export class AuthCodePKCEFlow {
   private tokenStore: TokenStore;
-  // Store PKCE data per user with timestamps for cleanup
+  // Store PKCE data per user+account with timestamps for cleanup
   private codeVerifiers: Map<string, { verifier: string; timestamp: number }> = new Map();
   private states: Map<string, { state: string; timestamp: number }> = new Map();
-  // Store refresh locks per user to prevent concurrent refresh
+  // Store refresh locks per user+account to prevent concurrent refresh
   private refreshLocks: Map<string, Promise<string>> = new Map();
   // PKCE data TTL: 15 minutes (auth flows should complete within this time)
   private readonly PKCE_TTL = 15 * 60 * 1000;
@@ -23,12 +23,21 @@ export class AuthCodePKCEFlow {
   }
 
   /**
+   * Build a map key from userId and accountId for internal PKCE/state/lock maps.
+   */
+  private getMapKey(userId?: string, accountId?: string): string {
+    const userPart = userId || 'default';
+    return accountId ? `${userPart}:${accountId}` : userPart;
+  }
+
+  /**
    * Generate authorization URL for user to visit
    * Opens browser or redirects user to this URL
    *
    * @param userId - User identifier for multi-user support (optional)
+   * @param accountId - Account alias for multi-account support (optional)
    */
-  async getAuthorizationUrl(userId?: string): Promise<string> {
+  async getAuthorizationUrl(userId?: string, accountId?: string): Promise<string> {
     if (!this.config.authorizationUrl) {
       throw new Error('authorizationUrl is required for authorization_code flow');
     }
@@ -40,15 +49,15 @@ export class AuthCodePKCEFlow {
     // Clean up expired PKCE data before creating new flow
     this.cleanupExpiredPKCE();
 
-    const userKey = userId || 'default';
+    const mapKey = this.getMapKey(userId, accountId);
 
     // Generate PKCE pair
     const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
+    this.codeVerifiers.set(mapKey, { verifier: codeVerifier, timestamp: Date.now() });
 
     // Generate state for CSRF protection
     const state = generateState();
-    this.states.set(userKey, { state, timestamp: Date.now() });
+    this.states.set(mapKey, { state, timestamp: Date.now() });
 
     // Build authorization URL
     const params = new URLSearchParams({
@@ -69,10 +78,16 @@ export class AuthCodePKCEFlow {
       params.append('code_challenge_method', 'S256');
     }
 
-    // Add user_id as state metadata (encode in state for retrieval in callback)
-    // The state will be: `{random_state}::{userId}`
-    const stateWithUser = userId ? `${state}::${userId}` : state;
-    params.set('state', stateWithUser);
+    // Encode userId and accountId in state for retrieval in callback
+    // Format: `{random_state}[::userId[::accountId]]`
+    let stateWithMetadata = state;
+    if (userId || accountId) {
+      stateWithMetadata = `${state}::${userId || ''}`;
+      if (accountId) {
+        stateWithMetadata += `::${accountId}`;
+      }
+    }
+    params.set('state', stateWithMetadata);
 
     return `${this.config.authorizationUrl}?${params.toString()}`;
   }
@@ -81,31 +96,44 @@ export class AuthCodePKCEFlow {
    * Exchange authorization code for access token
    *
    * @param code - Authorization code from callback
-   * @param state - State parameter from callback (for CSRF verification, may include userId)
+   * @param state - State parameter from callback (for CSRF verification, may include userId/accountId)
    * @param userId - User identifier (optional, can be extracted from state)
+   * @param accountId - Account alias (optional, can be extracted from state)
    */
-  async exchangeCode(code: string, state: string, userId?: string): Promise<void> {
-    // Extract userId from state if embedded
+  async exchangeCode(code: string, state: string, userId?: string, accountId?: string): Promise<void> {
+    // Extract userId and accountId from state if embedded
     let actualState = state;
     let actualUserId = userId;
+    let actualAccountId = accountId;
 
     if (state.includes('::')) {
       const parts = state.split('::');
       actualState = parts[0]!;
-      actualUserId = parts[1];
+      if (!actualUserId && parts[1]) {
+        actualUserId = parts[1];
+      }
+      if (!actualAccountId && parts[2]) {
+        actualAccountId = parts[2];
+      }
     }
 
-    const userKey = actualUserId || 'default';
+    const mapKey = this.getMapKey(actualUserId, actualAccountId);
 
     // Verify state to prevent CSRF attacks
-    const stateData = this.states.get(userKey);
+    const stateData = this.states.get(mapKey);
     if (!stateData) {
-      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+      const label = actualAccountId
+        ? `user ${actualUserId}, account ${actualAccountId}`
+        : `user ${actualUserId}`;
+      throw new Error(`No PKCE state found for ${label}. Authorization flow may have expired (15 min TTL).`);
     }
 
     const expectedState = stateData.state;
     if (actualState !== expectedState) {
-      throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
+      const label = actualAccountId
+        ? `user ${actualUserId}, account ${actualAccountId}`
+        : `user ${actualUserId}`;
+      throw new Error(`State mismatch for ${label} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
     }
 
     if (!this.config.redirectUri) {
@@ -126,7 +154,7 @@ export class AuthCodePKCEFlow {
     }
 
     // Add code_verifier if PKCE was used
-    const verifierData = this.codeVerifiers.get(userKey);
+    const verifierData = this.codeVerifiers.get(mapKey);
     if (this.config.usePKCE !== false && verifierData) {
       params.append('code_verifier', verifierData.verifier);
     }
@@ -165,55 +193,59 @@ export class AuthCodePKCEFlow {
 
     const data: any = await response.json();
 
-    // Store token (encrypted) with user scoping
-    await this.tokenStore.storeToken(data, actualUserId);
+    // Store token (encrypted) with user and account scoping
+    await this.tokenStore.storeToken(data, actualUserId, actualAccountId);
 
     // Clear PKCE data (one-time use)
-    this.codeVerifiers.delete(userKey);
-    this.states.delete(userKey);
+    this.codeVerifiers.delete(mapKey);
+    this.states.delete(mapKey);
   }
 
   /**
    * Get valid token (auto-refreshes if needed)
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async getToken(userId?: string): Promise<string> {
-    const key = userId || 'default';
+  async getToken(userId?: string, accountId?: string): Promise<string> {
+    const mapKey = this.getMapKey(userId, accountId);
 
-    // If already refreshing for this user, wait for the existing refresh
-    if (this.refreshLocks.has(key)) {
-      return this.refreshLocks.get(key)!;
+    // If already refreshing for this user+account, wait for the existing refresh
+    if (this.refreshLocks.has(mapKey)) {
+      return this.refreshLocks.get(mapKey)!;
     }
 
     // Return cached token if valid
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
-      return this.tokenStore.getAccessToken(userId);
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId)) {
+      return this.tokenStore.getAccessToken(userId, accountId);
     }
 
     // Try to refresh if we have a refresh token
-    if (await this.tokenStore.hasRefreshToken(userId)) {
+    if (await this.tokenStore.hasRefreshToken(userId, accountId)) {
       // Start refresh and lock it
-      const refreshPromise = this.refreshToken(userId);
-      this.refreshLocks.set(key, refreshPromise);
+      const refreshPromise = this.refreshToken(userId, accountId);
+      this.refreshLocks.set(mapKey, refreshPromise);
 
       try {
         return await refreshPromise;
       } finally {
         // Always clean up lock, even on error
-        this.refreshLocks.delete(key);
+        this.refreshLocks.delete(mapKey);
       }
     }
 
     // No valid token and can't refresh
-    throw new Error(`No valid token available for ${userId ? `user: ${userId}` : 'default user'}. User needs to authorize (call startAuthFlow).`);
+    const userLabel = userId ? `user: ${userId}` : 'default user';
+    const accountLabel = accountId ? `, account: ${accountId}` : '';
+    throw new Error(`No valid token available for ${userLabel}${accountLabel}. User needs to authorize (call startAuthFlow).`);
   }
 
   /**
    * Refresh access token using refresh token
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async refreshToken(userId?: string): Promise<string> {
-    const refreshToken = await this.tokenStore.getRefreshToken(userId);
+  async refreshToken(userId?: string, accountId?: string): Promise<string> {
+    const refreshToken = await this.tokenStore.getRefreshToken(userId, accountId);
 
     const params = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -260,8 +292,8 @@ export class AuthCodePKCEFlow {
 
     const data: any = await response.json();
 
-    // Store new token with user scoping
-    await this.tokenStore.storeToken(data, userId);
+    // Store new token with user and account scoping
+    await this.tokenStore.storeToken(data, userId, accountId);
 
     return data.access_token;
   }
@@ -269,25 +301,27 @@ export class AuthCodePKCEFlow {
   /**
    * Check if token is valid
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async isTokenValid(userId?: string): Promise<boolean> {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
+  async isTokenValid(userId?: string, accountId?: string): Promise<boolean> {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId, accountId);
   }
 
   /**
    * Revoke token (if supported by provider)
    * @param revocationUrl - Optional revocation endpoint
    * @param userId - User identifier for multi-user support
+   * @param accountId - Account alias for multi-account support
    */
-  async revokeToken(revocationUrl?: string, userId?: string): Promise<void> {
+  async revokeToken(revocationUrl?: string, userId?: string, accountId?: string): Promise<void> {
     if (!revocationUrl) {
       // Just clear from storage
-      await this.tokenStore.clear(userId);
+      await this.tokenStore.clear(userId, accountId);
       return;
     }
 
     try {
-      const token = await this.tokenStore.getAccessToken(userId);
+      const token = await this.tokenStore.getAccessToken(userId, accountId);
 
       await fetch(revocationUrl, {
         method: 'POST',
@@ -301,8 +335,16 @@ export class AuthCodePKCEFlow {
       });
     } finally {
       // Always clear from storage
-      await this.tokenStore.clear(userId);
+      await this.tokenStore.clear(userId, accountId);
     }
+  }
+
+  /**
+   * List account aliases for a user.
+   * @param userId - User identifier (optional)
+   */
+  async listAccounts(userId?: string): Promise<string[]> {
+    return this.tokenStore.listAccounts(userId);
   }
 
   /**

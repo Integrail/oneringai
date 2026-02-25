@@ -13,6 +13,7 @@
 
 import type { MemoryScope, MemoryPriority } from '../entities/Memory.js';
 import type { IConnectorRegistry } from './IConnectorRegistry.js';
+import type { AuthIdentity } from '../../core/context-nextgen/types.js';
 
 /**
  * Limited memory access for tools
@@ -78,6 +79,12 @@ export interface ToolContext {
 
   /** User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). */
   userId?: string;
+
+  /** Account alias for multi-account OAuth — auto-populated from Agent config (accountId). Allows one user to auth multiple external accounts on the same connector (e.g., 'work', 'personal'). */
+  accountId?: string;
+
+  /** Auth identities this agent is scoped to (for identity-aware tool descriptions) */
+  identities?: AuthIdentity[];
 
   /** Connector registry scoped to this agent's allowed connectors and userId */
   connectorRegistry?: IConnectorRegistry;

@@ -21,7 +21,7 @@ import type { AgentPermissionsConfig } from './permissions/types.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
-import type { AgentContextNextGenConfig, SerializedContextState } from './context-nextgen/types.js';
+import type { AgentContextNextGenConfig, AuthIdentity, SerializedContextState } from './context-nextgen/types.js';
 import { createProvider } from './createProvider.js';
 import type { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import type { LLMResponse } from '../domain/entities/Response.js';
@@ -196,11 +196,11 @@ export interface BaseAgentConfig {
   userId?: string;
 
   /**
-   * Restrict this agent to a subset of registered connectors (by name).
-   * Only these connectors will be visible in tool descriptions and sandbox execution.
+   * Restrict this agent to specific auth identities (connector + optional account alias).
+   * Each identity produces its own tool set (e.g., microsoft_work_api, microsoft_personal_api).
    * When not set, all connectors visible to the current userId are available.
    */
-  connectors?: string[];
+  identities?: AuthIdentity[];
 
   /** Tools available to the agent */
   tools?: ToolFunction[];
@@ -391,7 +391,7 @@ export abstract class BaseAgent<
       model: config.model,
       agentId: config.name,
       userId: config.userId,
-      connectors: config.connectors,
+      identities: config.identities,
       // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
       // Thread tool execution timeout to ToolManager
@@ -597,17 +597,17 @@ export abstract class BaseAgent<
   }
 
   /**
-   * Get the allowed connector names (undefined = all visible connectors).
+   * Get the auth identities this agent is scoped to (undefined = all visible connectors).
    */
-  get connectors(): string[] | undefined {
-    return this._agentContext.connectors;
+  get identities(): AuthIdentity[] | undefined {
+    return this._agentContext.identities;
   }
 
   /**
-   * Restrict this agent to a subset of connectors. Updates ToolContext.connectorRegistry.
+   * Set auth identities at runtime. Updates ToolContext.connectorRegistry and tool descriptions.
    */
-  set connectors(value: string[] | undefined) {
-    this._agentContext.connectors = value;
+  set identities(value: AuthIdentity[] | undefined) {
+    this._agentContext.identities = value;
   }
 
   /**
@@ -673,16 +673,44 @@ export abstract class BaseAgent<
    */
   protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
     const toolContext = this._agentContext.tools.getToolContext();
-    const allowed = this._agentContext.connectors;
+    const identities = this._agentContext.identities;
+
+    // Build allowed source set from identities
+    // { connector: 'microsoft', accountId: 'work' } → allows 'connector:microsoft:work'
+    // { connector: 'github' } (no accountId) → allows 'connector:github' and 'connector:github:*'
+    let allowedSources: Set<string> | undefined;
+    let allowedConnectorNames: Set<string> | undefined;
+    if (identities) {
+      allowedSources = new Set<string>();
+      allowedConnectorNames = new Set<string>();
+      for (const id of identities) {
+        allowedConnectorNames.add(id.connector);
+        if (id.accountId) {
+          allowedSources.add(`connector:${id.connector}:${id.accountId}`);
+        } else {
+          // No accountId → allow the base connector source and any account-specific ones
+          allowedSources.add(`connector:${id.connector}`);
+          allowedConnectorNames.add(id.connector); // used for wildcard matching below
+        }
+      }
+    }
 
     return this._agentContext.tools.getEnabledRegistrations()
       .filter((reg) => {
-        // No connector restriction → show all tools
-        if (!allowed) return true;
+        // No identity restriction → show all tools
+        if (!allowedSources) return true;
         // Non-connector tools (built-in, custom, mcp, etc.) always pass
         if (!reg.source?.startsWith('connector:')) return true;
-        // Connector tools: only pass if their connector is in the allowlist
-        return allowed.includes(reg.source.slice('connector:'.length));
+        // Exact match
+        if (allowedSources.has(reg.source)) return true;
+        // Wildcard: identity without accountId allows any account for that connector
+        const sourceParts = reg.source.slice('connector:'.length).split(':');
+        const connectorName = sourceParts[0]!;
+        // Check if there's an identity without accountId for this connector (wildcard)
+        if (allowedConnectorNames!.has(connectorName) && allowedSources.has(`connector:${connectorName}`)) {
+          return true;
+        }
+        return false;
       })
       .map((reg) => {
         const tool = reg.tool;

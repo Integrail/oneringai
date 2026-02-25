@@ -16,6 +16,7 @@ export { AgentContextNextGen } from './AgentContextNextGen.js';
 export type {
   IContextPluginNextGen,
   ITokenEstimator,
+  AuthIdentity,
   AgentContextNextGenConfig,
   ContextFeatures,
   ContextBudget,

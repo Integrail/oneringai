@@ -48,6 +48,7 @@ export {
   StrategyRegistry,
 } from './core/index.js';
 export type {
+  AuthIdentity,
   AgentContextNextGenConfig,
   ContextFeatures,
   ContextEvents,
@@ -335,6 +336,11 @@ export type {
   PlanInput,
   PlanStatus,
   PlanConcurrency,
+  TaskControlFlow,
+  TaskMapFlow,
+  TaskFoldFlow,
+  TaskUntilFlow,
+  SubRoutineSpec,
 } from './domain/entities/Task.js';
 
 // Task & Plan Utilities
@@ -359,6 +365,7 @@ export type {
   RoutineDefinitionInput,
   RoutineExecutionStatus,
   RoutineExecution,
+  RoutineParameter,
 } from './domain/entities/Routine.js';
 
 export {
@@ -370,6 +377,10 @@ export {
 // Routine Runner
 export { executeRoutine } from './core/routineRunner.js';
 export type { ExecuteRoutineOptions, ValidationContext } from './core/routineRunner.js';
+
+// Routine Control Flow
+export { resolveTemplates, ROUTINE_KEYS } from './core/routineControlFlow.js';
+export type { ControlFlowResult } from './core/routineControlFlow.js';
 
 // Memory Entities
 export type {

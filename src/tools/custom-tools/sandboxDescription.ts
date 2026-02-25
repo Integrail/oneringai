@@ -12,32 +12,50 @@ import { Connector } from '../../core/Connector.js';
 /**
  * Format a single connector for display in tool descriptions.
  */
-function formatConnectorEntry(c: Connector): string {
+function formatConnectorEntry(c: Connector, accountId?: string): string {
   const parts: string[] = [];
 
   const serviceOrVendor = c.serviceType ?? c.vendor ?? undefined;
   if (serviceOrVendor) parts.push(`Service: ${serviceOrVendor}`);
 
+  if (accountId) parts.push(`Account: "${accountId}"`);
+
   if (c.config.description) parts.push(c.config.description);
 
   if (c.baseURL) parts.push(`URL: ${c.baseURL}`);
 
+  const label = accountId ? `"${c.name}" account "${accountId}"` : `"${c.name}"`;
   const details = parts.map(p => `     ${p}`).join('\n');
-  return `   • "${c.name}" (${c.displayName})\n${details}`;
+  return `   • ${label} (${c.displayName})\n${details}`;
 }
 
 /**
- * Build the connector list section from current ToolContext.
+ * Build the connector/identity list section from current ToolContext.
+ * If identities are set, list each identity entry. Otherwise list all connectors.
  */
 export function buildConnectorList(context: ToolContext | undefined): string {
+  const identities = context?.identities;
   const registry = context?.connectorRegistry ?? Connector.asRegistry();
-  const connectors = registry.listAll();
 
+  if (identities?.length) {
+    const entries: string[] = [];
+    for (const id of identities) {
+      try {
+        const connector = registry.get(id.connector);
+        entries.push(formatConnectorEntry(connector, id.accountId));
+      } catch {
+        entries.push(`   • "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ''} — not available`);
+      }
+    }
+    return entries.length > 0 ? entries.join('\n\n') : '   No connectors registered.';
+  }
+
+  const connectors = registry.listAll();
   if (connectors.length === 0) {
     return '   No connectors registered.';
   }
 
-  return connectors.map(formatConnectorEntry).join('\n\n');
+  return connectors.map(c => formatConnectorEntry(c)).join('\n\n');
 }
 
 /**
@@ -45,7 +63,7 @@ export function buildConnectorList(context: ToolContext | undefined): string {
  */
 export const SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool code):
 
-1. authenticatedFetch(url, options, connectorName)
+1. authenticatedFetch(url, options, connectorName, accountId?)
    Makes authenticated HTTP requests using the connector's credentials.
    Auth headers are added automatically — DO NOT set Authorization header manually.
 
@@ -56,6 +74,7 @@ export const SANDBOX_API_REFERENCE = `SANDBOX API (available inside custom tool 
      • options: Standard fetch options { method, headers, body }
        - For POST/PUT: set body to JSON.stringify(data) and headers to { 'Content-Type': 'application/json' }
      • connectorName: Name of a registered connector (see REGISTERED CONNECTORS below)
+     • accountId (optional): Account alias for multi-account connectors (e.g., 'work', 'personal')
 
    Returns: Promise<Response>
      • response.ok — true if status 200-299

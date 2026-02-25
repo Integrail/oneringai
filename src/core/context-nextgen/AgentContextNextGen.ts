@@ -38,6 +38,7 @@ import type { OutputItem } from '../../domain/entities/Message.js';
 import { simpleTokenEstimator } from './BasePluginNextGen.js';
 
 import type {
+  AuthIdentity,
   IContextPluginNextGen,
   ITokenEstimator,
   AgentContextNextGenConfig,
@@ -121,7 +122,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'connectors'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -160,8 +161,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** User ID for multi-user scenarios */
   private _userId: string | undefined;
 
-  /** Allowed connector names (when agent is restricted to a subset) */
-  private _allowedConnectors: string[] | undefined;
+  /** Auth identities this agent is scoped to (connector + optional accountId) */
+  private _identities: AuthIdentity[] | undefined;
 
   /** Storage backend */
   private readonly _storage?: IContextStorage;
@@ -215,7 +216,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
     this._userId = config.userId;
-    this._allowedConnectors = config.connectors;
+    this._identities = config.identities;
 
     // Resolve session storage: explicit config > StorageRegistry factory > undefined
     const sessionFactory = StorageRegistry.get('sessions');
@@ -316,7 +317,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    * Merges with existing ToolContext to preserve other fields (memory, signal, taskId).
    *
    * Connector registry resolution order:
-   * 1. If `connectors` (allowed names) is set → filtered view of global registry
+   * 1. If `identities` is set → filtered view showing only identity connectors
    * 2. If access policy + userId → scoped view via Connector.scoped()
    * 3. Otherwise → full global registry
    */
@@ -326,6 +327,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       ...existing,
       agentId: this._agentId,
       userId: this._userId,
+      identities: this._identities,
       connectorRegistry: this.buildConnectorRegistry(),
     });
   }
@@ -334,18 +336,18 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    * Build the connector registry appropriate for this agent's config.
    */
   private buildConnectorRegistry(): IConnectorRegistry {
-    // 1. Explicit connector subset — filter global registry by allowed names
-    if (this._allowedConnectors?.length) {
-      const allowedSet = new Set(this._allowedConnectors);
+    // 1. Identities set → filter global registry by unique connector names from identities
+    if (this._identities?.length) {
+      const allowedSet = new Set(this._identities.map(id => id.connector));
       const base = this._userId && Connector.getAccessPolicy()
         ? Connector.scoped({ userId: this._userId })
         : Connector.asRegistry();
 
-      // Return a filtered view that only exposes the allowed connectors
+      // Return a filtered view that only exposes connectors from identities
       return {
         get: (name) => {
           if (!allowedSet.has(name)) {
-            const available = this._allowedConnectors!.filter(n => base.has(n)).join(', ') || 'none';
+            const available = [...allowedSet].filter(n => base.has(n)).join(', ') || 'none';
             throw new Error(`Connector '${name}' not found. Available: ${available}`);
           }
           return base.get(name);
@@ -408,14 +410,14 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     this.syncToolContext();
   }
 
-  /** Get the allowed connector names (undefined = all visible connectors) */
-  get connectors(): string[] | undefined {
-    return this._allowedConnectors;
+  /** Get the auth identities this agent is scoped to (undefined = all visible connectors) */
+  get identities(): AuthIdentity[] | undefined {
+    return this._identities;
   }
 
-  /** Set allowed connector names. Updates ToolContext.connectorRegistry. */
-  set connectors(value: string[] | undefined) {
-    this._allowedConnectors = value;
+  /** Set auth identities. Updates ToolContext.connectorRegistry and identity-aware descriptions. */
+  set identities(value: AuthIdentity[] | undefined) {
+    this._identities = value;
     this.syncToolContext();
   }
 

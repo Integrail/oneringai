@@ -101,6 +101,7 @@ EXAMPLES:
       context?: ToolContext
     ): Promise<MicrosoftFindSlotsResult> => {
       const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
       try {
         const prefix = getUserPathPrefix(connector, args.targetUser);
         const tz = args.timeZone ?? 'UTC';
@@ -111,6 +112,7 @@ EXAMPLES:
           {
             method: 'POST',
             userId: effectiveUserId,
+            accountId: effectiveAccountId,
             body: {
               attendees: formatAttendees(args.attendees),
               timeConstraint: {

@@ -56,4 +56,11 @@ export class MemoryStorage implements ITokenStorage {
   size(): number {
     return this.tokens.size;
   }
+
+  /**
+   * List all storage keys (for account enumeration)
+   */
+  async listKeys(): Promise<string[]> {
+    return Array.from(this.tokens.keys());
+  }
 }

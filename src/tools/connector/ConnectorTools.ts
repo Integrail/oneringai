@@ -17,6 +17,7 @@ import { sanitizeToolName } from '../../utils/sanitize.js';
 import { ToolFunction, ToolPermissionConfig, ToolContext } from '../../domain/entities/Tool.js';
 import { detectServiceFromURL } from '../../domain/entities/Services.js';
 import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
+import type { AuthIdentity } from '../../core/context-nextgen/types.js';
 
 /**
  * Headers that are protected and cannot be overridden by tool arguments
@@ -119,6 +120,8 @@ export interface GenericAPIToolOptions {
   description?: string;
   /** User ID for multi-user OAuth */
   userId?: string;
+  /** Account alias for multi-account OAuth (baked into tool name and context) */
+  accountId?: string;
   /** Permission config for the tool */
   permission?: ToolPermissionConfig;
 }
@@ -150,6 +153,8 @@ export interface GenericAPICallResult {
 export interface ConnectorToolsOptions {
   /** Optional scoped registry for access-controlled connector lookup */
   registry?: IConnectorRegistry;
+  /** Account alias for multi-account OAuth. When set, tools are prefixed with accountId and context is bound. */
+  accountId?: string;
 }
 
 /**
@@ -247,25 +252,42 @@ export class ConnectorTools {
    */
   static for(connectorOrName: Connector | string, userId?: string, options?: ConnectorToolsOptions): ToolFunction[] {
     const connector = this.resolveConnector(connectorOrName, options?.registry);
+    const accountId = options?.accountId;
     const tools: ToolFunction[] = [];
+
+    // Name prefix: connectorName_accountId or just connectorName
+    const namePrefix = accountId
+      ? `${sanitizeToolName(connector.name)}_${sanitizeToolName(accountId)}`
+      : sanitizeToolName(connector.name);
 
     // 1. Always include generic API tool if baseURL exists
     if (connector.baseURL) {
-      tools.push(this.createGenericAPITool(connector, { userId }));
+      const accountLabel = accountId ? ` (account: ${accountId})` : '';
+      tools.push(this.createGenericAPITool(connector, {
+        userId,
+        accountId,
+        toolName: `${namePrefix}_api`,
+        description:
+          `Make an authenticated API call to ${connector.displayName}${accountLabel}.` +
+          (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : ' Provide full URL in endpoint.') +
+          ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.',
+      }));
     }
 
     // 2. Add service-specific tools if factory exists
-    // Prefix with connector name (same pattern as generic API tool: ${connector.name}_api)
-    // This prevents naming collisions when multiple vendors have tools with the same name
-    // (e.g., openai generate_image vs google generate_image)
     const serviceType = this.detectService(connector);
     if (serviceType && this.factories.has(serviceType)) {
       const factory = this.factories.get(serviceType)!;
       const serviceTools = factory(connector, userId);
       for (const tool of serviceTools) {
-        tool.definition.function.name = `${sanitizeToolName(connector.name)}_${tool.definition.function.name}`;
+        tool.definition.function.name = `${namePrefix}_${tool.definition.function.name}`;
       }
       tools.push(...serviceTools);
+    }
+
+    // 3. If accountId is set, wrap all tools to inject accountId into ToolContext at execute time
+    if (accountId) {
+      return tools.map(tool => this.bindAccountId(tool, accountId));
     }
 
     return tools;
@@ -454,6 +476,67 @@ export class ConnectorTools {
     return connectorOrName;
   }
 
+  /**
+   * Generate tools for a set of auth identities.
+   * Each identity gets its own tool set with unique name prefixes.
+   *
+   * @param identities - Array of auth identities
+   * @param userId - Optional user ID for multi-user OAuth
+   * @param options - Optional registry for scoped connector lookup
+   * @returns Map of identity key to tool array
+   *
+   * @example
+   * ```typescript
+   * const toolsByIdentity = ConnectorTools.forIdentities([
+   *   { connector: 'microsoft', accountId: 'work' },
+   *   { connector: 'microsoft', accountId: 'personal' },
+   *   { connector: 'github' },
+   * ]);
+   * // Keys: 'microsoft:work', 'microsoft:personal', 'github'
+   * ```
+   */
+  static forIdentities(
+    identities: AuthIdentity[],
+    userId?: string,
+    options?: { registry?: IConnectorRegistry }
+  ): Map<string, ToolFunction[]> {
+    const result = new Map<string, ToolFunction[]>();
+
+    for (const identity of identities) {
+      const key = identity.accountId
+        ? `${identity.connector}:${identity.accountId}`
+        : identity.connector;
+
+      try {
+        const tools = this.for(identity.connector, userId, {
+          registry: options?.registry,
+          accountId: identity.accountId,
+        });
+        if (tools.length > 0) {
+          result.set(key, tools);
+        }
+      } catch (err) {
+        logger.error(`[ConnectorTools.forIdentities] Error generating tools for identity ${key}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Wrap a tool to inject accountId into ToolContext at execute time.
+   * This allows identity-bound tools to use the correct account without
+   * modifying every service tool factory.
+   */
+  private static bindAccountId(tool: ToolFunction, accountId: string): ToolFunction {
+    return {
+      ...tool,
+      execute: async (args: any, context?: ToolContext) => {
+        return tool.execute(args, { ...context, accountId });
+      },
+    };
+  }
+
   private static createGenericAPITool(
     connector: Connector,
     options?: GenericAPIToolOptions
@@ -505,6 +588,7 @@ export class ConnectorTools {
 
       execute: async (args: GenericAPICallArgs, context?: ToolContext): Promise<GenericAPICallResult> => {
         const effectiveUserId = context?.userId ?? userId;
+        const effectiveAccountId = context?.accountId;
         let url = args.endpoint;
 
         // Add query params if provided
@@ -544,7 +628,8 @@ export class ConnectorTools {
               },
               body: bodyStr,
             },
-            effectiveUserId
+            effectiveUserId,
+            effectiveAccountId
           );
 
           // Try to parse as JSON

@@ -9,6 +9,11 @@ import * as crypto from 'crypto';
 import { ITokenStorage, StoredToken } from '../../domain/ITokenStorage.js';
 import { encrypt, decrypt } from '../../utils/encryption.js';
 
+/** Internal format stored on disk — includes the storage key for enumeration */
+interface StoredTokenWithKey extends StoredToken {
+  _storageKey?: string;
+}
+
 export interface FileStorageConfig {
   directory: string; // Directory to store token files
   encryptionKey: string; // Encryption key (REQUIRED - do not use auto-generated key!)
@@ -57,7 +62,9 @@ export class FileStorage implements ITokenStorage {
     await this.ensureDirectory();
 
     const filePath = this.getFilePath(key);
-    const plaintext = JSON.stringify(token);
+    // Store the key inside the encrypted payload for enumeration via listKeys()
+    const tokenWithKey: StoredTokenWithKey = { ...token, _storageKey: key };
+    const plaintext = JSON.stringify(tokenWithKey);
     const encrypted = encrypt(plaintext, this.encryptionKey);
 
     // Write encrypted token to file
@@ -73,7 +80,10 @@ export class FileStorage implements ITokenStorage {
     try {
       const encrypted = await fs.readFile(filePath, 'utf8');
       const decrypted = decrypt(encrypted, this.encryptionKey);
-      return JSON.parse(decrypted) as StoredToken;
+      const parsed = JSON.parse(decrypted) as StoredTokenWithKey;
+      // Strip internal _storageKey before returning
+      const { _storageKey, ...token } = parsed;
+      return token as StoredToken;
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         // File doesn't exist
@@ -114,6 +124,37 @@ export class FileStorage implements ITokenStorage {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * List all storage keys by decrypting each token file and reading _storageKey.
+   * Falls back to returning hashed filenames for tokens stored before multi-account support.
+   */
+  async listKeys(): Promise<string[]> {
+    try {
+      const files = await fs.readdir(this.directory);
+      const tokenFiles = files.filter((f) => f.endsWith('.token'));
+
+      const keys: string[] = [];
+      for (const file of tokenFiles) {
+        try {
+          const filePath = path.join(this.directory, file);
+          const encrypted = await fs.readFile(filePath, 'utf8');
+          const decrypted = decrypt(encrypted, this.encryptionKey);
+          const parsed = JSON.parse(decrypted) as StoredTokenWithKey;
+          if (parsed._storageKey) {
+            keys.push(parsed._storageKey);
+          }
+          // Skip tokens without _storageKey (legacy, pre-multi-account)
+        } catch {
+          // Skip corrupted/unreadable files
+        }
+      }
+
+      return keys;
+    } catch {
+      return [];
     }
   }
 

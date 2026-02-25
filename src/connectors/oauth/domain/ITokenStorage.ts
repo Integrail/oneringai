@@ -47,4 +47,12 @@ export interface ITokenStorage {
    * @returns True if token exists
    */
   hasToken(key: string): Promise<boolean>;
+
+  /**
+   * List all storage keys (for account enumeration).
+   * Optional — implementations that support it enable multi-account listing.
+   *
+   * @returns Array of all stored token keys
+   */
+  listKeys?(): Promise<string[]>;
 }
