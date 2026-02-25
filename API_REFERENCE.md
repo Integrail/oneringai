@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-22
+**Generated:** 2026-02-25
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -16,7 +16,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (24 items)
 - [Video Generation](#video-generation) (18 items)
-- [Task Agents](#task-agents) (77 items)
+- [Task Agents](#task-agents) (82 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (29 items)
 - [Tools & Function Calling](#tools-function-calling) (126 items)
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (45 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (271 items)
+- [Other](#other) (275 items)
 
 ## Core
 
@@ -708,11 +708,12 @@ Get the current access token (for OAuth, JWT, or API key)
 Handles automatic refresh if needed
 
 ```typescript
-async getToken(userId?: string): Promise&lt;string&gt;
+async getToken(userId?: string, accountId?: string): Promise&lt;string&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;string&gt;`
 
@@ -722,11 +723,12 @@ Start OAuth authorization flow
 Returns the URL to redirect the user to
 
 ```typescript
-async startAuth(userId?: string): Promise&lt;string&gt;
+async startAuth(userId?: string, accountId?: string): Promise&lt;string&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;string&gt;`
 
@@ -736,12 +738,13 @@ Handle OAuth callback
 Call this after user is redirected back from OAuth provider
 
 ```typescript
-async handleCallback(callbackUrl: string, userId?: string): Promise&lt;void&gt;
+async handleCallback(callbackUrl: string, userId?: string, accountId?: string): Promise&lt;void&gt;
 ```
 
 **Parameters:**
 - `callbackUrl`: `string`
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -750,13 +753,28 @@ async handleCallback(callbackUrl: string, userId?: string): Promise&lt;void&gt;
 Check if the connector has a valid token
 
 ```typescript
-async hasValidToken(userId?: string): Promise&lt;boolean&gt;
+async hasValidToken(userId?: string, accountId?: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `listAccounts()`
+
+List account aliases for a user on this connector.
+Only applicable for OAuth connectors with multi-account support.
+
+```typescript
+async listAccounts(userId?: string): Promise&lt;string[]&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
 
-**Returns:** `Promise&lt;boolean&gt;`
+**Returns:** `Promise&lt;string[]&gt;`
 
 #### `getOptions()`
 
@@ -803,7 +821,8 @@ Features:
 async fetch(
     endpoint: string,
     options?: ConnectorFetchOptions,
-    userId?: string
+    userId?: string,
+    accountId?: string
   ): Promise&lt;Response&gt;
 ```
 
@@ -811,6 +830,7 @@ async fetch(
 - `endpoint`: `string`
 - `options`: `ConnectorFetchOptions | undefined` *(optional)*
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;Response&gt;`
 
@@ -823,7 +843,8 @@ Throws on non-OK responses
 async fetchJSON&lt;T = unknown&gt;(
     endpoint: string,
     options?: ConnectorFetchOptions,
-    userId?: string
+    userId?: string,
+    accountId?: string
   ): Promise&lt;T&gt;
 ```
 
@@ -831,6 +852,7 @@ async fetchJSON&lt;T = unknown&gt;(
 - `endpoint`: `string`
 - `options`: `ConnectorFetchOptions | undefined` *(optional)*
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;T&gt;`
 
@@ -5407,6 +5429,16 @@ size(): number
 
 **Returns:** `number`
 
+#### `listKeys()`
+
+List all storage keys (for account enumeration)
+
+```typescript
+async listKeys(): Promise&lt;string[]&gt;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
+
 </details>
 
 <details>
@@ -6553,7 +6585,7 @@ async cleanupRaw(): Promise&lt;
 
 ### ExternalDependency `interface`
 
-📍 [`src/domain/entities/Task.ts:70`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:71`](src/domain/entities/Task.ts)
 
 External dependency configuration
 
@@ -6959,7 +6991,7 @@ Index entry (lightweight, always in context)
 
 ### Plan `interface`
 
-📍 [`src/domain/entities/Task.ts:315`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:377`](src/domain/entities/Task.ts)
 
 Execution plan - a goal with steps to achieve it
 
@@ -6993,7 +7025,7 @@ Execution plan - a goal with steps to achieve it
 
 ### PlanConcurrency `interface`
 
-📍 [`src/domain/entities/Task.ts:299`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:361`](src/domain/entities/Task.ts)
 
 Plan concurrency settings
 
@@ -7015,7 +7047,7 @@ Plan concurrency settings
 
 ### PlanInput `interface`
 
-📍 [`src/domain/entities/Task.ts:354`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:416`](src/domain/entities/Task.ts)
 
 Input for creating a plan
 
@@ -7119,7 +7151,7 @@ Research plan for systematic research
 
 ### Task `interface`
 
-📍 [`src/domain/entities/Task.ts:226`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:284`](src/domain/entities/Task.ts)
 
 A single unit of work
 
@@ -7139,6 +7171,7 @@ A single unit of work
 | `validation?` | `validation?: TaskValidation;` | Completion validation settings |
 | `suggestedTools?` | `suggestedTools?: string[];` | Tool names the LLM should prefer for this task (advisory, not enforced) |
 | `expectedOutput?` | `expectedOutput?: string;` | Optional expected output description |
+| `controlFlow?` | `controlFlow?: TaskControlFlow;` | Control flow: map, fold, or until (replaces normal LLM execution for this task) |
 | `result?` | `result?: {
     success: boolean;
     output?: unknown;
@@ -7162,7 +7195,7 @@ A single unit of work
 
 ### TaskCondition `interface`
 
-📍 [`src/domain/entities/Task.ts:60`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:61`](src/domain/entities/Task.ts)
 
 Task condition - evaluated before execution
 
@@ -7182,7 +7215,7 @@ Task condition - evaluated before execution
 
 ### TaskExecution `interface`
 
-📍 [`src/domain/entities/Task.ts:104`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:162`](src/domain/entities/Task.ts)
 
 Task execution settings
 
@@ -7223,9 +7256,32 @@ Task failure info for parallel execution
 
 ---
 
+### TaskFoldFlow `interface`
+
+📍 [`src/domain/entities/Task.ts:125`](src/domain/entities/Task.ts)
+
+Fold: accumulate a result across array elements
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'fold';` | - |
+| `sourceKey` | `sourceKey: string;` | Memory key containing the source array |
+| `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run per element |
+| `initialValue` | `initialValue: unknown;` | Starting accumulator value |
+| `resultKey` | `resultKey: string;` | Memory key for final accumulated result |
+| `maxIterations?` | `maxIterations?: number;` | Cap iterations (default: array.length, hard max: 1000) |
+| `iterationTimeoutMs?` | `iterationTimeoutMs?: number;` | Timeout per sub-execution iteration in ms (default: no timeout) |
+
+</details>
+
+---
+
 ### TaskInput `interface`
 
-📍 [`src/domain/entities/Task.ts:281`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:342`](src/domain/entities/Task.ts)
 
 Input for creating a task
 
@@ -7244,6 +7300,7 @@ Input for creating a task
 | `suggestedTools?` | `suggestedTools?: string[];` | - |
 | `validation?` | `validation?: TaskValidation;` | - |
 | `expectedOutput?` | `expectedOutput?: string;` | - |
+| `controlFlow?` | `controlFlow?: TaskControlFlow;` | - |
 | `maxAttempts?` | `maxAttempts?: number;` | - |
 | `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
 
@@ -7251,9 +7308,53 @@ Input for creating a task
 
 ---
 
+### TaskMapFlow `interface`
+
+📍 [`src/domain/entities/Task.ts:110`](src/domain/entities/Task.ts)
+
+Map: execute a sub-routine for each element in an array
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'map';` | - |
+| `sourceKey` | `sourceKey: string;` | Memory key containing the source array |
+| `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run per element |
+| `resultKey?` | `resultKey?: string;` | Memory key for collected results array |
+| `maxIterations?` | `maxIterations?: number;` | Cap iterations (default: array.length, hard max: 1000) |
+| `iterationTimeoutMs?` | `iterationTimeoutMs?: number;` | Timeout per sub-execution iteration in ms (default: no timeout) |
+
+</details>
+
+---
+
+### TaskUntilFlow `interface`
+
+📍 [`src/domain/entities/Task.ts:142`](src/domain/entities/Task.ts)
+
+Until: repeat a sub-routine until a condition is met
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'until';` | - |
+| `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run each iteration |
+| `condition` | `condition: TaskCondition;` | Checked AFTER each iteration (reuses existing TaskCondition type) |
+| `maxIterations` | `maxIterations: number;` | Maximum iterations (required — no default) |
+| `iterationKey?` | `iterationKey?: string;` | Optional ICM key for current iteration index |
+| `iterationTimeoutMs?` | `iterationTimeoutMs?: number;` | Timeout per sub-execution iteration in ms (default: no timeout) |
+
+</details>
+
+---
+
 ### TaskValidation `interface`
 
-📍 [`src/domain/entities/Task.ts:137`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:195`](src/domain/entities/Task.ts)
 
 Task completion validation settings
 
@@ -7304,7 +7405,7 @@ Default: undefined (treated as true — validation auto-passes). |
 
 ### TaskValidationResult `interface`
 
-📍 [`src/domain/entities/Task.ts:199`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:257`](src/domain/entities/Task.ts)
 
 Result of task validation (returned by LLM reflection)
 
@@ -7330,7 +7431,7 @@ Result of task validation (returned by LLM reflection)
 
 ### WorkingMemoryAccess `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:25`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:26`](src/domain/interfaces/IToolContext.ts)
 
 Limited memory access for tools
 
@@ -7526,7 +7627,7 @@ type MemoryScope = SimpleScope | TaskAwareScope
 
 ### PlanStatus `type`
 
-📍 [`src/domain/entities/Task.ts:37`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:38`](src/domain/entities/Task.ts)
 
 Plan status
 
@@ -7561,6 +7662,18 @@ type SimpleScope = 'session' | 'persistent'
 
 ---
 
+### SubRoutineSpec `type`
+
+📍 [`src/domain/entities/Task.ts:107`](src/domain/entities/Task.ts)
+
+Sub-routine specification: either inline tasks or a full RoutineDefinition
+
+```typescript
+type SubRoutineSpec = TaskInput[] | RoutineDefinition
+```
+
+---
+
 ### TaskAwareScope `type`
 
 📍 [`src/domain/entities/Memory.ts:25`](src/domain/entities/Memory.ts)
@@ -7575,9 +7688,21 @@ type TaskAwareScope = | { type: 'task'; taskIds: string[] }   // Needed for spec
 
 ---
 
+### TaskControlFlow `type`
+
+📍 [`src/domain/entities/Task.ts:157`](src/domain/entities/Task.ts)
+
+Union of all control flow types
+
+```typescript
+type TaskControlFlow = TaskMapFlow | TaskFoldFlow | TaskUntilFlow
+```
+
+---
+
 ### TaskStatus `type`
 
-📍 [`src/domain/entities/Task.ts:12`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:13`](src/domain/entities/Task.ts)
 
 Task status lifecycle
 
@@ -7621,7 +7746,7 @@ export function calculateEntrySize(value: unknown): number
 
 ### canTaskExecute `function`
 
-📍 [`src/domain/entities/Task.ts:472`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:535`](src/domain/entities/Task.ts)
 
 Check if a task can be executed (dependencies met, status is pending)
 
@@ -7633,7 +7758,7 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createPlan `function`
 
-📍 [`src/domain/entities/Task.ts:405`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:468`](src/domain/entities/Task.ts)
 
 Create a plan with tasks
 
@@ -7645,7 +7770,7 @@ export function createPlan(input: PlanInput): Plan
 
 ### createTask `function`
 
-📍 [`src/domain/entities/Task.ts:377`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:439`](src/domain/entities/Task.ts)
 
 Create a task with defaults
 
@@ -7657,7 +7782,7 @@ export function createTask(input: TaskInput): Task
 
 ### detectDependencyCycle `function`
 
-📍 [`src/domain/entities/Task.ts:679`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:742`](src/domain/entities/Task.ts)
 
 Detect dependency cycles in tasks using depth-first search
 
@@ -7669,7 +7794,7 @@ export function detectDependencyCycle(tasks: Task[]): string[] | null
 
 ### evaluateCondition `function`
 
-📍 [`src/domain/entities/Task.ts:536`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:599`](src/domain/entities/Task.ts)
 
 Evaluate a task condition against memory
 
@@ -7732,7 +7857,7 @@ export async function generateSimplePlan(
 
 ### getNextExecutableTasks `function`
 
-📍 [`src/domain/entities/Task.ts:494`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:557`](src/domain/entities/Task.ts)
 
 Get the next tasks that can be executed
 
@@ -7744,7 +7869,7 @@ export function getNextExecutableTasks(plan: Plan): Task[]
 
 ### getTaskDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:633`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:696`](src/domain/entities/Task.ts)
 
 Get the dependency tasks for a task
 
@@ -7780,7 +7905,7 @@ export function isTaskAwareScope(scope: MemoryScope): scope is TaskAwareScope
 
 ### isTaskBlocked `function`
 
-📍 [`src/domain/entities/Task.ts:612`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:675`](src/domain/entities/Task.ts)
 
 Check if a task is blocked by dependencies
 
@@ -7804,7 +7929,7 @@ export function isTerminalMemoryStatus(status: TaskStatusForMemory): boolean
 
 ### isTerminalStatus `function`
 
-📍 [`src/domain/entities/Task.ts:30`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:31`](src/domain/entities/Task.ts)
 
 Check if a task status is terminal (task will not progress further)
 
@@ -7816,7 +7941,7 @@ export function isTerminalStatus(status: TaskStatus): boolean
 
 ### resolveDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:647`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:710`](src/domain/entities/Task.ts)
 
 Resolve task name dependencies to task IDs
 Modifies taskInputs in place
@@ -7855,7 +7980,7 @@ export function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope):
 
 ### updateTaskStatus `function`
 
-📍 [`src/domain/entities/Task.ts:584`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:647`](src/domain/entities/Task.ts)
 
 Update task status and timestamps
 
@@ -9541,7 +9666,7 @@ getPath(userId: string | undefined): string
 
 ### FileStorage `class`
 
-📍 [`src/connectors/oauth/infrastructure/storage/FileStorage.ts:17`](src/connectors/oauth/infrastructure/storage/FileStorage.ts)
+📍 [`src/connectors/oauth/infrastructure/storage/FileStorage.ts:22`](src/connectors/oauth/infrastructure/storage/FileStorage.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -9604,6 +9729,17 @@ async hasToken(key: string): Promise&lt;boolean&gt;
 - `key`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
+
+#### `listKeys()`
+
+List all storage keys by decrypting each token file and reading _storageKey.
+Falls back to returning hashed filenames for tokens stored before multi-account support.
+
+```typescript
+async listKeys(): Promise&lt;string[]&gt;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
 
 #### `listTokens()`
 
@@ -9910,7 +10046,7 @@ Configuration for FileRoutineDefinitionStorage
 
 ### FileStorageConfig `interface`
 
-📍 [`src/connectors/oauth/infrastructure/storage/FileStorage.ts:12`](src/connectors/oauth/infrastructure/storage/FileStorage.ts)
+📍 [`src/connectors/oauth/infrastructure/storage/FileStorage.ts:17`](src/connectors/oauth/infrastructure/storage/FileStorage.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10086,7 +10222,7 @@ Define and execute tools for agents
 
 ### ConnectorTools `class`
 
-📍 [`src/tools/connector/ConnectorTools.ts:174`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:179`](src/tools/connector/ConnectorTools.ts)
 
 ConnectorTools - Main API for vendor-dependent tools
 
@@ -10288,6 +10424,25 @@ static detectService(connector: Connector): string | undefined
 - `connector`: `Connector`
 
 **Returns:** `string | undefined`
+
+#### `static forIdentities()`
+
+Generate tools for a set of auth identities.
+Each identity gets its own tool set with unique name prefixes.
+
+```typescript
+static forIdentities(
+    identities: AuthIdentity[],
+    userId?: string,
+    options?:
+```
+
+**Parameters:**
+- `identities`: `AuthIdentity[]`
+- `userId`: `string | undefined` *(optional)*
+- `options`: `{ registry?: IConnectorRegistry | undefined; } | undefined` *(optional)*
+
+**Returns:** `Map&lt;string, ToolFunction&lt;any, any&gt;[]&gt;`
 
 </details>
 
@@ -10609,6 +10764,23 @@ registerMany(tools: ToolFunction[], options: Omit&lt;ToolOptions, 'conditions'&g
 
 **Returns:** `void`
 
+#### `registerConnectorTools()`
+
+Register tools produced by a specific connector.
+Sets `source: 'connector:<connectorName>'` (or `'connector:<name>:<accountId>'` for identity-bound tools)
+so agent-level filtering can restrict which connector tools are visible to a given agent.
+
+```typescript
+registerConnectorTools(connectorName: string, tools: ToolFunction[], options: Omit&lt;ToolOptions, 'source'&gt; &
+```
+
+**Parameters:**
+- `connectorName`: `string`
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
+- `options`: `Omit&lt;ToolOptions, "source"&gt; & { accountId?: string | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `void`
+
 #### `unregister()`
 
 Unregister a tool by name
@@ -10853,6 +11025,18 @@ getEnabled(): ToolFunction[]
 ```
 
 **Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `getEnabledRegistrations()`
+
+Get all enabled registrations (sorted by priority).
+Includes full registration metadata (source, namespace, etc.)
+for use in connector-aware filtering.
+
+```typescript
+getEnabledRegistrations(): ToolRegistration[]
+```
+
+**Returns:** `ToolRegistration[]`
 
 #### `getAll()`
 
@@ -11816,7 +12000,7 @@ Extended registry entry for connector-generated tools
 
 ### ConnectorToolsOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:150`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:153`](src/tools/connector/ConnectorTools.ts)
 
 Options for ConnectorTools methods that accept a scoped registry
 
@@ -11826,6 +12010,7 @@ Options for ConnectorTools methods that accept a scoped registry
 | Property | Type | Description |
 |----------|------|-------------|
 | `registry?` | `registry?: IConnectorRegistry;` | Optional scoped registry for access-controlled connector lookup |
+| `accountId?` | `accountId?: string;` | Account alias for multi-account OAuth. When set, tools are prefixed with accountId and context is bound. |
 
 </details>
 
@@ -12038,7 +12223,7 @@ When set, read_file will automatically convert binary document formats to markdo
 
 ### GenericAPICallArgs `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:129`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:132`](src/tools/connector/ConnectorTools.ts)
 
 Arguments for the generic API call tool
 
@@ -12059,7 +12244,7 @@ Arguments for the generic API call tool
 
 ### GenericAPICallResult `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:140`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:143`](src/tools/connector/ConnectorTools.ts)
 
 Result from the generic API call tool
 
@@ -12079,7 +12264,7 @@ Result from the generic API call tool
 
 ### GenericAPIToolOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:115`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:116`](src/tools/connector/ConnectorTools.ts)
 
 Options for generating the generic API tool
 
@@ -12091,6 +12276,7 @@ Options for generating the generic API tool
 | `toolName?` | `toolName?: string;` | Override the tool name (default: `${connectorName}_api`) |
 | `description?` | `description?: string;` | Override the description |
 | `userId?` | `userId?: string;` | User ID for multi-user OAuth |
+| `accountId?` | `accountId?: string;` | Account alias for multi-account OAuth (baked into tool name and context) |
 | `permission?` | `permission?: ToolPermissionConfig;` | Permission config for the tool |
 
 </details>
@@ -12770,7 +12956,7 @@ Tool call detected and starting
 
 ### ToolContext `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:72`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:73`](src/domain/interfaces/IToolContext.ts)
 
 Context passed to tool execute function
 
@@ -12784,6 +12970,8 @@ Simple and clean - only what tools actually need.
 | `agentId?` | `agentId?: string;` | Agent ID (for logging/tracing) |
 | `taskId?` | `taskId?: string;` | Task ID (if running in TaskAgent) |
 | `userId?` | `userId?: string;` | User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). |
+| `accountId?` | `accountId?: string;` | Account alias for multi-account OAuth — auto-populated from Agent config (accountId). Allows one user to auth multiple external accounts on the same connector (e.g., 'work', 'personal'). |
+| `identities?` | `identities?: AuthIdentity[];` | Auth identities this agent is scoped to (for identity-aware tool descriptions) |
 | `connectorRegistry?` | `connectorRegistry?: IConnectorRegistry;` | Connector registry scoped to this agent's allowed connectors and userId |
 | `memory?` | `memory?: WorkingMemoryAccess;` | Working memory access (if agent has memory feature enabled) |
 | `signal?` | `signal?: AbortSignal;` | Abort signal for cancellation |
@@ -13231,7 +13419,7 @@ type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
 
 ### ServiceToolFactory `type`
 
-📍 [`src/tools/connector/ConnectorTools.ts:110`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:111`](src/tools/connector/ConnectorTools.ts)
 
 Factory function type for creating service-specific tools.
 Takes a Connector and returns an array of tools that use it.
@@ -13562,7 +13750,7 @@ export function createEditMeetingTool(
 
 ### createExecuteJavaScriptTool `function`
 
-📍 [`src/tools/code/executeJavaScript.ts:165`](src/tools/code/executeJavaScript.ts)
+📍 [`src/tools/code/executeJavaScript.ts:217`](src/tools/code/executeJavaScript.ts)
 
 Create an execute_javascript tool.
 
@@ -16435,11 +16623,12 @@ Get valid access token
 Automatically refreshes if expired
 
 ```typescript
-async getToken(userId?: string): Promise&lt;string&gt;
+async getToken(userId?: string, accountId?: string): Promise&lt;string&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;string&gt;`
 
@@ -16448,11 +16637,12 @@ async getToken(userId?: string): Promise&lt;string&gt;
 Force refresh the token
 
 ```typescript
-async refreshToken(userId?: string): Promise&lt;string&gt;
+async refreshToken(userId?: string, accountId?: string): Promise&lt;string&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;string&gt;`
 
@@ -16461,11 +16651,12 @@ async refreshToken(userId?: string): Promise&lt;string&gt;
 Check if current token is valid
 
 ```typescript
-async isTokenValid(userId?: string): Promise&lt;boolean&gt;
+async isTokenValid(userId?: string, accountId?: string): Promise&lt;boolean&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;boolean&gt;`
 
@@ -16475,11 +16666,12 @@ Start authorization flow (Authorization Code only)
 Returns URL for user to visit
 
 ```typescript
-async startAuthFlow(userId?: string): Promise&lt;string&gt;
+async startAuthFlow(userId?: string, accountId?: string): Promise&lt;string&gt;
 ```
 
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;string&gt;`
 
@@ -16489,12 +16681,13 @@ Handle OAuth callback (Authorization Code only)
 Call this with the callback URL after user authorizes
 
 ```typescript
-async handleCallback(callbackUrl: string, userId?: string): Promise&lt;void&gt;
+async handleCallback(callbackUrl: string, userId?: string, accountId?: string): Promise&lt;void&gt;
 ```
 
 **Parameters:**
 - `callbackUrl`: `string`
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -16503,14 +16696,28 @@ async handleCallback(callbackUrl: string, userId?: string): Promise&lt;void&gt;
 Revoke token (if supported by provider)
 
 ```typescript
-async revokeToken(revocationUrl?: string, userId?: string): Promise&lt;void&gt;
+async revokeToken(revocationUrl?: string, userId?: string, accountId?: string): Promise&lt;void&gt;
 ```
 
 **Parameters:**
 - `revocationUrl`: `string | undefined` *(optional)*
 - `userId`: `string | undefined` *(optional)*
+- `accountId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
+
+#### `listAccounts()`
+
+List account aliases for a user (Authorization Code only)
+
+```typescript
+async listAccounts(userId?: string): Promise&lt;string[]&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;string[]&gt;`
 
 </details>
 
@@ -16635,6 +16842,17 @@ hasToken(key: string): Promise&lt;boolean&gt;;
 - `key`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
+
+#### `listKeys()?`
+
+List all storage keys (for account enumeration).
+Optional — implementations that support it enable multi-account listing.
+
+```typescript
+listKeys?(): Promise&lt;string[]&gt;;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
 
 </details>
 
@@ -16807,7 +17025,7 @@ Get vendor template information for display
 
 ### VendorLogo `interface`
 
-📍 [`src/connectors/vendors/logos.ts:167`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:169`](src/connectors/vendors/logos.ts)
 
 Vendor logo information
 
@@ -16935,11 +17153,11 @@ type TemplateCredentials = {
 
 ### authenticatedFetch `function`
 
-📍 [`src/connectors/authenticatedFetch.ts:60`](src/connectors/authenticatedFetch.ts)
+📍 [`src/connectors/authenticatedFetch.ts:51`](src/connectors/authenticatedFetch.ts)
 
 Fetch with automatic authentication using connector's configured auth scheme
 
-Same API as standard fetch(), but with additional authProvider and optional userId parameters.
+Same API as standard fetch(), but with additional authProvider and optional userId/accountId parameters.
 Authentication is handled automatically based on the connector's configuration:
 - Bearer tokens (GitHub, Slack, Stripe)
 - Bot tokens (Discord)
@@ -16951,7 +17169,8 @@ export async function authenticatedFetch(
   url: string | URL,
   options: RequestInit | undefined,
   authProvider: string,
-  userId?: string
+  userId?: string,
+  accountId?: string
 ): Promise&lt;Response&gt;
 ```
 
@@ -16966,24 +17185,15 @@ const response = await authenticatedFetch(
 );
 const data = await response.json();
 ```
-With relative URL (uses connector's baseURL):
+Multi-account mode:
 ```typescript
 const response = await authenticatedFetch(
-'/user/repos',  // Resolves to https://api.github.com/user/repos
+'https://graph.microsoft.com/v1.0/me',
 { method: 'GET' },
-'github'
+'microsoft',
+'alice',
+'work'  // Use Alice's work Microsoft account
 );
-const repos = await response.json();
-```
-Multi-user mode:
-```typescript
-const response = await authenticatedFetch(
-'/user/repos',
-{ method: 'GET' },
-'github',
-'user123'  // Get token for specific user
-);
-const repos = await response.json();
 ```
 
 ---
@@ -17005,9 +17215,9 @@ export function buildAuthConfig(
 
 ### createAuthenticatedFetch `function`
 
-📍 [`src/connectors/authenticatedFetch.ts:115`](src/connectors/authenticatedFetch.ts)
+📍 [`src/connectors/authenticatedFetch.ts:98`](src/connectors/authenticatedFetch.ts)
 
-Create an authenticated fetch function bound to a specific connector and optionally a user
+Create an authenticated fetch function bound to a specific connector and optionally a user/account
 
 Useful for creating reusable fetch functions for a specific API and/or user.
 Uses connector's configured auth scheme (Bearer, Bot, Basic, custom headers).
@@ -17015,7 +17225,8 @@ Uses connector's configured auth scheme (Bearer, Bot, Basic, custom headers).
 ```typescript
 export function createAuthenticatedFetch(
   authProvider: string,
-  userId?: string
+  userId?: string,
+  accountId?: string
 ): (url: string | URL, options?: RequestInit) =&gt; Promise&lt;Response&gt;
 ```
 
@@ -17029,23 +17240,14 @@ const msftFetch = createAuthenticatedFetch('microsoft');
 const me = await msftFetch('https://graph.microsoft.com/v1.0/me');
 const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
 ```
-With relative URLs:
+Multi-account mode:
 ```typescript
-const githubFetch = createAuthenticatedFetch('github');
+// Create fetch for Alice's work Microsoft account
+const workFetch = createAuthenticatedFetch('microsoft', 'alice', 'work');
+const personalFetch = createAuthenticatedFetch('microsoft', 'alice', 'personal');
 
-// Relative URLs resolved against connector's baseURL
-const repos = await githubFetch('/user/repos');
-const issues = await githubFetch('/user/issues');
-```
-Multi-user mode:
-```typescript
-// Create fetch functions for different users
-const aliceFetch = createAuthenticatedFetch('github', 'user123');
-const bobFetch = createAuthenticatedFetch('github', 'user456');
-
-// Each uses their own token
-const aliceRepos = await aliceFetch('/user/repos');
-const bobRepos = await bobFetch('/user/repos');
+const workEmails = await workFetch('/me/messages');
+const personalEmails = await personalFetch('/me/messages');
 ```
 
 ---
@@ -17094,7 +17296,7 @@ export function generateEncryptionKey(): string
 
 ### getAllVendorLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:281`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:283`](src/connectors/vendors/logos.ts)
 
 Get all available vendor logos
 
@@ -17157,7 +17359,7 @@ export function getVendorAuthTemplate(
 
 ### getVendorColor `function`
 
-📍 [`src/connectors/vendors/logos.ts:271`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:273`](src/connectors/vendors/logos.ts)
 
 Get the brand color for a vendor
 
@@ -17181,7 +17383,7 @@ export function getVendorInfo(vendorId: string): VendorInfo | undefined
 
 ### getVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:210`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:212`](src/connectors/vendors/logos.ts)
 
 Get logo for a vendor
 
@@ -17203,7 +17405,7 @@ if (logo) {
 
 ### getVendorLogoCdnUrl `function`
 
-📍 [`src/connectors/vendors/logos.ts:313`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:315`](src/connectors/vendors/logos.ts)
 
 Get CDN URL for a vendor's logo
 
@@ -17215,7 +17417,7 @@ export function getVendorLogoCdnUrl(vendorId: string, color?: string): string | 
 
 ### getVendorLogoSvg `function`
 
-📍 [`src/connectors/vendors/logos.ts:253`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:255`](src/connectors/vendors/logos.ts)
 
 Get SVG content for a vendor logo
 
@@ -17239,7 +17441,7 @@ export function getVendorTemplate(vendorId: string): VendorTemplate | undefined
 
 ### hasVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:183`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:185`](src/connectors/vendors/logos.ts)
 
 Check if a vendor has a logo available
 
@@ -17299,7 +17501,7 @@ export function listVendorsByCategory(category: string): VendorInfo[]
 
 ### listVendorsWithLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:297`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:299`](src/connectors/vendors/logos.ts)
 
 List vendor IDs that have logos available
 
@@ -17328,6 +17530,7 @@ Mapping from our vendor IDs to Simple Icons slugs
 | `discord` | `'discord'` | - |
 | `slack` | `'slack'` | - |
 | `telegram` | `'telegram'` | - |
+| `twitter` | `'x'` | - |
 | `'microsoft-teams'` | `'microsoftteams'` | - |
 | `salesforce` | `'salesforce'` | - |
 | `hubspot` | `'hubspot'` | - |
@@ -21939,7 +22142,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:118`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:119`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -25032,7 +25235,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:533`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:552`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -25052,9 +25255,9 @@ If provided, overrides the `strategy` option. |
 | `features?` | `features?: ContextFeatures;` | Feature flags |
 | `agentId?` | `agentId?: string;` | Agent ID (required for PersistentInstructions) |
 | `userId?` | `userId?: string;` | User ID for multi-user scenarios. Automatically flows to ToolContext for all tool executions. |
-| `connectors?` | `connectors?: string[];` | Restrict this agent to a subset of registered connectors (by name).
-When set, only these connectors are visible in ToolContext.connectorRegistry
-and in dynamic tool descriptions (e.g., execute_javascript).
+| `identities?` | `identities?: AuthIdentity[];` | Restrict this agent to specific auth identities (connector + optional account alias).
+When set, only these identities are visible in ToolContext and tool descriptions.
+Each identity produces its own tool set (e.g., microsoft_work_api, microsoft_personal_api).
 When not set, all connectors visible to the current userId are available. |
 | `tools?` | `tools?: ToolFunction[];` | Initial tools to register |
 | `storage?` | `storage?: IContextStorageFromDomain;` | Storage for session persistence |
@@ -25280,6 +25483,28 @@ Result from approval UI/hook
 
 ---
 
+### AuthIdentity `interface`
+
+📍 [`src/core/context-nextgen/types.ts:22`](src/core/context-nextgen/types.ts)
+
+A single auth identity: connector + optional account alias.
+
+Used to scope agents to specific OAuth accounts. When `accountId` is set,
+the identity represents a specific multi-account OAuth session (e.g., 'work'
+or 'personal' Microsoft account). When omitted, uses the connector's default account.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string;` | Name of the registered connector |
+| `accountId?` | `accountId?: string;` | Optional account alias for multi-account OAuth (e.g., 'work', 'personal') |
+
+</details>
+
+---
+
 ### BaseProviderConfig `interface`
 
 📍 [`src/capabilities/shared/types.ts:16`](src/capabilities/shared/types.ts)
@@ -25362,7 +25587,7 @@ Result of a bash command execution
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:706`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:725`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -25448,7 +25673,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:673`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:692`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -25559,7 +25784,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:690`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:709`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -25578,7 +25803,7 @@ Result of consolidate() operation.
 
 ### ContextBudget `interface`
 
-📍 [`src/core/context-nextgen/types.ts:375`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:394`](src/core/context-nextgen/types.ts)
 
 Token budget breakdown - clear and simple
 
@@ -25612,7 +25837,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:623`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:642`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -25641,7 +25866,7 @@ Events emitted by AgentContextNextGen
 
 ### ContextFeatures `interface`
 
-📍 [`src/core/context-nextgen/types.ts:470`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:489`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins
 
@@ -25654,6 +25879,23 @@ Feature flags for enabling/disabling plugins
 | `inContextMemory?` | `inContextMemory?: boolean;` | Enable InContextMemory plugin (default: false) |
 | `persistentInstructions?` | `persistentInstructions?: boolean;` | Enable PersistentInstructions plugin (default: false) |
 | `userInfo?` | `userInfo?: boolean;` | Enable UserInfo plugin (default: false) |
+
+</details>
+
+---
+
+### ControlFlowResult `interface`
+
+📍 [`src/core/routineControlFlow.ts:49`](src/core/routineControlFlow.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `completed` | `completed: boolean;` | - |
+| `result?` | `result?: unknown;` | - |
+| `error?` | `error?: string;` | - |
 
 </details>
 
@@ -26093,7 +26335,7 @@ Configuration for DefaultCompactionStrategy
 
 ### DirectCallOptions `interface`
 
-📍 [`src/core/BaseAgent.ts:249`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:250`](src/core/BaseAgent.ts)
 
 Options for direct LLM calls (bypassing AgentContext).
 
@@ -26264,7 +26506,7 @@ Result of a file edit operation
 
 ### ExecuteRoutineOptions `interface`
 
-📍 [`src/core/routineRunner.ts:51`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:57`](src/core/routineRunner.ts)
 
 Options for executing a routine.
 
@@ -26286,6 +26528,7 @@ The agent is NOT destroyed after execution — caller manages its lifecycle. |
 | `connector?` | `connector?: string;` | Connector name — required when `agent` is not provided |
 | `model?` | `model?: string;` | Model ID — required when `agent` is not provided |
 | `tools?` | `tools?: ToolFunction[];` | Additional tools — only used when creating a new agent (no `agent` provided) |
+| `inputs?` | `inputs?: Record&lt;string, unknown&gt;;` | Input parameter values for parameterized routines |
 | `hooks?` | `hooks?: HookConfig;` | Hooks — applied to agent for the duration of routine execution.
  For new agents: baked in at creation. For existing agents: registered before
  execution and unregistered after. |
@@ -26408,7 +26651,7 @@ Options for fetch operations
 
 ### GitHubCreatePRResult `interface`
 
-📍 [`src/tools/github/types.ts:291`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:293`](src/tools/github/types.ts)
 
 Result from create_pr tool
 
@@ -26432,7 +26675,7 @@ Result from create_pr tool
 
 ### GitHubGetPRResult `interface`
 
-📍 [`src/tools/github/types.ts:223`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:225`](src/tools/github/types.ts)
 
 Result from get_pr tool
 
@@ -26469,7 +26712,7 @@ Result from get_pr tool
 
 ### GitHubPRCommentEntry `interface`
 
-📍 [`src/tools/github/types.ts:267`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:269`](src/tools/github/types.ts)
 
 A unified comment/review entry
 
@@ -26493,7 +26736,7 @@ A unified comment/review entry
 
 ### GitHubPRCommentsResult `interface`
 
-📍 [`src/tools/github/types.ts:281`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:283`](src/tools/github/types.ts)
 
 Result from pr_comments tool
 
@@ -26513,7 +26756,7 @@ Result from pr_comments tool
 
 ### GitHubPRFilesResult `interface`
 
-📍 [`src/tools/github/types.ts:250`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:252`](src/tools/github/types.ts)
 
 Result from pr_files tool
 
@@ -26540,7 +26783,7 @@ Result from pr_files tool
 
 ### GitHubReadFileResult `interface`
 
-📍 [`src/tools/github/types.ts:209`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:211`](src/tools/github/types.ts)
 
 Result from read_file tool (GitHub variant)
 
@@ -26582,7 +26825,7 @@ Parsed GitHub repository reference
 
 ### GitHubSearchCodeResult `interface`
 
-📍 [`src/tools/github/types.ts:198`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:200`](src/tools/github/types.ts)
 
 Result from search_code tool
 
@@ -26603,7 +26846,7 @@ Result from search_code tool
 
 ### GitHubSearchFilesResult `interface`
 
-📍 [`src/tools/github/types.ts:187`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:189`](src/tools/github/types.ts)
 
 Result from search_files tool
 
@@ -26781,7 +27024,7 @@ Base interface for all capability providers
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:761`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:780`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -26852,7 +27095,7 @@ If any required plugin is missing, an error is thrown. |
 
 ### IContextPluginNextGen `interface`
 
-📍 [`src/core/context-nextgen/types.ts:143`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:162`](src/core/context-nextgen/types.ts)
 
 Context plugin interface for NextGen context management.
 
@@ -27681,7 +27924,7 @@ Used to track where information came from and when it was last verified
 
 ### ITokenEstimator `interface`
 
-📍 [`src/core/context-nextgen/types.ts:19`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:38`](src/core/context-nextgen/types.ts)
 
 Token estimator interface - used for conversation and input estimation
 Plugins handle their own token estimation internally.
@@ -28097,7 +28340,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MeetingSlotSuggestion `interface`
 
-📍 [`src/tools/microsoft/types.ts:307`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:311`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28133,7 +28376,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftCreateMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:278`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:282`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28152,7 +28395,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftDraftEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:266`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:270`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28170,7 +28413,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftEditMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:286`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:290`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28188,7 +28431,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftFindSlotsResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:300`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:304`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28206,7 +28449,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftGetTranscriptResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:293`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:297`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28224,7 +28467,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftSendEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:273`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:277`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28257,7 +28500,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### OversizedInputResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:443`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:462`](src/core/context-nextgen/types.ts)
 
 Result of handling oversized current input
 
@@ -28362,7 +28605,7 @@ Result of checking if a tool needs approval
 
 ### PluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:503`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:522`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -28413,7 +28656,7 @@ Contains all information about the current tool execution.
 
 ### PreparedContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:422`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:441`](src/core/context-nextgen/types.ts)
 
 Result of prepare() - ready for LLM call
 
@@ -28572,7 +28815,7 @@ Research execution result
 
 ### RoutineDefinition `interface`
 
-📍 [`src/domain/entities/Routine.ts:21`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:40`](src/domain/entities/Routine.ts)
 
 A reusable routine definition (template).
 
@@ -28594,6 +28837,7 @@ Multiple RoutineExecutions can be created from one RoutineDefinition.
 | `instructions?` | `instructions?: string;` | Additional instructions injected into system prompt when routine is active |
 | `concurrency?` | `concurrency?: PlanConcurrency;` | Concurrency settings for task execution |
 | `allowDynamicTasks?` | `allowDynamicTasks?: boolean;` | Whether the LLM can dynamically add/modify tasks during execution. Default: false |
+| `parameters?` | `parameters?: RoutineParameter[];` | Input parameters this routine accepts (templates use {{param.name}}) |
 | `tags?` | `tags?: string[];` | Tags for categorization and filtering |
 | `author?` | `author?: string;` | Author/creator |
 | `createdAt` | `createdAt: string;` | When the definition was created (ISO string) |
@@ -28606,7 +28850,7 @@ Multiple RoutineExecutions can be created from one RoutineDefinition.
 
 ### RoutineDefinitionInput `interface`
 
-📍 [`src/domain/entities/Routine.ts:72`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:94`](src/domain/entities/Routine.ts)
 
 Input for creating a RoutineDefinition.
 id, createdAt, updatedAt are auto-generated if not provided.
@@ -28626,6 +28870,7 @@ id, createdAt, updatedAt are auto-generated if not provided.
 | `instructions?` | `instructions?: string;` | - |
 | `concurrency?` | `concurrency?: PlanConcurrency;` | - |
 | `allowDynamicTasks?` | `allowDynamicTasks?: boolean;` | - |
+| `parameters?` | `parameters?: RoutineParameter[];` | - |
 | `tags?` | `tags?: string[];` | - |
 | `author?` | `author?: string;` | - |
 | `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
@@ -28636,7 +28881,7 @@ id, createdAt, updatedAt are auto-generated if not provided.
 
 ### RoutineExecution `interface`
 
-📍 [`src/domain/entities/Routine.ts:107`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:130`](src/domain/entities/Routine.ts)
 
 Runtime state when executing a routine.
 Created from a RoutineDefinition, delegates task management to Plan.
@@ -28656,6 +28901,27 @@ Created from a RoutineDefinition, delegates task management to Plan.
 | `lastUpdatedAt` | `lastUpdatedAt: number;` | - |
 | `error?` | `error?: string;` | Error message if failed |
 | `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Metadata |
+
+</details>
+
+---
+
+### RoutineParameter `interface`
+
+📍 [`src/domain/entities/Routine.ts:19`](src/domain/entities/Routine.ts)
+
+A parameter that a routine accepts as input.
+Enables parameterized, reusable routines.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Parameter name (used as {{param.name}} in templates) |
+| `description` | `description: string;` | Human-readable description |
+| `required?` | `required?: boolean;` | Whether this parameter must be provided (default: false) |
+| `default?` | `default?: unknown;` | Default value when not provided |
 
 </details>
 
@@ -28998,7 +29264,7 @@ Complete service definition - single source of truth
 
 ### ServiceInfo `interface`
 
-📍 [`src/domain/entities/Services.ts:454`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:463`](src/domain/entities/Services.ts)
 
 Service info lookup (derived from SERVICE_DEFINITIONS)
 
@@ -29195,7 +29461,7 @@ Full strategy registry entry (includes class reference)
 
 ### ValidationContext `interface`
 
-📍 [`src/core/routineRunner.ts:103`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:112`](src/core/routineRunner.ts)
 
 Context snapshot passed to the validation prompt builder.
 Contains everything the validator needs to evaluate task completion
@@ -29699,7 +29965,7 @@ type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 ### RoutineExecutionStatus `type`
 
-📍 [`src/domain/entities/Routine.ts:95`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:118`](src/domain/entities/Routine.ts)
 
 Execution status for a routine run
 
@@ -29763,7 +30029,7 @@ type ServiceCategory = | 'major-vendors'
 
 ### ServiceType `type`
 
-📍 [`src/domain/entities/Services.ts:425`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:434`](src/domain/entities/Services.ts)
 
 Service type - union of all service IDs
 
@@ -29831,7 +30097,7 @@ export function buildQueryString(params: Record&lt;string, string | number | boo
 
 ### createRoutineDefinition `function`
 
-📍 [`src/domain/entities/Routine.ts:143`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:166`](src/domain/entities/Routine.ts)
 
 Create a RoutineDefinition with defaults.
 Validates task dependency references and detects cycles.
@@ -29844,7 +30110,7 @@ export function createRoutineDefinition(input: RoutineDefinitionInput): RoutineD
 
 ### createRoutineExecution `function`
 
-📍 [`src/domain/entities/Routine.ts:193`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:217`](src/domain/entities/Routine.ts)
 
 Create a RoutineExecution from a RoutineDefinition.
 Instantiates all tasks into a Plan via createPlan().
@@ -29857,7 +30123,7 @@ export function createRoutineExecution(definition: RoutineDefinition): RoutineEx
 
 ### detectServiceFromURL `function`
 
-📍 [`src/domain/entities/Services.ts:503`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:512`](src/domain/entities/Services.ts)
 
 Detect service type from a URL
 
@@ -29869,7 +30135,7 @@ export function detectServiceFromURL(url: string): string | undefined
 
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:571`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:612`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 
@@ -29928,7 +30194,7 @@ const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
 
 ### formatAttendees `function`
 
-📍 [`src/tools/microsoft/types.ts:179`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:181`](src/tools/microsoft/types.ts)
 
 Convert an array of email addresses (any format) to Microsoft Graph attendee format.
 Normalizes input first, so it's safe to pass LLM output directly.
@@ -29954,7 +30220,7 @@ export function formatPluginDisplayName(name: string): string
 
 ### formatRecipients `function`
 
-📍 [`src/tools/microsoft/types.ts:171`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:173`](src/tools/microsoft/types.ts)
 
 Convert an array of email addresses (any format) to Microsoft Graph recipient format.
 Normalizes input first, so it's safe to pass LLM output directly.
@@ -29967,7 +30233,7 @@ export function formatRecipients(emails: unknown[]):
 
 ### getAllServiceIds `function`
 
-📍 [`src/domain/entities/Services.ts:539`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:548`](src/domain/entities/Services.ts)
 
 Get all service IDs
 
@@ -30028,7 +30294,7 @@ export function getRegisteredScrapeProviders(): string[]
 
 ### getRoutineProgress `function`
 
-📍 [`src/domain/entities/Routine.ts:222`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:246`](src/domain/entities/Routine.ts)
 
 Compute routine progress (0-100) from plan task statuses.
 
@@ -30040,7 +30306,7 @@ export function getRoutineProgress(execution: RoutineExecution): number
 
 ### getServiceDefinition `function`
 
-📍 [`src/domain/entities/Services.ts:525`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:534`](src/domain/entities/Services.ts)
 
 Get service definition by service type
 
@@ -30052,7 +30318,7 @@ export function getServiceDefinition(serviceType: string): ServiceDefinition | u
 
 ### getServiceInfo `function`
 
-📍 [`src/domain/entities/Services.ts:518`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:527`](src/domain/entities/Services.ts)
 
 Get service info by service type
 
@@ -30064,7 +30330,7 @@ export function getServiceInfo(serviceType: string): ServiceInfo | undefined
 
 ### getServicesByCategory `function`
 
-📍 [`src/domain/entities/Services.ts:532`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:541`](src/domain/entities/Services.ts)
 
 Get all services in a category
 
@@ -30121,7 +30387,7 @@ export function isExcludedExtension(
 
 ### isKnownService `function`
 
-📍 [`src/domain/entities/Services.ts:546`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:555`](src/domain/entities/Services.ts)
 
 Check if a service ID is known
 
@@ -30133,7 +30399,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### isTeamsMeetingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:197`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:199`](src/tools/microsoft/types.ts)
 
 Check if a meeting ID input is a Teams join URL.
 
@@ -30190,7 +30456,7 @@ export function mergeTextPieces(pieces: DocumentPiece[]): string
 
 ### microsoftFetch `function`
 
-📍 [`src/tools/microsoft/types.ts:74`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:75`](src/tools/microsoft/types.ts)
 
 Make an authenticated Microsoft Graph API request through the connector.
 
@@ -30210,7 +30476,7 @@ export async function microsoftFetch&lt;T = unknown&gt;(
 
 ### normalizeEmails `function`
 
-📍 [`src/tools/microsoft/types.ts:147`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:149`](src/tools/microsoft/types.ts)
 
 Normalize an email array from any format the LLM might send into plain strings.
 
@@ -30316,7 +30582,7 @@ export function resolveMaxContextTokens(
 
 ### resolveMeetingId `function`
 
-📍 [`src/tools/microsoft/types.ts:223`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:225`](src/tools/microsoft/types.ts)
 
 Resolve a meeting input (ID or Teams URL) to a Graph API online meeting ID.
 
@@ -30328,7 +30594,8 @@ export async function resolveMeetingId(
   connector: Connector,
   input: string,
   prefix: string,
-  effectiveUserId?: string
+  effectiveUserId?: string,
+  effectiveAccountId?: string
 ): Promise&lt;
 ```
 
@@ -30349,6 +30616,29 @@ export function resolveRepository(
   repository: string | undefined,
   connector: Connector
 ):
+```
+
+---
+
+### resolveTemplates `function`
+
+📍 [`src/core/routineControlFlow.ts:69`](src/core/routineControlFlow.ts)
+
+Resolve template placeholders in text.
+
+Supported namespaces:
+- {{param.name}} → inputs[name]
+- {{map.item}} / {{map.index}} / {{map.total}} → ICM keys
+- {{fold.accumulator}} → ICM key
+
+Non-string values are JSON.stringify'd. Unresolved templates are left as-is.
+
+```typescript
+export function resolveTemplates(
+  text: string,
+  inputs: Record&lt;string, unknown&gt;,
+  icmPlugin: InContextMemoryPluginNextGen | null
+): string
 ```
 
 ---
@@ -30408,7 +30698,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:596`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:615`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -30461,7 +30751,7 @@ Default configuration values
 
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:487`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:506`](src/core/context-nextgen/types.ts)
 
 Default feature configuration
 
