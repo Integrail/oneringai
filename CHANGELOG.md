@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Navigation** — Routines added to main sidebar under "Main" section. New `routines` and `routine-builder` page IDs.
   - Uses core library types directly (`RoutineDefinition`, `RoutineDefinitionInput`, `TaskInput`, etc.) — no duplicate `*ForUI` types.
 
+## [0.4.3] - 2026-02-25
+
+### Fixed
+
+- **Routine Runner: Iteration limiter hook leak** — The per-task `pause:check` hook was only unregistered on the happy path. If a task failed via control flow error, max-attempts break, or fail-fast, the hook leaked and accumulated on reused agents. Now wrapped in `try-finally` for guaranteed cleanup.
+- **Routine Runner: Fold accumulator treats empty string as valid** — Empty string `''` was incorrectly treated as "no output", falling back to ICM. Now only `null` (meaning no completed task) triggers ICM fallback. Any other value (including `''`, `0`, `false`) is a valid accumulator.
+
+### Changed
+
+- **Routine Runner: Permanent errors skip retry** — New `isTransientError()` classification. Auth errors, context length errors, config errors, and model-not-found errors now immediately fail the task instead of retrying uselessly. Unknown errors still retry (safer default).
+- **Routine Runner: DRY refactoring** — Extracted shared `getPlugins()` helper (exported from `routineControlFlow.ts`), unified `cleanupMemoryKeys()` helper with configurable prefix lists, and `ROUTINE_KEYS` constants object replacing ~25 magic string literals across both files.
+- **Routine Runner: Cleanup errors now logged** — Previously silent `catch {}` blocks in the finally cleanup now log at debug level for observability. `agent.destroy()` failures also logged.
+
+### Added
+
+- **Control Flow: Per-iteration timeout** — New optional `iterationTimeoutMs` field on `TaskMapFlow`, `TaskFoldFlow`, and `TaskUntilFlow`. When set, each sub-execution is wrapped with `Promise.race` timeout, preventing infinite hangs in control flow loops.
+- **`ROUTINE_KEYS` constant** — Exported from core library. Contains all well-known ICM/WM key names used by the routine framework (`__routine_plan`, `__map_item`, `__fold_accumulator`, etc.).
+
 ## [0.4.2] - 2026-02-22
 
 ### Added

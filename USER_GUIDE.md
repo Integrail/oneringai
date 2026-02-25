@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.4.2
-**Last Updated:** 2026-02-22
+**Version:** 0.4.3
+**Last Updated:** 2026-02-25
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -3165,6 +3165,62 @@ interface TaskDefinition {
 }
 ```
 
+### Control Flow (Map / Fold / Until)
+
+Tasks can use control flow to iterate over data. Three flow types are available:
+
+- **`map`** — Execute a sub-routine for each element in an array (from memory key)
+- **`fold`** — Accumulate a result across array elements (like `Array.reduce`)
+- **`until`** — Repeat a sub-routine until a condition is met
+
+All three support an optional `iterationTimeoutMs` to prevent infinite hangs:
+
+```typescript
+{
+  name: 'Process Items',
+  description: 'Process each item from the list',
+  controlFlow: {
+    type: 'map',
+    sourceKey: '__items_list',
+    resultKey: '__processed_items',
+    maxIterations: 50,
+    iterationTimeoutMs: 120000, // 2 min per iteration
+    tasks: [
+      { name: 'Process', description: 'Process the current item' },
+    ],
+  },
+}
+```
+
+When `iterationTimeoutMs` is set, each sub-execution is wrapped with `Promise.race`. If an iteration exceeds the timeout, it fails with a timeout error and the control flow moves to the next iteration (or stops, depending on failure mode).
+
+### Error Classification
+
+The routine runner classifies errors as **transient** or **permanent**:
+
+- **Permanent errors** (auth failures, context length exceeded, model not found, config errors) immediately fail the task without retrying
+- **Transient errors** (network issues, rate limits, unknown errors) are retried up to `maxAttempts`
+
+This prevents wasting retries on errors that will never succeed.
+
+### `ROUTINE_KEYS` Constant
+
+The `ROUTINE_KEYS` constant is exported from the core library and contains all well-known ICM/WM key names used internally by the routine framework:
+
+```typescript
+import { ROUTINE_KEYS } from '@everworker/oneringai';
+
+// ROUTINE_KEYS.PLAN            → '__routine_plan'
+// ROUTINE_KEYS.DEPS            → '__routine_deps'
+// ROUTINE_KEYS.DEP_RESULT_PREFIX → '__dep_result_'
+// ROUTINE_KEYS.MAP_ITEM        → '__map_item'
+// ROUTINE_KEYS.MAP_INDEX       → '__map_index'
+// ROUTINE_KEYS.MAP_TOTAL       → '__map_total'
+// ROUTINE_KEYS.FOLD_ACCUMULATOR → '__fold_accumulator'
+```
+
+Useful for custom integrations that need to read or set routine state programmatically.
+
 ### Task Dependencies and Ordering
 
 Tasks execute in dependency order. Use `dependsOn` to create a DAG:
@@ -3311,14 +3367,27 @@ interface ExecuteRoutineOptions {
   /** Routine definition to execute */
   definition: RoutineDefinition;
 
-  /** Connector name (must be registered via Connector.create()) */
-  connector: string;
+  /** Pre-created Agent instance. When provided, connector/model/tools are ignored.
+   *  The agent is NOT destroyed after execution — caller manages its lifecycle. */
+  agent?: Agent;
 
-  /** Model ID (e.g., 'gpt-4', 'claude-sonnet-4-5-20250929') */
-  model: string;
+  /** Connector name — required when `agent` is not provided */
+  connector?: string;
 
-  /** Additional tools beyond requiredTools */
+  /** Model ID — required when `agent` is not provided */
+  model?: string;
+
+  /** Additional tools — only used when creating a new agent (no `agent` provided) */
   tools?: ToolFunction[];
+
+  /** Input parameter values for parameterized routines */
+  inputs?: Record<string, unknown>;
+
+  /** Hooks — applied to agent for the duration of routine execution */
+  hooks?: HookConfig;
+
+  /** Called when a task starts executing */
+  onTaskStarted?: (task: Task, execution: RoutineExecution) => void;
 
   /** Called when a task completes successfully */
   onTaskComplete?: (task: Task, execution: RoutineExecution) => void;
@@ -3326,11 +3395,14 @@ interface ExecuteRoutineOptions {
   /** Called when a task fails */
   onTaskFailed?: (task: Task, execution: RoutineExecution) => void;
 
+  /** Called after each validation attempt (whether pass or fail) */
+  onTaskValidation?: (task: Task, result: TaskValidationResult, execution: RoutineExecution) => void;
+
   /** Configurable prompts (all have sensible defaults) */
   prompts?: {
     system?: (definition: RoutineDefinition) => string;
     task?: (task: Task) => string;
-    validation?: (task: Task, responseText: string) => string;
+    validation?: (task: Task, context: ValidationContext) => string;
   };
 }
 ```

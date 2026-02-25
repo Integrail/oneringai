@@ -1290,13 +1290,35 @@ console.log(execution.status); // 'completed' | 'failed'
 ```
 
 **Key Features:**
-- 🔗 **Task Dependencies** - DAG-based ordering via `dependsOn`
-- 🧠 **Memory Bridging** - In-context memory (`context_set`) + working memory (`memory_store`) persist across tasks while conversation is cleared
-- 🔍 **LLM Validation** - Self-reflection against completion criteria with configurable score thresholds
-- 🔄 **Retry Logic** - Configurable `maxAttempts` per task with automatic retry on validation failure
-- 📊 **Progress Tracking** - Real-time callbacks and progress percentage
-- ⚙️ **Failure Modes** - `fail-fast` (default) or `continue` for independent tasks
-- 🎨 **Custom Prompts** - Override system, task, or validation prompts
+- **Task Dependencies** - DAG-based ordering via `dependsOn`
+- **Memory Bridging** - In-context memory (`context_set`) + working memory (`memory_store`) persist across tasks while conversation is cleared
+- **LLM Validation** - Self-reflection against completion criteria with configurable score thresholds
+- **Retry Logic** - Configurable `maxAttempts` per task with automatic retry on validation failure
+- **Smart Error Classification** - Permanent errors (auth, config, model-not-found) skip retry; transient errors retry normally
+- **Control Flow** - `map`, `fold`, and `until` flows with optional per-iteration timeout (`iterationTimeoutMs`)
+- **Progress Tracking** - Real-time callbacks and progress percentage
+- **Failure Modes** - `fail-fast` (default) or `continue` for independent tasks
+- **Custom Prompts** - Override system, task, or validation prompts
+- **`ROUTINE_KEYS` export** - Well-known ICM/WM key constants for custom integrations
+
+**Control Flow with Timeout:**
+
+```typescript
+const routine = createRoutineDefinition({
+  name: 'Process Batch',
+  tasks: [{
+    name: 'Process Each',
+    description: 'Process each item',
+    controlFlow: {
+      type: 'map',
+      sourceKey: '__items',
+      resultKey: '__results',
+      iterationTimeoutMs: 60000, // 1 min per item
+      tasks: [{ name: 'Process', description: 'Handle the current item' }],
+    },
+  }],
+});
+```
 
 **Routine Persistence:** Save and load routine definitions with `FileRoutineDefinitionStorage` (or implement `IRoutineDefinitionStorage` for custom backends). Per-user isolation via optional `userId`. Integrated into `StorageRegistry` as `routineDefinitions`.
 
@@ -1708,4 +1730,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.4.2 | **Last Updated:** 2026-02-22 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.4.3 | **Last Updated:** 2026-02-25 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
