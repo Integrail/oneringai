@@ -11237,6 +11237,16 @@ var ToolManager = class extends EventEmitter {
     }
   }
   /**
+   * Register tools produced by a specific connector.
+   * Sets `source: 'connector:<connectorName>'` so agent-level filtering can
+   * restrict which connector tools are visible to a given agent.
+   */
+  registerConnectorTools(connectorName, tools, options = {}) {
+    for (const tool of tools) {
+      this.register(tool, { ...options, source: `connector:${connectorName}` });
+    }
+  }
+  /**
    * Unregister a tool by name
    */
   unregister(name) {
@@ -11425,6 +11435,14 @@ var ToolManager = class extends EventEmitter {
    */
   getEnabled() {
     return this.getSortedByPriority().filter((reg) => reg.enabled).map((reg) => reg.tool);
+  }
+  /**
+   * Get all enabled registrations (sorted by priority).
+   * Includes full registration metadata (source, namespace, etc.)
+   * for use in connector-aware filtering.
+   */
+  getEnabledRegistrations() {
+    return this.getSortedByPriority().filter((reg) => reg.enabled);
   }
   /**
    * Get all tools (enabled and disabled)
@@ -11617,6 +11635,13 @@ var ToolManager = class extends EventEmitter {
     }
     if (!registration.enabled) {
       throw new ToolExecutionError(toolName, "Tool is disabled");
+    }
+    if (registration.source?.startsWith("connector:")) {
+      const connName = registration.source.slice("connector:".length);
+      const registry = this._toolContext?.connectorRegistry;
+      if (registry && !registry.has(connName)) {
+        throw new ToolExecutionError(toolName, `Connector '${connName}' is not available to this agent`);
+      }
     }
     const breaker = this.getOrCreateCircuitBreaker(toolName, registration);
     this.toolLogger.debug({ toolName, args }, "Tool execution started");
@@ -21574,9 +21599,12 @@ var BaseAgent = class extends EventEmitter {
   /**
    * Add a tool to the agent.
    * Tools are registered with AgentContext (single source of truth).
+   *
+   * @param tool - The tool function to register
+   * @param options - Optional registration options (namespace, source, priority, etc.)
    */
-  addTool(tool) {
-    this._agentContext.tools.register(tool);
+  addTool(tool, options) {
+    this._agentContext.tools.register(tool, options);
     if (tool.permission) {
       this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
     }
@@ -21616,7 +21644,13 @@ var BaseAgent = class extends EventEmitter {
    */
   getEnabledToolDefinitions() {
     const toolContext = this._agentContext.tools.getToolContext();
-    return this._agentContext.tools.getEnabled().map((tool) => {
+    const allowed = this._agentContext.connectors;
+    return this._agentContext.tools.getEnabledRegistrations().filter((reg) => {
+      if (!allowed) return true;
+      if (!reg.source?.startsWith("connector:")) return true;
+      return allowed.includes(reg.source.slice("connector:".length));
+    }).map((reg) => {
+      const tool = reg.tool;
       if (tool.descriptionFactory) {
         const dynamicDescription = tool.descriptionFactory(toolContext);
         return {

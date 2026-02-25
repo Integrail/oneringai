@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent-Scoped Connector Availability** — Agents with `connectors: ['github', 'serper']` now only see and can execute tools produced by those connectors. New `ToolManager.registerConnectorTools(connectorName, tools)` sets `source: 'connector:<name>'` on each tool. `BaseAgent.getEnabledToolDefinitions()` filters connector tools against the agent's allowlist. Execution-time safety net in `ToolManager.execute()` blocks tools from unavailable connectors. Built-in tools (filesystem, shell, memory, etc.) are never filtered. Backward compatible: `connectors: undefined` shows all tools as before. Hosea updated to use `resolveToolsGrouped()` and `registerConnectorTools()` for proper source tracking.
 - **Hosea: Routines** — Full routine/workflow support in Hosea. Routines are multi-step automated task sequences that run on a chat tab's agent instance. Includes:
   - **Routines Page** — List all routines with search, sort (name/date), and card/list view toggle. Duplicate and delete routines directly from the list.
   - **Routine Builder** — Visual editor for creating/editing routine definitions. Sections: basic info (name, description, version, author, tags), LLM instructions, task list with accordion editor (name, description, dependencies as clickable badges, suggested tools, expected output, max attempts, optional validation with completion criteria and min score), and settings (concurrency mode, dynamic tasks toggle, required tools/plugins).

@@ -3235,11 +3235,14 @@ export class AgentService {
         toolManager.unregister(name);
       }
 
-      // Add tools that are in new config but not in old
+      // Add tools that are in new config but not in old, grouped by connector
       const toAdd = newToolNames.filter(name => !oldToolNames.includes(name));
       if (toAdd.length > 0) {
-        const newTools = this.toolCatalog.resolveToolsForAgent(toAdd, context);
-        toolManager.registerMany(newTools);
+        const { plain, byConnector } = this.toolCatalog.resolveToolsGrouped(toAdd, context);
+        toolManager.registerMany(plain);
+        for (const [connName, connTools] of byConnector) {
+          toolManager.registerConnectorTools(connName, connTools);
+        }
       }
 
       logger.info(`[syncInstanceTools] Instance ${instanceId}: removed ${toRemove.length}, added ${toAdd.length} tools`);
@@ -3259,8 +3262,11 @@ export class AgentService {
 
         const toAdd = newToolNames.filter(name => !oldToolNames.includes(name));
         if (toAdd.length > 0) {
-          const newTools = this.toolCatalog.resolveToolsForAgent(toAdd, context);
-          toolManager.registerMany(newTools);
+          const { plain, byConnector } = this.toolCatalog.resolveToolsGrouped(toAdd, context);
+          toolManager.registerMany(plain);
+          for (const [connName, connTools] of byConnector) {
+            toolManager.registerConnectorTools(connName, connTools);
+          }
         }
 
         logger.info(`[syncInstanceTools] Legacy agent: removed ${toRemove.length}, added ${toAdd.length} tools`);
@@ -3346,7 +3352,7 @@ export class AgentService {
       // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
       // Use agent config ID as instance ID for single-agent mode
       const toolCreationContext = { instanceId: agentConfig.id };
-      const tools = this.toolCatalog.resolveToolsForAgent(
+      const { plain: plainTools, byConnector: connectorToolGroups } = this.toolCatalog.resolveToolsGrouped(
         agentConfig.tools,
         toolCreationContext
       );
@@ -3367,11 +3373,12 @@ export class AgentService {
 
       // Create agent with NextGen context configuration
       // NOTE: NextGen simplifies context management - no history/permissions/cache options
+      // Pass only plain (non-connector) tools at creation time; connector tools are registered separately below.
       const config: AgentConfig = {
         connector: agentConfig.connector,
         model: agentConfig.model,
         name: agentConfig.name,
-        tools,
+        tools: plainTools,
         instructions: fullInstructions,
         temperature: agentConfig.temperature,
         maxIterations: agentConfig.maxIterations ?? 50,
@@ -3411,6 +3418,11 @@ export class AgentService {
       };
 
       this.agent = Agent.create(config);
+
+      // Register connector-produced tools with source tracking
+      for (const [connName, connTools] of connectorToolGroups) {
+        this.agent.tools.registerConnectorTools(connName, connTools);
+      }
 
       // Update global config
       this.config.activeConnector = agentConfig.connector;
@@ -3893,11 +3905,11 @@ export class AgentService {
       // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
       // This handles both oneringai tools AND hosea-specific tools (like browser automation)
       const toolCreationContext = { instanceId };
-      const tools = this.toolCatalog.resolveToolsForAgent(
+      const { plain: plainTools, byConnector: connectorToolGroups } = this.toolCatalog.resolveToolsGrouped(
         agentConfig.tools,
         toolCreationContext
       );
-      logger.debug(`[createInstance] Resolved ${tools.length} tools from catalog for ${agentConfig.tools.length} configured tool names`);
+      logger.debug(`[createInstance] Resolved ${plainTools.length} plain + ${connectorToolGroups.size} connector groups from catalog for ${agentConfig.tools.length} configured tool names`);
 
       // Connect MCP servers and register their tools if configured
       if (agentConfig.mcpServers && agentConfig.mcpServers.length > 0) {
@@ -3967,15 +3979,21 @@ export class AgentService {
       };
 
       // Create agent (only basic Agent type in NextGen - other types deprecated)
+      // Pass only plain (non-connector) tools; connector tools registered separately below.
       const agent = Agent.create({
         connector: agentConfig.connector,
         model: agentConfig.model,
         name: agentConfig.name,
-        tools,
+        tools: plainTools,
         instructions: fullInstructions,
         temperature: agentConfig.temperature,
         context: contextConfig,
       });
+
+      // Register connector-produced tools with source tracking
+      for (const [connName, connTools] of connectorToolGroups) {
+        agent.tools.registerConnectorTools(connName, connTools);
+      }
 
       // Register MCP tools with the agent if configured
       if (agentConfig.mcpServers && agentConfig.mcpServers.length > 0) {

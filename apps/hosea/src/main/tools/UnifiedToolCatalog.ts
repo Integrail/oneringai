@@ -221,6 +221,41 @@ export class UnifiedToolCatalog {
   }
 
   /**
+   * Resolve tools for agent creation, grouped by connector name.
+   * Returns `{ plain: ToolFunction[], byConnector: Map<string, ToolFunction[]> }`.
+   * Tools with a `connectorName` on their catalog entry go into `byConnector`;
+   * all others go into `plain`.
+   */
+  resolveToolsGrouped(
+    names: string[],
+    context: ToolCreationContext
+  ): { plain: ToolFunction[]; byConnector: Map<string, ToolFunction[]> } {
+    const plain: ToolFunction[] = [];
+    const byConnector = new Map<string, ToolFunction[]>();
+
+    for (const name of names) {
+      const entry = this.getToolByName(name);
+      if (!entry) continue;
+
+      const tool = entry.createTool ? entry.createTool(context) : entry.tool;
+      if (!tool) continue;
+
+      if (entry.connectorName) {
+        const list = byConnector.get(entry.connectorName);
+        if (list) {
+          list.push(tool);
+        } else {
+          byConnector.set(entry.connectorName, [tool]);
+        }
+      } else {
+        plain.push(tool);
+      }
+    }
+
+    return { plain, byConnector };
+  }
+
+  /**
    * Check if a provider is registered
    */
   hasProvider(name: string): boolean {

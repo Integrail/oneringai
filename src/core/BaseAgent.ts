@@ -15,6 +15,7 @@
 import { EventEmitter } from 'eventemitter3';
 import { Connector } from './Connector.js';
 import { ToolManager } from './ToolManager.js';
+import type { ToolOptions } from './ToolManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 import type { AgentPermissionsConfig } from './permissions/types.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
@@ -621,9 +622,12 @@ export abstract class BaseAgent<
   /**
    * Add a tool to the agent.
    * Tools are registered with AgentContext (single source of truth).
+   *
+   * @param tool - The tool function to register
+   * @param options - Optional registration options (namespace, source, priority, etc.)
    */
-  addTool(tool: ToolFunction): void {
-    this._agentContext.tools.register(tool);
+  addTool(tool: ToolFunction, options?: ToolOptions): void {
+    this._agentContext.tools.register(tool, options);
 
     // Sync permission config if tool has one
     if (tool.permission) {
@@ -669,23 +673,34 @@ export abstract class BaseAgent<
    */
   protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
     const toolContext = this._agentContext.tools.getToolContext();
-    return this._agentContext.tools.getEnabled().map((tool) => {
-      // If tool has a descriptionFactory, use it to generate dynamic description
-      // Pass current ToolContext so descriptions can scope by userId, etc.
-      if (tool.descriptionFactory) {
-        const dynamicDescription = tool.descriptionFactory(toolContext);
-        // Return a modified copy with the dynamic description
-        return {
-          ...tool.definition,
-          function: {
-            ...tool.definition.function,
-            description: dynamicDescription,
-          },
-        };
-      }
-      // Otherwise, use the static definition as-is
-      return tool.definition;
-    });
+    const allowed = this._agentContext.connectors;
+
+    return this._agentContext.tools.getEnabledRegistrations()
+      .filter((reg) => {
+        // No connector restriction → show all tools
+        if (!allowed) return true;
+        // Non-connector tools (built-in, custom, mcp, etc.) always pass
+        if (!reg.source?.startsWith('connector:')) return true;
+        // Connector tools: only pass if their connector is in the allowlist
+        return allowed.includes(reg.source.slice('connector:'.length));
+      })
+      .map((reg) => {
+        const tool = reg.tool;
+        // If tool has a descriptionFactory, use it to generate dynamic description
+        // Pass current ToolContext so descriptions can scope by userId, etc.
+        if (tool.descriptionFactory) {
+          const dynamicDescription = tool.descriptionFactory(toolContext);
+          return {
+            ...tool.definition,
+            function: {
+              ...tool.definition.function,
+              description: dynamicDescription,
+            },
+          };
+        }
+        // Otherwise, use the static definition as-is
+        return tool.definition;
+      });
   }
 
   // ===== Model Discovery =====

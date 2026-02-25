@@ -383,6 +383,17 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   }
 
   /**
+   * Register tools produced by a specific connector.
+   * Sets `source: 'connector:<connectorName>'` so agent-level filtering can
+   * restrict which connector tools are visible to a given agent.
+   */
+  registerConnectorTools(connectorName: string, tools: ToolFunction[], options: Omit<ToolOptions, 'source'> = {}): void {
+    for (const tool of tools) {
+      this.register(tool, { ...options, source: `connector:${connectorName}` });
+    }
+  }
+
+  /**
    * Unregister a tool by name
    */
   unregister(name: string): boolean {
@@ -610,6 +621,15 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     return this.getSortedByPriority()
       .filter((reg) => reg.enabled)
       .map((reg) => reg.tool);
+  }
+
+  /**
+   * Get all enabled registrations (sorted by priority).
+   * Includes full registration metadata (source, namespace, etc.)
+   * for use in connector-aware filtering.
+   */
+  getEnabledRegistrations(): ToolRegistration[] {
+    return this.getSortedByPriority().filter((reg) => reg.enabled);
   }
 
   /**
@@ -864,6 +884,15 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     // Check if tool is enabled
     if (!registration.enabled) {
       throw new ToolExecutionError(toolName, 'Tool is disabled');
+    }
+
+    // Connector-scoped safety net: block execution if the connector is not in the agent's allowlist
+    if (registration.source?.startsWith('connector:')) {
+      const connName = registration.source.slice('connector:'.length);
+      const registry = this._toolContext?.connectorRegistry;
+      if (registry && !registry.has(connName)) {
+        throw new ToolExecutionError(toolName, `Connector '${connName}' is not available to this agent`);
+      }
     }
 
     // Get or create circuit breaker for this tool
