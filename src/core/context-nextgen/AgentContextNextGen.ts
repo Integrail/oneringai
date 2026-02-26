@@ -54,6 +54,7 @@ import type {
   CompactionContext,
   ConsolidationResult,
 } from './types.js';
+import type { ToolCategoryScope } from '../ToolCatalogRegistry.js';
 import type {
   IContextSnapshot,
   IPluginSnapshot,
@@ -72,6 +73,7 @@ import {
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
   UserInfoPluginNextGen,
+  ToolCatalogPluginNextGen,
 } from './plugins/index.js';
 import { StorageRegistry } from '../StorageRegistry.js';
 import type {
@@ -79,6 +81,7 @@ import type {
   InContextMemoryConfig,
   PersistentInstructionsConfig,
   UserInfoPluginConfig,
+  ToolCatalogPluginConfig,
 } from './plugins/index.js';
 
 // Strategy imports
@@ -122,10 +125,11 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities' | 'toolCategories'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
+    toolCategories?: ToolCategoryScope;
   };
 
   /** Maximum context tokens for the model */
@@ -210,6 +214,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       strategy: config.strategy ?? DEFAULT_CONFIG.strategy,
       features: { ...DEFAULT_FEATURES, ...config.features },
       agentId: config.agentId ?? this.generateId(),
+      toolCategories: config.toolCategories,
       storage: config.storage,
     };
 
@@ -287,6 +292,18 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         userId: this._userId,
         ...uiConfig,
       }));
+    }
+
+    // 5. Tool Catalog (default: disabled)
+    if (features.toolCatalog) {
+      const tcConfig = configs.toolCatalog as Partial<ToolCatalogPluginConfig> | undefined;
+      const plugin = new ToolCatalogPluginNextGen({
+        categoryScope: this._config.toolCategories,
+        identities: this._identities,
+        ...tcConfig,
+      });
+      this.registerPlugin(plugin);
+      plugin.setToolManager(this._tools);
     }
 
     // Validate strategy dependencies now that plugins are initialized

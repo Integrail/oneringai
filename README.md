@@ -912,13 +912,20 @@ const agent = Agent.create({
 - 👥 **User-Scoped** - Data is per-user, not per-agent — different agents share the same user data
 - 🔧 **LLM-Modifiable** - Agent can update user info during execution
 
-**Available Tools:**
+**User Info Tools:**
 - `user_info_set` - Store/update user information by key (`key`, `value`, `description?`)
 - `user_info_get` - Retrieve one entry by key, or all entries if no key
 - `user_info_remove` - Remove a specific entry
 - `user_info_clear` - Clear all entries (requires confirmation)
 
-**Use cases:** User preferences (theme, language, timezone), user context (role, location), accumulated knowledge about the user.
+**TODO Tools** (built into the same plugin):
+- `todo_add` - Create a TODO (`title`, `description?`, `people?`, `dueDate?`, `tags?`)
+- `todo_update` - Update a TODO (`id`, plus any fields to change including `status: 'done'`)
+- `todo_remove` - Delete a TODO by id
+
+TODOs are stored alongside user info and rendered in a separate **"Current TODOs"** checklist in context. The agent proactively suggests creating TODOs when conversation implies action items, reminds about due/overdue items once per day, and auto-cleans completed TODOs after 48 hours.
+
+**Use cases:** User preferences (theme, language, timezone), user context (role, location), accumulated knowledge about the user, task/TODO tracking with deadlines and people.
 
 ### 11. Direct LLM Access
 

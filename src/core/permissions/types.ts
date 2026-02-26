@@ -352,6 +352,11 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
   'todo_update',
   'todo_remove',
 
+  // Tool catalog tools (browsing and loading — safe)
+  'tool_catalog_search',
+  'tool_catalog_load',
+  'tool_catalog_unload',
+
   // Meta-tools (internal coordination)
   '_start_planning',
   '_modify_plan',

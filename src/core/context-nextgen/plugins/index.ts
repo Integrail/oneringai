@@ -30,3 +30,8 @@ export type {
   SerializedUserInfoState,
   UserInfoEntry,
 } from './UserInfoPluginNextGen.js';
+
+export { ToolCatalogPluginNextGen } from './ToolCatalogPluginNextGen.js';
+export type {
+  ToolCatalogPluginConfig,
+} from './ToolCatalogPluginNextGen.js';

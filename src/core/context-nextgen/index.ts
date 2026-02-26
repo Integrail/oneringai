@@ -57,6 +57,7 @@ export {
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
   UserInfoPluginNextGen,
+  ToolCatalogPluginNextGen,
 } from './plugins/index.js';
 
 export type {
@@ -72,6 +73,7 @@ export type {
   InstructionEntry,
   UserInfoPluginConfig,
   SerializedUserInfoState,
+  ToolCatalogPluginConfig,
 } from './plugins/index.js';
 
 // Compaction strategies

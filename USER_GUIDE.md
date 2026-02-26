@@ -36,7 +36,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 10. [User Info](#user-info-nextgen-plugin)
     - Setup and Configuration
     - Context Injection (auto-rendered in system message)
-    - Tools (user_info_set, user_info_get, user_info_remove, user_info_clear)
+    - Tools (user_info_set, user_info_get, user_info_remove, user_info_clear, todo_add, todo_update, todo_remove)
     - Storage and Multi-User Isolation
     - Use Cases and Best Practices
 11. [Routine Execution](#routine-execution)
@@ -1014,7 +1014,7 @@ AgentContextNextGen uses a plugin architecture with these core components:
 | **WorkingMemoryPluginNextGen** | `ctx.getPlugin('working-memory')` | Tiered memory (raw/summary/findings) |
 | **InContextMemoryPluginNextGen** | `ctx.getPlugin('in-context-memory')` | Live key-value storage in context |
 | **PersistentInstructionsPluginNextGen** | `ctx.getPlugin('persistent-instructions')` | Disk-persisted agent instructions |
-| **UserInfoPluginNextGen** | `ctx.getPlugin('user_info')` | User-scoped preferences auto-injected into context |
+| **UserInfoPluginNextGen** | `ctx.getPlugin('user_info')` | User-scoped preferences + TODO tracking, auto-injected into context |
 | **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (Message[]) |
 
 #### Using AgentContextNextGen with Agent
@@ -1134,7 +1134,7 @@ console.log(DEFAULT_FEATURES);
 | `workingMemory` | `true` | WorkingMemoryPluginNextGen - tiered memory (raw/summary/findings) | `memory_*` tools not registered; `ctx.memory` returns `null` |
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen - live key-value storage directly in context | `context_set/delete/list` tools not registered |
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk (KVP entries) | `instructions_*` tools not registered |
-| `userInfo` | `false` | UserInfoPluginNextGen - user-scoped preferences auto-injected into context | `user_info_*` tools not registered |
+| `userInfo` | `false` | UserInfoPluginNextGen - user-scoped preferences + TODO tracking auto-injected into context | `user_info_*` and `todo_*` tools not registered |
 
 **Usage Examples:**
 
@@ -2978,7 +2978,7 @@ const agent = Agent.create({
 ### How It Works
 
 1. **Lazy Loading** — On first access (tool call or `getContent()`), entries are loaded from storage into an in-memory cache
-2. **Context Injection** — `getContent()` renders entries as markdown, included in the system message:
+2. **Context Injection** — `getContent()` renders entries as markdown in the system message. Regular user info and TODOs are shown in separate sections:
    ```
    ### theme
    dark
@@ -2986,13 +2986,15 @@ const agent = Agent.create({
    ### language
    en
 
-   ### preferences
-   {"notifications": true, "compact_view": false}
+   ## Current TODOs
+   - [ ] todo_a1b2c3: Review PR for auth module (due: 2026-03-01, people: Alice) [work]
+     Check the error handling changes
+   - [x] todo_d4e5f6: Buy groceries (due: 2026-02-25) [personal]
    ```
 3. **Write-Through** — Tool mutations (set/remove/clear) update both the in-memory cache and persist to storage immediately
 4. **Session Persistence** — `getState()`/`restoreState()` serialize/deserialize entries for session save/load
 
-### Tools
+### User Info Tools
 
 | Tool | Description | Permission |
 |------|-------------|------------|
@@ -3000,6 +3002,29 @@ const agent = Agent.create({
 | `user_info_get` | Retrieve one entry by key, or all entries (key optional) | Always allowed |
 | `user_info_remove` | Remove a specific entry by key | Always allowed |
 | `user_info_clear` | Clear all entries (requires `confirm: true`) | Requires approval |
+
+### TODO Tools
+
+TODOs are stored as user info entries with a `todo_` key prefix. They are rendered in a dedicated **"Current TODOs"** checklist section in context, separate from regular user info.
+
+| Tool | Description | Permission |
+|------|-------------|------------|
+| `todo_add` | Create a TODO (`title`, `description?`, `people?`, `dueDate?`, `tags?`) | Always allowed |
+| `todo_update` | Update a TODO — partial updates (`id`, `title?`, `description?`, `people?`, `dueDate?`, `tags?`, `status?`) | Always allowed |
+| `todo_remove` | Delete a TODO by id | Always allowed |
+
+**TODO fields:**
+- `title` (required) — short description of the task
+- `description` (optional) — additional details
+- `people` (optional) — other people involved besides the current user
+- `dueDate` (optional) — deadline in `YYYY-MM-DD` format
+- `tags` (optional) — categorization tags (e.g. `["work", "urgent"]`)
+- `status` — `'pending'` or `'done'`
+
+**Agent behavior (built into plugin instructions):**
+- **Proactive creation** — When conversation implies an action item, the agent suggests creating a TODO. Explicit requests like "remind me" or "track this" create one immediately.
+- **Daily reminders** — Once per day, the agent reminds about overdue and soon-due items (within 2 days). Uses a `_todo_last_reminded` internal entry to avoid repeating.
+- **Auto-cleanup** — Completed TODOs older than 48 hours are automatically removed. Pending TODOs overdue by more than 7 days prompt the user: "Still relevant or should I remove it?"
 
 ### Storage
 
@@ -3040,6 +3065,7 @@ interface UserInfoPluginConfig {
 - User context: role, location, department
 - Accumulated knowledge about the user
 - Profile information the LLM should always have access to
+- TODO tracking: tasks with deadlines, involved people, and tags — with proactive reminders and auto-cleanup
 
 ---
 

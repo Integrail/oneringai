@@ -7,6 +7,7 @@
 import type { InputItem } from '../../domain/entities/Message.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IContextStorage as IContextStorageFromDomain } from '../../domain/interfaces/IContextStorage.js';
+import type { ToolCategoryScope } from '../ToolCatalogRegistry.js';
 
 // ============================================================================
 // Auth Identity
@@ -498,6 +499,9 @@ export interface ContextFeatures {
 
   /** Enable UserInfo plugin (default: false) */
   userInfo?: boolean;
+
+  /** Enable ToolCatalog plugin for dynamic tool loading/unloading (default: false) */
+  toolCatalog?: boolean;
 }
 
 /**
@@ -508,6 +512,7 @@ export const DEFAULT_FEATURES: Required<ContextFeatures> = {
   inContextMemory: true,
   persistentInstructions: false,
   userInfo: false,
+  toolCatalog: false,
 };
 
 // ============================================================================
@@ -544,6 +549,12 @@ export interface PluginConfigs {
    * See UserInfoPluginConfig for full options.
    */
   userInfo?: Record<string, unknown>;
+
+  /**
+   * Tool catalog plugin config (used when features.toolCatalog=true).
+   * See ToolCatalogPluginConfig for full options.
+   */
+  toolCatalog?: Record<string, unknown>;
 }
 
 /**
@@ -596,6 +607,9 @@ export interface AgentContextNextGenConfig {
 
   /** Storage for session persistence */
   storage?: IContextStorageFromDomain;
+
+  /** Restrict tool catalog to specific categories */
+  toolCategories?: ToolCategoryScope;
 
   /** Plugin-specific configurations (used with features flags) */
   plugins?: PluginConfigs;

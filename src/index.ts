@@ -27,8 +27,8 @@
  */
 
 // ============ Core API (Primary) ============
-export { Connector, ScopedConnectorRegistry, StorageRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL } from './core/index.js';
-export type { StorageConfig, StorageContext } from './core/index.js';
+export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL } from './core/index.js';
+export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContextNextGen - Clean, Simple Context Management
@@ -42,6 +42,7 @@ export {
   InContextMemoryPluginNextGen,
   PersistentInstructionsPluginNextGen,
   UserInfoPluginNextGen,
+  ToolCatalogPluginNextGen,
   // Compaction strategies
   DefaultCompactionStrategy,
   // Strategy Registry
@@ -73,6 +74,7 @@ export type {
   InstructionEntry,
   UserInfoPluginConfig,
   SerializedUserInfoState,
+  ToolCatalogPluginConfig,
   // Compaction strategy types
   ICompactionStrategy,
   CompactionContext,

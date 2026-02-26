@@ -658,6 +658,18 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   }
 
   /**
+   * Get all registered tool names in a category.
+   * Used by ToolCatalogPlugin for bulk enable/disable.
+   */
+  getByCategory(category: string): string[] {
+    const names: string[] = [];
+    for (const [name, reg] of this.registry) {
+      if (reg.category === category) names.push(name);
+    }
+    return names;
+  }
+
+  /**
    * Get tool registration info
    */
   getRegistration(name: string): ToolRegistration | undefined {
