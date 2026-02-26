@@ -61,6 +61,6 @@ export { createMeetingTool } from './createMeeting.js';
 export { createEditMeetingTool } from './editMeeting.js';
 export { createGetMeetingTranscriptTool } from './getMeetingTranscript.js';
 export { createFindMeetingSlotsTool } from './findMeetingSlots.js';
-export { createMicrosoftReadFileTool } from './readFile.js';
+export { createMicrosoftReadFileTool, type MicrosoftReadFileConfig } from './readFile.js';
 export { createMicrosoftListFilesTool } from './listFiles.js';
 export { createMicrosoftSearchFilesTool } from './searchFiles.js';

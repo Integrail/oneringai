@@ -1258,6 +1258,102 @@ interface IRoutineDefinitionStorage {
 }
 
 /**
+ * Routine Execution Record — persisted record for tracking/history.
+ *
+ * Unlike RoutineExecution (runtime state with live Plan), this is a
+ * storage-agnostic snapshot meant for persistence and querying.
+ * Timestamps are `number` (epoch ms), no framework dependencies.
+ */
+
+type RoutineStepType = 'task.started' | 'task.completed' | 'task.failed' | 'task.validation' | 'tool.call' | 'tool.start' | 'llm.start' | 'llm.complete' | 'iteration.complete' | 'execution.error' | 'control_flow.started' | 'control_flow.completed';
+interface RoutineExecutionStep {
+    timestamp: number;
+    taskName: string;
+    type: RoutineStepType;
+    data?: Record<string, unknown>;
+}
+interface RoutineTaskResult {
+    success: boolean;
+    output?: string;
+    error?: string;
+    validationScore?: number;
+    validationExplanation?: string;
+}
+interface RoutineTaskSnapshot {
+    taskId: string;
+    name: string;
+    description: string;
+    status: 'pending' | 'blocked' | 'in_progress' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+    attempts: number;
+    maxAttempts: number;
+    result?: RoutineTaskResult;
+    startedAt?: number;
+    completedAt?: number;
+    controlFlowType?: 'map' | 'fold' | 'until';
+}
+interface RoutineExecutionRecord {
+    executionId: string;
+    routineId: string;
+    routineName: string;
+    status: RoutineExecutionStatus;
+    progress: number;
+    tasks: RoutineTaskSnapshot[];
+    steps: RoutineExecutionStep[];
+    taskCount: number;
+    connectorName: string;
+    model: string;
+    error?: string;
+    startedAt?: number;
+    completedAt?: number;
+    lastActivityAt?: number;
+    trigger?: {
+        type: 'schedule' | 'event' | 'manual';
+        source?: string;
+        event?: string;
+        payload?: unknown;
+    };
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Create initial task snapshots from a routine definition.
+ */
+declare function createTaskSnapshots(definition: RoutineDefinition): RoutineTaskSnapshot[];
+/**
+ * Create an initial RoutineExecutionRecord from a definition.
+ * Status is set to 'running' with empty steps.
+ */
+declare function createRoutineExecutionRecord(definition: RoutineDefinition, connectorName: string, model: string, trigger?: RoutineExecutionRecord['trigger']): RoutineExecutionRecord;
+
+/**
+ * Storage interface for routine execution records.
+ *
+ * Designed to be storage-agnostic — implementations can back this with
+ * MongoDB, PostgreSQL, file system, etc.
+ */
+
+interface IRoutineExecutionStorage {
+    /** Insert a new execution record. Returns the record ID. */
+    insert(userId: string | undefined, record: RoutineExecutionRecord): Promise<string>;
+    /** Update top-level fields on an execution record. */
+    update(id: string, updates: Partial<Pick<RoutineExecutionRecord, 'status' | 'progress' | 'error' | 'completedAt' | 'lastActivityAt'>>): Promise<void>;
+    /** Append a step to the execution's steps array. */
+    pushStep(id: string, step: RoutineExecutionStep): Promise<void>;
+    /** Update a specific task snapshot within the execution record. */
+    updateTask(id: string, taskName: string, updates: Partial<RoutineTaskSnapshot>): Promise<void>;
+    /** Load a single execution record by ID. */
+    load(id: string): Promise<RoutineExecutionRecord | null>;
+    /** List execution records with optional filters. */
+    list(userId: string | undefined, options?: {
+        routineId?: string;
+        status?: RoutineExecutionStatus;
+        limit?: number;
+        offset?: number;
+    }): Promise<RoutineExecutionRecord[]>;
+    /** Check if a routine has a currently running execution. */
+    hasRunning(userId: string | undefined, routineId: string): Promise<boolean>;
+}
+
+/**
  * StorageRegistry - Centralized storage backend registry
  *
  * Provides a single point of configuration for all storage backends
@@ -1319,6 +1415,7 @@ interface StorageConfig {
     workingMemory: (context?: StorageContext) => IMemoryStorage;
     userInfo: (context?: StorageContext) => IUserInfoStorage;
     routineDefinitions: (context?: StorageContext) => IRoutineDefinitionStorage;
+    routineExecutions: (context?: StorageContext) => IRoutineExecutionStorage;
 }
 declare class StorageRegistry {
     /** Internal storage map */
@@ -4244,6 +4341,64 @@ interface ValidationContext {
  * ```
  */
 declare function executeRoutine(options: ExecuteRoutineOptions): Promise<RoutineExecution>;
+
+/**
+ * Execution Recorder Factory
+ *
+ * Creates ready-to-use hooks + callbacks for `executeRoutine()` that
+ * persist execution state to an IRoutineExecutionStorage backend.
+ *
+ * Replaces the manual hook wiring previously done in v25's
+ * RoutineExecutionService._runInBackground().
+ *
+ * @example
+ * ```typescript
+ * const record = createRoutineExecutionRecord(definition, connector, model);
+ * const execId = await storage.insert(userId, record);
+ * const recorder = createExecutionRecorder({ storage, executionId: execId });
+ *
+ * executeRoutine({
+ *   definition, agent, inputs,
+ *   hooks: recorder.hooks,
+ *   onTaskStarted: recorder.onTaskStarted,
+ *   onTaskComplete: recorder.onTaskComplete,
+ *   onTaskFailed: recorder.onTaskFailed,
+ *   onTaskValidation: recorder.onTaskValidation,
+ * })
+ *   .then(exec => recorder.finalize(exec))
+ *   .catch(err => recorder.finalize(null, err));
+ * ```
+ */
+
+interface ExecutionRecorderOptions {
+    /** Storage backend for persisting execution state. */
+    storage: IRoutineExecutionStorage;
+    /** ID of the execution record (must already be inserted). */
+    executionId: string;
+    /** Optional prefix for log messages. */
+    logPrefix?: string;
+    /** Max length for truncated tool args/results in steps. Default: 500. */
+    maxTruncateLength?: number;
+}
+interface ExecutionRecorder {
+    /** Hook config to pass to executeRoutine(). */
+    hooks: HookConfig;
+    /** Callback for onTaskStarted. */
+    onTaskStarted: (task: Task, execution: RoutineExecution) => void;
+    /** Callback for onTaskComplete. */
+    onTaskComplete: (task: Task, execution: RoutineExecution) => void;
+    /** Callback for onTaskFailed. */
+    onTaskFailed: (task: Task, execution: RoutineExecution) => void;
+    /** Callback for onTaskValidation. */
+    onTaskValidation: (task: Task, result: TaskValidationResult, execution: RoutineExecution) => void;
+    /** Call after executeRoutine() resolves/rejects to write final status. */
+    finalize: (execution: RoutineExecution | null, error?: Error) => Promise<void>;
+}
+/**
+ * Create an ExecutionRecorder that wires hooks + callbacks to persist
+ * execution state via the provided storage backend.
+ */
+declare function createExecutionRecorder(options: ExecutionRecorderOptions): ExecutionRecorder;
 
 /**
  * BasePluginNextGen - Base class for context plugins
@@ -13418,7 +13573,13 @@ interface ReadFileArgs {
     siteId?: string;
     targetUser?: string;
 }
-declare function createMicrosoftReadFileTool(connector: Connector, userId?: string): ToolFunction<ReadFileArgs, MicrosoftReadFileResult>;
+interface MicrosoftReadFileConfig {
+    /** Default max file size in bytes (default: 50 MB). Applied when no per-extension limit matches. */
+    maxFileSizeBytes?: number;
+    /** Per-extension size limits in bytes, e.g. `{ '.pptx': 200 * 1024 * 1024 }`. Merged with built-in defaults. */
+    fileSizeLimits?: Record<string, number>;
+}
+declare function createMicrosoftReadFileTool(connector: Connector, userId?: string, config?: MicrosoftReadFileConfig): ToolFunction<ReadFileArgs, MicrosoftReadFileResult>;
 
 /**
  * Microsoft Graph - List Files Tool
@@ -13832,7 +13993,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-26T17:36:55.085Z
+ * Generated at: 2026-02-26T19:01:58.591Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -14486,4 +14647,76 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, AuthIdentity, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, CompactionContext, CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, ConsolidationResult, Content, ContextBudget$1 as ContextBudget, ContextEvents, ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, ContextSessionMetadata, ContextSessionSummary, ContextStorageListOptions, type ControlFlowResult, type ControlFlowSource, type ConversationMessage, type CreateConnectorOptions, type CustomToolDefinition, type CustomToolListOptions, type CustomToolMetaToolsOptions, type CustomToolMetadata, type CustomToolSummary, type CustomToolTestCase, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DesktopGetCursorResult, type DesktopGetScreenSizeResult, type DesktopKeyboardKeyArgs, type DesktopKeyboardKeyResult, type DesktopKeyboardTypeArgs, type DesktopKeyboardTypeResult, type DesktopMouseClickArgs, type DesktopMouseClickResult, type DesktopMouseDragArgs, type DesktopMouseDragResult, type DesktopMouseMoveArgs, type DesktopMouseMoveResult, type DesktopMouseScrollArgs, type DesktopMouseScrollResult, type DesktopPoint, type DesktopScreenSize, type DesktopScreenshot, type DesktopScreenshotArgs, type DesktopScreenshotResult, type DesktopToolConfig, type DesktopToolName, type DesktopWindow, type DesktopWindowFocusArgs, type DesktopWindowFocusResult, type DesktopWindowListResult, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, type ExecuteRoutineOptions, ExecutionContext, ExecutionMetrics, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileCustomToolStorage, type FileCustomToolStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileRoutineDefinitionStorage, type FileRoutineDefinitionStorageConfig, FileStorage, type FileStorageConfig, FileUserInfoStorage, type FileUserInfoStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GraphDriveItem, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, HookName, type HydrateOptions, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, IContextPluginNextGen, type IContextSnapshot, IContextStorage, type IContextStrategy, type ICustomToolStorage, type IDesktopDriver, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, type IPluginSnapshot, IProvider, type IResearchSource, type IRoutineDefinitionStorage, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IToolSnapshot, type IUserInfoStorage, type IVideoModelDescription, type IVideoProvider, type IViewContextComponent, type IViewContextData, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, type MeetingSlotSuggestion, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, type MicrosoftCreateMeetingResult, type MicrosoftDraftEmailResult, type MicrosoftEditMeetingResult, type MicrosoftFindSlotsResult, type MicrosoftGetTranscriptResult, type MicrosoftListFilesResult, type MicrosoftReadFileResult, type MicrosoftSearchFilesResult, type MicrosoftSendEmailResult, ModelCapabilities, ModelNotSupportedError, type MouseButton, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, NutTreeDriver, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginExecutionContext, PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ROUTINE_KEYS, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, type RoutineDefinition, type RoutineDefinitionInput, type RoutineExecution, type RoutineExecutionStatus, type RoutineParameter, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedUserInfoState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StorageConfig, type StorageContext, StorageRegistry, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, type SubRoutineSpec, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskControlFlow, type TaskExecution, type TaskFailure, type TaskFoldFlow, type TaskInput, type TaskMapFlow, type TaskSourceRef, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskUntilFlow, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, type ToolSource, ToolTimeoutError, type TransportConfig, TruncateCompactor, type UserInfoEntry, type UserInfoPluginConfig, UserInfoPluginNextGen, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, type ValidationContext, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createMicrosoftListFilesTool, createMicrosoftReadFileTool, createMicrosoftSearchFilesTool, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, developerTools, documentToContent, editFile, encodeSharingUrl, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, formatAttendees, formatFileSize, formatPluginDisplayName, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getDrivePrefix, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isExcludedExtension, isMicrosoftFileUrl, isTaskBlocked, isTeamsMeetingUrl, isTerminalStatus, isWebUrl, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveFileEndpoints, resolveFlowSource, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, resolveTemplates, retryWithBackoff, sanitizeToolName, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+/**
+ * Scheduler interface for running routines on a timer.
+ *
+ * Supports interval, one-time (timestamp), and cron schedules.
+ * Implementations may support all or a subset of schedule types.
+ */
+
+interface ScheduleHandle {
+    id: string;
+    cancel(): void;
+}
+interface ScheduleSpec {
+    /** Cron expression (e.g. '0 9 * * 1-5'). Not all implementations support this. */
+    cron?: string;
+    /** Repeat every N milliseconds. */
+    intervalMs?: number;
+    /** Fire once at this Unix timestamp (ms). */
+    once?: number;
+    /** IANA timezone for cron expressions (e.g. 'America/New_York'). */
+    timezone?: string;
+}
+interface IScheduler extends IDisposable {
+    /** Schedule a callback. Returns a handle to cancel it. */
+    schedule(id: string, spec: ScheduleSpec, callback: () => void | Promise<void>): ScheduleHandle;
+    /** Cancel a scheduled callback by ID. */
+    cancel(id: string): void;
+    /** Cancel all scheduled callbacks. */
+    cancelAll(): void;
+    /** Check if a schedule exists by ID. */
+    has(id: string): boolean;
+}
+
+/**
+ * SimpleScheduler — built-in scheduler using setInterval / setTimeout.
+ *
+ * Supports `intervalMs` and `once` schedule types.
+ * Throws for `cron` — use a cron-capable implementation instead.
+ */
+
+declare class SimpleScheduler implements IScheduler {
+    private timers;
+    private _isDestroyed;
+    schedule(id: string, spec: ScheduleSpec, callback: () => void | Promise<void>): ScheduleHandle;
+    cancel(id: string): void;
+    cancelAll(): void;
+    has(id: string): boolean;
+    destroy(): void;
+    get isDestroyed(): boolean;
+}
+
+/**
+ * EventEmitterTrigger — simple typed event emitter for routine triggers.
+ *
+ * Consumers call `emit()` from their webhook/queue/signal handlers
+ * to trigger routine execution.
+ */
+
+declare class EventEmitterTrigger implements IDisposable {
+    private listeners;
+    private _isDestroyed;
+    /**
+     * Register a listener for an event. Returns an unsubscribe function.
+     */
+    on(event: string, callback: (payload: unknown) => void | Promise<void>): () => void;
+    /**
+     * Emit an event to all registered listeners.
+     */
+    emit(event: string, payload?: unknown): void;
+    destroy(): void;
+    get isDestroyed(): boolean;
+}
+
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, type AgentConfig$1 as AgentConfig, AgentContextNextGen, AgentContextNextGenConfig, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, AgentEvents, type AgentMetrics, type AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, type ApprovalCacheEntry, type ApprovalDecision, ApproximateTokenEstimator, AudioFormat, AuditEntry, AuthIdentity, type AuthTemplate, type AuthTemplateField, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BasePluginNextGen, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, type BeforeExecuteResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, CompactionContext, CompactionResult, Connector, ConnectorAccessContext, ConnectorAuth, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, type ConnectorToolEntry, ConnectorTools, type ConnectorToolsOptions, ConsoleMetrics, ConsolidationResult, Content, ContextBudget$1 as ContextBudget, ContextEvents, ContextFeatures, type ContextManagerConfig, type ContextOverflowBudget, ContextOverflowError, ContextSessionMetadata, ContextSessionSummary, ContextStorageListOptions, type ControlFlowResult, type ControlFlowSource, type ConversationMessage, type CreateConnectorOptions, type CustomToolDefinition, type CustomToolListOptions, type CustomToolMetaToolsOptions, type CustomToolMetadata, type CustomToolSummary, type CustomToolTestCase, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, type DefaultAllowlistedTool, DefaultCompactionStrategy, type DefaultCompactionStrategyConfig, DependencyCycleError, type DesktopGetCursorResult, type DesktopGetScreenSizeResult, type DesktopKeyboardKeyArgs, type DesktopKeyboardKeyResult, type DesktopKeyboardTypeArgs, type DesktopKeyboardTypeResult, type DesktopMouseClickArgs, type DesktopMouseClickResult, type DesktopMouseDragArgs, type DesktopMouseDragResult, type DesktopMouseMoveArgs, type DesktopMouseMoveResult, type DesktopMouseScrollArgs, type DesktopMouseScrollResult, type DesktopPoint, type DesktopScreenSize, type DesktopScreenshot, type DesktopScreenshotArgs, type DesktopScreenshotResult, type DesktopToolConfig, type DesktopToolName, type DesktopWindow, type DesktopWindowFocusArgs, type DesktopWindowFocusResult, type DesktopWindowListResult, type DirectCallOptions, type DocumentFamily, type DocumentFormat, type DocumentImagePiece, type DocumentMetadata, type DocumentPiece, type DocumentReadOptions, DocumentReader, type DocumentReaderConfig, type DocumentResult, type DocumentSource, type DocumentTextPiece, type DocumentToContentOptions, type EditFileResult, type ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, EventEmitterTrigger, type EvictionStrategy, type ExecuteRoutineOptions, ExecutionContext, ExecutionMetrics, type ExecutionRecorder, type ExecutionRecorderOptions, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FileCustomToolStorage, type FileCustomToolStorageConfig, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, type FileMediaStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileRoutineDefinitionStorage, type FileRoutineDefinitionStorageConfig, FileStorage, type FileStorageConfig, FileUserInfoStorage, type FileUserInfoStorageConfig, type FilesystemToolConfig, type FormatDetectionResult, FormatDetector, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GitHubCreatePRResult, type GitHubGetPRResult, type GitHubPRCommentEntry, type GitHubPRCommentsResult, type GitHubPRFilesResult, type GitHubReadFileResult, type GitHubRepository, type GitHubSearchCodeResult, type GitHubSearchFilesResult, type GlobResult, type GraphDriveItem, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, HookName, type HydrateOptions, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, ICompactionStrategy, IConnectorAccessPolicy, type IConnectorConfigStorage, IConnectorRegistry, type IContextCompactor, type IContextComponent, IContextPluginNextGen, type IContextSnapshot, IContextStorage, type IContextStrategy, type ICustomToolStorage, type IDesktopDriver, type IDisposable, type IDocumentTransformer, type IFormatHandler, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type IMCPClient, type IMediaStorage as IMediaOutputHandler, type IMediaStorage, type IMemoryStorage, type IPersistentInstructionsStorage, type IPlanStorage, type IPluginSnapshot, IProvider, type IResearchSource, type IRoutineDefinitionStorage, type IRoutineExecutionStorage, type ISTTModelDescription, type IScheduler, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator$1 as ITokenEstimator, ITokenStorage, type IToolExecutionPipeline, type IToolExecutionPlugin, type IToolExecutor, type IToolSnapshot, type IUserInfoStorage, type IVideoModelDescription, type IVideoProvider, type IViewContextComponent, type IViewContextData, type IVoiceInfo, type ImageFilterOptions, type InContextEntry, type InContextMemoryConfig, InContextMemoryPluginNextGen, type InContextPriority, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type InstructionEntry, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, type LogEntry, type LogLevel, type LoggerConfig, LoggingPlugin, type LoggingPluginOptions, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, type MediaStorageMetadata as MediaOutputMetadata, type MediaStorageResult as MediaOutputResult, type MediaStorageEntry, type MediaStorageListOptions, type MediaStorageMetadata, type MediaStorageResult, type MeetingSlotSuggestion, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, type MicrosoftCreateMeetingResult, type MicrosoftDraftEmailResult, type MicrosoftEditMeetingResult, type MicrosoftFindSlotsResult, type MicrosoftGetTranscriptResult, type MicrosoftListFilesResult, type MicrosoftReadFileResult, type MicrosoftSearchFilesResult, type MicrosoftSendEmailResult, ModelCapabilities, ModelNotSupportedError, type MouseButton, type EvictionStrategy$1 as NextGenEvictionStrategy, NoOpMetrics, NutTreeDriver, type OAuthConfig, type OAuthFlow, OAuthManager, OutputItem, ParallelTasksError, type PermissionCheckContext, type PermissionCheckResult, type PermissionManagerEvent, type PermissionScope, type PersistentInstructionsConfig, PersistentInstructionsPluginNextGen, type PieceMetadata, type Plan, type PlanConcurrency, type PlanInput, type PlanStatus, PlanningAgent, type PlanningAgentConfig, type PluginExecutionContext, PreparedContext, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ROUTINE_KEYS, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, type RiskLevel, type RoutineDefinition, type RoutineDefinitionInput, type RoutineExecution, type RoutineExecutionRecord, type RoutineExecutionStatus, type RoutineExecutionStep, type RoutineParameter, type RoutineStepType, type RoutineTaskResult, type RoutineTaskSnapshot, SIMPLE_ICONS_CDN, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScheduleHandle, type ScheduleSpec, ScopedConnectorRegistry, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedApprovalEntry, type SerializedApprovalState, SerializedContextState, type SerializedHistoryState, type SerializedInContextMemoryState, type SerializedPersistentInstructionsState, type SerializedToolState, type SerializedUserInfoState, type SerializedWorkingMemoryState, SerperProvider, ServiceCategory, type ServiceToolFactory, type ShellToolConfig, type SimpleIcon, SimpleScheduler, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StorageConfig, type StorageContext, StorageRegistry, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, StoredContextSession, type StoredToken, type StrategyInfo, StrategyRegistry, type StrategyRegistryEntry, StreamEvent, StreamEventType, StreamHelpers, StreamState, type SubRoutineSpec, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskControlFlow, type TaskExecution, type TaskFailure, type TaskFoldFlow, type TaskInput, type TaskMapFlow, type TaskSourceRef, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskUntilFlow, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, type TemplateCredentials, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolExecutionPipeline, type ToolExecutionPipelineOptions, ToolFunction, ToolManager, type ToolManagerConfig, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolPermissionConfig, ToolPermissionManager, type ToolRegistration, ToolRegistry, type ToolRegistryEntry, ToolResult, type ToolSelectionContext, type ToolSource, ToolTimeoutError, type TransportConfig, TruncateCompactor, type UserInfoEntry, type UserInfoPluginConfig, UserInfoPluginNextGen, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, type ValidationContext, Vendor, type VendorInfo, type VendorLogo, VendorOptionSchema, type VendorRegistryEntry, type VendorTemplate, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WorkingMemoryPluginConfig, WorkingMemoryPluginNextGen, type WriteFileResult, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createExecutionRecorder, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createMicrosoftListFilesTool, createMicrosoftReadFileTool, createMicrosoftSearchFilesTool, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createRoutineExecutionRecord, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTaskSnapshots, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, developerTools, documentToContent, editFile, encodeSharingUrl, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, formatAttendees, formatFileSize, formatPluginDisplayName, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getDrivePrefix, getMediaOutputHandler, getMediaStorage, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isExcludedExtension, isMicrosoftFileUrl, isTaskBlocked, isTeamsMeetingUrl, isTerminalStatus, isWebUrl, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveFileEndpoints, resolveFlowSource, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, resolveTemplates, retryWithBackoff, sanitizeToolName, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

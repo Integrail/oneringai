@@ -25764,6 +25764,261 @@ async function executeRoutine(options) {
   }
 }
 
+// src/core/createExecutionRecorder.ts
+init_Logger();
+function truncate(value, maxLen) {
+  const str = typeof value === "string" ? value : JSON.stringify(value);
+  if (!str) return "";
+  return str.length > maxLen ? str.slice(0, maxLen) + "...(truncated)" : str;
+}
+function safeCall(fn, prefix) {
+  try {
+    const result = fn();
+    if (result && typeof result.catch === "function") {
+      result.catch((err) => {
+        exports.logger.debug({ error: err.message }, `${prefix} async error`);
+      });
+    }
+  } catch (err) {
+    exports.logger.debug({ error: err.message }, `${prefix} sync error`);
+  }
+}
+function createExecutionRecorder(options) {
+  const { storage, executionId, logPrefix = "[Recorder]", maxTruncateLength = 500 } = options;
+  const log = exports.logger.child({ executionId });
+  let currentTaskName = "(unknown)";
+  function pushStep(step) {
+    safeCall(() => storage.pushStep(executionId, step), `${logPrefix} pushStep`);
+  }
+  function heartbeat() {
+    safeCall(
+      () => storage.update(executionId, { lastActivityAt: Date.now() }),
+      `${logPrefix} heartbeat`
+    );
+  }
+  const hooks = {
+    "before:llm": (ctx) => {
+      pushStep({
+        timestamp: Date.now(),
+        taskName: currentTaskName,
+        type: "llm.start",
+        data: { iteration: ctx.iteration }
+      });
+      return {};
+    },
+    "after:llm": (ctx) => {
+      pushStep({
+        timestamp: Date.now(),
+        taskName: currentTaskName,
+        type: "llm.complete",
+        data: {
+          iteration: ctx.iteration,
+          duration: ctx.duration,
+          tokens: ctx.response?.usage
+        }
+      });
+      return {};
+    },
+    "before:tool": (ctx) => {
+      pushStep({
+        timestamp: Date.now(),
+        taskName: currentTaskName,
+        type: "tool.start",
+        data: {
+          toolName: ctx.toolCall.function.name,
+          args: truncate(ctx.toolCall.function.arguments, maxTruncateLength)
+        }
+      });
+      return {};
+    },
+    "after:tool": (ctx) => {
+      pushStep({
+        timestamp: Date.now(),
+        taskName: currentTaskName,
+        type: "tool.call",
+        data: {
+          toolName: ctx.toolCall.function.name,
+          args: truncate(ctx.toolCall.function.arguments, maxTruncateLength),
+          result: truncate(ctx.result?.content, maxTruncateLength),
+          error: ctx.result?.error ? true : void 0
+        }
+      });
+      return {};
+    },
+    "after:execution": () => {
+      pushStep({
+        timestamp: Date.now(),
+        taskName: currentTaskName,
+        type: "iteration.complete"
+      });
+    },
+    "pause:check": () => {
+      heartbeat();
+      return { shouldPause: false };
+    }
+  };
+  const onTaskStarted = (task, execution) => {
+    currentTaskName = task.name;
+    const now = Date.now();
+    safeCall(
+      () => storage.updateTask(executionId, task.name, {
+        status: "in_progress",
+        startedAt: now,
+        attempts: task.attempts
+      }),
+      `${logPrefix} onTaskStarted`
+    );
+    pushStep({
+      timestamp: now,
+      taskName: task.name,
+      type: "task.started",
+      data: { taskId: task.id }
+    });
+    if (task.controlFlow) {
+      pushStep({
+        timestamp: now,
+        taskName: task.name,
+        type: "control_flow.started",
+        data: { flowType: task.controlFlow.type }
+      });
+    }
+    safeCall(
+      () => storage.update(executionId, {
+        progress: execution.progress,
+        lastActivityAt: now
+      }),
+      `${logPrefix} onTaskStarted progress`
+    );
+  };
+  const onTaskComplete = (task, execution) => {
+    const now = Date.now();
+    safeCall(
+      () => storage.updateTask(executionId, task.name, {
+        status: "completed",
+        completedAt: now,
+        attempts: task.attempts,
+        result: task.result ? {
+          success: true,
+          output: truncate(task.result.output, maxTruncateLength),
+          validationScore: task.result.validationScore,
+          validationExplanation: task.result.validationExplanation
+        } : void 0
+      }),
+      `${logPrefix} onTaskComplete`
+    );
+    pushStep({
+      timestamp: now,
+      taskName: task.name,
+      type: "task.completed",
+      data: {
+        taskId: task.id,
+        validationScore: task.result?.validationScore
+      }
+    });
+    if (task.controlFlow) {
+      pushStep({
+        timestamp: now,
+        taskName: task.name,
+        type: "control_flow.completed",
+        data: { flowType: task.controlFlow.type }
+      });
+    }
+    safeCall(
+      () => storage.update(executionId, {
+        progress: execution.progress,
+        lastActivityAt: now
+      }),
+      `${logPrefix} onTaskComplete progress`
+    );
+  };
+  const onTaskFailed = (task, execution) => {
+    const now = Date.now();
+    safeCall(
+      () => storage.updateTask(executionId, task.name, {
+        status: "failed",
+        completedAt: now,
+        attempts: task.attempts,
+        result: task.result ? {
+          success: false,
+          error: task.result.error,
+          validationScore: task.result.validationScore,
+          validationExplanation: task.result.validationExplanation
+        } : void 0
+      }),
+      `${logPrefix} onTaskFailed`
+    );
+    pushStep({
+      timestamp: now,
+      taskName: task.name,
+      type: "task.failed",
+      data: {
+        taskId: task.id,
+        error: task.result?.error,
+        attempts: task.attempts
+      }
+    });
+    safeCall(
+      () => storage.update(executionId, {
+        progress: execution.progress,
+        lastActivityAt: now
+      }),
+      `${logPrefix} onTaskFailed progress`
+    );
+  };
+  const onTaskValidation = (task, result, _execution) => {
+    pushStep({
+      timestamp: Date.now(),
+      taskName: task.name,
+      type: "task.validation",
+      data: {
+        taskId: task.id,
+        isComplete: result.isComplete,
+        completionScore: result.completionScore,
+        explanation: truncate(result.explanation, maxTruncateLength)
+      }
+    });
+  };
+  const finalize = async (execution, error) => {
+    const now = Date.now();
+    try {
+      if (error || !execution) {
+        await storage.update(executionId, {
+          status: "failed",
+          error: error?.message ?? "Unknown error",
+          completedAt: now,
+          lastActivityAt: now
+        });
+        if (error) {
+          await storage.pushStep(executionId, {
+            timestamp: now,
+            taskName: currentTaskName,
+            type: "execution.error",
+            data: { error: error.message }
+          });
+        }
+      } else {
+        await storage.update(executionId, {
+          status: execution.status,
+          progress: execution.progress,
+          error: execution.error,
+          completedAt: execution.completedAt ?? now,
+          lastActivityAt: now
+        });
+      }
+    } catch (err) {
+      log.error({ error: err.message }, `${logPrefix} finalize error`);
+    }
+  };
+  return {
+    hooks,
+    onTaskStarted,
+    onTaskComplete,
+    onTaskFailed,
+    onTaskValidation,
+    finalize
+  };
+}
+
 // src/core/index.ts
 init_constants();
 (class {
@@ -39088,6 +39343,38 @@ var InMemoryHistoryStorage = class {
     this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
+
+// src/domain/entities/RoutineExecutionRecord.ts
+function createTaskSnapshots(definition) {
+  return definition.tasks.map((task) => ({
+    taskId: task.id ?? task.name,
+    name: task.name,
+    description: task.description,
+    status: "pending",
+    attempts: 0,
+    maxAttempts: task.maxAttempts ?? 3,
+    controlFlowType: task.controlFlow?.type
+  }));
+}
+function createRoutineExecutionRecord(definition, connectorName, model, trigger) {
+  const now = Date.now();
+  const executionId = `rexec-${now}-${Math.random().toString(36).substr(2, 9)}`;
+  return {
+    executionId,
+    routineId: definition.id,
+    routineName: definition.name,
+    status: "running",
+    progress: 0,
+    tasks: createTaskSnapshots(definition),
+    steps: [],
+    taskCount: definition.tasks.length,
+    connectorName,
+    model,
+    startedAt: now,
+    lastActivityAt: now,
+    trigger: trigger ?? { type: "manual" }
+  };
+}
 function getDefaultBaseDirectory3() {
   const platform2 = process.platform;
   if (platform2 === "win32") {
@@ -49266,7 +49553,17 @@ async function resolveMeetingId(connector, input, prefix, effectiveUserId, effec
     subject: meetings.value[0].subject
   };
 }
-var MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+var DEFAULT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+var DEFAULT_FILE_SIZE_LIMITS = {
+  ".pptx": 100 * 1024 * 1024,
+  // 100 MB — presentations are image-heavy
+  ".ppt": 100 * 1024 * 1024,
+  ".odp": 100 * 1024 * 1024
+};
+function getFileSizeLimit(ext, overrides, defaultLimit) {
+  const merged = { ...DEFAULT_FILE_SIZE_LIMITS, ...overrides };
+  return merged[ext.toLowerCase()] ?? defaultLimit ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+}
 var SUPPORTED_EXTENSIONS = /* @__PURE__ */ new Set([
   ".docx",
   ".pptx",
@@ -50043,8 +50340,10 @@ EXAMPLES:
 }
 
 // src/tools/microsoft/readFile.ts
-function createMicrosoftReadFileTool(connector, userId) {
+function createMicrosoftReadFileTool(connector, userId, config) {
   const reader = DocumentReader.create();
+  const defaultLimit = config?.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+  const sizeOverrides = config?.fileSizeLimits;
   return {
     definition: {
       type: "function",
@@ -50065,7 +50364,7 @@ Use this tool when you need to read the contents of a document stored in OneDriv
 
 When given a web URL, the tool automatically resolves it to the correct Graph API call \u2014 no need to manually extract drive or item IDs.
 
-**Maximum file size:** 10 MB. For larger files, use the search or list tools to find smaller alternatives.
+**Maximum file size:** 50 MB (100 MB for presentations). For larger files, use the search or list tools to find smaller alternatives.
 
 **Returns:** The file content as markdown text, along with metadata (filename, size, MIME type, webUrl). For spreadsheets, each sheet becomes a markdown table. For presentations, each slide becomes a section.`,
         parameters: {
@@ -50140,15 +50439,16 @@ When given a web URL, the tool automatically resolves it to the correct Graph AP
             error: `"${metadata.name}" is a folder, not a file. Use the list_files tool to browse folder contents.`
           };
         }
-        if (metadata.size > MAX_FILE_SIZE_BYTES) {
+        const ext = getExtension(metadata.name);
+        const sizeLimit = getFileSizeLimit(ext, sizeOverrides, defaultLimit);
+        if (metadata.size > sizeLimit) {
           return {
             success: false,
             filename: metadata.name,
             sizeBytes: metadata.size,
-            error: `File "${metadata.name}" is ${formatFileSize(metadata.size)}, which exceeds the ${formatFileSize(MAX_FILE_SIZE_BYTES)} limit. Consider downloading a smaller version or using the search tool to find an alternative.`
+            error: `File "${metadata.name}" is ${formatFileSize(metadata.size)}, which exceeds the ${formatFileSize(sizeLimit)} limit for ${ext || "this file type"}. Consider downloading a smaller version or using the search tool to find an alternative.`
           };
         }
-        const ext = getExtension(metadata.name);
         if (ext && !SUPPORTED_EXTENSIONS.has(ext) && !FormatDetector.isBinaryDocumentFormat(ext)) {
           return {
             success: false,
@@ -52895,6 +53195,127 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
+// src/infrastructure/scheduling/SimpleScheduler.ts
+var SimpleScheduler = class {
+  timers = /* @__PURE__ */ new Map();
+  _isDestroyed = false;
+  schedule(id, spec, callback) {
+    if (this._isDestroyed) throw new Error("Scheduler has been destroyed");
+    if (spec.cron) {
+      throw new Error(
+        `SimpleScheduler does not support cron expressions. Use a cron-capable scheduler implementation (e.g. node-cron, croner) or convert to intervalMs.`
+      );
+    }
+    if (this.timers.has(id)) {
+      this.cancel(id);
+    }
+    if (spec.intervalMs != null) {
+      const timer = setInterval(() => {
+        try {
+          const result = callback();
+          if (result && typeof result.catch === "function") {
+            result.catch(() => {
+            });
+          }
+        } catch {
+        }
+      }, spec.intervalMs);
+      this.timers.set(id, { timer, type: "interval" });
+    } else if (spec.once != null) {
+      const delay = Math.max(0, spec.once - Date.now());
+      const timer = setTimeout(() => {
+        this.timers.delete(id);
+        try {
+          const result = callback();
+          if (result && typeof result.catch === "function") {
+            result.catch(() => {
+            });
+          }
+        } catch {
+        }
+      }, delay);
+      this.timers.set(id, { timer, type: "timeout" });
+    } else {
+      throw new Error("ScheduleSpec must have at least one of: cron, intervalMs, once");
+    }
+    return {
+      id,
+      cancel: () => this.cancel(id)
+    };
+  }
+  cancel(id) {
+    const entry = this.timers.get(id);
+    if (!entry) return;
+    if (entry.type === "interval") {
+      clearInterval(entry.timer);
+    } else {
+      clearTimeout(entry.timer);
+    }
+    this.timers.delete(id);
+  }
+  cancelAll() {
+    for (const [id] of this.timers) {
+      this.cancel(id);
+    }
+  }
+  has(id) {
+    return this.timers.has(id);
+  }
+  destroy() {
+    if (this._isDestroyed) return;
+    this.cancelAll();
+    this._isDestroyed = true;
+  }
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+};
+
+// src/infrastructure/triggers/EventEmitterTrigger.ts
+var EventEmitterTrigger = class {
+  listeners = /* @__PURE__ */ new Map();
+  _isDestroyed = false;
+  /**
+   * Register a listener for an event. Returns an unsubscribe function.
+   */
+  on(event, callback) {
+    if (this._isDestroyed) throw new Error("EventEmitterTrigger has been destroyed");
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, /* @__PURE__ */ new Set());
+    }
+    this.listeners.get(event).add(callback);
+    return () => {
+      this.listeners.get(event)?.delete(callback);
+    };
+  }
+  /**
+   * Emit an event to all registered listeners.
+   */
+  emit(event, payload) {
+    if (this._isDestroyed) return;
+    const callbacks = this.listeners.get(event);
+    if (!callbacks) return;
+    for (const cb of callbacks) {
+      try {
+        const result = cb(payload);
+        if (result && typeof result.catch === "function") {
+          result.catch(() => {
+          });
+        }
+      } catch {
+      }
+    }
+  }
+  destroy() {
+    if (this._isDestroyed) return;
+    this.listeners.clear();
+    this._isDestroyed = true;
+  }
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+};
+
 exports.AGENT_DEFINITION_FORMAT_VERSION = AGENT_DEFINITION_FORMAT_VERSION;
 exports.AIError = AIError;
 exports.APPROVAL_STATE_VERSION = APPROVAL_STATE_VERSION;
@@ -52931,6 +53352,7 @@ exports.DefaultCompactionStrategy = DefaultCompactionStrategy;
 exports.DependencyCycleError = DependencyCycleError;
 exports.DocumentReader = DocumentReader;
 exports.ErrorHandler = ErrorHandler;
+exports.EventEmitterTrigger = EventEmitterTrigger;
 exports.ExecutionContext = ExecutionContext;
 exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileAgentDefinitionStorage = FileAgentDefinitionStorage;
@@ -52996,6 +53418,7 @@ exports.ScrapeProvider = ScrapeProvider;
 exports.SearchProvider = SearchProvider;
 exports.SerperProvider = SerperProvider;
 exports.Services = Services;
+exports.SimpleScheduler = SimpleScheduler;
 exports.SpeechToText = SpeechToText;
 exports.StrategyRegistry = StrategyRegistry;
 exports.StreamEventType = StreamEventType;
@@ -53074,6 +53497,7 @@ exports.createEditFileTool = createEditFileTool;
 exports.createEditMeetingTool = createEditMeetingTool;
 exports.createEstimator = createEstimator;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
+exports.createExecutionRecorder = createExecutionRecorder;
 exports.createFileAgentDefinitionStorage = createFileAgentDefinitionStorage;
 exports.createFileContextStorage = createFileContextStorage;
 exports.createFileCustomToolStorage = createFileCustomToolStorage;
@@ -53101,11 +53525,13 @@ exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
 exports.createRoutineDefinition = createRoutineDefinition;
 exports.createRoutineExecution = createRoutineExecution;
+exports.createRoutineExecutionRecord = createRoutineExecutionRecord;
 exports.createSearchCodeTool = createSearchCodeTool;
 exports.createSearchFilesTool = createSearchFilesTool;
 exports.createSendEmailTool = createSendEmailTool;
 exports.createSpeechToTextTool = createSpeechToTextTool;
 exports.createTask = createTask;
+exports.createTaskSnapshots = createTaskSnapshots;
 exports.createTextMessage = createTextMessage;
 exports.createTextToSpeechTool = createTextToSpeechTool;
 exports.createVideoProvider = createVideoProvider;

@@ -376,9 +376,27 @@ export {
   getRoutineProgress,
 } from './domain/entities/Routine.js';
 
+// Routine Execution Records (persisted history)
+export type {
+  RoutineStepType,
+  RoutineExecutionStep,
+  RoutineTaskResult,
+  RoutineTaskSnapshot,
+  RoutineExecutionRecord,
+} from './domain/entities/RoutineExecutionRecord.js';
+
+export {
+  createRoutineExecutionRecord,
+  createTaskSnapshots,
+} from './domain/entities/RoutineExecutionRecord.js';
+
 // Routine Runner
 export { executeRoutine } from './core/routineRunner.js';
 export type { ExecuteRoutineOptions, ValidationContext } from './core/routineRunner.js';
+
+// Execution Recorder
+export { createExecutionRecorder } from './core/createExecutionRecorder.js';
+export type { ExecutionRecorderOptions, ExecutionRecorder } from './core/createExecutionRecorder.js';
 
 // Routine Control Flow
 export { resolveTemplates, ROUTINE_KEYS, resolveFlowSource } from './core/routineControlFlow.js';
@@ -1148,4 +1166,12 @@ export type { IUserInfoStorage, UserInfoEntry } from './domain/interfaces/IUserI
 export type { IRoutineDefinitionStorage } from './domain/interfaces/IRoutineDefinitionStorage.js';
 export { FileRoutineDefinitionStorage, createFileRoutineDefinitionStorage } from './infrastructure/storage/index.js';
 export type { FileRoutineDefinitionStorageConfig } from './infrastructure/storage/index.js';
+
+// RoutineExecution Storage
+export type { IRoutineExecutionStorage } from './domain/interfaces/IRoutineExecutionStorage.js';
+
+// Scheduling & Triggers
+export type { IScheduler, ScheduleHandle, ScheduleSpec } from './domain/interfaces/IScheduler.js';
+export { SimpleScheduler } from './infrastructure/scheduling/SimpleScheduler.js';
+export { EventEmitterTrigger } from './infrastructure/triggers/EventEmitterTrigger.js';
 

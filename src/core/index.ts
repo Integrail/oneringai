@@ -36,6 +36,10 @@ export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 export { executeRoutine } from './routineRunner.js';
 export type { ExecuteRoutineOptions, ValidationContext } from './routineRunner.js';
 
+// Execution Recorder
+export { createExecutionRecorder } from './createExecutionRecorder.js';
+export type { ExecutionRecorderOptions, ExecutionRecorder } from './createExecutionRecorder.js';
+
 // ============================================================================
 // AgentContextNextGen - Clean, Simple Context Management
 // ============================================================================

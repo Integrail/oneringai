@@ -15,9 +15,10 @@ import {
   getDrivePrefix,
   resolveFileEndpoints,
   formatFileSize,
+  getFileSizeLimit,
   isWebUrl,
   isMicrosoftFileUrl,
-  MAX_FILE_SIZE_BYTES,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
   SUPPORTED_EXTENSIONS,
   MicrosoftAPIError,
   type GraphDriveItem,
@@ -33,14 +34,26 @@ interface ReadFileArgs {
   targetUser?: string;
 }
 
+// ---- Config ----
+
+export interface MicrosoftReadFileConfig {
+  /** Default max file size in bytes (default: 50 MB). Applied when no per-extension limit matches. */
+  maxFileSizeBytes?: number;
+  /** Per-extension size limits in bytes, e.g. `{ '.pptx': 200 * 1024 * 1024 }`. Merged with built-in defaults. */
+  fileSizeLimits?: Record<string, number>;
+}
+
 // ---- Tool Factory ----
 
 export function createMicrosoftReadFileTool(
   connector: Connector,
   userId?: string,
+  config?: MicrosoftReadFileConfig,
 ): ToolFunction<ReadFileArgs, MicrosoftReadFileResult> {
   // Reuse a single DocumentReader instance across invocations (stateless, no resources to leak)
   const reader = DocumentReader.create();
+  const defaultLimit = config?.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+  const sizeOverrides = config?.fileSizeLimits;
 
   return {
     definition: {
@@ -62,7 +75,7 @@ Use this tool when you need to read the contents of a document stored in OneDriv
 
 When given a web URL, the tool automatically resolves it to the correct Graph API call — no need to manually extract drive or item IDs.
 
-**Maximum file size:** 10 MB. For larger files, use the search or list tools to find smaller alternatives.
+**Maximum file size:** 50 MB (100 MB for presentations). For larger files, use the search or list tools to find smaller alternatives.
 
 **Returns:** The file content as markdown text, along with metadata (filename, size, MIME type, webUrl). For spreadsheets, each sheet becomes a markdown table. For presentations, each slide becomes a section.`,
         parameters: {
@@ -166,21 +179,22 @@ When given a web URL, the tool automatically resolves it to the correct Graph AP
           };
         }
 
-        // Check file size
-        if (metadata.size > MAX_FILE_SIZE_BYTES) {
+        // Check file size (per-extension limits, then default)
+        const ext = getExtension(metadata.name);
+        const sizeLimit = getFileSizeLimit(ext, sizeOverrides, defaultLimit);
+        if (metadata.size > sizeLimit) {
           return {
             success: false,
             filename: metadata.name,
             sizeBytes: metadata.size,
             error:
               `File "${metadata.name}" is ${formatFileSize(metadata.size)}, which exceeds ` +
-              `the ${formatFileSize(MAX_FILE_SIZE_BYTES)} limit. Consider downloading a smaller version ` +
-              `or using the search tool to find an alternative.`,
+              `the ${formatFileSize(sizeLimit)} limit for ${ext || 'this file type'}. ` +
+              `Consider downloading a smaller version or using the search tool to find an alternative.`,
           };
         }
 
         // Check extension support
-        const ext = getExtension(metadata.name);
         if (ext && !SUPPORTED_EXTENSIONS.has(ext) && !FormatDetector.isBinaryDocumentFormat(ext)) {
           return {
             success: false,

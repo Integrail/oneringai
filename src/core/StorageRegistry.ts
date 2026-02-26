@@ -43,6 +43,7 @@ import type { IPersistentInstructionsStorage } from '../domain/interfaces/IPersi
 import type { IMemoryStorage } from '../domain/interfaces/IMemoryStorage.js';
 import type { IUserInfoStorage } from '../domain/interfaces/IUserInfoStorage.js';
 import type { IRoutineDefinitionStorage } from '../domain/interfaces/IRoutineDefinitionStorage.js';
+import type { IRoutineExecutionStorage } from '../domain/interfaces/IRoutineExecutionStorage.js';
 
 // ============================================================================
 // Types
@@ -79,6 +80,7 @@ export interface StorageConfig {
   workingMemory: (context?: StorageContext) => IMemoryStorage;
   userInfo: (context?: StorageContext) => IUserInfoStorage;
   routineDefinitions: (context?: StorageContext) => IRoutineDefinitionStorage;
+  routineExecutions: (context?: StorageContext) => IRoutineExecutionStorage;
 }
 
 // ============================================================================

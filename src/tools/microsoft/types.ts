@@ -456,8 +456,32 @@ export interface MicrosoftSearchFilesResult {
 
 // ---- File source resolution ----
 
-/** Maximum file size for download (10 MB) */
-export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+/** Default file size limit (50 MB) */
+export const DEFAULT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Per-extension file size limits.
+ * Presentations can be very large due to embedded images, but since we extract
+ * text/markdown only (images are discarded), larger limits are safe.
+ */
+export const DEFAULT_FILE_SIZE_LIMITS: Record<string, number> = {
+  '.pptx': 100 * 1024 * 1024,  // 100 MB — presentations are image-heavy
+  '.ppt':  100 * 1024 * 1024,
+  '.odp':  100 * 1024 * 1024,
+};
+
+/**
+ * Get the file size limit for a given extension.
+ * Checks per-extension overrides first, then falls back to the default.
+ */
+export function getFileSizeLimit(
+  ext: string,
+  overrides?: Record<string, number>,
+  defaultLimit?: number,
+): number {
+  const merged = { ...DEFAULT_FILE_SIZE_LIMITS, ...overrides };
+  return merged[ext.toLowerCase()] ?? defaultLimit ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+}
 
 /** Supported document extensions that DocumentReader can convert to markdown */
 export const SUPPORTED_EXTENSIONS = new Set([
