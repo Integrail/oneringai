@@ -8,12 +8,15 @@
  * - User preferences (theme, language, timezone)
  * - User context (location, role, permissions)
  * - User metadata (name, email, profile info)
+ * - TODO tracking (stored as entries with `todo_` key prefix)
  *
  * Storage: ~/.oneringai/users/<userId>/user_info.json
  *
  * Design:
  * - UserId passed at construction time from AgentContextNextGen._userId
  * - User data IS injected into context via getContent() (entries rendered as markdown)
+ * - TODOs rendered in a separate "## Current TODOs" section as a checklist
+ * - Internal entries (key starts with `_`) hidden from rendered output
  * - In-memory cache with lazy loading + write-through to storage
  * - Tools access current user's data only (no cross-user access)
  */
@@ -76,7 +79,35 @@ User info is automatically shown in context — no need to call user_info_get ev
 
 **Important:** Do not store sensitive information (passwords, tokens, PII) in user info. It is not encrypted and may be accessible to other parts of the system. Always follow best practices for security.
 
-**Rules after each user message:** If the user provides new information about themselves, update user info accordingly. If they ask to change or remove existing information, do that as well. Always keep user info up to date with the latest information provided by the user. Learn about the user proactively!`;
+**Rules after each user message:** If the user provides new information about themselves, update user info accordingly. If they ask to change or remove existing information, do that as well. Always keep user info up to date with the latest information provided by the user. Learn about the user proactively!
+
+## TODO Management
+
+TODOs are stored alongside user info and shown in a separate "Current TODOs" section in context.
+
+**Tools:**
+- \`todo_add(title, description?, people?, dueDate?, tags?)\`: Create a new TODO item
+- \`todo_update(id, title?, description?, people?, dueDate?, tags?, status?)\`: Update an existing TODO
+- \`todo_remove(id)\`: Delete a TODO item
+
+**Proactive creation — be helpful:**
+- If the user's message implies an action item, task, or deadline → ask "Would you like me to create a TODO for this?"
+- If the user explicitly says "remind me", "track this", "don't forget" → create a TODO immediately without asking.
+- When discussing plans with deadlines or deliverables → suggest relevant TODOs.
+- When the user mentions other people involved → include them in the \`people\` field.
+- Suggest appropriate tags based on context (e.g. "work", "personal", "urgent").
+
+**Reminder rules:**
+- Check the \`_todo_last_reminded\` entry in user info. If its value is NOT today's date (YYYY-MM-DD) AND there are overdue or soon-due items (within 2 days), proactively remind the user ONCE at the start of the conversation, then set \`_todo_last_reminded\` to today's date via \`user_info_set\`.
+- Do NOT remind again in the same day unless the user explicitly asks about their TODOs.
+- When reminding, prioritize: overdue items first, then items due today, then items due tomorrow.
+- If the user asks about their TODOs or schedule, always answer regardless of reminder status.
+- After completing a TODO, mark it as done via \`todo_update(id, status: 'done')\`. Suggest marking items done when context indicates completion.
+
+**Cleanup rules:**
+- Completed TODOs older than 48 hours (check updatedAt of done items) → auto-delete via \`todo_remove\` without asking.
+- Overdue pending TODOs (past due > 7 days) → ask the user: "This TODO is overdue by X days — still relevant or should I remove it?"
+- Run cleanup checks at the same time as reminders (once per day, using \`_todo_last_reminded\` marker).`;
 
 // ============================================================================
 // Tool Definitions
@@ -163,6 +194,109 @@ const userInfoClearDefinition = {
 };
 
 // ============================================================================
+// TODO Tool Definitions
+// ============================================================================
+
+const todoAddDefinition = {
+  type: 'function' as const,
+  function: {
+    name: 'todo_add',
+    description: 'Create a new TODO item for the user. Returns the generated todo ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Short title for the TODO (required)',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional detailed description',
+        },
+        people: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'People involved besides the current user (optional)',
+        },
+        dueDate: {
+          type: 'string',
+          description: 'Due date in ISO format YYYY-MM-DD (optional)',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Categorization tags (optional, e.g. "work", "personal", "urgent")',
+        },
+      },
+      required: ['title'],
+    },
+  },
+};
+
+const todoUpdateDefinition = {
+  type: 'function' as const,
+  function: {
+    name: 'todo_update',
+    description: 'Update an existing TODO item. Only provided fields are changed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The todo ID (e.g. "todo_a1b2c3")',
+        },
+        title: {
+          type: 'string',
+          description: 'New title',
+        },
+        description: {
+          type: 'string',
+          description: 'New description (pass empty string to clear)',
+        },
+        people: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'New people list (replaces existing)',
+        },
+        dueDate: {
+          type: 'string',
+          description: 'New due date in ISO format YYYY-MM-DD (pass empty string to clear)',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'New tags list (replaces existing)',
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'done'],
+          description: 'New status',
+        },
+      },
+      required: ['id'],
+    },
+  },
+};
+
+const todoRemoveDefinition = {
+  type: 'function' as const,
+  function: {
+    name: 'todo_remove',
+    description: 'Delete a TODO item.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The todo ID to remove (e.g. "todo_a1b2c3")',
+        },
+      },
+      required: ['id'],
+    },
+  },
+};
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -203,6 +337,57 @@ function buildStorageContext(toolContext?: ToolContext): StorageContext | undefi
   if (global) return global;
   if (toolContext?.userId) return { userId: toolContext.userId };
   return undefined;
+}
+
+// ============================================================================
+// TODO Helpers
+// ============================================================================
+
+const TODO_KEY_PREFIX = 'todo_';
+const INTERNAL_KEY_PREFIX = '_';
+
+interface TodoValue {
+  type: 'todo';
+  title: string;
+  description?: string;
+  people?: string[];
+  dueDate?: string;
+  tags?: string[];
+  status: 'pending' | 'done';
+}
+
+function isTodoEntry(entry: UserInfoEntry): boolean {
+  return entry.id.startsWith(TODO_KEY_PREFIX);
+}
+
+function isInternalEntry(entry: UserInfoEntry): boolean {
+  return entry.id.startsWith(INTERNAL_KEY_PREFIX);
+}
+
+function generateTodoId(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `${TODO_KEY_PREFIX}${id}`;
+}
+
+function renderTodoEntry(entry: UserInfoEntry): string {
+  const val = entry.value as TodoValue;
+  const checkbox = val.status === 'done' ? '[x]' : '[ ]';
+  const parts: string[] = [];
+
+  if (val.dueDate) parts.push(`due: ${val.dueDate}`);
+  if (val.people && val.people.length > 0) parts.push(`people: ${val.people.join(', ')}`);
+  const meta = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+  const tags = val.tags && val.tags.length > 0 ? ` [${val.tags.join(', ')}]` : '';
+
+  let line = `- ${checkbox} ${entry.id}: ${val.title}${meta}${tags}`;
+  if (val.description) {
+    line += `\n  ${val.description}`;
+  }
+  return line;
 }
 
 /**
@@ -300,6 +485,9 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
       this.createUserInfoGetTool(),
       this.createUserInfoRemoveTool(),
       this.createUserInfoClearTool(),
+      this.createTodoAddTool(),
+      this.createTodoUpdateTool(),
+      this.createTodoRemoveTool(),
     ];
   }
 
@@ -382,10 +570,48 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
    * Render entries as markdown for context injection
    */
   private renderContent(): string {
-    const sorted = Array.from(this._entries.values()).sort((a, b) => a.createdAt - b.createdAt);
-    return sorted
-      .map(entry => `### ${entry.id}\n${formatValue(entry.value)}`)
-      .join('\n\n');
+    const userEntries: UserInfoEntry[] = [];
+    const todoEntries: UserInfoEntry[] = [];
+
+    for (const entry of this._entries.values()) {
+      if (isTodoEntry(entry)) {
+        todoEntries.push(entry);
+      } else if (!isInternalEntry(entry)) {
+        userEntries.push(entry);
+      }
+      // Internal entries (key starts with `_`) are hidden from rendered output
+    }
+
+    const sections: string[] = [];
+
+    // User info section
+    if (userEntries.length > 0) {
+      userEntries.sort((a, b) => a.createdAt - b.createdAt);
+      sections.push(
+        userEntries.map(entry => `### ${entry.id}\n${formatValue(entry.value)}`).join('\n\n'),
+      );
+    }
+
+    // TODOs section
+    if (todoEntries.length > 0) {
+      // Sort: pending first (by due date asc, then createdAt), done last
+      todoEntries.sort((a, b) => {
+        const aVal = a.value as TodoValue;
+        const bVal = b.value as TodoValue;
+        // Pending before done
+        if (aVal.status !== bVal.status) return aVal.status === 'pending' ? -1 : 1;
+        // By due date (entries without due date go last)
+        if (aVal.dueDate && bVal.dueDate) return aVal.dueDate.localeCompare(bVal.dueDate);
+        if (aVal.dueDate) return -1;
+        if (bVal.dueDate) return 1;
+        return a.createdAt - b.createdAt;
+      });
+      sections.push(
+        '## Current TODOs\n' + todoEntries.map(renderTodoEntry).join('\n'),
+      );
+    }
+
+    return sections.join('\n\n');
   }
 
   /**
@@ -617,6 +843,203 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen {
       },
       permission: { scope: 'once', riskLevel: 'medium' },
       describeCall: () => 'clear user info',
+    };
+  }
+
+  // ============================================================================
+  // TODO Tool Factories
+  // ============================================================================
+
+  private createTodoAddTool(): ToolFunction {
+    return {
+      definition: todoAddDefinition,
+      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+        this.assertNotDestroyed();
+        await this.ensureInitialized();
+
+        const userId = context?.userId ?? this.userId;
+        const title = args.title as string;
+
+        if (!title || typeof title !== 'string' || title.trim().length === 0) {
+          return { error: 'Title is required' };
+        }
+
+        // Check maxEntries
+        if (this._entries.size >= this.maxEntries) {
+          return { error: `Maximum number of entries reached (${this.maxEntries})` };
+        }
+
+        // Generate unique ID
+        let todoId = generateTodoId();
+        while (this._entries.has(todoId)) {
+          todoId = generateTodoId();
+        }
+
+        const todoValue: TodoValue = {
+          type: 'todo',
+          title: title.trim(),
+          description: args.description ? String(args.description).trim() : undefined,
+          people: Array.isArray(args.people) ? args.people.filter((p): p is string => typeof p === 'string') : undefined,
+          dueDate: typeof args.dueDate === 'string' && args.dueDate.trim() ? args.dueDate.trim() : undefined,
+          tags: Array.isArray(args.tags) ? args.tags.filter((t): t is string => typeof t === 'string') : undefined,
+          status: 'pending',
+        };
+
+        // Check size
+        const valueSize = calculateValueSize(todoValue);
+        let currentTotal = 0;
+        for (const e of this._entries.values()) {
+          currentTotal += calculateValueSize(e.value);
+        }
+        if (currentTotal + valueSize > this.maxTotalSize) {
+          return { error: `Total size would exceed maximum (${this.maxTotalSize} bytes)` };
+        }
+
+        const now = Date.now();
+        const entry: UserInfoEntry = {
+          id: todoId,
+          value: todoValue,
+          valueType: 'object',
+          description: title.trim(),
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        this._entries.set(todoId, entry);
+        this._tokenCache = null;
+
+        await this.persistToStorage(userId);
+
+        return {
+          success: true,
+          message: `TODO '${title.trim()}' created`,
+          id: todoId,
+          todo: todoValue,
+        };
+      },
+      permission: { scope: 'always', riskLevel: 'low' },
+      describeCall: (args) => `add todo '${args.title}'`,
+    };
+  }
+
+  private createTodoUpdateTool(): ToolFunction {
+    return {
+      definition: todoUpdateDefinition,
+      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+        this.assertNotDestroyed();
+        await this.ensureInitialized();
+
+        const userId = context?.userId ?? this.userId;
+        const id = args.id as string;
+
+        if (!id || typeof id !== 'string') {
+          return { error: 'Todo ID is required' };
+        }
+
+        const entry = this._entries.get(id);
+        if (!entry || !isTodoEntry(entry)) {
+          return { error: `TODO '${id}' not found` };
+        }
+
+        const currentValue = entry.value as TodoValue;
+        const updatedValue: TodoValue = { ...currentValue };
+
+        // Apply partial updates
+        if (typeof args.title === 'string' && args.title.trim()) {
+          updatedValue.title = args.title.trim();
+        }
+        if (args.description !== undefined) {
+          updatedValue.description = typeof args.description === 'string' && args.description.trim()
+            ? args.description.trim()
+            : undefined;
+        }
+        if (args.people !== undefined) {
+          updatedValue.people = Array.isArray(args.people)
+            ? args.people.filter((p): p is string => typeof p === 'string')
+            : undefined;
+        }
+        if (args.dueDate !== undefined) {
+          updatedValue.dueDate = typeof args.dueDate === 'string' && args.dueDate.trim()
+            ? args.dueDate.trim()
+            : undefined;
+        }
+        if (args.tags !== undefined) {
+          updatedValue.tags = Array.isArray(args.tags)
+            ? args.tags.filter((t): t is string => typeof t === 'string')
+            : undefined;
+        }
+        if (args.status === 'pending' || args.status === 'done') {
+          updatedValue.status = args.status;
+        }
+
+        // Check size
+        const valueSize = calculateValueSize(updatedValue);
+        let currentTotal = 0;
+        for (const e of this._entries.values()) {
+          currentTotal += calculateValueSize(e.value);
+        }
+        const existingSize = calculateValueSize(currentValue);
+        if (currentTotal - existingSize + valueSize > this.maxTotalSize) {
+          return { error: `Total size would exceed maximum (${this.maxTotalSize} bytes)` };
+        }
+
+        const now = Date.now();
+        const updatedEntry: UserInfoEntry = {
+          ...entry,
+          value: updatedValue,
+          description: updatedValue.title,
+          updatedAt: now,
+        };
+
+        this._entries.set(id, updatedEntry);
+        this._tokenCache = null;
+
+        await this.persistToStorage(userId);
+
+        return {
+          success: true,
+          message: `TODO '${id}' updated`,
+          id,
+          todo: updatedValue,
+        };
+      },
+      permission: { scope: 'always', riskLevel: 'low' },
+      describeCall: (args) => `update todo '${args.id}'`,
+    };
+  }
+
+  private createTodoRemoveTool(): ToolFunction {
+    return {
+      definition: todoRemoveDefinition,
+      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+        this.assertNotDestroyed();
+        await this.ensureInitialized();
+
+        const userId = context?.userId ?? this.userId;
+        const id = args.id as string;
+
+        if (!id || typeof id !== 'string') {
+          return { error: 'Todo ID is required' };
+        }
+
+        const entry = this._entries.get(id);
+        if (!entry || !isTodoEntry(entry)) {
+          return { error: `TODO '${id}' not found` };
+        }
+
+        this._entries.delete(id);
+        this._tokenCache = null;
+
+        await this.persistToStorage(userId);
+
+        return {
+          success: true,
+          message: `TODO '${id}' removed`,
+          id,
+        };
+      },
+      permission: { scope: 'always', riskLevel: 'low' },
+      describeCall: (args) => `remove todo '${args.id}'`,
     };
   }
 }

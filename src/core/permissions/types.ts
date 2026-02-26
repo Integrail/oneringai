@@ -347,6 +347,11 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
   'user_info_remove',
   'user_info_clear',
 
+  // TODO tools (user-specific data - safe)
+  'todo_add',
+  'todo_update',
+  'todo_remove',
+
   // Meta-tools (internal coordination)
   '_start_planning',
   '_modify_plan',

@@ -92,15 +92,18 @@ describe('UserInfoPluginNextGen', () => {
       expect(freed).toBe(0);
     });
 
-    it('should provide 4 tools', () => {
+    it('should provide 7 tools (4 user_info + 3 todo)', () => {
       const tools = plugin.getTools();
-      expect(tools).toHaveLength(4);
+      expect(tools).toHaveLength(7);
 
       const toolNames = tools.map(t => t.definition.function.name);
       expect(toolNames).toContain('user_info_set');
       expect(toolNames).toContain('user_info_get');
       expect(toolNames).toContain('user_info_remove');
       expect(toolNames).toContain('user_info_clear');
+      expect(toolNames).toContain('todo_add');
+      expect(toolNames).toContain('todo_update');
+      expect(toolNames).toContain('todo_remove');
     });
 
     it('should have non-zero instructions token size', () => {
