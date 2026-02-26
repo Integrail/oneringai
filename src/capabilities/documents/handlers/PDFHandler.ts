@@ -46,8 +46,10 @@ export class PDFHandler implements IFormatHandler {
     const pieces: DocumentPiece[] = [];
     let pieceIndex = 0;
 
-    // unpdf requires Uint8Array, not Buffer (strict type check)
-    const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    // unpdf wraps pdf.js which transfers ArrayBuffers to workers via postMessage().
+    // Node.js Buffer uses a shared/pooled ArrayBuffer that can't be transferred.
+    // new Uint8Array(buffer) copies into a fresh standalone ArrayBuffer.
+    const data = new Uint8Array(buffer);
 
     // Extract metadata
     let metadata: any = {};

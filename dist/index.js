@@ -9960,7 +9960,7 @@ var init_PDFHandler = __esm({
         const unpdf = await getUnpdf();
         const pieces = [];
         let pieceIndex = 0;
-        const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+        const data = new Uint8Array(buffer);
         let metadata = {};
         const includeMetadata = options.formatOptions?.pdf?.includeMetadata !== false;
         if (includeMetadata) {
