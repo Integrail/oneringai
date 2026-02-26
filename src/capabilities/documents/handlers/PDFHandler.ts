@@ -46,19 +46,22 @@ export class PDFHandler implements IFormatHandler {
     const pieces: DocumentPiece[] = [];
     let pieceIndex = 0;
 
+    // unpdf requires Uint8Array, not Buffer (strict type check)
+    const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
     // Extract metadata
     let metadata: any = {};
     const includeMetadata = options.formatOptions?.pdf?.includeMetadata !== false;
     if (includeMetadata) {
       try {
-        metadata = await unpdf.getMeta(buffer);
+        metadata = await unpdf.getMeta(data);
       } catch {
         // Metadata extraction failed, continue without
       }
     }
 
     // Extract text (per page)
-    const textResult = await unpdf.extractText(buffer, { mergePages: false });
+    const textResult = await unpdf.extractText(data, { mergePages: false });
     const pages: string[] = textResult?.pages || textResult?.text
       ? (Array.isArray(textResult.text) ? textResult.text : [textResult.text])
       : [];
@@ -126,7 +129,7 @@ export class PDFHandler implements IFormatHandler {
     // Extract images if requested
     if (options.extractImages !== false) {
       try {
-        const imagesResult = await unpdf.extractImages(buffer, {});
+        const imagesResult = await unpdf.extractImages(data, {});
         const images: any[] = imagesResult?.images || [];
 
         for (const img of images) {

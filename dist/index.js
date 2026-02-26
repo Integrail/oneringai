@@ -9960,15 +9960,16 @@ var init_PDFHandler = __esm({
         const unpdf = await getUnpdf();
         const pieces = [];
         let pieceIndex = 0;
+        const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
         let metadata = {};
         const includeMetadata = options.formatOptions?.pdf?.includeMetadata !== false;
         if (includeMetadata) {
           try {
-            metadata = await unpdf.getMeta(buffer);
+            metadata = await unpdf.getMeta(data);
           } catch {
           }
         }
-        const textResult = await unpdf.extractText(buffer, { mergePages: false });
+        const textResult = await unpdf.extractText(data, { mergePages: false });
         const pages = textResult?.pages || textResult?.text ? Array.isArray(textResult.text) ? textResult.text : [textResult.text] : [];
         const requestedPages = options.pages;
         const pageEntries = pages.map((text, i) => ({ text, pageNum: i + 1 }));
@@ -10021,7 +10022,7 @@ var init_PDFHandler = __esm({
         }
         if (options.extractImages !== false) {
           try {
-            const imagesResult = await unpdf.extractImages(buffer, {});
+            const imagesResult = await unpdf.extractImages(data, {});
             const images = imagesResult?.images || [];
             for (const img of images) {
               if (!img.data) continue;
@@ -50134,7 +50135,7 @@ When given a web URL, the tool automatically resolves it to the correct Graph AP
           throw new MicrosoftAPIError(response.status, response.statusText, await response.text());
         }
         const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const buffer = new Uint8Array(arrayBuffer);
         const result = await reader.read(
           { type: "buffer", buffer, filename: metadata.name },
           { extractImages: false }

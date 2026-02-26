@@ -205,7 +205,7 @@ When given a web URL, the tool automatically resolves it to the correct Graph AP
         }
 
         const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const buffer = new Uint8Array(arrayBuffer);
 
         // 4. Convert to markdown via DocumentReader
         const result = await reader.read(
