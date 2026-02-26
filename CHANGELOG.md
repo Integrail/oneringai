@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-02-26
+
+### Changed
+
+- **Hosea: Migrated UnifiedToolCatalog to ToolCatalogRegistry** — Replaced Hosea's parallel tool catalog system (`UnifiedToolCatalog` + 3 provider classes) with the core `ToolCatalogRegistry`. Browser and desktop tool categories are now registered at startup via `registerHoseaTools()`. Deleted `UnifiedToolCatalog.ts`, `OneRingToolProvider.ts`, `BrowserToolProvider.ts`, `DesktopToolProvider.ts`.
+
+- **ToolCatalogRegistry: Factory support + grouped resolution** — Extended `CatalogToolEntry` with optional fields for app-level extensions:
+  - `createTool?: (ctx) => ToolFunction` — factory for runtime tool creation (e.g., browser tools needing BrowserService)
+  - `source?`, `connectorName?`, `serviceType?`, `connectorServiceTypes?` — metadata fields for UI and resolution
+  - `tool` field is now optional (factory-only entries supported)
+  - New `resolveToolsGrouped()` method splits tools into `plain` vs `byConnector` groups
+  - `resolveTools()` now accepts optional `context` for factory resolution
+
 ## [0.4.4] - 2026-02-26
 
 ### Changed

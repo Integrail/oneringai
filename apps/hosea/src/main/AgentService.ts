@@ -83,12 +83,9 @@ import {
   type RoutineDefinitionInput,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
-import {
-  UnifiedToolCatalog,
-  OneRingToolProvider,
-  BrowserToolProvider,
-  type UnifiedToolEntry,
-} from './tools/index.js';
+import { ToolCatalogRegistry } from '@everworker/oneringai';
+import type { CatalogToolEntry } from '@everworker/oneringai';
+import { registerHoseaTools, updateBrowserService, invalidateHoseaTools } from './tools/index.js';
 import { HoseaUIPlugin, type DynamicUIContent } from './plugins/index.js';
 import { VendorOAuthService } from './VendorOAuthService.js';
 import { OAuthCallbackServer } from './OAuthCallbackServer.js';
@@ -599,10 +596,7 @@ export class AgentService {
   private ollamaService: import('./OllamaService.js').OllamaService | null = null;
   // Vendor OAuth service for authorization_code and client_credentials flows
   private vendorOAuthService = new VendorOAuthService();
-  // Unified tool catalog (combines oneringai + hosea tools)
-  private toolCatalog: UnifiedToolCatalog;
-  private oneRingToolProvider: OneRingToolProvider;
-  private browserToolProvider: BrowserToolProvider;
+  // Tool catalog uses ToolCatalogRegistry (static global)
   // Stream emitter for sending chunks to renderer (set by main process)
   private streamEmitter: ((instanceId: string, chunk: StreamChunk) => void) | null = null;
   // Compaction event log (last N events for each instance/agent)
@@ -733,16 +727,8 @@ export class AgentService {
       () => new FileAgentDefinitionStorage({ baseDirectory: this.dataDir }),
     );
 
-    // Initialize UnifiedToolCatalog with providers
-    this.toolCatalog = new UnifiedToolCatalog();
-
-    // Register OneRing tools (from @everworker/oneringai library)
-    this.oneRingToolProvider = new OneRingToolProvider();
-    this.toolCatalog.registerProvider(this.oneRingToolProvider);
-
-    // Register Browser tools provider (tools will be available once BrowserService is set)
-    this.browserToolProvider = new BrowserToolProvider();
-    this.toolCatalog.registerProvider(this.browserToolProvider);
+    // Register Hosea-specific tool categories (browser, desktop) with core ToolCatalogRegistry
+    registerHoseaTools();
 
     // Create the ready promise for deferred initialization
     this._readyPromise = new Promise<void>((resolve) => {
@@ -886,8 +872,9 @@ export class AgentService {
         logger.debug(`  connector=${name}: ${tools.length} tools [${tools.map(t => t.definition.function.name).join(', ')}]`);
       }
 
-      this.oneRingToolProvider.invalidateCache();
-      this.toolCatalog.invalidateCache();
+      ToolCatalogRegistry.reset();
+      ToolCatalogRegistry.ensureInitialized();
+      invalidateHoseaTools();
 
       const allTools = ToolRegistry.getAllTools();
       const connectorTools = allTools.filter(t => 'connectorName' in t);
@@ -1260,8 +1247,9 @@ export class AgentService {
       }
 
       // Invalidate tool caches
-      this.oneRingToolProvider.invalidateCache();
-      this.toolCatalog.invalidateCache();
+      ToolCatalogRegistry.reset();
+      ToolCatalogRegistry.ensureInitialized();
+      invalidateHoseaTools();
 
       // Notify renderer
       this.notifyRenderer('everworker:connectors-changed', { profileId, added: addedCount, removed: removedCount });
@@ -1497,8 +1485,9 @@ export class AgentService {
       await this.saveEWProfiles();
 
       // Invalidate tool caches after sync
-      this.oneRingToolProvider.invalidateCache();
-      this.toolCatalog.invalidateCache();
+      ToolCatalogRegistry.reset();
+      ToolCatalogRegistry.ensureInitialized();
+      invalidateHoseaTools();
 
       logger.info(`[syncActiveEWProfile] Sync complete: ${added} added, ${updated} updated, ${removed} removed, ${remoteConnectors.length} total remote`);
       return { success: true, added, updated, removed };
@@ -2401,8 +2390,9 @@ export class AgentService {
 
       // Invalidate caches so tools appear immediately without restart
       ConnectorTools.clearCache();
-      this.oneRingToolProvider.invalidateCache();
-      this.toolCatalog.invalidateCache();
+      ToolCatalogRegistry.reset();
+      ToolCatalogRegistry.ensureInitialized();
+      invalidateHoseaTools();
 
       // Tell the caller whether OAuth authorization is needed
       const needsAuth = authMethod.type === 'oauth';
@@ -2455,8 +2445,9 @@ export class AgentService {
 
       // Invalidate caches so tool changes appear immediately
       ConnectorTools.clearCache();
-      this.oneRingToolProvider.invalidateCache();
-      this.toolCatalog.invalidateCache();
+      ToolCatalogRegistry.reset();
+      ToolCatalogRegistry.ensureInitialized();
+      invalidateHoseaTools();
 
       return { success: true };
     } catch (error) {
@@ -2489,8 +2480,9 @@ export class AgentService {
 
       // Invalidate caches so removed tools disappear immediately
       ConnectorTools.clearCache();
-      this.oneRingToolProvider.invalidateCache();
-      this.toolCatalog.invalidateCache();
+      ToolCatalogRegistry.reset();
+      ToolCatalogRegistry.ensureInitialized();
+      invalidateHoseaTools();
 
       return { success: true };
     } catch (error) {
@@ -2815,8 +2807,9 @@ export class AgentService {
 
     // Invalidate caches
     ConnectorTools.clearCache();
-    this.oneRingToolProvider.invalidateCache();
-    this.toolCatalog.invalidateCache();
+    ToolCatalogRegistry.reset();
+    ToolCatalogRegistry.ensureInitialized();
+    invalidateHoseaTools();
 
     // Start the OAuth flow
     console.log(`[BuiltInOAuth]   Starting OAuth flow...`);
@@ -3253,7 +3246,7 @@ export class AgentService {
       // Add tools that are in new config but not in old, grouped by connector
       const toAdd = newToolNames.filter(name => !oldToolNames.includes(name));
       if (toAdd.length > 0) {
-        const { plain, byConnector } = this.toolCatalog.resolveToolsGrouped(toAdd, context);
+        const { plain, byConnector } = ToolCatalogRegistry.resolveToolsGrouped(toAdd, context, { includeConnectors: true });
         toolManager.registerMany(plain);
         for (const [connName, connTools] of byConnector) {
           toolManager.registerConnectorTools(connName, connTools);
@@ -3277,7 +3270,7 @@ export class AgentService {
 
         const toAdd = newToolNames.filter(name => !oldToolNames.includes(name));
         if (toAdd.length > 0) {
-          const { plain, byConnector } = this.toolCatalog.resolveToolsGrouped(toAdd, context);
+          const { plain, byConnector } = ToolCatalogRegistry.resolveToolsGrouped(toAdd, context, { includeConnectors: true });
           toolManager.registerMany(plain);
           for (const [connName, connTools] of byConnector) {
             toolManager.registerConnectorTools(connName, connTools);
@@ -3364,12 +3357,13 @@ export class AgentService {
       // Resolve session storage from StorageRegistry
       this.sessionStorage = this.createSessionStorage('hosea');
 
-      // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
+      // Resolve tool names to actual ToolFunction objects using ToolCatalogRegistry
       // Use agent config ID as instance ID for single-agent mode
       const toolCreationContext = { instanceId: agentConfig.id };
-      const { plain: plainTools, byConnector: connectorToolGroups } = this.toolCatalog.resolveToolsGrouped(
+      const { plain: plainTools, byConnector: connectorToolGroups } = ToolCatalogRegistry.resolveToolsGrouped(
         agentConfig.tools,
-        toolCreationContext
+        toolCreationContext,
+        { includeConnectors: true },
       );
 
       // Combine user instructions with UI capabilities prompt (user instructions first)
@@ -3640,33 +3634,48 @@ export class AgentService {
     connectorName?: string;
     serviceType?: string;
   }[] {
-    // Use UnifiedToolCatalog which combines oneringai + hosea tools
-    const allTools = this.toolCatalog.getAllTools();
+    // Use ToolCatalogRegistry which combines core + hosea tools
+    const allTools = ToolCatalogRegistry.getAllCatalogTools();
     const connectorTools = allTools.filter(t => t.requiresConnector);
     logger.debug(`[getAvailableTools] Returning ${allTools.length} tools (${connectorTools.length} require connector)`);
     for (const t of connectorTools) {
       logger.debug(`  requiresConnector tool: name=${t.name}, serviceTypes=${JSON.stringify(t.connectorServiceTypes)}, source=${t.source}`);
     }
-    return allTools.map((entry: UnifiedToolEntry) => ({
-      name: entry.name,
-      displayName: entry.displayName,
-      category: entry.category,
-      categoryDisplayName: entry.categoryDisplayName,
-      description: entry.description,
-      safeByDefault: entry.safeByDefault,
-      requiresConnector: entry.requiresConnector || false,
-      connectorServiceTypes: entry.connectorServiceTypes,
-      source: entry.source,
-      connectorName: entry.connectorName,
-      serviceType: entry.serviceType,
-    }));
+
+    // Map CatalogToolEntry to the serialized format the UI expects
+    const categories = ToolCatalogRegistry.getCategories();
+    const categoryDisplayMap = new Map(categories.map(c => [c.name, c.displayName]));
+
+    return allTools.map((entry: CatalogToolEntry) => {
+      // Find which category this tool belongs to
+      const found = ToolCatalogRegistry.findTool(entry.name);
+      const category = found?.category ?? 'other';
+      return {
+        name: entry.name,
+        displayName: entry.displayName,
+        category,
+        categoryDisplayName: categoryDisplayMap.get(category) ?? category,
+        description: entry.description,
+        safeByDefault: entry.safeByDefault,
+        requiresConnector: entry.requiresConnector || false,
+        connectorServiceTypes: entry.connectorServiceTypes,
+        source: (entry.source ?? 'oneringai') as 'oneringai' | 'hosea' | 'custom',
+        connectorName: entry.connectorName,
+        serviceType: entry.serviceType,
+      };
+    });
   }
 
   /**
    * Get tool categories with display names and counts
    */
   getToolCategories(): { id: string; displayName: string; count: number }[] {
-    return this.toolCatalog.getCategories();
+    const categories = ToolCatalogRegistry.getCategories();
+    return categories.map(cat => ({
+      id: cat.name,
+      displayName: cat.displayName,
+      count: ToolCatalogRegistry.getToolsInCategory(cat.name).length,
+    }));
   }
 
   toggleTool(toolName: string, enabled: boolean): { success: boolean } {
@@ -3746,8 +3755,8 @@ export class AgentService {
    */
   setBrowserService(browserService: BrowserService): void {
     this.browserService = browserService;
-    // Update the browser tool provider so tools can be created
-    this.browserToolProvider.setBrowserService(browserService);
+    // Update browser tool factories with the new service reference
+    updateBrowserService(browserService);
     console.log('[AgentService] BrowserService connected');
   }
 
@@ -3917,12 +3926,13 @@ export class AgentService {
       // Create instance-specific session storage via StorageRegistry factory
       const sessionStorage = this.createSessionStorage(instanceId);
 
-      // Resolve tool names to actual ToolFunction objects using UnifiedToolCatalog
+      // Resolve tool names to actual ToolFunction objects using ToolCatalogRegistry
       // This handles both oneringai tools AND hosea-specific tools (like browser automation)
       const toolCreationContext = { instanceId };
-      const { plain: plainTools, byConnector: connectorToolGroups } = this.toolCatalog.resolveToolsGrouped(
+      const { plain: plainTools, byConnector: connectorToolGroups } = ToolCatalogRegistry.resolveToolsGrouped(
         agentConfig.tools,
-        toolCreationContext
+        toolCreationContext,
+        { includeConnectors: true },
       );
       logger.debug(`[createInstance] Resolved ${plainTools.length} plain + ${connectorToolGroups.size} connector groups from catalog for ${agentConfig.tools.length} configured tool names`);
 
@@ -4022,7 +4032,7 @@ export class AgentService {
         }
       }
 
-      // NOTE: Browser tools are now resolved through UnifiedToolCatalog when selected
+      // NOTE: Browser tools are now resolved through ToolCatalogRegistry when selected
       // No need for separate registration - they're part of agentConfig.tools
 
       // Register HoseaUIPlugin for browser tool UI integration

@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-25
+**Generated:** 2026-02-26
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -16,19 +16,19 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (24 items)
 - [Video Generation](#video-generation) (18 items)
-- [Task Agents](#task-agents) (82 items)
+- [Task Agents](#task-agents) (87 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (29 items)
-- [Tools & Function Calling](#tools-function-calling) (126 items)
+- [Tools & Function Calling](#tools-function-calling) (137 items)
 - [Streaming](#streaming) (19 items)
 - [Model Registry](#model-registry) (10 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (20 items)
 - [Utilities](#utilities) (8 items)
-- [Interfaces](#interfaces) (45 items)
+- [Interfaces](#interfaces) (49 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (275 items)
+- [Other](#other) (294 items)
 
 ## Core
 
@@ -6991,7 +6991,7 @@ Index entry (lightweight, always in context)
 
 ### Plan `interface`
 
-📍 [`src/domain/entities/Task.ts:377`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:390`](src/domain/entities/Task.ts)
 
 Execution plan - a goal with steps to achieve it
 
@@ -7025,7 +7025,7 @@ Execution plan - a goal with steps to achieve it
 
 ### PlanConcurrency `interface`
 
-📍 [`src/domain/entities/Task.ts:361`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:374`](src/domain/entities/Task.ts)
 
 Plan concurrency settings
 
@@ -7047,7 +7047,7 @@ Plan concurrency settings
 
 ### PlanInput `interface`
 
-📍 [`src/domain/entities/Task.ts:416`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:429`](src/domain/entities/Task.ts)
 
 Input for creating a plan
 
@@ -7110,6 +7110,49 @@ Research plan for systematic research
 
 ---
 
+### RoutineTaskResult `interface`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:40`](src/domain/entities/RoutineExecutionRecord.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `output?` | `output?: string;` | - |
+| `error?` | `error?: string;` | - |
+| `validationScore?` | `validationScore?: number;` | - |
+| `validationExplanation?` | `validationExplanation?: string;` | - |
+
+</details>
+
+---
+
+### RoutineTaskSnapshot `interface`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:48`](src/domain/entities/RoutineExecutionRecord.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `taskId` | `taskId: string;` | - |
+| `name` | `name: string;` | - |
+| `description` | `description: string;` | - |
+| `status` | `status: 'pending' | 'blocked' | 'in_progress' | 'completed' | 'failed' | 'skipped' | 'cancelled';` | - |
+| `attempts` | `attempts: number;` | - |
+| `maxAttempts` | `maxAttempts: number;` | - |
+| `result?` | `result?: RoutineTaskResult;` | - |
+| `startedAt?` | `startedAt?: number;` | - |
+| `completedAt?` | `completedAt?: number;` | - |
+| `controlFlowType?` | `controlFlowType?: 'map' | 'fold' | 'until';` | - |
+
+</details>
+
+---
+
 ### SerializedInContextMemoryState `interface`
 
 📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:51`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
@@ -7151,7 +7194,7 @@ Research plan for systematic research
 
 ### Task `interface`
 
-📍 [`src/domain/entities/Task.ts:284`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:297`](src/domain/entities/Task.ts)
 
 A single unit of work
 
@@ -7215,7 +7258,7 @@ Task condition - evaluated before execution
 
 ### TaskExecution `interface`
 
-📍 [`src/domain/entities/Task.ts:162`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:175`](src/domain/entities/Task.ts)
 
 Task execution settings
 
@@ -7258,7 +7301,7 @@ Task failure info for parallel execution
 
 ### TaskFoldFlow `interface`
 
-📍 [`src/domain/entities/Task.ts:125`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:138`](src/domain/entities/Task.ts)
 
 Fold: accumulate a result across array elements
 
@@ -7268,7 +7311,7 @@ Fold: accumulate a result across array elements
 | Property | Type | Description |
 |----------|------|-------------|
 | `type` | `type: 'fold';` | - |
-| `source` | `source: ControlFlowSource;` | Source array reference — task name, memory key, or structured ref |
+| `source` | `source: ControlFlowSource;` | Source array reference — task name, memory key, or structured ref. |
 | `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run per element |
 | `initialValue` | `initialValue: unknown;` | Starting accumulator value |
 | `resultKey` | `resultKey: string;` | Memory key for final accumulated result |
@@ -7281,7 +7324,7 @@ Fold: accumulate a result across array elements
 
 ### TaskInput `interface`
 
-📍 [`src/domain/entities/Task.ts:342`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:355`](src/domain/entities/Task.ts)
 
 Input for creating a task
 
@@ -7310,7 +7353,7 @@ Input for creating a task
 
 ### TaskMapFlow `interface`
 
-📍 [`src/domain/entities/Task.ts:110`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:123`](src/domain/entities/Task.ts)
 
 Map: execute a sub-routine for each element in an array
 
@@ -7320,7 +7363,7 @@ Map: execute a sub-routine for each element in an array
 | Property | Type | Description |
 |----------|------|-------------|
 | `type` | `type: 'map';` | - |
-| `source` | `source: ControlFlowSource;` | Source array reference — task name, memory key, or structured ref |
+| `source` | `source: ControlFlowSource;` | Source array reference — task name, memory key, or structured ref. |
 | `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run per element |
 | `resultKey?` | `resultKey?: string;` | Memory key for collected results array |
 | `maxIterations?` | `maxIterations?: number;` | Cap iterations (default: array.length, hard max: 1000) |
@@ -7330,9 +7373,28 @@ Map: execute a sub-routine for each element in an array
 
 ---
 
+### TaskSourceRef `interface`
+
+📍 [`src/domain/entities/Task.ts:110`](src/domain/entities/Task.ts)
+
+Reference to a source value for control flow operations.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `task?` | `task?: string;` | Reference the output of a named task (resolves to __task_output_{name}) |
+| `key?` | `key?: string;` | Direct memory key lookup |
+| `path?` | `path?: string;` | JSON path to extract from the resolved value (e.g., 'data.items', 'results[0].entries') |
+
+</details>
+
+---
+
 ### TaskUntilFlow `interface`
 
-📍 [`src/domain/entities/Task.ts:142`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:155`](src/domain/entities/Task.ts)
 
 Until: repeat a sub-routine until a condition is met
 
@@ -7354,7 +7416,7 @@ Until: repeat a sub-routine until a condition is met
 
 ### TaskValidation `interface`
 
-📍 [`src/domain/entities/Task.ts:195`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:208`](src/domain/entities/Task.ts)
 
 Task completion validation settings
 
@@ -7405,7 +7467,7 @@ Default: undefined (treated as true — validation auto-passes). |
 
 ### TaskValidationResult `interface`
 
-📍 [`src/domain/entities/Task.ts:257`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:270`](src/domain/entities/Task.ts)
 
 Result of task validation (returned by LLM reflection)
 
@@ -7584,6 +7646,18 @@ Configuration for working memory
 
 ---
 
+### ControlFlowSource `type`
+
+📍 [`src/domain/entities/Task.ts:120`](src/domain/entities/Task.ts)
+
+Source can be a simple key string (legacy) or a structured reference.
+
+```typescript
+type ControlFlowSource = string | TaskSourceRef
+```
+
+---
+
 ### EvictionStrategy `type`
 
 📍 [`src/capabilities/taskAgent/WorkingMemory.ts:73`](src/capabilities/taskAgent/WorkingMemory.ts)
@@ -7690,7 +7764,7 @@ type TaskAwareScope = | { type: 'task'; taskIds: string[] }   // Needed for spec
 
 ### TaskControlFlow `type`
 
-📍 [`src/domain/entities/Task.ts:157`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:170`](src/domain/entities/Task.ts)
 
 Union of all control flow types
 
@@ -7746,7 +7820,7 @@ export function calculateEntrySize(value: unknown): number
 
 ### canTaskExecute `function`
 
-📍 [`src/domain/entities/Task.ts:535`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:548`](src/domain/entities/Task.ts)
 
 Check if a task can be executed (dependencies met, status is pending)
 
@@ -7758,7 +7832,7 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createPlan `function`
 
-📍 [`src/domain/entities/Task.ts:468`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:481`](src/domain/entities/Task.ts)
 
 Create a plan with tasks
 
@@ -7770,7 +7844,7 @@ export function createPlan(input: PlanInput): Plan
 
 ### createTask `function`
 
-📍 [`src/domain/entities/Task.ts:439`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:452`](src/domain/entities/Task.ts)
 
 Create a task with defaults
 
@@ -7780,9 +7854,21 @@ export function createTask(input: TaskInput): Task
 
 ---
 
+### createTaskSnapshots `function`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:96`](src/domain/entities/RoutineExecutionRecord.ts)
+
+Create initial task snapshots from a routine definition.
+
+```typescript
+export function createTaskSnapshots(definition: RoutineDefinition): RoutineTaskSnapshot[]
+```
+
+---
+
 ### detectDependencyCycle `function`
 
-📍 [`src/domain/entities/Task.ts:742`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:755`](src/domain/entities/Task.ts)
 
 Detect dependency cycles in tasks using depth-first search
 
@@ -7794,7 +7880,7 @@ export function detectDependencyCycle(tasks: Task[]): string[] | null
 
 ### evaluateCondition `function`
 
-📍 [`src/domain/entities/Task.ts:599`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:612`](src/domain/entities/Task.ts)
 
 Evaluate a task condition against memory
 
@@ -7857,7 +7943,7 @@ export async function generateSimplePlan(
 
 ### getNextExecutableTasks `function`
 
-📍 [`src/domain/entities/Task.ts:557`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:570`](src/domain/entities/Task.ts)
 
 Get the next tasks that can be executed
 
@@ -7869,7 +7955,7 @@ export function getNextExecutableTasks(plan: Plan): Task[]
 
 ### getTaskDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:696`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:709`](src/domain/entities/Task.ts)
 
 Get the dependency tasks for a task
 
@@ -7905,7 +7991,7 @@ export function isTaskAwareScope(scope: MemoryScope): scope is TaskAwareScope
 
 ### isTaskBlocked `function`
 
-📍 [`src/domain/entities/Task.ts:675`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:688`](src/domain/entities/Task.ts)
 
 Check if a task is blocked by dependencies
 
@@ -7941,7 +8027,7 @@ export function isTerminalStatus(status: TaskStatus): boolean
 
 ### resolveDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:710`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:723`](src/domain/entities/Task.ts)
 
 Resolve task name dependencies to task IDs
 Modifies taskInputs in place
@@ -7980,7 +8066,7 @@ export function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope):
 
 ### updateTaskStatus `function`
 
-📍 [`src/domain/entities/Task.ts:647`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:660`](src/domain/entities/Task.ts)
 
 Update task status and timestamps
 
@@ -10516,6 +10602,482 @@ constructor(
 
 ---
 
+### ToolCatalogPluginNextGen `class`
+
+📍 [`src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts:141`](src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config?: ToolCatalogPluginConfig)
+```
+
+**Parameters:**
+- `config`: `ToolCatalogPluginConfig | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getInstructions()`
+
+```typescript
+getInstructions(): string
+```
+
+**Returns:** `string`
+
+#### `getContent()`
+
+```typescript
+async getContent(): Promise&lt;string | null&gt;
+```
+
+**Returns:** `Promise&lt;string | null&gt;`
+
+#### `getContents()`
+
+```typescript
+getContents(): unknown
+```
+
+**Returns:** `unknown`
+
+#### `getTools()`
+
+```typescript
+getTools(): ToolFunction[]
+```
+
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `isCompactable()`
+
+```typescript
+isCompactable(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `compact()`
+
+```typescript
+async compact(targetTokensToFree: number): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `targetTokensToFree`: `number`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+```typescript
+getState(): unknown
+```
+
+**Returns:** `unknown`
+
+#### `restoreState()`
+
+```typescript
+restoreState(state: unknown): void
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+#### `setToolManager()`
+
+Set the ToolManager reference. Called by AgentContextNextGen after plugin registration.
+
+```typescript
+setToolManager(tm: ToolManager): void
+```
+
+**Parameters:**
+- `tm`: `ToolManager`
+
+**Returns:** `void`
+
+#### `executeLoad()`
+
+```typescript
+executeLoad(category: string): Record&lt;string, unknown&gt;
+```
+
+**Parameters:**
+- `category`: `string`
+
+**Returns:** `Record&lt;string, unknown&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "tool_catalog"` | - |
+
+</details>
+
+---
+
+### ToolCatalogRegistry `class`
+
+📍 [`src/core/ToolCatalogRegistry.ts:132`](src/core/ToolCatalogRegistry.ts)
+
+Static global registry for tool categories and their tools.
+
+Like Connector and StorageRegistry, this is a static class that acts
+as a single source of truth. App code registers categories at startup,
+and plugins/agents query them at runtime.
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static toDisplayName()`
+
+Convert a hyphenated or plain name to a display name.
+E.g., 'custom-tools' → 'Custom Tools', 'filesystem' → 'Filesystem'
+
+```typescript
+static toDisplayName(name: string): string
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `string`
+
+#### `static parseConnectorCategory()`
+
+Parse a connector category name, returning the connector name or null.
+E.g., 'connector:github' → 'github', 'filesystem' → null
+
+```typescript
+static parseConnectorCategory(category: string): string | null
+```
+
+**Parameters:**
+- `category`: `string`
+
+**Returns:** `string | null`
+
+#### `static getConnectorToolsModule()`
+
+Get the ConnectorTools module (lazy-loaded, cached).
+Returns null if ConnectorTools is not available.
+Uses false sentinel to prevent retrying after first failure.
+
+```typescript
+static getConnectorToolsModule():
+```
+
+**Returns:** `{ ConnectorTools: any; } | null`
+
+#### `static registerCategory()`
+
+Register a tool category.
+If the category already exists, updates its metadata.
+
+```typescript
+static registerCategory(def: ToolCategoryDefinition): void
+```
+
+**Parameters:**
+- `def`: `ToolCategoryDefinition`
+
+**Returns:** `void`
+
+#### `static registerTools()`
+
+Register multiple tools in a category.
+The category is auto-created if it doesn't exist (with a generic description).
+
+```typescript
+static registerTools(category: string, tools: CatalogToolEntry[]): void
+```
+
+**Parameters:**
+- `category`: `string`
+- `tools`: `CatalogToolEntry[]`
+
+**Returns:** `void`
+
+#### `static registerTool()`
+
+Register a single tool in a category.
+
+```typescript
+static registerTool(category: string, tool: CatalogToolEntry): void
+```
+
+**Parameters:**
+- `category`: `string`
+- `tool`: `CatalogToolEntry`
+
+**Returns:** `void`
+
+#### `static unregisterCategory()`
+
+Unregister a category and all its tools.
+
+```typescript
+static unregisterCategory(category: string): boolean
+```
+
+**Parameters:**
+- `category`: `string`
+
+**Returns:** `boolean`
+
+#### `static unregisterTool()`
+
+Unregister a single tool from a category.
+
+```typescript
+static unregisterTool(category: string, toolName: string): boolean
+```
+
+**Parameters:**
+- `category`: `string`
+- `toolName`: `string`
+
+**Returns:** `boolean`
+
+#### `static getCategories()`
+
+Get all registered categories.
+
+```typescript
+static getCategories(): ToolCategoryDefinition[]
+```
+
+**Returns:** `ToolCategoryDefinition[]`
+
+#### `static getCategory()`
+
+Get a single category by name.
+
+```typescript
+static getCategory(name: string): ToolCategoryDefinition | undefined
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `ToolCategoryDefinition | undefined`
+
+#### `static hasCategory()`
+
+Check if a category exists.
+
+```typescript
+static hasCategory(name: string): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `boolean`
+
+#### `static getToolsInCategory()`
+
+Get all tools in a category.
+
+```typescript
+static getToolsInCategory(category: string): CatalogToolEntry[]
+```
+
+**Parameters:**
+- `category`: `string`
+
+**Returns:** `CatalogToolEntry[]`
+
+#### `static getAllCatalogTools()`
+
+Get all catalog tools across all categories.
+
+```typescript
+static getAllCatalogTools(): CatalogToolEntry[]
+```
+
+**Returns:** `CatalogToolEntry[]`
+
+#### `static findTool()`
+
+Find a tool by name across all categories.
+
+```typescript
+static findTool(name: string):
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `{ category: string; entry: CatalogToolEntry; } | undefined`
+
+#### `static filterCategories()`
+
+Filter categories by scope.
+
+```typescript
+static filterCategories(scope?: ToolCategoryScope): ToolCategoryDefinition[]
+```
+
+**Parameters:**
+- `scope`: `ToolCategoryScope | undefined` *(optional)*
+
+**Returns:** `ToolCategoryDefinition[]`
+
+#### `static isCategoryAllowed()`
+
+Check if a category is allowed by a scope.
+
+```typescript
+static isCategoryAllowed(name: string, scope?: ToolCategoryScope): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+- `scope`: `ToolCategoryScope | undefined` *(optional)*
+
+**Returns:** `boolean`
+
+#### `static discoverConnectorCategories()`
+
+Discover all connector categories with their tools.
+Calls ConnectorTools.discoverAll() and filters by scope/identities.
+
+```typescript
+static discoverConnectorCategories(options?:
+```
+
+**Parameters:**
+- `options`: `{ scope?: ToolCategoryScope | undefined; identities?: { connector: string; }[] | undefined; } | undefined` *(optional)*
+
+**Returns:** `ConnectorCategoryInfo[]`
+
+#### `static resolveConnectorCategoryTools()`
+
+Resolve tools for a specific connector category.
+
+```typescript
+static resolveConnectorCategoryTools(category: string): Array&lt;
+```
+
+**Parameters:**
+- `category`: `string`
+
+**Returns:** `{ tool: ToolFunction&lt;any, any&gt;; name: string; }[]`
+
+#### `static resolveTools()`
+
+Resolve tool names to ToolFunction[].
+
+Searches registered categories and (optionally) connector tools.
+Used by app-level executors (e.g., V25's OneRingAgentExecutor).
+
+```typescript
+static resolveTools(
+    toolNames: string[],
+    options?:
+```
+
+**Parameters:**
+- `toolNames`: `string[]`
+- `options`: `{ includeConnectors?: boolean | undefined; userId?: string | undefined; context?: Record&lt;string, unknown&gt; | undefined; } | undefined` *(optional)*
+
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `static resolveToolsGrouped()`
+
+Resolve tools grouped by connector name.
+
+Tools with a `connectorName` go into `byConnector`; all others go into `plain`.
+Supports factory-based tool creation via `createTool` when context is provided.
+
+```typescript
+static resolveToolsGrouped(
+    toolNames: string[],
+    context?: Record&lt;string, unknown&gt;,
+    options?:
+```
+
+**Parameters:**
+- `toolNames`: `string[]`
+- `context`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+- `options`: `{ includeConnectors?: boolean | undefined; } | undefined` *(optional)*
+
+**Returns:** `{ plain: ToolFunction&lt;any, any&gt;[]; byConnector: Map&lt;string, ToolFunction&lt;any, any&gt;[]&gt;; }`
+
+#### `static ensureInitialized()`
+
+Ensure built-in tools from registry.generated.ts are registered.
+Called lazily on first query.
+
+In ESM environments, call `initializeFromRegistry(toolRegistry)` explicitly
+from your app startup instead of relying on auto-initialization.
+
+```typescript
+static ensureInitialized(): void
+```
+
+**Returns:** `void`
+
+#### `static initializeFromRegistry()`
+
+Explicitly initialize from the generated tool registry.
+Call this at app startup in ESM environments where lazy require() doesn't work.
+
+```typescript
+static initializeFromRegistry(registry: ToolRegistryEntry[]): void
+```
+
+**Parameters:**
+- `registry`: `ToolRegistryEntry[]`
+
+**Returns:** `void`
+
+#### `static reset()`
+
+Reset the registry. Primarily for testing.
+
+```typescript
+static reset(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `BUILTIN_DESCRIPTIONS` | `BUILTIN_DESCRIPTIONS: Record&lt;string, string&gt;` | - |
+
+</details>
+
+---
+
 ### ToolExecutionError `class`
 
 📍 [`src/domain/errors/AIErrors.ts:73`](src/domain/errors/AIErrors.ts)
@@ -11060,6 +11622,20 @@ getByNamespace(namespace: string): ToolFunction[]
 - `namespace`: `string`
 
 **Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `getByCategory()`
+
+Get all registered tool names in a category.
+Used by ToolCatalogPlugin for bulk enable/disable.
+
+```typescript
+getByCategory(category: string): string[]
+```
+
+**Parameters:**
+- `category`: `string`
+
+**Returns:** `string[]`
 
 #### `getRegistration()`
 
@@ -11975,6 +12551,54 @@ constructor(
 |----------|------|-------------|
 | `type` | `type: 'web_search' | 'file_search' | 'computer_use' | 'code_interpreter';` | - |
 | `blocking?` | `blocking?: boolean;` | - |
+
+</details>
+
+---
+
+### CatalogToolEntry `interface`
+
+📍 [`src/core/ToolCatalogRegistry.ts:52`](src/core/ToolCatalogRegistry.ts)
+
+A single tool entry in the catalog.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tool?` | `tool?: ToolFunction;` | The actual tool function (optional when createTool factory is provided) |
+| `name` | `name: string;` | Tool name (matches definition.function.name) |
+| `displayName` | `displayName: string;` | Human-readable display name |
+| `description` | `description: string;` | Brief description |
+| `safeByDefault` | `safeByDefault: boolean;` | Whether this tool is safe to execute without user approval |
+| `requiresConnector?` | `requiresConnector?: boolean;` | Whether this tool requires a connector to function |
+| `createTool?` | `createTool?: (ctx: Record&lt;string, unknown&gt;) =&gt; ToolFunction;` | Factory for runtime tool creation (e.g., browser tools needing context) |
+| `source?` | `source?: string;` | Source identifier (e.g., 'oneringai', 'hosea', 'custom') |
+| `connectorName?` | `connectorName?: string;` | Connector name (for connector-originated tools) |
+| `serviceType?` | `serviceType?: string;` | Service type (e.g., 'github', 'slack') |
+| `connectorServiceTypes?` | `connectorServiceTypes?: string[];` | Supported connector service types |
+
+</details>
+
+---
+
+### ConnectorCategoryInfo `interface`
+
+📍 [`src/core/ToolCatalogRegistry.ts:108`](src/core/ToolCatalogRegistry.ts)
+
+Connector category metadata returned by discoverConnectorCategories().
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Category name in 'connector:<name>' format |
+| `displayName` | `displayName: string;` | Human-readable display name |
+| `description` | `description: string;` | Description |
+| `toolCount` | `toolCount: number;` | Number of tools |
+| `tools` | `tools: ToolFunction[];` | Resolved tools |
 
 </details>
 
@@ -12938,6 +13562,43 @@ Tool call detected and starting
 
 ---
 
+### ToolCatalogPluginConfig `interface`
+
+📍 [`src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts:37`](src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `categoryScope?` | `categoryScope?: ToolCategoryScope;` | Scope filter for which categories are visible |
+| `autoLoadCategories?` | `autoLoadCategories?: string[];` | Categories to pre-load on initialization |
+| `maxLoadedCategories?` | `maxLoadedCategories?: number;` | Maximum loaded categories at once (default: 10) |
+| `identities?` | `identities?: AuthIdentity[];` | Auth identities for connector filtering |
+
+</details>
+
+---
+
+### ToolCategoryDefinition `interface`
+
+📍 [`src/core/ToolCatalogRegistry.ts:40`](src/core/ToolCatalogRegistry.ts)
+
+Definition of a tool category in the catalog.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Unique category name (e.g., 'filesystem', 'knowledge', 'connector:github') |
+| `displayName` | `displayName: string;` | Human-readable display name (e.g., 'File System') |
+| `description` | `description: string;` | Description shown in catalog metatool display |
+
+</details>
+
+---
+
 ### ToolCondition `interface`
 
 📍 [`src/core/ToolManager.ts:108`](src/core/ToolManager.ts)
@@ -13273,7 +13934,31 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistryEntry `interface`
 
-📍 [`src/tools/registry.generated.ts:44`](src/tools/registry.generated.ts)
+📍 [`src/core/ToolCatalogRegistry.ts:81`](src/core/ToolCatalogRegistry.ts)
+
+Entry format from the generated tool registry (registry.generated.ts).
+Used by initializeFromRegistry() and registerFromToolRegistry().
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | - |
+| `displayName` | `displayName: string;` | - |
+| `category` | `category: string;` | - |
+| `description` | `description: string;` | - |
+| `tool` | `tool: ToolFunction;` | - |
+| `safeByDefault` | `safeByDefault: boolean;` | - |
+| `requiresConnector?` | `requiresConnector?: boolean;` | - |
+
+</details>
+
+---
+
+### ToolRegistryEntry `interface`
+
+📍 [`src/tools/registry.generated.ts:45`](src/tools/registry.generated.ts)
 
 Metadata for a tool in the registry
 
@@ -13397,7 +14082,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### DefaultAllowlistedTool `type`
 
-📍 [`src/core/permissions/types.ts:360`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:370`](src/core/permissions/types.ts)
 
 Type for default allowlisted tools
 
@@ -13446,12 +14131,31 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolCategory `type`
 
-📍 [`src/tools/registry.generated.ts:41`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:42`](src/tools/registry.generated.ts)
 
 Tool category for grouping
 
 ```typescript
-type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'custom-tools' | 'other'
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'desktop' | 'custom-tools' | 'routines' | 'other'
+```
+
+---
+
+### ToolCategoryScope `type`
+
+📍 [`src/core/ToolCatalogRegistry.ts:99`](src/core/ToolCatalogRegistry.ts)
+
+Scope for filtering which categories are visible/allowed.
+
+- `string[]` — shorthand allowlist (only these categories)
+- `{ include: string[] }` — explicit allowlist
+- `{ exclude: string[] }` — blocklist (all except these)
+- `undefined` — all categories allowed
+
+```typescript
+type ToolCategoryScope = | string[]                  // shorthand allowlist
+  | { include: string[] }     // explicit allowlist
+  | { exclude: string[] }
 ```
 
 ---
@@ -13878,6 +14582,46 @@ export function createMeetingTool(
 
 ---
 
+### createMicrosoftListFilesTool `function`
+
+📍 [`src/tools/microsoft/listFiles.ts:41`](src/tools/microsoft/listFiles.ts)
+
+```typescript
+export function createMicrosoftListFilesTool(
+  connector: Connector,
+  userId?: string,
+): ToolFunction&lt;ListFilesArgs, MicrosoftListFilesResult&gt;
+```
+
+---
+
+### createMicrosoftReadFileTool `function`
+
+📍 [`src/tools/microsoft/readFile.ts:48`](src/tools/microsoft/readFile.ts)
+
+```typescript
+export function createMicrosoftReadFileTool(
+  connector: Connector,
+  userId?: string,
+  config?: MicrosoftReadFileConfig,
+): ToolFunction&lt;ReadFileArgs, MicrosoftReadFileResult&gt;
+```
+
+---
+
+### createMicrosoftSearchFilesTool `function`
+
+📍 [`src/tools/microsoft/searchFiles.ts:36`](src/tools/microsoft/searchFiles.ts)
+
+```typescript
+export function createMicrosoftSearchFilesTool(
+  connector: Connector,
+  userId?: string,
+): ToolFunction&lt;SearchFilesArgs, MicrosoftSearchFilesResult&gt;
+```
+
+---
+
 ### createPRCommentsTool `function`
 
 📍 [`src/tools/github/prComments.ts:33`](src/tools/github/prComments.ts)
@@ -14048,7 +14792,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:313`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:323`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -14072,7 +14816,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:328`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:338`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -14100,7 +14844,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:338`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:348`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -14112,7 +14856,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:318`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:328`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -14124,7 +14868,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:323`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:333`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -14136,7 +14880,7 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:333`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:343`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
@@ -21175,6 +21919,190 @@ getPath(userId: string | undefined): string;
 
 ---
 
+### IRoutineExecutionStorage `interface`
+
+📍 [`src/domain/interfaces/IRoutineExecutionStorage.ts:15`](src/domain/interfaces/IRoutineExecutionStorage.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `insert()`
+
+Insert a new execution record. Returns the record ID.
+
+```typescript
+insert(userId: string | undefined, record: RoutineExecutionRecord): Promise&lt;string&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `record`: `RoutineExecutionRecord`
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `update()`
+
+Update top-level fields on an execution record.
+
+```typescript
+update(
+    id: string,
+    updates: Partial&lt;
+      Pick&lt;RoutineExecutionRecord, 'status' | 'progress' | 'error' | 'completedAt' | 'lastActivityAt'&gt;
+    &gt;,
+  ): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+- `updates`: `Partial&lt;Pick&lt;RoutineExecutionRecord, "status" | "progress" | "error" | "completedAt" | "lastActivityAt"&gt;&gt;`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `pushStep()`
+
+Append a step to the execution's steps array.
+
+```typescript
+pushStep(id: string, step: RoutineExecutionStep): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+- `step`: `RoutineExecutionStep`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `updateTask()`
+
+Update a specific task snapshot within the execution record.
+
+```typescript
+updateTask(id: string, taskName: string, updates: Partial&lt;RoutineTaskSnapshot&gt;): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+- `taskName`: `string`
+- `updates`: `Partial&lt;RoutineTaskSnapshot&gt;`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `load()`
+
+Load a single execution record by ID.
+
+```typescript
+load(id: string): Promise&lt;RoutineExecutionRecord | null&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `Promise&lt;RoutineExecutionRecord | null&gt;`
+
+#### `list()`
+
+List execution records with optional filters.
+
+```typescript
+list(
+    userId: string | undefined,
+    options?: {
+      routineId?: string;
+      status?: RoutineExecutionStatus;
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise&lt;RoutineExecutionRecord[]&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `options`: `{ routineId?: string | undefined; status?: RoutineExecutionStatus | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;RoutineExecutionRecord[]&gt;`
+
+#### `hasRunning()`
+
+Check if a routine has a currently running execution.
+
+```typescript
+hasRunning(userId: string | undefined, routineId: string): Promise&lt;boolean&gt;;
+```
+
+**Parameters:**
+- `userId`: `string | undefined`
+- `routineId`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+</details>
+
+---
+
+### IScheduler `interface`
+
+📍 [`src/domain/interfaces/IScheduler.ts:26`](src/domain/interfaces/IScheduler.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `schedule()`
+
+Schedule a callback. Returns a handle to cancel it.
+
+```typescript
+schedule(id: string, spec: ScheduleSpec, callback: () =&gt; void | Promise&lt;void&gt;): ScheduleHandle;
+```
+
+**Parameters:**
+- `id`: `string`
+- `spec`: `ScheduleSpec`
+- `callback`: `() =&gt; void | Promise&lt;void&gt;`
+
+**Returns:** `ScheduleHandle`
+
+#### `cancel()`
+
+Cancel a scheduled callback by ID.
+
+```typescript
+cancel(id: string): void;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `void`
+
+#### `cancelAll()`
+
+Cancel all scheduled callbacks.
+
+```typescript
+cancelAll(): void;
+```
+
+**Returns:** `void`
+
+#### `has()`
+
+Check if a schedule exists by ID.
+
+```typescript
+has(id: string): boolean;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `boolean`
+
+</details>
+
+---
+
 ### ISpeechToTextProvider `interface`
 
 📍 [`src/domain/interfaces/IAudioProvider.ts:152`](src/domain/interfaces/IAudioProvider.ts)
@@ -21501,6 +22429,52 @@ Base provider interface
 | `videos` | `videos: boolean;` | - |
 | `audio` | `audio: boolean;` | - |
 | `features?` | `features?: Record&lt;string, boolean&gt;;` | Optional feature flags for specific capabilities |
+
+</details>
+
+---
+
+### ScheduleHandle `interface`
+
+📍 [`src/domain/interfaces/IScheduler.ts:10`](src/domain/interfaces/IScheduler.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `cancel()`
+
+```typescript
+cancel(): void;
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+
+</details>
+
+---
+
+### ScheduleSpec `interface`
+
+📍 [`src/domain/interfaces/IScheduler.ts:15`](src/domain/interfaces/IScheduler.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `cron?` | `cron?: string;` | Cron expression (e.g. '0 9 * * 1-5'). Not all implementations support this. |
+| `intervalMs?` | `intervalMs?: number;` | Repeat every N milliseconds. |
+| `once?` | `once?: number;` | Fire once at this Unix timestamp (ms). |
+| `timezone?` | `timezone?: string;` | IANA timezone for cron expressions (e.g. 'America/New_York'). |
 
 </details>
 
@@ -22142,7 +23116,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:119`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:122`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -23147,6 +24121,62 @@ async read(
 
 ---
 
+### EventEmitterTrigger `class`
+
+📍 [`src/infrastructure/triggers/EventEmitterTrigger.ts:10`](src/infrastructure/triggers/EventEmitterTrigger.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `on()`
+
+Register a listener for an event. Returns an unsubscribe function.
+
+```typescript
+on(event: string, callback: (payload: unknown) =&gt; void | Promise&lt;void&gt;): () =&gt; void
+```
+
+**Parameters:**
+- `event`: `string`
+- `callback`: `(payload: unknown) =&gt; void | Promise&lt;void&gt;`
+
+**Returns:** `() =&gt; void`
+
+#### `emit()`
+
+Emit an event to all registered listeners.
+
+```typescript
+emit(event: string, payload?: unknown): void
+```
+
+**Parameters:**
+- `event`: `string`
+- `payload`: `unknown` *(optional)*
+
+**Returns:** `void`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `listeners` | `listeners: Map&lt;string, Set&lt;(payload: unknown) =&gt; void | Promise&lt;void&gt;&gt;&gt;` | - |
+
+</details>
+
+---
+
 ### ExecutionContext `class`
 
 📍 [`src/capabilities/agents/ExecutionContext.ts:76`](src/capabilities/agents/ExecutionContext.ts)
@@ -23655,8 +24685,8 @@ async onError(ctx: PluginExecutionContext, error: Error): Promise&lt;unknown&gt;
 | `name` | `name: "logging"` | - |
 | `priority` | `priority: 5` | - |
 | `logger` | `logger: FrameworkLogger` | - |
-| `level` | `level: "trace" | "debug" | "info" | "warn" | "error"` | - |
-| `errorLevel` | `errorLevel: "warn" | "error"` | - |
+| `level` | `level: "error" | "trace" | "debug" | "info" | "warn"` | - |
+| `errorLevel` | `errorLevel: "error" | "warn"` | - |
 | `logArgs` | `logArgs: boolean` | - |
 | `logResult` | `logResult: boolean` | - |
 | `maxLogLength` | `maxLogLength: number` | - |
@@ -24767,9 +25797,80 @@ async search(query: string, options: SearchOptions =
 
 ---
 
+### SimpleScheduler `class`
+
+📍 [`src/infrastructure/scheduling/SimpleScheduler.ts:10`](src/infrastructure/scheduling/SimpleScheduler.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `schedule()`
+
+```typescript
+schedule(id: string, spec: ScheduleSpec, callback: () =&gt; void | Promise&lt;void&gt;): ScheduleHandle
+```
+
+**Parameters:**
+- `id`: `string`
+- `spec`: `ScheduleSpec`
+- `callback`: `() =&gt; void | Promise&lt;void&gt;`
+
+**Returns:** `ScheduleHandle`
+
+#### `cancel()`
+
+```typescript
+cancel(id: string): void
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `void`
+
+#### `cancelAll()`
+
+```typescript
+cancelAll(): void
+```
+
+**Returns:** `void`
+
+#### `has()`
+
+```typescript
+has(id: string): boolean
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `boolean`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `timers` | `timers: Map&lt;string, { timer: NodeJS.Timeout; type: "interval" | "timeout"; }&gt;` | - |
+
+</details>
+
+---
+
 ### StorageRegistry `class`
 
-📍 [`src/core/StorageRegistry.ts:88`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:90`](src/core/StorageRegistry.ts)
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -25081,7 +26182,7 @@ async search(query: string, options: SearchOptions =
 
 ### UserInfoPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:222`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:407`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -25235,7 +26336,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:552`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:563`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -25261,6 +26362,7 @@ Each identity produces its own tool set (e.g., microsoft_work_api, microsoft_per
 When not set, all connectors visible to the current userId are available. |
 | `tools?` | `tools?: ToolFunction[];` | Initial tools to register |
 | `storage?` | `storage?: IContextStorageFromDomain;` | Storage for session persistence |
+| `toolCategories?` | `toolCategories?: ToolCategoryScope;` | Restrict tool catalog to specific categories |
 | `plugins?` | `plugins?: PluginConfigs;` | Plugin-specific configurations (used with features flags) |
 | `toolExecutionTimeout?` | `toolExecutionTimeout?: number;` | Hard timeout in milliseconds for any single tool execution.
 Acts as a safety net: if a tool's own timeout mechanism fails
@@ -25485,7 +26587,7 @@ Result from approval UI/hook
 
 ### AuthIdentity `interface`
 
-📍 [`src/core/context-nextgen/types.ts:22`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:23`](src/core/context-nextgen/types.ts)
 
 A single auth identity: connector + optional account alias.
 
@@ -25587,7 +26689,7 @@ Result of a bash command execution
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:725`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:739`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -25673,7 +26775,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:692`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:706`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -25784,7 +26886,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:709`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:723`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -25803,7 +26905,7 @@ Result of consolidate() operation.
 
 ### ContextBudget `interface`
 
-📍 [`src/core/context-nextgen/types.ts:394`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:395`](src/core/context-nextgen/types.ts)
 
 Token budget breakdown - clear and simple
 
@@ -25837,7 +26939,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:642`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:656`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -25866,7 +26968,7 @@ Events emitted by AgentContextNextGen
 
 ### ContextFeatures `interface`
 
-📍 [`src/core/context-nextgen/types.ts:489`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:490`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins
 
@@ -25879,6 +26981,7 @@ Feature flags for enabling/disabling plugins
 | `inContextMemory?` | `inContextMemory?: boolean;` | Enable InContextMemory plugin (default: false) |
 | `persistentInstructions?` | `persistentInstructions?: boolean;` | Enable PersistentInstructions plugin (default: false) |
 | `userInfo?` | `userInfo?: boolean;` | Enable UserInfo plugin (default: false) |
+| `toolCatalog?` | `toolCatalog?: boolean;` | Enable ToolCatalog plugin for dynamic tool loading/unloading (default: false) |
 
 </details>
 
@@ -25886,7 +26989,7 @@ Feature flags for enabling/disabling plugins
 
 ### ControlFlowResult `interface`
 
-📍 [`src/core/routineControlFlow.ts:49`](src/core/routineControlFlow.ts)
+📍 [`src/core/routineControlFlow.ts:51`](src/core/routineControlFlow.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -26506,7 +27609,7 @@ Result of a file edit operation
 
 ### ExecuteRoutineOptions `interface`
 
-📍 [`src/core/routineRunner.ts:57`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:59`](src/core/routineRunner.ts)
 
 Options for executing a routine.
 
@@ -26539,8 +27642,8 @@ The agent is NOT destroyed after execution — caller manages its lifecycle. |
 | `prompts?` | `prompts?: {
     /** Override system prompt builder. Receives definition, should return full system prompt. */
     system?: (definition: RoutineDefinition) =&gt; string;
-    /** Override task prompt builder. Receives task, should return the user message for that task. */
-    task?: (task: Task) =&gt; string;
+    /** Override task prompt builder. Receives task and optional execution context, should return the user message for that task. */
+    task?: (task: Task, execution?: RoutineExecution) =&gt; string;
     /** Override validation prompt builder. Receives task + validation context (response, memory state, tool calls). */
     validation?: (task: Task, context: ValidationContext) =&gt; string;
   };` | Configurable prompts (all have sensible defaults) |
@@ -26565,6 +27668,44 @@ This captures the essential info without importing full AgentConfig.
 | `instructions?` | `instructions?: string;` | - |
 | `temperature?` | `temperature?: number;` | - |
 | `maxIterations?` | `maxIterations?: number;` | - |
+
+</details>
+
+---
+
+### ExecutionRecorder `interface`
+
+📍 [`src/core/createExecutionRecorder.ts:51`](src/core/createExecutionRecorder.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `hooks` | `hooks: HookConfig;` | Hook config to pass to executeRoutine(). |
+| `onTaskStarted` | `onTaskStarted: (task: Task, execution: RoutineExecution) =&gt; void;` | Callback for onTaskStarted. |
+| `onTaskComplete` | `onTaskComplete: (task: Task, execution: RoutineExecution) =&gt; void;` | Callback for onTaskComplete. |
+| `onTaskFailed` | `onTaskFailed: (task: Task, execution: RoutineExecution) =&gt; void;` | Callback for onTaskFailed. |
+| `onTaskValidation` | `onTaskValidation: (task: Task, result: TaskValidationResult, execution: RoutineExecution) =&gt; void;` | Callback for onTaskValidation. |
+| `finalize` | `finalize: (execution: RoutineExecution | null, error?: Error) =&gt; Promise&lt;void&gt;;` | Call after executeRoutine() resolves/rejects to write final status. |
+
+</details>
+
+---
+
+### ExecutionRecorderOptions `interface`
+
+📍 [`src/core/createExecutionRecorder.ts:40`](src/core/createExecutionRecorder.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `storage` | `storage: IRoutineExecutionStorage;` | Storage backend for persisting execution state. |
+| `executionId` | `executionId: string;` | ID of the execution record (must already be inserted). |
+| `logPrefix?` | `logPrefix?: string;` | Optional prefix for log messages. |
+| `maxTruncateLength?` | `maxTruncateLength?: number;` | Max length for truncated tool args/results in steps. Default: 500. |
 
 </details>
 
@@ -27024,7 +28165,7 @@ Base interface for all capability providers
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:780`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:794`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -27095,7 +28236,7 @@ If any required plugin is missing, an error is thrown. |
 
 ### IContextPluginNextGen `interface`
 
-📍 [`src/core/context-nextgen/types.ts:162`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:163`](src/core/context-nextgen/types.ts)
 
 Context plugin interface for NextGen context management.
 
@@ -27924,7 +29065,7 @@ Used to track where information came from and when it was last verified
 
 ### ITokenEstimator `interface`
 
-📍 [`src/core/context-nextgen/types.ts:38`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:39`](src/core/context-nextgen/types.ts)
 
 Token estimator interface - used for conversation and input estimation
 Plugins handle their own token estimation internally.
@@ -28465,6 +29606,85 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ---
 
+### MicrosoftListFilesResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:421`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `items?` | `items?: {
+    name: string;
+    type: 'file' | 'folder';
+    size: number;
+    sizeFormatted: string;
+    mimeType?: string;
+    lastModified?: string;
+    webUrl?: string;
+    id: string;
+    childCount?: number;
+  }[];` | - |
+| `totalCount?` | `totalCount?: number;` | - |
+| `hasMore?` | `hasMore?: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftReadFileResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:411`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `filename?` | `filename?: string;` | - |
+| `sizeBytes?` | `sizeBytes?: number;` | - |
+| `mimeType?` | `mimeType?: string;` | - |
+| `markdown?` | `markdown?: string;` | - |
+| `webUrl?` | `webUrl?: string;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### MicrosoftSearchFilesResult `interface`
+
+📍 [`src/tools/microsoft/types.ts:439`](src/tools/microsoft/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `results?` | `results?: {
+    name: string;
+    path?: string;
+    site?: string;
+    snippet?: string;
+    size: number;
+    sizeFormatted: string;
+    webUrl?: string;
+    id: string;
+    lastModified?: string;
+  }[];` | - |
+| `totalCount?` | `totalCount?: number;` | - |
+| `hasMore?` | `hasMore?: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
 ### MicrosoftSendEmailResult `interface`
 
 📍 [`src/tools/microsoft/types.ts:277`](src/tools/microsoft/types.ts)
@@ -28500,7 +29720,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### OversizedInputResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:462`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:463`](src/core/context-nextgen/types.ts)
 
 Result of handling oversized current input
 
@@ -28605,7 +29825,7 @@ Result of checking if a tool needs approval
 
 ### PluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:522`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:527`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -28625,6 +29845,8 @@ Note: agentId is auto-filled from context config if not provided.
 See PersistentInstructionsConfig for full options. |
 | `userInfo?` | `userInfo?: Record&lt;string, unknown&gt;;` | User info plugin config (used when features.userInfo=true).
 See UserInfoPluginConfig for full options. |
+| `toolCatalog?` | `toolCatalog?: Record&lt;string, unknown&gt;;` | Tool catalog plugin config (used when features.toolCatalog=true).
+See ToolCatalogPluginConfig for full options. |
 
 </details>
 
@@ -28656,7 +29878,7 @@ Contains all information about the current tool execution.
 
 ### PreparedContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:441`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:442`](src/core/context-nextgen/types.ts)
 
 Result of prepare() - ready for LLM call
 
@@ -28901,6 +30123,59 @@ Created from a RoutineDefinition, delegates task management to Plan.
 | `lastUpdatedAt` | `lastUpdatedAt: number;` | - |
 | `error?` | `error?: string;` | Error message if failed |
 | `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Metadata |
+
+</details>
+
+---
+
+### RoutineExecutionRecord `interface`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:65`](src/domain/entities/RoutineExecutionRecord.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `executionId` | `executionId: string;` | - |
+| `routineId` | `routineId: string;` | - |
+| `routineName` | `routineName: string;` | - |
+| `status` | `status: RoutineExecutionStatus;` | - |
+| `progress` | `progress: number;` | - |
+| `tasks` | `tasks: RoutineTaskSnapshot[];` | - |
+| `steps` | `steps: RoutineExecutionStep[];` | - |
+| `taskCount` | `taskCount: number;` | - |
+| `connectorName` | `connectorName: string;` | - |
+| `model` | `model: string;` | - |
+| `error?` | `error?: string;` | - |
+| `startedAt?` | `startedAt?: number;` | - |
+| `completedAt?` | `completedAt?: number;` | - |
+| `lastActivityAt?` | `lastActivityAt?: number;` | - |
+| `trigger?` | `trigger?: {
+    type: 'schedule' | 'event' | 'manual';
+    source?: string;
+    event?: string;
+    payload?: unknown;
+  };` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
+### RoutineExecutionStep `interface`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:29`](src/domain/entities/RoutineExecutionRecord.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `timestamp` | `timestamp: number;` | - |
+| `taskName` | `taskName: string;` | - |
+| `type` | `type: RoutineStepType;` | - |
+| `data?` | `data?: Record&lt;string, unknown&gt;;` | - |
 
 </details>
 
@@ -29224,7 +30499,7 @@ Serialized approval state for session persistence
 
 ### SerializedUserInfoState `interface`
 
-📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:46`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:49`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -29356,7 +30631,7 @@ Stdio transport configuration
 
 ### StorageConfig `interface`
 
-📍 [`src/core/StorageRegistry.ts:68`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:69`](src/core/StorageRegistry.ts)
 
 Storage configuration map.
 
@@ -29379,6 +30654,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 | `workingMemory` | `workingMemory: (context?: StorageContext) =&gt; IMemoryStorage;` | - |
 | `userInfo` | `userInfo: (context?: StorageContext) =&gt; IUserInfoStorage;` | - |
 | `routineDefinitions` | `routineDefinitions: (context?: StorageContext) =&gt; IRoutineDefinitionStorage;` | - |
+| `routineExecutions` | `routineExecutions: (context?: StorageContext) =&gt; IRoutineExecutionStorage;` | - |
 
 </details>
 
@@ -29443,7 +30719,7 @@ Full strategy registry entry (includes class reference)
 
 ### UserInfoPluginConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:35`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts:38`](src/core/context-nextgen/plugins/UserInfoPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -29461,7 +30737,7 @@ Full strategy registry entry (includes class reference)
 
 ### ValidationContext `interface`
 
-📍 [`src/core/routineRunner.ts:112`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:114`](src/core/routineRunner.ts)
 
 Context snapshot passed to the validation prompt builder.
 Contains everything the validator needs to evaluate task completion
@@ -29980,6 +31256,27 @@ type RoutineExecutionStatus = | 'pending'     // Created but not started
 
 ---
 
+### RoutineStepType `type`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:15`](src/domain/entities/RoutineExecutionRecord.ts)
+
+```typescript
+type RoutineStepType = | 'task.started'
+  | 'task.completed'
+  | 'task.failed'
+  | 'task.validation'
+  | 'tool.call'
+  | 'tool.start'
+  | 'llm.start'
+  | 'llm.complete'
+  | 'iteration.complete'
+  | 'execution.error'
+  | 'control_flow.started'
+  | 'control_flow.completed'
+```
+
+---
+
 ### ScrapeFeature `type`
 
 📍 [`src/capabilities/scrape/ScrapeProvider.ts:129`](src/capabilities/scrape/ScrapeProvider.ts)
@@ -30041,7 +31338,7 @@ type ServiceType = (typeof SERVICE_DEFINITIONS)[number]['id']
 
 ### StorageContext `type`
 
-📍 [`src/core/StorageRegistry.ts:59`](src/core/StorageRegistry.ts)
+📍 [`src/core/StorageRegistry.ts:60`](src/core/StorageRegistry.ts)
 
 Opaque context passed to per-agent storage factories.
 
@@ -30095,6 +31392,19 @@ export function buildQueryString(params: Record&lt;string, string | number | boo
 
 ---
 
+### createExecutionRecorder `function`
+
+📍 [`src/core/createExecutionRecorder.ts:97`](src/core/createExecutionRecorder.ts)
+
+Create an ExecutionRecorder that wires hooks + callbacks to persist
+execution state via the provided storage backend.
+
+```typescript
+export function createExecutionRecorder(options: ExecutionRecorderOptions): ExecutionRecorder
+```
+
+---
+
 ### createRoutineDefinition `function`
 
 📍 [`src/domain/entities/Routine.ts:166`](src/domain/entities/Routine.ts)
@@ -30121,6 +31431,24 @@ export function createRoutineExecution(definition: RoutineDefinition): RoutineEx
 
 ---
 
+### createRoutineExecutionRecord `function`
+
+📍 [`src/domain/entities/RoutineExecutionRecord.ts:112`](src/domain/entities/RoutineExecutionRecord.ts)
+
+Create an initial RoutineExecutionRecord from a definition.
+Status is set to 'running' with empty steps.
+
+```typescript
+export function createRoutineExecutionRecord(
+  definition: RoutineDefinition,
+  connectorName: string,
+  model: string,
+  trigger?: RoutineExecutionRecord['trigger'],
+): RoutineExecutionRecord
+```
+
+---
+
 ### detectServiceFromURL `function`
 
 📍 [`src/domain/entities/Services.ts:512`](src/domain/entities/Services.ts)
@@ -30133,9 +31461,25 @@ export function detectServiceFromURL(url: string): string | undefined
 
 ---
 
+### encodeSharingUrl `function`
+
+📍 [`src/tools/microsoft/types.ts:503`](src/tools/microsoft/types.ts)
+
+Encode a sharing URL into the Graph API sharing token format.
+
+Microsoft Graph's `/shares/{token}` endpoint accepts base64url-encoded URLs
+prefixed with `u!`. This is the documented way to access files via sharing links
+or direct web URLs without knowing the driveId/itemId.
+
+```typescript
+export function encodeSharingUrl(webUrl: string): string
+```
+
+---
+
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:612`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:673`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 
@@ -30205,6 +31549,18 @@ export function formatAttendees(emails: unknown[]):
 
 ---
 
+### formatFileSize `function`
+
+📍 [`src/tools/microsoft/types.ts:607`](src/tools/microsoft/types.ts)
+
+Format a file size in bytes to a human-readable string.
+
+```typescript
+export function formatFileSize(bytes: number): string
+```
+
+---
+
 ### formatPluginDisplayName `function`
 
 📍 [`src/core/context-nextgen/snapshot.ts:159`](src/core/context-nextgen/snapshot.ts)
@@ -30264,6 +31620,25 @@ If config.driver is provided, uses that instead of the default.
 
 ```typescript
 export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;IDesktopDriver&gt;
+```
+
+---
+
+### getDrivePrefix `function`
+
+📍 [`src/tools/microsoft/types.ts:551`](src/tools/microsoft/types.ts)
+
+Determine the drive prefix for Graph API calls.
+
+Priority:
+1. siteId → `/sites/{siteId}/drive`
+2. driveId → `/drives/{driveId}`
+3. fallback → `{userPrefix}/drive` (e.g., `/me/drive`)
+
+```typescript
+export function getDrivePrefix(
+  userPrefix: string,
+  options?:
 ```
 
 ---
@@ -30397,6 +31772,24 @@ export function isKnownService(serviceId: string): boolean
 
 ---
 
+### isMicrosoftFileUrl `function`
+
+📍 [`src/tools/microsoft/types.ts:528`](src/tools/microsoft/types.ts)
+
+Check if a string looks like a OneDrive/SharePoint web URL.
+
+Matches:
+- `*.sharepoint.com/*`
+- `onedrive.live.com/*`
+- `1drv.ms/*`
+- `*.sharepoint-df.com/*` (dogfood/test)
+
+```typescript
+export function isMicrosoftFileUrl(source: string): boolean
+```
+
+---
+
 ### isTeamsMeetingUrl `function`
 
 📍 [`src/tools/microsoft/types.ts:199`](src/tools/microsoft/types.ts)
@@ -30413,6 +31806,18 @@ To resolve a URL to a meeting ID, use `resolveMeetingId()` which calls
 
 ```typescript
 export function isTeamsMeetingUrl(input: string): boolean
+```
+
+---
+
+### isWebUrl `function`
+
+📍 [`src/tools/microsoft/types.ts:515`](src/tools/microsoft/types.ts)
+
+Check if a string looks like a web URL (http/https).
+
+```typescript
+export function isWebUrl(source: string): boolean
 ```
 
 ---
@@ -30564,6 +31969,44 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ---
 
+### resolveFileEndpoints `function`
+
+📍 [`src/tools/microsoft/types.ts:570`](src/tools/microsoft/types.ts)
+
+Build the Graph API endpoint and metadata endpoint for a file source.
+
+Handles three input types:
+1. Web URL (SharePoint/OneDrive link) → uses `/shares/{token}/driveItem`
+2. Path (starts with `/`) → uses `/drive/root:{path}:`
+3. Item ID → uses `/drive/items/{id}`
+
+```typescript
+export function resolveFileEndpoints(
+  source: string,
+  drivePrefix: string
+):
+```
+
+---
+
+### resolveFlowSource `function`
+
+📍 [`src/core/routineControlFlow.ts:472`](src/core/routineControlFlow.ts)
+
+Resolve the source array for a map/fold control flow using layered resolution:
+1. Determine lookup key(s) from source config
+2. Read from ICM/WM with fallback chain
+3. Apply JSON path extraction if specified
+4. Coerce to array algorithmically (JSON parse, common field names)
+5. LLM extraction fallback if still not an array
+
+```typescript
+export async function resolveFlowSource(
+  flow:
+```
+
+---
+
 ### resolveMaxContextTokens `function`
 
 📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:51`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
@@ -30622,7 +32065,7 @@ export function resolveRepository(
 
 ### resolveTemplates `function`
 
-📍 [`src/core/routineControlFlow.ts:69`](src/core/routineControlFlow.ts)
+📍 [`src/core/routineControlFlow.ts:71`](src/core/routineControlFlow.ts)
 
 Resolve template placeholders in text.
 
@@ -30698,7 +32141,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:615`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:629`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -30751,7 +32194,7 @@ Default configuration values
 
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:506`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:510`](src/core/context-nextgen/types.ts)
 
 Default feature configuration
 
@@ -30764,6 +32207,7 @@ Default feature configuration
 | `inContextMemory` | `true` | - |
 | `persistentInstructions` | `false` | - |
 | `userInfo` | `false` | - |
+| `toolCatalog` | `false` | - |
 
 </details>
 

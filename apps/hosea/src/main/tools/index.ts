@@ -1,26 +1,11 @@
 /**
- * Unified Tool Catalog Module
+ * Hosea Tools Module
  *
- * Exports the UnifiedToolCatalog and all tool providers for Hosea.
+ * Registers Hosea-specific tool categories with the core ToolCatalogRegistry.
  */
 
-// Main catalog
-export {
-  UnifiedToolCatalog,
-  getUnifiedToolCatalog,
-  resetUnifiedToolCatalog,
-  CATEGORY_DISPLAY_NAMES,
-  type HoseaToolCategory,
-  type UnifiedToolEntry,
-  type IToolProvider,
-  type ToolCreationContext,
-  type CategoryInfo,
-} from './UnifiedToolCatalog.js';
+export { registerHoseaTools, updateBrowserService, invalidateHoseaTools } from './registration.js';
 
-// Providers
-export { OneRingToolProvider } from './providers/OneRingToolProvider.js';
-export {
-  BrowserToolProvider,
-  type BrowserToolCreationContext,
-} from './providers/BrowserToolProvider.js';
-export { DesktopToolProvider } from './providers/DesktopToolProvider.js';
+// Re-export core types for convenience
+export { ToolCatalogRegistry } from '@everworker/oneringai';
+export type { CatalogToolEntry, ToolCategoryDefinition } from '@everworker/oneringai';
