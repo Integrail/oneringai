@@ -6,7 +6,12 @@
  * UnifiedToolCatalog architecture.
  */
 
-import { ToolCatalogRegistry, desktopTools } from '@everworker/oneringai';
+import {
+  ToolCatalogRegistry,
+  ToolRegistry,
+  toolRegistry,
+  desktopTools,
+} from '@everworker/oneringai';
 import type { CatalogToolEntry, ToolFunction } from '@everworker/oneringai';
 import type { BrowserService } from '../BrowserService.js';
 import { createBrowserTools } from '../browser/index.js';
@@ -89,6 +94,14 @@ export function registerHoseaTools(browserService?: BrowserService): void {
     _browserService = browserService;
   }
 
+  // ---- Core library tools (ESM requires explicit init) ----
+  // ToolCatalogRegistry.ensureInitialized() uses require() which fails in Electron ESM.
+  // Explicitly init from the imported toolRegistry array instead.
+  ToolCatalogRegistry.initializeFromRegistry(toolRegistry);
+
+  // ---- Connector tools (runtime-discovered from active connectors) ----
+  registerConnectorTools();
+
   // ---- Browser category ----
   ToolCatalogRegistry.registerCategory({
     name: 'browser',
@@ -148,13 +161,44 @@ export function updateBrowserService(browserService: BrowserService): void {
 }
 
 /**
+ * Register connector tools from all active connectors into ToolCatalogRegistry.
+ * Connector tools get `connectorName`, `serviceType`, and `requiresConnector` metadata
+ * so they can be grouped properly during resolution and displayed correctly in the UI.
+ */
+function registerConnectorTools(): void {
+  const connectorTools = ToolRegistry.getAllConnectorTools();
+  for (const entry of connectorTools) {
+    const catName = `connector:${entry.connectorName}`;
+
+    // Ensure category exists
+    if (!ToolCatalogRegistry.hasCategory(catName)) {
+      ToolCatalogRegistry.registerCategory({
+        name: catName,
+        displayName: ToolCatalogRegistry.toDisplayName(entry.connectorName),
+        description: `API tools for ${entry.connectorName}`,
+      });
+    }
+
+    ToolCatalogRegistry.registerTool(catName, {
+      tool: entry.tool,
+      name: entry.name,
+      displayName: entry.displayName,
+      description: entry.description,
+      safeByDefault: entry.safeByDefault,
+      requiresConnector: entry.requiresConnector,
+      connectorServiceTypes: entry.connectorServiceTypes,
+      source: 'oneringai',
+      connectorName: entry.connectorName,
+      serviceType: entry.serviceType,
+    });
+  }
+}
+
+/**
  * Invalidate and re-register all Hosea tools.
  * Call this after connector changes to refresh the catalog.
  */
 export function invalidateHoseaTools(): void {
-  // Remove Hosea categories so they can be re-registered fresh
-  ToolCatalogRegistry.unregisterCategory('browser');
-  ToolCatalogRegistry.unregisterCategory('desktop');
-  // Re-register with current browser service
+  // Re-register everything fresh (registerHoseaTools handles all categories)
   registerHoseaTools();
 }

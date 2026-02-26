@@ -873,7 +873,6 @@ export class AgentService {
       }
 
       ToolCatalogRegistry.reset();
-      ToolCatalogRegistry.ensureInitialized();
       invalidateHoseaTools();
 
       const allTools = ToolRegistry.getAllTools();
@@ -1248,7 +1247,6 @@ export class AgentService {
 
       // Invalidate tool caches
       ToolCatalogRegistry.reset();
-      ToolCatalogRegistry.ensureInitialized();
       invalidateHoseaTools();
 
       // Notify renderer
@@ -1486,7 +1484,6 @@ export class AgentService {
 
       // Invalidate tool caches after sync
       ToolCatalogRegistry.reset();
-      ToolCatalogRegistry.ensureInitialized();
       invalidateHoseaTools();
 
       logger.info(`[syncActiveEWProfile] Sync complete: ${added} added, ${updated} updated, ${removed} removed, ${remoteConnectors.length} total remote`);
@@ -2391,7 +2388,6 @@ export class AgentService {
       // Invalidate caches so tools appear immediately without restart
       ConnectorTools.clearCache();
       ToolCatalogRegistry.reset();
-      ToolCatalogRegistry.ensureInitialized();
       invalidateHoseaTools();
 
       // Tell the caller whether OAuth authorization is needed
@@ -2446,7 +2442,6 @@ export class AgentService {
       // Invalidate caches so tool changes appear immediately
       ConnectorTools.clearCache();
       ToolCatalogRegistry.reset();
-      ToolCatalogRegistry.ensureInitialized();
       invalidateHoseaTools();
 
       return { success: true };
@@ -2481,7 +2476,6 @@ export class AgentService {
       // Invalidate caches so removed tools disappear immediately
       ConnectorTools.clearCache();
       ToolCatalogRegistry.reset();
-      ToolCatalogRegistry.ensureInitialized();
       invalidateHoseaTools();
 
       return { success: true };
@@ -2808,7 +2802,6 @@ export class AgentService {
     // Invalidate caches
     ConnectorTools.clearCache();
     ToolCatalogRegistry.reset();
-    ToolCatalogRegistry.ensureInitialized();
     invalidateHoseaTools();
 
     // Start the OAuth flow
