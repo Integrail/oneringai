@@ -44939,6 +44939,9 @@ __export(tools_exports, {
   createImageGenerationTool: () => createImageGenerationTool,
   createListDirectoryTool: () => createListDirectoryTool,
   createMeetingTool: () => createMeetingTool,
+  createMicrosoftListFilesTool: () => createMicrosoftListFilesTool,
+  createMicrosoftReadFileTool: () => createMicrosoftReadFileTool,
+  createMicrosoftSearchFilesTool: () => createMicrosoftSearchFilesTool,
   createPRCommentsTool: () => createPRCommentsTool,
   createPRFilesTool: () => createPRFilesTool,
   createReadFileTool: () => createReadFileTool,
@@ -44971,15 +44974,18 @@ __export(tools_exports, {
   desktopWindowList: () => desktopWindowList,
   developerTools: () => developerTools,
   editFile: () => editFile,
+  encodeSharingUrl: () => encodeSharingUrl,
   executeInVM: () => executeInVM,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
   formatAttendees: () => formatAttendees,
+  formatFileSize: () => formatFileSize,
   formatRecipients: () => formatRecipients,
   generateRoutine: () => generateRoutine,
   getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
   getDesktopDriver: () => getDesktopDriver,
+  getDrivePrefix: () => getDrivePrefix,
   getMediaOutputHandler: () => getMediaOutputHandler,
   getMediaStorage: () => getMediaStorage,
   getToolByName: () => getToolByName,
@@ -44993,7 +44999,9 @@ __export(tools_exports, {
   hydrateCustomTool: () => hydrateCustomTool,
   isBlockedCommand: () => isBlockedCommand,
   isExcludedExtension: () => isExcludedExtension,
+  isMicrosoftFileUrl: () => isMicrosoftFileUrl,
   isTeamsMeetingUrl: () => isTeamsMeetingUrl,
+  isWebUrl: () => isWebUrl,
   jsonManipulator: () => jsonManipulator,
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
@@ -45004,6 +45012,7 @@ __export(tools_exports, {
   parseRepository: () => parseRepository,
   readFile: () => readFile5,
   resetDefaultDriver: () => resetDefaultDriver,
+  resolveFileEndpoints: () => resolveFileEndpoints,
   resolveMeetingId: () => resolveMeetingId,
   resolveRepository: () => resolveRepository,
   setMediaOutputHandler: () => setMediaOutputHandler,
@@ -49256,6 +49265,77 @@ async function resolveMeetingId(connector, input, prefix, effectiveUserId, effec
     subject: meetings.value[0].subject
   };
 }
+var MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+var SUPPORTED_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".docx",
+  ".pptx",
+  ".xlsx",
+  ".csv",
+  ".pdf",
+  ".odt",
+  ".odp",
+  ".ods",
+  ".rtf",
+  ".html",
+  ".htm",
+  ".txt",
+  ".md",
+  ".json",
+  ".xml",
+  ".yaml",
+  ".yml"
+]);
+function encodeSharingUrl(webUrl) {
+  const base64 = Buffer.from(webUrl, "utf-8").toString("base64").replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-");
+  return `u!${base64}`;
+}
+function isWebUrl(source) {
+  return /^https?:\/\//i.test(source.trim());
+}
+function isMicrosoftFileUrl(source) {
+  try {
+    const url2 = new URL(source.trim());
+    const host = url2.hostname.toLowerCase();
+    return host.endsWith(".sharepoint.com") || host.endsWith(".sharepoint-df.com") || host === "onedrive.live.com" || host === "1drv.ms";
+  } catch {
+    return false;
+  }
+}
+function getDrivePrefix(userPrefix, options) {
+  if (options?.siteId) return `/sites/${options.siteId}/drive`;
+  if (options?.driveId) return `/drives/${options.driveId}`;
+  return `${userPrefix}/drive`;
+}
+function resolveFileEndpoints(source, drivePrefix) {
+  const trimmed = source.trim();
+  if (isWebUrl(trimmed)) {
+    const token = encodeSharingUrl(trimmed);
+    return {
+      metadataEndpoint: `/shares/${token}/driveItem`,
+      contentEndpoint: `/shares/${token}/driveItem/content`,
+      isSharedUrl: true
+    };
+  }
+  if (trimmed.startsWith("/")) {
+    const path6 = trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+    return {
+      metadataEndpoint: `${drivePrefix}/root:${path6}:`,
+      contentEndpoint: `${drivePrefix}/root:${path6}:/content`,
+      isSharedUrl: false
+    };
+  }
+  return {
+    metadataEndpoint: `${drivePrefix}/items/${trimmed}`,
+    contentEndpoint: `${drivePrefix}/items/${trimmed}/content`,
+    isSharedUrl: false
+  };
+}
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 // src/tools/microsoft/createDraftEmail.ts
 function createDraftEmailTool(connector, userId) {
@@ -49961,16 +50041,536 @@ EXAMPLES:
   };
 }
 
+// src/tools/microsoft/readFile.ts
+function createMicrosoftReadFileTool(connector, userId) {
+  const reader = DocumentReader.create();
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "read_file",
+        description: `Read a file from Microsoft OneDrive or SharePoint and return its content as **markdown text**.
+
+Use this tool when you need to read the contents of a document stored in OneDrive or SharePoint. The file is downloaded and automatically converted to clean markdown \u2014 you will never receive raw binary data.
+
+**Supported formats:** .docx, .pptx, .xlsx, .csv, .pdf, .odt, .odp, .ods, .rtf, .html, .txt, .md, .json, .xml, .yaml
+**Not supported:** .doc, .xls, .ppt (legacy Office formats), images, videos, executables.
+
+**The \`source\` parameter is flexible \u2014 you can provide any of these:**
+- A SharePoint or OneDrive **web URL**: \`https://contoso.sharepoint.com/sites/team/Shared Documents/report.docx\`
+- A OneDrive **sharing link**: \`https://1drv.ms/w/s!AmVg...\`
+- A **file path** within the drive: \`/Documents/Q4 Report.docx\`
+- A Graph API **item ID**: \`01ABCDEF123456\`
+
+When given a web URL, the tool automatically resolves it to the correct Graph API call \u2014 no need to manually extract drive or item IDs.
+
+**Maximum file size:** 10 MB. For larger files, use the search or list tools to find smaller alternatives.
+
+**Returns:** The file content as markdown text, along with metadata (filename, size, MIME type, webUrl). For spreadsheets, each sheet becomes a markdown table. For presentations, each slide becomes a section.`,
+        parameters: {
+          type: "object",
+          properties: {
+            source: {
+              type: "string",
+              description: 'The file to read. Accepts a web URL (SharePoint/OneDrive link), a file path within the drive (e.g., "/Documents/report.docx"), or a Graph API item ID.'
+            },
+            driveId: {
+              type: "string",
+              description: "Optional drive ID. Omit to use the default drive. Only needed when accessing a specific non-default drive."
+            },
+            siteId: {
+              type: "string",
+              description: "Optional SharePoint site ID. Use this instead of driveId to access files in a specific SharePoint site's default drive."
+            },
+            targetUser: {
+              type: "string",
+              description: `User ID or email (e.g., "user@contoso.com"). Only needed with application-only (client_credentials) auth to specify which user's drive to access.`
+            }
+          },
+          required: ["source"]
+        }
+      },
+      blocking: true,
+      timeout: 6e4
+    },
+    describeCall: (args) => {
+      const src = args.source.length > 80 ? args.source.slice(0, 77) + "..." : args.source;
+      return `Read: ${src}`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Read a file from OneDrive/SharePoint via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
+      if (!args.source || !args.source.trim()) {
+        return {
+          success: false,
+          error: 'The "source" parameter is required. Provide a file URL, path, or item ID.'
+        };
+      }
+      if (isWebUrl(args.source) && !isMicrosoftFileUrl(args.source)) {
+        return {
+          success: false,
+          error: `The URL "${args.source}" does not appear to be a SharePoint or OneDrive link. This tool only supports URLs from *.sharepoint.com, onedrive.live.com, or 1drv.ms. For other URLs, use the web_fetch tool instead.`
+        };
+      }
+      try {
+        const userPrefix = getUserPathPrefix(connector, args.targetUser);
+        const drivePrefix = getDrivePrefix(userPrefix, {
+          siteId: args.siteId,
+          driveId: args.driveId
+        });
+        const { metadataEndpoint, contentEndpoint, isSharedUrl } = resolveFileEndpoints(
+          args.source,
+          drivePrefix
+        );
+        const metadataQueryParams = isSharedUrl ? {} : { "$select": "id,name,size,file,folder,webUrl,parentReference" };
+        const metadata = await microsoftFetch(connector, metadataEndpoint, {
+          userId: effectiveUserId,
+          accountId: effectiveAccountId,
+          queryParams: metadataQueryParams
+        });
+        if (metadata.folder) {
+          return {
+            success: false,
+            error: `"${metadata.name}" is a folder, not a file. Use the list_files tool to browse folder contents.`
+          };
+        }
+        if (metadata.size > MAX_FILE_SIZE_BYTES) {
+          return {
+            success: false,
+            filename: metadata.name,
+            sizeBytes: metadata.size,
+            error: `File "${metadata.name}" is ${formatFileSize(metadata.size)}, which exceeds the ${formatFileSize(MAX_FILE_SIZE_BYTES)} limit. Consider downloading a smaller version or using the search tool to find an alternative.`
+          };
+        }
+        const ext = getExtension(metadata.name);
+        if (ext && !SUPPORTED_EXTENSIONS.has(ext) && !FormatDetector.isBinaryDocumentFormat(ext)) {
+          return {
+            success: false,
+            filename: metadata.name,
+            mimeType: metadata.file?.mimeType,
+            error: `File format "${ext}" is not supported for text extraction. Supported formats: ${[...SUPPORTED_EXTENSIONS].join(", ")}`
+          };
+        }
+        const response = await connector.fetch(
+          contentEndpoint,
+          { method: "GET" },
+          effectiveUserId,
+          effectiveAccountId
+        );
+        if (!response.ok) {
+          throw new MicrosoftAPIError(response.status, response.statusText, await response.text());
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const result = await reader.read(
+          { type: "buffer", buffer, filename: metadata.name },
+          { extractImages: false }
+        );
+        if (!result.success) {
+          return {
+            success: false,
+            filename: metadata.name,
+            error: `Failed to convert "${metadata.name}" to markdown: ${result.error ?? "unknown error"}`
+          };
+        }
+        const markdown = mergeTextPieces(result.pieces);
+        if (!markdown || markdown.trim().length === 0) {
+          return {
+            success: true,
+            filename: metadata.name,
+            sizeBytes: metadata.size,
+            mimeType: metadata.file?.mimeType,
+            webUrl: metadata.webUrl,
+            markdown: "*(empty document \u2014 no text content found)*"
+          };
+        }
+        return {
+          success: true,
+          filename: metadata.name,
+          sizeBytes: metadata.size,
+          mimeType: metadata.file?.mimeType,
+          webUrl: metadata.webUrl,
+          markdown
+        };
+      } catch (error) {
+        if (error instanceof MicrosoftAPIError) {
+          if (error.status === 404) {
+            return {
+              success: false,
+              error: `File not found. Check that the source "${args.source}" is correct and you have access.`
+            };
+          }
+          if (error.status === 403 || error.status === 401) {
+            return {
+              success: false,
+              error: `Access denied. The connector may not have sufficient permissions (Files.Read or Sites.Read.All required).`
+            };
+          }
+        }
+        return {
+          success: false,
+          error: `Failed to read file: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+function getExtension(filename) {
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0) return "";
+  return filename.slice(dot).toLowerCase();
+}
+
+// src/tools/microsoft/listFiles.ts
+var DEFAULT_LIMIT = 50;
+var MAX_LIMIT = 200;
+var SELECT_FIELDS = "id,name,size,lastModifiedDateTime,file,folder,webUrl";
+function createMicrosoftListFilesTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "list_files",
+        description: `List files and folders in a Microsoft OneDrive or SharePoint directory.
+
+Use this tool to browse the contents of a folder, discover available files before reading them, or search within a specific folder. Returns file/folder metadata (name, size, type, last modified, URL) \u2014 **never returns file contents**.
+
+**The \`path\` parameter is flexible \u2014 you can provide:**
+- A **folder path** within the drive: \`/Documents/Projects\` or \`/\` for root
+- A SharePoint/OneDrive **folder URL**: \`https://contoso.sharepoint.com/sites/team/Shared Documents/Projects\`
+- Omit entirely to list the root of the drive
+
+**Optional search:** Use the \`search\` parameter to filter by filename within the folder tree. This uses Microsoft's server-side search (fast, works across subfolders).
+
+**Tip:** To read a file's content after finding it, use the read_file tool with the file's webUrl or id from these results.`,
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: 'Folder path (e.g., "/Documents/Projects") or a web URL to a SharePoint/OneDrive folder. Omit to list root.'
+            },
+            driveId: {
+              type: "string",
+              description: "Optional drive ID for a specific non-default drive."
+            },
+            siteId: {
+              type: "string",
+              description: "Optional SharePoint site ID to access that site's default document library."
+            },
+            search: {
+              type: "string",
+              description: "Optional search query to filter results by filename or content. Searches within the specified folder and all subfolders."
+            },
+            limit: {
+              type: "number",
+              description: `Maximum number of items to return (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT}).`
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email. Only needed with application-only (client_credentials) auth."
+            }
+          }
+        }
+      },
+      blocking: true,
+      timeout: 3e4
+    },
+    describeCall: (args) => {
+      const loc = args.path || "/";
+      const suffix = args.search ? ` (search: "${args.search}")` : "";
+      return `List: ${loc}${suffix}`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `List files in OneDrive/SharePoint via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
+      const limit = Math.min(Math.max(1, args.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
+      try {
+        const userPrefix = getUserPathPrefix(connector, args.targetUser);
+        const drivePrefix = getDrivePrefix(userPrefix, {
+          siteId: args.siteId,
+          driveId: args.driveId
+        });
+        let endpoint;
+        if (args.search) {
+          const folderBase = args.path && !isWebUrl(args.path) ? `${drivePrefix}/root:${normalizePath(args.path)}:` : drivePrefix;
+          endpoint = `${folderBase}/search(q='${encodeSearchQuery(args.search)}')`;
+        } else if (args.path) {
+          if (isWebUrl(args.path)) {
+            const token = encodeSharingUrl(args.path.trim());
+            endpoint = `/shares/${token}/driveItem/children`;
+          } else {
+            const path6 = normalizePath(args.path);
+            endpoint = path6 === "/" ? `${drivePrefix}/root/children` : `${drivePrefix}/root:${path6}:/children`;
+          }
+        } else {
+          endpoint = `${drivePrefix}/root/children`;
+        }
+        const queryParams = {
+          "$top": limit,
+          "$select": SELECT_FIELDS
+        };
+        if (!args.search) {
+          queryParams["$orderby"] = "name asc";
+        }
+        const data = await microsoftFetch(connector, endpoint, {
+          userId: effectiveUserId,
+          accountId: effectiveAccountId,
+          queryParams
+        });
+        const items = (data.value || []).map(mapDriveItem);
+        return {
+          success: true,
+          items,
+          totalCount: items.length,
+          hasMore: !!data["@odata.nextLink"]
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to list files: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+function mapDriveItem(item) {
+  return {
+    name: item.name,
+    type: item.folder ? "folder" : "file",
+    size: item.size,
+    sizeFormatted: formatFileSize(item.size),
+    mimeType: item.file?.mimeType,
+    lastModified: item.lastModifiedDateTime,
+    webUrl: item.webUrl,
+    id: item.id,
+    childCount: item.folder?.childCount
+  };
+}
+function normalizePath(path6) {
+  let p = path6.trim();
+  if (!p.startsWith("/")) p = "/" + p;
+  if (p.endsWith("/") && p.length > 1) p = p.slice(0, -1);
+  return p;
+}
+function encodeSearchQuery(query) {
+  return query.replace(/\\/g, "\\\\").replace(/'/g, "''");
+}
+
+// src/tools/microsoft/searchFiles.ts
+var DEFAULT_LIMIT2 = 25;
+var MAX_LIMIT2 = 100;
+function createMicrosoftSearchFilesTool(connector, userId) {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "search_files",
+        description: `Search for files across Microsoft OneDrive and SharePoint.
+
+Use this tool when you need to **find** files by name, content, or metadata across all of the user's OneDrive and SharePoint sites. This is a powerful full-text search \u2014 it searches inside document content, not just filenames.
+
+**Supports Microsoft's KQL (Keyword Query Language):**
+- Simple text: \`"quarterly report"\`
+- By filename: \`filename:budget.xlsx\`
+- By author: \`author:"Jane Smith"\`
+- By date: \`lastModifiedTime>2024-01-01\`
+- Combined: \`project proposal filetype:docx\`
+
+**Filter by file type:** Use the \`fileTypes\` parameter (e.g., \`["docx", "pdf"]\`) to restrict results to specific formats.
+
+**Limit to a SharePoint site:** Provide the \`siteId\` parameter to search only within a specific site.
+
+**Returns:** A list of matching files with name, path, site, snippet (text preview), size, and webUrl. Does NOT return file contents \u2014 use the read_file tool to read a specific result.
+
+**Tip:** Start with a broad search, then use read_file on the most relevant results.`,
+        parameters: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: 'Search query. Supports plain text and KQL syntax (e.g., "budget report", "filename:spec.docx", "author:john filetype:pptx").'
+            },
+            siteId: {
+              type: "string",
+              description: "Optional SharePoint site ID to limit search to a specific site."
+            },
+            fileTypes: {
+              type: "array",
+              items: { type: "string" },
+              description: 'Optional file type filter. Array of extensions without dots (e.g., ["docx", "pdf", "xlsx"]).'
+            },
+            limit: {
+              type: "number",
+              description: `Maximum number of results (default: ${DEFAULT_LIMIT2}, max: ${MAX_LIMIT2}).`
+            },
+            targetUser: {
+              type: "string",
+              description: "User ID or email. Only needed with application-only (client_credentials) auth."
+            }
+          },
+          required: ["query"]
+        }
+      },
+      blocking: true,
+      timeout: 3e4
+    },
+    describeCall: (args) => {
+      const types = args.fileTypes?.length ? ` [${args.fileTypes.join(",")}]` : "";
+      return `Search: "${args.query}"${types}`;
+    },
+    permission: {
+      scope: "session",
+      riskLevel: "low",
+      approvalMessage: `Search files in OneDrive/SharePoint via ${connector.displayName}`
+    },
+    execute: async (args, context) => {
+      const effectiveUserId = context?.userId ?? userId;
+      const effectiveAccountId = context?.accountId;
+      const limit = Math.min(Math.max(1, args.limit ?? DEFAULT_LIMIT2), MAX_LIMIT2);
+      try {
+        if (args.siteId) {
+          return await searchViaDriveEndpoint(
+            connector,
+            args,
+            limit,
+            effectiveUserId,
+            effectiveAccountId
+          );
+        }
+        let queryString = args.query;
+        if (args.fileTypes?.length) {
+          const typeFilter = args.fileTypes.map((t) => `filetype:${t.replace(/^\./, "")}`).join(" OR ");
+          queryString = `(${queryString}) (${typeFilter})`;
+        }
+        const searchRequest = {
+          requests: [
+            {
+              entityTypes: ["driveItem"],
+              query: { queryString },
+              from: 0,
+              size: limit,
+              fields: [
+                "id",
+                "name",
+                "size",
+                "webUrl",
+                "lastModifiedDateTime",
+                "parentReference",
+                "file"
+              ]
+            }
+          ]
+        };
+        const data = await microsoftFetch(connector, "/search/query", {
+          method: "POST",
+          body: searchRequest,
+          userId: effectiveUserId,
+          accountId: effectiveAccountId
+        });
+        const container = data.value?.[0]?.hitsContainers?.[0];
+        if (!container?.hits?.length) {
+          return {
+            success: true,
+            results: [],
+            totalCount: 0,
+            hasMore: false
+          };
+        }
+        const results = container.hits.map((hit) => {
+          const resource = hit.resource;
+          return {
+            name: resource.name,
+            path: resource.parentReference?.path?.replace(/\/drive\/root:/, "") || void 0,
+            site: resource.parentReference?.siteId || void 0,
+            snippet: hit.summary || void 0,
+            size: resource.size,
+            sizeFormatted: formatFileSize(resource.size),
+            webUrl: resource.webUrl,
+            id: resource.id,
+            lastModified: resource.lastModifiedDateTime
+          };
+        });
+        return {
+          success: true,
+          results,
+          totalCount: container.total,
+          hasMore: container.moreResultsAvailable
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Search failed: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+async function searchViaDriveEndpoint(connector, args, limit, effectiveUserId, effectiveAccountId) {
+  const drivePrefix = `/sites/${args.siteId}/drive`;
+  const escapedQuery = args.query.replace(/'/g, "''");
+  const endpoint = `${drivePrefix}/root/search(q='${escapedQuery}')`;
+  const data = await microsoftFetch(connector, endpoint, {
+    userId: effectiveUserId,
+    accountId: effectiveAccountId,
+    queryParams: {
+      "$top": limit,
+      "$select": "id,name,size,webUrl,lastModifiedDateTime,parentReference,file"
+    }
+  });
+  let items = data.value || [];
+  if (args.fileTypes?.length) {
+    const extSet = new Set(args.fileTypes.map((t) => t.replace(/^\./, "").toLowerCase()));
+    items = items.filter((item) => {
+      const ext = item.name.split(".").pop()?.toLowerCase();
+      return ext && extSet.has(ext);
+    });
+  }
+  const results = items.map((item) => ({
+    name: item.name,
+    path: item.parentReference?.path?.replace(/\/drive\/root:/, "") || void 0,
+    site: item.parentReference?.siteId || void 0,
+    snippet: void 0,
+    size: item.size,
+    sizeFormatted: formatFileSize(item.size),
+    webUrl: item.webUrl,
+    id: item.id,
+    lastModified: item.lastModifiedDateTime
+  }));
+  return {
+    success: true,
+    results,
+    totalCount: results.length,
+    hasMore: !!data["@odata.nextLink"]
+  };
+}
+
 // src/tools/microsoft/register.ts
 function registerMicrosoftTools() {
   ConnectorTools.registerService("microsoft", (connector, userId) => {
     return [
+      // Email
       createDraftEmailTool(connector, userId),
       createSendEmailTool(connector, userId),
+      // Meetings
       createMeetingTool(connector, userId),
       createEditMeetingTool(connector, userId),
       createGetMeetingTranscriptTool(connector, userId),
-      createFindMeetingSlotsTool(connector, userId)
+      createFindMeetingSlotsTool(connector, userId),
+      // Files (OneDrive / SharePoint)
+      createMicrosoftReadFileTool(connector, userId),
+      createMicrosoftListFilesTool(connector, userId),
+      createMicrosoftSearchFilesTool(connector, userId)
     ];
   });
 }
@@ -52490,6 +53090,9 @@ exports.createListDirectoryTool = createListDirectoryTool;
 exports.createMeetingTool = createMeetingTool;
 exports.createMessageWithImages = createMessageWithImages;
 exports.createMetricsCollector = createMetricsCollector;
+exports.createMicrosoftListFilesTool = createMicrosoftListFilesTool;
+exports.createMicrosoftReadFileTool = createMicrosoftReadFileTool;
+exports.createMicrosoftSearchFilesTool = createMicrosoftSearchFilesTool;
 exports.createPRCommentsTool = createPRCommentsTool;
 exports.createPRFilesTool = createPRFilesTool;
 exports.createPlan = createPlan;
@@ -52531,6 +53134,7 @@ exports.detectServiceFromURL = detectServiceFromURL;
 exports.developerTools = developerTools;
 exports.documentToContent = documentToContent;
 exports.editFile = editFile;
+exports.encodeSharingUrl = encodeSharingUrl;
 exports.evaluateCondition = evaluateCondition;
 exports.executeRoutine = executeRoutine;
 exports.extractJSON = extractJSON;
@@ -52540,6 +53144,7 @@ exports.findConnectorByServiceTypes = findConnectorByServiceTypes;
 exports.forPlan = forPlan;
 exports.forTasks = forTasks;
 exports.formatAttendees = formatAttendees;
+exports.formatFileSize = formatFileSize;
 exports.formatPluginDisplayName = formatPluginDisplayName;
 exports.formatRecipients = formatRecipients;
 exports.generateEncryptionKey = generateEncryptionKey;
@@ -52559,6 +53164,7 @@ exports.getConnectorTools = getConnectorTools;
 exports.getCredentialsSetupURL = getCredentialsSetupURL;
 exports.getDesktopDriver = getDesktopDriver;
 exports.getDocsURL = getDocsURL;
+exports.getDrivePrefix = getDrivePrefix;
 exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
@@ -52608,6 +53214,7 @@ exports.isBlockedCommand = isBlockedCommand;
 exports.isErrorEvent = isErrorEvent;
 exports.isExcludedExtension = isExcludedExtension;
 exports.isKnownService = isKnownService;
+exports.isMicrosoftFileUrl = isMicrosoftFileUrl;
 exports.isOutputTextDelta = isOutputTextDelta;
 exports.isReasoningDelta = isReasoningDelta;
 exports.isReasoningDone = isReasoningDone;
@@ -52623,6 +53230,7 @@ exports.isToolCallArgumentsDelta = isToolCallArgumentsDelta;
 exports.isToolCallArgumentsDone = isToolCallArgumentsDone;
 exports.isToolCallStart = isToolCallStart;
 exports.isVendor = isVendor;
+exports.isWebUrl = isWebUrl;
 exports.killBackgroundProcess = killBackgroundProcess;
 exports.listConnectorsByServiceTypes = listConnectorsByServiceTypes;
 exports.listDirectory = listDirectory;
@@ -52643,6 +53251,7 @@ exports.registerScrapeProvider = registerScrapeProvider;
 exports.resetDefaultDriver = resetDefaultDriver;
 exports.resolveConnector = resolveConnector;
 exports.resolveDependencies = resolveDependencies;
+exports.resolveFileEndpoints = resolveFileEndpoints;
 exports.resolveFlowSource = resolveFlowSource;
 exports.resolveMaxContextTokens = resolveMaxContextTokens;
 exports.resolveMeetingId = resolveMeetingId;

@@ -362,10 +362,10 @@ describe('Microsoft Graph Tools', () => {
       expect(ConnectorTools.hasServiceTools('microsoft')).toBe(true);
     });
 
-    it('should return 7 tools (6 Microsoft + 1 generic API) via ConnectorTools.for()', () => {
+    it('should return 10 tools (9 Microsoft + 1 generic API) via ConnectorTools.for()', () => {
       const connector = createMockConnector('my-microsoft');
       const tools = ConnectorTools.for(connector);
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(10);
     });
 
     it('should prefix tool names with connector name', () => {
@@ -382,10 +382,10 @@ describe('Microsoft Graph Tools', () => {
       expect(names).toContain('ms-outlook_find_meeting_slots');
     });
 
-    it('should return 6 tools via serviceTools()', () => {
+    it('should return 9 tools via serviceTools()', () => {
       const connector = createMockConnector('ms-svc');
       const tools = ConnectorTools.serviceTools(connector);
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(9);
     });
   });
 

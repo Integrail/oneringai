@@ -1005,6 +1005,9 @@ export {
   createEditMeetingTool,
   createGetMeetingTranscriptTool,
   createFindMeetingSlotsTool,
+  createMicrosoftReadFileTool,
+  createMicrosoftListFilesTool,
+  createMicrosoftSearchFilesTool,
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,
@@ -1012,6 +1015,12 @@ export {
   normalizeEmails,
   isTeamsMeetingUrl,
   resolveMeetingId,
+  encodeSharingUrl,
+  isWebUrl,
+  isMicrosoftFileUrl,
+  getDrivePrefix,
+  resolveFileEndpoints,
+  formatFileSize,
 } from './tools/index.js';
 
 export type {
@@ -1022,6 +1031,10 @@ export type {
   MicrosoftGetTranscriptResult,
   MicrosoftFindSlotsResult,
   MeetingSlotSuggestion,
+  MicrosoftReadFileResult,
+  MicrosoftListFilesResult,
+  MicrosoftSearchFilesResult,
+  GraphDriveItem,
 } from './tools/index.js';
 
 // Desktop automation tools (requires @nut-tree-fork/nut-js peer dependency)

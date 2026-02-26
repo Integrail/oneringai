@@ -12,6 +12,9 @@
  * - edit_meeting — Update an existing calendar event
  * - get_meeting_transcript — Retrieve Teams meeting transcript
  * - find_meeting_slots — Find available meeting time slots
+ * - read_file — Read a file from OneDrive/SharePoint as markdown
+ * - list_files — List files/folders in a OneDrive/SharePoint directory
+ * - search_files — Search across OneDrive/SharePoint for files
  */
 
 // Side-effect: register Microsoft tool factories with ConnectorTools
@@ -28,6 +31,10 @@ export type {
   MicrosoftFindSlotsResult,
   MeetingSlotSuggestion,
   MicrosoftAPIError,
+  MicrosoftReadFileResult,
+  MicrosoftListFilesResult,
+  MicrosoftSearchFilesResult,
+  GraphDriveItem,
 } from './types.js';
 
 // Utility functions
@@ -39,6 +46,12 @@ export {
   normalizeEmails,
   isTeamsMeetingUrl,
   resolveMeetingId,
+  encodeSharingUrl,
+  isWebUrl,
+  isMicrosoftFileUrl,
+  getDrivePrefix,
+  resolveFileEndpoints,
+  formatFileSize,
 } from './types.js';
 
 // Tool factories (for direct use with custom options)
@@ -48,3 +61,6 @@ export { createMeetingTool } from './createMeeting.js';
 export { createEditMeetingTool } from './editMeeting.js';
 export { createGetMeetingTranscriptTool } from './getMeetingTranscript.js';
 export { createFindMeetingSlotsTool } from './findMeetingSlots.js';
+export { createMicrosoftReadFileTool } from './readFile.js';
+export { createMicrosoftListFilesTool } from './listFiles.js';
+export { createMicrosoftSearchFilesTool } from './searchFiles.js';

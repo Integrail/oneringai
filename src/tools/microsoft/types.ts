@@ -356,3 +356,233 @@ export interface GraphFindMeetingTimesResponse {
   }[];
   emptySuggestionsReason?: string;
 }
+
+// ============================================================================
+// File / Drive Types and Helpers
+// ============================================================================
+
+/** @internal Graph driveItem metadata */
+export interface GraphDriveItem {
+  id: string;
+  name: string;
+  size: number;
+  webUrl?: string;
+  lastModifiedDateTime?: string;
+  createdDateTime?: string;
+  file?: { mimeType?: string; hashes?: Record<string, string> };
+  folder?: { childCount?: number };
+  parentReference?: {
+    driveId?: string;
+    driveType?: string;
+    id?: string;
+    name?: string;
+    path?: string;
+    siteId?: string;
+  };
+  '@microsoft.graph.downloadUrl'?: string;
+}
+
+/** @internal Graph response for listing children or search results */
+export interface GraphDriveItemListResponse {
+  value: GraphDriveItem[];
+  '@odata.nextLink'?: string;
+  '@odata.count'?: number;
+}
+
+/** @internal Graph search API response */
+export interface GraphSearchResponse {
+  value: {
+    hitsContainers: {
+      hits: {
+        hitId: string;
+        summary?: string;
+        resource: GraphDriveItem & {
+          parentReference?: GraphDriveItem['parentReference'] & { name?: string };
+        };
+      }[];
+      total: number;
+      moreResultsAvailable: boolean;
+    }[];
+  }[];
+}
+
+// ---- Result types ----
+
+export interface MicrosoftReadFileResult {
+  success: boolean;
+  filename?: string;
+  sizeBytes?: number;
+  mimeType?: string;
+  markdown?: string;
+  webUrl?: string;
+  error?: string;
+}
+
+export interface MicrosoftListFilesResult {
+  success: boolean;
+  items?: {
+    name: string;
+    type: 'file' | 'folder';
+    size: number;
+    sizeFormatted: string;
+    mimeType?: string;
+    lastModified?: string;
+    webUrl?: string;
+    id: string;
+    childCount?: number;
+  }[];
+  totalCount?: number;
+  hasMore?: boolean;
+  error?: string;
+}
+
+export interface MicrosoftSearchFilesResult {
+  success: boolean;
+  results?: {
+    name: string;
+    path?: string;
+    site?: string;
+    snippet?: string;
+    size: number;
+    sizeFormatted: string;
+    webUrl?: string;
+    id: string;
+    lastModified?: string;
+  }[];
+  totalCount?: number;
+  hasMore?: boolean;
+  error?: string;
+}
+
+// ---- File source resolution ----
+
+/** Maximum file size for download (10 MB) */
+export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+/** Supported document extensions that DocumentReader can convert to markdown */
+export const SUPPORTED_EXTENSIONS = new Set([
+  '.docx', '.pptx', '.xlsx', '.csv', '.pdf',
+  '.odt', '.odp', '.ods', '.rtf',
+  '.html', '.htm',
+  '.txt', '.md', '.json', '.xml', '.yaml', '.yml',
+]);
+
+/**
+ * Encode a sharing URL into the Graph API sharing token format.
+ *
+ * Microsoft Graph's `/shares/{token}` endpoint accepts base64url-encoded URLs
+ * prefixed with `u!`. This is the documented way to access files via sharing links
+ * or direct web URLs without knowing the driveId/itemId.
+ *
+ * @see https://learn.microsoft.com/en-us/graph/api/shares-get
+ */
+export function encodeSharingUrl(webUrl: string): string {
+  const base64 = Buffer.from(webUrl, 'utf-8')
+    .toString('base64')
+    .replace(/=+$/, '')
+    .replace(/\//g, '_')
+    .replace(/\+/g, '-');
+  return `u!${base64}`;
+}
+
+/**
+ * Check if a string looks like a web URL (http/https).
+ */
+export function isWebUrl(source: string): boolean {
+  return /^https?:\/\//i.test(source.trim());
+}
+
+/**
+ * Check if a string looks like a OneDrive/SharePoint web URL.
+ *
+ * Matches:
+ * - `*.sharepoint.com/*`
+ * - `onedrive.live.com/*`
+ * - `1drv.ms/*`
+ * - `*.sharepoint-df.com/*` (dogfood/test)
+ */
+export function isMicrosoftFileUrl(source: string): boolean {
+  try {
+    const url = new URL(source.trim());
+    const host = url.hostname.toLowerCase();
+    return (
+      host.endsWith('.sharepoint.com') ||
+      host.endsWith('.sharepoint-df.com') ||
+      host === 'onedrive.live.com' ||
+      host === '1drv.ms'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Determine the drive prefix for Graph API calls.
+ *
+ * Priority:
+ * 1. siteId → `/sites/{siteId}/drive`
+ * 2. driveId → `/drives/{driveId}`
+ * 3. fallback → `{userPrefix}/drive` (e.g., `/me/drive`)
+ */
+export function getDrivePrefix(
+  userPrefix: string,
+  options?: { siteId?: string; driveId?: string }
+): string {
+  if (options?.siteId) return `/sites/${options.siteId}/drive`;
+  if (options?.driveId) return `/drives/${options.driveId}`;
+  return `${userPrefix}/drive`;
+}
+
+/**
+ * Build the Graph API endpoint and metadata endpoint for a file source.
+ *
+ * Handles three input types:
+ * 1. Web URL (SharePoint/OneDrive link) → uses `/shares/{token}/driveItem`
+ * 2. Path (starts with `/`) → uses `/drive/root:{path}:`
+ * 3. Item ID → uses `/drive/items/{id}`
+ *
+ * @returns Object with `metadataEndpoint` (for item info) and `contentEndpoint` (for download)
+ */
+export function resolveFileEndpoints(
+  source: string,
+  drivePrefix: string
+): { metadataEndpoint: string; contentEndpoint: string; isSharedUrl: boolean } {
+  const trimmed = source.trim();
+
+  // Web URL → sharing link resolution
+  if (isWebUrl(trimmed)) {
+    const token = encodeSharingUrl(trimmed);
+    return {
+      metadataEndpoint: `/shares/${token}/driveItem`,
+      contentEndpoint: `/shares/${token}/driveItem/content`,
+      isSharedUrl: true,
+    };
+  }
+
+  // Path → root-relative
+  if (trimmed.startsWith('/')) {
+    const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+    return {
+      metadataEndpoint: `${drivePrefix}/root:${path}:`,
+      contentEndpoint: `${drivePrefix}/root:${path}:/content`,
+      isSharedUrl: false,
+    };
+  }
+
+  // Item ID
+  return {
+    metadataEndpoint: `${drivePrefix}/items/${trimmed}`,
+    contentEndpoint: `${drivePrefix}/items/${trimmed}/content`,
+    isSharedUrl: false,
+  };
+}
+
+/**
+ * Format a file size in bytes to a human-readable string.
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}

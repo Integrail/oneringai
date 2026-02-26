@@ -186,6 +186,10 @@ export {
   createEditMeetingTool,
   createGetMeetingTranscriptTool,
   createFindMeetingSlotsTool,
+  // Files (OneDrive / SharePoint)
+  createMicrosoftReadFileTool,
+  createMicrosoftListFilesTool,
+  createMicrosoftSearchFilesTool,
   // Utilities
   getUserPathPrefix,
   microsoftFetch,
@@ -194,6 +198,12 @@ export {
   normalizeEmails,
   isTeamsMeetingUrl,
   resolveMeetingId,
+  encodeSharingUrl,
+  isWebUrl,
+  isMicrosoftFileUrl,
+  getDrivePrefix,
+  resolveFileEndpoints,
+  formatFileSize,
 } from './microsoft/index.js';
 
 export type {
@@ -204,6 +214,10 @@ export type {
   MicrosoftGetTranscriptResult,
   MicrosoftFindSlotsResult,
   MeetingSlotSuggestion,
+  MicrosoftReadFileResult,
+  MicrosoftListFilesResult,
+  MicrosoftSearchFilesResult,
+  GraphDriveItem,
 } from './microsoft/index.js';
 
 // ============================================================================
