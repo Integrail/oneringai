@@ -46,9 +46,10 @@ export class PDFHandler implements IFormatHandler {
     const pieces: DocumentPiece[] = [];
     let pieceIndex = 0;
 
-    // unpdf wraps pdf.js which transfers ArrayBuffers to workers via postMessage().
-    // Node.js Buffer uses a shared/pooled ArrayBuffer that can't be transferred.
-    // new Uint8Array(buffer) copies into a fresh standalone ArrayBuffer.
+    // pdf.js (via unpdf) transfers the underlying ArrayBuffer to a worker, which
+    // detaches it from the original view. We must copy into a dedicated ArrayBuffer
+    // so the caller's Buffer is not invalidated, and to avoid issues with pooled
+    // or shared ArrayBuffers that can't be transferred.
     const data = new Uint8Array(buffer);
 
     // Extract metadata

@@ -205,7 +205,9 @@ When given a web URL, the tool automatically resolves it to the correct Graph AP
         }
 
         const arrayBuffer = await response.arrayBuffer();
-        const buffer = new Uint8Array(arrayBuffer);
+        // Buffer.from(ArrayBuffer) creates a zero-copy view (no data duplication).
+        // PDFHandler will copy to a standalone Uint8Array only when needed for pdf.js workers.
+        const buffer = Buffer.from(arrayBuffer);
 
         // 4. Convert to markdown via DocumentReader
         const result = await reader.read(

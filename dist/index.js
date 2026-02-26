@@ -50135,7 +50135,7 @@ When given a web URL, the tool automatically resolves it to the correct Graph AP
           throw new MicrosoftAPIError(response.status, response.statusText, await response.text());
         }
         const arrayBuffer = await response.arrayBuffer();
-        const buffer = new Uint8Array(arrayBuffer);
+        const buffer = Buffer.from(arrayBuffer);
         const result = await reader.read(
           { type: "buffer", buffer, filename: metadata.name },
           { extractImages: false }
