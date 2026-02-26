@@ -6,7 +6,7 @@
  */
 
 import type { Agent } from './Agent.js';
-import type { Task, TaskInput, SubRoutineSpec, ConditionMemoryAccess, TaskMapFlow, TaskFoldFlow, TaskUntilFlow } from '../domain/entities/Task.js';
+import type { Task, TaskInput, SubRoutineSpec, ConditionMemoryAccess, TaskMapFlow, TaskFoldFlow, TaskUntilFlow, ControlFlowSource } from '../domain/entities/Task.js';
 import { evaluateCondition } from '../domain/entities/Task.js';
 import type { RoutineDefinition, RoutineExecution, RoutineParameter } from '../domain/entities/Routine.js';
 import { createRoutineDefinition } from '../domain/entities/Routine.js';
@@ -40,6 +40,8 @@ export const ROUTINE_KEYS = {
   FOLD_ACCUMULATOR: '__fold_accumulator',
   /** Prefix for large dep results stored in WM findings tier */
   WM_DEP_FINDINGS_PREFIX: 'findings/__dep_result_',
+  /** Prefix for auto-stored task outputs (set by output contracts) */
+  TASK_OUTPUT_PREFIX: '__task_output_',
 } as const;
 
 // ============================================================================
@@ -96,7 +98,7 @@ export function resolveTemplates(
 }
 
 /**
- * Resolve templates in task description and expectedOutput.
+ * Resolve templates in task description, expectedOutput, and controlFlow.source.
  * Returns a shallow copy — original task is NOT mutated.
  */
 export function resolveTaskTemplates(
@@ -109,7 +111,41 @@ export function resolveTaskTemplates(
     ? resolveTemplates(task.expectedOutput, inputs, icmPlugin)
     : task.expectedOutput;
 
-  if (resolvedDescription === task.description && resolvedExpectedOutput === task.expectedOutput) {
+  // Resolve templates in controlFlow.source
+  let resolvedControlFlow = task.controlFlow;
+  if (task.controlFlow && 'source' in task.controlFlow) {
+    const flow = task.controlFlow as TaskMapFlow | TaskFoldFlow;
+    const source = flow.source;
+
+    if (typeof source === 'string') {
+      const r = resolveTemplates(source, inputs, icmPlugin);
+      if (r !== source) {
+        resolvedControlFlow = { ...flow, source: r };
+      }
+    } else if (source) {
+      let changed = false;
+      const resolved = { ...source };
+
+      if (resolved.task) {
+        const r = resolveTemplates(resolved.task, inputs, icmPlugin);
+        if (r !== resolved.task) { resolved.task = r; changed = true; }
+      }
+      if (resolved.key) {
+        const r = resolveTemplates(resolved.key, inputs, icmPlugin);
+        if (r !== resolved.key) { resolved.key = r; changed = true; }
+      }
+
+      if (changed) {
+        resolvedControlFlow = { ...flow, source: resolved };
+      }
+    }
+  }
+
+  if (
+    resolvedDescription === task.description &&
+    resolvedExpectedOutput === task.expectedOutput &&
+    resolvedControlFlow === task.controlFlow
+  ) {
     return task; // No changes — avoid unnecessary copy
   }
 
@@ -117,6 +153,7 @@ export function resolveTaskTemplates(
     ...task,
     description: resolvedDescription,
     expectedOutput: resolvedExpectedOutput,
+    controlFlow: resolvedControlFlow,
   };
 }
 
@@ -249,27 +286,6 @@ function cleanFoldKeys(icmPlugin: InContextMemoryPluginNextGen | null): void {
 }
 
 /**
- * Read and validate the source array from memory, capping iterations.
- * Returns the array + maxIter, or a ControlFlowResult error.
- */
-async function readSourceArray(
-  flow: { sourceKey: string; maxIterations?: number },
-  flowType: string,
-  icmPlugin: InContextMemoryPluginNextGen | null,
-  wmPlugin: WorkingMemoryPluginNextGen | null
-): Promise<{ array: unknown[]; maxIter: number } | ControlFlowResult> {
-  const sourceValue = await readMemoryValue(flow.sourceKey, icmPlugin, wmPlugin);
-  if (!Array.isArray(sourceValue)) {
-    return {
-      completed: false,
-      error: `${flowType} sourceKey "${flow.sourceKey}" is not an array (got ${typeof sourceValue})`,
-    };
-  }
-  const maxIter = Math.min(sourceValue.length, flow.maxIterations ?? sourceValue.length, HARD_MAX_ITERATIONS);
-  return { array: sourceValue, maxIter };
-}
-
-/**
  * Resolve a sub-routine spec and prepare an augmented copy for instruction injection.
  */
 function prepareSubRoutine(
@@ -335,6 +351,216 @@ async function withTimeout<T>(
 }
 
 // ============================================================================
+// Source Resolution (Three-Layer)
+// ============================================================================
+
+/** Well-known field names that commonly contain array data. */
+const COMMON_ARRAY_FIELDS = ['data', 'items', 'results', 'entries', 'list', 'records', 'values', 'elements'] as const;
+
+/**
+ * Extract a nested value using dot notation + bracket indexing.
+ * E.g., 'data.items', 'results[0].entries', 'response.data'
+ * Auto-parses JSON strings before traversing.
+ */
+function extractByPath(value: unknown, path: string): unknown {
+  let current: unknown = value;
+
+  // Auto-parse JSON strings
+  if (typeof current === 'string') {
+    try { current = JSON.parse(current); } catch { return undefined; }
+  }
+
+  const segments = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
+  for (const segment of segments) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/**
+ * Attempt to coerce a value to an array without LLM calls:
+ * 1. Already an array → return as-is
+ * 2. JSON string → parse, check if array or object with array field
+ * 3. Object → check common array field names (data, items, results, ...)
+ * Returns the original value unchanged if no coercion succeeds.
+ */
+function tryCoerceToArray(value: unknown): unknown {
+  if (value === undefined || value === null) return value;
+  if (Array.isArray(value)) return value;
+
+  // JSON string → parse
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+      // Parsed to non-array object — fall through to object check
+      if (typeof parsed === 'object' && parsed !== null) {
+        value = parsed;
+      } else {
+        return value; // primitive — can't coerce
+      }
+    } catch {
+      return value; // not JSON — will go to LLM fallback
+    }
+  }
+
+  // Object → check common array fields
+  if (typeof value === 'object' && value !== null) {
+    for (const field of COMMON_ARRAY_FIELDS) {
+      const candidate = (value as Record<string, unknown>)[field];
+      if (Array.isArray(candidate)) return candidate;
+    }
+  }
+
+  return value; // not coercible algorithmically
+}
+
+/**
+ * Last-resort LLM extraction: ask the agent to extract a JSON array from raw data.
+ * Uses runDirect() to avoid polluting the agent's conversation history.
+ * Truncates input to 8000 chars to keep the extraction call fast and cheap.
+ */
+async function llmExtractArray(agent: Agent, rawValue: unknown): Promise<unknown[]> {
+  const serialized = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue);
+  const truncated = serialized.length > 8000
+    ? serialized.slice(0, 8000) + '\n...(truncated)'
+    : serialized;
+
+  const response = await agent.runDirect(
+    [
+      'Extract a JSON array from the data below for iteration.',
+      'Return ONLY a valid JSON array. No explanation, no markdown fences, no extra text.',
+      'If the data contains a list in any format (JSON, markdown, numbered list, comma-separated), convert it to a JSON array of items.',
+      '',
+      'Data:',
+      truncated,
+    ].join('\n'),
+    { temperature: 0, maxOutputTokens: 4096 }
+  );
+
+  const text = response.output_text?.trim() ?? '';
+
+  // Strip markdown code fences if present (LLMs often wrap in ```json)
+  const cleaned = text
+    .replace(/^```(?:json|JSON)?\s*\n?/, '')
+    .replace(/\n?\s*```$/, '')
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (parseErr) {
+    throw new Error(`LLM returned invalid JSON: ${(parseErr as Error).message}. Raw: "${text.slice(0, 200)}"`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`LLM extraction produced ${typeof parsed}, expected array`);
+  }
+
+  return parsed;
+}
+
+/**
+ * Resolve the source array for a map/fold control flow using layered resolution:
+ * 1. Determine lookup key(s) from source config
+ * 2. Read from ICM/WM with fallback chain
+ * 3. Apply JSON path extraction if specified
+ * 4. Coerce to array algorithmically (JSON parse, common field names)
+ * 5. LLM extraction fallback if still not an array
+ */
+export async function resolveFlowSource(
+  flow: { source: ControlFlowSource; maxIterations?: number },
+  flowType: string,
+  agent: Agent,
+  execution: RoutineExecution | undefined,
+  icmPlugin: InContextMemoryPluginNextGen | null,
+  wmPlugin: WorkingMemoryPluginNextGen | null
+): Promise<{ array: unknown[]; maxIter: number } | ControlFlowResult> {
+  const log = logger.child({ fn: 'resolveFlowSource', flowType });
+
+  // ── Phase 1: Build ordered lookup chain ──
+  const source = flow.source;
+  const lookups: Array<{ key: string; path?: string; label: string }> = [];
+
+  if (typeof source === 'string') {
+    // Simple key string: source: 'my_key'
+    lookups.push({ key: source, label: `key "${source}"` });
+  } else if (source.task) {
+    // Task reference: source: { task: 'Research' }
+    // Primary: output contract key (__task_output_Research)
+    lookups.push({
+      key: `${ROUTINE_KEYS.TASK_OUTPUT_PREFIX}${source.task}`,
+      path: source.path,
+      label: `task output "${source.task}"`,
+    });
+    // Fallback: dep_result key (injected by injectRoutineContext)
+    if (execution) {
+      const depTask = execution.plan.tasks.find(t => t.name === source.task);
+      if (depTask) {
+        lookups.push({
+          key: `${ROUTINE_KEYS.DEP_RESULT_PREFIX}${depTask.id}`,
+          path: source.path,
+          label: `dep result "${source.task}"`,
+        });
+      }
+    }
+  } else if (source.key) {
+    // Direct key with optional path: source: { key: 'data', path: 'items' }
+    lookups.push({ key: source.key, path: source.path, label: `key "${source.key}"` });
+  }
+
+  if (lookups.length === 0) {
+    return { completed: false, error: `${flowType}: source has no task, key, or string value` };
+  }
+
+  // ── Phase 2: Try each lookup in order ──
+  let rawValue: unknown;
+  let resolvedVia: string | undefined;
+
+  for (const { key, path, label } of lookups) {
+    const value = await readMemoryValue(key, icmPlugin, wmPlugin);
+    if (value !== undefined) {
+      rawValue = path ? extractByPath(value, path) : value;
+      resolvedVia = label;
+      break;
+    }
+  }
+
+  if (rawValue === undefined) {
+    const tried = lookups.map(l => l.label).join(', ');
+    return { completed: false, error: `${flowType}: source not found (tried: ${tried})` };
+  }
+
+  log.debug({ resolvedVia }, 'Source value found');
+
+  // ── Phase 3: Coerce to array (algorithmic, zero-cost) ──
+  let value = tryCoerceToArray(rawValue);
+
+  // ── Phase 4: LLM extraction fallback ──
+  if (!Array.isArray(value)) {
+    log.info({ resolvedVia, valueType: typeof value }, 'Source not an array, attempting LLM extraction');
+    try {
+      value = await llmExtractArray(agent, rawValue);
+      log.info({ extractedLength: (value as unknown[]).length }, 'LLM extraction succeeded');
+    } catch (err) {
+      return {
+        completed: false,
+        error: `${flowType}: source value is not an array and LLM extraction failed: ${(err as Error).message}`,
+      };
+    }
+  }
+
+  const arr = value as unknown[];
+  if (arr.length === 0) {
+    log.warn('Source array is empty');
+  }
+
+  const maxIter = Math.min(arr.length, flow.maxIterations ?? arr.length, HARD_MAX_ITERATIONS);
+  return { array: arr, maxIter };
+}
+
+// ============================================================================
 // Control Flow Handlers
 // ============================================================================
 
@@ -345,13 +571,14 @@ async function handleMap(
   agent: Agent,
   flow: TaskMapFlow,
   task: Task,
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
+  execution?: RoutineExecution
 ): Promise<ControlFlowResult> {
   const { icmPlugin, wmPlugin } = getPlugins(agent);
   const log = logger.child({ controlFlow: 'map', task: task.name });
 
-  // 1. Read source array
-  const sourceResult = await readSourceArray(flow, 'Map', icmPlugin, wmPlugin);
+  // 1. Resolve source array via layered resolution
+  const sourceResult = await resolveFlowSource(flow, 'Map', agent, execution, icmPlugin, wmPlugin);
   if ('completed' in sourceResult) return sourceResult;
   const { array, maxIter } = sourceResult;
   const results: unknown[] = [];
@@ -410,13 +637,14 @@ async function handleFold(
   agent: Agent,
   flow: TaskFoldFlow,
   task: Task,
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
+  execution?: RoutineExecution
 ): Promise<ControlFlowResult> {
   const { icmPlugin, wmPlugin } = getPlugins(agent);
   const log = logger.child({ controlFlow: 'fold', task: task.name });
 
-  // 1. Read source array
-  const sourceResult = await readSourceArray(flow, 'Fold', icmPlugin, wmPlugin);
+  // 1. Resolve source array via layered resolution
+  const sourceResult = await resolveFlowSource(flow, 'Fold', agent, execution, icmPlugin, wmPlugin);
   if ('completed' in sourceResult) return sourceResult;
   const { array, maxIter } = sourceResult;
   let accumulator: unknown = flow.initialValue;
@@ -561,15 +789,16 @@ async function handleUntil(
 export async function executeControlFlow(
   agent: Agent,
   task: Task,
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
+  execution?: RoutineExecution
 ): Promise<ControlFlowResult> {
   const flow = task.controlFlow!;
 
   switch (flow.type) {
     case 'map':
-      return handleMap(agent, flow, task, inputs);
+      return handleMap(agent, flow, task, inputs, execution);
     case 'fold':
-      return handleFold(agent, flow, task, inputs);
+      return handleFold(agent, flow, task, inputs, execution);
     case 'until':
       return handleUntil(agent, flow, task, inputs);
     default:

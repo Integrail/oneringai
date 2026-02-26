@@ -1157,4 +1157,165 @@ describe('executeRoutine', () => {
       expect(execution.plan.tasks[0]!.result?.output).toBe('The answer is 42');
     });
   });
+
+  // ==========================================================================
+  // Output Contract Injection
+  // ==========================================================================
+
+  describe('output contract injection', () => {
+    /**
+     * Helper to extract the full serialized input from a mockGenerate call.
+     * We stringify the entire input to search for expected text fragments.
+     */
+    function getSerializedInputFromCall(callIndex: number): string {
+      const opts = mockGenerate.mock.calls[callIndex]![0];
+      return JSON.stringify(opts);
+    }
+
+    it('should inject output storage instructions when downstream task uses source.task', async () => {
+      const routine = createRoutineDefinition({
+        name: 'Output Contract Test',
+        description: 'Test output contract injection',
+        tasks: [
+          {
+            name: 'Task A',
+            description: 'Produce items',
+          },
+          {
+            name: 'Task B',
+            description: 'Process each item',
+            dependsOn: ['Task A'],
+            controlFlow: {
+              type: 'map',
+              source: { task: 'Task A' },
+              tasks: { description: 'Process item' },
+            },
+          },
+        ],
+      });
+
+      mockGenerate.mockResolvedValue(makeTextResponse('Done'));
+
+      await executeRoutine(defaultOptions(routine));
+
+      // Task A's prompt (call 0) should contain output storage instructions
+      const taskAInput = getSerializedInputFromCall(0);
+      expect(taskAInput).toContain('### Output Storage');
+      expect(taskAInput).toContain('context_set(\\"__task_output_Task A\\"');
+      expect(taskAInput).toContain('Task B');
+
+      // Task B's prompt (call 1) should NOT contain output storage (no downstream consumers)
+      const taskBInput = getSerializedInputFromCall(1);
+      expect(taskBInput).not.toContain('### Output Storage');
+    });
+
+    it('should NOT inject output storage when downstream task uses string source', async () => {
+      const routine = createRoutineDefinition({
+        name: 'String Source Test',
+        description: 'Test string source does not trigger output contract',
+        tasks: [
+          {
+            name: 'Task A',
+            description: 'Produce items',
+          },
+          {
+            name: 'Task B',
+            description: 'Process each item from key',
+            dependsOn: ['Task A'],
+            controlFlow: {
+              type: 'map',
+              source: 'items',
+              tasks: { description: 'Process item' },
+            },
+          },
+        ],
+      });
+
+      mockGenerate.mockResolvedValue(makeTextResponse('Done'));
+
+      await executeRoutine(defaultOptions(routine));
+
+      // Task A's prompt should NOT contain output storage (string source = key reference)
+      const taskAInput = getSerializedInputFromCall(0);
+      expect(taskAInput).not.toContain('### Output Storage');
+    });
+
+    it('should inject output storage for multiple downstream consumers', async () => {
+      const routine = createRoutineDefinition({
+        name: 'Multiple Consumers Test',
+        description: 'Test multiple downstream tasks referencing same source',
+        tasks: [
+          {
+            name: 'Task A',
+            description: 'Produce items',
+          },
+          {
+            name: 'Task B',
+            description: 'Map over items',
+            dependsOn: ['Task A'],
+            controlFlow: {
+              type: 'map',
+              source: { task: 'Task A' },
+              tasks: { description: 'Process item' },
+            },
+          },
+          {
+            name: 'Task C',
+            description: 'Fold over items',
+            dependsOn: ['Task A'],
+            controlFlow: {
+              type: 'fold',
+              source: { task: 'Task A' },
+              tasks: { description: 'Accumulate item' },
+              initialValue: '[]',
+            },
+          },
+        ],
+      });
+
+      mockGenerate.mockResolvedValue(makeTextResponse('Done'));
+
+      await executeRoutine(defaultOptions(routine));
+
+      // Task A's prompt should contain output storage for BOTH Task B and Task C
+      const taskAInput = getSerializedInputFromCall(0);
+      expect(taskAInput).toContain('### Output Storage');
+      expect(taskAInput).toContain('Task B');
+      expect(taskAInput).toContain('Task C');
+      // Should mention both map and fold
+      expect(taskAInput).toContain('map over your results');
+      expect(taskAInput).toContain('fold over your results');
+    });
+
+    it('should NOT inject output storage for until flow type', async () => {
+      const routine = createRoutineDefinition({
+        name: 'Until Flow Test',
+        description: 'Test until flow does not trigger output contract',
+        tasks: [
+          {
+            name: 'Task A',
+            description: 'Produce items',
+          },
+          {
+            name: 'Task B',
+            description: 'Repeat until done',
+            dependsOn: ['Task A'],
+            controlFlow: {
+              type: 'until',
+              tasks: { description: 'Check condition' },
+              condition: { type: 'maxIterations', maxIterations: 3 },
+            },
+          },
+        ],
+      });
+
+      mockGenerate.mockResolvedValue(makeTextResponse('Done'));
+
+      await executeRoutine(defaultOptions(routine));
+
+      // Task A's prompt should NOT contain output storage (until has no source)
+      const taskAInput = getSerializedInputFromCall(0);
+      expect(taskAInput).not.toContain('### Output Storage');
+    });
+  });
 });

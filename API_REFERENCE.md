@@ -7268,7 +7268,7 @@ Fold: accumulate a result across array elements
 | Property | Type | Description |
 |----------|------|-------------|
 | `type` | `type: 'fold';` | - |
-| `sourceKey` | `sourceKey: string;` | Memory key containing the source array |
+| `source` | `source: ControlFlowSource;` | Source array reference — task name, memory key, or structured ref |
 | `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run per element |
 | `initialValue` | `initialValue: unknown;` | Starting accumulator value |
 | `resultKey` | `resultKey: string;` | Memory key for final accumulated result |
@@ -7320,7 +7320,7 @@ Map: execute a sub-routine for each element in an array
 | Property | Type | Description |
 |----------|------|-------------|
 | `type` | `type: 'map';` | - |
-| `sourceKey` | `sourceKey: string;` | Memory key containing the source array |
+| `source` | `source: ControlFlowSource;` | Source array reference — task name, memory key, or structured ref |
 | `tasks` | `tasks: SubRoutineSpec;` | Sub-routine to run per element |
 | `resultKey?` | `resultKey?: string;` | Memory key for collected results array |
 | `maxIterations?` | `maxIterations?: number;` | Cap iterations (default: array.length, hard max: 1000) |

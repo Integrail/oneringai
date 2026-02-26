@@ -1311,7 +1311,7 @@ const routine = createRoutineDefinition({
     description: 'Process each item',
     controlFlow: {
       type: 'map',
-      sourceKey: '__items',
+      source: '__items',
       resultKey: '__results',
       iterationTimeoutMs: 60000, // 1 min per item
       tasks: [{ name: 'Process', description: 'Handle the current item' }],

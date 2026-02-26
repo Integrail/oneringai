@@ -157,7 +157,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Task A'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'items',
+              source: 'items',
               tasks: [
                 { name: 'Process Item', description: 'Process the current item' },
               ],
@@ -209,7 +209,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'data',
+              source: 'data',
               tasks: [
                 {
                   name: 'Process',
@@ -270,7 +270,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'big_array',
+              source: 'big_array',
               tasks: [
                 { name: 'Process', description: 'Process item' },
               ],
@@ -317,7 +317,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'items',
+              source: 'items',
               tasks: [
                 { name: 'Process', description: 'Process item', maxAttempts: 1 },
               ],
@@ -359,7 +359,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'empty',
+              source: 'empty',
               tasks: [
                 { name: 'Process', description: 'Process item' },
               ],
@@ -404,7 +404,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'data',
+              source: 'data',
               tasks: [
                 { name: 'Transform', description: 'Transform item' },
               ],
@@ -466,7 +466,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'fold',
-              sourceKey: 'numbers',
+              source: 'numbers',
               initialValue: 0,
               resultKey: 'fold_sum',
               tasks: [
@@ -515,7 +515,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'fold',
-              sourceKey: 'vals',
+              source: 'vals',
               initialValue: 'start',
               resultKey: 'fold_result',
               tasks: [
@@ -575,7 +575,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'fold',
-              sourceKey: 'items',
+              source: 'items',
               initialValue: 100,
               resultKey: 'result',
               tasks: [
@@ -625,7 +625,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'fold',
-              sourceKey: 'items',
+              source: 'items',
               initialValue: 0,
               resultKey: 'result',
               tasks: [
@@ -912,7 +912,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Fetch Data'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'data',
+              source: 'data',
               tasks: [
                 { name: 'Transform', description: 'Transform item' },
               ],
@@ -966,7 +966,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Task A'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'prepared',
+              source: 'prepared',
               tasks: [
                 { name: 'MapSub', description: 'Process' },
               ],
@@ -1027,7 +1027,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'items',
+              source: 'items',
               tasks: [
                 { name: 'Sub', description: 'Process {{param.topic}} item' },
               ],
@@ -1084,7 +1084,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'items',
+              source: 'items',
               tasks: [
                 { name: 'Process', description: 'Process' },
               ],
@@ -1128,7 +1128,7 @@ describe('routineControlFlowExecution', () => {
             dependsOn: ['Setup'],
             controlFlow: {
               type: 'map',
-              sourceKey: 'items',
+              source: 'items',
               tasks: [
                 { name: 'Process', description: 'Process' },
               ],

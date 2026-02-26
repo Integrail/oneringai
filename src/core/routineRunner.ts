@@ -11,6 +11,8 @@ import type { ToolFunction } from '../domain/entities/Tool.js';
 import type {
   Task,
   TaskValidationResult,
+  TaskMapFlow,
+  TaskFoldFlow,
 } from '../domain/entities/Task.js';
 import {
   getNextExecutableTasks,
@@ -97,8 +99,8 @@ export interface ExecuteRoutineOptions {
   prompts?: {
     /** Override system prompt builder. Receives definition, should return full system prompt. */
     system?: (definition: RoutineDefinition) => string;
-    /** Override task prompt builder. Receives task, should return the user message for that task. */
-    task?: (task: Task) => string;
+    /** Override task prompt builder. Receives task and optional execution context, should return the user message for that task. */
+    task?: (task: Task, execution?: RoutineExecution) => string;
     /** Override validation prompt builder. Receives task + validation context (response, memory state, tool calls). */
     validation?: (task: Task, context: ValidationContext) => string;
   };
@@ -151,10 +153,52 @@ function defaultSystemPrompt(definition: RoutineDefinition): string {
   return parts.join('\n');
 }
 
+/** Describes what a downstream control flow task needs from the current task's output. */
+interface OutputContract {
+  storageKey: string;
+  format: 'array';
+  consumingTaskName: string;
+  flowType: 'map' | 'fold';
+}
+
+/**
+ * Scan the execution plan for downstream control flow tasks that reference
+ * the current task via source.task. Returns output storage contracts.
+ */
+function getOutputContracts(
+  execution: RoutineExecution,
+  currentTask: Task
+): OutputContract[] {
+  const contracts: OutputContract[] = [];
+
+  for (const task of execution.plan.tasks) {
+    if (task.status !== 'pending' || !task.controlFlow) continue;
+    const flow = task.controlFlow;
+    if (flow.type === 'until') continue;
+
+    const source = (flow as TaskMapFlow | TaskFoldFlow).source;
+
+    const sourceTaskName = typeof source === 'string'
+      ? undefined  // string source = key reference, not task reference
+      : source.task;
+
+    if (sourceTaskName === currentTask.name) {
+      contracts.push({
+        storageKey: `${ROUTINE_KEYS.TASK_OUTPUT_PREFIX}${currentTask.name}`,
+        format: 'array',
+        consumingTaskName: task.name,
+        flowType: flow.type as 'map' | 'fold',
+      });
+    }
+  }
+
+  return contracts;
+}
+
 /**
  * Default task prompt builder.
  */
-function defaultTaskPrompt(task: Task): string {
+function defaultTaskPrompt(task: Task, execution?: RoutineExecution): string {
   const parts: string[] = [];
 
   parts.push(`## Current Task: ${task.name}`, '');
@@ -183,6 +227,23 @@ function defaultTaskPrompt(task: Task): string {
     parts.push('Small results appear directly; larger results are in working memory — use memory_retrieve to access them.');
     parts.push('Review the plan overview and dependency results before starting.');
     parts.push('');
+  }
+
+  // Output contract injection — tell the LLM how to store results for downstream control flow
+  if (execution) {
+    const contracts = getOutputContracts(execution, task);
+    if (contracts.length > 0) {
+      parts.push('### Output Storage');
+      for (const contract of contracts) {
+        parts.push(
+          `A downstream task ("${contract.consumingTaskName}") will ${contract.flowType} over your results.`,
+          `Store your result as a JSON ${contract.format} using:`,
+          `  context_set("${contract.storageKey}", <your JSON ${contract.format}>)`,
+          'Each array element should represent one item to process independently.',
+          ''
+        );
+      }
+    }
   }
 
   parts.push('After completing the work, store key results in memory once, then respond with a text summary (no more tool calls).');
@@ -422,8 +483,8 @@ const DEP_CLEANUP_CONFIG = {
 
 /** Prefixes for full routine cleanup (after execution). */
 const FULL_CLEANUP_CONFIG = {
-  icmPrefixes: ['__routine_', ROUTINE_KEYS.DEP_RESULT_PREFIX, '__map_', '__fold_'],
-  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX],
+  icmPrefixes: ['__routine_', ROUTINE_KEYS.DEP_RESULT_PREFIX, '__map_', '__fold_', ROUTINE_KEYS.TASK_OUTPUT_PREFIX],
+  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX, ROUTINE_KEYS.TASK_OUTPUT_PREFIX],
 };
 
 /**
@@ -644,7 +705,8 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
 
   // 2. Resolve prompt builders
   const buildSystemPrompt = prompts?.system ?? defaultSystemPrompt;
-  const buildTaskPrompt = prompts?.task ?? defaultTaskPrompt;
+  const userTaskPromptBuilder = prompts?.task ?? defaultTaskPrompt;
+  const buildTaskPrompt = (task: Task) => userTaskPromptBuilder(task, execution);
   const buildValidationPrompt = prompts?.validation ?? defaultValidationPrompt;
 
   // 3. Resolve agent: reuse existing or create new
@@ -766,7 +828,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
         // Control flow branch: map/fold/until handle their own execution
         if (getTask().controlFlow) {
           try {
-            const cfResult = await executeControlFlow(agent, getTask(), resolvedInputs);
+            const cfResult = await executeControlFlow(agent, getTask(), resolvedInputs, execution);
 
             if (cfResult.completed) {
               execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), 'completed');

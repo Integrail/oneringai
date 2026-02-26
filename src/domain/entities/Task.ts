@@ -106,11 +106,24 @@ export interface ExternalDependency {
 /** Sub-routine specification: either inline tasks or a full RoutineDefinition */
 export type SubRoutineSpec = TaskInput[] | RoutineDefinition;
 
+/** Reference to a source value for control flow operations. */
+export interface TaskSourceRef {
+  /** Reference the output of a named task (resolves to __task_output_{name}) */
+  task?: string;
+  /** Direct memory key lookup */
+  key?: string;
+  /** JSON path to extract from the resolved value (e.g., 'data.items', 'results[0].entries') */
+  path?: string;
+}
+
+/** Source can be a simple key string (legacy) or a structured reference. */
+export type ControlFlowSource = string | TaskSourceRef;
+
 /** Map: execute a sub-routine for each element in an array */
 export interface TaskMapFlow {
   type: 'map';
-  /** Memory key containing the source array */
-  sourceKey: string;
+  /** Source array reference — task name, memory key, or structured ref. */
+  source: ControlFlowSource;
   /** Sub-routine to run per element */
   tasks: SubRoutineSpec;
   /** Memory key for collected results array */
@@ -124,8 +137,8 @@ export interface TaskMapFlow {
 /** Fold: accumulate a result across array elements */
 export interface TaskFoldFlow {
   type: 'fold';
-  /** Memory key containing the source array */
-  sourceKey: string;
+  /** Source array reference — task name, memory key, or structured ref. */
+  source: ControlFlowSource;
   /** Sub-routine to run per element */
   tasks: SubRoutineSpec;
   /** Starting accumulator value */

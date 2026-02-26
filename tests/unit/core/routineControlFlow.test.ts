@@ -2,7 +2,7 @@
  * Routine Control Flow Unit Tests
  *
  * Tests for resolveTemplates, readMemoryValue, validateAndResolveInputs,
- * resolveSubRoutine, executeControlFlow (map, fold, until).
+ * resolveSubRoutine, resolveFlowSource, executeControlFlow (map, fold, until).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -12,10 +12,12 @@ import {
   validateAndResolveInputs,
   readMemoryValue,
   resolveSubRoutine,
+  resolveFlowSource,
   executeControlFlow,
+  ROUTINE_KEYS,
 } from '@/core/routineControlFlow.js';
 import type { Task } from '@/domain/entities/Task.js';
-import type { RoutineParameter } from '@/domain/entities/Routine.js';
+import type { RoutineParameter, RoutineExecution } from '@/domain/entities/Routine.js';
 import { createRoutineDefinition } from '@/domain/entities/Routine.js';
 import { createTask } from '@/domain/entities/Task.js';
 import type { InContextMemoryPluginNextGen } from '@/core/context-nextgen/plugins/InContextMemoryPluginNextGen.js';
@@ -147,6 +149,62 @@ describe('resolveTaskTemplates', () => {
     const resolved = resolveTaskTemplates(task, {}, null);
     expect(resolved).toBe(task);
   });
+
+  it('resolves templates in string source', () => {
+    const task = createTask({
+      name: 'map-task',
+      description: 'Map over data',
+      controlFlow: {
+        type: 'map',
+        source: '{{param.keyName}}',
+        tasks: [{ name: 's', description: 's' }],
+      },
+    });
+    const resolved = resolveTaskTemplates(task, { keyName: 'my_items' }, null);
+    expect((resolved.controlFlow as any).source).toBe('my_items');
+  });
+
+  it('resolves templates in source.task', () => {
+    const task = createTask({
+      name: 'map-task',
+      description: 'Map over data',
+      controlFlow: {
+        type: 'map',
+        source: { task: '{{param.taskName}}' },
+        tasks: [{ name: 's', description: 's' }],
+      },
+    });
+    const resolved = resolveTaskTemplates(task, { taskName: 'Research' }, null);
+    expect((resolved.controlFlow as any).source.task).toBe('Research');
+  });
+
+  it('resolves templates in source.key', () => {
+    const task = createTask({
+      name: 'map-task',
+      description: 'Map over data',
+      controlFlow: {
+        type: 'map',
+        source: { key: '{{param.dataKey}}' },
+        tasks: [{ name: 's', description: 's' }],
+      },
+    });
+    const resolved = resolveTaskTemplates(task, { dataKey: 'results' }, null);
+    expect((resolved.controlFlow as any).source.key).toBe('results');
+  });
+
+  it('returns same task when source templates do not change', () => {
+    const task = createTask({
+      name: 'map-task',
+      description: 'Map over data',
+      controlFlow: {
+        type: 'map',
+        source: { task: 'Research' },
+        tasks: [{ name: 's', description: 's' }],
+      },
+    });
+    const resolved = resolveTaskTemplates(task, {}, null);
+    expect(resolved).toBe(task);
+  });
 });
 
 // ============================================================================
@@ -249,6 +307,226 @@ describe('resolveSubRoutine', () => {
     const result = resolveSubRoutine(tasks, 'parent-task');
     expect(result.name).toBe('parent-task (sub-routine)');
     expect(result.tasks).toHaveLength(2);
+  });
+});
+
+// ============================================================================
+// resolveFlowSource
+// ============================================================================
+
+describe('resolveFlowSource', () => {
+  const mockAgent = {} as any; // LLM extraction tests will override
+
+  it('resolves string source from ICM', async () => {
+    const icm = createMockIcm({ items: [1, 2, 3] });
+    const result = await resolveFlowSource(
+      { source: 'items' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect('array' in result).toBe(true);
+    expect((result as any).array).toEqual([1, 2, 3]);
+    expect((result as any).maxIter).toBe(3);
+  });
+
+  it('resolves string source from WM fallback', async () => {
+    const icm = createMockIcm({});
+    const wm = createMockWm({ items: ['a', 'b'] });
+    const result = await resolveFlowSource(
+      { source: 'items' }, 'Map', mockAgent, undefined, icm, wm
+    );
+    expect('array' in result).toBe(true);
+    expect((result as any).array).toEqual(['a', 'b']);
+  });
+
+  it('resolves task source via output contract key', async () => {
+    const icm = createMockIcm({ '__task_output_Research': ['x', 'y'] });
+    const result = await resolveFlowSource(
+      { source: { task: 'Research' } }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect('array' in result).toBe(true);
+    expect((result as any).array).toEqual(['x', 'y']);
+  });
+
+  it('falls back to dep_result key for task source', async () => {
+    const icm = createMockIcm({ '__dep_result_task-123': [1, 2] });
+    const execution = {
+      plan: {
+        tasks: [
+          { id: 'task-123', name: 'Research', status: 'completed', dependsOn: [] },
+        ],
+      },
+    } as unknown as RoutineExecution;
+
+    const result = await resolveFlowSource(
+      { source: { task: 'Research' } }, 'Map', mockAgent, execution, icm, null
+    );
+    expect('array' in result).toBe(true);
+    expect((result as any).array).toEqual([1, 2]);
+  });
+
+  it('resolves key source with path', async () => {
+    const icm = createMockIcm({ data: { items: [1, 2, 3] } });
+    const result = await resolveFlowSource(
+      { source: { key: 'data', path: 'items' } }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect('array' in result).toBe(true);
+    expect((result as any).array).toEqual([1, 2, 3]);
+  });
+
+  it('resolves task source with path', async () => {
+    const icm = createMockIcm({ '__task_output_Fetch': { response: { results: ['a', 'b'] } } });
+    const result = await resolveFlowSource(
+      { source: { task: 'Fetch', path: 'response.results' } }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect('array' in result).toBe(true);
+    expect((result as any).array).toEqual(['a', 'b']);
+  });
+
+  it('returns error when source not found', async () => {
+    const icm = createMockIcm({});
+    const result = await resolveFlowSource(
+      { source: 'missing' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect('completed' in result).toBe(true);
+    expect((result as any).completed).toBe(false);
+    expect((result as any).error).toContain('source not found');
+  });
+
+  it('returns error for empty source ref', async () => {
+    const result = await resolveFlowSource(
+      { source: {} }, 'Map', mockAgent, undefined, null, null
+    );
+    expect('completed' in result).toBe(true);
+    expect((result as any).error).toContain('source has no task, key, or string value');
+  });
+
+  it('respects maxIterations cap', async () => {
+    const icm = createMockIcm({ items: [1, 2, 3, 4, 5] });
+    const result = await resolveFlowSource(
+      { source: 'items', maxIterations: 2 }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).maxIter).toBe(2);
+  });
+
+  it('coerces JSON string to array', async () => {
+    const icm = createMockIcm({ data: '[1,2,3]' });
+    const result = await resolveFlowSource(
+      { source: 'data' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual([1, 2, 3]);
+  });
+
+  it('coerces object with .data field to array', async () => {
+    const icm = createMockIcm({ stuff: { data: ['a', 'b'] } });
+    const result = await resolveFlowSource(
+      { source: 'stuff' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual(['a', 'b']);
+  });
+
+  it('coerces object with .items field to array', async () => {
+    const icm = createMockIcm({ stuff: { items: [1, 2] } });
+    const result = await resolveFlowSource(
+      { source: 'stuff' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual([1, 2]);
+  });
+
+  it('coerces object with .results field to array', async () => {
+    const icm = createMockIcm({ stuff: { results: ['x'] } });
+    const result = await resolveFlowSource(
+      { source: 'stuff' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual(['x']);
+  });
+
+  it('coerces JSON string containing object with array field', async () => {
+    const icm = createMockIcm({ data: '{"items": [1, 2, 3]}' });
+    const result = await resolveFlowSource(
+      { source: 'data' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual([1, 2, 3]);
+  });
+
+  it('attempts LLM extraction for non-coercible values', async () => {
+    const icm = createMockIcm({ data: 'apple, banana, cherry' });
+    const agent = {
+      runDirect: vi.fn().mockResolvedValue({
+        output_text: '["apple", "banana", "cherry"]',
+      }),
+    } as any;
+
+    const result = await resolveFlowSource(
+      { source: 'data' }, 'Map', agent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual(['apple', 'banana', 'cherry']);
+    expect(agent.runDirect).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles LLM extraction with markdown fences', async () => {
+    const icm = createMockIcm({ data: 'some unstructured text' });
+    const agent = {
+      runDirect: vi.fn().mockResolvedValue({
+        output_text: '```json\n["a", "b"]\n```',
+      }),
+    } as any;
+
+    const result = await resolveFlowSource(
+      { source: 'data' }, 'Map', agent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual(['a', 'b']);
+  });
+
+  it('returns error when LLM extraction fails with invalid JSON', async () => {
+    const icm = createMockIcm({ data: 'messy text' });
+    const agent = {
+      runDirect: vi.fn().mockResolvedValue({ output_text: 'not json at all' }),
+    } as any;
+
+    const result = await resolveFlowSource(
+      { source: 'data' }, 'Map', agent, undefined, icm, null
+    );
+    expect('completed' in result).toBe(true);
+    expect((result as any).error).toContain('LLM extraction failed');
+  });
+
+  it('returns error when LLM extraction returns non-array', async () => {
+    const icm = createMockIcm({ data: 'some text' });
+    const agent = {
+      runDirect: vi.fn().mockResolvedValue({ output_text: '{"not": "array"}' }),
+    } as any;
+
+    const result = await resolveFlowSource(
+      { source: 'data' }, 'Map', agent, undefined, icm, null
+    );
+    expect('completed' in result).toBe(true);
+    expect((result as any).error).toContain('LLM extraction failed');
+  });
+
+  it('handles empty array gracefully', async () => {
+    const icm = createMockIcm({ items: [] });
+    const result = await resolveFlowSource(
+      { source: 'items' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual([]);
+    expect((result as any).maxIter).toBe(0);
+  });
+
+  it('handles null and undefined values as not found', async () => {
+    // undefined is returned when key not in memory, which is "not found"
+    const icm = createMockIcm({});
+    const result = await resolveFlowSource(
+      { source: 'nope' }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).completed).toBe(false);
+    expect((result as any).error).toContain('source not found');
+  });
+
+  it('handles bracket indexing in path', async () => {
+    const icm = createMockIcm({ data: { results: [{ entries: ['a', 'b'] }] } });
+    const result = await resolveFlowSource(
+      { source: { key: 'data', path: 'results[0].entries' } }, 'Map', mockAgent, undefined, icm, null
+    );
+    expect((result as any).array).toEqual(['a', 'b']);
   });
 });
 
@@ -368,7 +646,7 @@ describe('executeControlFlow', () => {
         description: 'Map over items',
         controlFlow: {
           type: 'map',
-          sourceKey: 'items',
+          source: 'items',
           tasks: [{ name: 'process', description: 'Process item' }],
           resultKey: 'results',
         },
@@ -391,12 +669,15 @@ describe('executeControlFlow', () => {
       expect(agent.__icm.delete).toHaveBeenCalledWith('__map_total');
     });
 
-    it('fails if sourceKey is not an array', async () => {
-      const agent = createMockAgent({ items: 'not-an-array' });
+    it('fails if source is not an array and cannot be coerced', async () => {
+      const agent = createMockAgent({ items: 42 });
+      // LLM extraction will be attempted — mock it to fail
+      agent.runDirect = vi.fn().mockResolvedValue({ output_text: 'not json' });
+
       const task = createTask({
         name: 'map-test',
         description: 'Map',
-        controlFlow: { type: 'map', sourceKey: 'items', tasks: [{ name: 's', description: 's' }] },
+        controlFlow: { type: 'map', source: 'items', tasks: [{ name: 's', description: 's' }] },
       });
 
       const result = await executeControlFlow(agent, task, {});
@@ -413,7 +694,7 @@ describe('executeControlFlow', () => {
         description: 'Map',
         controlFlow: {
           type: 'map',
-          sourceKey: 'items',
+          source: 'items',
           tasks: [{ name: 's', description: 's' }],
           maxIterations: 2,
         },
@@ -435,7 +716,7 @@ describe('executeControlFlow', () => {
         description: 'Map',
         controlFlow: {
           type: 'map',
-          sourceKey: 'items',
+          source: 'items',
           tasks: [{ name: 's', description: 's' }],
         },
       });
@@ -445,6 +726,27 @@ describe('executeControlFlow', () => {
       expect(result.error).toContain('iteration 1 failed');
       // Should not have called for third element
       expect(mockExecuteRoutine).toHaveBeenCalledTimes(2);
+    });
+
+    it('works with source: { task: "X" } when task output key exists', async () => {
+      const agent = createMockAgent({ '__task_output_Research': ['a', 'b'] });
+      mockExecuteRoutine
+        .mockResolvedValueOnce(makeCompletedExecution('r-a') as any)
+        .mockResolvedValueOnce(makeCompletedExecution('r-b') as any);
+
+      const task = createTask({
+        name: 'map-test',
+        description: 'Map over research results',
+        controlFlow: {
+          type: 'map',
+          source: { task: 'Research' },
+          tasks: [{ name: 'analyze', description: 'Analyze' }],
+        },
+      });
+
+      const result = await executeControlFlow(agent, task, {});
+      expect(result.completed).toBe(true);
+      expect(result.result).toEqual(['r-a', 'r-b']);
     });
   });
 
@@ -463,7 +765,7 @@ describe('executeControlFlow', () => {
         description: 'Sum numbers',
         controlFlow: {
           type: 'fold',
-          sourceKey: 'numbers',
+          source: 'numbers',
           tasks: [{ name: 'add', description: 'Add number' }],
           initialValue: 0,
           resultKey: 'total',
@@ -504,7 +806,7 @@ describe('executeControlFlow', () => {
         description: 'Fold',
         controlFlow: {
           type: 'fold',
-          sourceKey: 'items',
+          source: 'items',
           tasks: [{ name: 's', description: 's' }],
           initialValue: 'start',
           resultKey: 'result',
@@ -533,7 +835,7 @@ describe('executeControlFlow', () => {
         description: 'Fold',
         controlFlow: {
           type: 'fold',
-          sourceKey: 'items',
+          source: 'items',
           tasks: [{ name: 's', description: 's' }],
           initialValue: 'start',
           resultKey: 'result',
@@ -555,7 +857,7 @@ describe('executeControlFlow', () => {
         description: 'Fold',
         controlFlow: {
           type: 'fold',
-          sourceKey: 'items',
+          source: 'items',
           tasks: [{ name: 's', description: 's' }],
           initialValue: 0,
           resultKey: 'result',

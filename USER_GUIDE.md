@@ -3181,7 +3181,7 @@ All three support an optional `iterationTimeoutMs` to prevent infinite hangs:
   description: 'Process each item from the list',
   controlFlow: {
     type: 'map',
-    sourceKey: '__items_list',
+    source: '__items_list',
     resultKey: '__processed_items',
     maxIterations: 50,
     iterationTimeoutMs: 120000, // 2 min per iteration

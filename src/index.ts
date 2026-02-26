@@ -340,6 +340,8 @@ export type {
   TaskMapFlow,
   TaskFoldFlow,
   TaskUntilFlow,
+  TaskSourceRef,
+  ControlFlowSource,
   SubRoutineSpec,
 } from './domain/entities/Task.js';
 
@@ -379,7 +381,7 @@ export { executeRoutine } from './core/routineRunner.js';
 export type { ExecuteRoutineOptions, ValidationContext } from './core/routineRunner.js';
 
 // Routine Control Flow
-export { resolveTemplates, ROUTINE_KEYS } from './core/routineControlFlow.js';
+export { resolveTemplates, ROUTINE_KEYS, resolveFlowSource } from './core/routineControlFlow.js';
 export type { ControlFlowResult } from './core/routineControlFlow.js';
 
 // Memory Entities

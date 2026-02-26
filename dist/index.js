@@ -24694,7 +24694,9 @@ var ROUTINE_KEYS = {
   /** Running fold accumulator (ICM) */
   FOLD_ACCUMULATOR: "__fold_accumulator",
   /** Prefix for large dep results stored in WM findings tier */
-  WM_DEP_FINDINGS_PREFIX: "findings/__dep_result_"
+  WM_DEP_FINDINGS_PREFIX: "findings/__dep_result_",
+  /** Prefix for auto-stored task outputs (set by output contracts) */
+  TASK_OUTPUT_PREFIX: "__task_output_"
 };
 function resolveTemplates(text, inputs, icmPlugin) {
   return text.replace(/\{\{(\w+)\.(\w+)\}\}/g, (_match, namespace, key) => {
@@ -24719,13 +24721,45 @@ function resolveTemplates(text, inputs, icmPlugin) {
 function resolveTaskTemplates(task, inputs, icmPlugin) {
   const resolvedDescription = resolveTemplates(task.description, inputs, icmPlugin);
   const resolvedExpectedOutput = task.expectedOutput ? resolveTemplates(task.expectedOutput, inputs, icmPlugin) : task.expectedOutput;
-  if (resolvedDescription === task.description && resolvedExpectedOutput === task.expectedOutput) {
+  let resolvedControlFlow = task.controlFlow;
+  if (task.controlFlow && "source" in task.controlFlow) {
+    const flow = task.controlFlow;
+    const source = flow.source;
+    if (typeof source === "string") {
+      const r = resolveTemplates(source, inputs, icmPlugin);
+      if (r !== source) {
+        resolvedControlFlow = { ...flow, source: r };
+      }
+    } else if (source) {
+      let changed = false;
+      const resolved = { ...source };
+      if (resolved.task) {
+        const r = resolveTemplates(resolved.task, inputs, icmPlugin);
+        if (r !== resolved.task) {
+          resolved.task = r;
+          changed = true;
+        }
+      }
+      if (resolved.key) {
+        const r = resolveTemplates(resolved.key, inputs, icmPlugin);
+        if (r !== resolved.key) {
+          resolved.key = r;
+          changed = true;
+        }
+      }
+      if (changed) {
+        resolvedControlFlow = { ...flow, source: resolved };
+      }
+    }
+  }
+  if (resolvedDescription === task.description && resolvedExpectedOutput === task.expectedOutput && resolvedControlFlow === task.controlFlow) {
     return task;
   }
   return {
     ...task,
     description: resolvedDescription,
-    expectedOutput: resolvedExpectedOutput
+    expectedOutput: resolvedExpectedOutput,
+    controlFlow: resolvedControlFlow
   };
 }
 function validateAndResolveInputs(parameters, inputs) {
@@ -24793,17 +24827,6 @@ function cleanFoldKeys(icmPlugin) {
   cleanMapKeys(icmPlugin);
   icmPlugin.delete(ROUTINE_KEYS.FOLD_ACCUMULATOR);
 }
-async function readSourceArray(flow, flowType, icmPlugin, wmPlugin) {
-  const sourceValue = await readMemoryValue(flow.sourceKey, icmPlugin, wmPlugin);
-  if (!Array.isArray(sourceValue)) {
-    return {
-      completed: false,
-      error: `${flowType} sourceKey "${flow.sourceKey}" is not an array (got ${typeof sourceValue})`
-    };
-  }
-  const maxIter = Math.min(sourceValue.length, flow.maxIterations ?? sourceValue.length, HARD_MAX_ITERATIONS);
-  return { array: sourceValue, maxIter };
-}
 function prepareSubRoutine(tasks, parentTaskName) {
   const subRoutine = resolveSubRoutine(tasks, parentTaskName);
   return {
@@ -24838,10 +24861,141 @@ async function withTimeout(promise, timeoutMs, label) {
     clearTimeout(timer);
   }
 }
-async function handleMap(agent, flow, task, inputs) {
+var COMMON_ARRAY_FIELDS = ["data", "items", "results", "entries", "list", "records", "values", "elements"];
+function extractByPath(value, path6) {
+  let current = value;
+  if (typeof current === "string") {
+    try {
+      current = JSON.parse(current);
+    } catch {
+      return void 0;
+    }
+  }
+  const segments = path6.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+  for (const segment of segments) {
+    if (current == null || typeof current !== "object") return void 0;
+    current = current[segment];
+  }
+  return current;
+}
+function tryCoerceToArray(value) {
+  if (value === void 0 || value === null) return value;
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+      if (typeof parsed === "object" && parsed !== null) {
+        value = parsed;
+      } else {
+        return value;
+      }
+    } catch {
+      return value;
+    }
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const field of COMMON_ARRAY_FIELDS) {
+      const candidate = value[field];
+      if (Array.isArray(candidate)) return candidate;
+    }
+  }
+  return value;
+}
+async function llmExtractArray(agent, rawValue) {
+  const serialized = typeof rawValue === "string" ? rawValue : JSON.stringify(rawValue);
+  const truncated = serialized.length > 8e3 ? serialized.slice(0, 8e3) + "\n...(truncated)" : serialized;
+  const response = await agent.runDirect(
+    [
+      "Extract a JSON array from the data below for iteration.",
+      "Return ONLY a valid JSON array. No explanation, no markdown fences, no extra text.",
+      "If the data contains a list in any format (JSON, markdown, numbered list, comma-separated), convert it to a JSON array of items.",
+      "",
+      "Data:",
+      truncated
+    ].join("\n"),
+    { temperature: 0, maxOutputTokens: 4096 }
+  );
+  const text = response.output_text?.trim() ?? "";
+  const cleaned = text.replace(/^```(?:json|JSON)?\s*\n?/, "").replace(/\n?\s*```$/, "").trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (parseErr) {
+    throw new Error(`LLM returned invalid JSON: ${parseErr.message}. Raw: "${text.slice(0, 200)}"`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`LLM extraction produced ${typeof parsed}, expected array`);
+  }
+  return parsed;
+}
+async function resolveFlowSource(flow, flowType, agent, execution, icmPlugin, wmPlugin) {
+  const log = logger.child({ fn: "resolveFlowSource", flowType });
+  const source = flow.source;
+  const lookups = [];
+  if (typeof source === "string") {
+    lookups.push({ key: source, label: `key "${source}"` });
+  } else if (source.task) {
+    lookups.push({
+      key: `${ROUTINE_KEYS.TASK_OUTPUT_PREFIX}${source.task}`,
+      path: source.path,
+      label: `task output "${source.task}"`
+    });
+    if (execution) {
+      const depTask = execution.plan.tasks.find((t) => t.name === source.task);
+      if (depTask) {
+        lookups.push({
+          key: `${ROUTINE_KEYS.DEP_RESULT_PREFIX}${depTask.id}`,
+          path: source.path,
+          label: `dep result "${source.task}"`
+        });
+      }
+    }
+  } else if (source.key) {
+    lookups.push({ key: source.key, path: source.path, label: `key "${source.key}"` });
+  }
+  if (lookups.length === 0) {
+    return { completed: false, error: `${flowType}: source has no task, key, or string value` };
+  }
+  let rawValue;
+  let resolvedVia;
+  for (const { key, path: path6, label } of lookups) {
+    const value2 = await readMemoryValue(key, icmPlugin, wmPlugin);
+    if (value2 !== void 0) {
+      rawValue = path6 ? extractByPath(value2, path6) : value2;
+      resolvedVia = label;
+      break;
+    }
+  }
+  if (rawValue === void 0) {
+    const tried = lookups.map((l) => l.label).join(", ");
+    return { completed: false, error: `${flowType}: source not found (tried: ${tried})` };
+  }
+  log.debug({ resolvedVia }, "Source value found");
+  let value = tryCoerceToArray(rawValue);
+  if (!Array.isArray(value)) {
+    log.info({ resolvedVia, valueType: typeof value }, "Source not an array, attempting LLM extraction");
+    try {
+      value = await llmExtractArray(agent, rawValue);
+      log.info({ extractedLength: value.length }, "LLM extraction succeeded");
+    } catch (err) {
+      return {
+        completed: false,
+        error: `${flowType}: source value is not an array and LLM extraction failed: ${err.message}`
+      };
+    }
+  }
+  const arr = value;
+  if (arr.length === 0) {
+    log.warn("Source array is empty");
+  }
+  const maxIter = Math.min(arr.length, flow.maxIterations ?? arr.length, HARD_MAX_ITERATIONS);
+  return { array: arr, maxIter };
+}
+async function handleMap(agent, flow, task, inputs, execution) {
   const { icmPlugin, wmPlugin } = getPlugins(agent);
   const log = logger.child({ controlFlow: "map", task: task.name });
-  const sourceResult = await readSourceArray(flow, "Map", icmPlugin, wmPlugin);
+  const sourceResult = await resolveFlowSource(flow, "Map", agent, execution, icmPlugin, wmPlugin);
   if ("completed" in sourceResult) return sourceResult;
   const { array: array3, maxIter } = sourceResult;
   const results = [];
@@ -24879,10 +25033,10 @@ async function handleMap(agent, flow, task, inputs) {
   log.info({ resultCount: results.length }, "Map completed");
   return { completed: true, result: results };
 }
-async function handleFold(agent, flow, task, inputs) {
+async function handleFold(agent, flow, task, inputs, execution) {
   const { icmPlugin, wmPlugin } = getPlugins(agent);
   const log = logger.child({ controlFlow: "fold", task: task.name });
-  const sourceResult = await readSourceArray(flow, "Fold", icmPlugin, wmPlugin);
+  const sourceResult = await resolveFlowSource(flow, "Fold", agent, execution, icmPlugin, wmPlugin);
   if ("completed" in sourceResult) return sourceResult;
   const { array: array3, maxIter } = sourceResult;
   let accumulator = flow.initialValue;
@@ -24973,13 +25127,13 @@ async function handleUntil(agent, flow, task, inputs) {
   }
   return { completed: false, error: `Until loop: maxIterations (${flow.maxIterations}) exceeded` };
 }
-async function executeControlFlow(agent, task, inputs) {
+async function executeControlFlow(agent, task, inputs, execution) {
   const flow = task.controlFlow;
   switch (flow.type) {
     case "map":
-      return handleMap(agent, flow, task, inputs);
+      return handleMap(agent, flow, task, inputs, execution);
     case "fold":
-      return handleFold(agent, flow, task, inputs);
+      return handleFold(agent, flow, task, inputs, execution);
     case "until":
       return handleUntil(agent, flow, task, inputs);
     default:
@@ -25008,7 +25162,26 @@ function defaultSystemPrompt(definition) {
   );
   return parts.join("\n");
 }
-function defaultTaskPrompt(task) {
+function getOutputContracts(execution, currentTask) {
+  const contracts = [];
+  for (const task of execution.plan.tasks) {
+    if (task.status !== "pending" || !task.controlFlow) continue;
+    const flow = task.controlFlow;
+    if (flow.type === "until") continue;
+    const source = flow.source;
+    const sourceTaskName = typeof source === "string" ? void 0 : source.task;
+    if (sourceTaskName === currentTask.name) {
+      contracts.push({
+        storageKey: `${ROUTINE_KEYS.TASK_OUTPUT_PREFIX}${currentTask.name}`,
+        format: "array",
+        consumingTaskName: task.name,
+        flowType: flow.type
+      });
+    }
+  }
+  return contracts;
+}
+function defaultTaskPrompt(task, execution) {
   const parts = [];
   parts.push(`## Current Task: ${task.name}`, "");
   parts.push(task.description, "");
@@ -25032,6 +25205,21 @@ function defaultTaskPrompt(task) {
     parts.push("Small results appear directly; larger results are in working memory \u2014 use memory_retrieve to access them.");
     parts.push("Review the plan overview and dependency results before starting.");
     parts.push("");
+  }
+  if (execution) {
+    const contracts = getOutputContracts(execution, task);
+    if (contracts.length > 0) {
+      parts.push("### Output Storage");
+      for (const contract of contracts) {
+        parts.push(
+          `A downstream task ("${contract.consumingTaskName}") will ${contract.flowType} over your results.`,
+          `Store your result as a JSON ${contract.format} using:`,
+          `  context_set("${contract.storageKey}", <your JSON ${contract.format}>)`,
+          "Each array element should represent one item to process independently.",
+          ""
+        );
+      }
+    }
   }
   parts.push("After completing the work, store key results in memory once, then respond with a text summary (no more tool calls).");
   return parts.join("\n");
@@ -25189,8 +25377,8 @@ var DEP_CLEANUP_CONFIG = {
   wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX]
 };
 var FULL_CLEANUP_CONFIG = {
-  icmPrefixes: ["__routine_", ROUTINE_KEYS.DEP_RESULT_PREFIX, "__map_", "__fold_"],
-  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX]
+  icmPrefixes: ["__routine_", ROUTINE_KEYS.DEP_RESULT_PREFIX, "__map_", "__fold_", ROUTINE_KEYS.TASK_OUTPUT_PREFIX],
+  wmPrefixes: [ROUTINE_KEYS.DEP_RESULT_PREFIX, ROUTINE_KEYS.WM_DEP_FINDINGS_PREFIX, ROUTINE_KEYS.TASK_OUTPUT_PREFIX]
 };
 async function injectRoutineContext(agent, execution, definition, currentTask) {
   const { icmPlugin, wmPlugin } = getPlugins(agent);
@@ -25301,7 +25489,8 @@ async function executeRoutine(options) {
   execution.startedAt = Date.now();
   execution.lastUpdatedAt = Date.now();
   const buildSystemPrompt = prompts?.system ?? defaultSystemPrompt;
-  const buildTaskPrompt = prompts?.task ?? defaultTaskPrompt;
+  const userTaskPromptBuilder = prompts?.task ?? defaultTaskPrompt;
+  const buildTaskPrompt = (task) => userTaskPromptBuilder(task, execution);
   const buildValidationPrompt = prompts?.validation ?? defaultValidationPrompt;
   let agent;
   const registeredHooks = [];
@@ -25392,7 +25581,7 @@ async function executeRoutine(options) {
         const { icmPlugin } = getPlugins(agent);
         if (getTask().controlFlow) {
           try {
-            const cfResult = await executeControlFlow(agent, getTask(), resolvedInputs);
+            const cfResult = await executeControlFlow(agent, getTask(), resolvedInputs, execution);
             if (cfResult.completed) {
               execution.plan.tasks[taskIndex] = updateTaskStatus(getTask(), "completed");
               execution.plan.tasks[taskIndex].result = { success: true, output: cfResult.result };
@@ -51757,6 +51946,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ROUTINE_KEYS, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, formatAttendees, formatPluginDisplayName, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isReasoningDelta, isReasoningDone, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTeamsMeetingUrl, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, resolveTemplates, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, Agent, AgentContextNextGen, ApproximateTokenEstimator, BaseMediaProvider, BasePluginNextGen, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CUSTOM_TOOL_DEFINITION_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONFIG2 as DEFAULT_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_DESKTOP_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DESKTOP_TOOL_NAMES, DefaultCompactionStrategy, DependencyCycleError, DocumentReader, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FileCustomToolStorage, FileMediaStorage as FileMediaOutputHandler, FileMediaStorage, FilePersistentInstructionsStorage, FileRoutineDefinitionStorage, FileStorage, FileUserInfoStorage, FormatDetector, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, ImageGeneration, InContextMemoryPluginNextGen, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LoggingPlugin, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, NutTreeDriver, OAuthManager, ParallelTasksError, PersistentInstructionsPluginNextGen, PlanningAgent, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ROUTINE_KEYS, RapidAPIProvider, RateLimitError, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScopedConnectorRegistry, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StorageRegistry, StrategyRegistry, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolExecutionPipeline, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UserInfoPluginNextGen, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, WorkingMemoryPluginNextGen, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createCreatePRTool, createCustomToolDelete, createCustomToolDraft, createCustomToolList, createCustomToolLoad, createCustomToolMetaTools, createCustomToolSave, createCustomToolTest, createDesktopGetCursorTool, createDesktopGetScreenSizeTool, createDesktopKeyboardKeyTool, createDesktopKeyboardTypeTool, createDesktopMouseClickTool, createDesktopMouseDragTool, createDesktopMouseMoveTool, createDesktopMouseScrollTool, createDesktopScreenshotTool, createDesktopWindowFocusTool, createDesktopWindowListTool, createDraftEmailTool, createEditFileTool, createEditMeetingTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileCustomToolStorage, createFileMediaStorage, createFileRoutineDefinitionStorage, createFindMeetingSlotsTool, createGetMeetingTranscriptTool, createGetPRTool, createGitHubReadFileTool, createGlobTool, createGrepTool, createImageGenerationTool, createImageProvider, createListDirectoryTool, createMeetingTool, createMessageWithImages, createMetricsCollector, createPRCommentsTool, createPRFilesTool, createPlan, createProvider, createReadFileTool, createRoutineDefinition, createRoutineExecution, createSearchCodeTool, createSearchFilesTool, createSendEmailTool, createSpeechToTextTool, createTask, createTextMessage, createTextToSpeechTool, createVideoProvider, createVideoTools, createWriteFileTool, customToolDelete, customToolDraft, customToolList, customToolLoad, customToolSave, customToolTest, defaultDescribeCall, desktopGetCursor, desktopGetScreenSize, desktopKeyboardKey, desktopKeyboardType, desktopMouseClick, desktopMouseDrag, desktopMouseMove, desktopMouseScroll, desktopScreenshot, desktopTools, desktopWindowFocus, desktopWindowList, detectDependencyCycle, detectServiceFromURL, developerTools, documentToContent, editFile, evaluateCondition, executeRoutine, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, formatAttendees, formatPluginDisplayName, formatRecipients, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllBuiltInTools, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getConnectorTools, getCredentialsSetupURL, getDesktopDriver, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMediaOutputHandler, getMediaStorage, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getRoutineProgress, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getUserPathPrefix, getVendorAuthTemplate, getVendorColor, getVendorDefaultBaseURL, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, hydrateCustomTool, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isOutputTextDelta, isReasoningDelta, isReasoningDone, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTeamsMeetingUrl, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, mergeTextPieces, metrics, microsoftFetch, normalizeEmails, parseKeyCombo, parseRepository, readClipboardImage, readDocumentAsContent, readFile5 as readFile, registerScrapeProvider, resetDefaultDriver, resolveConnector, resolveDependencies, resolveFlowSource, resolveMaxContextTokens, resolveMeetingId, resolveModelCapabilities, resolveRepository, resolveTemplates, retryWithBackoff, sanitizeToolName, scopeEquals, scopeMatches, setMediaOutputHandler, setMediaStorage, setMetricsCollector, simpleTokenEstimator, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile5 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

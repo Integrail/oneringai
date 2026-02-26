@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Flexible Source Resolution for Routine Control Flow** — Three-layer source resolution for `map`/`fold` control flow operations. Replaces brittle `sourceKey: string` with flexible `source: ControlFlowSource` that supports:
+  - **Simple key** (`source: 'items'`) — backward-compatible direct memory key lookup
+  - **Task reference** (`source: { task: 'Research' }`) — resolves to `__task_output_{name}` with dep_result fallback
+  - **Structured ref** (`source: { key: 'data', path: 'items' }`) — direct key with JSON path extraction
+  - **Output contracts** (Layer 1) — system auto-injects storage instructions into task prompts when downstream tasks reference the current task via `source.task`, keeping user task descriptions natural language
+  - **Smart coercion** (Layer 2) — algorithmic array coercion: JSON string parsing, common field extraction (`data`, `items`, `results`, etc.)
+  - **LLM extraction fallback** (Layer 3) — uses `runDirect()` to extract arrays from unstructured data as a last resort
+  - Template resolution extended to `source.task` and `source.key` fields
+  - New exports: `TaskSourceRef`, `ControlFlowSource` types; `resolveFlowSource` function
 - **Agent-Scoped Connector Availability** — Agents with `connectors: ['github', 'serper']` now only see and can execute tools produced by those connectors. New `ToolManager.registerConnectorTools(connectorName, tools)` sets `source: 'connector:<name>'` on each tool. `BaseAgent.getEnabledToolDefinitions()` filters connector tools against the agent's allowlist. Execution-time safety net in `ToolManager.execute()` blocks tools from unavailable connectors. Built-in tools (filesystem, shell, memory, etc.) are never filtered. Backward compatible: `connectors: undefined` shows all tools as before. Hosea updated to use `resolveToolsGrouped()` and `registerConnectorTools()` for proper source tracking.
 - **Hosea: Routines** — Full routine/workflow support in Hosea. Routines are multi-step automated task sequences that run on a chat tab's agent instance. Includes:
   - **Routines Page** — List all routines with search, sort (name/date), and card/list view toggle. Duplicate and delete routines directly from the list.
