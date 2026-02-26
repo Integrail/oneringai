@@ -34,6 +34,7 @@
   - [20. Routine Execution](#20-routine-execution) — Multi-step workflows with task dependencies, validation, and memory bridging
   - [21. External API Integration](#21-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
   - [22. Microsoft Graph Connector Tools](#22-microsoft-graph-connector-tools-new) — Email, calendar, meetings, and Teams transcripts
+  - [23. Tool Catalog](#23-tool-catalog-new) — Dynamic tool loading/unloading for agents with 100+ tools
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -54,11 +55,15 @@
 | **[User Guide](./USER_GUIDE.md)** | Comprehensive guide covering every feature with examples — connectors, agents, context, plugins, audio, video, search, MCP, OAuth, and more |
 | **[API Reference](./API_REFERENCE.md)** | Auto-generated reference for all 600+ public exports — classes, interfaces, types, and functions with signatures |
 | [CHANGELOG](./CHANGELOG.md) | Version history and migration notes |
-| [MCP Integration](./MCP_INTEGRATION.md) | Model Context Protocol setup and usage |
-| [Architecture (CLAUDE.md)](./CLAUDE.md) | Internal architecture guide |
-| [Testing Guide](./TESTING.md) | How to run and write tests |
 
 ---
+
+## Tutorial / Architecture Series
+
+**Part 0**. [One Lib to Rule Them All: Why We Built OneRingAI](https://medium.com/superstringtheory/one-library-to-rule-them-all-why-we-built-oneringai-689f904874d6): introduction and architecture overview
+
+**Part 1**. [Your AI Agent Forgets Everything. Here’s How We Fixed It.](https://medium.com/superstringtheory/your-ai-agent-forgets-everything-heres-how-we-fixed-it-276b39aedbb3): context management plugins
+
 
 ## HOSEA APP
 We realize that library alone in these times is not enough to get you excited, so we built a FREE FOREVER desktop app on top of this library to showcase its power! It's as easy to start using as cloning this library's repo, and then `cd apps/hosea` and then `npm install` and then `npm run dev`. Or watch the video first:
@@ -111,6 +116,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔁 **Routine Execution** - NEW: Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
 - 📊 **Execution Recording** - NEW: Persist full routine execution history with `createExecutionRecorder()` — replaces manual hook wiring
 - ⏰ **Scheduling & Triggers** - NEW: `SimpleScheduler` for interval/one-time schedules, `EventEmitterTrigger` for webhook/queue-driven execution
+- 📦 **Tool Catalog** - NEW: Dynamic tool loading/unloading — agents discover and load only the categories they need at runtime
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
@@ -790,6 +796,8 @@ const agent = Agent.create({
 | `workingMemory` | `true` | WorkingMemoryPluginNextGen | `memory_store/retrieve/delete/list` |
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen | `context_set/delete/list` |
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | `instructions_set/remove/list/clear` |
+| `userInfo` | `false` | UserInfoPluginNextGen | `user_info_set/get/remove/clear`, `todo_add/update/remove` |
+| `toolCatalog` | `false` | ToolCatalogPluginNextGen | `tool_catalog_search/load/unload` |
 
 **AgentContextNextGen architecture:**
 - **Plugin-first design** - All features are composable plugins
@@ -1631,6 +1639,46 @@ await agent.run('Find available meeting slots for alice and bob this week');
 
 Supports both **delegated** (`/me` — user signs in) and **application** (`/users/{id}` — app-only) permission modes. See the [User Guide](./USER_GUIDE.md#microsoft-graph-connector-tools) for full parameter reference.
 
+### 23. Tool Catalog (NEW)
+
+When agents have 100+ available tools, sending all definitions to the LLM wastes tokens and degrades performance. The Tool Catalog lets agents discover and load only the categories they need:
+
+```typescript
+import { Agent, ToolCatalogRegistry } from '@everworker/oneringai';
+
+// Register custom categories (built-in tools auto-register)
+ToolCatalogRegistry.registerCategory({
+  name: 'knowledge',
+  displayName: 'Knowledge Graph',
+  description: 'Search entities, get facts, manage references',
+});
+ToolCatalogRegistry.registerTools('knowledge', [
+  { name: 'entity_search', displayName: 'Entity Search', description: 'Search entities', tool: entitySearchTool, safeByDefault: true },
+]);
+
+// Enable tool catalog on an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { toolCatalog: true },
+  },
+  toolCategories: ['filesystem', 'knowledge'],  // optional scope
+});
+
+// Agent gets 3 metatools: tool_catalog_search, tool_catalog_load, tool_catalog_unload
+// It can browse categories, load what it needs, and unload when done
+await agent.run('Search for information about quantum computing');
+```
+
+**Key Features:**
+- **Dynamic loading** — Agent loads only needed categories, saving token budget
+- **Category scoping** — Restrict visible categories per agent (allowlist/blocklist)
+- **Connector discovery** — Connector tools auto-discovered as categories
+- **Registry API** — `ToolCatalogRegistry.resolveTools()` for app-level tool resolution
+
+See the [User Guide](./USER_GUIDE.md#tool-catalog) for full documentation.
+
 ---
 
 ## MCP (Model Context Protocol) Integration
@@ -1779,4 +1827,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.4.3 | **Last Updated:** 2026-02-25 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.4.4 | **Last Updated:** 2026-02-26 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

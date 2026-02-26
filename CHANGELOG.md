@@ -5,10 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.4] - 2026-02-26
+
+### Changed
+
+- **Tool Catalog: Hardened ToolCatalogRegistry + ToolCatalogPluginNextGen** — Major internal refactor with no breaking API changes:
+  - **DRY:** Extracted `ToolRegistryEntry` type, `toDisplayName()`, and `parseConnectorCategory()` static helpers to eliminate duplication across registry and plugin
+  - **Lazy ConnectorTools accessor:** Single `getConnectorToolsModule()` with false sentinel prevents retrying failed `require()` — replaces 4 separate try/catch blocks
+  - **Connector logic moved to Registry:** New `discoverConnectorCategories()` and `resolveConnectorCategoryTools()` methods on `ToolCatalogRegistry` — plugin delegates instead of duplicating ~100 lines of connector discovery
+  - **Bug fix:** `executeLoad()` now applies scope check uniformly to connector categories (previously skipped, allowing blocked connectors to load)
+  - **Input validation:** `registerCategory()` and `registerTools()` throw on empty/whitespace category names
+  - **Robust restoreState():** Validates state shape, skips non-string entries, checks `executeLoad()` error results
+  - **Destroyed-state guard:** All 3 metatools return `{ error: 'Plugin destroyed' }` after `destroy()`
+  - **Performance:** Connector categories discovered once at init (no more per-turn `discoverAll()` calls); tool definition token estimates cached via `WeakMap`
+  - New exported types: `ConnectorCategoryInfo`, `CatalogRegistryEntry`
 
 ### Added
 
+- **Tool Catalog: Dynamic Tool Loading/Unloading** — New `ToolCatalogRegistry` static class for registering tool categories and tools at the library level. New `ToolCatalogPluginNextGen` plugin with 3 metatools (`tool_catalog_search`, `tool_catalog_load`, `tool_catalog_unload`) that let agents dynamically discover and load only the tool categories they need at runtime. Reduces token waste when agents have 100+ available tools. Features:
+  - Runtime-extensible tool category registry (library users register their own categories)
+  - Agent-level category scoping via `toolCategories` config (allowlist/blocklist)
+  - `ToolCatalogRegistry.resolveTools()` for resolving tool names to `ToolFunction[]` (replaces V25's parallel catalog)
+  - `ToolCatalogRegistry.initializeFromRegistry()` for explicit initialization in ESM environments
+  - `ToolManager.getByCategory()` convenience method for bulk category queries
+  - All 3 catalog metatools added to DEFAULT_ALLOWLIST (safe by default)
+  - Enable via `features: { toolCatalog: true }` on `AgentContextNextGen`
 - **Routine Execution Recording** — New `RoutineExecutionRecord` types and `createExecutionRecorder()` factory for persisting routine execution history. Storage-agnostic types (`RoutineExecutionStep`, `RoutineTaskSnapshot`, `RoutineTaskResult`) replace manual hook wiring with a single factory call. `IRoutineExecutionStorage` interface for custom backends (MongoDB, PostgreSQL, etc.). Integrated into `StorageRegistry` as `routineExecutions`. Consumers wire recording with ~5 lines instead of ~140 lines of manual hooks/callbacks.
 - **Routine Scheduling** — New `IScheduler` interface with `ScheduleSpec` supporting interval, one-time (timestamp), and cron schedule types. Built-in `SimpleScheduler` implementation using `setInterval`/`setTimeout` (throws clear error for cron — use a cron-capable implementation). Implements `IDisposable` for clean timer cleanup.
 - **Event Trigger System** — New `EventEmitterTrigger` class for triggering routine execution from external events (webhooks, queues, custom signals). Simple typed event emitter with `on()`/`emit()`/`destroy()`. No heavy `ITriggerSource` interface — users call `emit()` from their handler.

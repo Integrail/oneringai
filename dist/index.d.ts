@@ -1,7 +1,7 @@
 import { I as IConnectorRegistry, a as IConnectorAccessPolicy, C as ConnectorAccessContext, b as Connector, c as ConnectorConfig, d as ITokenStorage, e as IProvider, f as ConnectorFetchOptions, P as ProviderCapabilities, S as StoredToken$1, g as ConnectorAuth, h as ConnectorConfigResult } from './IProvider-CxDUGl6n.js';
 export { A as APIKeyConnectorAuth, D as DEFAULT_BASE_DELAY_MS, i as DEFAULT_CONNECTOR_TIMEOUT, j as DEFAULT_MAX_DELAY_MS, k as DEFAULT_MAX_RETRIES, l as DEFAULT_RETRYABLE_STATUSES, J as JWTConnectorAuth, O as OAuthConnectorAuth } from './IProvider-CxDUGl6n.js';
-import { C as ContextFeatures, M as MemoryEntry, a as MemoryScope, I as IContextStorage, T as Tool, b as ToolFunction, c as ToolContext, d as ToolPermissionConfig$1, e as ContextBudget$1, f as ToolCall, g as IContextPluginNextGen, W as WorkingMemoryConfig, P as PriorityCalculator, h as MemoryPriority, i as MemoryTier, j as ContextEvents, A as AgentContextNextGenConfig, k as AuthIdentity, l as ICompactionStrategy, B as BeforeCompactionCallback, m as InputItem, n as Content, o as PreparedContext, O as OutputItem, p as ToolResult, q as ConsolidationResult, S as SerializedContextState, r as StoredContextSession, s as ITextProvider, t as ContextSessionMetadata, F as FunctionToolDefinition, L as LLMResponse, u as StreamEvent, H as HookConfig, v as HistoryMode, w as AgentEvents, x as AgentResponse, E as ExecutionContext, y as ExecutionMetrics, z as AuditEntry, D as HookName, G as ITokenEstimator$1, J as ToolCategoryScope, K as CompactionContext, N as CompactionResult, Q as StaleEntryInfo, R as PriorityContext, U as MemoryIndex, V as TaskStatusForMemory, X as WorkingMemoryAccess, Y as ContextStorageListOptions, Z as ContextSessionSummary, _ as TokenUsage, $ as StreamEventType, a0 as TextGenerateOptions, a1 as ModelCapabilities, a2 as MessageRole } from './index-BQVkRxeU.js';
-export { a3 as AfterToolContext, a4 as AgentEventName, a5 as AgenticLoopEventName, a6 as AgenticLoopEvents, a7 as ApprovalResult, a8 as ApproveToolContext, a9 as BeforeToolContext, aa as BuiltInTool, ab as CONTEXT_SESSION_FORMAT_VERSION, ac as CatalogToolEntry, ad as CompactionItem, ae as ContentType, af as DEFAULT_CONFIG, ag as DEFAULT_FEATURES, ah as DEFAULT_MEMORY_CONFIG, ai as ErrorEvent, aj as ExecutionConfig, ak as Hook, al as HookManager, am as InputImageContent, an as InputTextContent, ao as IterationCompleteEvent, ap as JSONSchema, aq as MEMORY_PRIORITY_VALUES, ar as MemoryEntryInput, as as MemoryIndexEntry, at as Message, au as ModifyingHook, av as OutputTextContent, aw as OutputTextDeltaEvent, ax as OutputTextDoneEvent, ay as OversizedInputResult, az as PluginConfigs, aA as ReasoningDeltaEvent, aB as ReasoningDoneEvent, aC as ReasoningItem, aD as ResponseCompleteEvent, aE as ResponseCreatedEvent, aF as ResponseInProgressEvent, aG as SimpleScope, aH as TaskAwareScope, aI as ThinkingContent, aJ as ToolCallArgumentsDeltaEvent, aK as ToolCallArgumentsDoneEvent, aL as ToolCallStartEvent, aM as ToolCallState, aN as ToolCatalogRegistry, aO as ToolCategoryDefinition, aP as ToolExecutionContext, aQ as ToolExecutionDoneEvent, aR as ToolExecutionStartEvent, aS as ToolModification, aT as ToolResultContent, aU as ToolUseContent, aV as calculateEntrySize, aW as defaultDescribeCall, aX as forPlan, aY as forTasks, aZ as getToolCallDescription, a_ as isErrorEvent, a$ as isOutputTextDelta, b0 as isReasoningDelta, b1 as isReasoningDone, b2 as isResponseComplete, b3 as isSimpleScope, b4 as isStreamEvent, b5 as isTaskAwareScope, b6 as isTerminalMemoryStatus, b7 as isToolCallArgumentsDelta, b8 as isToolCallArgumentsDone, b9 as isToolCallStart, ba as scopeEquals, bb as scopeMatches } from './index-BQVkRxeU.js';
+import { C as ContextFeatures, M as MemoryEntry, a as MemoryScope, I as IContextStorage, T as Tool, b as ToolFunction, c as ToolContext, d as ToolPermissionConfig$1, e as ContextBudget$1, f as ToolCall, g as IContextPluginNextGen, W as WorkingMemoryConfig, P as PriorityCalculator, h as MemoryPriority, i as MemoryTier, j as ContextEvents, A as AgentContextNextGenConfig, k as AuthIdentity, l as ICompactionStrategy, B as BeforeCompactionCallback, m as InputItem, n as Content, o as PreparedContext, O as OutputItem, p as ToolResult, q as ConsolidationResult, S as SerializedContextState, r as StoredContextSession, s as ITextProvider, t as ContextSessionMetadata, F as FunctionToolDefinition, L as LLMResponse, u as StreamEvent, H as HookConfig, v as HistoryMode, w as AgentEvents, x as AgentResponse, E as ExecutionContext, y as ExecutionMetrics, z as AuditEntry, D as HookName, G as ITokenEstimator$1, J as ToolCategoryScope, K as CompactionContext, N as CompactionResult, Q as StaleEntryInfo, R as PriorityContext, U as MemoryIndex, V as TaskStatusForMemory, X as WorkingMemoryAccess, Y as ContextStorageListOptions, Z as ContextSessionSummary, _ as TokenUsage, $ as StreamEventType, a0 as TextGenerateOptions, a1 as ModelCapabilities, a2 as MessageRole } from './index-Dyl6pHfq.js';
+export { a3 as AfterToolContext, a4 as AgentEventName, a5 as AgenticLoopEventName, a6 as AgenticLoopEvents, a7 as ApprovalResult, a8 as ApproveToolContext, a9 as BeforeToolContext, aa as BuiltInTool, ab as CONTEXT_SESSION_FORMAT_VERSION, ac as CatalogRegistryEntry, ad as CatalogToolEntry, ae as CompactionItem, af as ConnectorCategoryInfo, ag as ContentType, ah as DEFAULT_CONFIG, ai as DEFAULT_FEATURES, aj as DEFAULT_MEMORY_CONFIG, ak as ErrorEvent, al as ExecutionConfig, am as Hook, an as HookManager, ao as InputImageContent, ap as InputTextContent, aq as IterationCompleteEvent, ar as JSONSchema, as as MEMORY_PRIORITY_VALUES, at as MemoryEntryInput, au as MemoryIndexEntry, av as Message, aw as ModifyingHook, ax as OutputTextContent, ay as OutputTextDeltaEvent, az as OutputTextDoneEvent, aA as OversizedInputResult, aB as PluginConfigs, aC as ReasoningDeltaEvent, aD as ReasoningDoneEvent, aE as ReasoningItem, aF as ResponseCompleteEvent, aG as ResponseCreatedEvent, aH as ResponseInProgressEvent, aI as SimpleScope, aJ as TaskAwareScope, aK as ThinkingContent, aL as ToolCallArgumentsDeltaEvent, aM as ToolCallArgumentsDoneEvent, aN as ToolCallStartEvent, aO as ToolCallState, aP as ToolCatalogRegistry, aQ as ToolCategoryDefinition, aR as ToolExecutionContext, aS as ToolExecutionDoneEvent, aT as ToolExecutionStartEvent, aU as ToolModification, aV as ToolResultContent, aW as ToolUseContent, aX as calculateEntrySize, aY as defaultDescribeCall, aZ as forPlan, a_ as forTasks, a$ as getToolCallDescription, b0 as isErrorEvent, b1 as isOutputTextDelta, b2 as isReasoningDelta, b3 as isReasoningDone, b4 as isResponseComplete, b5 as isSimpleScope, b6 as isStreamEvent, b7 as isTaskAwareScope, b8 as isTerminalMemoryStatus, b9 as isToolCallArgumentsDelta, ba as isToolCallArgumentsDone, bb as isToolCallStart, bc as scopeEquals, bd as scopeMatches } from './index-Dyl6pHfq.js';
 import { EventEmitter } from 'eventemitter3';
 import { V as Vendor } from './Vendor-DYh_bzwo.js';
 export { a as VENDORS, i as isVendor } from './Vendor-DYh_bzwo.js';
@@ -5088,6 +5088,12 @@ declare class ToolCatalogPluginNextGen extends BasePluginNextGen {
     private _loadedCategories;
     /** Reference to the ToolManager for registering/disabling tools */
     private _toolManager;
+    /** Cached connector categories — discovered once in setToolManager() */
+    private _connectorCategories;
+    /** Whether this plugin has been destroyed */
+    private _destroyed;
+    /** WeakMap cache for tool definition token estimates */
+    private _toolTokenCache;
     private _config;
     constructor(config?: ToolCatalogPluginConfig);
     getInstructions(): string;
@@ -5109,10 +5115,12 @@ declare class ToolCatalogPluginNextGen extends BasePluginNextGen {
     executeLoad(category: string): Record<string, unknown>;
     private executeUnload;
     private getAllowedCategories;
+    /**
+     * Get connector categories from cache (populated once in setToolManager).
+     */
+    private getConnectorCategories;
     private keywordSearch;
     private searchConnectorCategory;
-    private getConnectorCategories;
-    private resolveConnectorTools;
     private getCategoriesSortedByLastUsed;
     private estimateToolDefinitionTokens;
 }
@@ -14069,7 +14077,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-26T21:14:43.537Z
+ * Generated at: 2026-02-26T21:45:33.395Z
  *
  * To regenerate: npm run generate:tools
  */

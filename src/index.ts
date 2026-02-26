@@ -28,7 +28,7 @@
 
 // ============ Core API (Primary) ============
 export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL } from './core/index.js';
-export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope } from './core/index.js';
+export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, CatalogRegistryEntry } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContextNextGen - Clean, Simple Context Management

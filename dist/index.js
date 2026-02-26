@@ -2592,914 +2592,6 @@ Do NOT use any tools in this response - just provide a clear summary and ask for
   }
 });
 
-// src/utils/sanitize.ts
-function sanitizeToolName(name) {
-  let result = name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^[_-]+|[_-]+$/g, "");
-  if (/^[0-9]/.test(result)) {
-    result = `n_${result}`;
-  }
-  return result || "unnamed";
-}
-var init_sanitize = __esm({
-  "src/utils/sanitize.ts"() {
-  }
-});
-
-// src/domain/entities/Services.ts
-function getCompiledPatterns() {
-  if (!compiledPatterns) {
-    compiledPatterns = SERVICE_DEFINITIONS.map((def) => ({
-      service: def.id,
-      pattern: def.urlPattern
-    }));
-  }
-  return compiledPatterns;
-}
-function detectServiceFromURL(url2) {
-  const patterns = getCompiledPatterns();
-  for (const { service, pattern } of patterns) {
-    if (pattern.test(url2)) {
-      return service;
-    }
-  }
-  return void 0;
-}
-function getServiceInfo(serviceType) {
-  return SERVICE_INFO[serviceType];
-}
-function getServiceDefinition(serviceType) {
-  return SERVICE_DEFINITIONS.find((def) => def.id === serviceType);
-}
-function getServicesByCategory(category) {
-  return SERVICE_DEFINITIONS.filter((def) => def.category === category);
-}
-function getAllServiceIds() {
-  return SERVICE_DEFINITIONS.map((def) => def.id);
-}
-function isKnownService(serviceId) {
-  return SERVICE_DEFINITIONS.some((def) => def.id === serviceId);
-}
-var SERVICE_DEFINITIONS, Services, SERVICE_URL_PATTERNS, SERVICE_INFO, compiledPatterns;
-var init_Services = __esm({
-  "src/domain/entities/Services.ts"() {
-    SERVICE_DEFINITIONS = [
-      // ============ Major Vendors ============
-      {
-        id: "microsoft",
-        name: "Microsoft",
-        category: "major-vendors",
-        urlPattern: /graph\.microsoft\.com|login\.microsoftonline\.com/i,
-        baseURL: "https://graph.microsoft.com/v1.0",
-        docsURL: "https://learn.microsoft.com/en-us/graph/",
-        commonScopes: ["User.Read", "Files.ReadWrite", "Mail.Read", "Calendars.ReadWrite"]
-      },
-      {
-        id: "google",
-        name: "Google",
-        category: "major-vendors",
-        urlPattern: /googleapis\.com|accounts\.google\.com/i,
-        baseURL: "https://www.googleapis.com",
-        docsURL: "https://developers.google.com/",
-        commonScopes: [
-          "https://www.googleapis.com/auth/drive",
-          "https://www.googleapis.com/auth/calendar",
-          "https://www.googleapis.com/auth/gmail.readonly"
-        ]
-      },
-      // ============ Communication ============
-      {
-        id: "slack",
-        name: "Slack",
-        category: "communication",
-        urlPattern: /slack\.com/i,
-        baseURL: "https://slack.com/api",
-        docsURL: "https://api.slack.com/methods",
-        commonScopes: ["chat:write", "channels:read", "users:read"]
-      },
-      {
-        id: "discord",
-        name: "Discord",
-        category: "communication",
-        urlPattern: /discord\.com|discordapp\.com/i,
-        baseURL: "https://discord.com/api/v10",
-        docsURL: "https://discord.com/developers/docs",
-        commonScopes: ["bot", "messages.read"]
-      },
-      {
-        id: "telegram",
-        name: "Telegram",
-        category: "communication",
-        urlPattern: /api\.telegram\.org/i,
-        baseURL: "https://api.telegram.org",
-        docsURL: "https://core.telegram.org/bots/api"
-      },
-      {
-        id: "twitter",
-        name: "X (Twitter)",
-        category: "communication",
-        urlPattern: /api\.x\.com|api\.twitter\.com/i,
-        baseURL: "https://api.x.com/2",
-        docsURL: "https://developer.x.com/en/docs/x-api",
-        commonScopes: ["tweet.read", "tweet.write", "users.read", "offline.access"]
-      },
-      // ============ Development & Project Management ============
-      {
-        id: "github",
-        name: "GitHub",
-        category: "development",
-        urlPattern: /api\.github\.com/i,
-        baseURL: "https://api.github.com",
-        docsURL: "https://docs.github.com/en/rest",
-        commonScopes: ["repo", "read:user", "read:org"]
-      },
-      {
-        id: "gitlab",
-        name: "GitLab",
-        category: "development",
-        urlPattern: /gitlab\.com|gitlab\./i,
-        baseURL: "https://gitlab.com/api/v4",
-        docsURL: "https://docs.gitlab.com/ee/api/",
-        commonScopes: ["api", "read_user", "read_repository"]
-      },
-      {
-        id: "bitbucket",
-        name: "Bitbucket",
-        category: "development",
-        urlPattern: /api\.bitbucket\.org|bitbucket\.org/i,
-        baseURL: "https://api.bitbucket.org/2.0",
-        docsURL: "https://developer.atlassian.com/cloud/bitbucket/rest/",
-        commonScopes: ["repository", "pullrequest"]
-      },
-      {
-        id: "jira",
-        name: "Jira",
-        category: "development",
-        urlPattern: /atlassian\.net.*jira|jira\./i,
-        baseURL: "https://your-domain.atlassian.net/rest/api/3",
-        docsURL: "https://developer.atlassian.com/cloud/jira/platform/rest/v3/",
-        commonScopes: ["read:jira-work", "write:jira-work"]
-      },
-      {
-        id: "linear",
-        name: "Linear",
-        category: "development",
-        urlPattern: /api\.linear\.app/i,
-        baseURL: "https://api.linear.app/graphql",
-        docsURL: "https://developers.linear.app/docs",
-        commonScopes: ["read", "write"]
-      },
-      {
-        id: "asana",
-        name: "Asana",
-        category: "development",
-        urlPattern: /api\.asana\.com/i,
-        baseURL: "https://app.asana.com/api/1.0",
-        docsURL: "https://developers.asana.com/docs"
-      },
-      {
-        id: "trello",
-        name: "Trello",
-        category: "development",
-        urlPattern: /api\.trello\.com/i,
-        baseURL: "https://api.trello.com/1",
-        docsURL: "https://developer.atlassian.com/cloud/trello/rest/",
-        commonScopes: ["read", "write"]
-      },
-      // ============ Productivity & Collaboration ============
-      {
-        id: "notion",
-        name: "Notion",
-        category: "productivity",
-        urlPattern: /api\.notion\.com/i,
-        baseURL: "https://api.notion.com/v1",
-        docsURL: "https://developers.notion.com/reference"
-      },
-      {
-        id: "airtable",
-        name: "Airtable",
-        category: "productivity",
-        urlPattern: /api\.airtable\.com/i,
-        baseURL: "https://api.airtable.com/v0",
-        docsURL: "https://airtable.com/developers/web/api",
-        commonScopes: ["data.records:read", "data.records:write"]
-      },
-      {
-        id: "confluence",
-        name: "Confluence",
-        category: "productivity",
-        urlPattern: /atlassian\.net.*wiki|confluence\./i,
-        baseURL: "https://your-domain.atlassian.net/wiki/rest/api",
-        docsURL: "https://developer.atlassian.com/cloud/confluence/rest/",
-        commonScopes: ["read:confluence-content.all", "write:confluence-content"]
-      },
-      // ============ CRM & Sales ============
-      {
-        id: "salesforce",
-        name: "Salesforce",
-        category: "crm",
-        urlPattern: /salesforce\.com|force\.com/i,
-        baseURL: "https://your-instance.salesforce.com/services/data/v58.0",
-        docsURL: "https://developer.salesforce.com/docs/apis",
-        commonScopes: ["api", "refresh_token"]
-      },
-      {
-        id: "hubspot",
-        name: "HubSpot",
-        category: "crm",
-        urlPattern: /api\.hubapi\.com|api\.hubspot\.com/i,
-        baseURL: "https://api.hubapi.com",
-        docsURL: "https://developers.hubspot.com/docs/api",
-        commonScopes: ["crm.objects.contacts.read", "crm.objects.contacts.write"]
-      },
-      {
-        id: "pipedrive",
-        name: "Pipedrive",
-        category: "crm",
-        urlPattern: /api\.pipedrive\.com/i,
-        baseURL: "https://api.pipedrive.com/v1",
-        docsURL: "https://developers.pipedrive.com/docs/api/v1"
-      },
-      // ============ Payments & Finance ============
-      {
-        id: "stripe",
-        name: "Stripe",
-        category: "payments",
-        urlPattern: /api\.stripe\.com/i,
-        baseURL: "https://api.stripe.com/v1",
-        docsURL: "https://stripe.com/docs/api"
-      },
-      {
-        id: "paypal",
-        name: "PayPal",
-        category: "payments",
-        urlPattern: /api\.paypal\.com|api-m\.paypal\.com/i,
-        baseURL: "https://api-m.paypal.com/v2",
-        docsURL: "https://developer.paypal.com/docs/api/"
-      },
-      {
-        id: "quickbooks",
-        name: "QuickBooks",
-        category: "payments",
-        urlPattern: /quickbooks\.api\.intuit\.com|intuit\.com.*quickbooks/i,
-        baseURL: "https://quickbooks.api.intuit.com/v3",
-        docsURL: "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account",
-        commonScopes: ["com.intuit.quickbooks.accounting"]
-      },
-      {
-        id: "ramp",
-        name: "Ramp",
-        category: "payments",
-        urlPattern: /api\.ramp\.com/i,
-        baseURL: "https://api.ramp.com/developer/v1",
-        docsURL: "https://docs.ramp.com/reference"
-      },
-      // ============ Cloud Providers ============
-      {
-        id: "aws",
-        name: "Amazon Web Services",
-        category: "cloud",
-        urlPattern: /amazonaws\.com/i,
-        baseURL: "https://aws.amazon.com",
-        docsURL: "https://docs.aws.amazon.com/"
-      },
-      // ============ Storage ============
-      {
-        id: "dropbox",
-        name: "Dropbox",
-        category: "storage",
-        urlPattern: /api\.dropboxapi\.com|dropbox\.com/i,
-        baseURL: "https://api.dropboxapi.com/2",
-        docsURL: "https://www.dropbox.com/developers/documentation",
-        commonScopes: ["files.content.read", "files.content.write"]
-      },
-      {
-        id: "box",
-        name: "Box",
-        category: "storage",
-        urlPattern: /api\.box\.com/i,
-        baseURL: "https://api.box.com/2.0",
-        docsURL: "https://developer.box.com/reference/"
-      },
-      // ============ Email ============
-      {
-        id: "sendgrid",
-        name: "SendGrid",
-        category: "email",
-        urlPattern: /api\.sendgrid\.com/i,
-        baseURL: "https://api.sendgrid.com/v3",
-        docsURL: "https://docs.sendgrid.com/api-reference"
-      },
-      {
-        id: "mailchimp",
-        name: "Mailchimp",
-        category: "email",
-        urlPattern: /api\.mailchimp\.com|mandrillapp\.com/i,
-        baseURL: "https://server.api.mailchimp.com/3.0",
-        docsURL: "https://mailchimp.com/developer/marketing/api/"
-      },
-      {
-        id: "postmark",
-        name: "Postmark",
-        category: "email",
-        urlPattern: /api\.postmarkapp\.com/i,
-        baseURL: "https://api.postmarkapp.com",
-        docsURL: "https://postmarkapp.com/developer"
-      },
-      // ============ Monitoring & Observability ============
-      {
-        id: "datadog",
-        name: "Datadog",
-        category: "monitoring",
-        urlPattern: /api\.datadoghq\.com/i,
-        baseURL: "https://api.datadoghq.com/api/v2",
-        docsURL: "https://docs.datadoghq.com/api/"
-      },
-      {
-        id: "pagerduty",
-        name: "PagerDuty",
-        category: "monitoring",
-        urlPattern: /api\.pagerduty\.com/i,
-        baseURL: "https://api.pagerduty.com",
-        docsURL: "https://developer.pagerduty.com/api-reference/"
-      },
-      {
-        id: "sentry",
-        name: "Sentry",
-        category: "monitoring",
-        urlPattern: /sentry\.io/i,
-        baseURL: "https://sentry.io/api/0",
-        docsURL: "https://docs.sentry.io/api/"
-      },
-      // ============ Search ============
-      {
-        id: "serper",
-        name: "Serper",
-        category: "search",
-        urlPattern: /serper\.dev/i,
-        baseURL: "https://google.serper.dev",
-        docsURL: "https://serper.dev/docs"
-      },
-      {
-        id: "brave-search",
-        name: "Brave Search",
-        category: "search",
-        urlPattern: /api\.search\.brave\.com/i,
-        baseURL: "https://api.search.brave.com/res/v1",
-        docsURL: "https://brave.com/search/api/"
-      },
-      {
-        id: "tavily",
-        name: "Tavily",
-        category: "search",
-        urlPattern: /api\.tavily\.com/i,
-        baseURL: "https://api.tavily.com",
-        docsURL: "https://tavily.com/docs"
-      },
-      {
-        id: "rapidapi-search",
-        name: "RapidAPI Search",
-        category: "search",
-        urlPattern: /real-time-web-search\.p\.rapidapi\.com/i,
-        baseURL: "https://real-time-web-search.p.rapidapi.com",
-        docsURL: "https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-web-search"
-      },
-      // ============ Scraping ============
-      {
-        id: "zenrows",
-        name: "ZenRows",
-        category: "scrape",
-        urlPattern: /api\.zenrows\.com/i,
-        baseURL: "https://api.zenrows.com/v1",
-        docsURL: "https://docs.zenrows.com/universal-scraper-api/api-reference"
-      },
-      // ============ Other ============
-      {
-        id: "twilio",
-        name: "Twilio",
-        category: "other",
-        urlPattern: /api\.twilio\.com/i,
-        baseURL: "https://api.twilio.com/2010-04-01",
-        docsURL: "https://www.twilio.com/docs/usage/api"
-      },
-      {
-        id: "zendesk",
-        name: "Zendesk",
-        category: "other",
-        urlPattern: /zendesk\.com/i,
-        baseURL: "https://your-subdomain.zendesk.com/api/v2",
-        docsURL: "https://developer.zendesk.com/api-reference/",
-        commonScopes: ["read", "write"]
-      },
-      {
-        id: "intercom",
-        name: "Intercom",
-        category: "other",
-        urlPattern: /api\.intercom\.io/i,
-        baseURL: "https://api.intercom.io",
-        docsURL: "https://developers.intercom.com/docs/"
-      },
-      {
-        id: "shopify",
-        name: "Shopify",
-        category: "other",
-        urlPattern: /shopify\.com.*admin/i,
-        baseURL: "https://your-store.myshopify.com/admin/api/2024-01",
-        docsURL: "https://shopify.dev/docs/api",
-        commonScopes: ["read_products", "write_products", "read_orders"]
-      }
-    ];
-    Services = Object.fromEntries(
-      SERVICE_DEFINITIONS.map((def) => [
-        // Convert kebab-case to PascalCase for object key
-        def.id.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(""),
-        def.id
-      ])
-    );
-    SERVICE_URL_PATTERNS = SERVICE_DEFINITIONS.map((def) => ({
-      service: def.id,
-      pattern: def.urlPattern
-    }));
-    SERVICE_INFO = Object.fromEntries(
-      SERVICE_DEFINITIONS.map((def) => [
-        def.id,
-        {
-          id: def.id,
-          name: def.name,
-          category: def.category,
-          baseURL: def.baseURL,
-          docsURL: def.docsURL,
-          commonScopes: def.commonScopes
-        }
-      ])
-    );
-    compiledPatterns = null;
-  }
-});
-
-// src/tools/connector/ConnectorTools.ts
-var ConnectorTools_exports = {};
-__export(ConnectorTools_exports, {
-  ConnectorTools: () => ConnectorTools
-});
-function safeStringify2(obj) {
-  const seen = /* @__PURE__ */ new WeakSet();
-  return JSON.stringify(obj, (_key, value) => {
-    if (typeof value === "object" && value !== null) {
-      if (seen.has(value)) {
-        return "[Circular]";
-      }
-      seen.add(value);
-    }
-    return value;
-  });
-}
-function filterProtectedHeaders(headers) {
-  if (!headers) return {};
-  const filtered = {};
-  for (const [key, value] of Object.entries(headers)) {
-    if (!PROTECTED_HEADERS.includes(key.toLowerCase())) {
-      filtered[key] = value;
-    }
-  }
-  return filtered;
-}
-function normalizeBody(body) {
-  if (typeof body === "string") {
-    try {
-      return JSON.parse(body);
-    } catch {
-      return body;
-    }
-  }
-  return body;
-}
-function detectAPIError(data) {
-  if (!data || typeof data !== "object") return null;
-  const obj = data;
-  if (obj.ok === false && typeof obj.error === "string") {
-    return obj.error;
-  }
-  if (obj.success === false) {
-    if (typeof obj.error === "string") return obj.error;
-    if (typeof obj.message === "string") return obj.message;
-  }
-  if (obj.error && typeof obj.error === "object") {
-    const err = obj.error;
-    if (typeof err.message === "string") return err.message;
-  }
-  return null;
-}
-var PROTECTED_HEADERS, ConnectorTools;
-var init_ConnectorTools = __esm({
-  "src/tools/connector/ConnectorTools.ts"() {
-    init_Connector();
-    init_Logger();
-    init_sanitize();
-    init_Services();
-    PROTECTED_HEADERS = ["authorization", "x-api-key", "api-key", "bearer"];
-    ConnectorTools = class {
-      /** Registry of service-specific tool factories */
-      static factories = /* @__PURE__ */ new Map();
-      /** Cache for detected service types (connector name -> service type) */
-      static serviceTypeCache = /* @__PURE__ */ new Map();
-      /** Cache for generated tools (cacheKey -> tools) */
-      static toolCache = /* @__PURE__ */ new Map();
-      /** Maximum cache size to prevent memory issues */
-      static MAX_CACHE_SIZE = 100;
-      /**
-       * Clear all caches (useful for testing or when connectors change)
-       */
-      static clearCache() {
-        this.serviceTypeCache.clear();
-        this.toolCache.clear();
-      }
-      /**
-       * Invalidate cache for a specific connector
-       */
-      static invalidateCache(connectorName) {
-        this.serviceTypeCache.delete(connectorName);
-        for (const key of this.toolCache.keys()) {
-          if (key.startsWith(`${connectorName}:`)) {
-            this.toolCache.delete(key);
-          }
-        }
-      }
-      /**
-       * Register a tool factory for a service type
-       *
-       * @param serviceType - Service identifier (e.g., 'slack', 'github')
-       * @param factory - Function that creates tools from a Connector
-       *
-       * @example
-       * ```typescript
-       * ConnectorTools.registerService('slack', (connector) => [
-       *   createSlackSendMessageTool(connector),
-       *   createSlackListChannelsTool(connector),
-       * ]);
-       * ```
-       */
-      static registerService(serviceType, factory) {
-        this.factories.set(serviceType, factory);
-        logger.debug(`[ConnectorTools.registerService] Registered factory for: ${serviceType} (total factories: ${this.factories.size})`);
-      }
-      /**
-       * Unregister a service tool factory
-       */
-      static unregisterService(serviceType) {
-        return this.factories.delete(serviceType);
-      }
-      /**
-       * Get ALL tools for a connector (generic API + service-specific)
-       * This is the main entry point
-       *
-       * @param connectorOrName - Connector instance or name
-       * @param userId - Optional user ID for multi-user OAuth
-       * @returns Array of tools
-       *
-       * @example
-       * ```typescript
-       * const tools = ConnectorTools.for('slack');
-       * // Returns: [slack_api, slack_send_message, slack_list_channels, ...]
-       * ```
-       */
-      static for(connectorOrName, userId, options) {
-        const connector = this.resolveConnector(connectorOrName, options?.registry);
-        const accountId = options?.accountId;
-        const tools = [];
-        const namePrefix = accountId ? `${sanitizeToolName(connector.name)}_${sanitizeToolName(accountId)}` : sanitizeToolName(connector.name);
-        if (connector.baseURL) {
-          const accountLabel = accountId ? ` (account: ${accountId})` : "";
-          tools.push(this.createGenericAPITool(connector, {
-            userId,
-            accountId,
-            toolName: `${namePrefix}_api`,
-            description: `Make an authenticated API call to ${connector.displayName}${accountLabel}.` + (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : " Provide full URL in endpoint.") + ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.'
-          }));
-        }
-        const serviceType = this.detectService(connector);
-        if (serviceType && this.factories.has(serviceType)) {
-          const factory = this.factories.get(serviceType);
-          const serviceTools = factory(connector, userId);
-          for (const tool of serviceTools) {
-            tool.definition.function.name = `${namePrefix}_${tool.definition.function.name}`;
-          }
-          tools.push(...serviceTools);
-        }
-        if (accountId) {
-          return tools.map((tool) => this.bindAccountId(tool, accountId));
-        }
-        return tools;
-      }
-      /**
-       * Get just the generic API tool for a connector
-       *
-       * @param connectorOrName - Connector instance or name
-       * @param options - Optional configuration
-       * @returns Generic API tool
-       *
-       * @example
-       * ```typescript
-       * const apiTool = ConnectorTools.genericAPI('github');
-       * ```
-       */
-      static genericAPI(connectorOrName, options) {
-        const connector = this.resolveConnector(connectorOrName);
-        return this.createGenericAPITool(connector, options);
-      }
-      /**
-       * Get only service-specific tools (no generic API tool)
-       *
-       * @param connectorOrName - Connector instance or name
-       * @param userId - Optional user ID for multi-user OAuth
-       * @returns Service-specific tools only
-       */
-      static serviceTools(connectorOrName, userId) {
-        const connector = this.resolveConnector(connectorOrName);
-        const serviceType = this.detectService(connector);
-        if (!serviceType || !this.factories.has(serviceType)) {
-          return [];
-        }
-        return this.factories.get(serviceType)(connector, userId);
-      }
-      /**
-       * Discover tools for ALL registered connectors with external services
-       * Skips AI provider connectors (those with vendor but no serviceType)
-       *
-       * @param userId - Optional user ID for multi-user OAuth
-       * @returns Map of connector name to tools
-       *
-       * @example
-       * ```typescript
-       * const allTools = ConnectorTools.discoverAll();
-       * for (const [name, tools] of allTools) {
-       *   agent.tools.registerMany(tools, { namespace: name });
-       * }
-       * ```
-       */
-      static discoverAll(userId, options) {
-        const result = /* @__PURE__ */ new Map();
-        const allConnectors = options?.registry ? options.registry.listAll() : Connector.listAll();
-        const factoryKeys = Array.from(this.factories.keys());
-        logger.debug(`[ConnectorTools.discoverAll] ${allConnectors.length} connectors in library, ${factoryKeys.length} factories registered: [${factoryKeys.join(", ")}]`);
-        for (const connector of allConnectors) {
-          const hasServiceType = !!connector.config.serviceType;
-          const isExternalAPI = connector.baseURL && !connector.vendor;
-          const hasVendorFactory = !!connector.vendor && this.factories.has(connector.vendor);
-          logger.debug(`[ConnectorTools.discoverAll] connector=${connector.name}: vendor=${connector.vendor}, serviceType=${connector.config.serviceType}, baseURL=${connector.baseURL ? "yes" : "no"} \u2192 hasServiceType=${hasServiceType}, isExternalAPI=${isExternalAPI}, hasVendorFactory=${hasVendorFactory}`);
-          if (hasServiceType || isExternalAPI || hasVendorFactory) {
-            try {
-              const tools = this.for(connector, userId);
-              logger.debug(`[ConnectorTools.discoverAll]   \u2192 ${tools.length} tools: [${tools.map((t) => t.definition.function.name).join(", ")}]`);
-              if (tools.length > 0) {
-                result.set(connector.name, tools);
-              }
-            } catch (err) {
-              logger.error(`[ConnectorTools.discoverAll]   \u2192 ERROR generating tools for ${connector.name}: ${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
-        }
-        logger.debug(`[ConnectorTools.discoverAll] Result: ${result.size} connectors with tools`);
-        return result;
-      }
-      /**
-       * Find a connector by service type
-       * Returns the first connector matching the service type
-       *
-       * @param serviceType - Service identifier
-       * @returns Connector or undefined
-       */
-      static findConnector(serviceType, options) {
-        const connectors = options?.registry ? options.registry.listAll() : Connector.listAll();
-        return connectors.find((c) => this.detectService(c) === serviceType);
-      }
-      /**
-       * Find all connectors for a service type
-       * Useful when you have multiple connectors for the same service
-       *
-       * @param serviceType - Service identifier
-       * @returns Array of matching connectors
-       */
-      static findConnectors(serviceType, options) {
-        const connectors = options?.registry ? options.registry.listAll() : Connector.listAll();
-        return connectors.filter((c) => this.detectService(c) === serviceType);
-      }
-      /**
-       * List services that have registered tool factories
-       */
-      static listSupportedServices() {
-        return Array.from(this.factories.keys());
-      }
-      /**
-       * Check if a service has dedicated tool factory
-       */
-      static hasServiceTools(serviceType) {
-        return this.factories.has(serviceType);
-      }
-      /**
-       * Detect the service type for a connector
-       * Uses explicit serviceType if set, otherwise infers from baseURL
-       * Results are cached for performance
-       */
-      static detectService(connector) {
-        const cacheKey = connector.name;
-        if (this.serviceTypeCache.has(cacheKey)) {
-          return this.serviceTypeCache.get(cacheKey);
-        }
-        let result;
-        if (connector.config.serviceType) {
-          result = connector.config.serviceType;
-        } else if (connector.baseURL) {
-          result = detectServiceFromURL(connector.baseURL);
-        }
-        if (!result && connector.vendor) {
-          result = connector.vendor;
-        }
-        this.maintainCacheSize(this.serviceTypeCache);
-        this.serviceTypeCache.set(cacheKey, result);
-        return result;
-      }
-      /**
-       * Maintain cache size to prevent memory leaks
-       */
-      static maintainCacheSize(cache) {
-        if (cache.size >= this.MAX_CACHE_SIZE) {
-          const toRemove = Math.ceil(this.MAX_CACHE_SIZE * 0.1);
-          const keys = Array.from(cache.keys()).slice(0, toRemove);
-          for (const key of keys) {
-            cache.delete(key);
-          }
-        }
-      }
-      // ============ Private Methods ============
-      static resolveConnector(connectorOrName, registry) {
-        if (typeof connectorOrName === "string") {
-          return registry ? registry.get(connectorOrName) : Connector.get(connectorOrName);
-        }
-        return connectorOrName;
-      }
-      /**
-       * Generate tools for a set of auth identities.
-       * Each identity gets its own tool set with unique name prefixes.
-       *
-       * @param identities - Array of auth identities
-       * @param userId - Optional user ID for multi-user OAuth
-       * @param options - Optional registry for scoped connector lookup
-       * @returns Map of identity key to tool array
-       *
-       * @example
-       * ```typescript
-       * const toolsByIdentity = ConnectorTools.forIdentities([
-       *   { connector: 'microsoft', accountId: 'work' },
-       *   { connector: 'microsoft', accountId: 'personal' },
-       *   { connector: 'github' },
-       * ]);
-       * // Keys: 'microsoft:work', 'microsoft:personal', 'github'
-       * ```
-       */
-      static forIdentities(identities, userId, options) {
-        const result = /* @__PURE__ */ new Map();
-        for (const identity of identities) {
-          const key = identity.accountId ? `${identity.connector}:${identity.accountId}` : identity.connector;
-          try {
-            const tools = this.for(identity.connector, userId, {
-              registry: options?.registry,
-              accountId: identity.accountId
-            });
-            if (tools.length > 0) {
-              result.set(key, tools);
-            }
-          } catch (err) {
-            logger.error(`[ConnectorTools.forIdentities] Error generating tools for identity ${key}: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-        return result;
-      }
-      /**
-       * Wrap a tool to inject accountId into ToolContext at execute time.
-       * This allows identity-bound tools to use the correct account without
-       * modifying every service tool factory.
-       */
-      static bindAccountId(tool, accountId) {
-        return {
-          ...tool,
-          execute: async (args, context) => {
-            return tool.execute(args, { ...context, accountId });
-          }
-        };
-      }
-      static createGenericAPITool(connector, options) {
-        const toolName = options?.toolName ?? `${sanitizeToolName(connector.name)}_api`;
-        const userId = options?.userId;
-        const description = options?.description ?? `Make an authenticated API call to ${connector.displayName}.` + (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : " Provide full URL in endpoint.") + ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.';
-        return {
-          definition: {
-            type: "function",
-            function: {
-              name: toolName,
-              description,
-              parameters: {
-                type: "object",
-                properties: {
-                  method: {
-                    type: "string",
-                    enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-                    description: "HTTP method"
-                  },
-                  endpoint: {
-                    type: "string",
-                    description: 'API endpoint path (relative to base URL) or full URL. Do NOT put request data as query parameters here for POST/PUT/PATCH \u2014 use the "body" parameter instead.'
-                  },
-                  body: {
-                    type: "object",
-                    description: 'JSON request body for POST/PUT/PATCH requests. MUST be a JSON object (NOT a string). Example: {"channel": "C123", "text": "hello"}. Do NOT stringify this \u2014 pass it as a raw JSON object. Do NOT use query string parameters for POST data.'
-                  },
-                  queryParams: {
-                    type: "object",
-                    description: 'URL query parameters (for filtering/pagination on GET requests). Do NOT use for POST/PUT/PATCH data \u2014 use "body" instead.'
-                  },
-                  headers: {
-                    type: "object",
-                    description: "Additional request headers"
-                  }
-                },
-                required: ["method", "endpoint"]
-              }
-            }
-          },
-          execute: async (args, context) => {
-            const effectiveUserId = context?.userId ?? userId;
-            const effectiveAccountId = context?.accountId;
-            let url2 = args.endpoint;
-            if (args.queryParams && Object.keys(args.queryParams).length > 0) {
-              const params = new URLSearchParams();
-              for (const [key, value] of Object.entries(args.queryParams)) {
-                params.append(key, String(value));
-              }
-              url2 += (url2.includes("?") ? "&" : "?") + params.toString();
-            }
-            const safeHeaders = filterProtectedHeaders(args.headers);
-            let bodyStr;
-            if (args.body) {
-              try {
-                const normalized = normalizeBody(args.body);
-                bodyStr = safeStringify2(normalized);
-              } catch (e) {
-                return {
-                  success: false,
-                  error: `Failed to serialize request body: ${e instanceof Error ? e.message : String(e)}`
-                };
-              }
-            }
-            try {
-              const response = await connector.fetch(
-                url2,
-                {
-                  method: args.method,
-                  headers: {
-                    "Content-Type": "application/json",
-                    ...safeHeaders
-                  },
-                  body: bodyStr
-                },
-                effectiveUserId,
-                effectiveAccountId
-              );
-              const text = await response.text();
-              let data;
-              try {
-                data = JSON.parse(text);
-              } catch {
-                data = text;
-              }
-              const apiError = detectAPIError(data);
-              return {
-                success: response.ok && !apiError,
-                status: response.status,
-                data: response.ok && !apiError ? data : void 0,
-                error: apiError ? apiError : response.ok ? void 0 : typeof data === "string" ? data : safeStringify2(data)
-              };
-            } catch (error) {
-              return {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-              };
-            }
-          },
-          describeCall: (args) => {
-            const bodyInfo = args.body ? ` body=${JSON.stringify(args.body).slice(0, 100)}` : "";
-            return `${args.method} ${args.endpoint}${bodyInfo}`;
-          },
-          permission: options?.permission ?? {
-            scope: "session",
-            riskLevel: "medium",
-            approvalMessage: `This will make an API call to ${connector.displayName}`
-          }
-        };
-      }
-    };
-  }
-});
-
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
   "node_modules/ajv/dist/compile/codegen/code.js"(exports$1) {
@@ -11172,6 +10264,8 @@ var ToolCatalogRegistry = class {
   static _tools = /* @__PURE__ */ new Map();
   /** Whether built-in tools have been registered */
   static _initialized = false;
+  /** Lazy-loaded ConnectorTools module. null = not attempted, false = failed */
+  static _connectorToolsModule = null;
   // --- Built-in category descriptions ---
   static BUILTIN_DESCRIPTIONS = {
     filesystem: "Read, write, edit, search, and list files and directories",
@@ -11185,13 +10279,49 @@ var ToolCatalogRegistry = class {
     other: "Miscellaneous tools"
   };
   // ========================================================================
+  // Static Helpers (DRY)
+  // ========================================================================
+  /**
+   * Convert a hyphenated or plain name to a display name.
+   * E.g., 'custom-tools' → 'Custom Tools', 'filesystem' → 'Filesystem'
+   */
+  static toDisplayName(name) {
+    return name.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  }
+  /**
+   * Parse a connector category name, returning the connector name or null.
+   * E.g., 'connector:github' → 'github', 'filesystem' → null
+   */
+  static parseConnectorCategory(category) {
+    return category.startsWith("connector:") ? category.slice("connector:".length) : null;
+  }
+  /**
+   * Get the ConnectorTools module (lazy-loaded, cached).
+   * Returns null if ConnectorTools is not available.
+   * Uses false sentinel to prevent retrying after first failure.
+   */
+  static getConnectorToolsModule() {
+    if (this._connectorToolsModule === null) {
+      try {
+        this._connectorToolsModule = __require("../../tools/connector/ConnectorTools.js");
+      } catch {
+        this._connectorToolsModule = false;
+      }
+    }
+    return this._connectorToolsModule || null;
+  }
+  // ========================================================================
   // Registration
   // ========================================================================
   /**
    * Register a tool category.
    * If the category already exists, updates its metadata.
+   * @throws Error if name is empty or whitespace
    */
   static registerCategory(def) {
+    if (!def.name || !def.name.trim()) {
+      throw new Error("[ToolCatalogRegistry] Category name cannot be empty");
+    }
     this._categories.set(def.name, def);
     if (!this._tools.has(def.name)) {
       this._tools.set(def.name, []);
@@ -11200,12 +10330,16 @@ var ToolCatalogRegistry = class {
   /**
    * Register multiple tools in a category.
    * The category is auto-created if it doesn't exist (with a generic description).
+   * @throws Error if category name is empty or whitespace
    */
   static registerTools(category, tools) {
+    if (!category || !category.trim()) {
+      throw new Error("[ToolCatalogRegistry] Category name cannot be empty");
+    }
     if (!this._categories.has(category)) {
       this._categories.set(category, {
         name: category,
-        displayName: category.charAt(0).toUpperCase() + category.slice(1),
+        displayName: this.toDisplayName(category),
         description: this.BUILTIN_DESCRIPTIONS[category] ?? `Tools in the ${category} category`
       });
     }
@@ -11324,6 +10458,63 @@ var ToolCatalogRegistry = class {
     return true;
   }
   // ========================================================================
+  // Connector Discovery
+  // ========================================================================
+  /**
+   * Discover all connector categories with their tools.
+   * Calls ConnectorTools.discoverAll() and filters by scope/identities.
+   *
+   * @param options - Optional filtering
+   * @returns Array of connector category info
+   */
+  static discoverConnectorCategories(options) {
+    const mod = this.getConnectorToolsModule();
+    if (!mod) return [];
+    try {
+      const discovered = mod.ConnectorTools.discoverAll();
+      const results = [];
+      for (const [connectorName, tools] of discovered) {
+        const catName = `connector:${connectorName}`;
+        if (options?.scope && !this.isCategoryAllowed(catName, options.scope)) {
+          continue;
+        }
+        if (options?.identities?.length) {
+          const hasIdentity = options.identities.some((id) => id.connector === connectorName);
+          if (!hasIdentity) continue;
+        }
+        const preRegistered = this.getCategory(catName);
+        results.push({
+          name: catName,
+          displayName: preRegistered?.displayName ?? this.toDisplayName(connectorName),
+          description: preRegistered?.description ?? `API tools for ${connectorName}`,
+          toolCount: tools.length,
+          tools
+        });
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+  /**
+   * Resolve tools for a specific connector category.
+   *
+   * @param category - Category name in 'connector:<name>' format
+   * @returns Array of resolved tools with names
+   */
+  static resolveConnectorCategoryTools(category) {
+    const connectorName = this.parseConnectorCategory(category);
+    if (!connectorName) return [];
+    const mod = this.getConnectorToolsModule();
+    if (!mod) return [];
+    try {
+      const tools = mod.ConnectorTools.for(connectorName);
+      return tools.map((t) => ({ tool: t, name: t.definition.function.name }));
+    } catch {
+      return [];
+    }
+  }
+  // ========================================================================
   // Resolution
   // ========================================================================
   /**
@@ -11343,8 +10534,11 @@ var ToolCatalogRegistry = class {
     for (const name of toolNames) {
       const found = this.findTool(name);
       if (found) {
-        resolved.push(found.entry.tool);
-        continue;
+        const tool = this.resolveEntryTool(found.entry, options?.context);
+        if (tool) {
+          resolved.push(tool);
+          continue;
+        }
       }
       if (options?.includeConnectors) {
         const connectorTool = this.findConnectorTool(name);
@@ -11364,12 +10558,68 @@ var ToolCatalogRegistry = class {
     return resolved;
   }
   /**
-   * Search connector tools by name (lazy import to avoid circular deps).
+   * Resolve tools grouped by connector name.
+   *
+   * Tools with a `connectorName` go into `byConnector`; all others go into `plain`.
+   * Supports factory-based tool creation via `createTool` when context is provided.
+   *
+   * @param toolNames - Array of tool names to resolve
+   * @param context - Optional context passed to createTool factories
+   * @param options - Resolution options
+   * @returns Grouped tools: plain + byConnector map
+   */
+  static resolveToolsGrouped(toolNames, context, options) {
+    this.ensureInitialized();
+    const plain = [];
+    const byConnector = /* @__PURE__ */ new Map();
+    for (const name of toolNames) {
+      const found = this.findTool(name);
+      if (found) {
+        const entry = found.entry;
+        const tool = this.resolveEntryTool(entry, context);
+        if (!tool) continue;
+        if (entry.connectorName) {
+          const list = byConnector.get(entry.connectorName) ?? [];
+          list.push(tool);
+          byConnector.set(entry.connectorName, list);
+        } else {
+          plain.push(tool);
+        }
+        continue;
+      }
+      if (options?.includeConnectors) {
+        const connectorTool = this.findConnectorTool(name);
+        if (connectorTool) {
+          plain.push(connectorTool);
+          continue;
+        }
+      }
+    }
+    return { plain, byConnector };
+  }
+  /**
+   * Resolve a tool from a CatalogToolEntry, using factory if available.
+   * Returns null if neither tool nor createTool is available.
+   */
+  static resolveEntryTool(entry, context) {
+    if (entry.createTool && context) {
+      try {
+        return entry.createTool(context);
+      } catch (e) {
+        logger.warn(`[ToolCatalogRegistry] Factory failed for '${entry.name}': ${e}`);
+        return null;
+      }
+    }
+    return entry.tool ?? null;
+  }
+  /**
+   * Search connector tools by name (uses lazy accessor).
    */
   static findConnectorTool(name) {
+    const mod = this.getConnectorToolsModule();
+    if (!mod) return void 0;
     try {
-      const { ConnectorTools: ConnectorTools2 } = __require("../../tools/connector/ConnectorTools.js");
-      const allConnectorTools = ConnectorTools2.discoverAll();
+      const allConnectorTools = mod.ConnectorTools.discoverAll();
       for (const [, tools] of allConnectorTools) {
         for (const tool of tools) {
           if (tool.definition.function.name === name) {
@@ -11424,10 +10674,9 @@ var ToolCatalogRegistry = class {
     for (const entry of registry) {
       const category = entry.category;
       if (!this._categories.has(category)) {
-        const displayName = category.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
         this.registerCategory({
           name: category,
-          displayName,
+          displayName: this.toDisplayName(category),
           description: this.BUILTIN_DESCRIPTIONS[category] ?? `Built-in ${category} tools`
         });
       }
@@ -11453,6 +10702,7 @@ var ToolCatalogRegistry = class {
     this._categories.clear();
     this._tools.clear();
     this._initialized = false;
+    this._connectorToolsModule = null;
   }
 };
 
@@ -17839,6 +17089,12 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   _loadedCategories = /* @__PURE__ */ new Map();
   /** Reference to the ToolManager for registering/disabling tools */
   _toolManager = null;
+  /** Cached connector categories — discovered once in setToolManager() */
+  _connectorCategories = null;
+  /** Whether this plugin has been destroyed */
+  _destroyed = false;
+  /** WeakMap cache for tool definition token estimates */
+  _toolTokenCache = /* @__PURE__ */ new WeakMap();
   _config;
   constructor(config) {
     super();
@@ -17855,7 +17111,7 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   }
   async getContent() {
     const categories = this.getAllowedCategories();
-    if (categories.length === 0) return null;
+    if (categories.length === 0 && this.getConnectorCategories().length === 0) return null;
     const lines = ["## Tool Catalog"];
     lines.push("");
     const loaded = Array.from(this._loadedCategories.keys());
@@ -17868,8 +17124,7 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
       const marker = this._loadedCategories.has(cat.name) ? " [LOADED]" : "";
       lines.push(`- **${cat.displayName}** (${tools.length} tools)${marker}: ${cat.description}`);
     }
-    const connectorCats = this.getConnectorCategories();
-    for (const cc of connectorCats) {
+    for (const cc of this.getConnectorCategories()) {
       const marker = this._loadedCategories.has(cc.name) ? " [LOADED]" : "";
       lines.push(`- **${cc.displayName}** (${cc.toolCount} tools)${marker}: ${cc.description}`);
     }
@@ -17937,14 +17192,15 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     };
   }
   restoreState(state) {
+    if (!state || typeof state !== "object") return;
     const s = state;
-    if (!s.loadedCategories?.length) return;
+    if (!Array.isArray(s.loadedCategories) || s.loadedCategories.length === 0) return;
     for (const category of s.loadedCategories) {
-      try {
-        this.executeLoad(category);
-      } catch (err) {
+      if (typeof category !== "string" || !category) continue;
+      const result = this.executeLoad(category);
+      if (result.error) {
         logger.warn(
-          { category, error: err instanceof Error ? err.message : String(err) },
+          { category, error: result.error },
           `[ToolCatalogPlugin] Failed to restore category '${category}'`
         );
       }
@@ -17954,6 +17210,8 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   destroy() {
     this._loadedCategories.clear();
     this._toolManager = null;
+    this._connectorCategories = null;
+    this._destroyed = true;
   }
   // ========================================================================
   // Public API
@@ -17963,13 +17221,16 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
    */
   setToolManager(tm) {
     this._toolManager = tm;
+    this._connectorCategories = ToolCatalogRegistry.discoverConnectorCategories({
+      scope: this._config.categoryScope,
+      identities: this._config.identities
+    });
     if (this._config.autoLoadCategories?.length) {
       for (const category of this._config.autoLoadCategories) {
-        try {
-          this.executeLoad(category);
-        } catch (err) {
+        const result = this.executeLoad(category);
+        if (result.error) {
           logger.warn(
-            { category, error: err instanceof Error ? err.message : String(err) },
+            { category, error: result.error },
             `[ToolCatalogPlugin] Failed to auto-load category '${category}'`
           );
         }
@@ -17984,8 +17245,9 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   // Metatool Implementations
   // ========================================================================
   executeSearch(query, category) {
+    if (this._destroyed) return { error: "Plugin destroyed" };
     if (category) {
-      if (category.startsWith("connector:")) {
+      if (ToolCatalogRegistry.parseConnectorCategory(category) !== null) {
         return this.searchConnectorCategory(category);
       }
       if (!ToolCatalogRegistry.hasCategory(category)) {
@@ -18035,11 +17297,11 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     return { categories: result };
   }
   executeLoad(category) {
+    if (this._destroyed) return { error: "Plugin destroyed" };
     if (!this._toolManager) {
       return { error: "ToolManager not connected. Plugin not properly initialized." };
     }
-    const isConnector = category.startsWith("connector:");
-    if (!isConnector && !ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
+    if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
       return { error: `Category '${category}' is not available for this agent.` };
     }
     if (this._loadedCategories.has(category)) {
@@ -18052,15 +17314,16 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
         loaded: Array.from(this._loadedCategories.keys())
       };
     }
+    const isConnector = ToolCatalogRegistry.parseConnectorCategory(category) !== null;
     let tools;
     if (isConnector) {
-      tools = this.resolveConnectorTools(category);
+      tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     } else {
       const entries = ToolCatalogRegistry.getToolsInCategory(category);
       if (entries.length === 0) {
         return { error: `Category '${category}' has no tools or does not exist.` };
       }
-      tools = entries.map((e) => ({ tool: e.tool, name: e.name }));
+      tools = entries.filter((e) => e.tool != null).map((e) => ({ tool: e.tool, name: e.name }));
     }
     if (tools.length === 0) {
       return { error: `No tools found for category '${category}'.` };
@@ -18084,6 +17347,7 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     return { loaded: toolNames.length, tools: toolNames };
   }
   executeUnload(category) {
+    if (this._destroyed) return { error: "Plugin destroyed" };
     if (!this._toolManager) {
       return { error: "ToolManager not connected." };
     }
@@ -18105,6 +17369,12 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   // ========================================================================
   getAllowedCategories() {
     return ToolCatalogRegistry.filterCategories(this._config.categoryScope);
+  }
+  /**
+   * Get connector categories from cache (populated once in setToolManager).
+   */
+  getConnectorCategories() {
+    return this._connectorCategories ?? [];
   }
   keywordSearch(query) {
     const lq = query.toLowerCase();
@@ -18143,8 +17413,8 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     return { query, results, totalMatches: results.length };
   }
   searchConnectorCategory(category) {
-    const connectorName = category.replace("connector:", "");
-    const tools = this.resolveConnectorTools(category);
+    const connectorName = ToolCatalogRegistry.parseConnectorCategory(category);
+    const tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     const loaded = this._loadedCategories.has(category);
     return {
       category,
@@ -18155,44 +17425,6 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
         description: t.tool.definition.function.description || ""
       }))
     };
-  }
-  getConnectorCategories() {
-    try {
-      const { ConnectorTools: ConnectorTools2 } = (init_ConnectorTools(), __toCommonJS(ConnectorTools_exports));
-      const discovered = ConnectorTools2.discoverAll();
-      const results = [];
-      for (const [connectorName, tools] of discovered) {
-        const catName = `connector:${connectorName}`;
-        if (!ToolCatalogRegistry.isCategoryAllowed(catName, this._config.categoryScope)) {
-          continue;
-        }
-        if (this._config.identities?.length) {
-          const hasIdentity = this._config.identities.some((id) => id.connector === connectorName);
-          if (!hasIdentity) continue;
-        }
-        const preRegistered = ToolCatalogRegistry.getCategory(catName);
-        results.push({
-          name: catName,
-          displayName: preRegistered?.displayName ?? connectorName.charAt(0).toUpperCase() + connectorName.slice(1),
-          description: preRegistered?.description ?? `API tools for ${connectorName}`,
-          toolCount: tools.length,
-          tools
-        });
-      }
-      return results;
-    } catch {
-      return [];
-    }
-  }
-  resolveConnectorTools(category) {
-    const connectorName = category.replace("connector:", "");
-    try {
-      const { ConnectorTools: ConnectorTools2 } = (init_ConnectorTools(), __toCommonJS(ConnectorTools_exports));
-      const tools = ConnectorTools2.for(connectorName);
-      return tools.map((t) => ({ tool: t, name: t.definition.function.name }));
-    } catch {
-      return [];
-    }
   }
   getCategoriesSortedByLastUsed() {
     if (!this._toolManager) return Array.from(this._loadedCategories.keys());
@@ -18216,8 +17448,16 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     for (const name of toolNames) {
       const reg = this._toolManager?.getRegistration(name);
       if (reg) {
-        const defStr = JSON.stringify(reg.tool.definition);
-        total += this.estimator.estimateTokens(defStr);
+        const defObj = reg.tool.definition;
+        const cached = this._toolTokenCache.get(defObj);
+        if (cached !== void 0) {
+          total += cached;
+        } else {
+          const defStr = JSON.stringify(defObj);
+          const tokens = this.estimator.estimateTokens(defStr);
+          this._toolTokenCache.set(defObj, tokens);
+          total += tokens;
+        }
       }
     }
     return total;
@@ -33057,8 +32297,16 @@ function applyServerDefaults(config, defaults) {
   };
 }
 
+// src/utils/sanitize.ts
+function sanitizeToolName(name) {
+  let result = name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^[_-]+|[_-]+$/g, "");
+  if (/^[0-9]/.test(result)) {
+    result = `n_${result}`;
+  }
+  return result || "unnamed";
+}
+
 // src/infrastructure/mcp/adapters/MCPToolAdapter.ts
-init_sanitize();
 function createMCPToolAdapter(tool, client, namespace) {
   const fullName = sanitizeToolName(`${namespace}:${tool.name}`);
   return {
@@ -42833,12 +42081,887 @@ var ProviderErrorMapper = class {
   }
 };
 
+// src/domain/entities/Services.ts
+var SERVICE_DEFINITIONS = [
+  // ============ Major Vendors ============
+  {
+    id: "microsoft",
+    name: "Microsoft",
+    category: "major-vendors",
+    urlPattern: /graph\.microsoft\.com|login\.microsoftonline\.com/i,
+    baseURL: "https://graph.microsoft.com/v1.0",
+    docsURL: "https://learn.microsoft.com/en-us/graph/",
+    commonScopes: ["User.Read", "Files.ReadWrite", "Mail.Read", "Calendars.ReadWrite"]
+  },
+  {
+    id: "google",
+    name: "Google",
+    category: "major-vendors",
+    urlPattern: /googleapis\.com|accounts\.google\.com/i,
+    baseURL: "https://www.googleapis.com",
+    docsURL: "https://developers.google.com/",
+    commonScopes: [
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/gmail.readonly"
+    ]
+  },
+  // ============ Communication ============
+  {
+    id: "slack",
+    name: "Slack",
+    category: "communication",
+    urlPattern: /slack\.com/i,
+    baseURL: "https://slack.com/api",
+    docsURL: "https://api.slack.com/methods",
+    commonScopes: ["chat:write", "channels:read", "users:read"]
+  },
+  {
+    id: "discord",
+    name: "Discord",
+    category: "communication",
+    urlPattern: /discord\.com|discordapp\.com/i,
+    baseURL: "https://discord.com/api/v10",
+    docsURL: "https://discord.com/developers/docs",
+    commonScopes: ["bot", "messages.read"]
+  },
+  {
+    id: "telegram",
+    name: "Telegram",
+    category: "communication",
+    urlPattern: /api\.telegram\.org/i,
+    baseURL: "https://api.telegram.org",
+    docsURL: "https://core.telegram.org/bots/api"
+  },
+  {
+    id: "twitter",
+    name: "X (Twitter)",
+    category: "communication",
+    urlPattern: /api\.x\.com|api\.twitter\.com/i,
+    baseURL: "https://api.x.com/2",
+    docsURL: "https://developer.x.com/en/docs/x-api",
+    commonScopes: ["tweet.read", "tweet.write", "users.read", "offline.access"]
+  },
+  // ============ Development & Project Management ============
+  {
+    id: "github",
+    name: "GitHub",
+    category: "development",
+    urlPattern: /api\.github\.com/i,
+    baseURL: "https://api.github.com",
+    docsURL: "https://docs.github.com/en/rest",
+    commonScopes: ["repo", "read:user", "read:org"]
+  },
+  {
+    id: "gitlab",
+    name: "GitLab",
+    category: "development",
+    urlPattern: /gitlab\.com|gitlab\./i,
+    baseURL: "https://gitlab.com/api/v4",
+    docsURL: "https://docs.gitlab.com/ee/api/",
+    commonScopes: ["api", "read_user", "read_repository"]
+  },
+  {
+    id: "bitbucket",
+    name: "Bitbucket",
+    category: "development",
+    urlPattern: /api\.bitbucket\.org|bitbucket\.org/i,
+    baseURL: "https://api.bitbucket.org/2.0",
+    docsURL: "https://developer.atlassian.com/cloud/bitbucket/rest/",
+    commonScopes: ["repository", "pullrequest"]
+  },
+  {
+    id: "jira",
+    name: "Jira",
+    category: "development",
+    urlPattern: /atlassian\.net.*jira|jira\./i,
+    baseURL: "https://your-domain.atlassian.net/rest/api/3",
+    docsURL: "https://developer.atlassian.com/cloud/jira/platform/rest/v3/",
+    commonScopes: ["read:jira-work", "write:jira-work"]
+  },
+  {
+    id: "linear",
+    name: "Linear",
+    category: "development",
+    urlPattern: /api\.linear\.app/i,
+    baseURL: "https://api.linear.app/graphql",
+    docsURL: "https://developers.linear.app/docs",
+    commonScopes: ["read", "write"]
+  },
+  {
+    id: "asana",
+    name: "Asana",
+    category: "development",
+    urlPattern: /api\.asana\.com/i,
+    baseURL: "https://app.asana.com/api/1.0",
+    docsURL: "https://developers.asana.com/docs"
+  },
+  {
+    id: "trello",
+    name: "Trello",
+    category: "development",
+    urlPattern: /api\.trello\.com/i,
+    baseURL: "https://api.trello.com/1",
+    docsURL: "https://developer.atlassian.com/cloud/trello/rest/",
+    commonScopes: ["read", "write"]
+  },
+  // ============ Productivity & Collaboration ============
+  {
+    id: "notion",
+    name: "Notion",
+    category: "productivity",
+    urlPattern: /api\.notion\.com/i,
+    baseURL: "https://api.notion.com/v1",
+    docsURL: "https://developers.notion.com/reference"
+  },
+  {
+    id: "airtable",
+    name: "Airtable",
+    category: "productivity",
+    urlPattern: /api\.airtable\.com/i,
+    baseURL: "https://api.airtable.com/v0",
+    docsURL: "https://airtable.com/developers/web/api",
+    commonScopes: ["data.records:read", "data.records:write"]
+  },
+  {
+    id: "confluence",
+    name: "Confluence",
+    category: "productivity",
+    urlPattern: /atlassian\.net.*wiki|confluence\./i,
+    baseURL: "https://your-domain.atlassian.net/wiki/rest/api",
+    docsURL: "https://developer.atlassian.com/cloud/confluence/rest/",
+    commonScopes: ["read:confluence-content.all", "write:confluence-content"]
+  },
+  // ============ CRM & Sales ============
+  {
+    id: "salesforce",
+    name: "Salesforce",
+    category: "crm",
+    urlPattern: /salesforce\.com|force\.com/i,
+    baseURL: "https://your-instance.salesforce.com/services/data/v58.0",
+    docsURL: "https://developer.salesforce.com/docs/apis",
+    commonScopes: ["api", "refresh_token"]
+  },
+  {
+    id: "hubspot",
+    name: "HubSpot",
+    category: "crm",
+    urlPattern: /api\.hubapi\.com|api\.hubspot\.com/i,
+    baseURL: "https://api.hubapi.com",
+    docsURL: "https://developers.hubspot.com/docs/api",
+    commonScopes: ["crm.objects.contacts.read", "crm.objects.contacts.write"]
+  },
+  {
+    id: "pipedrive",
+    name: "Pipedrive",
+    category: "crm",
+    urlPattern: /api\.pipedrive\.com/i,
+    baseURL: "https://api.pipedrive.com/v1",
+    docsURL: "https://developers.pipedrive.com/docs/api/v1"
+  },
+  // ============ Payments & Finance ============
+  {
+    id: "stripe",
+    name: "Stripe",
+    category: "payments",
+    urlPattern: /api\.stripe\.com/i,
+    baseURL: "https://api.stripe.com/v1",
+    docsURL: "https://stripe.com/docs/api"
+  },
+  {
+    id: "paypal",
+    name: "PayPal",
+    category: "payments",
+    urlPattern: /api\.paypal\.com|api-m\.paypal\.com/i,
+    baseURL: "https://api-m.paypal.com/v2",
+    docsURL: "https://developer.paypal.com/docs/api/"
+  },
+  {
+    id: "quickbooks",
+    name: "QuickBooks",
+    category: "payments",
+    urlPattern: /quickbooks\.api\.intuit\.com|intuit\.com.*quickbooks/i,
+    baseURL: "https://quickbooks.api.intuit.com/v3",
+    docsURL: "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account",
+    commonScopes: ["com.intuit.quickbooks.accounting"]
+  },
+  {
+    id: "ramp",
+    name: "Ramp",
+    category: "payments",
+    urlPattern: /api\.ramp\.com/i,
+    baseURL: "https://api.ramp.com/developer/v1",
+    docsURL: "https://docs.ramp.com/reference"
+  },
+  // ============ Cloud Providers ============
+  {
+    id: "aws",
+    name: "Amazon Web Services",
+    category: "cloud",
+    urlPattern: /amazonaws\.com/i,
+    baseURL: "https://aws.amazon.com",
+    docsURL: "https://docs.aws.amazon.com/"
+  },
+  // ============ Storage ============
+  {
+    id: "dropbox",
+    name: "Dropbox",
+    category: "storage",
+    urlPattern: /api\.dropboxapi\.com|dropbox\.com/i,
+    baseURL: "https://api.dropboxapi.com/2",
+    docsURL: "https://www.dropbox.com/developers/documentation",
+    commonScopes: ["files.content.read", "files.content.write"]
+  },
+  {
+    id: "box",
+    name: "Box",
+    category: "storage",
+    urlPattern: /api\.box\.com/i,
+    baseURL: "https://api.box.com/2.0",
+    docsURL: "https://developer.box.com/reference/"
+  },
+  // ============ Email ============
+  {
+    id: "sendgrid",
+    name: "SendGrid",
+    category: "email",
+    urlPattern: /api\.sendgrid\.com/i,
+    baseURL: "https://api.sendgrid.com/v3",
+    docsURL: "https://docs.sendgrid.com/api-reference"
+  },
+  {
+    id: "mailchimp",
+    name: "Mailchimp",
+    category: "email",
+    urlPattern: /api\.mailchimp\.com|mandrillapp\.com/i,
+    baseURL: "https://server.api.mailchimp.com/3.0",
+    docsURL: "https://mailchimp.com/developer/marketing/api/"
+  },
+  {
+    id: "postmark",
+    name: "Postmark",
+    category: "email",
+    urlPattern: /api\.postmarkapp\.com/i,
+    baseURL: "https://api.postmarkapp.com",
+    docsURL: "https://postmarkapp.com/developer"
+  },
+  // ============ Monitoring & Observability ============
+  {
+    id: "datadog",
+    name: "Datadog",
+    category: "monitoring",
+    urlPattern: /api\.datadoghq\.com/i,
+    baseURL: "https://api.datadoghq.com/api/v2",
+    docsURL: "https://docs.datadoghq.com/api/"
+  },
+  {
+    id: "pagerduty",
+    name: "PagerDuty",
+    category: "monitoring",
+    urlPattern: /api\.pagerduty\.com/i,
+    baseURL: "https://api.pagerduty.com",
+    docsURL: "https://developer.pagerduty.com/api-reference/"
+  },
+  {
+    id: "sentry",
+    name: "Sentry",
+    category: "monitoring",
+    urlPattern: /sentry\.io/i,
+    baseURL: "https://sentry.io/api/0",
+    docsURL: "https://docs.sentry.io/api/"
+  },
+  // ============ Search ============
+  {
+    id: "serper",
+    name: "Serper",
+    category: "search",
+    urlPattern: /serper\.dev/i,
+    baseURL: "https://google.serper.dev",
+    docsURL: "https://serper.dev/docs"
+  },
+  {
+    id: "brave-search",
+    name: "Brave Search",
+    category: "search",
+    urlPattern: /api\.search\.brave\.com/i,
+    baseURL: "https://api.search.brave.com/res/v1",
+    docsURL: "https://brave.com/search/api/"
+  },
+  {
+    id: "tavily",
+    name: "Tavily",
+    category: "search",
+    urlPattern: /api\.tavily\.com/i,
+    baseURL: "https://api.tavily.com",
+    docsURL: "https://tavily.com/docs"
+  },
+  {
+    id: "rapidapi-search",
+    name: "RapidAPI Search",
+    category: "search",
+    urlPattern: /real-time-web-search\.p\.rapidapi\.com/i,
+    baseURL: "https://real-time-web-search.p.rapidapi.com",
+    docsURL: "https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-web-search"
+  },
+  // ============ Scraping ============
+  {
+    id: "zenrows",
+    name: "ZenRows",
+    category: "scrape",
+    urlPattern: /api\.zenrows\.com/i,
+    baseURL: "https://api.zenrows.com/v1",
+    docsURL: "https://docs.zenrows.com/universal-scraper-api/api-reference"
+  },
+  // ============ Other ============
+  {
+    id: "twilio",
+    name: "Twilio",
+    category: "other",
+    urlPattern: /api\.twilio\.com/i,
+    baseURL: "https://api.twilio.com/2010-04-01",
+    docsURL: "https://www.twilio.com/docs/usage/api"
+  },
+  {
+    id: "zendesk",
+    name: "Zendesk",
+    category: "other",
+    urlPattern: /zendesk\.com/i,
+    baseURL: "https://your-subdomain.zendesk.com/api/v2",
+    docsURL: "https://developer.zendesk.com/api-reference/",
+    commonScopes: ["read", "write"]
+  },
+  {
+    id: "intercom",
+    name: "Intercom",
+    category: "other",
+    urlPattern: /api\.intercom\.io/i,
+    baseURL: "https://api.intercom.io",
+    docsURL: "https://developers.intercom.com/docs/"
+  },
+  {
+    id: "shopify",
+    name: "Shopify",
+    category: "other",
+    urlPattern: /shopify\.com.*admin/i,
+    baseURL: "https://your-store.myshopify.com/admin/api/2024-01",
+    docsURL: "https://shopify.dev/docs/api",
+    commonScopes: ["read_products", "write_products", "read_orders"]
+  }
+];
+var Services = Object.fromEntries(
+  SERVICE_DEFINITIONS.map((def) => [
+    // Convert kebab-case to PascalCase for object key
+    def.id.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(""),
+    def.id
+  ])
+);
+var SERVICE_URL_PATTERNS = SERVICE_DEFINITIONS.map((def) => ({
+  service: def.id,
+  pattern: def.urlPattern
+}));
+var SERVICE_INFO = Object.fromEntries(
+  SERVICE_DEFINITIONS.map((def) => [
+    def.id,
+    {
+      id: def.id,
+      name: def.name,
+      category: def.category,
+      baseURL: def.baseURL,
+      docsURL: def.docsURL,
+      commonScopes: def.commonScopes
+    }
+  ])
+);
+var compiledPatterns = null;
+function getCompiledPatterns() {
+  if (!compiledPatterns) {
+    compiledPatterns = SERVICE_DEFINITIONS.map((def) => ({
+      service: def.id,
+      pattern: def.urlPattern
+    }));
+  }
+  return compiledPatterns;
+}
+function detectServiceFromURL(url2) {
+  const patterns = getCompiledPatterns();
+  for (const { service, pattern } of patterns) {
+    if (pattern.test(url2)) {
+      return service;
+    }
+  }
+  return void 0;
+}
+function getServiceInfo(serviceType) {
+  return SERVICE_INFO[serviceType];
+}
+function getServiceDefinition(serviceType) {
+  return SERVICE_DEFINITIONS.find((def) => def.id === serviceType);
+}
+function getServicesByCategory(category) {
+  return SERVICE_DEFINITIONS.filter((def) => def.category === category);
+}
+function getAllServiceIds() {
+  return SERVICE_DEFINITIONS.map((def) => def.id);
+}
+function isKnownService(serviceId) {
+  return SERVICE_DEFINITIONS.some((def) => def.id === serviceId);
+}
+
 // src/index.ts
-init_Services();
 init_Connector();
 
-// src/tools/connector/index.ts
-init_ConnectorTools();
+// src/tools/connector/ConnectorTools.ts
+init_Connector();
+init_Logger();
+var PROTECTED_HEADERS = ["authorization", "x-api-key", "api-key", "bearer"];
+function safeStringify2(obj) {
+  const seen = /* @__PURE__ */ new WeakSet();
+  return JSON.stringify(obj, (_key, value) => {
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) {
+        return "[Circular]";
+      }
+      seen.add(value);
+    }
+    return value;
+  });
+}
+function filterProtectedHeaders(headers) {
+  if (!headers) return {};
+  const filtered = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!PROTECTED_HEADERS.includes(key.toLowerCase())) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+function normalizeBody(body) {
+  if (typeof body === "string") {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return body;
+    }
+  }
+  return body;
+}
+function detectAPIError(data) {
+  if (!data || typeof data !== "object") return null;
+  const obj = data;
+  if (obj.ok === false && typeof obj.error === "string") {
+    return obj.error;
+  }
+  if (obj.success === false) {
+    if (typeof obj.error === "string") return obj.error;
+    if (typeof obj.message === "string") return obj.message;
+  }
+  if (obj.error && typeof obj.error === "object") {
+    const err = obj.error;
+    if (typeof err.message === "string") return err.message;
+  }
+  return null;
+}
+var ConnectorTools = class {
+  /** Registry of service-specific tool factories */
+  static factories = /* @__PURE__ */ new Map();
+  /** Cache for detected service types (connector name -> service type) */
+  static serviceTypeCache = /* @__PURE__ */ new Map();
+  /** Cache for generated tools (cacheKey -> tools) */
+  static toolCache = /* @__PURE__ */ new Map();
+  /** Maximum cache size to prevent memory issues */
+  static MAX_CACHE_SIZE = 100;
+  /**
+   * Clear all caches (useful for testing or when connectors change)
+   */
+  static clearCache() {
+    this.serviceTypeCache.clear();
+    this.toolCache.clear();
+  }
+  /**
+   * Invalidate cache for a specific connector
+   */
+  static invalidateCache(connectorName) {
+    this.serviceTypeCache.delete(connectorName);
+    for (const key of this.toolCache.keys()) {
+      if (key.startsWith(`${connectorName}:`)) {
+        this.toolCache.delete(key);
+      }
+    }
+  }
+  /**
+   * Register a tool factory for a service type
+   *
+   * @param serviceType - Service identifier (e.g., 'slack', 'github')
+   * @param factory - Function that creates tools from a Connector
+   *
+   * @example
+   * ```typescript
+   * ConnectorTools.registerService('slack', (connector) => [
+   *   createSlackSendMessageTool(connector),
+   *   createSlackListChannelsTool(connector),
+   * ]);
+   * ```
+   */
+  static registerService(serviceType, factory) {
+    this.factories.set(serviceType, factory);
+    logger.debug(`[ConnectorTools.registerService] Registered factory for: ${serviceType} (total factories: ${this.factories.size})`);
+  }
+  /**
+   * Unregister a service tool factory
+   */
+  static unregisterService(serviceType) {
+    return this.factories.delete(serviceType);
+  }
+  /**
+   * Get ALL tools for a connector (generic API + service-specific)
+   * This is the main entry point
+   *
+   * @param connectorOrName - Connector instance or name
+   * @param userId - Optional user ID for multi-user OAuth
+   * @returns Array of tools
+   *
+   * @example
+   * ```typescript
+   * const tools = ConnectorTools.for('slack');
+   * // Returns: [slack_api, slack_send_message, slack_list_channels, ...]
+   * ```
+   */
+  static for(connectorOrName, userId, options) {
+    const connector = this.resolveConnector(connectorOrName, options?.registry);
+    const accountId = options?.accountId;
+    const tools = [];
+    const namePrefix = accountId ? `${sanitizeToolName(connector.name)}_${sanitizeToolName(accountId)}` : sanitizeToolName(connector.name);
+    if (connector.baseURL) {
+      const accountLabel = accountId ? ` (account: ${accountId})` : "";
+      tools.push(this.createGenericAPITool(connector, {
+        userId,
+        accountId,
+        toolName: `${namePrefix}_api`,
+        description: `Make an authenticated API call to ${connector.displayName}${accountLabel}.` + (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : " Provide full URL in endpoint.") + ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.'
+      }));
+    }
+    const serviceType = this.detectService(connector);
+    if (serviceType && this.factories.has(serviceType)) {
+      const factory = this.factories.get(serviceType);
+      const serviceTools = factory(connector, userId);
+      for (const tool of serviceTools) {
+        tool.definition.function.name = `${namePrefix}_${tool.definition.function.name}`;
+      }
+      tools.push(...serviceTools);
+    }
+    if (accountId) {
+      return tools.map((tool) => this.bindAccountId(tool, accountId));
+    }
+    return tools;
+  }
+  /**
+   * Get just the generic API tool for a connector
+   *
+   * @param connectorOrName - Connector instance or name
+   * @param options - Optional configuration
+   * @returns Generic API tool
+   *
+   * @example
+   * ```typescript
+   * const apiTool = ConnectorTools.genericAPI('github');
+   * ```
+   */
+  static genericAPI(connectorOrName, options) {
+    const connector = this.resolveConnector(connectorOrName);
+    return this.createGenericAPITool(connector, options);
+  }
+  /**
+   * Get only service-specific tools (no generic API tool)
+   *
+   * @param connectorOrName - Connector instance or name
+   * @param userId - Optional user ID for multi-user OAuth
+   * @returns Service-specific tools only
+   */
+  static serviceTools(connectorOrName, userId) {
+    const connector = this.resolveConnector(connectorOrName);
+    const serviceType = this.detectService(connector);
+    if (!serviceType || !this.factories.has(serviceType)) {
+      return [];
+    }
+    return this.factories.get(serviceType)(connector, userId);
+  }
+  /**
+   * Discover tools for ALL registered connectors with external services
+   * Skips AI provider connectors (those with vendor but no serviceType)
+   *
+   * @param userId - Optional user ID for multi-user OAuth
+   * @returns Map of connector name to tools
+   *
+   * @example
+   * ```typescript
+   * const allTools = ConnectorTools.discoverAll();
+   * for (const [name, tools] of allTools) {
+   *   agent.tools.registerMany(tools, { namespace: name });
+   * }
+   * ```
+   */
+  static discoverAll(userId, options) {
+    const result = /* @__PURE__ */ new Map();
+    const allConnectors = options?.registry ? options.registry.listAll() : Connector.listAll();
+    const factoryKeys = Array.from(this.factories.keys());
+    logger.debug(`[ConnectorTools.discoverAll] ${allConnectors.length} connectors in library, ${factoryKeys.length} factories registered: [${factoryKeys.join(", ")}]`);
+    for (const connector of allConnectors) {
+      const hasServiceType = !!connector.config.serviceType;
+      const isExternalAPI = connector.baseURL && !connector.vendor;
+      const hasVendorFactory = !!connector.vendor && this.factories.has(connector.vendor);
+      logger.debug(`[ConnectorTools.discoverAll] connector=${connector.name}: vendor=${connector.vendor}, serviceType=${connector.config.serviceType}, baseURL=${connector.baseURL ? "yes" : "no"} \u2192 hasServiceType=${hasServiceType}, isExternalAPI=${isExternalAPI}, hasVendorFactory=${hasVendorFactory}`);
+      if (hasServiceType || isExternalAPI || hasVendorFactory) {
+        try {
+          const tools = this.for(connector, userId);
+          logger.debug(`[ConnectorTools.discoverAll]   \u2192 ${tools.length} tools: [${tools.map((t) => t.definition.function.name).join(", ")}]`);
+          if (tools.length > 0) {
+            result.set(connector.name, tools);
+          }
+        } catch (err) {
+          logger.error(`[ConnectorTools.discoverAll]   \u2192 ERROR generating tools for ${connector.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+    logger.debug(`[ConnectorTools.discoverAll] Result: ${result.size} connectors with tools`);
+    return result;
+  }
+  /**
+   * Find a connector by service type
+   * Returns the first connector matching the service type
+   *
+   * @param serviceType - Service identifier
+   * @returns Connector or undefined
+   */
+  static findConnector(serviceType, options) {
+    const connectors = options?.registry ? options.registry.listAll() : Connector.listAll();
+    return connectors.find((c) => this.detectService(c) === serviceType);
+  }
+  /**
+   * Find all connectors for a service type
+   * Useful when you have multiple connectors for the same service
+   *
+   * @param serviceType - Service identifier
+   * @returns Array of matching connectors
+   */
+  static findConnectors(serviceType, options) {
+    const connectors = options?.registry ? options.registry.listAll() : Connector.listAll();
+    return connectors.filter((c) => this.detectService(c) === serviceType);
+  }
+  /**
+   * List services that have registered tool factories
+   */
+  static listSupportedServices() {
+    return Array.from(this.factories.keys());
+  }
+  /**
+   * Check if a service has dedicated tool factory
+   */
+  static hasServiceTools(serviceType) {
+    return this.factories.has(serviceType);
+  }
+  /**
+   * Detect the service type for a connector
+   * Uses explicit serviceType if set, otherwise infers from baseURL
+   * Results are cached for performance
+   */
+  static detectService(connector) {
+    const cacheKey = connector.name;
+    if (this.serviceTypeCache.has(cacheKey)) {
+      return this.serviceTypeCache.get(cacheKey);
+    }
+    let result;
+    if (connector.config.serviceType) {
+      result = connector.config.serviceType;
+    } else if (connector.baseURL) {
+      result = detectServiceFromURL(connector.baseURL);
+    }
+    if (!result && connector.vendor) {
+      result = connector.vendor;
+    }
+    this.maintainCacheSize(this.serviceTypeCache);
+    this.serviceTypeCache.set(cacheKey, result);
+    return result;
+  }
+  /**
+   * Maintain cache size to prevent memory leaks
+   */
+  static maintainCacheSize(cache) {
+    if (cache.size >= this.MAX_CACHE_SIZE) {
+      const toRemove = Math.ceil(this.MAX_CACHE_SIZE * 0.1);
+      const keys = Array.from(cache.keys()).slice(0, toRemove);
+      for (const key of keys) {
+        cache.delete(key);
+      }
+    }
+  }
+  // ============ Private Methods ============
+  static resolveConnector(connectorOrName, registry) {
+    if (typeof connectorOrName === "string") {
+      return registry ? registry.get(connectorOrName) : Connector.get(connectorOrName);
+    }
+    return connectorOrName;
+  }
+  /**
+   * Generate tools for a set of auth identities.
+   * Each identity gets its own tool set with unique name prefixes.
+   *
+   * @param identities - Array of auth identities
+   * @param userId - Optional user ID for multi-user OAuth
+   * @param options - Optional registry for scoped connector lookup
+   * @returns Map of identity key to tool array
+   *
+   * @example
+   * ```typescript
+   * const toolsByIdentity = ConnectorTools.forIdentities([
+   *   { connector: 'microsoft', accountId: 'work' },
+   *   { connector: 'microsoft', accountId: 'personal' },
+   *   { connector: 'github' },
+   * ]);
+   * // Keys: 'microsoft:work', 'microsoft:personal', 'github'
+   * ```
+   */
+  static forIdentities(identities, userId, options) {
+    const result = /* @__PURE__ */ new Map();
+    for (const identity of identities) {
+      const key = identity.accountId ? `${identity.connector}:${identity.accountId}` : identity.connector;
+      try {
+        const tools = this.for(identity.connector, userId, {
+          registry: options?.registry,
+          accountId: identity.accountId
+        });
+        if (tools.length > 0) {
+          result.set(key, tools);
+        }
+      } catch (err) {
+        logger.error(`[ConnectorTools.forIdentities] Error generating tools for identity ${key}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return result;
+  }
+  /**
+   * Wrap a tool to inject accountId into ToolContext at execute time.
+   * This allows identity-bound tools to use the correct account without
+   * modifying every service tool factory.
+   */
+  static bindAccountId(tool, accountId) {
+    return {
+      ...tool,
+      execute: async (args, context) => {
+        return tool.execute(args, { ...context, accountId });
+      }
+    };
+  }
+  static createGenericAPITool(connector, options) {
+    const toolName = options?.toolName ?? `${sanitizeToolName(connector.name)}_api`;
+    const userId = options?.userId;
+    const description = options?.description ?? `Make an authenticated API call to ${connector.displayName}.` + (connector.baseURL ? ` Base URL: ${connector.baseURL}.` : " Provide full URL in endpoint.") + ' IMPORTANT: For POST/PUT/PATCH requests, pass data in the "body" parameter as a JSON object, NOT as query string parameters in the endpoint URL. The body is sent as application/json.';
+    return {
+      definition: {
+        type: "function",
+        function: {
+          name: toolName,
+          description,
+          parameters: {
+            type: "object",
+            properties: {
+              method: {
+                type: "string",
+                enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                description: "HTTP method"
+              },
+              endpoint: {
+                type: "string",
+                description: 'API endpoint path (relative to base URL) or full URL. Do NOT put request data as query parameters here for POST/PUT/PATCH \u2014 use the "body" parameter instead.'
+              },
+              body: {
+                type: "object",
+                description: 'JSON request body for POST/PUT/PATCH requests. MUST be a JSON object (NOT a string). Example: {"channel": "C123", "text": "hello"}. Do NOT stringify this \u2014 pass it as a raw JSON object. Do NOT use query string parameters for POST data.'
+              },
+              queryParams: {
+                type: "object",
+                description: 'URL query parameters (for filtering/pagination on GET requests). Do NOT use for POST/PUT/PATCH data \u2014 use "body" instead.'
+              },
+              headers: {
+                type: "object",
+                description: "Additional request headers"
+              }
+            },
+            required: ["method", "endpoint"]
+          }
+        }
+      },
+      execute: async (args, context) => {
+        const effectiveUserId = context?.userId ?? userId;
+        const effectiveAccountId = context?.accountId;
+        let url2 = args.endpoint;
+        if (args.queryParams && Object.keys(args.queryParams).length > 0) {
+          const params = new URLSearchParams();
+          for (const [key, value] of Object.entries(args.queryParams)) {
+            params.append(key, String(value));
+          }
+          url2 += (url2.includes("?") ? "&" : "?") + params.toString();
+        }
+        const safeHeaders = filterProtectedHeaders(args.headers);
+        let bodyStr;
+        if (args.body) {
+          try {
+            const normalized = normalizeBody(args.body);
+            bodyStr = safeStringify2(normalized);
+          } catch (e) {
+            return {
+              success: false,
+              error: `Failed to serialize request body: ${e instanceof Error ? e.message : String(e)}`
+            };
+          }
+        }
+        try {
+          const response = await connector.fetch(
+            url2,
+            {
+              method: args.method,
+              headers: {
+                "Content-Type": "application/json",
+                ...safeHeaders
+              },
+              body: bodyStr
+            },
+            effectiveUserId,
+            effectiveAccountId
+          );
+          const text = await response.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = text;
+          }
+          const apiError = detectAPIError(data);
+          return {
+            success: response.ok && !apiError,
+            status: response.status,
+            data: response.ok && !apiError ? data : void 0,
+            error: apiError ? apiError : response.ok ? void 0 : typeof data === "string" ? data : safeStringify2(data)
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+        }
+      },
+      describeCall: (args) => {
+        const bodyInfo = args.body ? ` body=${JSON.stringify(args.body).slice(0, 100)}` : "";
+        return `${args.method} ${args.endpoint}${bodyInfo}`;
+      },
+      permission: options?.permission ?? {
+        scope: "session",
+        riskLevel: "medium",
+        approvalMessage: `This will make an API call to ${connector.displayName}`
+      }
+    };
+  }
+};
 
 // src/connectors/oauth/index.ts
 init_OAuthManager();
@@ -43548,7 +43671,6 @@ var FileConnectorStorage = class {
 
 // src/connectors/vendors/helpers.ts
 init_Connector();
-init_ConnectorTools();
 var vendorRegistry = null;
 function initVendorRegistry(templates) {
   vendorRegistry = new Map(templates.map((t) => [t.id, t]));
@@ -46306,9 +46428,6 @@ async function hasClipboardImage() {
   }
 }
 
-// src/index.ts
-init_sanitize();
-
 // src/tools/index.ts
 var tools_exports = {};
 __export(tools_exports, {
@@ -48207,9 +48326,6 @@ The tool returns a result object with:
   }
 };
 
-// src/tools/web/register.ts
-init_ConnectorTools();
-
 // src/tools/web/createWebSearchTool.ts
 init_Logger();
 var searchLogger = logger.child({ component: "webSearch" });
@@ -49143,9 +49259,6 @@ async function executeInVM(code, input, timeout, logs, userId, registry) {
   return result !== void 0 ? result : sandbox.output;
 }
 
-// src/tools/multimedia/register.ts
-init_ConnectorTools();
-
 // src/tools/multimedia/config.ts
 init_StorageRegistry();
 function getMediaStorage() {
@@ -49700,9 +49813,6 @@ function registerMultimediaTools(storage) {
 
 // src/tools/multimedia/index.ts
 registerMultimediaTools();
-
-// src/tools/github/register.ts
-init_ConnectorTools();
 
 // src/tools/github/types.ts
 function parseRepository(input) {
@@ -50566,9 +50676,6 @@ function registerGitHubTools() {
 
 // src/tools/github/index.ts
 registerGitHubTools();
-
-// src/tools/microsoft/register.ts
-init_ConnectorTools();
 
 // src/tools/microsoft/types.ts
 function getUserPathPrefix(connector, targetUser) {
@@ -54003,9 +54110,7 @@ function hydrateCustomTool(definition, options) {
 }
 
 // src/tools/ToolRegistry.ts
-init_ConnectorTools();
 init_Connector();
-init_Services();
 var ToolRegistry = class {
   /**
    * Get built-in tools only (from registry.generated.ts)

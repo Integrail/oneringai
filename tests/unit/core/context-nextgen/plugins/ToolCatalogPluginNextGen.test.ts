@@ -2,7 +2,7 @@
  * ToolCatalogPluginNextGen Unit Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ToolCatalogPluginNextGen } from '@/core/context-nextgen/plugins/ToolCatalogPluginNextGen.js';
 import { ToolCatalogRegistry } from '@/core/ToolCatalogRegistry.js';
 import { ToolManager } from '@/core/ToolManager.js';
@@ -210,6 +210,23 @@ describe('ToolCatalogPluginNextGen', () => {
       scopedPlugin.destroy();
     });
 
+    it('should enforce scope check on connector categories too', async () => {
+      // Scope only allows 'test_cat' — connector:github should be blocked
+      const scopedPlugin = new ToolCatalogPluginNextGen({
+        categoryScope: ['test_cat'],
+      });
+      scopedPlugin.setToolManager(toolManager);
+
+      const tools = scopedPlugin.getTools();
+      const loadTool = tools.find(t => t.definition.function.name === 'tool_catalog_load')!;
+
+      const result = await loadTool.execute({ category: 'connector:github' }) as Record<string, unknown>;
+      expect(result.error).toBeDefined();
+      expect((result.error as string)).toContain('not available');
+
+      scopedPlugin.destroy();
+    });
+
     it('should error when max categories reached', async () => {
       const limitedPlugin = new ToolCatalogPluginNextGen({
         maxLoadedCategories: 1,
@@ -333,6 +350,83 @@ describe('ToolCatalogPluginNextGen', () => {
       plugin2.destroy();
       tm2.destroy();
     });
+
+    it('should handle corrupted state gracefully', () => {
+      const plugin2 = new ToolCatalogPluginNextGen();
+      const tm2 = new ToolManager();
+      plugin2.setToolManager(tm2);
+
+      // null state
+      plugin2.restoreState(null);
+      expect(plugin2.loadedCategories).toHaveLength(0);
+
+      // non-object state
+      plugin2.restoreState('bad');
+      expect(plugin2.loadedCategories).toHaveLength(0);
+
+      // array with non-string entries
+      plugin2.restoreState({ loadedCategories: [123, null, '', 'test_cat'] });
+      // Only 'test_cat' should be loaded (123, null, '' are skipped)
+      expect(plugin2.loadedCategories).toContain('test_cat');
+
+      // Empty array
+      plugin2.destroy();
+      const plugin3 = new ToolCatalogPluginNextGen();
+      plugin3.setToolManager(tm2);
+      plugin3.restoreState({ loadedCategories: [] });
+      expect(plugin3.loadedCategories).toHaveLength(0);
+
+      plugin3.destroy();
+      tm2.destroy();
+    });
+
+    it('should log warning for categories that fail to restore', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const plugin2 = new ToolCatalogPluginNextGen();
+      const tm2 = new ToolManager();
+      plugin2.setToolManager(tm2);
+
+      // 'nonexistent' has no tools, executeLoad returns {error}
+      plugin2.restoreState({ loadedCategories: ['nonexistent'] });
+      // Category should not be loaded since it failed
+      expect(plugin2.loadedCategories).not.toContain('nonexistent');
+
+      plugin2.destroy();
+      tm2.destroy();
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('destroyed state guard', () => {
+    it('should return error from executeSearch after destroy', async () => {
+      const tools = plugin.getTools();
+      const searchTool = tools.find(t => t.definition.function.name === 'tool_catalog_search')!;
+
+      plugin.destroy();
+
+      const result = await searchTool.execute({}) as Record<string, unknown>;
+      expect(result.error).toBe('Plugin destroyed');
+    });
+
+    it('should return error from executeLoad after destroy', async () => {
+      const tools = plugin.getTools();
+      const loadTool = tools.find(t => t.definition.function.name === 'tool_catalog_load')!;
+
+      plugin.destroy();
+
+      const result = await loadTool.execute({ category: 'test_cat' }) as Record<string, unknown>;
+      expect(result.error).toBe('Plugin destroyed');
+    });
+
+    it('should return error from executeUnload after destroy', async () => {
+      const tools = plugin.getTools();
+      const unloadTool = tools.find(t => t.definition.function.name === 'tool_catalog_unload')!;
+
+      plugin.destroy();
+
+      const result = await unloadTool.execute({ category: 'test_cat' }) as Record<string, unknown>;
+      expect(result.error).toBe('Plugin destroyed');
+    });
   });
 
   describe('autoLoadCategories', () => {
@@ -345,6 +439,20 @@ describe('ToolCatalogPluginNextGen', () => {
 
       expect(autoPlugin.loadedCategories).toContain('test_cat');
       expect(tm.isEnabled('test_tool_a')).toBe(true);
+
+      autoPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should log warning for invalid auto-load categories', () => {
+      const autoPlugin = new ToolCatalogPluginNextGen({
+        autoLoadCategories: ['nonexistent_category'],
+      });
+      const tm = new ToolManager();
+
+      // Should not throw, just log warning
+      autoPlugin.setToolManager(tm);
+      expect(autoPlugin.loadedCategories).not.toContain('nonexistent_category');
 
       autoPlugin.destroy();
       tm.destroy();

@@ -50,8 +50,8 @@ export interface ToolCategoryDefinition {
  * A single tool entry in the catalog.
  */
 export interface CatalogToolEntry {
-  /** The actual tool function */
-  tool: ToolFunction;
+  /** The actual tool function (optional when createTool factory is provided) */
+  tool?: ToolFunction;
   /** Tool name (matches definition.function.name) */
   name: string;
   /** Human-readable display name */
@@ -61,6 +61,30 @@ export interface CatalogToolEntry {
   /** Whether this tool is safe to execute without user approval */
   safeByDefault: boolean;
   /** Whether this tool requires a connector to function */
+  requiresConnector?: boolean;
+  /** Factory for runtime tool creation (e.g., browser tools needing context) */
+  createTool?: (ctx: Record<string, unknown>) => ToolFunction;
+  /** Source identifier (e.g., 'oneringai', 'hosea', 'custom') */
+  source?: string;
+  /** Connector name (for connector-originated tools) */
+  connectorName?: string;
+  /** Service type (e.g., 'github', 'slack') */
+  serviceType?: string;
+  /** Supported connector service types */
+  connectorServiceTypes?: string[];
+}
+
+/**
+ * Entry format from the generated tool registry (registry.generated.ts).
+ * Used by initializeFromRegistry() and registerFromToolRegistry().
+ */
+export interface ToolRegistryEntry {
+  name: string;
+  displayName: string;
+  category: string;
+  description: string;
+  tool: ToolFunction;
+  safeByDefault: boolean;
   requiresConnector?: boolean;
 }
 
@@ -77,6 +101,22 @@ export type ToolCategoryScope =
   | { include: string[] }     // explicit allowlist
   | { exclude: string[] };    // blocklist
   // undefined = all allowed
+
+/**
+ * Connector category metadata returned by discoverConnectorCategories().
+ */
+export interface ConnectorCategoryInfo {
+  /** Category name in 'connector:<name>' format */
+  name: string;
+  /** Human-readable display name */
+  displayName: string;
+  /** Description */
+  description: string;
+  /** Number of tools */
+  toolCount: number;
+  /** Resolved tools */
+  tools: ToolFunction[];
+}
 
 // ============================================================================
 // ToolCatalogRegistry
@@ -99,6 +139,9 @@ export class ToolCatalogRegistry {
   /** Whether built-in tools have been registered */
   private static _initialized = false;
 
+  /** Lazy-loaded ConnectorTools module. null = not attempted, false = failed */
+  private static _connectorToolsModule: { ConnectorTools: any } | false | null = null;
+
   // --- Built-in category descriptions ---
   private static readonly BUILTIN_DESCRIPTIONS: Record<string, string> = {
     filesystem: 'Read, write, edit, search, and list files and directories',
@@ -113,14 +156,57 @@ export class ToolCatalogRegistry {
   };
 
   // ========================================================================
+  // Static Helpers (DRY)
+  // ========================================================================
+
+  /**
+   * Convert a hyphenated or plain name to a display name.
+   * E.g., 'custom-tools' → 'Custom Tools', 'filesystem' → 'Filesystem'
+   */
+  static toDisplayName(name: string): string {
+    return name
+      .split('-')
+      .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+
+  /**
+   * Parse a connector category name, returning the connector name or null.
+   * E.g., 'connector:github' → 'github', 'filesystem' → null
+   */
+  static parseConnectorCategory(category: string): string | null {
+    return category.startsWith('connector:') ? category.slice('connector:'.length) : null;
+  }
+
+  /**
+   * Get the ConnectorTools module (lazy-loaded, cached).
+   * Returns null if ConnectorTools is not available.
+   * Uses false sentinel to prevent retrying after first failure.
+   */
+  static getConnectorToolsModule(): { ConnectorTools: any } | null {
+    if (this._connectorToolsModule === null) {
+      try {
+        this._connectorToolsModule = require('../../tools/connector/ConnectorTools.js');
+      } catch {
+        this._connectorToolsModule = false;
+      }
+    }
+    return this._connectorToolsModule || null;
+  }
+
+  // ========================================================================
   // Registration
   // ========================================================================
 
   /**
    * Register a tool category.
    * If the category already exists, updates its metadata.
+   * @throws Error if name is empty or whitespace
    */
   static registerCategory(def: ToolCategoryDefinition): void {
+    if (!def.name || !def.name.trim()) {
+      throw new Error('[ToolCatalogRegistry] Category name cannot be empty');
+    }
     this._categories.set(def.name, def);
     if (!this._tools.has(def.name)) {
       this._tools.set(def.name, []);
@@ -130,12 +216,16 @@ export class ToolCatalogRegistry {
   /**
    * Register multiple tools in a category.
    * The category is auto-created if it doesn't exist (with a generic description).
+   * @throws Error if category name is empty or whitespace
    */
   static registerTools(category: string, tools: CatalogToolEntry[]): void {
+    if (!category || !category.trim()) {
+      throw new Error('[ToolCatalogRegistry] Category name cannot be empty');
+    }
     if (!this._categories.has(category)) {
       this._categories.set(category, {
         name: category,
-        displayName: category.charAt(0).toUpperCase() + category.slice(1),
+        displayName: this.toDisplayName(category),
         description: this.BUILTIN_DESCRIPTIONS[category] ?? `Tools in the ${category} category`,
       });
     }
@@ -274,6 +364,80 @@ export class ToolCatalogRegistry {
   }
 
   // ========================================================================
+  // Connector Discovery
+  // ========================================================================
+
+  /**
+   * Discover all connector categories with their tools.
+   * Calls ConnectorTools.discoverAll() and filters by scope/identities.
+   *
+   * @param options - Optional filtering
+   * @returns Array of connector category info
+   */
+  static discoverConnectorCategories(options?: {
+    scope?: ToolCategoryScope;
+    identities?: Array<{ connector: string }>;
+  }): ConnectorCategoryInfo[] {
+    const mod = this.getConnectorToolsModule();
+    if (!mod) return [];
+
+    try {
+      const discovered: Map<string, ToolFunction[]> = mod.ConnectorTools.discoverAll();
+      const results: ConnectorCategoryInfo[] = [];
+
+      for (const [connectorName, tools] of discovered) {
+        const catName = `connector:${connectorName}`;
+
+        // Check scope
+        if (options?.scope && !this.isCategoryAllowed(catName, options.scope)) {
+          continue;
+        }
+
+        // Check identities filter
+        if (options?.identities?.length) {
+          const hasIdentity = options.identities.some(id => id.connector === connectorName);
+          if (!hasIdentity) continue;
+        }
+
+        // Check if there's a pre-registered category with better metadata
+        const preRegistered = this.getCategory(catName);
+        results.push({
+          name: catName,
+          displayName: preRegistered?.displayName ?? this.toDisplayName(connectorName),
+          description: preRegistered?.description ?? `API tools for ${connectorName}`,
+          toolCount: tools.length,
+          tools,
+        });
+      }
+
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Resolve tools for a specific connector category.
+   *
+   * @param category - Category name in 'connector:<name>' format
+   * @returns Array of resolved tools with names
+   */
+  static resolveConnectorCategoryTools(category: string): Array<{ tool: ToolFunction; name: string }> {
+    const connectorName = this.parseConnectorCategory(category);
+    if (!connectorName) return [];
+
+    const mod = this.getConnectorToolsModule();
+    if (!mod) return [];
+
+    try {
+      const tools: ToolFunction[] = mod.ConnectorTools.for(connectorName);
+      return tools.map(t => ({ tool: t, name: t.definition.function.name }));
+    } catch {
+      return [];
+    }
+  }
+
+  // ========================================================================
   // Resolution
   // ========================================================================
 
@@ -289,7 +453,7 @@ export class ToolCatalogRegistry {
    */
   static resolveTools(
     toolNames: string[],
-    options?: { includeConnectors?: boolean; userId?: string },
+    options?: { includeConnectors?: boolean; userId?: string; context?: Record<string, unknown> },
   ): ToolFunction[] {
     this.ensureInitialized();
     const resolved: ToolFunction[] = [];
@@ -299,8 +463,11 @@ export class ToolCatalogRegistry {
       // 1. Search registered categories
       const found = this.findTool(name);
       if (found) {
-        resolved.push(found.entry.tool);
-        continue;
+        const tool = this.resolveEntryTool(found.entry, options?.context);
+        if (tool) {
+          resolved.push(tool);
+          continue;
+        }
       }
 
       // 2. Search connector tools (if enabled)
@@ -326,14 +493,84 @@ export class ToolCatalogRegistry {
   }
 
   /**
-   * Search connector tools by name (lazy import to avoid circular deps).
+   * Resolve tools grouped by connector name.
+   *
+   * Tools with a `connectorName` go into `byConnector`; all others go into `plain`.
+   * Supports factory-based tool creation via `createTool` when context is provided.
+   *
+   * @param toolNames - Array of tool names to resolve
+   * @param context - Optional context passed to createTool factories
+   * @param options - Resolution options
+   * @returns Grouped tools: plain + byConnector map
+   */
+  static resolveToolsGrouped(
+    toolNames: string[],
+    context?: Record<string, unknown>,
+    options?: { includeConnectors?: boolean },
+  ): { plain: ToolFunction[]; byConnector: Map<string, ToolFunction[]> } {
+    this.ensureInitialized();
+    const plain: ToolFunction[] = [];
+    const byConnector = new Map<string, ToolFunction[]>();
+
+    for (const name of toolNames) {
+      // 1. Search registered categories
+      const found = this.findTool(name);
+      if (found) {
+        const entry = found.entry;
+        const tool = this.resolveEntryTool(entry, context);
+        if (!tool) continue;
+
+        if (entry.connectorName) {
+          const list = byConnector.get(entry.connectorName) ?? [];
+          list.push(tool);
+          byConnector.set(entry.connectorName, list);
+        } else {
+          plain.push(tool);
+        }
+        continue;
+      }
+
+      // 2. Search connector tools (if enabled)
+      if (options?.includeConnectors) {
+        const connectorTool = this.findConnectorTool(name);
+        if (connectorTool) {
+          plain.push(connectorTool);
+          continue;
+        }
+      }
+    }
+
+    return { plain, byConnector };
+  }
+
+  /**
+   * Resolve a tool from a CatalogToolEntry, using factory if available.
+   * Returns null if neither tool nor createTool is available.
+   */
+  private static resolveEntryTool(
+    entry: CatalogToolEntry,
+    context?: Record<string, unknown>,
+  ): ToolFunction | null {
+    if (entry.createTool && context) {
+      try {
+        return entry.createTool(context);
+      } catch (e) {
+        logger.warn(`[ToolCatalogRegistry] Factory failed for '${entry.name}': ${e}`);
+        return null;
+      }
+    }
+    return entry.tool ?? null;
+  }
+
+  /**
+   * Search connector tools by name (uses lazy accessor).
    */
   private static findConnectorTool(name: string): ToolFunction | undefined {
+    const mod = this.getConnectorToolsModule();
+    if (!mod) return undefined;
+
     try {
-      // Dynamic import not feasible in static sync method — use require-style pattern
-      // ConnectorTools is available at runtime since it's already loaded
-      const { ConnectorTools } = require('../../tools/connector/ConnectorTools.js');
-      const allConnectorTools: Map<string, ToolFunction[]> = ConnectorTools.discoverAll();
+      const allConnectorTools: Map<string, ToolFunction[]> = mod.ConnectorTools.discoverAll();
       for (const [, tools] of allConnectorTools) {
         for (const tool of tools) {
           if (tool.definition.function.name === name) {
@@ -342,7 +579,7 @@ export class ToolCatalogRegistry {
         }
       }
     } catch {
-      // ConnectorTools not available — skip
+      // ConnectorTools error — skip
     }
     return undefined;
   }
@@ -386,15 +623,7 @@ export class ToolCatalogRegistry {
    * ToolCatalogRegistry.initializeFromRegistry(toolRegistry);
    * ```
    */
-  static initializeFromRegistry(registry: Array<{
-    name: string;
-    displayName: string;
-    category: string;
-    description: string;
-    tool: ToolFunction;
-    safeByDefault: boolean;
-    requiresConnector?: boolean;
-  }>): void {
+  static initializeFromRegistry(registry: ToolRegistryEntry[]): void {
     this._initialized = true;
     this.registerFromToolRegistry(registry);
   }
@@ -402,27 +631,15 @@ export class ToolCatalogRegistry {
   /**
    * Internal: register tools from a tool registry array.
    */
-  private static registerFromToolRegistry(registry: Array<{
-    name: string;
-    displayName: string;
-    category: string;
-    description: string;
-    tool: ToolFunction;
-    safeByDefault: boolean;
-    requiresConnector?: boolean;
-  }>): void {
+  private static registerFromToolRegistry(registry: ToolRegistryEntry[]): void {
     for (const entry of registry) {
       const category = entry.category;
 
       // Register category if not already registered
       if (!this._categories.has(category)) {
-        const displayName = category
-          .split('-')
-          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ');
         this.registerCategory({
           name: category,
-          displayName,
+          displayName: this.toDisplayName(category),
           description: this.BUILTIN_DESCRIPTIONS[category] ?? `Built-in ${category} tools`,
         });
       }
@@ -453,5 +670,6 @@ export class ToolCatalogRegistry {
     this._categories.clear();
     this._tools.clear();
     this._initialized = false;
+    this._connectorToolsModule = null;
   }
 }

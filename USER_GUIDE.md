@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.4.3
-**Last Updated:** 2026-02-25
+**Version:** 0.4.4
+**Last Updated:** 2026-02-26
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -1112,6 +1112,9 @@ interface ContextFeatures {
 
   /** Enable UserInfoPluginNextGen (default: false) */
   userInfo?: boolean;
+
+  /** Enable ToolCatalogPluginNextGen for dynamic tool loading/unloading (default: false) */
+  toolCatalog?: boolean;
 }
 ```
 
@@ -1124,7 +1127,7 @@ import { AgentContextNextGen, DEFAULT_FEATURES } from '@everworker/oneringai';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
-// { workingMemory: true, inContextMemory: false, persistentInstructions: false, userInfo: false }
+// { workingMemory: true, inContextMemory: false, persistentInstructions: false, userInfo: false, toolCatalog: false }
 ```
 
 **Available Features:**
@@ -1135,6 +1138,7 @@ console.log(DEFAULT_FEATURES);
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen - live key-value storage directly in context | `context_set/delete/list` tools not registered |
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk (KVP entries) | `instructions_*` tools not registered |
 | `userInfo` | `false` | UserInfoPluginNextGen - user-scoped preferences + TODO tracking auto-injected into context | `user_info_*` and `todo_*` tools not registered |
+| `toolCatalog` | `false` | ToolCatalogPluginNextGen - dynamic tool loading/unloading by category | `tool_catalog_*` tools not registered; all tools must be pre-loaded |
 
 **Usage Examples:**
 
@@ -1194,7 +1198,7 @@ ctx.features.persistentInstructions;  // boolean
 ctx.features.userInfo;                // boolean
 
 // Get read-only feature configuration
-ctx.features; // { workingMemory, inContextMemory, persistentInstructions, userInfo }
+ctx.features; // { workingMemory, inContextMemory, persistentInstructions, userInfo, toolCatalog }
 
 // Access nullable memory
 ctx.memory;  // WorkingMemoryPluginNextGen | null
@@ -3066,6 +3070,99 @@ interface UserInfoPluginConfig {
 - Accumulated knowledge about the user
 - Profile information the LLM should always have access to
 - TODO tracking: tasks with deadlines, involved people, and tags — with proactive reminders and auto-cleanup
+
+---
+
+## Tool Catalog: Dynamic Tool Loading/Unloading
+
+When agents need 100+ tools, sending all tool definitions to the LLM wastes tokens and degrades performance. The Tool Catalog lets agents dynamically discover and load only the tool categories they need.
+
+### Quick Start
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { toolCatalog: true },
+    // Optional: restrict visible categories
+    toolCategories: ['web', 'knowledge', 'connector:github'],
+  },
+});
+```
+
+The agent gets 3 metatools: `tool_catalog_search`, `tool_catalog_load`, `tool_catalog_unload`. It can browse available categories, load what it needs, and unload when done.
+
+### ToolCatalogRegistry
+
+Static global registry for tool categories (like `Connector` and `StorageRegistry`). Register your custom categories at app startup:
+
+```typescript
+import { ToolCatalogRegistry } from '@everworker/oneringai';
+
+ToolCatalogRegistry.registerCategory({
+  name: 'knowledge',
+  displayName: 'Knowledge Graph',
+  description: 'Search entities, get facts, manage references',
+});
+
+ToolCatalogRegistry.registerTools('knowledge', [
+  { name: 'entity_search', displayName: 'Entity Search', description: 'Search people/orgs', tool: entitySearch, safeByDefault: true },
+]);
+```
+
+Built-in tools from `registry.generated.ts` are auto-registered on first access.
+
+### Category Scoping
+
+Restrict which categories an agent can see:
+
+```typescript
+// Allowlist (string[] shorthand)
+toolCategories: ['web', 'knowledge']
+
+// Explicit allowlist
+toolCategories: { include: ['web', 'knowledge'] }
+
+// Blocklist
+toolCategories: { exclude: ['desktop', 'shell'] }
+```
+
+### Resolving Tool Names
+
+For executors that resolve `string[]` tool names to `ToolFunction[]`:
+
+```typescript
+const tools = ToolCatalogRegistry.resolveTools(
+  ['entity_search', 'github_api'],
+  { includeConnectors: true }
+);
+```
+
+### Auto-Loading Categories
+
+Pre-load categories so the agent doesn't need an extra turn:
+
+```typescript
+const ctx = AgentContextNextGen.create({
+  model: 'gpt-4',
+  features: { toolCatalog: true },
+  plugins: {
+    toolCatalog: {
+      autoLoadCategories: ['web', 'knowledge'],
+      maxLoadedCategories: 10,
+    },
+  },
+});
+```
+
+### Tools
+
+| Tool | Description | Permission |
+|------|-------------|------------|
+| `tool_catalog_search` | Browse categories, list tools, keyword search | Always allowed |
+| `tool_catalog_load` | Load a category's tools into the agent | Always allowed |
+| `tool_catalog_unload` | Unload a category to free token budget | Always allowed |
 
 ---
 
@@ -10339,5 +10436,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-02-22
-**Version:** 0.4.2
+**Last Updated:** 2026-02-26
+**Version:** 0.4.4

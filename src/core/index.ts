@@ -30,7 +30,7 @@ export { ScopedConnectorRegistry } from './ScopedConnectorRegistry.js';
 export { StorageRegistry } from './StorageRegistry.js';
 export type { StorageConfig, StorageContext } from './StorageRegistry.js';
 export { ToolCatalogRegistry } from './ToolCatalogRegistry.js';
-export type { ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope } from './ToolCatalogRegistry.js';
+export type { ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, ToolRegistryEntry as CatalogRegistryEntry } from './ToolCatalogRegistry.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 

@@ -25,6 +25,7 @@ import {
   ToolCatalogRegistry,
   type ToolCategoryScope,
   type ToolCategoryDefinition,
+  type ConnectorCategoryInfo,
 } from '../../ToolCatalogRegistry.js';
 import type { ToolManager } from '../../ToolManager.js';
 import { logger } from '../../../infrastructure/observability/Logger.js';
@@ -146,6 +147,15 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   /** Reference to the ToolManager for registering/disabling tools */
   private _toolManager: ToolManager | null = null;
 
+  /** Cached connector categories — discovered once in setToolManager() */
+  private _connectorCategories: ConnectorCategoryInfo[] | null = null;
+
+  /** Whether this plugin has been destroyed */
+  private _destroyed = false;
+
+  /** WeakMap cache for tool definition token estimates */
+  private _toolTokenCache = new WeakMap<object, number>();
+
   private _config: Required<Pick<ToolCatalogPluginConfig, 'maxLoadedCategories'>> & ToolCatalogPluginConfig;
 
   constructor(config?: ToolCatalogPluginConfig) {
@@ -166,7 +176,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
 
   async getContent(): Promise<string | null> {
     const categories = this.getAllowedCategories();
-    if (categories.length === 0) return null;
+    if (categories.length === 0 && this.getConnectorCategories().length === 0) return null;
 
     const lines: string[] = ['## Tool Catalog'];
     lines.push('');
@@ -185,9 +195,8 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       lines.push(`- **${cat.displayName}** (${tools.length} tools)${marker}: ${cat.description}`);
     }
 
-    // Add connector categories
-    const connectorCats = this.getConnectorCategories();
-    for (const cc of connectorCats) {
+    // Add connector categories (from cache)
+    for (const cc of this.getConnectorCategories()) {
       const marker = this._loadedCategories.has(cc.name) ? ' [LOADED]' : '';
       lines.push(`- **${cc.displayName}** (${cc.toolCount} tools)${marker}: ${cc.description}`);
     }
@@ -272,15 +281,18 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   }
 
   restoreState(state: unknown): void {
-    const s = state as { loadedCategories?: string[] };
-    if (!s.loadedCategories?.length) return;
+    // Validate state shape
+    if (!state || typeof state !== 'object') return;
 
-    // Re-load categories from state
+    const s = state as Record<string, unknown>;
+    if (!Array.isArray(s.loadedCategories) || s.loadedCategories.length === 0) return;
+
+    // Re-load categories from state, skipping invalid entries
     for (const category of s.loadedCategories) {
-      try {
-        this.executeLoad(category);
-      } catch (err) {
-        logger.warn({ category, error: err instanceof Error ? err.message : String(err) },
+      if (typeof category !== 'string' || !category) continue;
+      const result = this.executeLoad(category);
+      if (result.error) {
+        logger.warn({ category, error: result.error },
           `[ToolCatalogPlugin] Failed to restore category '${category}'`);
       }
     }
@@ -290,6 +302,8 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   destroy(): void {
     this._loadedCategories.clear();
     this._toolManager = null;
+    this._connectorCategories = null;
+    this._destroyed = true;
   }
 
   // ========================================================================
@@ -302,13 +316,18 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   setToolManager(tm: ToolManager): void {
     this._toolManager = tm;
 
+    // Discover connector categories once at init
+    this._connectorCategories = ToolCatalogRegistry.discoverConnectorCategories({
+      scope: this._config.categoryScope,
+      identities: this._config.identities,
+    });
+
     // Auto-load categories if configured
     if (this._config.autoLoadCategories?.length) {
       for (const category of this._config.autoLoadCategories) {
-        try {
-          this.executeLoad(category);
-        } catch (err) {
-          logger.warn({ category, error: err instanceof Error ? err.message : String(err) },
+        const result = this.executeLoad(category);
+        if (result.error) {
+          logger.warn({ category, error: result.error },
             `[ToolCatalogPlugin] Failed to auto-load category '${category}'`);
         }
       }
@@ -325,10 +344,12 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   // ========================================================================
 
   private executeSearch(query?: string, category?: string): Record<string, unknown> {
+    if (this._destroyed) return { error: 'Plugin destroyed' };
+
     // List tools in a specific category
     if (category) {
       // Check if it's a connector category
-      if (category.startsWith('connector:')) {
+      if (ToolCatalogRegistry.parseConnectorCategory(category) !== null) {
         return this.searchConnectorCategory(category);
       }
 
@@ -395,13 +416,14 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   }
 
   executeLoad(category: string): Record<string, unknown> {
+    if (this._destroyed) return { error: 'Plugin destroyed' };
+
     if (!this._toolManager) {
       return { error: 'ToolManager not connected. Plugin not properly initialized.' };
     }
 
-    // Check scope
-    const isConnector = category.startsWith('connector:');
-    if (!isConnector && !ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
+    // Check scope — applies uniformly to all categories (including connectors)
+    if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
       return { error: `Category '${category}' is not available for this agent.` };
     }
 
@@ -420,16 +442,19 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
     }
 
     // Resolve tools
+    const isConnector = ToolCatalogRegistry.parseConnectorCategory(category) !== null;
     let tools: Array<{ tool: ToolFunction; name: string }>;
 
     if (isConnector) {
-      tools = this.resolveConnectorTools(category);
+      tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     } else {
       const entries = ToolCatalogRegistry.getToolsInCategory(category);
       if (entries.length === 0) {
         return { error: `Category '${category}' has no tools or does not exist.` };
       }
-      tools = entries.map(e => ({ tool: e.tool, name: e.name }));
+      tools = entries
+        .filter(e => e.tool != null)
+        .map(e => ({ tool: e.tool!, name: e.name }));
     }
 
     if (tools.length === 0) {
@@ -459,6 +484,8 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   }
 
   private executeUnload(category: string): Record<string, unknown> {
+    if (this._destroyed) return { error: 'Plugin destroyed' };
+
     if (!this._toolManager) {
       return { error: 'ToolManager not connected.' };
     }
@@ -485,6 +512,13 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
 
   private getAllowedCategories(): ToolCategoryDefinition[] {
     return ToolCatalogRegistry.filterCategories(this._config.categoryScope);
+  }
+
+  /**
+   * Get connector categories from cache (populated once in setToolManager).
+   */
+  private getConnectorCategories(): ConnectorCategoryInfo[] {
+    return this._connectorCategories ?? [];
   }
 
   private keywordSearch(query: string): Record<string, unknown> {
@@ -521,7 +555,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       }
     }
 
-    // Search connector categories
+    // Search connector categories (from cache)
     for (const cc of this.getConnectorCategories()) {
       if (cc.name.toLowerCase().includes(lq) ||
         cc.displayName.toLowerCase().includes(lq) ||
@@ -542,8 +576,8 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   }
 
   private searchConnectorCategory(category: string): Record<string, unknown> {
-    const connectorName = category.replace('connector:', '');
-    const tools = this.resolveConnectorTools(category);
+    const connectorName = ToolCatalogRegistry.parseConnectorCategory(category);
+    const tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     const loaded = this._loadedCategories.has(category);
 
     return {
@@ -555,66 +589,6 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
         description: t.tool.definition.function.description || '',
       })),
     };
-  }
-
-  private getConnectorCategories(): Array<{
-    name: string;
-    displayName: string;
-    description: string;
-    toolCount: number;
-    tools: ToolFunction[];
-  }> {
-    try {
-      const { ConnectorTools } = require('../../../tools/connector/ConnectorTools.js');
-      const discovered: Map<string, ToolFunction[]> = ConnectorTools.discoverAll();
-      const results: Array<{
-        name: string;
-        displayName: string;
-        description: string;
-        toolCount: number;
-        tools: ToolFunction[];
-      }> = [];
-
-      for (const [connectorName, tools] of discovered) {
-        const catName = `connector:${connectorName}`;
-
-        // Check scope
-        if (!ToolCatalogRegistry.isCategoryAllowed(catName, this._config.categoryScope)) {
-          continue;
-        }
-
-        // Check identities filter
-        if (this._config.identities?.length) {
-          const hasIdentity = this._config.identities.some(id => id.connector === connectorName);
-          if (!hasIdentity) continue;
-        }
-
-        // Check if there's a pre-registered category with better metadata
-        const preRegistered = ToolCatalogRegistry.getCategory(catName);
-        results.push({
-          name: catName,
-          displayName: preRegistered?.displayName ?? connectorName.charAt(0).toUpperCase() + connectorName.slice(1),
-          description: preRegistered?.description ?? `API tools for ${connectorName}`,
-          toolCount: tools.length,
-          tools,
-        });
-      }
-
-      return results;
-    } catch {
-      return [];
-    }
-  }
-
-  private resolveConnectorTools(category: string): Array<{ tool: ToolFunction; name: string }> {
-    const connectorName = category.replace('connector:', '');
-    try {
-      const { ConnectorTools } = require('../../../tools/connector/ConnectorTools.js');
-      const tools: ToolFunction[] = ConnectorTools.for(connectorName);
-      return tools.map(t => ({ tool: t, name: t.definition.function.name }));
-    } catch {
-      return [];
-    }
   }
 
   private getCategoriesSortedByLastUsed(): string[] {
@@ -646,9 +620,17 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
     for (const name of toolNames) {
       const reg = this._toolManager?.getRegistration(name);
       if (reg) {
-        // Rough estimate: tool definition JSON stringified
-        const defStr = JSON.stringify(reg.tool.definition);
-        total += this.estimator.estimateTokens(defStr);
+        // Check WeakMap cache first
+        const defObj = reg.tool.definition;
+        const cached = this._toolTokenCache.get(defObj);
+        if (cached !== undefined) {
+          total += cached;
+        } else {
+          const defStr = JSON.stringify(defObj);
+          const tokens = this.estimator.estimateTokens(defStr);
+          this._toolTokenCache.set(defObj, tokens);
+          total += tokens;
+        }
       }
     }
     return total;

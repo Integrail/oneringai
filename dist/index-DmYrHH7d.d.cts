@@ -1,4 +1,4 @@
-import { I as IConnectorRegistry, e as IProvider } from './IProvider-CxDUGl6n.js';
+import { I as IConnectorRegistry, e as IProvider } from './IProvider-B8sqUzJG.cjs';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -786,8 +786,8 @@ interface ToolCategoryDefinition {
  * A single tool entry in the catalog.
  */
 interface CatalogToolEntry {
-    /** The actual tool function */
-    tool: ToolFunction;
+    /** The actual tool function (optional when createTool factory is provided) */
+    tool?: ToolFunction;
     /** Tool name (matches definition.function.name) */
     name: string;
     /** Human-readable display name */
@@ -797,6 +797,29 @@ interface CatalogToolEntry {
     /** Whether this tool is safe to execute without user approval */
     safeByDefault: boolean;
     /** Whether this tool requires a connector to function */
+    requiresConnector?: boolean;
+    /** Factory for runtime tool creation (e.g., browser tools needing context) */
+    createTool?: (ctx: Record<string, unknown>) => ToolFunction;
+    /** Source identifier (e.g., 'oneringai', 'hosea', 'custom') */
+    source?: string;
+    /** Connector name (for connector-originated tools) */
+    connectorName?: string;
+    /** Service type (e.g., 'github', 'slack') */
+    serviceType?: string;
+    /** Supported connector service types */
+    connectorServiceTypes?: string[];
+}
+/**
+ * Entry format from the generated tool registry (registry.generated.ts).
+ * Used by initializeFromRegistry() and registerFromToolRegistry().
+ */
+interface ToolRegistryEntry {
+    name: string;
+    displayName: string;
+    category: string;
+    description: string;
+    tool: ToolFunction;
+    safeByDefault: boolean;
     requiresConnector?: boolean;
 }
 /**
@@ -813,6 +836,21 @@ type ToolCategoryScope = string[] | {
     exclude: string[];
 };
 /**
+ * Connector category metadata returned by discoverConnectorCategories().
+ */
+interface ConnectorCategoryInfo {
+    /** Category name in 'connector:<name>' format */
+    name: string;
+    /** Human-readable display name */
+    displayName: string;
+    /** Description */
+    description: string;
+    /** Number of tools */
+    toolCount: number;
+    /** Resolved tools */
+    tools: ToolFunction[];
+}
+/**
  * Static global registry for tool categories and their tools.
  *
  * Like Connector and StorageRegistry, this is a static class that acts
@@ -826,15 +864,37 @@ declare class ToolCatalogRegistry {
     private static _tools;
     /** Whether built-in tools have been registered */
     private static _initialized;
+    /** Lazy-loaded ConnectorTools module. null = not attempted, false = failed */
+    private static _connectorToolsModule;
     private static readonly BUILTIN_DESCRIPTIONS;
+    /**
+     * Convert a hyphenated or plain name to a display name.
+     * E.g., 'custom-tools' → 'Custom Tools', 'filesystem' → 'Filesystem'
+     */
+    static toDisplayName(name: string): string;
+    /**
+     * Parse a connector category name, returning the connector name or null.
+     * E.g., 'connector:github' → 'github', 'filesystem' → null
+     */
+    static parseConnectorCategory(category: string): string | null;
+    /**
+     * Get the ConnectorTools module (lazy-loaded, cached).
+     * Returns null if ConnectorTools is not available.
+     * Uses false sentinel to prevent retrying after first failure.
+     */
+    static getConnectorToolsModule(): {
+        ConnectorTools: any;
+    } | null;
     /**
      * Register a tool category.
      * If the category already exists, updates its metadata.
+     * @throws Error if name is empty or whitespace
      */
     static registerCategory(def: ToolCategoryDefinition): void;
     /**
      * Register multiple tools in a category.
      * The category is auto-created if it doesn't exist (with a generic description).
+     * @throws Error if category name is empty or whitespace
      */
     static registerTools(category: string, tools: CatalogToolEntry[]): void;
     /**
@@ -885,6 +945,29 @@ declare class ToolCatalogRegistry {
      */
     static isCategoryAllowed(name: string, scope?: ToolCategoryScope): boolean;
     /**
+     * Discover all connector categories with their tools.
+     * Calls ConnectorTools.discoverAll() and filters by scope/identities.
+     *
+     * @param options - Optional filtering
+     * @returns Array of connector category info
+     */
+    static discoverConnectorCategories(options?: {
+        scope?: ToolCategoryScope;
+        identities?: Array<{
+            connector: string;
+        }>;
+    }): ConnectorCategoryInfo[];
+    /**
+     * Resolve tools for a specific connector category.
+     *
+     * @param category - Category name in 'connector:<name>' format
+     * @returns Array of resolved tools with names
+     */
+    static resolveConnectorCategoryTools(category: string): Array<{
+        tool: ToolFunction;
+        name: string;
+    }>;
+    /**
      * Resolve tool names to ToolFunction[].
      *
      * Searches registered categories and (optionally) connector tools.
@@ -897,9 +980,32 @@ declare class ToolCatalogRegistry {
     static resolveTools(toolNames: string[], options?: {
         includeConnectors?: boolean;
         userId?: string;
+        context?: Record<string, unknown>;
     }): ToolFunction[];
     /**
-     * Search connector tools by name (lazy import to avoid circular deps).
+     * Resolve tools grouped by connector name.
+     *
+     * Tools with a `connectorName` go into `byConnector`; all others go into `plain`.
+     * Supports factory-based tool creation via `createTool` when context is provided.
+     *
+     * @param toolNames - Array of tool names to resolve
+     * @param context - Optional context passed to createTool factories
+     * @param options - Resolution options
+     * @returns Grouped tools: plain + byConnector map
+     */
+    static resolveToolsGrouped(toolNames: string[], context?: Record<string, unknown>, options?: {
+        includeConnectors?: boolean;
+    }): {
+        plain: ToolFunction[];
+        byConnector: Map<string, ToolFunction[]>;
+    };
+    /**
+     * Resolve a tool from a CatalogToolEntry, using factory if available.
+     * Returns null if neither tool nor createTool is available.
+     */
+    private static resolveEntryTool;
+    /**
+     * Search connector tools by name (uses lazy accessor).
      */
     private static findConnectorTool;
     /**
@@ -920,15 +1026,7 @@ declare class ToolCatalogRegistry {
      * ToolCatalogRegistry.initializeFromRegistry(toolRegistry);
      * ```
      */
-    static initializeFromRegistry(registry: Array<{
-        name: string;
-        displayName: string;
-        category: string;
-        description: string;
-        tool: ToolFunction;
-        safeByDefault: boolean;
-        requiresConnector?: boolean;
-    }>): void;
+    static initializeFromRegistry(registry: ToolRegistryEntry[]): void;
     /**
      * Internal: register tools from a tool registry array.
      */
@@ -2455,4 +2553,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { StreamEventType as $, type AgentContextNextGenConfig as A, type BeforeCompactionCallback as B, type ContextFeatures as C, type HookName as D, ExecutionContext as E, type FunctionToolDefinition as F, type ITokenEstimator as G, type HookConfig as H, type IContextStorage as I, type ToolCategoryScope as J, type CompactionContext as K, type LLMResponse as L, type MemoryEntry as M, type CompactionResult as N, type OutputItem as O, type PriorityCalculator as P, type StaleEntryInfo as Q, type PriorityContext as R, type SerializedContextState as S, type Tool as T, type MemoryIndex as U, type TaskStatusForMemory as V, type WorkingMemoryConfig as W, type WorkingMemoryAccess as X, type ContextStorageListOptions as Y, type ContextSessionSummary as Z, type TokenUsage as _, type MemoryScope as a, isOutputTextDelta as a$, type TextGenerateOptions as a0, type ModelCapabilities as a1, MessageRole as a2, type AfterToolContext as a3, type AgentEventName as a4, type AgenticLoopEventName as a5, type AgenticLoopEvents as a6, type ApprovalResult as a7, type ApproveToolContext as a8, type BeforeToolContext as a9, type ReasoningDeltaEvent as aA, type ReasoningDoneEvent as aB, type ReasoningItem as aC, type ResponseCompleteEvent as aD, type ResponseCreatedEvent as aE, type ResponseInProgressEvent as aF, type SimpleScope as aG, type TaskAwareScope as aH, type ThinkingContent as aI, type ToolCallArgumentsDeltaEvent as aJ, type ToolCallArgumentsDoneEvent as aK, type ToolCallStartEvent as aL, ToolCallState as aM, ToolCatalogRegistry as aN, type ToolCategoryDefinition as aO, type ToolExecutionContext as aP, type ToolExecutionDoneEvent as aQ, type ToolExecutionStartEvent as aR, type ToolModification as aS, type ToolResultContent as aT, type ToolUseContent as aU, calculateEntrySize as aV, defaultDescribeCall as aW, forPlan as aX, forTasks as aY, getToolCallDescription as aZ, isErrorEvent as a_, type BuiltInTool as aa, CONTEXT_SESSION_FORMAT_VERSION as ab, type CatalogToolEntry as ac, type CompactionItem as ad, ContentType as ae, DEFAULT_CONFIG as af, DEFAULT_FEATURES as ag, DEFAULT_MEMORY_CONFIG as ah, type ErrorEvent as ai, type ExecutionConfig as aj, type Hook as ak, HookManager as al, type InputImageContent as am, type InputTextContent as an, type IterationCompleteEvent$1 as ao, type JSONSchema as ap, MEMORY_PRIORITY_VALUES as aq, type MemoryEntryInput as ar, type MemoryIndexEntry as as, type Message as at, type ModifyingHook as au, type OutputTextContent as av, type OutputTextDeltaEvent as aw, type OutputTextDoneEvent as ax, type OversizedInputResult as ay, type PluginConfigs as az, type ToolFunction as b, isReasoningDelta as b0, isReasoningDone as b1, isResponseComplete as b2, isSimpleScope as b3, isStreamEvent as b4, isTaskAwareScope as b5, isTerminalMemoryStatus as b6, isToolCallArgumentsDelta as b7, isToolCallArgumentsDone as b8, isToolCallStart as b9, scopeEquals as ba, scopeMatches as bb, type ExecutionCompleteEvent as bc, type ExecutionStartEvent as bd, type LLMRequestEvent as be, type LLMResponseEvent as bf, type ToolCompleteEvent as bg, type ToolStartEvent as bh, type ToolContext as c, type ToolPermissionConfig as d, type ContextBudget as e, type ToolCall as f, type IContextPluginNextGen as g, type MemoryPriority as h, type MemoryTier as i, type ContextEvents as j, type AuthIdentity as k, type ICompactionStrategy as l, type InputItem as m, type Content as n, type PreparedContext as o, type ToolResult as p, type ConsolidationResult as q, type StoredContextSession as r, type ITextProvider as s, type ContextSessionMetadata as t, type StreamEvent as u, type HistoryMode as v, type AgentEvents as w, type AgentResponse as x, type ExecutionMetrics as y, type AuditEntry as z };
+export { StreamEventType as $, type AgentContextNextGenConfig as A, type BeforeCompactionCallback as B, type ContextFeatures as C, type HookName as D, ExecutionContext as E, type FunctionToolDefinition as F, type ITokenEstimator as G, type HookConfig as H, type IContextStorage as I, type ToolCategoryScope as J, type CompactionContext as K, type LLMResponse as L, type MemoryEntry as M, type CompactionResult as N, type OutputItem as O, type PriorityCalculator as P, type StaleEntryInfo as Q, type PriorityContext as R, type SerializedContextState as S, type Tool as T, type MemoryIndex as U, type TaskStatusForMemory as V, type WorkingMemoryConfig as W, type WorkingMemoryAccess as X, type ContextStorageListOptions as Y, type ContextSessionSummary as Z, type TokenUsage as _, type MemoryScope as a, getToolCallDescription as a$, type TextGenerateOptions as a0, type ModelCapabilities as a1, MessageRole as a2, type AfterToolContext as a3, type AgentEventName as a4, type AgenticLoopEventName as a5, type AgenticLoopEvents as a6, type ApprovalResult as a7, type ApproveToolContext as a8, type BeforeToolContext as a9, type OversizedInputResult as aA, type PluginConfigs as aB, type ReasoningDeltaEvent as aC, type ReasoningDoneEvent as aD, type ReasoningItem as aE, type ResponseCompleteEvent as aF, type ResponseCreatedEvent as aG, type ResponseInProgressEvent as aH, type SimpleScope as aI, type TaskAwareScope as aJ, type ThinkingContent as aK, type ToolCallArgumentsDeltaEvent as aL, type ToolCallArgumentsDoneEvent as aM, type ToolCallStartEvent as aN, ToolCallState as aO, ToolCatalogRegistry as aP, type ToolCategoryDefinition as aQ, type ToolExecutionContext as aR, type ToolExecutionDoneEvent as aS, type ToolExecutionStartEvent as aT, type ToolModification as aU, type ToolResultContent as aV, type ToolUseContent as aW, calculateEntrySize as aX, defaultDescribeCall as aY, forPlan as aZ, forTasks as a_, type BuiltInTool as aa, CONTEXT_SESSION_FORMAT_VERSION as ab, type ToolRegistryEntry as ac, type CatalogToolEntry as ad, type CompactionItem as ae, type ConnectorCategoryInfo as af, ContentType as ag, DEFAULT_CONFIG as ah, DEFAULT_FEATURES as ai, DEFAULT_MEMORY_CONFIG as aj, type ErrorEvent as ak, type ExecutionConfig as al, type Hook as am, HookManager as an, type InputImageContent as ao, type InputTextContent as ap, type IterationCompleteEvent$1 as aq, type JSONSchema as ar, MEMORY_PRIORITY_VALUES as as, type MemoryEntryInput as at, type MemoryIndexEntry as au, type Message as av, type ModifyingHook as aw, type OutputTextContent as ax, type OutputTextDeltaEvent as ay, type OutputTextDoneEvent as az, type ToolFunction as b, isErrorEvent as b0, isOutputTextDelta as b1, isReasoningDelta as b2, isReasoningDone as b3, isResponseComplete as b4, isSimpleScope as b5, isStreamEvent as b6, isTaskAwareScope as b7, isTerminalMemoryStatus as b8, isToolCallArgumentsDelta as b9, isToolCallArgumentsDone as ba, isToolCallStart as bb, scopeEquals as bc, scopeMatches as bd, type ExecutionCompleteEvent as be, type ExecutionStartEvent as bf, type LLMRequestEvent as bg, type LLMResponseEvent as bh, type ToolCompleteEvent as bi, type ToolStartEvent as bj, type ToolContext as c, type ToolPermissionConfig as d, type ContextBudget as e, type ToolCall as f, type IContextPluginNextGen as g, type MemoryPriority as h, type MemoryTier as i, type ContextEvents as j, type AuthIdentity as k, type ICompactionStrategy as l, type InputItem as m, type Content as n, type PreparedContext as o, type ToolResult as p, type ConsolidationResult as q, type StoredContextSession as r, type ITextProvider as s, type ContextSessionMetadata as t, type StreamEvent as u, type HistoryMode as v, type AgentEvents as w, type AgentResponse as x, type ExecutionMetrics as y, type AuditEntry as z };
