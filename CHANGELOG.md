@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Routine Execution Recording** — New `RoutineExecutionRecord` types and `createExecutionRecorder()` factory for persisting routine execution history. Storage-agnostic types (`RoutineExecutionStep`, `RoutineTaskSnapshot`, `RoutineTaskResult`) replace manual hook wiring with a single factory call. `IRoutineExecutionStorage` interface for custom backends (MongoDB, PostgreSQL, etc.). Integrated into `StorageRegistry` as `routineExecutions`. Consumers wire recording with ~5 lines instead of ~140 lines of manual hooks/callbacks.
+- **Routine Scheduling** — New `IScheduler` interface with `ScheduleSpec` supporting interval, one-time (timestamp), and cron schedule types. Built-in `SimpleScheduler` implementation using `setInterval`/`setTimeout` (throws clear error for cron — use a cron-capable implementation). Implements `IDisposable` for clean timer cleanup.
+- **Event Trigger System** — New `EventEmitterTrigger` class for triggering routine execution from external events (webhooks, queues, custom signals). Simple typed event emitter with `on()`/`emit()`/`destroy()`. No heavy `ITriggerSource` interface — users call `emit()` from their handler.
 - **Flexible Source Resolution for Routine Control Flow** — Three-layer source resolution for `map`/`fold` control flow operations. Replaces brittle `sourceKey: string` with flexible `source: ControlFlowSource` that supports:
   - **Simple key** (`source: 'items'`) — backward-compatible direct memory key lookup
   - **Task reference** (`source: { task: 'Research' }`) — resolves to `__task_output_{name}` with dep_result fallback

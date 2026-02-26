@@ -109,6 +109,8 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
 - 📧 **Microsoft Graph Tools** - NEW: Email, calendar, meetings, and Teams transcripts via Microsoft Graph API
 - 🔁 **Routine Execution** - NEW: Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
+- 📊 **Execution Recording** - NEW: Persist full routine execution history with `createExecutionRecorder()` — replaces manual hook wiring
+- ⏰ **Scheduling & Triggers** - NEW: `SimpleScheduler` for interval/one-time schedules, `EventEmitterTrigger` for webhook/queue-driven execution
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
@@ -1318,6 +1320,46 @@ const routine = createRoutineDefinition({
     },
   }],
 });
+```
+
+**Execution Recording:** Persist full execution history (steps, task snapshots, progress) with `createExecutionRecorder()`. Replaces ~140 lines of manual hook wiring with a single factory call:
+
+```typescript
+import {
+  createRoutineExecutionRecord, createExecutionRecorder,
+  type IRoutineExecutionStorage,
+} from '@everworker/oneringai';
+
+const record = createRoutineExecutionRecord(definition, 'openai', 'gpt-4');
+const execId = await storage.insert(userId, record);
+const recorder = createExecutionRecorder({ storage, executionId: execId });
+
+executeRoutine({
+  definition, agent, inputs,
+  hooks: recorder.hooks,
+  onTaskStarted: recorder.onTaskStarted,
+  onTaskComplete: recorder.onTaskComplete,
+  onTaskFailed: recorder.onTaskFailed,
+  onTaskValidation: recorder.onTaskValidation,
+})
+  .then(exec => recorder.finalize(exec))
+  .catch(err => recorder.finalize(null, err));
+```
+
+**Scheduling & Triggers:** Run routines on a timer or from external events:
+
+```typescript
+import { SimpleScheduler, EventEmitterTrigger } from '@everworker/oneringai';
+
+// Schedule: run every hour
+const scheduler = new SimpleScheduler();
+scheduler.schedule('hourly-report', { intervalMs: 3600000 }, () => executeRoutine({ ... }));
+
+// Event trigger: run from webhook
+const trigger = new EventEmitterTrigger();
+trigger.on('new-order', (payload) => executeRoutine({ ... }));
+// In your webhook handler:
+trigger.emit('new-order', { orderId: '123' });
 ```
 
 **Routine Persistence:** Save and load routine definitions with `FileRoutineDefinitionStorage` (or implement `IRoutineDefinitionStorage` for custom backends). Per-user isolation via optional `userId`. Integrated into `StorageRegistry` as `routineDefinitions`.

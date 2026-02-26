@@ -3595,6 +3595,196 @@ StorageRegistry.configure({
 });
 ```
 
+### Execution Recording
+
+Persist full routine execution history — every step, task snapshot, and progress update — without manually wiring hooks and callbacks.
+
+**Types:**
+
+| Type | Purpose |
+|------|---------|
+| `RoutineExecutionRecord` | Top-level persisted record (status, progress, tasks, steps, trigger info) |
+| `RoutineTaskSnapshot` | Per-task snapshot (status, attempts, result, controlFlowType) |
+| `RoutineExecutionStep` | Timestamped event (task.started, tool.call, llm.complete, etc.) |
+| `RoutineTaskResult` | Task outcome (success, output, error, validationScore) |
+
+**Factory functions:**
+
+```typescript
+import {
+  createRoutineExecutionRecord,
+  createTaskSnapshots,
+  createExecutionRecorder,
+} from '@everworker/oneringai';
+
+// 1. Create the initial record from a definition
+const record = createRoutineExecutionRecord(definition, 'openai', 'gpt-4', {
+  type: 'schedule',
+  source: 'daily-cron',
+});
+
+// 2. Insert into your storage backend
+const execId = await storage.insert(userId, record);
+
+// 3. Create recorder — returns ready-to-use hooks + callbacks
+const recorder = createExecutionRecorder({
+  storage,
+  executionId: execId,
+  logPrefix: '[MyRoutine]',
+  maxTruncateLength: 500,  // truncate tool args/results in steps
+});
+
+// 4. Wire into executeRoutine()
+executeRoutine({
+  definition, agent, inputs,
+  hooks: recorder.hooks,
+  onTaskStarted: recorder.onTaskStarted,
+  onTaskComplete: recorder.onTaskComplete,
+  onTaskFailed: recorder.onTaskFailed,
+  onTaskValidation: recorder.onTaskValidation,
+})
+  .then(exec => recorder.finalize(exec))
+  .catch(err => recorder.finalize(null, err));
+```
+
+**What the recorder tracks:**
+
+| Hook/Callback | Step Type(s) |
+|--------------|-------------|
+| `before:llm` | `llm.start` |
+| `after:llm` | `llm.complete` (with duration/tokens) |
+| `before:tool` | `tool.start` |
+| `after:tool` | `tool.call` (with args/result, truncated) |
+| `after:execution` | `iteration.complete` |
+| `pause:check` | heartbeat (`lastActivityAt` update) |
+| `onTaskStarted` | `task.started`, `control_flow.started` |
+| `onTaskComplete` | `task.completed`, `control_flow.completed` |
+| `onTaskFailed` | `task.failed` |
+| `onTaskValidation` | `task.validation` |
+| `finalize` | `execution.error` (on failure), final status update |
+
+**Storage interface (`IRoutineExecutionStorage`):**
+
+```typescript
+interface IRoutineExecutionStorage {
+  insert(userId: string | undefined, record: RoutineExecutionRecord): Promise<string>;
+  update(id: string, updates: Partial<Pick<RoutineExecutionRecord, 'status' | 'progress' | 'error' | 'completedAt' | 'lastActivityAt'>>): Promise<void>;
+  pushStep(id: string, step: RoutineExecutionStep): Promise<void>;
+  updateTask(id: string, taskName: string, updates: Partial<RoutineTaskSnapshot>): Promise<void>;
+  load(id: string): Promise<RoutineExecutionRecord | null>;
+  list(userId: string | undefined, options?: { routineId?: string; status?: RoutineExecutionStatus; limit?: number; offset?: number }): Promise<RoutineExecutionRecord[]>;
+  hasRunning(userId: string | undefined, routineId: string): Promise<boolean>;
+}
+```
+
+Implement this interface for your storage backend (MongoDB, PostgreSQL, file system, etc.). The library does not ship a default implementation — it's consumer-provided.
+
+**StorageRegistry integration:**
+
+```typescript
+StorageRegistry.configure({
+  routineExecutions: (ctx) => new MongoRoutineExecutionStorage(ctx?.userId),
+});
+```
+
+### Scheduling
+
+Run routines on a timer using `IScheduler`. The built-in `SimpleScheduler` supports interval and one-time schedules:
+
+```typescript
+import { SimpleScheduler } from '@everworker/oneringai';
+
+const scheduler = new SimpleScheduler();
+
+// Repeat every hour
+scheduler.schedule('hourly-report', { intervalMs: 3600000 }, async () => {
+  await executeRoutine({ definition: dailyRoutine, agent, inputs });
+});
+
+// Run once at a specific time
+scheduler.schedule('end-of-day', { once: endOfDayTimestamp }, async () => {
+  await executeRoutine({ definition: summaryRoutine, agent, inputs });
+});
+
+// Cancel a schedule
+scheduler.cancel('hourly-report');
+
+// Check if a schedule exists
+scheduler.has('hourly-report'); // false
+
+// Clean up all timers
+scheduler.destroy();
+```
+
+**`ScheduleSpec` options:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `intervalMs` | `number` | Repeat every N milliseconds |
+| `once` | `number` | Fire once at this Unix timestamp (ms) |
+| `cron` | `string` | Cron expression (not supported by `SimpleScheduler` — use a cron library) |
+| `timezone` | `string` | IANA timezone for cron expressions |
+
+**SimpleScheduler** is intentionally minimal. For cron support, implement `IScheduler` with a cron library (e.g., `croner`, `node-cron`):
+
+```typescript
+import type { IScheduler, ScheduleHandle, ScheduleSpec } from '@everworker/oneringai';
+import { Cron } from 'croner';
+
+class CronScheduler implements IScheduler {
+  private jobs = new Map<string, Cron>();
+  private _isDestroyed = false;
+
+  schedule(id: string, spec: ScheduleSpec, callback: () => void | Promise<void>): ScheduleHandle {
+    if (spec.cron) {
+      const job = new Cron(spec.cron, { timezone: spec.timezone }, callback);
+      this.jobs.set(id, job);
+      return { id, cancel: () => this.cancel(id) };
+    }
+    throw new Error('CronScheduler only handles cron specs');
+  }
+  cancel(id: string) { this.jobs.get(id)?.stop(); this.jobs.delete(id); }
+  cancelAll() { for (const [id] of this.jobs) this.cancel(id); }
+  has(id: string) { return this.jobs.has(id); }
+  destroy() { this.cancelAll(); this._isDestroyed = true; }
+  get isDestroyed() { return this._isDestroyed; }
+}
+```
+
+### Event Triggers
+
+Trigger routine execution from external events (webhooks, message queues, custom signals) using `EventEmitterTrigger`:
+
+```typescript
+import { EventEmitterTrigger } from '@everworker/oneringai';
+
+const trigger = new EventEmitterTrigger();
+
+// Register a handler
+const unsubscribe = trigger.on('new-order', async (payload) => {
+  const order = payload as { orderId: string; items: string[] };
+  await executeRoutine({
+    definition: orderProcessingRoutine,
+    agent,
+    inputs: { orderId: order.orderId, items: order.items },
+  });
+});
+
+// Emit from your webhook handler, queue consumer, etc.
+app.post('/webhooks/orders', (req, res) => {
+  trigger.emit('new-order', req.body);
+  res.sendStatus(200);
+});
+
+// Unsubscribe a specific handler
+unsubscribe();
+
+// Clean up all listeners
+trigger.destroy();
+```
+
+**Key design:** `EventEmitterTrigger` is intentionally simple — no `ITriggerSource` interface. For complex trigger systems (AWS SQS, RabbitMQ, Kafka), just call `trigger.emit()` from your consumer callback.
+
 ---
 
 ## Tools & Function Calling
