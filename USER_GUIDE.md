@@ -15,7 +15,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
    - Multi-User Support (`userId`)
-   - Connector Allowlist (`connectors`)
+   - Auth Identities (`identities`)
 6. [Session Persistence](#session-persistence)
    - [Centralized Storage Registry](#centralized-storage-registry) — One `configure()` for all backends, multi-tenant `StorageContext`
 7. [Context Management](#context-management)
@@ -213,7 +213,6 @@ const agent = Agent.create({
   // Optional settings
   temperature: 0.7,          // Randomness (0.0 - 1.0)
   maxIterations: 50,         // Max tool calling rounds (default: 50)
-  maxOutputTokens: 2000,     // Max response length
 
   instructions: `You are a helpful assistant.
                  Always be concise and professional.`,
@@ -482,33 +481,43 @@ const agent = Agent.create({
 agent.userId = 'user-123';
 ```
 
-### Connector Allowlist (`connectors`)
+### Auth Identities (`identities`)
 
-Restrict an agent to a subset of registered connectors. Only listed connectors appear in tool descriptions (e.g., `execute_javascript`) and are accessible in sandbox execution:
+Restrict an agent to specific connectors (and optionally specific accounts). Only listed identities produce tool sets and are accessible in sandbox execution:
 
 ```typescript
+import type { AuthIdentity } from '@everworker/oneringai';
+
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   userId: 'user-123',
-  connectors: ['github', 'slack'],  // Only these connectors available to tools
+  identities: [                       // Only these connectors available to tools
+    { connector: 'github' },
+    { connector: 'slack' },
+    { connector: 'microsoft', accountId: 'work' },  // Specific account
+  ],
   tools: [executeJavaScript],
 });
 
-// Tools only see github and slack — stripe, etc. are invisible
-// This works with userId scoping: allowlist filters on top of access-policy view
+// Tools only see github, slack, and microsoft (work account) — stripe, etc. are invisible
+// This works with userId scoping: identities filter on top of access-policy view
 
 // Change at runtime
-agent.connectors = ['github', 'slack', 'stripe'];
+agent.identities = [
+  { connector: 'github' },
+  { connector: 'slack' },
+  { connector: 'stripe' },
+];
 
 // Remove restriction (all visible connectors available)
-agent.connectors = undefined;
+agent.identities = undefined;
 ```
 
 **How it composes with access policies:**
 1. Access policy filters connectors by userId (if set)
-2. `connectors` allowlist further restricts to named subset
-3. Result: only connectors in the allowlist AND visible to the user
+2. `identities` further restricts to named connectors (and accounts)
+3. Result: only connectors matching identities AND visible to the user
 
 **Available via `ToolContext.connectorRegistry`** — tools that need connector access (like `execute_javascript`) read the pre-built, scoped registry directly from their execution context.
 
@@ -1233,7 +1242,7 @@ console.log(ctx2.tools.has('memory_store'));    // false
 ```
 
 **Tools registered by feature:**
-- **workingMemory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`
+- **workingMemory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw`
 - **inContextMemory=true**: `context_set`, `context_delete`, `context_list`
 - **persistentInstructions=true**: `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear`
 
@@ -2807,7 +2816,7 @@ Agent inherits `runDirect()` and `streamDirect()` methods from BaseAgent. These 
 
 | Use Case | Recommended Method |
 |----------|-------------------|
-| Conversational agent with history | `run()` / `chat()` |
+| Conversational agent with history | `run()` |
 | Task with memory and tools | `run()` with context features |
 | Quick one-off query | `runDirect()` |
 | Embedding-like simplicity | `runDirect()` |
@@ -2913,7 +2922,7 @@ for await (const event of agent.streamDirect('Explain quantum computing', {
 
 ### Comparison: run() vs runDirect()
 
-| Aspect | `run()` / `chat()` | `runDirect()` |
+| Aspect | `run()` | `runDirect()` |
 |--------|-------------------|---------------|
 | History tracking | ✅ Automatic | ❌ None |
 | WorkingMemory | ✅ Available | ❌ Not used |
@@ -4026,7 +4035,7 @@ const myTool: ToolFunction = {
     console.log(context?.agentId);  // Agent identifier
     console.log(context?.userId);   // User ID (set via agent.userId or config)
 
-    // Connector registry (scoped to agent's userId + connectors allowlist):
+    // Connector registry (scoped to agent's userId + identities):
     if (context?.connectorRegistry) {
       const names = context.connectorRegistry.list();  // Available connector names
       const gh = context.connectorRegistry.get('github'); // Get connector instance
@@ -4053,7 +4062,7 @@ The library ships with 38+ built-in tools across 8 categories:
 
 | Category | Tools | Description |
 |----------|-------|-------------|
-| **Memory** | `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list` | Working memory for agents (auto-registered when feature enabled) |
+| **Memory** | `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw` | Working memory for agents (auto-registered when feature enabled) |
 | **In-Context Memory** | `context_set`, `context_delete`, `context_list` | Key-value store visible directly in context (auto-registered) |
 | **Persistent Instructions** | `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear` | Cross-session agent instructions (auto-registered) |
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory` | Local file operations |
@@ -4082,7 +4091,8 @@ const agent = Agent.create({
 // - memory_store: Store key-value pair
 // - memory_retrieve: Retrieve value by key
 // - memory_delete: Delete entry
-// - memory_list: List all entries
+// - memory_query: Query/list entries (by tier, pattern, etc.)
+// - memory_cleanup_raw: Clean up raw tier entries
 
 // Programmatic access:
 const memory = agent.context.memory;

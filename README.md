@@ -92,7 +92,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔌 **Tool Execution Plugins** - NEW: Pluggable pipeline for logging, analytics, UI updates, custom behavior
 - 💾 **Session Persistence** - Save and resume conversations with full state restoration
 - 👤 **Multi-User Support** - Set `userId` once, flows automatically to all tool executions and session metadata
-- 🔒 **Connector Allowlist** - Restrict agents to a named subset of connectors, composable with access policies
+- 🔒 **Auth Identities** - Restrict agents to specific connectors (and accounts), composable with access policies
 - 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
 - 🤖 **Task Agents** - ⚠️ *Deprecated* - Use `Agent` with `WorkingMemoryPluginNextGen`
 - 🔬 **Research Agent** - ⚠️ *Deprecated* - Use `Agent` with search tools
@@ -120,7 +120,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
-> **v0.2.0 — Multi-User Support:** Set `userId` once on an agent and it automatically flows to all tool executions, OAuth token retrieval, session metadata, and connector scoping. Combine with `connectors` allowlist and access policies for complete multi-tenant isolation. See [Multi-User Support](#multi-user-support-userid) and [Connector Allowlist](#connector-allowlist-connectors) in the User Guide.
+> **v0.2.0 — Multi-User Support:** Set `userId` once on an agent and it automatically flows to all tool executions, OAuth token retrieval, session metadata, and connector scoping. Combine with `identities` and access policies for complete multi-tenant isolation. See [Multi-User Support](#multi-user-support-userid) and [Auth Identities](#auth-identities-identities) in the User Guide.
 
 ## Quick Start
 
@@ -454,7 +454,10 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   userId: 'user-123',            // Flows to all tool executions automatically
-  connectors: ['github', 'slack'], // Only these connectors visible to tools
+  identities: [                   // Only these connectors visible to tools
+    { connector: 'github' },
+    { connector: 'slack' },
+  ],
   tools: [weatherTool, emailTool],
   context: {
     features: {
@@ -685,7 +688,7 @@ const agent = Agent.create({
   },
 });
 
-// Agent now has memory_store, memory_retrieve, memory_delete, memory_list tools
+// Agent now has memory_store, memory_retrieve, memory_delete, memory_query tools
 await agent.run('Check weather for SF and remember the result');
 ```
 
@@ -793,7 +796,7 @@ const agent = Agent.create({
 **Available Features:**
 | Feature | Default | Plugin | Associated Tools |
 |---------|---------|--------|------------------|
-| `workingMemory` | `true` | WorkingMemoryPluginNextGen | `memory_store/retrieve/delete/list` |
+| `workingMemory` | `true` | WorkingMemoryPluginNextGen | `memory_store/retrieve/delete/query/cleanup_raw` |
 | `inContextMemory` | `false` | InContextMemoryPluginNextGen | `context_set/delete/list` |
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | `instructions_set/remove/list/clear` |
 | `userInfo` | `false` | UserInfoPluginNextGen | `user_info_set/get/remove/clear`, `todo_add/update/remove` |
@@ -971,7 +974,7 @@ for await (const event of agent.streamDirect('Tell me a story')) {
 
 **Comparison:**
 
-| Aspect | `run()` / `chat()` | `runDirect()` |
+| Aspect | `run()` | `runDirect()` |
 |--------|-------------------|---------------|
 | History tracking | ✅ | ❌ |
 | Memory/Cache | ✅ | ❌ |
@@ -1662,8 +1665,8 @@ const agent = Agent.create({
   model: 'gpt-4',
   context: {
     features: { toolCatalog: true },
+    toolCategories: ['filesystem', 'knowledge'],  // optional scope
   },
-  toolCategories: ['filesystem', 'knowledge'],  // optional scope
 });
 
 // Agent gets 3 metatools: tool_catalog_search, tool_catalog_load, tool_catalog_unload

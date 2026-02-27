@@ -377,10 +377,11 @@ const entries = await memory.list({ tier: 'findings' });
 ```
 
 **Tools provided:**
-- `memory_store` - Store key-value pair
-- `memory_retrieve` - Retrieve value by key
+- `memory_store` - Store data in working memory
+- `memory_retrieve` - Retrieve data by key
 - `memory_delete` - Delete entry
-- `memory_list` - List all entries
+- `memory_query` - Query memory (by tier, pattern, etc.)
+- `memory_cleanup_raw` - Cleanup raw tier
 
 ### InContextMemoryPluginNextGen
 
