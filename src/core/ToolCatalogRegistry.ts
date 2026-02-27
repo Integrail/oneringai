@@ -182,6 +182,9 @@ export class ToolCatalogRegistry {
    * Get the ConnectorTools module (lazy-loaded, cached).
    * Returns null if ConnectorTools is not available.
    * Uses false sentinel to prevent retrying after first failure.
+   *
+   * NOTE: The dynamic require() path fails in bundled environments (Meteor, Webpack).
+   * Call setConnectorToolsModule() at app startup to inject the module explicitly.
    */
   static getConnectorToolsModule(): { ConnectorTools: any } | null {
     if (this._connectorToolsModule === null) {
@@ -192,6 +195,22 @@ export class ToolCatalogRegistry {
       }
     }
     return this._connectorToolsModule || null;
+  }
+
+  /**
+   * Explicitly set the ConnectorTools module reference.
+   *
+   * Use this in bundled environments (Meteor, Webpack, etc.) where the lazy
+   * require('../../tools/connector/ConnectorTools.js') fails due to path resolution.
+   *
+   * @example
+   * ```typescript
+   * import { ToolCatalogRegistry, ConnectorTools } from '@everworker/oneringai';
+   * ToolCatalogRegistry.setConnectorToolsModule({ ConnectorTools });
+   * ```
+   */
+  static setConnectorToolsModule(mod: { ConnectorTools: any }): void {
+    this._connectorToolsModule = mod;
   }
 
   // ========================================================================
