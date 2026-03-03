@@ -175,6 +175,7 @@ SANDBOX API:
 
 VARIABLES:
    • input — data passed via the "input" parameter (default: {}). Always a parsed object/array, never a string.
+     CRITICAL: You MUST pass actual data values directly. Template placeholders ({{results}}, {{param.name}}, etc.) are NOT supported and will be passed as literal strings. If you need data from a previous tool call, include the actual returned data in the input object.
    • output — SET THIS to return your result to the caller
 
 GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
@@ -197,7 +198,8 @@ const resp = await authenticatedFetch('/chat.postMessage', {
 }, 'slack');
 output = await resp.json();
 ${accountIdExamples}
-// Data processing (no API needed)
+// Data processing — pass actual data via the input parameter, NOT template references
+// e.g. call with: { "code": "...", "input": { "data": [{"score": 0.9}, {"score": 0.5}] } }
 const items = input.data;
 output = items.filter(i => i.score > 0.8).sort((a, b) => b.score - a.score);
 
@@ -240,8 +242,11 @@ export function createExecuteJavaScriptTool(
             input: {
               description:
                 'Optional data available as the "input" variable in your code. ' +
-                'IMPORTANT: Pass as a JSON object/array directly, NOT as a stringified JSON string. ' +
-                'Correct: "input": {"deals": [...]}. Wrong: "input": "{\\"deals\\": [...]}".',
+                'IMPORTANT: Pass actual data directly as a JSON object/array. ' +
+                'Template placeholders like {{results}} or {{param.name}} are NOT supported here and will be passed as literal strings. ' +
+                'You must include the actual data values inline. ' +
+                'Correct: "input": {"deals": [{"id":"1"}, ...]}. ' +
+                'Wrong: "input": {"deals": "{{results}}"}.',
             },
             timeout: {
               type: 'number',
