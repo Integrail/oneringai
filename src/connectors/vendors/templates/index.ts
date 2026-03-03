@@ -39,13 +39,14 @@ export { rampTemplate } from './ramp.js';
 
 // Cloud
 export { awsTemplate } from './aws.js';
+export { cloudflareTemplate } from './cloudflare.js';
 
 // Storage
 export { dropboxTemplate } from './dropbox.js';
 export { boxTemplate } from './box.js';
 
 // Email
-export { sendgridTemplate, mailchimpTemplate, postmarkTemplate } from './email.js';
+export { sendgridTemplate, mailchimpTemplate, postmarkTemplate, mailgunTemplate } from './email.js';
 
 // Monitoring
 export { datadogTemplate, pagerdutyTemplate, sentryTemplate } from './monitoring.js';
@@ -98,9 +99,10 @@ import { paypalTemplate } from './paypal.js';
 import { quickbooksTemplate } from './quickbooks.js';
 import { rampTemplate } from './ramp.js';
 import { awsTemplate } from './aws.js';
+import { cloudflareTemplate } from './cloudflare.js';
 import { dropboxTemplate } from './dropbox.js';
 import { boxTemplate } from './box.js';
-import { sendgridTemplate, mailchimpTemplate, postmarkTemplate } from './email.js';
+import { sendgridTemplate, mailchimpTemplate, postmarkTemplate, mailgunTemplate } from './email.js';
 import { datadogTemplate, pagerdutyTemplate, sentryTemplate } from './monitoring.js';
 import {
   serperTemplate,
@@ -150,6 +152,7 @@ export const allVendorTemplates: VendorTemplate[] = [
 
   // Cloud
   awsTemplate,
+  cloudflareTemplate,
 
   // Storage
   dropboxTemplate,
@@ -159,6 +162,7 @@ export const allVendorTemplates: VendorTemplate[] = [
   sendgridTemplate,
   mailchimpTemplate,
   postmarkTemplate,
+  mailgunTemplate,
 
   // Monitoring
   datadogTemplate,

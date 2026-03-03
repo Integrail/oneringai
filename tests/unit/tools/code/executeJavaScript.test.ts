@@ -98,6 +98,58 @@ describe('executeJavaScript', () => {
     });
   });
 
+  describe('stringified JSON input auto-parsing', () => {
+    it('should auto-parse stringified JSON object input', async () => {
+      const result = await tool.execute({
+        code: `output = input.deals.length;`,
+        input: '{"deals":[{"id":"1"},{"id":"2"},{"id":"3"}]}'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe(3);
+    });
+
+    it('should auto-parse stringified JSON array input', async () => {
+      const result = await tool.execute({
+        code: `output = input.map(x => x.id);`,
+        input: '[{"id":"a"},{"id":"b"}]'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual(['a', 'b']);
+    });
+
+    it('should keep plain string input as-is', async () => {
+      const result = await tool.execute({
+        code: `output = input;`,
+        input: 'hello world'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe('hello world');
+    });
+
+    it('should keep invalid JSON string as-is', async () => {
+      const result = await tool.execute({
+        code: `output = input;`,
+        input: '{not valid json}'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe('{not valid json}');
+    });
+
+    it('should handle object input normally (no double-parse)', async () => {
+      const result = await tool.execute({
+        code: `output = input.x;`,
+        input: { x: 42 }
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe(42);
+    });
+  });
+
   describe('basic execution', () => {
     it('should execute simple sync code', async () => {
       const result = await tool.execute({

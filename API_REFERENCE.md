@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-26
+**Generated:** 2026-02-27
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -10785,11 +10785,30 @@ Get the ConnectorTools module (lazy-loaded, cached).
 Returns null if ConnectorTools is not available.
 Uses false sentinel to prevent retrying after first failure.
 
+NOTE: The dynamic require() path fails in bundled environments (Meteor, Webpack).
+Call setConnectorToolsModule() at app startup to inject the module explicitly.
+
 ```typescript
 static getConnectorToolsModule():
 ```
 
 **Returns:** `{ ConnectorTools: any; } | null`
+
+#### `static setConnectorToolsModule()`
+
+Explicitly set the ConnectorTools module reference.
+
+Use this in bundled environments (Meteor, Webpack, etc.) where the lazy
+require('../../tools/connector/ConnectorTools.js') fails due to path resolution.
+
+```typescript
+static setConnectorToolsModule(mod:
+```
+
+**Parameters:**
+- `mod`: `{ ConnectorTools: any; }`
+
+**Returns:** `void`
 
 #### `static registerCategory()`
 

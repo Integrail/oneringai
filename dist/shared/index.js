@@ -1576,6 +1576,14 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://aws.amazon.com",
     docsURL: "https://docs.aws.amazon.com/"
   },
+  {
+    id: "cloudflare",
+    name: "Cloudflare",
+    category: "cloud",
+    urlPattern: /api\.cloudflare\.com/i,
+    baseURL: "https://api.cloudflare.com/client/v4",
+    docsURL: "https://developers.cloudflare.com/api/"
+  },
   // ============ Storage ============
   {
     id: "dropbox",
@@ -1618,6 +1626,14 @@ var SERVICE_DEFINITIONS = [
     urlPattern: /api\.postmarkapp\.com/i,
     baseURL: "https://api.postmarkapp.com",
     docsURL: "https://postmarkapp.com/developer"
+  },
+  {
+    id: "mailgun",
+    name: "Mailgun",
+    category: "email",
+    urlPattern: /api\.mailgun\.net|api\.eu\.mailgun\.net/i,
+    baseURL: "https://api.mailgun.net/v3",
+    docsURL: "https://documentation.mailgun.com/docs/mailgun/api-reference/"
   },
   // ============ Monitoring & Observability ============
   {

@@ -174,7 +174,7 @@ SANDBOX API:
 4. connectors.get(name) — Connector info: { displayName, description, baseURL, serviceType }
 
 VARIABLES:
-   • input — data passed via the "input" parameter (default: {})
+   • input — data passed via the "input" parameter (default: {}). Always a parsed object/array, never a string.
    • output — SET THIS to return your result to the caller
 
 GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
@@ -238,7 +238,10 @@ export function createExecuteJavaScriptTool(
                 'For explicit async control, wrap in (async () => { ... })().',
             },
             input: {
-              description: 'Optional data available as the "input" variable in your code. Can be any JSON value.',
+              description:
+                'Optional data available as the "input" variable in your code. ' +
+                'IMPORTANT: Pass as a JSON object/array directly, NOT as a stringified JSON string. ' +
+                'Correct: "input": {"deals": [...]}. Wrong: "input": "{\\"deals\\": [...]}".',
             },
             timeout: {
               type: 'number',
@@ -269,9 +272,28 @@ export function createExecuteJavaScriptTool(
         // Get connector registry from context (already scoped by userId + allowed connectors)
         const registry = context?.connectorRegistry ?? Connector.asRegistry();
 
+        // Auto-parse stringified JSON input.
+        // LLMs frequently pass input as a JSON string instead of a JSON object
+        // (e.g. "input": "{\"deals\":[...]}" instead of "input": {"deals":[...]}).
+        // Detect and parse to avoid `undefined` when code accesses input.field.
+        let resolvedInput = args.input;
+        if (typeof resolvedInput === 'string') {
+          const trimmed = resolvedInput.trim();
+          if (
+            (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+            (trimmed.startsWith('[') && trimmed.endsWith(']'))
+          ) {
+            try {
+              resolvedInput = JSON.parse(trimmed);
+            } catch {
+              // Not valid JSON — keep as string
+            }
+          }
+        }
+
         // Execute in VM with userId and scoped registry
         const result = await executeInVM(
-          args.code, args.input, timeout, logs,
+          args.code, resolvedInput, timeout, logs,
           context?.userId, registry,
         );
 

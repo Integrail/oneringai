@@ -1,5 +1,5 @@
 /**
- * Email Vendor Templates (SendGrid, Mailchimp, Postmark)
+ * Email Vendor Templates (SendGrid, Mailchimp, Postmark, Mailgun)
  */
 import type { VendorTemplate } from '../types.js';
 
@@ -102,6 +102,33 @@ export const postmarkTemplate: VendorTemplate = {
         type: 'api_key',
         headerName: 'X-Postmark-Account-Token',
         headerPrefix: '',
+      },
+    },
+  ],
+};
+
+export const mailgunTemplate: VendorTemplate = {
+  id: 'mailgun',
+  name: 'Mailgun',
+  serviceType: 'mailgun',
+  baseURL: 'https://api.mailgun.net/v3',
+  docsURL: 'https://documentation.mailgun.com/docs/mailgun/api-reference/',
+  credentialsSetupURL: 'https://app.mailgun.com/settings/api_security',
+  category: 'email',
+  notes: 'EU region uses api.eu.mailgun.net. Most endpoints require /v3/<domain> in the path.',
+
+  authTemplates: [
+    {
+      id: 'api-key',
+      name: 'API Key',
+      type: 'api_key',
+      description:
+        'Private API key for full account access. Find at Settings > API Security',
+      requiredFields: ['apiKey'],
+      defaults: {
+        type: 'api_key',
+        headerName: 'Authorization',
+        headerPrefix: 'Basic',
       },
     },
   ],

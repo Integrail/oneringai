@@ -42320,6 +42320,14 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://aws.amazon.com",
     docsURL: "https://docs.aws.amazon.com/"
   },
+  {
+    id: "cloudflare",
+    name: "Cloudflare",
+    category: "cloud",
+    urlPattern: /api\.cloudflare\.com/i,
+    baseURL: "https://api.cloudflare.com/client/v4",
+    docsURL: "https://developers.cloudflare.com/api/"
+  },
   // ============ Storage ============
   {
     id: "dropbox",
@@ -42362,6 +42370,14 @@ var SERVICE_DEFINITIONS = [
     urlPattern: /api\.postmarkapp\.com/i,
     baseURL: "https://api.postmarkapp.com",
     docsURL: "https://postmarkapp.com/developer"
+  },
+  {
+    id: "mailgun",
+    name: "Mailgun",
+    category: "email",
+    urlPattern: /api\.mailgun\.net|api\.eu\.mailgun\.net/i,
+    baseURL: "https://api.mailgun.net/v3",
+    docsURL: "https://documentation.mailgun.com/docs/mailgun/api-reference/"
   },
   // ============ Monitoring & Observability ============
   {
@@ -45102,6 +45118,43 @@ var awsTemplate = {
   ]
 };
 
+// src/connectors/vendors/templates/cloudflare.ts
+var cloudflareTemplate = {
+  id: "cloudflare",
+  name: "Cloudflare",
+  serviceType: "cloudflare",
+  baseURL: "https://api.cloudflare.com/client/v4",
+  docsURL: "https://developers.cloudflare.com/api/",
+  credentialsSetupURL: "https://dash.cloudflare.com/profile/api-tokens",
+  category: "cloud",
+  notes: "API Tokens (recommended) are scoped and more secure. Global API Key requires email and has full account access.",
+  authTemplates: [
+    {
+      id: "api-token",
+      name: "API Token",
+      type: "api_key",
+      description: "Scoped API token (recommended). Create at dash.cloudflare.com > My Profile > API Tokens",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "global-api-key",
+      name: "Global API Key",
+      type: "api_key",
+      description: "Legacy global API key + email. Has full account access. Prefer API Tokens for least-privilege access",
+      requiredFields: ["apiKey", "username"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-Auth-Key"
+      }
+    }
+  ]
+};
+
 // src/connectors/vendors/templates/dropbox.ts
 var dropboxTemplate = {
   id: "dropbox",
@@ -45286,6 +45339,30 @@ var postmarkTemplate = {
         type: "api_key",
         headerName: "X-Postmark-Account-Token",
         headerPrefix: ""
+      }
+    }
+  ]
+};
+var mailgunTemplate = {
+  id: "mailgun",
+  name: "Mailgun",
+  serviceType: "mailgun",
+  baseURL: "https://api.mailgun.net/v3",
+  docsURL: "https://documentation.mailgun.com/docs/mailgun/api-reference/",
+  credentialsSetupURL: "https://app.mailgun.com/settings/api_security",
+  category: "email",
+  notes: "EU region uses api.eu.mailgun.net. Most endpoints require /v3/<domain> in the path.",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "Private API key for full account access. Find at Settings > API Security",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
       }
     }
   ]
@@ -45738,6 +45815,7 @@ var allVendorTemplates = [
   rampTemplate,
   // Cloud
   awsTemplate,
+  cloudflareTemplate,
   // Storage
   dropboxTemplate,
   boxTemplate,
@@ -45745,6 +45823,7 @@ var allVendorTemplates = [
   sendgridTemplate,
   mailchimpTemplate,
   postmarkTemplate,
+  mailgunTemplate,
   // Monitoring
   datadogTemplate,
   pagerdutyTemplate,
@@ -49102,7 +49181,7 @@ SANDBOX API:
 4. connectors.get(name) \u2014 Connector info: { displayName, description, baseURL, serviceType }
 
 VARIABLES:
-   \u2022 input \u2014 data passed via the "input" parameter (default: {})
+   \u2022 input \u2014 data passed via the "input" parameter (default: {}). Always a parsed object/array, never a string.
    \u2022 output \u2014 SET THIS to return your result to the caller
 
 GLOBALS: console.log/error/warn, JSON, Math, Date, Buffer, Promise, Array, Object, String, Number, Boolean, setTimeout, setInterval, URL, URLSearchParams, RegExp, Map, Set, Error, TextEncoder, TextDecoder
@@ -49149,7 +49228,7 @@ function createExecuteJavaScriptTool(options) {
               description: 'JavaScript code to execute. Set the "output" variable with your result. Code is auto-wrapped in async IIFE \u2014 you can use await directly. For explicit async control, wrap in (async () => { ... })().'
             },
             input: {
-              description: 'Optional data available as the "input" variable in your code. Can be any JSON value.'
+              description: 'Optional data available as the "input" variable in your code. IMPORTANT: Pass as a JSON object/array directly, NOT as a stringified JSON string. Correct: "input": {"deals": [...]}. Wrong: "input": "{\\"deals\\": [...]}".'
             },
             timeout: {
               type: "number",
@@ -49172,9 +49251,19 @@ function createExecuteJavaScriptTool(options) {
       try {
         const timeout = Math.min(Math.max(args.timeout || defaultTimeout, 0), maxTimeout);
         const registry = context?.connectorRegistry ?? Connector.asRegistry();
+        let resolvedInput = args.input;
+        if (typeof resolvedInput === "string") {
+          const trimmed = resolvedInput.trim();
+          if (trimmed.startsWith("{") && trimmed.endsWith("}") || trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            try {
+              resolvedInput = JSON.parse(trimmed);
+            } catch {
+            }
+          }
+        }
         const result = await executeInVM(
           args.code,
-          args.input,
+          resolvedInput,
           timeout,
           logs,
           context?.userId,
