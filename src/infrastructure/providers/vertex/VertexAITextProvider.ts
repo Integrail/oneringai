@@ -73,6 +73,13 @@ export class VertexAITextProvider extends BaseTextProvider {
       // Convert our format → Google format (same as regular Gemini API)
       const googleRequest = await this.converter.convertRequest(options);
 
+      console.log(
+        `[VertexAITextProvider] generate: calling Vertex AI (model=${options.model}, ` +
+        `contents=${googleRequest.contents?.length ?? 0} messages, ` +
+        `tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`,
+      );
+      const genStartTime = Date.now();
+
       // Call Vertex AI using new SDK structure
       // Note: contents goes at top level, generation config properties go directly in config
       const result = await this.client.models.generateContent({
@@ -85,10 +92,14 @@ export class VertexAITextProvider extends BaseTextProvider {
           ...googleRequest.generationConfig,
         },
       });
+      console.log(
+        `[VertexAITextProvider] generate: response received (${Date.now() - genStartTime}ms)`,
+      );
 
       // Convert response → our format (same as regular Gemini API)
       return this.converter.convertResponse(result);
     } catch (error: any) {
+      console.error(`[VertexAITextProvider] generate error (model=${options.model}):`, error.message || error);
       this.handleError(error, options.model);
       throw error; // TypeScript needs this
     }
@@ -102,6 +113,13 @@ export class VertexAITextProvider extends BaseTextProvider {
       // Convert our format → Google format
       const googleRequest = await this.converter.convertRequest(options);
 
+      console.log(
+        `[VertexAITextProvider] streamGenerate: calling Vertex AI (model=${options.model}, ` +
+        `contents=${googleRequest.contents?.length ?? 0} messages, ` +
+        `tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`,
+      );
+      const streamStartTime = Date.now();
+
       // Create stream using new SDK
       // Note: contents goes at top level, generation config properties go directly in config
       const stream = await this.client.models.generateContentStream({
@@ -114,11 +132,25 @@ export class VertexAITextProvider extends BaseTextProvider {
           ...googleRequest.generationConfig,
         },
       });
+      console.log(
+        `[VertexAITextProvider] streamGenerate: Vertex AI stream opened (${Date.now() - streamStartTime}ms)`,
+      );
 
       // Convert Google stream → our StreamEvent format
       const streamConverter = new GoogleStreamConverter();
-      yield* streamConverter.convertStream(stream, options.model);
+      let chunkCount = 0;
+      for await (const event of streamConverter.convertStream(stream, options.model)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[VertexAITextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`,
+      );
     } catch (error: any) {
+      console.error(
+        `[VertexAITextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error,
+      );
       this.handleError(error, options.model);
       throw error;
     }

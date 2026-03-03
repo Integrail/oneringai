@@ -20523,9 +20523,17 @@ var OpenAITextProvider = class extends BaseTextProvider {
           ...options.metadata && { metadata: options.metadata }
         };
         this.applyReasoningConfig(params, options);
+        console.log(
+          `[OpenAITextProvider] generate: calling OpenAI API (model=${options.model}, tools=${params.tools?.length ?? 0})`
+        );
+        const genStartTime = Date.now();
         const response = await this.client.responses.create(params);
+        console.log(
+          `[OpenAITextProvider] generate: response received (${Date.now() - genStartTime}ms)`
+        );
         return this.converter.convertResponse(response);
       } catch (error) {
+        console.error(`[OpenAITextProvider] generate error (model=${options.model}):`, error.message || error);
         this.handleError(error, options.model);
         throw error;
       }
@@ -20565,9 +20573,27 @@ var OpenAITextProvider = class extends BaseTextProvider {
         stream: true
       };
       this.applyReasoningConfig(params, options);
+      console.log(
+        `[OpenAITextProvider] streamGenerate: calling OpenAI API (model=${options.model}, tools=${params.tools?.length ?? 0})`
+      );
+      const streamStartTime = Date.now();
       const stream = await this.client.responses.create(params);
-      yield* this.streamConverter.convertStream(stream);
+      console.log(
+        `[OpenAITextProvider] streamGenerate: OpenAI stream opened (${Date.now() - streamStartTime}ms)`
+      );
+      let chunkCount = 0;
+      for await (const event of this.streamConverter.convertStream(stream)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[OpenAITextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`
+      );
     } catch (error) {
+      console.error(
+        `[OpenAITextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error
+      );
       this.handleError(error, options.model);
       throw error;
     }
@@ -21573,12 +21599,20 @@ var AnthropicTextProvider = class extends BaseTextProvider {
     return this.executeWithCircuitBreaker(async () => {
       try {
         const anthropicRequest = this.converter.convertRequest(options);
+        console.log(
+          `[AnthropicTextProvider] generate: calling Anthropic API (model=${options.model}, messages=${anthropicRequest.messages?.length ?? 0}, tools=${anthropicRequest.tools?.length ?? 0})`
+        );
+        const genStartTime = Date.now();
         const anthropicResponse = await this.client.messages.create({
           ...anthropicRequest,
           stream: false
         });
+        console.log(
+          `[AnthropicTextProvider] generate: response received (${Date.now() - genStartTime}ms)`
+        );
         return this.converter.convertResponse(anthropicResponse);
       } catch (error) {
+        console.error(`[AnthropicTextProvider] generate error (model=${options.model}):`, error.message || error);
         this.handleError(error, options.model);
         throw error;
       }
@@ -21590,13 +21624,31 @@ var AnthropicTextProvider = class extends BaseTextProvider {
   async *streamGenerate(options) {
     try {
       const anthropicRequest = this.converter.convertRequest(options);
+      console.log(
+        `[AnthropicTextProvider] streamGenerate: calling Anthropic API (model=${options.model}, messages=${anthropicRequest.messages?.length ?? 0}, tools=${anthropicRequest.tools?.length ?? 0})`
+      );
+      const streamStartTime = Date.now();
       const stream = await this.client.messages.create({
         ...anthropicRequest,
         stream: true
       });
+      console.log(
+        `[AnthropicTextProvider] streamGenerate: Anthropic stream opened (${Date.now() - streamStartTime}ms)`
+      );
       this.streamConverter.reset();
-      yield* this.streamConverter.convertStream(stream, options.model);
+      let chunkCount = 0;
+      for await (const event of this.streamConverter.convertStream(stream, options.model)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[AnthropicTextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`
+      );
     } catch (error) {
+      console.error(
+        `[AnthropicTextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error
+      );
       this.handleError(error, options.model);
       throw error;
     } finally {
@@ -22390,6 +22442,10 @@ var GoogleTextProvider = class extends BaseTextProvider {
             // First message only
           }, null, 2));
         }
+        console.log(
+          `[GoogleTextProvider] generate: calling Google API (model=${options.model}, contents=${googleRequest.contents?.length ?? 0} messages, tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`
+        );
+        const genStartTime = Date.now();
         const result = await this.client.models.generateContent({
           model: options.model,
           contents: googleRequest.contents,
@@ -22400,6 +22456,9 @@ var GoogleTextProvider = class extends BaseTextProvider {
             ...googleRequest.generationConfig
           }
         });
+        console.log(
+          `[GoogleTextProvider] generate: response received (${Date.now() - genStartTime}ms)`
+        );
         if (process.env.DEBUG_GOOGLE) {
           console.error("[DEBUG] Google Response:", JSON.stringify({
             candidates: result.candidates?.map((c) => ({
@@ -22418,6 +22477,7 @@ var GoogleTextProvider = class extends BaseTextProvider {
         }
         return response;
       } catch (error) {
+        console.error(`[GoogleTextProvider] generate error (model=${options.model}):`, error.message || error);
         this.converter.clearMappings();
         this.handleError(error, options.model);
         throw error;
@@ -22430,6 +22490,10 @@ var GoogleTextProvider = class extends BaseTextProvider {
   async *streamGenerate(options) {
     try {
       const googleRequest = await this.converter.convertRequest(options);
+      console.log(
+        `[GoogleTextProvider] streamGenerate: calling Google API (model=${options.model}, contents=${googleRequest.contents?.length ?? 0} messages, tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`
+      );
+      const streamStartTime = Date.now();
       const stream = await this.client.models.generateContentStream({
         model: options.model,
         contents: googleRequest.contents,
@@ -22440,13 +22504,27 @@ var GoogleTextProvider = class extends BaseTextProvider {
           ...googleRequest.generationConfig
         }
       });
+      console.log(
+        `[GoogleTextProvider] streamGenerate: Google stream opened (${Date.now() - streamStartTime}ms)`
+      );
       this.streamConverter.reset();
-      yield* this.streamConverter.convertStream(stream, options.model);
+      let chunkCount = 0;
+      for await (const event of this.streamConverter.convertStream(stream, options.model)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[GoogleTextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`
+      );
       if (!this.streamConverter.hasToolCalls()) {
         this.converter.clearMappings();
         this.streamConverter.clear();
       }
     } catch (error) {
+      console.error(
+        `[GoogleTextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error
+      );
       this.converter.clearMappings();
       this.streamConverter.clear();
       this.handleError(error, options.model);
@@ -22533,6 +22611,10 @@ var VertexAITextProvider = class extends BaseTextProvider {
   async generate(options) {
     try {
       const googleRequest = await this.converter.convertRequest(options);
+      console.log(
+        `[VertexAITextProvider] generate: calling Vertex AI (model=${options.model}, contents=${googleRequest.contents?.length ?? 0} messages, tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`
+      );
+      const genStartTime = Date.now();
       const result = await this.client.models.generateContent({
         model: options.model,
         contents: googleRequest.contents,
@@ -22543,8 +22625,12 @@ var VertexAITextProvider = class extends BaseTextProvider {
           ...googleRequest.generationConfig
         }
       });
+      console.log(
+        `[VertexAITextProvider] generate: response received (${Date.now() - genStartTime}ms)`
+      );
       return this.converter.convertResponse(result);
     } catch (error) {
+      console.error(`[VertexAITextProvider] generate error (model=${options.model}):`, error.message || error);
       this.handleError(error, options.model);
       throw error;
     }
@@ -22555,6 +22641,10 @@ var VertexAITextProvider = class extends BaseTextProvider {
   async *streamGenerate(options) {
     try {
       const googleRequest = await this.converter.convertRequest(options);
+      console.log(
+        `[VertexAITextProvider] streamGenerate: calling Vertex AI (model=${options.model}, contents=${googleRequest.contents?.length ?? 0} messages, tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`
+      );
+      const streamStartTime = Date.now();
       const stream = await this.client.models.generateContentStream({
         model: options.model,
         contents: googleRequest.contents,
@@ -22565,9 +22655,23 @@ var VertexAITextProvider = class extends BaseTextProvider {
           ...googleRequest.generationConfig
         }
       });
+      console.log(
+        `[VertexAITextProvider] streamGenerate: Vertex AI stream opened (${Date.now() - streamStartTime}ms)`
+      );
       const streamConverter = new GoogleStreamConverter();
-      yield* streamConverter.convertStream(stream, options.model);
+      let chunkCount = 0;
+      for await (const event of streamConverter.convertStream(stream, options.model)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[VertexAITextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`
+      );
     } catch (error) {
+      console.error(
+        `[VertexAITextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error
+      );
       this.handleError(error, options.model);
       throw error;
     }

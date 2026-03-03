@@ -52,15 +52,25 @@ export class AnthropicTextProvider extends BaseTextProvider {
         // Convert our format → Anthropic Messages API format
         const anthropicRequest = this.converter.convertRequest(options);
 
+        console.log(
+          `[AnthropicTextProvider] generate: calling Anthropic API (model=${options.model}, ` +
+          `messages=${anthropicRequest.messages?.length ?? 0}, tools=${anthropicRequest.tools?.length ?? 0})`,
+        );
+        const genStartTime = Date.now();
+
         // Call Anthropic API (not stream)
         const anthropicResponse = await this.client.messages.create({
           ...anthropicRequest,
           stream: false,
         });
+        console.log(
+          `[AnthropicTextProvider] generate: response received (${Date.now() - genStartTime}ms)`,
+        );
 
         // Convert Anthropic response → our format
         return this.converter.convertResponse(anthropicResponse);
       } catch (error: any) {
+        console.error(`[AnthropicTextProvider] generate error (model=${options.model}):`, error.message || error);
         this.handleError(error, options.model);
         throw error; // TypeScript needs this
       }
@@ -75,18 +85,39 @@ export class AnthropicTextProvider extends BaseTextProvider {
       // Convert our format → Anthropic Messages API format
       const anthropicRequest = this.converter.convertRequest(options);
 
+      console.log(
+        `[AnthropicTextProvider] streamGenerate: calling Anthropic API (model=${options.model}, ` +
+        `messages=${anthropicRequest.messages?.length ?? 0}, ` +
+        `tools=${anthropicRequest.tools?.length ?? 0})`,
+      );
+      const streamStartTime = Date.now();
+
       // Create stream
       const stream = await this.client.messages.create({
         ...anthropicRequest,
         stream: true,
       });
+      console.log(
+        `[AnthropicTextProvider] streamGenerate: Anthropic stream opened (${Date.now() - streamStartTime}ms)`,
+      );
 
       // Reset stream converter for reuse
       this.streamConverter.reset();
 
       // Convert Anthropic events → our StreamEvent format
-      yield* this.streamConverter.convertStream(stream, options.model);
+      let chunkCount = 0;
+      for await (const event of this.streamConverter.convertStream(stream, options.model)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[AnthropicTextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`,
+      );
     } catch (error: any) {
+      console.error(
+        `[AnthropicTextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error,
+      );
       this.handleError(error, options.model);
       throw error;
     } finally {

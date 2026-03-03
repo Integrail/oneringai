@@ -70,6 +70,13 @@ export class GoogleTextProvider extends BaseTextProvider {
           }, null, 2));
         }
 
+        console.log(
+          `[GoogleTextProvider] generate: calling Google API (model=${options.model}, ` +
+          `contents=${googleRequest.contents?.length ?? 0} messages, ` +
+          `tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`,
+        );
+        const genStartTime = Date.now();
+
         // Call Google API using new SDK structure
         // Note: contents goes at top level, generation config properties go directly in config
         const result = await this.client.models.generateContent({
@@ -82,6 +89,9 @@ export class GoogleTextProvider extends BaseTextProvider {
             ...googleRequest.generationConfig,
           },
         });
+        console.log(
+          `[GoogleTextProvider] generate: response received (${Date.now() - genStartTime}ms)`,
+        );
 
         // Debug logging for response
         if (process.env.DEBUG_GOOGLE) {
@@ -108,6 +118,7 @@ export class GoogleTextProvider extends BaseTextProvider {
 
         return response;
       } catch (error: any) {
+        console.error(`[GoogleTextProvider] generate error (model=${options.model}):`, error.message || error);
         // Clear mappings on error to prevent stale state
         this.converter.clearMappings();
         this.handleError(error, options.model);
@@ -126,6 +137,12 @@ export class GoogleTextProvider extends BaseTextProvider {
 
       // Create stream using new SDK
       // Note: contents goes at top level, generation config properties go directly in config
+      console.log(
+        `[GoogleTextProvider] streamGenerate: calling Google API (model=${options.model}, ` +
+        `contents=${googleRequest.contents?.length ?? 0} messages, ` +
+        `tools=${googleRequest.tools?.[0]?.functionDeclarations?.length ?? 0} tools)`,
+      );
+      const streamStartTime = Date.now();
       const stream = await this.client.models.generateContentStream({
         model: options.model,
         contents: googleRequest.contents,
@@ -136,12 +153,22 @@ export class GoogleTextProvider extends BaseTextProvider {
           ...googleRequest.generationConfig,
         },
       });
+      console.log(
+        `[GoogleTextProvider] streamGenerate: Google stream opened (${Date.now() - streamStartTime}ms)`,
+      );
 
       // Reset stream converter for reuse
       this.streamConverter.reset();
 
       // Convert Google stream → our StreamEvent format
-      yield* this.streamConverter.convertStream(stream, options.model);
+      let chunkCount = 0;
+      for await (const event of this.streamConverter.convertStream(stream, options.model)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[GoogleTextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`,
+      );
 
       // Only clear mappings when conversation is complete (no pending tool calls)
       // For Gemini 3+, thought signatures must persist across tool execution rounds
@@ -151,6 +178,10 @@ export class GoogleTextProvider extends BaseTextProvider {
       }
     } catch (error: any) {
       // Clear converters on error to prevent stale state
+      console.error(
+        `[GoogleTextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error,
+      );
       this.converter.clearMappings();
       this.streamConverter.clear();
       this.handleError(error, options.model);

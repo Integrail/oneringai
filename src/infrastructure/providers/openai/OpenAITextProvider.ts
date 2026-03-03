@@ -104,12 +104,21 @@ export class OpenAITextProvider extends BaseTextProvider {
         // Add reasoning config from unified thinking option
         this.applyReasoningConfig(params, options);
 
+        console.log(
+          `[OpenAITextProvider] generate: calling OpenAI API (model=${options.model}, tools=${params.tools?.length ?? 0})`,
+        );
+        const genStartTime = Date.now();
+
         // Call Responses API
         const response = await this.client.responses.create(params);
+        console.log(
+          `[OpenAITextProvider] generate: response received (${Date.now() - genStartTime}ms)`,
+        );
 
         // Convert response to our format
         return this.converter.convertResponse(response);
       } catch (error: any) {
+        console.error(`[OpenAITextProvider] generate error (model=${options.model}):`, error.message || error);
         this.handleError(error, options.model);
         throw error; // TypeScript needs this
       }
@@ -158,12 +167,32 @@ export class OpenAITextProvider extends BaseTextProvider {
       // Add reasoning config from unified thinking option
       this.applyReasoningConfig(params, options);
 
+      console.log(
+        `[OpenAITextProvider] streamGenerate: calling OpenAI API (model=${options.model}, ` +
+        `tools=${params.tools?.length ?? 0})`,
+      );
+      const streamStartTime = Date.now();
+
       // Call Responses API with streaming
       const stream = await this.client.responses.create(params) as any;
+      console.log(
+        `[OpenAITextProvider] streamGenerate: OpenAI stream opened (${Date.now() - streamStartTime}ms)`,
+      );
 
       // Convert stream events using the stream converter
-      yield* this.streamConverter.convertStream(stream as AsyncIterable<ResponsesAPI.ResponseStreamEvent>);
+      let chunkCount = 0;
+      for await (const event of this.streamConverter.convertStream(stream as AsyncIterable<ResponsesAPI.ResponseStreamEvent>)) {
+        chunkCount++;
+        yield event;
+      }
+      console.log(
+        `[OpenAITextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`,
+      );
     } catch (error: any) {
+      console.error(
+        `[OpenAITextProvider] streamGenerate error (model=${options.model}):`,
+        error.message || error,
+      );
       this.handleError(error, options.model);
       throw error;
     }
