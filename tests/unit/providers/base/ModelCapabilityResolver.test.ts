@@ -46,7 +46,7 @@ describe('ModelCapabilityResolver', () => {
     it('should resolve Google models from registry', () => {
       const caps = resolveModelCapabilities('gemini-2.5-pro', GENERIC_DEFAULTS);
 
-      expect(caps.maxTokens).toBe(1000000);
+      expect(caps.maxTokens).toBe(1048576);
       expect(caps.maxOutputTokens).toBe(65536);
       expect(caps.supportsTools).toBe(true);
     });

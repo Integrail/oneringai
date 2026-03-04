@@ -67,8 +67,12 @@ export interface TTSModelCapabilities {
  * TTS model pricing
  */
 export interface TTSModelPricing {
-  /** Cost per 1,000 characters */
-  per1kCharacters: number;
+  /** Cost per 1,000 characters (OpenAI) */
+  per1kCharacters?: number;
+  /** Cost per 1M input tokens (Google) */
+  perMInputTokens?: number;
+  /** Cost per 1M output tokens (Google) */
+  perMOutputTokens?: number;
   currency: 'USD';
 }
 
@@ -217,13 +221,13 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     name: 'gemini-2.5-flash-preview-tts',
     displayName: 'Gemini 2.5 Flash TTS',
     provider: Vendor.Google,
-    description: 'Google Gemini 2.5 Flash TTS - optimized for low latency',
+    description: 'Google Gemini 2.5 Flash TTS - optimized for low latency, 30 voices, 70+ languages',
     isActive: true,
     releaseDate: '2025-01-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -237,7 +241,12 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
         voiceCloning: false,
         wordTimestamps: false,
       },
-      limits: { maxInputLength: 32000 }, // 32k tokens
+      limits: { maxInputLength: 32000 }, // 32k token context window
+    },
+    pricing: {
+      perMInputTokens: 0.50, // $0.50 per 1M input tokens
+      perMOutputTokens: 10.00, // $10.00 per 1M output tokens
+      currency: 'USD',
     },
   },
 
@@ -245,13 +254,13 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     name: 'gemini-2.5-pro-preview-tts',
     displayName: 'Gemini 2.5 Pro TTS',
     provider: Vendor.Google,
-    description: 'Google Gemini 2.5 Pro TTS - optimized for quality',
+    description: 'Google Gemini 2.5 Pro TTS - optimized for quality, 30 voices, 70+ languages',
     isActive: true,
     releaseDate: '2025-01-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -265,7 +274,12 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
         voiceCloning: false,
         wordTimestamps: false,
       },
-      limits: { maxInputLength: 32000 }, // 32k tokens
+      limits: { maxInputLength: 32000 }, // 32k token context window
+    },
+    pricing: {
+      perMInputTokens: 1.00, // $1.00 per 1M input tokens
+      perMOutputTokens: 20.00, // $20.00 per 1M output tokens
+      currency: 'USD',
     },
   },
 };
@@ -293,9 +307,30 @@ export function getTTSModelsWithFeature(
 
 /**
  * Calculate estimated cost for TTS
+ * For OpenAI models: based on character count
+ * For Google models: based on input/output token count
  */
-export function calculateTTSCost(modelName: string, characterCount: number): number | null {
+export function calculateTTSCost(
+  modelName: string,
+  characterCount: number,
+  options?: { inputTokens?: number; outputTokens?: number }
+): number | null {
   const model = getTTSModelInfo(modelName);
   if (!model?.pricing) return null;
-  return (characterCount / 1000) * model.pricing.per1kCharacters;
+
+  // OpenAI character-based pricing
+  if (model.pricing.per1kCharacters) {
+    return (characterCount / 1000) * model.pricing.per1kCharacters;
+  }
+
+  // Google token-based pricing
+  if (model.pricing.perMInputTokens && options?.inputTokens != null) {
+    const inputCost = (options.inputTokens / 1_000_000) * model.pricing.perMInputTokens;
+    const outputCost = options.outputTokens
+      ? (options.outputTokens / 1_000_000) * (model.pricing.perMOutputTokens ?? 0)
+      : 0;
+    return inputCost + outputCost;
+  }
+
+  return null;
 }

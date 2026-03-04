@@ -11,30 +11,30 @@ import { Vendor } from '../../../../src/core/Vendor.js';
 
 describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
-    it('should have all 35 models', () => {
+    it('should have all 45 models', () => {
       const modelCount = Object.keys(MODEL_REGISTRY).length;
-      expect(modelCount).toBe(35);
+      expect(modelCount).toBe(51);
     });
 
-    it('should have 12 OpenAI models', () => {
+    it('should have 22 OpenAI models', () => {
       const openAIModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.OpenAI
       );
-      expect(openAIModels).toHaveLength(12);
+      expect(openAIModels).toHaveLength(22);
     });
 
-    it('should have 7 Anthropic models', () => {
+    it('should have 10 Anthropic models', () => {
       const anthropicModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.Anthropic
       );
-      expect(anthropicModels).toHaveLength(7);
+      expect(anthropicModels).toHaveLength(10);
     });
 
-    it('should have 7 Google models', () => {
+    it('should have 10 Google models', () => {
       const googleModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.Google
       );
-      expect(googleModels).toHaveLength(7);
+      expect(googleModels).toHaveLength(10);
     });
 
     it('should have 9 Grok models', () => {
@@ -48,7 +48,7 @@ describe('Model Registry', () => {
       const activeCount = Object.values(MODEL_REGISTRY).filter(
         (model) => model.isActive
       ).length;
-      expect(activeCount).toBe(35);
+      expect(activeCount).toBe(51);
     });
 
     it('should have valid pricing for all models', () => {
@@ -70,11 +70,23 @@ describe('Model Registry', () => {
     it('should have OpenAI model constants', () => {
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2).toBe('gpt-5.2');
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2_PRO).toBe('gpt-5.2-pro');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2_CODEX).toBe('gpt-5.2-codex');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2_CHAT).toBe('gpt-5.2-chat-latest');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_3_CODEX).toBe('gpt-5.3-codex');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_3_CHAT).toBe('gpt-5.3-chat-latest');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_1).toBe('gpt-5.1');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_1_CODEX).toBe('gpt-5.1-codex');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_1_CODEX_MAX).toBe('gpt-5.1-codex-max');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_1_CODEX_MINI).toBe('gpt-5.1-codex-mini');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_1_CHAT).toBe('gpt-5.1-chat-latest');
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5).toBe('gpt-5');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_5_CHAT).toBe('gpt-5-chat-latest');
       expect(LLM_MODELS[Vendor.OpenAI].O3_MINI).toBe('o3-mini');
     });
 
     it('should have Anthropic model constants', () => {
+      expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4_6).toBe('claude-opus-4-6');
+      expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_SONNET_4_6).toBe('claude-sonnet-4-6');
       expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4_5).toBe(
         'claude-opus-4-5-20251101'
       );
@@ -84,12 +96,14 @@ describe('Model Registry', () => {
       expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_HAIKU_4_5).toBe(
         'claude-haiku-4-5-20251001'
       );
+      expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4).toBe('claude-opus-4-20250514');
     });
 
     it('should have Google model constants', () => {
-      expect(LLM_MODELS[Vendor.Google].GEMINI_3_FLASH_PREVIEW).toBe(
-        'gemini-3-flash-preview'
-      );
+      expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_PRO_PREVIEW).toBe('gemini-3.1-pro-preview');
+      expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_FLASH_LITE_PREVIEW).toBe('gemini-3.1-flash-lite-preview');
+      expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE_PREVIEW).toBe('gemini-3.1-flash-image-preview');
+      expect(LLM_MODELS[Vendor.Google].GEMINI_3_FLASH_PREVIEW).toBe('gemini-3-flash-preview');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_PRO_PREVIEW).toBe('gemini-3-pro-preview');
       expect(LLM_MODELS[Vendor.Google].GEMINI_2_5_PRO).toBe('gemini-2.5-pro');
     });
@@ -143,11 +157,11 @@ describe('Model Registry', () => {
       expect(model).toBeUndefined();
     });
 
-    it('should return correct pricing for GPT-5.2', () => {
+    it('should return correct pricing for GPT-5.2 with cached pricing', () => {
       const model = getModelInfo('gpt-5.2');
       expect(model?.features.input.cpm).toBe(1.75);
       expect(model?.features.output.cpm).toBe(14);
-      expect(model?.features.input.cpmCached).toBeUndefined();
+      expect(model?.features.input.cpmCached).toBe(0.175);
     });
 
     it('should return correct pricing for Claude Opus 4.5', () => {
@@ -159,7 +173,7 @@ describe('Model Registry', () => {
 
     it('should return correct context window for Gemini 3 Flash', () => {
       const model = getModelInfo('gemini-3-flash-preview');
-      expect(model?.features.input.tokens).toBe(1000000);
+      expect(model?.features.input.tokens).toBe(1048576);
       expect(model?.features.output.tokens).toBe(65536);
     });
   });
@@ -167,19 +181,19 @@ describe('Model Registry', () => {
   describe('getModelsByVendor()', () => {
     it('should filter models by OpenAI vendor', () => {
       const models = getModelsByVendor(Vendor.OpenAI);
-      expect(models).toHaveLength(12);
+      expect(models).toHaveLength(22);
       expect(models.every((m) => m.provider === Vendor.OpenAI)).toBe(true);
     });
 
     it('should filter models by Anthropic vendor', () => {
       const models = getModelsByVendor(Vendor.Anthropic);
-      expect(models).toHaveLength(7);
+      expect(models).toHaveLength(10);
       expect(models.every((m) => m.provider === Vendor.Anthropic)).toBe(true);
     });
 
     it('should filter models by Google vendor', () => {
       const models = getModelsByVendor(Vendor.Google);
-      expect(models).toHaveLength(7);
+      expect(models).toHaveLength(10);
       expect(models.every((m) => m.provider === Vendor.Google)).toBe(true);
     });
 
@@ -198,11 +212,21 @@ describe('Model Registry', () => {
       const models = getModelsByVendor(Vendor.OpenAI);
       const modelNames = models.map((m) => m.name);
 
+      expect(modelNames).toContain('gpt-5.3-codex');
+      expect(modelNames).toContain('gpt-5.3-chat-latest');
       expect(modelNames).toContain('gpt-5.2');
       expect(modelNames).toContain('gpt-5.2-pro');
+      expect(modelNames).toContain('gpt-5.2-codex');
+      expect(modelNames).toContain('gpt-5.2-chat-latest');
+      expect(modelNames).toContain('gpt-5.1');
+      expect(modelNames).toContain('gpt-5.1-codex');
+      expect(modelNames).toContain('gpt-5.1-codex-max');
+      expect(modelNames).toContain('gpt-5.1-codex-mini');
+      expect(modelNames).toContain('gpt-5.1-chat-latest');
       expect(modelNames).toContain('gpt-5');
       expect(modelNames).toContain('gpt-5-mini');
       expect(modelNames).toContain('gpt-5-nano');
+      expect(modelNames).toContain('gpt-5-chat-latest');
       expect(modelNames).toContain('gpt-4.1');
       expect(modelNames).toContain('gpt-4.1-mini');
       expect(modelNames).toContain('gpt-4.1-nano');
@@ -216,7 +240,7 @@ describe('Model Registry', () => {
   describe('getActiveModels()', () => {
     it('should return all active models', () => {
       const models = getActiveModels();
-      expect(models).toHaveLength(35);
+      expect(models).toHaveLength(51);
       expect(models.every((m) => m.isActive)).toBe(true);
     });
 
@@ -244,12 +268,12 @@ describe('Model Registry', () => {
       expect(cost).toBeCloseTo(0.1155, 4);
     });
 
-    it('should calculate cost with cache discount', () => {
-      // gpt-5.2 doesn't have cached pricing, falls back to standard
+    it('should calculate cost with cache discount for GPT-5.2', () => {
+      // gpt-5.2 now has cached pricing: $0.175/M cached + $14/M output
       const cost = calculateCost('gpt-5.2', 1_000_000, 1_000_000, {
         useCachedInput: true,
       });
-      expect(cost).toBe(15.75);
+      expect(cost).toBe(14.175);
     });
 
     it('should calculate cost correctly for Claude Opus 4.5', () => {
@@ -267,9 +291,9 @@ describe('Model Registry', () => {
     });
 
     it('should calculate cost correctly for Gemini 2.5 Flash', () => {
-      // $0.15/M input + $0.6/M output
+      // $0.30/M input + $2.50/M output
       const cost = calculateCost('gemini-2.5-flash', 1_000_000, 1_000_000);
-      expect(cost).toBeCloseTo(0.75, 2);
+      expect(cost).toBeCloseTo(2.80, 2);
     });
 
     it('should calculate cost for very cheap models (GPT-5-nano)', () => {
@@ -301,13 +325,12 @@ describe('Model Registry', () => {
       expect(cost).toBeCloseTo(expectedCost, 6);
     });
 
-    it('should fall back to standard pricing when cache not available', () => {
-      // o3-mini doesn't have cached pricing
+    it('should use cached pricing for o3-mini when available', () => {
+      // o3-mini now has cached pricing: $0.55/M cached + $4.4/M output
       const cost = calculateCost('o3-mini', 1_000_000, 1_000_000, {
         useCachedInput: true,
       });
-      // Should use standard pricing: $1.1/M input + $4.4/M output
-      expect(cost).toBeCloseTo(5.5, 2);
+      expect(cost).toBeCloseTo(4.95, 2);
     });
   });
 
@@ -339,8 +362,9 @@ describe('Model Registry', () => {
 
     it('should have correct Gemini 3 Flash preview pricing', () => {
       const flash = getModelInfo('gemini-3-flash-preview');
-      expect(flash?.features.input.cpm).toBe(0.15);
-      expect(flash?.features.output.cpm).toBe(0.6);
+      expect(flash?.features.input.cpm).toBe(0.50);
+      expect(flash?.features.output.cpm).toBe(3.00);
+      expect(flash?.features.input.cpmCached).toBe(0.05);
     });
 
     it('should have reasoning flag for appropriate models', () => {
@@ -380,7 +404,97 @@ describe('Model Registry', () => {
 
       expect(gpt52?.features.input.tokens).toBe(400000);
       expect(claude?.features.input.tokens).toBe(200000);
-      expect(gemini?.features.input.tokens).toBe(1000000);
+      expect(gemini?.features.input.tokens).toBe(1048576);
+    });
+
+    it('should have preferred flag on recommended models', () => {
+      const gpt52 = getModelInfo('gpt-5.2');
+      const gpt52codex = getModelInfo('gpt-5.2-codex');
+      const gpt5 = getModelInfo('gpt-5');
+      const opus46 = getModelInfo('claude-opus-4-6');
+      const sonnet46 = getModelInfo('claude-sonnet-4-6');
+
+      expect(gpt52?.preferred).toBe(true);
+      expect(gpt52codex?.preferred).toBe(true);
+      expect(gpt5?.preferred).toBeUndefined();
+      expect(opus46?.preferred).toBe(true);
+      expect(sonnet46?.preferred).toBe(true);
+    });
+
+    it('should have correct Claude 4.6 series data', () => {
+      const opus = getModelInfo('claude-opus-4-6');
+      const sonnet = getModelInfo('claude-sonnet-4-6');
+
+      expect(opus?.features.input.cpm).toBe(5);
+      expect(opus?.features.output.cpm).toBe(25);
+      expect(opus?.features.input.cpmCached).toBe(0.5);
+      expect(opus?.features.output.tokens).toBe(128000);
+      expect(opus?.knowledgeCutoff).toBe('2025-05-01');
+      expect(opus?.features.extendedThinking).toBe(true);
+
+      expect(sonnet?.features.input.cpm).toBe(3);
+      expect(sonnet?.features.output.cpm).toBe(15);
+      expect(sonnet?.features.input.cpmCached).toBe(0.3);
+      expect(sonnet?.features.output.tokens).toBe(64000);
+      expect(sonnet?.knowledgeCutoff).toBe('2025-08-01');
+    });
+
+    it('should have Claude Opus 4 in registry', () => {
+      const opus4 = getModelInfo('claude-opus-4-20250514');
+      expect(opus4).toBeDefined();
+      expect(opus4?.features.input.cpm).toBe(15);
+      expect(opus4?.features.output.cpm).toBe(75);
+      expect(opus4?.features.output.tokens).toBe(32000);
+      expect(opus4?.knowledgeCutoff).toBe('2025-01-01');
+    });
+
+    it('should have correct knowledge cutoffs for GPT-4.1 series', () => {
+      expect(getModelInfo('gpt-4.1')?.knowledgeCutoff).toBe('2024-06-01');
+      expect(getModelInfo('gpt-4.1-mini')?.knowledgeCutoff).toBe('2024-06-01');
+      expect(getModelInfo('gpt-4.1-nano')?.knowledgeCutoff).toBe('2024-06-01');
+    });
+
+    it('should have correct knowledge cutoffs for legacy models', () => {
+      expect(getModelInfo('gpt-4o')?.knowledgeCutoff).toBe('2023-10-01');
+      expect(getModelInfo('gpt-4o-mini')?.knowledgeCutoff).toBe('2023-10-01');
+      expect(getModelInfo('o3-mini')?.knowledgeCutoff).toBe('2023-10-01');
+      expect(getModelInfo('o1')?.knowledgeCutoff).toBe('2023-10-01');
+    });
+
+    it('should not have audio on gpt-4o and gpt-4o-mini', () => {
+      const gpt4o = getModelInfo('gpt-4o');
+      const gpt4oMini = getModelInfo('gpt-4o-mini');
+
+      expect(gpt4o?.features.audio).toBe(false);
+      expect(gpt4o?.features.input.audio).toBeUndefined();
+      expect(gpt4o?.features.output.audio).toBeUndefined();
+
+      expect(gpt4oMini?.features.audio).toBe(false);
+      expect(gpt4oMini?.features.input.audio).toBeUndefined();
+      expect(gpt4oMini?.features.output.audio).toBeUndefined();
+    });
+
+    it('should not have vision on o3-mini', () => {
+      const o3mini = getModelInfo('o3-mini');
+      expect(o3mini?.features.vision).toBe(false);
+      expect(o3mini?.features.input.image).toBeUndefined();
+    });
+
+    it('should have structuredOutput false on gpt-5.2-pro', () => {
+      const pro = getModelInfo('gpt-5.2-pro');
+      expect(pro?.features.structuredOutput).toBe(false);
+    });
+
+    it('should have cached pricing on GPT-4.1 series', () => {
+      expect(getModelInfo('gpt-4.1')?.features.input.cpmCached).toBe(0.50);
+      expect(getModelInfo('gpt-4.1-mini')?.features.input.cpmCached).toBe(0.10);
+      expect(getModelInfo('gpt-4.1-nano')?.features.input.cpmCached).toBe(0.025);
+    });
+
+    it('should have cached pricing on GPT-5.1 codex series', () => {
+      expect(getModelInfo('gpt-5.1')?.features.input.cpmCached).toBe(0.125);
+      expect(getModelInfo('gpt-5.1-codex')?.features.input.cpmCached).toBe(0.125);
+      expect(getModelInfo('gpt-5.1-codex-mini')?.features.input.cpmCached).toBe(0.025);
     });
   });
 });

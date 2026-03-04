@@ -12631,18 +12631,30 @@ function isVendor(value) {
 // src/domain/entities/Model.ts
 var LLM_MODELS = {
   [Vendor.OpenAI]: {
+    // GPT-5.3 Series
+    GPT_5_3_CODEX: "gpt-5.3-codex",
+    GPT_5_3_CHAT: "gpt-5.3-chat-latest",
     // GPT-5.2 Series (Current Flagship)
     GPT_5_2: "gpt-5.2",
     GPT_5_2_PRO: "gpt-5.2-pro",
+    GPT_5_2_CODEX: "gpt-5.2-codex",
+    GPT_5_2_CHAT: "gpt-5.2-chat-latest",
+    // GPT-5.1 Series
+    GPT_5_1: "gpt-5.1",
+    GPT_5_1_CODEX: "gpt-5.1-codex",
+    GPT_5_1_CODEX_MAX: "gpt-5.1-codex-max",
+    GPT_5_1_CODEX_MINI: "gpt-5.1-codex-mini",
+    GPT_5_1_CHAT: "gpt-5.1-chat-latest",
     // GPT-5 Series
     GPT_5: "gpt-5",
     GPT_5_MINI: "gpt-5-mini",
     GPT_5_NANO: "gpt-5-nano",
+    GPT_5_CHAT: "gpt-5-chat-latest",
     // GPT-4.1 Series
     GPT_4_1: "gpt-4.1",
     GPT_4_1_MINI: "gpt-4.1-mini",
     GPT_4_1_NANO: "gpt-4.1-nano",
-    // GPT-4o Series (Legacy, Audio Capable)
+    // GPT-4o Series (Legacy)
     GPT_4O: "gpt-4o",
     GPT_4O_MINI: "gpt-4o-mini",
     // Reasoning Models (o-series)
@@ -12650,18 +12662,26 @@ var LLM_MODELS = {
     O1: "o1"
   },
   [Vendor.Anthropic]: {
-    // Claude 4.5 Series (Current)
+    // Claude 4.6 Series (Current)
+    CLAUDE_OPUS_4_6: "claude-opus-4-6",
+    CLAUDE_SONNET_4_6: "claude-sonnet-4-6",
+    // Claude 4.5 Series
     CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101",
     CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929",
     CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001",
     // Claude 4.x Legacy
     CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805",
+    CLAUDE_OPUS_4: "claude-opus-4-20250514",
     CLAUDE_SONNET_4: "claude-sonnet-4-20250514",
     CLAUDE_SONNET_3_7: "claude-3-7-sonnet-20250219",
-    // Claude 3.x Legacy
+    // Claude 3.x Legacy (Deprecated)
     CLAUDE_HAIKU_3: "claude-3-haiku-20240307"
   },
   [Vendor.Google]: {
+    // Gemini 3.1 Series (Preview)
+    GEMINI_3_1_PRO_PREVIEW: "gemini-3.1-pro-preview",
+    GEMINI_3_1_FLASH_LITE_PREVIEW: "gemini-3.1-flash-lite-preview",
+    GEMINI_3_1_FLASH_IMAGE_PREVIEW: "gemini-3.1-flash-image-preview",
     // Gemini 3 Series (Preview)
     GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview",
     GEMINI_3_PRO_PREVIEW: "gemini-3-pro-preview",
@@ -12693,12 +12713,88 @@ var MODEL_REGISTRY = {
   // ============================================================================
   // OpenAI Models (Verified from platform.openai.com)
   // ============================================================================
+  // GPT-5.3 Series
+  "gpt-5.3-codex": {
+    name: "gpt-5.3-codex",
+    provider: Vendor.OpenAI,
+    description: "Latest codex model for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  "gpt-5.3-chat-latest": {
+    name: "gpt-5.3-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "Latest GPT-5.3 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
   // GPT-5.2 Series (Current Flagship)
   "gpt-5.2": {
     name: "gpt-5.2",
     provider: Vendor.OpenAI,
     description: "Flagship model for coding and agentic tasks. Reasoning.effort: none, low, medium, high, xhigh",
     isActive: true,
+    preferred: true,
     releaseDate: "2025-12-01",
     knowledgeCutoff: "2025-08-31",
     features: {
@@ -12724,7 +12820,8 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 1.75
+        cpm: 1.75,
+        cpmCached: 0.175
       },
       output: {
         tokens: 128e3,
@@ -12743,7 +12840,7 @@ var MODEL_REGISTRY = {
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: true,
+      structuredOutput: false,
       functionCalling: true,
       fineTuning: false,
       predictedOutputs: false,
@@ -12769,6 +12866,276 @@ var MODEL_REGISTRY = {
         tokens: 128e3,
         text: true,
         cpm: 168
+      }
+    }
+  },
+  "gpt-5.2-codex": {
+    name: "gpt-5.2-codex",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.2 codex for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  "gpt-5.2-chat-latest": {
+    name: "gpt-5.2-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.2 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  // GPT-5.1 Series
+  "gpt-5.1": {
+    name: "gpt-5.1",
+    provider: Vendor.OpenAI,
+    description: "Intelligent reasoning model for coding and agentic tasks. Reasoning.effort: none, low, medium, high",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5.1-codex": {
+    name: "gpt-5.1-codex",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 codex for coding and agentic tasks with reasoning",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5.1-codex-max": {
+    name: "gpt-5.1-codex-max",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 codex max for maximum reasoning depth on coding tasks",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5.1-codex-mini": {
+    name: "gpt-5.1-codex-mini",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 codex mini for cost-efficient coding tasks",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 0.25,
+        cpmCached: 0.025
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 2
+      }
+    }
+  },
+  "gpt-5.1-chat-latest": {
+    name: "gpt-5.1-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 10
       }
     }
   },
@@ -12803,7 +13170,8 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 1.25
+        cpm: 1.25,
+        cpmCached: 0.125
       },
       output: {
         tokens: 128e3,
@@ -12842,7 +13210,8 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 0.25
+        cpm: 0.25,
+        cpmCached: 0.025
       },
       output: {
         tokens: 128e3,
@@ -12881,12 +13250,47 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 0.05
+        cpm: 0.05,
+        cpmCached: 5e-3
       },
       output: {
         tokens: 128e3,
         text: true,
         cpm: 0.4
+      }
+    }
+  },
+  "gpt-5-chat-latest": {
+    name: "gpt-5-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "GPT-5 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2025-08-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 10
       }
     }
   },
@@ -12897,7 +13301,7 @@ var MODEL_REGISTRY = {
     description: "GPT-4.1 specialized for coding with 1M token context window",
     isActive: true,
     releaseDate: "2025-04-14",
-    knowledgeCutoff: "2025-04-01",
+    knowledgeCutoff: "2024-06-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -12915,7 +13319,8 @@ var MODEL_REGISTRY = {
         tokens: 1e6,
         text: true,
         image: true,
-        cpm: 2
+        cpm: 2,
+        cpmCached: 0.5
       },
       output: {
         tokens: 32768,
@@ -12930,7 +13335,7 @@ var MODEL_REGISTRY = {
     description: "Efficient GPT-4.1 model, beats GPT-4o in many benchmarks at 83% lower cost",
     isActive: true,
     releaseDate: "2025-04-14",
-    knowledgeCutoff: "2025-04-01",
+    knowledgeCutoff: "2024-06-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -12948,7 +13353,8 @@ var MODEL_REGISTRY = {
         tokens: 1e6,
         text: true,
         image: true,
-        cpm: 0.4
+        cpm: 0.4,
+        cpmCached: 0.1
       },
       output: {
         tokens: 16384,
@@ -12963,7 +13369,7 @@ var MODEL_REGISTRY = {
     description: "Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion",
     isActive: true,
     releaseDate: "2025-04-14",
-    knowledgeCutoff: "2025-04-01",
+    knowledgeCutoff: "2024-06-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -12981,7 +13387,8 @@ var MODEL_REGISTRY = {
         tokens: 1e6,
         text: true,
         image: true,
-        cpm: 0.1
+        cpm: 0.1,
+        cpmCached: 0.025
       },
       output: {
         tokens: 16384,
@@ -12990,14 +13397,14 @@ var MODEL_REGISTRY = {
       }
     }
   },
-  // GPT-4o Series (Legacy, Audio Capable)
+  // GPT-4o Series (Legacy)
   "gpt-4o": {
     name: "gpt-4o",
     provider: Vendor.OpenAI,
-    description: "Versatile omni model with audio support. Legacy but still available",
+    description: "Versatile omni model. Legacy but still available",
     isActive: true,
     releaseDate: "2024-05-13",
-    knowledgeCutoff: "2024-04-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -13007,7 +13414,7 @@ var MODEL_REGISTRY = {
       predictedOutputs: true,
       realtime: true,
       vision: true,
-      audio: true,
+      audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
@@ -13015,13 +13422,12 @@ var MODEL_REGISTRY = {
         tokens: 128e3,
         text: true,
         image: true,
-        audio: true,
-        cpm: 2.5
+        cpm: 2.5,
+        cpmCached: 1.25
       },
       output: {
         tokens: 16384,
         text: true,
-        audio: true,
         cpm: 10
       }
     }
@@ -13029,10 +13435,10 @@ var MODEL_REGISTRY = {
   "gpt-4o-mini": {
     name: "gpt-4o-mini",
     provider: Vendor.OpenAI,
-    description: "Fast, affordable omni model with audio support",
+    description: "Fast, affordable omni model",
     isActive: true,
     releaseDate: "2024-07-18",
-    knowledgeCutoff: "2024-04-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -13042,7 +13448,7 @@ var MODEL_REGISTRY = {
       predictedOutputs: false,
       realtime: true,
       vision: true,
-      audio: true,
+      audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
@@ -13050,13 +13456,12 @@ var MODEL_REGISTRY = {
         tokens: 128e3,
         text: true,
         image: true,
-        audio: true,
-        cpm: 0.15
+        cpm: 0.15,
+        cpmCached: 0.075
       },
       output: {
         tokens: 16384,
         text: true,
-        audio: true,
         cpm: 0.6
       }
     }
@@ -13068,7 +13473,7 @@ var MODEL_REGISTRY = {
     description: "Fast reasoning model tailored for coding, math, and science",
     isActive: true,
     releaseDate: "2025-01-31",
-    knowledgeCutoff: "2024-10-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -13077,11 +13482,11 @@ var MODEL_REGISTRY = {
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: true,
+      vision: false,
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: false,
+      promptCaching: true,
       parameters: {
         temperature: false,
         topP: false,
@@ -13091,8 +13496,8 @@ var MODEL_REGISTRY = {
       input: {
         tokens: 2e5,
         text: true,
-        image: true,
-        cpm: 1.1
+        cpm: 1.1,
+        cpmCached: 0.55
       },
       output: {
         tokens: 1e5,
@@ -13107,7 +13512,7 @@ var MODEL_REGISTRY = {
     description: "Advanced reasoning model for complex problems",
     isActive: true,
     releaseDate: "2024-12-17",
-    knowledgeCutoff: "2024-10-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -13120,7 +13525,7 @@ var MODEL_REGISTRY = {
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: false,
+      promptCaching: true,
       parameters: {
         temperature: false,
         topP: false,
@@ -13131,7 +13536,8 @@ var MODEL_REGISTRY = {
         tokens: 2e5,
         text: true,
         image: true,
-        cpm: 15
+        cpm: 15,
+        cpmCached: 7.5
       },
       output: {
         tokens: 1e5,
@@ -13141,13 +13547,88 @@ var MODEL_REGISTRY = {
     }
   },
   // ============================================================================
-  // Anthropic Models (Verified from platform.claude.com)
+  // Anthropic Models (Verified from platform.claude.com - March 2026)
   // ============================================================================
-  // Claude 4.5 Series (Current)
+  // Claude 4.6 Series (Current)
+  "claude-opus-4-6": {
+    name: "claude-opus-4-6",
+    provider: Vendor.Anthropic,
+    description: "The most intelligent model for building agents and coding. 128K output, adaptive thinking",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-05-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 5,
+        cpmCached: 0.5
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 25
+      }
+    }
+  },
+  "claude-sonnet-4-6": {
+    name: "claude-sonnet-4-6",
+    provider: Vendor.Anthropic,
+    description: "Best combination of speed and intelligence. Adaptive thinking, 1M context beta",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-08-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3
+      },
+      output: {
+        tokens: 64e3,
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  // Claude 4.5 Series
   "claude-opus-4-5-20251101": {
     name: "claude-opus-4-5-20251101",
     provider: Vendor.Anthropic,
-    description: "Premium model combining maximum intelligence with practical performance",
+    description: "Legacy Opus 4.5. Premium model combining maximum intelligence with practical performance",
     isActive: true,
     releaseDate: "2025-11-01",
     knowledgeCutoff: "2025-05-01",
@@ -13182,7 +13663,7 @@ var MODEL_REGISTRY = {
   "claude-sonnet-4-5-20250929": {
     name: "claude-sonnet-4-5-20250929",
     provider: Vendor.Anthropic,
-    description: "Smart model for complex agents and coding. Best balance of intelligence, speed, cost",
+    description: "Legacy Sonnet 4.5. Smart model for complex agents and coding",
     isActive: true,
     releaseDate: "2025-09-29",
     knowledgeCutoff: "2025-01-01",
@@ -13202,6 +13683,7 @@ var MODEL_REGISTRY = {
       promptCaching: true,
       input: {
         tokens: 2e5,
+        // 1M with beta header
         text: true,
         image: true,
         cpm: 3,
@@ -13285,10 +13767,45 @@ var MODEL_REGISTRY = {
       }
     }
   },
+  "claude-opus-4-20250514": {
+    name: "claude-opus-4-20250514",
+    provider: Vendor.Anthropic,
+    description: "Legacy Opus 4. Agentic tasks and reasoning",
+    isActive: true,
+    releaseDate: "2025-05-14",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 15,
+        cpmCached: 1.5
+      },
+      output: {
+        tokens: 32e3,
+        text: true,
+        cpm: 75
+      }
+    }
+  },
   "claude-sonnet-4-20250514": {
     name: "claude-sonnet-4-20250514",
     provider: Vendor.Anthropic,
-    description: "Legacy Sonnet 4. Default for most users, supports 1M context beta",
+    description: "Legacy Sonnet 4. Supports 1M context beta",
     isActive: true,
     releaseDate: "2025-05-14",
     knowledgeCutoff: "2025-01-01",
@@ -13324,7 +13841,7 @@ var MODEL_REGISTRY = {
   "claude-3-7-sonnet-20250219": {
     name: "claude-3-7-sonnet-20250219",
     provider: Vendor.Anthropic,
-    description: "Claude 3.7 Sonnet with extended thinking, supports 128K output beta",
+    description: "Deprecated. Claude 3.7 Sonnet with extended thinking",
     isActive: true,
     releaseDate: "2025-02-19",
     knowledgeCutoff: "2024-10-01",
@@ -13351,17 +13868,16 @@ var MODEL_REGISTRY = {
       },
       output: {
         tokens: 64e3,
-        // 128K with beta header
         text: true,
         cpm: 15
       }
     }
   },
-  // Claude 3.x Legacy
+  // Claude 3.x Legacy (Deprecated - retiring April 19, 2026)
   "claude-3-haiku-20240307": {
     name: "claude-3-haiku-20240307",
     provider: Vendor.Anthropic,
-    description: "Fast legacy model. Recommend migrating to Haiku 4.5",
+    description: "Deprecated. Retiring April 19, 2026. Migrate to Haiku 4.5",
     isActive: true,
     releaseDate: "2024-03-07",
     knowledgeCutoff: "2023-08-01",
@@ -13394,16 +13910,17 @@ var MODEL_REGISTRY = {
     }
   },
   // ============================================================================
-  // Google Models (Verified from ai.google.dev)
+  // Google Models (Verified from ai.google.dev - March 2026)
   // ============================================================================
-  // Gemini 3 Series (Preview)
-  "gemini-3-flash-preview": {
-    name: "gemini-3-flash-preview",
+  // Gemini 3.1 Series (Preview)
+  "gemini-3.1-pro-preview": {
+    name: "gemini-3.1-pro-preview",
     provider: Vendor.Google,
-    description: "Pro-grade reasoning with Flash-level latency and efficiency",
+    description: "Advanced intelligence with powerful agentic and coding capabilities. Replaces gemini-3-pro-preview",
     isActive: true,
-    releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
+    preferred: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-01-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -13418,27 +13935,135 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.15
+        cpm: 2,
+        cpmCached: 0.2
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.6
+        cpm: 12
+      }
+    }
+  },
+  "gemini-3.1-flash-lite-preview": {
+    name: "gemini-3.1-flash-lite-preview",
+    provider: Vendor.Google,
+    description: "High performance, budget-friendly for high-volume agentic tasks and data extraction",
+    isActive: true,
+    releaseDate: "2026-03-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1048576,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.25
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 1.5
+      }
+    }
+  },
+  "gemini-3.1-flash-image-preview": {
+    name: "gemini-3.1-flash-image-preview",
+    provider: Vendor.Google,
+    description: "High-efficiency image generation with up to 4K output, search grounding support",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: false,
+      input: {
+        tokens: 131072,
+        text: true,
+        image: true,
+        cpm: 0.25
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        image: true,
+        cpm: 1.5
+      }
+    }
+  },
+  // Gemini 3 Series (Preview)
+  "gemini-3-flash-preview": {
+    name: "gemini-3-flash-preview",
+    provider: Vendor.Google,
+    description: "Most powerful agentic and coding model with frontier-class reasoning",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1048576,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.5,
+        cpmCached: 0.05
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 3
       }
     }
   },
   "gemini-3-pro-preview": {
     name: "gemini-3-pro-preview",
     provider: Vendor.Google,
-    description: "Most advanced reasoning Gemini model for complex tasks",
+    description: "Deprecated. Shutting down March 9, 2026. Migrate to gemini-3.1-pro-preview",
     isActive: true,
     releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
+    knowledgeCutoff: "2025-01-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -13453,7 +14078,7 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
@@ -13470,14 +14095,14 @@ var MODEL_REGISTRY = {
   "gemini-3-pro-image-preview": {
     name: "gemini-3-pro-image-preview",
     provider: Vendor.Google,
-    description: "Highest quality image generation model",
+    description: "Professional-grade image generation and editing with reasoning",
     isActive: true,
     releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
+    knowledgeCutoff: "2025-01-01",
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: false,
+      structuredOutput: true,
       functionCalling: false,
       fineTuning: false,
       predictedOutputs: false,
@@ -13486,15 +14111,15 @@ var MODEL_REGISTRY = {
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: true,
+      promptCaching: false,
       input: {
-        tokens: 1e6,
+        tokens: 65536,
         text: true,
         image: true,
         cpm: 1.25
       },
       output: {
-        tokens: 65536,
+        tokens: 32768,
         text: true,
         image: true,
         cpm: 10
@@ -13505,7 +14130,7 @@ var MODEL_REGISTRY = {
   "gemini-2.5-pro": {
     name: "gemini-2.5-pro",
     provider: Vendor.Google,
-    description: "Advanced multimodal model built for deep reasoning and agents",
+    description: "Most advanced model for complex tasks with deep reasoning and coding",
     isActive: true,
     releaseDate: "2025-03-01",
     knowledgeCutoff: "2025-01-01",
@@ -13523,12 +14148,13 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 1.25
+        cpm: 1.25,
+        cpmCached: 0.125
       },
       output: {
         tokens: 65536,
@@ -13540,7 +14166,7 @@ var MODEL_REGISTRY = {
   "gemini-2.5-flash": {
     name: "gemini-2.5-flash",
     provider: Vendor.Google,
-    description: "Fast, cost-effective model with excellent reasoning",
+    description: "Best price-performance for low-latency, high-volume tasks with reasoning",
     isActive: true,
     releaseDate: "2025-06-17",
     knowledgeCutoff: "2025-01-01",
@@ -13558,24 +14184,25 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.15
+        cpm: 0.3,
+        cpmCached: 0.03
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.6
+        cpm: 2.5
       }
     }
   },
   "gemini-2.5-flash-lite": {
     name: "gemini-2.5-flash-lite",
     provider: Vendor.Google,
-    description: "Lowest latency for high-volume tasks, summarization, classification",
+    description: "Fastest and most budget-friendly multimodal model in the 2.5 family",
     isActive: true,
     releaseDate: "2025-06-17",
     knowledgeCutoff: "2025-01-01",
@@ -13593,31 +14220,31 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.075
+        cpm: 0.1
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.3
+        cpm: 0.4
       }
     }
   },
   "gemini-2.5-flash-image": {
     name: "gemini-2.5-flash-image",
     provider: Vendor.Google,
-    description: "Image generation and editing model",
+    description: "Fast native image generation and editing (Nano Banana)",
     isActive: true,
-    releaseDate: "2025-09-01",
-    knowledgeCutoff: "2025-01-01",
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2025-06-01",
     features: {
-      reasoning: true,
+      reasoning: false,
       streaming: true,
-      structuredOutput: false,
+      structuredOutput: true,
       functionCalling: false,
       fineTuning: false,
       predictedOutputs: false,
@@ -13628,13 +14255,13 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 65536,
         text: true,
         image: true,
         cpm: 0.15
       },
       output: {
-        tokens: 65536,
+        tokens: 32768,
         text: true,
         image: true,
         cpm: 0.6
@@ -13642,7 +14269,7 @@ var MODEL_REGISTRY = {
     }
   },
   // ============================================================================
-  // xAI Grok Models (Verified from docs.x.ai - January 2026)
+  // xAI Grok Models (Verified from docs.x.ai - March 2026)
   // ============================================================================
   // Grok 4.1 Series (2M context, fast)
   "grok-4-1-fast-reasoning": {
@@ -13663,13 +14290,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
         image: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -13696,13 +14324,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
         image: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -13730,12 +14359,13 @@ var MODEL_REGISTRY = {
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 256e3,
         text: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.02
       },
       output: {
         tokens: 32768,
@@ -13748,7 +14378,7 @@ var MODEL_REGISTRY = {
   "grok-4-fast-reasoning": {
     name: "grok-4-fast-reasoning",
     provider: Vendor.Grok,
-    description: "Fast Grok 4 with reasoning capabilities, 2M context window",
+    description: "Fast Grok 4 with reasoning capabilities, 2M context window, vision support",
     isActive: true,
     releaseDate: "2025-09-01",
     knowledgeCutoff: "2024-11-01",
@@ -13760,15 +14390,17 @@ var MODEL_REGISTRY = {
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: false,
+      vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
-        cpm: 0.2
+        image: true,
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -13795,13 +14427,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
         image: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -13813,12 +14446,12 @@ var MODEL_REGISTRY = {
   "grok-4-0709": {
     name: "grok-4-0709",
     provider: Vendor.Grok,
-    description: "Grok 4 flagship model (July 2025 release), 256K context, vision support",
+    description: "Grok 4 flagship model (July 2025 release), 256K context, vision support, reasoning",
     isActive: true,
     releaseDate: "2025-07-09",
     knowledgeCutoff: "2024-11-01",
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -13828,13 +14461,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 256e3,
         text: true,
         image: true,
-        cpm: 3
+        cpm: 3,
+        cpmCached: 0.75
       },
       output: {
         tokens: 32768,
@@ -13847,12 +14481,12 @@ var MODEL_REGISTRY = {
   "grok-3-mini": {
     name: "grok-3-mini",
     provider: Vendor.Grok,
-    description: "Lightweight, cost-efficient model for simpler tasks, 131K context",
+    description: "Lightweight, cost-efficient model with reasoning, 131K context",
     isActive: true,
     releaseDate: "2025-06-01",
     knowledgeCutoff: "2024-11-01",
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -13862,12 +14496,13 @@ var MODEL_REGISTRY = {
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 131072,
         text: true,
-        cpm: 0.3
+        cpm: 0.3,
+        cpmCached: 0.07
       },
       output: {
         tokens: 32768,
@@ -13894,12 +14529,13 @@ var MODEL_REGISTRY = {
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 131072,
         text: true,
-        cpm: 3
+        cpm: 3,
+        cpmCached: 0.75
       },
       output: {
         tokens: 32768,
@@ -13908,11 +14544,11 @@ var MODEL_REGISTRY = {
       }
     }
   },
-  // Grok 2 Series (Vision)
+  // Grok 2 Series (Legacy - not in current docs)
   "grok-2-vision-1212": {
     name: "grok-2-vision-1212",
     provider: Vendor.Grok,
-    description: "Vision-capable model for image understanding, 32K context",
+    description: "Legacy vision model for image understanding, 32K context. Not in current xAI docs",
     isActive: true,
     releaseDate: "2024-12-12",
     knowledgeCutoff: "2024-11-01",
@@ -17058,27 +17694,6 @@ ${formatValue(entry.value)}`).join("\n\n")
 // src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts
 init_Logger();
 var DEFAULT_MAX_LOADED = 10;
-var TOOL_CATALOG_INSTRUCTIONS = `## Tool Catalog
-
-You have access to a dynamic tool catalog. Not all tools are loaded at once \u2014 use these metatools to discover and load what you need:
-
-**tool_catalog_search** \u2014 Browse available tool categories and search for specific tools.
-  - No params \u2192 list all available categories with descriptions
-  - \`category\` \u2192 list tools in that category
-  - \`query\` \u2192 keyword search across categories and tools
-
-**tool_catalog_load** \u2014 Load a category's tools so you can use them.
-  - Tools become available immediately after loading.
-  - If you need tools from a category, load it first.
-
-**tool_catalog_unload** \u2014 Unload a category to free token budget.
-  - Unloaded tools are no longer sent to you.
-  - Use when you're done with a category.
-
-**Best practices:**
-- Search first to find the right category before loading.
-- Unload categories you no longer need to keep context lean.
-- Categories marked [LOADED] are already available.`;
 var catalogSearchDefinition = {
   type: "function",
   function: {
@@ -17137,6 +17752,8 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   name = "tool_catalog";
   /** category name → array of tool names that were loaded */
   _loadedCategories = /* @__PURE__ */ new Map();
+  /** Categories that cannot be unloaded */
+  _pinnedCategories = /* @__PURE__ */ new Set();
   /** Reference to the ToolManager for registering/disabling tools */
   _toolManager = null;
   /** Cached connector categories — discovered once in setToolManager() */
@@ -17152,12 +17769,17 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
       maxLoadedCategories: DEFAULT_MAX_LOADED,
       ...config
     };
+    if (this._config.pinned?.length) {
+      for (const cat of this._config.pinned) {
+        this._pinnedCategories.add(cat);
+      }
+    }
   }
   // ========================================================================
   // Plugin Interface
   // ========================================================================
   getInstructions() {
-    return TOOL_CATALOG_INSTRUCTIONS;
+    return this.buildInstructions();
   }
   async getContent() {
     const categories = this.getAllowedCategories();
@@ -17168,15 +17790,15 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     if (loaded.length > 0) {
       lines.push(`**Loaded:** ${loaded.join(", ")}`);
     }
-    lines.push(`**Available categories:** ${categories.length}`);
+    lines.push(`**Available categories:** ${categories.length + this.getConnectorCategories().length}`);
     for (const cat of categories) {
       const tools = ToolCatalogRegistry.getToolsInCategory(cat.name);
-      const marker = this._loadedCategories.has(cat.name) ? " [LOADED]" : "";
-      lines.push(`- **${cat.displayName}** (${tools.length} tools)${marker}: ${cat.description}`);
+      const markers = this.getCategoryMarkers(cat.name);
+      lines.push(`- **${cat.displayName}** (${tools.length} tools)${markers}: ${cat.description}`);
     }
     for (const cc of this.getConnectorCategories()) {
-      const marker = this._loadedCategories.has(cc.name) ? " [LOADED]" : "";
-      lines.push(`- **${cc.displayName}** (${cc.toolCount} tools)${marker}: ${cc.description}`);
+      const markers = this.getCategoryMarkers(cc.name);
+      lines.push(`- **${cc.displayName}** (${cc.toolCount} tools)${markers}: ${cc.description}`);
     }
     const content = lines.join("\n");
     this.updateTokenCache(this.estimator.estimateTokens(content));
@@ -17187,7 +17809,8 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
       loadedCategories: Array.from(this._loadedCategories.entries()).map(([name, tools]) => ({
         category: name,
         toolCount: tools.length,
-        tools
+        tools,
+        pinned: this._pinnedCategories.has(name)
       }))
     };
   }
@@ -17214,11 +17837,14 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     return [searchTool, loadTool, unloadTool];
   }
   isCompactable() {
-    return this._loadedCategories.size > 0;
+    for (const category of this._loadedCategories.keys()) {
+      if (!this._pinnedCategories.has(category)) return true;
+    }
+    return false;
   }
   async compact(targetTokensToFree) {
     if (!this._toolManager || this._loadedCategories.size === 0) return 0;
-    const categoriesByLastUsed = this.getCategoriesSortedByLastUsed();
+    const categoriesByLastUsed = this.getCategoriesSortedByLastUsed().filter((cat) => !this._pinnedCategories.has(cat));
     let freed = 0;
     for (const category of categoriesByLastUsed) {
       if (freed >= targetTokensToFree) break;
@@ -17259,6 +17885,7 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   }
   destroy() {
     this._loadedCategories.clear();
+    this._pinnedCategories.clear();
     this._toolManager = null;
     this._connectorCategories = null;
     this._destroyed = true;
@@ -17272,11 +17899,20 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   setToolManager(tm) {
     this._toolManager = tm;
     this._connectorCategories = ToolCatalogRegistry.discoverConnectorCategories({
-      scope: this._config.categoryScope,
       identities: this._config.identities
     });
+    for (const category of this._pinnedCategories) {
+      const result = this.executeLoad(category);
+      if (result.error) {
+        exports.logger.warn(
+          { category, error: result.error },
+          `[ToolCatalogPlugin] Failed to load pinned category '${category}'`
+        );
+      }
+    }
     if (this._config.autoLoadCategories?.length) {
       for (const category of this._config.autoLoadCategories) {
+        if (this._pinnedCategories.has(category)) continue;
         const result = this.executeLoad(category);
         if (result.error) {
           exports.logger.warn(
@@ -17290,6 +17926,10 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
   /** Get list of currently loaded category names */
   get loadedCategories() {
     return Array.from(this._loadedCategories.keys());
+  }
+  /** Get set of pinned category names */
+  get pinnedCategories() {
+    return this._pinnedCategories;
   }
   // ========================================================================
   // Metatool Implementations
@@ -17311,6 +17951,7 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
       return {
         category,
         loaded,
+        pinned: this._pinnedCategories.has(category),
         tools: tools.map((t) => ({
           name: t.name,
           displayName: t.displayName,
@@ -17332,7 +17973,8 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
         displayName: cat.displayName,
         description: cat.description,
         toolCount: tools.length,
-        loaded: this._loadedCategories.has(cat.name)
+        loaded: this._loadedCategories.has(cat.name),
+        pinned: this._pinnedCategories.has(cat.name)
       });
     }
     for (const cc of connectorCats) {
@@ -17341,7 +17983,8 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
         displayName: cc.displayName,
         description: cc.description,
         toolCount: cc.toolCount,
-        loaded: this._loadedCategories.has(cc.name)
+        loaded: this._loadedCategories.has(cc.name),
+        pinned: this._pinnedCategories.has(cc.name)
       });
     }
     return { categories: result };
@@ -17351,20 +17994,28 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     if (!this._toolManager) {
       return { error: "ToolManager not connected. Plugin not properly initialized." };
     }
-    if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
-      return { error: `Category '${category}' is not available for this agent.` };
+    const isConnector = ToolCatalogRegistry.parseConnectorCategory(category) !== null;
+    if (isConnector) {
+      const allowed = this.getConnectorCategories().some((cc) => cc.name === category);
+      if (!allowed) {
+        return { error: `Category '${category}' is not available for this agent.` };
+      }
+    } else {
+      if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
+        return { error: `Category '${category}' is not available for this agent.` };
+      }
     }
     if (this._loadedCategories.has(category)) {
       const toolNames2 = this._loadedCategories.get(category);
       return { loaded: toolNames2.length, tools: toolNames2, alreadyLoaded: true };
     }
-    if (this._loadedCategories.size >= this._config.maxLoadedCategories) {
+    const nonPinnedLoaded = this._loadedCategories.size - this._pinnedCategories.size;
+    if (!this._pinnedCategories.has(category) && nonPinnedLoaded >= this._config.maxLoadedCategories) {
       return {
         error: `Maximum loaded categories (${this._config.maxLoadedCategories}) reached. Unload a category first.`,
         loaded: Array.from(this._loadedCategories.keys())
       };
     }
-    const isConnector = ToolCatalogRegistry.parseConnectorCategory(category) !== null;
     let tools;
     if (isConnector) {
       tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
@@ -17401,6 +18052,9 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     if (!this._toolManager) {
       return { error: "ToolManager not connected." };
     }
+    if (this._pinnedCategories.has(category)) {
+      return { error: `Category '${category}' is pinned and cannot be unloaded.` };
+    }
     const toolNames = this._loadedCategories.get(category);
     if (!toolNames) {
       return { unloaded: 0, message: `Category '${category}' is not loaded.` };
@@ -17425,6 +18079,61 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
    */
   getConnectorCategories() {
     return this._connectorCategories ?? [];
+  }
+  /**
+   * Build status markers for a category (e.g., " [PINNED]", " [LOADED]", " [PINNED] [LOADED]")
+   */
+  getCategoryMarkers(name) {
+    const parts = [];
+    if (this._pinnedCategories.has(name)) parts.push("[PINNED]");
+    if (this._loadedCategories.has(name)) parts.push("[LOADED]");
+    return parts.length > 0 ? " " + parts.join(" ") : "";
+  }
+  /**
+   * Build dynamic instructions that include the list of available categories.
+   */
+  buildInstructions() {
+    const lines = [];
+    lines.push("## Tool Catalog");
+    lines.push("");
+    lines.push("Your core tools (memory, context, instructions, etc.) are always available.");
+    lines.push("Additional tool categories can be loaded on demand from the catalog below.");
+    lines.push("");
+    lines.push("**tool_catalog_search** \u2014 Browse available tool categories and search for specific tools.");
+    lines.push("  - No params \u2192 list all available categories with descriptions");
+    lines.push("  - `category` \u2192 list tools in that category");
+    lines.push("  - `query` \u2192 keyword search across categories and tools");
+    lines.push("");
+    lines.push("**tool_catalog_load** \u2014 Load a category's tools so you can use them.");
+    lines.push("  - Tools become available immediately after loading.");
+    lines.push("  - If you need tools from a category, load it first.");
+    lines.push("");
+    lines.push("**tool_catalog_unload** \u2014 Unload a category to free token budget.");
+    lines.push("  - Unloaded tools are no longer sent to you.");
+    lines.push("  - Use when you're done with a category.");
+    lines.push("  - Pinned categories cannot be unloaded.");
+    lines.push("");
+    const builtIn = this.getAllowedCategories();
+    const connectors = this.getConnectorCategories();
+    if (builtIn.length > 0 || connectors.length > 0) {
+      lines.push("**Available categories:**");
+      for (const cat of builtIn) {
+        const tools = ToolCatalogRegistry.getToolsInCategory(cat.name);
+        const pinned = this._pinnedCategories.has(cat.name) ? " [PINNED]" : "";
+        lines.push(`- ${cat.name} (${tools.length} tools)${pinned}: ${cat.description}`);
+      }
+      for (const cc of connectors) {
+        const pinned = this._pinnedCategories.has(cc.name) ? " [PINNED]" : "";
+        lines.push(`- ${cc.name} (${cc.toolCount} tools)${pinned}: ${cc.description}`);
+      }
+      lines.push("");
+    }
+    lines.push("**Best practices:**");
+    lines.push("- Search first to find the right category before loading.");
+    lines.push("- Unload categories you no longer need to keep context lean.");
+    lines.push("- Categories marked [LOADED] are already available.");
+    lines.push("- Categories marked [PINNED] are always available and cannot be unloaded.");
+    return lines.join("\n");
   }
   keywordSearch(query) {
     const lq = query.toLowerCase();
@@ -17463,12 +18172,17 @@ var ToolCatalogPluginNextGen = class extends BasePluginNextGen {
     return { query, results, totalMatches: results.length };
   }
   searchConnectorCategory(category) {
+    const allowed = this.getConnectorCategories().some((cc) => cc.name === category);
+    if (!allowed) {
+      return { error: `Category '${category}' is not available for this agent.` };
+    }
     const connectorName = ToolCatalogRegistry.parseConnectorCategory(category);
     const tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     const loaded = this._loadedCategories.has(category);
     return {
       category,
       loaded,
+      pinned: this._pinnedCategories.has(category),
       connectorName,
       tools: tools.map((t) => ({
         name: t.name,
@@ -34154,13 +34868,13 @@ var TTS_MODEL_REGISTRY = {
     name: "gemini-2.5-flash-preview-tts",
     displayName: "Gemini 2.5 Flash TTS",
     provider: Vendor.Google,
-    description: "Google Gemini 2.5 Flash TTS - optimized for low latency",
+    description: "Google Gemini 2.5 Flash TTS - optimized for low latency, 30 voices, 70+ languages",
     isActive: true,
     releaseDate: "2025-01-01",
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/speech-generation",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -34179,20 +34893,27 @@ var TTS_MODEL_REGISTRY = {
         wordTimestamps: false
       },
       limits: { maxInputLength: 32e3 }
-      // 32k tokens
+      // 32k token context window
+    },
+    pricing: {
+      perMInputTokens: 0.5,
+      // $0.50 per 1M input tokens
+      perMOutputTokens: 10,
+      // $10.00 per 1M output tokens
+      currency: "USD"
     }
   },
   "gemini-2.5-pro-preview-tts": {
     name: "gemini-2.5-pro-preview-tts",
     displayName: "Gemini 2.5 Pro TTS",
     provider: Vendor.Google,
-    description: "Google Gemini 2.5 Pro TTS - optimized for quality",
+    description: "Google Gemini 2.5 Pro TTS - optimized for quality, 30 voices, 70+ languages",
     isActive: true,
     releaseDate: "2025-01-01",
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/speech-generation",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -34211,7 +34932,14 @@ var TTS_MODEL_REGISTRY = {
         wordTimestamps: false
       },
       limits: { maxInputLength: 32e3 }
-      // 32k tokens
+      // 32k token context window
+    },
+    pricing: {
+      perMInputTokens: 1,
+      // $1.00 per 1M input tokens
+      perMOutputTokens: 20,
+      // $20.00 per 1M output tokens
+      currency: "USD"
     }
   }
 };
@@ -34224,10 +34952,18 @@ function getTTSModelsWithFeature(feature) {
     (model) => model.isActive && model.capabilities.features[feature]
   );
 }
-function calculateTTSCost(modelName, characterCount) {
+function calculateTTSCost(modelName, characterCount, options) {
   const model = getTTSModelInfo(modelName);
   if (!model?.pricing) return null;
-  return characterCount / 1e3 * model.pricing.per1kCharacters;
+  if (model.pricing.per1kCharacters) {
+    return characterCount / 1e3 * model.pricing.per1kCharacters;
+  }
+  if (model.pricing.perMInputTokens && options?.inputTokens != null) {
+    const inputCost = options.inputTokens / 1e6 * model.pricing.perMInputTokens;
+    const outputCost = options.outputTokens ? options.outputTokens / 1e6 * (model.pricing.perMOutputTokens ?? 0) : 0;
+    return inputCost + outputCost;
+  }
+  return null;
 }
 var TextToSpeech = class _TextToSpeech {
   provider;
@@ -35673,7 +36409,13 @@ var IMAGE_MODELS = {
     /** Imagen 4.0 Ultra: Highest quality */
     IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001",
     /** Imagen 4.0 Fast: Optimized for speed */
-    IMAGEN_4_FAST: "imagen-4.0-fast-generate-001"
+    IMAGEN_4_FAST: "imagen-4.0-fast-generate-001",
+    /** Nano Banana 2: Gemini 3.1 Flash native image gen with 4K support */
+    GEMINI_3_1_FLASH_IMAGE: "gemini-3.1-flash-image-preview",
+    /** Nano Banana Pro: Gemini 3 Pro professional design engine with reasoning */
+    GEMINI_3_PRO_IMAGE: "gemini-3-pro-image-preview",
+    /** Nano Banana: Gemini 2.5 Flash native image gen/editing */
+    GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image"
   },
   [Vendor.Grok]: {
     /** Grok Imagine Image: xAI image generation with editing support */
@@ -35857,7 +36599,7 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
@@ -35968,7 +36710,7 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
@@ -36065,7 +36807,8 @@ var IMAGE_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perImage: 0.08,
+      perImage: 0.06,
+      // Updated per official pricing page (was $0.08)
       currency: "USD"
     }
   },
@@ -36079,7 +36822,7 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
@@ -36180,6 +36923,141 @@ var IMAGE_MODEL_REGISTRY = {
       currency: "USD"
     }
   },
+  // ======================== Google Nano Banana (Gemini Native Image) ========================
+  "gemini-3.1-flash-image-preview": {
+    name: "gemini-3.1-flash-image-preview",
+    displayName: "Nano Banana 2 (Gemini 3.1 Flash Image)",
+    provider: Vendor.Google,
+    description: "High-efficiency native image generation and editing with 4K support and thinking capabilities",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-03-04"
+    },
+    capabilities: {
+      sizes: ["512x512", "1024x1024", "1536x1536", "auto"],
+      aspectRatios: ["1:1", "1:4", "4:1", "1:8", "8:1"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: true,
+        // Multiple resolution tiers: 0.5K, 1K, 2K, 4K
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 131072 },
+      // 131K input tokens
+      vendorOptions: {
+        outputImageResolution: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution tier",
+          enum: ["0.5K", "1K", "2K", "4K"],
+          default: "1K",
+          controlType: "select"
+        }
+      }
+    },
+    pricing: {
+      // Per-image, varies by resolution: $0.045 (512px), $0.067 (1K), $0.101 (2K), $0.151 (4K)
+      perImageStandard: 0.067,
+      // 1K default
+      perImageHD: 0.151,
+      // 4K
+      currency: "USD"
+    }
+  },
+  "gemini-3-pro-image-preview": {
+    name: "gemini-3-pro-image-preview",
+    displayName: "Nano Banana Pro (Gemini 3 Pro Image)",
+    provider: Vendor.Google,
+    description: "Professional design engine with reasoning for studio-quality 4K visuals, complex layouts, and precise text rendering",
+    isActive: true,
+    releaseDate: "2025-11-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-03-04"
+    },
+    capabilities: {
+      sizes: ["1024x1024", "auto"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: true,
+        // Reasoning-driven design
+        qualityControl: true,
+        // 1K, 2K, 4K tiers
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 65536 },
+      // 65K input tokens
+      vendorOptions: {
+        outputImageResolution: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution tier",
+          enum: ["1K", "2K", "4K"],
+          default: "1K",
+          controlType: "select"
+        }
+      }
+    },
+    pricing: {
+      // $0.134 per 1K/2K image, $0.24 per 4K image
+      perImageStandard: 0.134,
+      // 1K/2K
+      perImageHD: 0.24,
+      // 4K
+      currency: "USD"
+    }
+  },
+  "gemini-2.5-flash-image": {
+    name: "gemini-2.5-flash-image",
+    displayName: "Nano Banana (Gemini 2.5 Flash Image)",
+    provider: Vendor.Google,
+    description: "Native image generation and editing designed for fast, creative workflows",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-03-04"
+    },
+    capabilities: {
+      sizes: ["1024x1024", "auto"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 65536 }
+      // 65K input tokens
+    },
+    pricing: {
+      perImage: 0.039,
+      // $0.039 per image
+      currency: "USD"
+    }
+  },
   // ======================== xAI Grok ========================
   "grok-imagine-image": {
     name: "grok-imagine-image",
@@ -36191,11 +37069,11 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://docs.x.ai/docs/guides/image-generation",
       pricing: "https://docs.x.ai/docs/models",
-      lastVerified: "2026-02-01"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
-      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "2:1", "1:2"],
       maxImagesPerRequest: 10,
       outputFormats: ["png", "jpeg"],
       features: {
@@ -37451,9 +38329,9 @@ var OPENAI_SOURCES = {
   lastVerified: "2026-01-25"
 };
 var GOOGLE_SOURCES = {
-  documentation: "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/overview",
-  apiReference: "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation",
-  lastVerified: "2026-01-25"
+  documentation: "https://ai.google.dev/gemini-api/docs/video",
+  apiReference: "https://ai.google.dev/gemini-api/docs/models/veo",
+  lastVerified: "2026-03-04"
 };
 var GROK_SOURCES = {
   documentation: "https://docs.x.ai/docs/guides/video-generations",
@@ -37527,14 +38405,16 @@ var VIDEO_MODEL_REGISTRY = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
-      resolutions: [],
-      // Veo 2.0 uses aspectRatio only, no resolution control
+      resolutions: ["720p"],
+      // Veo 2 only supports 720p
       aspectRatios: ["16:9", "9:16"],
       maxFps: 24,
       audio: false,
-      imageToVideo: true,
+      imageToVideo: false,
+      // Veo 2 does not support reference images
       videoExtension: false,
       frameControl: true,
+      // First/last frame interpolation supported
       features: {
         upscaling: false,
         styleControl: false,
@@ -37543,7 +38423,8 @@ var VIDEO_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perSecond: 0.03,
+      perSecond: 0.35,
+      // Updated per official pricing page (was $0.03)
       currency: "USD"
     }
   },
@@ -37555,14 +38436,18 @@ var VIDEO_MODEL_REGISTRY = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ["720p"],
-      // Fast model only supports 720p
+      resolutions: ["720p", "1080p", "4k"],
+      // 1080p/4k require 8s duration
       aspectRatios: ["16:9", "9:16"],
       maxFps: 24,
       audio: true,
+      // Native audio generation
       imageToVideo: true,
-      videoExtension: false,
-      frameControl: false,
+      // Up to 3 reference images
+      videoExtension: true,
+      // Supported (720p only)
+      frameControl: true,
+      // First/last frame interpolation
       features: {
         upscaling: false,
         styleControl: false,
@@ -37571,7 +38456,8 @@ var VIDEO_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perSecond: 0.75,
+      perSecond: 0.15,
+      // $0.15 for 720p/1080p, $0.35 for 4K
       currency: "USD"
     }
   },
@@ -37588,8 +38474,11 @@ var VIDEO_MODEL_REGISTRY = {
       aspectRatios: ["16:9", "9:16"],
       maxFps: 30,
       audio: true,
+      // Native audio generation
       imageToVideo: true,
+      // Up to 3 reference images
       videoExtension: true,
+      // Supported (720p only)
       frameControl: true,
       features: {
         upscaling: true,
@@ -37599,7 +38488,8 @@ var VIDEO_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perSecond: 0.75,
+      perSecond: 0.4,
+      // $0.40 for 720p/1080p, $0.60 for 4K
       currency: "USD"
     }
   },

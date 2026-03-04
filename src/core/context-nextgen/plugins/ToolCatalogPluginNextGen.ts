@@ -8,12 +8,23 @@
  * Categories come from ToolCatalogRegistry (static global) and ConnectorTools
  * (runtime discovery). The plugin manages loaded/unloaded state via ToolManager.
  *
+ * Scoping:
+ * - Built-in categories are scoped by `categoryScope` (toolCategories config)
+ * - Connector categories are scoped by `identities` (not by categoryScope)
+ * - Plugin tools (memory_*, context_*, etc.) are always available and separate
+ *
  * @example
  * ```typescript
  * const ctx = AgentContextNextGen.create({
  *   model: 'gpt-4',
  *   features: { toolCatalog: true },
- *   toolCategories: ['filesystem', 'web'],  // optional scope
+ *   toolCategories: ['filesystem', 'web'],  // built-in scope only
+ *   identities: [{ connector: 'github' }],  // connector scope
+ *   plugins: {
+ *     toolCatalog: {
+ *       pinned: ['filesystem'],              // always loaded, can't unload
+ *     },
+ *   },
  * });
  * ```
  */
@@ -35,13 +46,15 @@ import { logger } from '../../../infrastructure/observability/Logger.js';
 // ============================================================================
 
 export interface ToolCatalogPluginConfig {
-  /** Scope filter for which categories are visible */
+  /** Scope filter for which built-in categories are visible (does NOT affect connector categories) */
   categoryScope?: ToolCategoryScope;
-  /** Categories to pre-load on initialization */
+  /** Categories to pre-load on initialization (can be unloaded by LLM) */
   autoLoadCategories?: string[];
-  /** Maximum loaded categories at once (default: 10) */
+  /** Categories that are always loaded and cannot be unloaded by the LLM */
+  pinned?: string[];
+  /** Maximum loaded categories at once, excluding pinned (default: 10) */
   maxLoadedCategories?: number;
-  /** Auth identities for connector filtering */
+  /** Auth identities for connector category filtering */
   identities?: AuthIdentity[];
 }
 
@@ -50,28 +63,6 @@ export interface ToolCatalogPluginConfig {
 // ============================================================================
 
 const DEFAULT_MAX_LOADED = 10;
-
-const TOOL_CATALOG_INSTRUCTIONS = `## Tool Catalog
-
-You have access to a dynamic tool catalog. Not all tools are loaded at once — use these metatools to discover and load what you need:
-
-**tool_catalog_search** — Browse available tool categories and search for specific tools.
-  - No params → list all available categories with descriptions
-  - \`category\` → list tools in that category
-  - \`query\` → keyword search across categories and tools
-
-**tool_catalog_load** — Load a category's tools so you can use them.
-  - Tools become available immediately after loading.
-  - If you need tools from a category, load it first.
-
-**tool_catalog_unload** — Unload a category to free token budget.
-  - Unloaded tools are no longer sent to you.
-  - Use when you're done with a category.
-
-**Best practices:**
-- Search first to find the right category before loading.
-- Unload categories you no longer need to keep context lean.
-- Categories marked [LOADED] are already available.`;
 
 // ============================================================================
 // Tool Definitions
@@ -144,6 +135,9 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   /** category name → array of tool names that were loaded */
   private _loadedCategories = new Map<string, string[]>();
 
+  /** Categories that cannot be unloaded */
+  private _pinnedCategories = new Set<string>();
+
   /** Reference to the ToolManager for registering/disabling tools */
   private _toolManager: ToolManager | null = null;
 
@@ -164,6 +158,12 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       maxLoadedCategories: DEFAULT_MAX_LOADED,
       ...config,
     };
+    // Populate pinned set from config
+    if (this._config.pinned?.length) {
+      for (const cat of this._config.pinned) {
+        this._pinnedCategories.add(cat);
+      }
+    }
   }
 
   // ========================================================================
@@ -171,7 +171,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   // ========================================================================
 
   getInstructions(): string {
-    return TOOL_CATALOG_INSTRUCTIONS;
+    return this.buildInstructions();
   }
 
   async getContent(): Promise<string | null> {
@@ -186,19 +186,19 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       lines.push(`**Loaded:** ${loaded.join(', ')}`);
     }
 
-    lines.push(`**Available categories:** ${categories.length}`);
+    lines.push(`**Available categories:** ${categories.length + this.getConnectorCategories().length}`);
 
     // Brief summary of categories
     for (const cat of categories) {
       const tools = ToolCatalogRegistry.getToolsInCategory(cat.name);
-      const marker = this._loadedCategories.has(cat.name) ? ' [LOADED]' : '';
-      lines.push(`- **${cat.displayName}** (${tools.length} tools)${marker}: ${cat.description}`);
+      const markers = this.getCategoryMarkers(cat.name);
+      lines.push(`- **${cat.displayName}** (${tools.length} tools)${markers}: ${cat.description}`);
     }
 
     // Add connector categories (from cache)
     for (const cc of this.getConnectorCategories()) {
-      const marker = this._loadedCategories.has(cc.name) ? ' [LOADED]' : '';
-      lines.push(`- **${cc.displayName}** (${cc.toolCount} tools)${marker}: ${cc.description}`);
+      const markers = this.getCategoryMarkers(cc.name);
+      lines.push(`- **${cc.displayName}** (${cc.toolCount} tools)${markers}: ${cc.description}`);
     }
 
     const content = lines.join('\n');
@@ -212,6 +212,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
         category: name,
         toolCount: tools.length,
         tools,
+        pinned: this._pinnedCategories.has(name),
       })),
     };
   }
@@ -244,14 +245,19 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   }
 
   isCompactable(): boolean {
-    return this._loadedCategories.size > 0;
+    // Only compactable if there are non-pinned loaded categories
+    for (const category of this._loadedCategories.keys()) {
+      if (!this._pinnedCategories.has(category)) return true;
+    }
+    return false;
   }
 
   async compact(targetTokensToFree: number): Promise<number> {
     if (!this._toolManager || this._loadedCategories.size === 0) return 0;
 
-    // Sort loaded categories by least recently used (based on tool metadata)
-    const categoriesByLastUsed = this.getCategoriesSortedByLastUsed();
+    // Sort loaded categories by least recently used, excluding pinned
+    const categoriesByLastUsed = this.getCategoriesSortedByLastUsed()
+      .filter(cat => !this._pinnedCategories.has(cat));
     let freed = 0;
 
     for (const category of categoriesByLastUsed) {
@@ -301,6 +307,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
 
   destroy(): void {
     this._loadedCategories.clear();
+    this._pinnedCategories.clear();
     this._toolManager = null;
     this._connectorCategories = null;
     this._destroyed = true;
@@ -316,15 +323,24 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   setToolManager(tm: ToolManager): void {
     this._toolManager = tm;
 
-    // Discover connector categories once at init
+    // Discover connector categories once at init (filtered by identities, not categoryScope)
     this._connectorCategories = ToolCatalogRegistry.discoverConnectorCategories({
-      scope: this._config.categoryScope,
       identities: this._config.identities,
     });
 
-    // Auto-load categories if configured
+    // Load pinned categories first (always loaded, cannot be unloaded)
+    for (const category of this._pinnedCategories) {
+      const result = this.executeLoad(category);
+      if (result.error) {
+        logger.warn({ category, error: result.error },
+          `[ToolCatalogPlugin] Failed to load pinned category '${category}'`);
+      }
+    }
+
+    // Auto-load categories if configured (can be unloaded later)
     if (this._config.autoLoadCategories?.length) {
       for (const category of this._config.autoLoadCategories) {
+        if (this._pinnedCategories.has(category)) continue; // Already loaded as pinned
         const result = this.executeLoad(category);
         if (result.error) {
           logger.warn({ category, error: result.error },
@@ -339,6 +355,11 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
     return Array.from(this._loadedCategories.keys());
   }
 
+  /** Get set of pinned category names */
+  get pinnedCategories(): ReadonlySet<string> {
+    return this._pinnedCategories;
+  }
+
   // ========================================================================
   // Metatool Implementations
   // ========================================================================
@@ -348,7 +369,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
 
     // List tools in a specific category
     if (category) {
-      // Check if it's a connector category
+      // Check if it's a connector category — scoped by identities, not categoryScope
       if (ToolCatalogRegistry.parseConnectorCategory(category) !== null) {
         return this.searchConnectorCategory(category);
       }
@@ -357,6 +378,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
         return { error: `Category '${category}' not found. Use tool_catalog_search with no params to see available categories.` };
       }
 
+      // Built-in categories: check categoryScope
       if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
         return { error: `Category '${category}' is not available for this agent.` };
       }
@@ -366,6 +388,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       return {
         category,
         loaded,
+        pinned: this._pinnedCategories.has(category),
         tools: tools.map(t => ({
           name: t.name,
           displayName: t.displayName,
@@ -389,6 +412,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       description: string;
       toolCount: number;
       loaded: boolean;
+      pinned: boolean;
     }> = [];
 
     for (const cat of categories) {
@@ -399,6 +423,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
         description: cat.description,
         toolCount: tools.length,
         loaded: this._loadedCategories.has(cat.name),
+        pinned: this._pinnedCategories.has(cat.name),
       });
     }
 
@@ -409,6 +434,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
         description: cc.description,
         toolCount: cc.toolCount,
         loaded: this._loadedCategories.has(cc.name),
+        pinned: this._pinnedCategories.has(cc.name),
       });
     }
 
@@ -422,9 +448,19 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       return { error: 'ToolManager not connected. Plugin not properly initialized.' };
     }
 
-    // Check scope — applies uniformly to all categories (including connectors)
-    if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
-      return { error: `Category '${category}' is not available for this agent.` };
+    // Connector categories: scoped by identities (checked in discoverConnectorCategories),
+    // not by categoryScope. Verify it's in our discovered set.
+    const isConnector = ToolCatalogRegistry.parseConnectorCategory(category) !== null;
+    if (isConnector) {
+      const allowed = this.getConnectorCategories().some(cc => cc.name === category);
+      if (!allowed) {
+        return { error: `Category '${category}' is not available for this agent.` };
+      }
+    } else {
+      // Built-in categories: check categoryScope
+      if (!ToolCatalogRegistry.isCategoryAllowed(category, this._config.categoryScope)) {
+        return { error: `Category '${category}' is not available for this agent.` };
+      }
     }
 
     // Already loaded — idempotent
@@ -433,8 +469,9 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       return { loaded: toolNames.length, tools: toolNames, alreadyLoaded: true };
     }
 
-    // Check max loaded limit
-    if (this._loadedCategories.size >= this._config.maxLoadedCategories) {
+    // Check max loaded limit (pinned don't count)
+    const nonPinnedLoaded = this._loadedCategories.size - this._pinnedCategories.size;
+    if (!this._pinnedCategories.has(category) && nonPinnedLoaded >= this._config.maxLoadedCategories) {
       return {
         error: `Maximum loaded categories (${this._config.maxLoadedCategories}) reached. Unload a category first.`,
         loaded: Array.from(this._loadedCategories.keys()),
@@ -442,7 +479,6 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
     }
 
     // Resolve tools
-    const isConnector = ToolCatalogRegistry.parseConnectorCategory(category) !== null;
     let tools: Array<{ tool: ToolFunction; name: string }>;
 
     if (isConnector) {
@@ -490,6 +526,11 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       return { error: 'ToolManager not connected.' };
     }
 
+    // Pinned categories cannot be unloaded
+    if (this._pinnedCategories.has(category)) {
+      return { error: `Category '${category}' is pinned and cannot be unloaded.` };
+    }
+
     const toolNames = this._loadedCategories.get(category);
     if (!toolNames) {
       return { unloaded: 0, message: `Category '${category}' is not loaded.` };
@@ -519,6 +560,69 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
    */
   private getConnectorCategories(): ConnectorCategoryInfo[] {
     return this._connectorCategories ?? [];
+  }
+
+  /**
+   * Build status markers for a category (e.g., " [PINNED]", " [LOADED]", " [PINNED] [LOADED]")
+   */
+  private getCategoryMarkers(name: string): string {
+    const parts: string[] = [];
+    if (this._pinnedCategories.has(name)) parts.push('[PINNED]');
+    if (this._loadedCategories.has(name)) parts.push('[LOADED]');
+    return parts.length > 0 ? ' ' + parts.join(' ') : '';
+  }
+
+  /**
+   * Build dynamic instructions that include the list of available categories.
+   */
+  private buildInstructions(): string {
+    const lines: string[] = [];
+
+    lines.push('## Tool Catalog');
+    lines.push('');
+    lines.push('Your core tools (memory, context, instructions, etc.) are always available.');
+    lines.push('Additional tool categories can be loaded on demand from the catalog below.');
+    lines.push('');
+    lines.push('**tool_catalog_search** — Browse available tool categories and search for specific tools.');
+    lines.push('  - No params → list all available categories with descriptions');
+    lines.push('  - `category` → list tools in that category');
+    lines.push('  - `query` → keyword search across categories and tools');
+    lines.push('');
+    lines.push('**tool_catalog_load** — Load a category\'s tools so you can use them.');
+    lines.push('  - Tools become available immediately after loading.');
+    lines.push('  - If you need tools from a category, load it first.');
+    lines.push('');
+    lines.push('**tool_catalog_unload** — Unload a category to free token budget.');
+    lines.push('  - Unloaded tools are no longer sent to you.');
+    lines.push('  - Use when you\'re done with a category.');
+    lines.push('  - Pinned categories cannot be unloaded.');
+    lines.push('');
+
+    // List available categories
+    const builtIn = this.getAllowedCategories();
+    const connectors = this.getConnectorCategories();
+
+    if (builtIn.length > 0 || connectors.length > 0) {
+      lines.push('**Available categories:**');
+      for (const cat of builtIn) {
+        const tools = ToolCatalogRegistry.getToolsInCategory(cat.name);
+        const pinned = this._pinnedCategories.has(cat.name) ? ' [PINNED]' : '';
+        lines.push(`- ${cat.name} (${tools.length} tools)${pinned}: ${cat.description}`);
+      }
+      for (const cc of connectors) {
+        const pinned = this._pinnedCategories.has(cc.name) ? ' [PINNED]' : '';
+        lines.push(`- ${cc.name} (${cc.toolCount} tools)${pinned}: ${cc.description}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('**Best practices:**');
+    lines.push('- Search first to find the right category before loading.');
+    lines.push('- Unload categories you no longer need to keep context lean.');
+    lines.push('- Categories marked [LOADED] are already available.');
+    lines.push('- Categories marked [PINNED] are always available and cannot be unloaded.');
+
+    return lines.join('\n');
   }
 
   private keywordSearch(query: string): Record<string, unknown> {
@@ -576,6 +680,12 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
   }
 
   private searchConnectorCategory(category: string): Record<string, unknown> {
+    // Verify this connector category is in our discovered set (filtered by identities)
+    const allowed = this.getConnectorCategories().some(cc => cc.name === category);
+    if (!allowed) {
+      return { error: `Category '${category}' is not available for this agent.` };
+    }
+
     const connectorName = ToolCatalogRegistry.parseConnectorCategory(category);
     const tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     const loaded = this._loadedCategories.has(category);
@@ -583,6 +693,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
     return {
       category,
       loaded,
+      pinned: this._pinnedCategories.has(category),
       connectorName,
       tools: tools.map(t => ({
         name: t.name,

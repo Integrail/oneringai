@@ -22,18 +22,30 @@ function isVendor(value) {
 // src/domain/entities/Model.ts
 var LLM_MODELS = {
   [Vendor.OpenAI]: {
+    // GPT-5.3 Series
+    GPT_5_3_CODEX: "gpt-5.3-codex",
+    GPT_5_3_CHAT: "gpt-5.3-chat-latest",
     // GPT-5.2 Series (Current Flagship)
     GPT_5_2: "gpt-5.2",
     GPT_5_2_PRO: "gpt-5.2-pro",
+    GPT_5_2_CODEX: "gpt-5.2-codex",
+    GPT_5_2_CHAT: "gpt-5.2-chat-latest",
+    // GPT-5.1 Series
+    GPT_5_1: "gpt-5.1",
+    GPT_5_1_CODEX: "gpt-5.1-codex",
+    GPT_5_1_CODEX_MAX: "gpt-5.1-codex-max",
+    GPT_5_1_CODEX_MINI: "gpt-5.1-codex-mini",
+    GPT_5_1_CHAT: "gpt-5.1-chat-latest",
     // GPT-5 Series
     GPT_5: "gpt-5",
     GPT_5_MINI: "gpt-5-mini",
     GPT_5_NANO: "gpt-5-nano",
+    GPT_5_CHAT: "gpt-5-chat-latest",
     // GPT-4.1 Series
     GPT_4_1: "gpt-4.1",
     GPT_4_1_MINI: "gpt-4.1-mini",
     GPT_4_1_NANO: "gpt-4.1-nano",
-    // GPT-4o Series (Legacy, Audio Capable)
+    // GPT-4o Series (Legacy)
     GPT_4O: "gpt-4o",
     GPT_4O_MINI: "gpt-4o-mini",
     // Reasoning Models (o-series)
@@ -41,18 +53,26 @@ var LLM_MODELS = {
     O1: "o1"
   },
   [Vendor.Anthropic]: {
-    // Claude 4.5 Series (Current)
+    // Claude 4.6 Series (Current)
+    CLAUDE_OPUS_4_6: "claude-opus-4-6",
+    CLAUDE_SONNET_4_6: "claude-sonnet-4-6",
+    // Claude 4.5 Series
     CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101",
     CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929",
     CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001",
     // Claude 4.x Legacy
     CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805",
+    CLAUDE_OPUS_4: "claude-opus-4-20250514",
     CLAUDE_SONNET_4: "claude-sonnet-4-20250514",
     CLAUDE_SONNET_3_7: "claude-3-7-sonnet-20250219",
-    // Claude 3.x Legacy
+    // Claude 3.x Legacy (Deprecated)
     CLAUDE_HAIKU_3: "claude-3-haiku-20240307"
   },
   [Vendor.Google]: {
+    // Gemini 3.1 Series (Preview)
+    GEMINI_3_1_PRO_PREVIEW: "gemini-3.1-pro-preview",
+    GEMINI_3_1_FLASH_LITE_PREVIEW: "gemini-3.1-flash-lite-preview",
+    GEMINI_3_1_FLASH_IMAGE_PREVIEW: "gemini-3.1-flash-image-preview",
     // Gemini 3 Series (Preview)
     GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview",
     GEMINI_3_PRO_PREVIEW: "gemini-3-pro-preview",
@@ -84,12 +104,88 @@ var MODEL_REGISTRY = {
   // ============================================================================
   // OpenAI Models (Verified from platform.openai.com)
   // ============================================================================
+  // GPT-5.3 Series
+  "gpt-5.3-codex": {
+    name: "gpt-5.3-codex",
+    provider: Vendor.OpenAI,
+    description: "Latest codex model for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  "gpt-5.3-chat-latest": {
+    name: "gpt-5.3-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "Latest GPT-5.3 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
   // GPT-5.2 Series (Current Flagship)
   "gpt-5.2": {
     name: "gpt-5.2",
     provider: Vendor.OpenAI,
     description: "Flagship model for coding and agentic tasks. Reasoning.effort: none, low, medium, high, xhigh",
     isActive: true,
+    preferred: true,
     releaseDate: "2025-12-01",
     knowledgeCutoff: "2025-08-31",
     features: {
@@ -115,7 +211,8 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 1.75
+        cpm: 1.75,
+        cpmCached: 0.175
       },
       output: {
         tokens: 128e3,
@@ -134,7 +231,7 @@ var MODEL_REGISTRY = {
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: true,
+      structuredOutput: false,
       functionCalling: true,
       fineTuning: false,
       predictedOutputs: false,
@@ -160,6 +257,276 @@ var MODEL_REGISTRY = {
         tokens: 128e3,
         text: true,
         cpm: 168
+      }
+    }
+  },
+  "gpt-5.2-codex": {
+    name: "gpt-5.2-codex",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.2 codex for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  "gpt-5.2-chat-latest": {
+    name: "gpt-5.2-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.2 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  // GPT-5.1 Series
+  "gpt-5.1": {
+    name: "gpt-5.1",
+    provider: Vendor.OpenAI,
+    description: "Intelligent reasoning model for coding and agentic tasks. Reasoning.effort: none, low, medium, high",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5.1-codex": {
+    name: "gpt-5.1-codex",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 codex for coding and agentic tasks with reasoning",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5.1-codex-max": {
+    name: "gpt-5.1-codex-max",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 codex max for maximum reasoning depth on coding tasks",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5.1-codex-mini": {
+    name: "gpt-5.1-codex-mini",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 codex mini for cost-efficient coding tasks",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 0.25,
+        cpmCached: 0.025
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 2
+      }
+    }
+  },
+  "gpt-5.1-chat-latest": {
+    name: "gpt-5.1-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.1 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 10
       }
     }
   },
@@ -194,7 +561,8 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 1.25
+        cpm: 1.25,
+        cpmCached: 0.125
       },
       output: {
         tokens: 128e3,
@@ -233,7 +601,8 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 0.25
+        cpm: 0.25,
+        cpmCached: 0.025
       },
       output: {
         tokens: 128e3,
@@ -272,12 +641,47 @@ var MODEL_REGISTRY = {
         tokens: 4e5,
         text: true,
         image: true,
-        cpm: 0.05
+        cpm: 0.05,
+        cpmCached: 5e-3
       },
       output: {
         tokens: 128e3,
         text: true,
         cpm: 0.4
+      }
+    }
+  },
+  "gpt-5-chat-latest": {
+    name: "gpt-5-chat-latest",
+    provider: Vendor.OpenAI,
+    description: "GPT-5 chat model for general-purpose use",
+    isActive: true,
+    releaseDate: "2025-08-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125
+      },
+      output: {
+        tokens: 16e3,
+        text: true,
+        cpm: 10
       }
     }
   },
@@ -288,7 +692,7 @@ var MODEL_REGISTRY = {
     description: "GPT-4.1 specialized for coding with 1M token context window",
     isActive: true,
     releaseDate: "2025-04-14",
-    knowledgeCutoff: "2025-04-01",
+    knowledgeCutoff: "2024-06-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -306,7 +710,8 @@ var MODEL_REGISTRY = {
         tokens: 1e6,
         text: true,
         image: true,
-        cpm: 2
+        cpm: 2,
+        cpmCached: 0.5
       },
       output: {
         tokens: 32768,
@@ -321,7 +726,7 @@ var MODEL_REGISTRY = {
     description: "Efficient GPT-4.1 model, beats GPT-4o in many benchmarks at 83% lower cost",
     isActive: true,
     releaseDate: "2025-04-14",
-    knowledgeCutoff: "2025-04-01",
+    knowledgeCutoff: "2024-06-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -339,7 +744,8 @@ var MODEL_REGISTRY = {
         tokens: 1e6,
         text: true,
         image: true,
-        cpm: 0.4
+        cpm: 0.4,
+        cpmCached: 0.1
       },
       output: {
         tokens: 16384,
@@ -354,7 +760,7 @@ var MODEL_REGISTRY = {
     description: "Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion",
     isActive: true,
     releaseDate: "2025-04-14",
-    knowledgeCutoff: "2025-04-01",
+    knowledgeCutoff: "2024-06-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -372,7 +778,8 @@ var MODEL_REGISTRY = {
         tokens: 1e6,
         text: true,
         image: true,
-        cpm: 0.1
+        cpm: 0.1,
+        cpmCached: 0.025
       },
       output: {
         tokens: 16384,
@@ -381,14 +788,14 @@ var MODEL_REGISTRY = {
       }
     }
   },
-  // GPT-4o Series (Legacy, Audio Capable)
+  // GPT-4o Series (Legacy)
   "gpt-4o": {
     name: "gpt-4o",
     provider: Vendor.OpenAI,
-    description: "Versatile omni model with audio support. Legacy but still available",
+    description: "Versatile omni model. Legacy but still available",
     isActive: true,
     releaseDate: "2024-05-13",
-    knowledgeCutoff: "2024-04-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -398,7 +805,7 @@ var MODEL_REGISTRY = {
       predictedOutputs: true,
       realtime: true,
       vision: true,
-      audio: true,
+      audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
@@ -406,13 +813,12 @@ var MODEL_REGISTRY = {
         tokens: 128e3,
         text: true,
         image: true,
-        audio: true,
-        cpm: 2.5
+        cpm: 2.5,
+        cpmCached: 1.25
       },
       output: {
         tokens: 16384,
         text: true,
-        audio: true,
         cpm: 10
       }
     }
@@ -420,10 +826,10 @@ var MODEL_REGISTRY = {
   "gpt-4o-mini": {
     name: "gpt-4o-mini",
     provider: Vendor.OpenAI,
-    description: "Fast, affordable omni model with audio support",
+    description: "Fast, affordable omni model",
     isActive: true,
     releaseDate: "2024-07-18",
-    knowledgeCutoff: "2024-04-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: false,
       streaming: true,
@@ -433,7 +839,7 @@ var MODEL_REGISTRY = {
       predictedOutputs: false,
       realtime: true,
       vision: true,
-      audio: true,
+      audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
@@ -441,13 +847,12 @@ var MODEL_REGISTRY = {
         tokens: 128e3,
         text: true,
         image: true,
-        audio: true,
-        cpm: 0.15
+        cpm: 0.15,
+        cpmCached: 0.075
       },
       output: {
         tokens: 16384,
         text: true,
-        audio: true,
         cpm: 0.6
       }
     }
@@ -459,7 +864,7 @@ var MODEL_REGISTRY = {
     description: "Fast reasoning model tailored for coding, math, and science",
     isActive: true,
     releaseDate: "2025-01-31",
-    knowledgeCutoff: "2024-10-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -468,11 +873,11 @@ var MODEL_REGISTRY = {
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: true,
+      vision: false,
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: false,
+      promptCaching: true,
       parameters: {
         temperature: false,
         topP: false,
@@ -482,8 +887,8 @@ var MODEL_REGISTRY = {
       input: {
         tokens: 2e5,
         text: true,
-        image: true,
-        cpm: 1.1
+        cpm: 1.1,
+        cpmCached: 0.55
       },
       output: {
         tokens: 1e5,
@@ -498,7 +903,7 @@ var MODEL_REGISTRY = {
     description: "Advanced reasoning model for complex problems",
     isActive: true,
     releaseDate: "2024-12-17",
-    knowledgeCutoff: "2024-10-01",
+    knowledgeCutoff: "2023-10-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -511,7 +916,7 @@ var MODEL_REGISTRY = {
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: false,
+      promptCaching: true,
       parameters: {
         temperature: false,
         topP: false,
@@ -522,7 +927,8 @@ var MODEL_REGISTRY = {
         tokens: 2e5,
         text: true,
         image: true,
-        cpm: 15
+        cpm: 15,
+        cpmCached: 7.5
       },
       output: {
         tokens: 1e5,
@@ -532,13 +938,88 @@ var MODEL_REGISTRY = {
     }
   },
   // ============================================================================
-  // Anthropic Models (Verified from platform.claude.com)
+  // Anthropic Models (Verified from platform.claude.com - March 2026)
   // ============================================================================
-  // Claude 4.5 Series (Current)
+  // Claude 4.6 Series (Current)
+  "claude-opus-4-6": {
+    name: "claude-opus-4-6",
+    provider: Vendor.Anthropic,
+    description: "The most intelligent model for building agents and coding. 128K output, adaptive thinking",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-05-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 5,
+        cpmCached: 0.5
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 25
+      }
+    }
+  },
+  "claude-sonnet-4-6": {
+    name: "claude-sonnet-4-6",
+    provider: Vendor.Anthropic,
+    description: "Best combination of speed and intelligence. Adaptive thinking, 1M context beta",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-08-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3
+      },
+      output: {
+        tokens: 64e3,
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  // Claude 4.5 Series
   "claude-opus-4-5-20251101": {
     name: "claude-opus-4-5-20251101",
     provider: Vendor.Anthropic,
-    description: "Premium model combining maximum intelligence with practical performance",
+    description: "Legacy Opus 4.5. Premium model combining maximum intelligence with practical performance",
     isActive: true,
     releaseDate: "2025-11-01",
     knowledgeCutoff: "2025-05-01",
@@ -573,7 +1054,7 @@ var MODEL_REGISTRY = {
   "claude-sonnet-4-5-20250929": {
     name: "claude-sonnet-4-5-20250929",
     provider: Vendor.Anthropic,
-    description: "Smart model for complex agents and coding. Best balance of intelligence, speed, cost",
+    description: "Legacy Sonnet 4.5. Smart model for complex agents and coding",
     isActive: true,
     releaseDate: "2025-09-29",
     knowledgeCutoff: "2025-01-01",
@@ -593,6 +1074,7 @@ var MODEL_REGISTRY = {
       promptCaching: true,
       input: {
         tokens: 2e5,
+        // 1M with beta header
         text: true,
         image: true,
         cpm: 3,
@@ -676,10 +1158,45 @@ var MODEL_REGISTRY = {
       }
     }
   },
+  "claude-opus-4-20250514": {
+    name: "claude-opus-4-20250514",
+    provider: Vendor.Anthropic,
+    description: "Legacy Opus 4. Agentic tasks and reasoning",
+    isActive: true,
+    releaseDate: "2025-05-14",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 15,
+        cpmCached: 1.5
+      },
+      output: {
+        tokens: 32e3,
+        text: true,
+        cpm: 75
+      }
+    }
+  },
   "claude-sonnet-4-20250514": {
     name: "claude-sonnet-4-20250514",
     provider: Vendor.Anthropic,
-    description: "Legacy Sonnet 4. Default for most users, supports 1M context beta",
+    description: "Legacy Sonnet 4. Supports 1M context beta",
     isActive: true,
     releaseDate: "2025-05-14",
     knowledgeCutoff: "2025-01-01",
@@ -715,7 +1232,7 @@ var MODEL_REGISTRY = {
   "claude-3-7-sonnet-20250219": {
     name: "claude-3-7-sonnet-20250219",
     provider: Vendor.Anthropic,
-    description: "Claude 3.7 Sonnet with extended thinking, supports 128K output beta",
+    description: "Deprecated. Claude 3.7 Sonnet with extended thinking",
     isActive: true,
     releaseDate: "2025-02-19",
     knowledgeCutoff: "2024-10-01",
@@ -742,17 +1259,16 @@ var MODEL_REGISTRY = {
       },
       output: {
         tokens: 64e3,
-        // 128K with beta header
         text: true,
         cpm: 15
       }
     }
   },
-  // Claude 3.x Legacy
+  // Claude 3.x Legacy (Deprecated - retiring April 19, 2026)
   "claude-3-haiku-20240307": {
     name: "claude-3-haiku-20240307",
     provider: Vendor.Anthropic,
-    description: "Fast legacy model. Recommend migrating to Haiku 4.5",
+    description: "Deprecated. Retiring April 19, 2026. Migrate to Haiku 4.5",
     isActive: true,
     releaseDate: "2024-03-07",
     knowledgeCutoff: "2023-08-01",
@@ -785,16 +1301,17 @@ var MODEL_REGISTRY = {
     }
   },
   // ============================================================================
-  // Google Models (Verified from ai.google.dev)
+  // Google Models (Verified from ai.google.dev - March 2026)
   // ============================================================================
-  // Gemini 3 Series (Preview)
-  "gemini-3-flash-preview": {
-    name: "gemini-3-flash-preview",
+  // Gemini 3.1 Series (Preview)
+  "gemini-3.1-pro-preview": {
+    name: "gemini-3.1-pro-preview",
     provider: Vendor.Google,
-    description: "Pro-grade reasoning with Flash-level latency and efficiency",
+    description: "Advanced intelligence with powerful agentic and coding capabilities. Replaces gemini-3-pro-preview",
     isActive: true,
-    releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
+    preferred: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-01-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -809,27 +1326,135 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.15
+        cpm: 2,
+        cpmCached: 0.2
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.6
+        cpm: 12
+      }
+    }
+  },
+  "gemini-3.1-flash-lite-preview": {
+    name: "gemini-3.1-flash-lite-preview",
+    provider: Vendor.Google,
+    description: "High performance, budget-friendly for high-volume agentic tasks and data extraction",
+    isActive: true,
+    releaseDate: "2026-03-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1048576,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.25
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 1.5
+      }
+    }
+  },
+  "gemini-3.1-flash-image-preview": {
+    name: "gemini-3.1-flash-image-preview",
+    provider: Vendor.Google,
+    description: "High-efficiency image generation with up to 4K output, search grounding support",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: false,
+      input: {
+        tokens: 131072,
+        text: true,
+        image: true,
+        cpm: 0.25
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        image: true,
+        cpm: 1.5
+      }
+    }
+  },
+  // Gemini 3 Series (Preview)
+  "gemini-3-flash-preview": {
+    name: "gemini-3-flash-preview",
+    provider: Vendor.Google,
+    description: "Most powerful agentic and coding model with frontier-class reasoning",
+    isActive: true,
+    preferred: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1048576,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.5,
+        cpmCached: 0.05
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 3
       }
     }
   },
   "gemini-3-pro-preview": {
     name: "gemini-3-pro-preview",
     provider: Vendor.Google,
-    description: "Most advanced reasoning Gemini model for complex tasks",
+    description: "Deprecated. Shutting down March 9, 2026. Migrate to gemini-3.1-pro-preview",
     isActive: true,
     releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
+    knowledgeCutoff: "2025-01-01",
     features: {
       reasoning: true,
       streaming: true,
@@ -844,7 +1469,7 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
@@ -861,14 +1486,14 @@ var MODEL_REGISTRY = {
   "gemini-3-pro-image-preview": {
     name: "gemini-3-pro-image-preview",
     provider: Vendor.Google,
-    description: "Highest quality image generation model",
+    description: "Professional-grade image generation and editing with reasoning",
     isActive: true,
     releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
+    knowledgeCutoff: "2025-01-01",
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: false,
+      structuredOutput: true,
       functionCalling: false,
       fineTuning: false,
       predictedOutputs: false,
@@ -877,15 +1502,15 @@ var MODEL_REGISTRY = {
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: true,
+      promptCaching: false,
       input: {
-        tokens: 1e6,
+        tokens: 65536,
         text: true,
         image: true,
         cpm: 1.25
       },
       output: {
-        tokens: 65536,
+        tokens: 32768,
         text: true,
         image: true,
         cpm: 10
@@ -896,7 +1521,7 @@ var MODEL_REGISTRY = {
   "gemini-2.5-pro": {
     name: "gemini-2.5-pro",
     provider: Vendor.Google,
-    description: "Advanced multimodal model built for deep reasoning and agents",
+    description: "Most advanced model for complex tasks with deep reasoning and coding",
     isActive: true,
     releaseDate: "2025-03-01",
     knowledgeCutoff: "2025-01-01",
@@ -914,12 +1539,13 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 1.25
+        cpm: 1.25,
+        cpmCached: 0.125
       },
       output: {
         tokens: 65536,
@@ -931,7 +1557,7 @@ var MODEL_REGISTRY = {
   "gemini-2.5-flash": {
     name: "gemini-2.5-flash",
     provider: Vendor.Google,
-    description: "Fast, cost-effective model with excellent reasoning",
+    description: "Best price-performance for low-latency, high-volume tasks with reasoning",
     isActive: true,
     releaseDate: "2025-06-17",
     knowledgeCutoff: "2025-01-01",
@@ -949,24 +1575,25 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.15
+        cpm: 0.3,
+        cpmCached: 0.03
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.6
+        cpm: 2.5
       }
     }
   },
   "gemini-2.5-flash-lite": {
     name: "gemini-2.5-flash-lite",
     provider: Vendor.Google,
-    description: "Lowest latency for high-volume tasks, summarization, classification",
+    description: "Fastest and most budget-friendly multimodal model in the 2.5 family",
     isActive: true,
     releaseDate: "2025-06-17",
     knowledgeCutoff: "2025-01-01",
@@ -984,31 +1611,31 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.075
+        cpm: 0.1
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.3
+        cpm: 0.4
       }
     }
   },
   "gemini-2.5-flash-image": {
     name: "gemini-2.5-flash-image",
     provider: Vendor.Google,
-    description: "Image generation and editing model",
+    description: "Fast native image generation and editing (Nano Banana)",
     isActive: true,
-    releaseDate: "2025-09-01",
-    knowledgeCutoff: "2025-01-01",
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2025-06-01",
     features: {
-      reasoning: true,
+      reasoning: false,
       streaming: true,
-      structuredOutput: false,
+      structuredOutput: true,
       functionCalling: false,
       fineTuning: false,
       predictedOutputs: false,
@@ -1019,13 +1646,13 @@ var MODEL_REGISTRY = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1e6,
+        tokens: 65536,
         text: true,
         image: true,
         cpm: 0.15
       },
       output: {
-        tokens: 65536,
+        tokens: 32768,
         text: true,
         image: true,
         cpm: 0.6
@@ -1033,7 +1660,7 @@ var MODEL_REGISTRY = {
     }
   },
   // ============================================================================
-  // xAI Grok Models (Verified from docs.x.ai - January 2026)
+  // xAI Grok Models (Verified from docs.x.ai - March 2026)
   // ============================================================================
   // Grok 4.1 Series (2M context, fast)
   "grok-4-1-fast-reasoning": {
@@ -1054,13 +1681,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
         image: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -1087,13 +1715,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
         image: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -1121,12 +1750,13 @@ var MODEL_REGISTRY = {
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 256e3,
         text: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.02
       },
       output: {
         tokens: 32768,
@@ -1139,7 +1769,7 @@ var MODEL_REGISTRY = {
   "grok-4-fast-reasoning": {
     name: "grok-4-fast-reasoning",
     provider: Vendor.Grok,
-    description: "Fast Grok 4 with reasoning capabilities, 2M context window",
+    description: "Fast Grok 4 with reasoning capabilities, 2M context window, vision support",
     isActive: true,
     releaseDate: "2025-09-01",
     knowledgeCutoff: "2024-11-01",
@@ -1151,15 +1781,17 @@ var MODEL_REGISTRY = {
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: false,
+      vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
-        cpm: 0.2
+        image: true,
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -1186,13 +1818,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2e6,
         text: true,
         image: true,
-        cpm: 0.2
+        cpm: 0.2,
+        cpmCached: 0.05
       },
       output: {
         tokens: 65536,
@@ -1204,12 +1837,12 @@ var MODEL_REGISTRY = {
   "grok-4-0709": {
     name: "grok-4-0709",
     provider: Vendor.Grok,
-    description: "Grok 4 flagship model (July 2025 release), 256K context, vision support",
+    description: "Grok 4 flagship model (July 2025 release), 256K context, vision support, reasoning",
     isActive: true,
     releaseDate: "2025-07-09",
     knowledgeCutoff: "2024-11-01",
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -1219,13 +1852,14 @@ var MODEL_REGISTRY = {
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 256e3,
         text: true,
         image: true,
-        cpm: 3
+        cpm: 3,
+        cpmCached: 0.75
       },
       output: {
         tokens: 32768,
@@ -1238,12 +1872,12 @@ var MODEL_REGISTRY = {
   "grok-3-mini": {
     name: "grok-3-mini",
     provider: Vendor.Grok,
-    description: "Lightweight, cost-efficient model for simpler tasks, 131K context",
+    description: "Lightweight, cost-efficient model with reasoning, 131K context",
     isActive: true,
     releaseDate: "2025-06-01",
     knowledgeCutoff: "2024-11-01",
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -1253,12 +1887,13 @@ var MODEL_REGISTRY = {
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 131072,
         text: true,
-        cpm: 0.3
+        cpm: 0.3,
+        cpmCached: 0.07
       },
       output: {
         tokens: 32768,
@@ -1285,12 +1920,13 @@ var MODEL_REGISTRY = {
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 131072,
         text: true,
-        cpm: 3
+        cpm: 3,
+        cpmCached: 0.75
       },
       output: {
         tokens: 32768,
@@ -1299,11 +1935,11 @@ var MODEL_REGISTRY = {
       }
     }
   },
-  // Grok 2 Series (Vision)
+  // Grok 2 Series (Legacy - not in current docs)
   "grok-2-vision-1212": {
     name: "grok-2-vision-1212",
     provider: Vendor.Grok,
-    description: "Vision-capable model for image understanding, 32K context",
+    description: "Legacy vision model for image understanding, 32K context. Not in current xAI docs",
     isActive: true,
     releaseDate: "2024-12-12",
     knowledgeCutoff: "2024-11-01",

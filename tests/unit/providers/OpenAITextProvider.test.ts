@@ -608,7 +608,7 @@ describe('OpenAITextProvider', () => {
       const caps = provider.getModelCapabilities('o3-mini');
 
       expect(caps.supportsTools).toBe(true);
-      expect(caps.supportsVision).toBe(true);
+      expect(caps.supportsVision).toBe(false);
       expect(caps.maxTokens).toBe(200000);
     });
 

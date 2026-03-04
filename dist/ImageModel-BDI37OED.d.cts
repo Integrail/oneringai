@@ -1,5 +1,5 @@
-import { e as IProvider, b as Connector } from './IProvider-CxDUGl6n.js';
-import { V as Vendor } from './Vendor-DYh_bzwo.js';
+import { e as IProvider, b as Connector } from './IProvider-B8sqUzJG.cjs';
+import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 
 /**
  * Shared types used across all multimodal capabilities
@@ -230,11 +230,11 @@ declare class ImageGeneration {
 /**
  * Supported image sizes by model
  */
-type ImageSize = '256x256' | '512x512' | '1024x1024' | '1024x1536' | '1536x1024' | '1792x1024' | '1024x1792' | 'auto';
+type ImageSize = '256x256' | '512x512' | '1024x1024' | '1024x1536' | '1536x1024' | '1792x1024' | '1024x1792' | '1536x1536' | 'auto';
 /**
  * Supported aspect ratios
  */
-type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3';
+type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3' | '1:4' | '4:1' | '1:8' | '8:1' | '2:1' | '1:2';
 /**
  * Image model capabilities
  */
@@ -309,6 +309,12 @@ declare const IMAGE_MODELS: {
         readonly IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001";
         /** Imagen 4.0 Fast: Optimized for speed */
         readonly IMAGEN_4_FAST: "imagen-4.0-fast-generate-001";
+        /** Nano Banana 2: Gemini 3.1 Flash native image gen with 4K support */
+        readonly GEMINI_3_1_FLASH_IMAGE: "gemini-3.1-flash-image-preview";
+        /** Nano Banana Pro: Gemini 3 Pro professional design engine with reasoning */
+        readonly GEMINI_3_PRO_IMAGE: "gemini-3-pro-image-preview";
+        /** Nano Banana: Gemini 2.5 Flash native image gen/editing */
+        readonly GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image";
     };
     readonly grok: {
         /** Grok Imagine Image: xAI image generation with editing support */

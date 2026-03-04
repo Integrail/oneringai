@@ -5,8 +5,8 @@ export { a3 as AfterToolContext, a4 as AgentEventName, a5 as AgenticLoopEventNam
 import { EventEmitter } from 'eventemitter3';
 import { V as Vendor } from './Vendor-DYh_bzwo.cjs';
 export { a as VENDORS, i as isVendor } from './Vendor-DYh_bzwo.cjs';
-import { A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as IImageProvider } from './ImageModel-Ds5_6sf7.cjs';
-export { b as AspectRatio, c as IImageModelDescription, d as IMAGE_MODELS, e as IMAGE_MODEL_REGISTRY, f as ISourceLinks, g as ImageEditOptions, h as ImageGenerateOptions, i as ImageGeneration, j as ImageGenerationCreateOptions, k as ImageModelCapabilities, l as ImageModelPricing, m as ImageResponse, n as ImageVariationOptions, O as OutputFormat, Q as QualityLevel, S as SimpleGenerateOptions, o as calculateImageCost, p as getActiveImageModels, q as getImageModelInfo, r as getImageModelsByVendor, s as getImageModelsWithFeature } from './ImageModel-Ds5_6sf7.cjs';
+import { A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as IImageProvider } from './ImageModel-BDI37OED.cjs';
+export { b as AspectRatio, c as IImageModelDescription, d as IMAGE_MODELS, e as IMAGE_MODEL_REGISTRY, f as ISourceLinks, g as ImageEditOptions, h as ImageGenerateOptions, i as ImageGeneration, j as ImageGenerationCreateOptions, k as ImageModelCapabilities, l as ImageModelPricing, m as ImageResponse, n as ImageVariationOptions, O as OutputFormat, Q as QualityLevel, S as SimpleGenerateOptions, o as calculateImageCost, p as getActiveImageModels, q as getImageModelInfo, r as getImageModelsByVendor, s as getImageModelsWithFeature } from './ImageModel-BDI37OED.cjs';
 import { ServiceCategory } from './shared/index.cjs';
 export { ILLMDescription, LLM_MODELS, MODEL_REGISTRY, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, ServiceDefinition, ServiceInfo, ServiceType, Services, calculateCost, detectServiceFromURL, getActiveModels, getAllServiceIds, getModelInfo, getModelsByVendor, getServiceDefinition, getServiceInfo, getServicesByCategory, isKnownService } from './shared/index.cjs';
 
@@ -5062,30 +5062,45 @@ declare class UserInfoPluginNextGen implements IContextPluginNextGen {
  * Categories come from ToolCatalogRegistry (static global) and ConnectorTools
  * (runtime discovery). The plugin manages loaded/unloaded state via ToolManager.
  *
+ * Scoping:
+ * - Built-in categories are scoped by `categoryScope` (toolCategories config)
+ * - Connector categories are scoped by `identities` (not by categoryScope)
+ * - Plugin tools (memory_*, context_*, etc.) are always available and separate
+ *
  * @example
  * ```typescript
  * const ctx = AgentContextNextGen.create({
  *   model: 'gpt-4',
  *   features: { toolCatalog: true },
- *   toolCategories: ['filesystem', 'web'],  // optional scope
+ *   toolCategories: ['filesystem', 'web'],  // built-in scope only
+ *   identities: [{ connector: 'github' }],  // connector scope
+ *   plugins: {
+ *     toolCatalog: {
+ *       pinned: ['filesystem'],              // always loaded, can't unload
+ *     },
+ *   },
  * });
  * ```
  */
 
 interface ToolCatalogPluginConfig {
-    /** Scope filter for which categories are visible */
+    /** Scope filter for which built-in categories are visible (does NOT affect connector categories) */
     categoryScope?: ToolCategoryScope;
-    /** Categories to pre-load on initialization */
+    /** Categories to pre-load on initialization (can be unloaded by LLM) */
     autoLoadCategories?: string[];
-    /** Maximum loaded categories at once (default: 10) */
+    /** Categories that are always loaded and cannot be unloaded by the LLM */
+    pinned?: string[];
+    /** Maximum loaded categories at once, excluding pinned (default: 10) */
     maxLoadedCategories?: number;
-    /** Auth identities for connector filtering */
+    /** Auth identities for connector category filtering */
     identities?: AuthIdentity[];
 }
 declare class ToolCatalogPluginNextGen extends BasePluginNextGen {
     readonly name = "tool_catalog";
     /** category name → array of tool names that were loaded */
     private _loadedCategories;
+    /** Categories that cannot be unloaded */
+    private _pinnedCategories;
     /** Reference to the ToolManager for registering/disabling tools */
     private _toolManager;
     /** Cached connector categories — discovered once in setToolManager() */
@@ -5111,6 +5126,8 @@ declare class ToolCatalogPluginNextGen extends BasePluginNextGen {
     setToolManager(tm: ToolManager): void;
     /** Get list of currently loaded category names */
     get loadedCategories(): string[];
+    /** Get set of pinned category names */
+    get pinnedCategories(): ReadonlySet<string>;
     private executeSearch;
     executeLoad(category: string): Record<string, unknown>;
     private executeUnload;
@@ -5119,6 +5136,14 @@ declare class ToolCatalogPluginNextGen extends BasePluginNextGen {
      * Get connector categories from cache (populated once in setToolManager).
      */
     private getConnectorCategories;
+    /**
+     * Build status markers for a category (e.g., " [PINNED]", " [LOADED]", " [PINNED] [LOADED]")
+     */
+    private getCategoryMarkers;
+    /**
+     * Build dynamic instructions that include the list of available categories.
+     */
+    private buildInstructions;
     private keywordSearch;
     private searchConnectorCategory;
     private getCategoriesSortedByLastUsed;
@@ -6101,8 +6126,12 @@ interface TTSModelCapabilities {
  * TTS model pricing
  */
 interface TTSModelPricing {
-    /** Cost per 1,000 characters */
-    per1kCharacters: number;
+    /** Cost per 1,000 characters (OpenAI) */
+    per1kCharacters?: number;
+    /** Cost per 1M input tokens (Google) */
+    perMInputTokens?: number;
+    /** Cost per 1M output tokens (Google) */
+    perMOutputTokens?: number;
     currency: 'USD';
 }
 /**
@@ -6142,8 +6171,13 @@ declare const getActiveTTSModels: () => ITTSModelDescription[];
 declare function getTTSModelsWithFeature(feature: keyof ITTSModelDescription['capabilities']['features']): ITTSModelDescription[];
 /**
  * Calculate estimated cost for TTS
+ * For OpenAI models: based on character count
+ * For Google models: based on input/output token count
  */
-declare function calculateTTSCost(modelName: string, characterCount: number): number | null;
+declare function calculateTTSCost(modelName: string, characterCount: number, options?: {
+    inputTokens?: number;
+    outputTokens?: number;
+}): number | null;
 
 /**
  * Configuration for TextToSpeech capability
@@ -14077,7 +14111,7 @@ declare const desktopTools: (ToolFunction<DesktopScreenshotArgs, DesktopScreensh
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-03-03T17:29:51.349Z
+ * Generated at: 2026-03-04T12:49:41.622Z
  *
  * To regenerate: npm run generate:tools
  */

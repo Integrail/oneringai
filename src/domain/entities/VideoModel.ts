@@ -95,9 +95,9 @@ const OPENAI_SOURCES: ISourceLinks = {
 };
 
 const GOOGLE_SOURCES: ISourceLinks = {
-  documentation: 'https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/overview',
-  apiReference: 'https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation',
-  lastVerified: '2026-01-25',
+  documentation: 'https://ai.google.dev/gemini-api/docs/video',
+  apiReference: 'https://ai.google.dev/gemini-api/docs/models/veo',
+  lastVerified: '2026-03-04',
 };
 
 const GROK_SOURCES: ISourceLinks = {
@@ -180,13 +180,13 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
-      resolutions: [], // Veo 2.0 uses aspectRatio only, no resolution control
+      resolutions: ['720p'], // Veo 2 only supports 720p
       aspectRatios: ['16:9', '9:16'],
       maxFps: 24,
       audio: false,
-      imageToVideo: true,
+      imageToVideo: false, // Veo 2 does not support reference images
       videoExtension: false,
-      frameControl: true,
+      frameControl: true, // First/last frame interpolation supported
       features: {
         upscaling: false,
         styleControl: false,
@@ -195,7 +195,7 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       },
     },
     pricing: {
-      perSecond: 0.03,
+      perSecond: 0.35, // Updated per official pricing page (was $0.03)
       currency: 'USD',
     },
   },
@@ -208,13 +208,13 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ['720p'], // Fast model only supports 720p
+      resolutions: ['720p', '1080p', '4k'], // 1080p/4k require 8s duration
       aspectRatios: ['16:9', '9:16'],
       maxFps: 24,
-      audio: true,
-      imageToVideo: true,
-      videoExtension: false,
-      frameControl: false,
+      audio: true, // Native audio generation
+      imageToVideo: true, // Up to 3 reference images
+      videoExtension: true, // Supported (720p only)
+      frameControl: true, // First/last frame interpolation
       features: {
         upscaling: false,
         styleControl: false,
@@ -223,7 +223,7 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       },
     },
     pricing: {
-      perSecond: 0.75,
+      perSecond: 0.15, // $0.15 for 720p/1080p, $0.35 for 4K
       currency: 'USD',
     },
   },
@@ -239,9 +239,9 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       resolutions: ['720p', '1080p', '4k'], // 1080p and 4k require 8s duration
       aspectRatios: ['16:9', '9:16'],
       maxFps: 30,
-      audio: true,
-      imageToVideo: true,
-      videoExtension: true,
+      audio: true, // Native audio generation
+      imageToVideo: true, // Up to 3 reference images
+      videoExtension: true, // Supported (720p only)
       frameControl: true,
       features: {
         upscaling: true,
@@ -251,7 +251,7 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       },
     },
     pricing: {
-      perSecond: 0.75,
+      perSecond: 0.40, // $0.40 for 720p/1080p, $0.60 for 4K
       currency: 'USD',
     },
   },

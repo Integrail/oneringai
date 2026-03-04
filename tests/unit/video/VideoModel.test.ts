@@ -154,7 +154,7 @@ describe('VideoModel Registry', () => {
 
     it('should calculate cost for Google Veo', () => {
       const cost = calculateVideoCost('veo-3.1-generate-preview', 8);
-      expect(cost).toBe(6.00); // 8 * 0.75
+      expect(cost).toBeCloseTo(3.20, 2); // 8 * 0.40
     });
 
     it('should return null for unknown model', () => {

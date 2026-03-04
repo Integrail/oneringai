@@ -125,6 +125,10 @@ interface AgentFormData {
   permissionsEnabled: boolean;
   // Selected tools
   tools: string[];
+  // Tool catalog
+  toolCatalogEnabled: boolean;
+  pinnedCategories: string[];
+  toolCategoryScope: string[];
   // MCP servers
   mcpServers: AgentMCPServerRef[];
 }
@@ -158,6 +162,10 @@ const defaultFormData: AgentFormData = {
   permissionsEnabled: true,
   // Tools
   tools: [],
+  // Tool catalog
+  toolCatalogEnabled: false,
+  pinnedCategories: [],
+  toolCategoryScope: [],
   // MCP servers
   mcpServers: [],
 };
@@ -238,6 +246,9 @@ export function AgentEditorPage(): React.ReactElement {
               persistentInstructionsEnabled: existingAgent.persistentInstructionsEnabled ?? false,
               permissionsEnabled: existingAgent.permissionsEnabled ?? true,
               tools: existingAgent.tools,
+              toolCatalogEnabled: existingAgent.toolCatalogEnabled ?? false,
+              pinnedCategories: existingAgent.pinnedCategories ?? [],
+              toolCategoryScope: existingAgent.toolCategoryScope ?? [],
               mcpServers: existingAgent.mcpServers || [],
             });
           }

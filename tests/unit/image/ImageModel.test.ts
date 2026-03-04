@@ -26,6 +26,10 @@ describe('ImageModel Registry', () => {
       expect(IMAGE_MODEL_REGISTRY['imagen-4.0-generate-001']).toBeDefined();
       expect(IMAGE_MODEL_REGISTRY['imagen-4.0-ultra-generate-001']).toBeDefined();
       expect(IMAGE_MODEL_REGISTRY['imagen-4.0-fast-generate-001']).toBeDefined();
+      // Nano Banana (Gemini native image) models
+      expect(IMAGE_MODEL_REGISTRY['gemini-3.1-flash-image-preview']).toBeDefined();
+      expect(IMAGE_MODEL_REGISTRY['gemini-3-pro-image-preview']).toBeDefined();
+      expect(IMAGE_MODEL_REGISTRY['gemini-2.5-flash-image']).toBeDefined();
     });
 
     it('should have all declared Grok models', () => {
@@ -175,6 +179,9 @@ describe('ImageModel Registry', () => {
       expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE).toBe('imagen-4.0-generate-001');
       expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_ULTRA).toBe('imagen-4.0-ultra-generate-001');
       expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_FAST).toBe('imagen-4.0-fast-generate-001');
+      expect(IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE).toBe('gemini-3.1-flash-image-preview');
+      expect(IMAGE_MODELS[Vendor.Google].GEMINI_3_PRO_IMAGE).toBe('gemini-3-pro-image-preview');
+      expect(IMAGE_MODELS[Vendor.Google].GEMINI_2_5_FLASH_IMAGE).toBe('gemini-2.5-flash-image');
     });
 
     it('should have IMAGE_MODELS constants for Grok', () => {
@@ -290,6 +297,54 @@ describe('ImageModel Registry', () => {
     it('should show Grok 2 image max 10 images per request', () => {
       const model = getImageModelInfo('grok-2-image-1212');
       expect(model?.capabilities.maxImagesPerRequest).toBe(10);
+    });
+  });
+
+  describe('Google Nano Banana (Gemini native image) models', () => {
+    it('should have Nano Banana 2 (Gemini 3.1 Flash Image) with 4K support', () => {
+      const model = getImageModelInfo('gemini-3.1-flash-image-preview');
+      expect(model).toBeDefined();
+      expect(model?.provider).toBe(Vendor.Google);
+      expect(model?.capabilities.features.generation).toBe(true);
+      expect(model?.capabilities.features.editing).toBe(true);
+      expect(model?.capabilities.features.qualityControl).toBe(true);
+    });
+
+    it('should have Nano Banana Pro (Gemini 3 Pro Image) with reasoning', () => {
+      const model = getImageModelInfo('gemini-3-pro-image-preview');
+      expect(model).toBeDefined();
+      expect(model?.provider).toBe(Vendor.Google);
+      expect(model?.capabilities.features.generation).toBe(true);
+      expect(model?.capabilities.features.editing).toBe(true);
+      expect(model?.capabilities.features.styleControl).toBe(true);
+    });
+
+    it('should have Nano Banana (Gemini 2.5 Flash Image) for fast workflows', () => {
+      const model = getImageModelInfo('gemini-2.5-flash-image');
+      expect(model).toBeDefined();
+      expect(model?.provider).toBe(Vendor.Google);
+      expect(model?.capabilities.features.generation).toBe(true);
+      expect(model?.capabilities.features.editing).toBe(true);
+    });
+
+    it('should calculate cost for Nano Banana Pro', () => {
+      const cost = calculateImageCost('gemini-3-pro-image-preview', 1, 'standard');
+      expect(cost).toBe(0.134);
+    });
+
+    it('should calculate cost for Nano Banana Pro 4K', () => {
+      const cost = calculateImageCost('gemini-3-pro-image-preview', 1, 'hd');
+      expect(cost).toBe(0.24);
+    });
+
+    it('should calculate cost for Nano Banana (flat rate)', () => {
+      const cost = calculateImageCost('gemini-2.5-flash-image', 2);
+      expect(cost).toBeCloseTo(0.078, 3); // 2 * 0.039
+    });
+
+    it('should have Imagen 4 Ultra at $0.06 per image', () => {
+      const cost = calculateImageCost('imagen-4.0-ultra-generate-001', 1);
+      expect(cost).toBe(0.06);
     });
   });
 });

@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **V25 & Hosea: Tool Catalog adoption** — Both apps now support `ToolCatalogPluginNextGen` features. V25 `V25ContextSettings.features` uses `ContextFeatures` from core (no type duplication). V25 `buildContextConfig()` wires `pinnedCategories` and `toolCategoryScope`. Hosea adds 3 flat fields (`toolCatalogEnabled`, `pinnedCategories`, `toolCategoryScope`) to `StoredAgentConfig`, persistence mapping, `createInstance()` context config, and `AgentEditorPage` form data. All fields default to `false`/`[]` for backward compatibility.
+
+- **Model Registry: 10 new OpenAI models** — Added GPT-5.3 (codex, chat-latest), GPT-5.2 (codex, chat-latest), GPT-5.1 (base, codex, codex-max, codex-mini, chat-latest), and GPT-5 chat-latest. OpenAI total: 12 → 22 models.
+
+- **Model Registry: 3 new Anthropic models** — Added Claude Opus 4.6 (`claude-opus-4-6`, 128K output, adaptive thinking), Claude Sonnet 4.6 (`claude-sonnet-4-6`, 1M context beta), and Claude Opus 4 (`claude-opus-4-20250514`). Anthropic total: 7 → 10 models. Registry total: 35 → 48.
+
+- **Model Registry: `preferred` field on `ILLMDescription`** — New optional boolean field to mark recommended models per vendor. Currently set on `gpt-5.2` (general purpose) and `gpt-5.2-codex` (coding/agentic).
+
+- **Model Registry: Cached input pricing** — Added `cpmCached` for GPT-5.2, GPT-5, GPT-5-mini, GPT-5-nano, GPT-4.1 series, GPT-4o series, o3-mini, and o1.
+
+- **Model Registry: Reference doc** — Created `src/domain/entities/MODEL_REGISTRY_SOURCES.md` with vendor doc URLs and update checklist.
+
+### Changed
+
+- **Model Registry: Fixed knowledge cutoffs** — GPT-4.1 series: 2025-04-01 → 2024-06-01. GPT-4o/4o-mini: 2024-04-01 → 2023-10-01. o3-mini/o1: 2024-10-01 → 2023-10-01.
+
+- **Model Registry: Fixed model features** — `gpt-5.2-pro`: structuredOutput → false. `gpt-4o`/`gpt-4o-mini`: audio → false, removed audio from input/output. `o3-mini`: vision → false, removed image from input.
+
+- **Model Registry: Anthropic deprecation notices** — Marked `claude-3-7-sonnet-20250219` as deprecated per official docs. Marked `claude-3-haiku-20240307` as deprecated (retiring April 19, 2026). Updated legacy model descriptions.
+
+- **Model Registry: 3 new Google models** — Added `gemini-3.1-pro-preview` ($2/$12, replaces deprecated 3-pro), `gemini-3.1-flash-lite-preview` ($0.25/$1.50), and `gemini-3.1-flash-image-preview` (131K ctx, image gen up to 4K). Google total: 7 → 10. Registry total: 35 → 51.
+
+- **Model Registry: Google pricing updates** — `gemini-3-flash-preview`: $0.15→$0.50 input, $0.6→$3.00 output. `gemini-2.5-flash`: $0.15→$0.30 input, $0.6→$2.50 output. `gemini-2.5-flash-lite`: $0.075→$0.10 input, $0.3→$0.40 output. Added cached pricing to gemini-3.1-pro, gemini-3-flash, gemini-2.5-pro, gemini-2.5-flash.
+
+- **Model Registry: Google fixes per official docs** — Fixed context windows to exact 1,048,576 tokens. Fixed `gemini-3-pro-image-preview`: context 1M→65K, output 65K→32K, no caching. Fixed `gemini-2.5-flash-image`: context 1M→65K, output 65K→32K, reasoning→false, cutoff→June 2025. Fixed knowledge cutoffs for Gemini 3 series (2025-08→2025-01). Marked `gemini-3-pro-preview` as deprecated (shutting down March 9, 2026).
+
+- **Model Registry: Grok fixes per official docs** — Fixed `grok-4-fast-reasoning`: added vision/image support. Fixed `grok-4-0709`: reasoning → true. Fixed `grok-3-mini`: reasoning → true. Added `cpmCached` to all 9 Grok models. Set `promptCaching: true` and `batchAPI: true` for all Grok models. Marked `grok-2-vision-1212` as legacy (not in current xAI docs).
+
+- **Image Registry: 3 new Google Nano Banana models** — Added `gemini-3.1-flash-image-preview` (Nano Banana 2, 4K support, $0.045-$0.151/image by resolution), `gemini-3-pro-image-preview` (Nano Banana Pro, reasoning-driven design, $0.134-$0.24/image), `gemini-2.5-flash-image` (Nano Banana, fast workflows, $0.039/image). Google image models: 3 → 6.
+
+- **Image Registry: Imagen 4 Ultra pricing fix** — `imagen-4.0-ultra-generate-001`: $0.08 → $0.06 per image per official pricing.
+
+- **Video Registry: Google Veo pricing overhaul** — `veo-2.0-generate-001`: $0.03 → $0.35/s. `veo-3.1-fast-generate-preview`: $0.75 → $0.15/s (720p/1080p). `veo-3.1-generate-preview`: $0.75 → $0.40/s (720p/1080p). Fixed Veo 2 capabilities (no imageToVideo, 720p only). Fixed Veo 3.1 Fast capabilities (added 1080p/4K, videoExtension, frameControl).
+
+- **TTS Registry: Google TTS pricing** — Added token-based pricing for `gemini-2.5-flash-preview-tts` ($0.50/$10.00 per 1M tokens in/out) and `gemini-2.5-pro-preview-tts` ($1.00/$20.00 per 1M tokens). Updated `TTSModelPricing` interface with `perMInputTokens`/`perMOutputTokens` fields. Updated `calculateTTSCost()` to handle both character-based (OpenAI) and token-based (Google) pricing.
+
+- **Tool Catalog: Pinned categories** — New `pinned` config option for categories that are always loaded and cannot be unloaded by the LLM. Pinned categories are auto-loaded on plugin init, excluded from `maxLoadedCategories` limit, and skipped during compaction.
+
+- **Tool Catalog: Dynamic instructions** — `getInstructions()` now builds instructions dynamically, listing all available categories with `[PINNED]` markers. LLM sees exactly which categories it can browse, instead of generic instructions. Core plugin tools (memory, context, etc.) are noted as always available.
+
+### Changed
+
+- **Tool Catalog: Separated built-in and connector scoping** — `toolCategories` now only scopes built-in categories (filesystem, web, code, etc.). Connector categories (`connector:*`) are scoped solely by `identities`, removing the previous double-filtering behavior. This is a minor behavioral change: connector categories no longer need to be listed in `toolCategories` to be visible.
+
+- **Tool Catalog: Search results include pinned info** — `tool_catalog_search` results now include a `pinned` boolean field for each category. `getContent()` shows `[PINNED]` markers alongside `[LOADED]`.
+
 ## [0.4.5] - 2026-02-26
 
 ### Changed

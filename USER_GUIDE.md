@@ -3092,15 +3092,132 @@ When agents need 100+ tools, sending all tool definitions to the LLM wastes toke
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
+  tools: [readFile, writeFile],  // always-on tools (outside catalog)
+  identities: [{ connector: 'github' }],  // connector scope
   context: {
     features: { toolCatalog: true },
-    // Optional: restrict visible categories
-    toolCategories: ['web', 'knowledge', 'connector:github'],
+    toolCategories: ['web', 'code'],  // built-in category scope
+    plugins: {
+      toolCatalog: {
+        pinned: ['web'],  // always loaded, LLM can't unload
+      },
+    },
   },
 });
 ```
 
 The agent gets 3 metatools: `tool_catalog_search`, `tool_catalog_load`, `tool_catalog_unload`. It can browse available categories, load what it needs, and unload when done.
+
+**Important:** Plugin tools (memory, context, instructions, etc.) are always available and completely separate from the catalog. They cannot be unloaded.
+
+### How Scoping Works
+
+The Tool Catalog has two independent scoping mechanisms:
+
+| Scope | Controls | Config |
+|-------|----------|--------|
+| **`toolCategories`** | Built-in categories (filesystem, web, code, shell, etc.) | `context.toolCategories` |
+| **`identities`** | Connector categories (connector:github, connector:slack, etc.) | `Agent.create({ identities })` |
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+
+  // Controls which connector categories appear in catalog
+  identities: [
+    { connector: 'github' },
+    { connector: 'slack' },
+    { connector: 'microsoft', accountId: 'work' },
+  ],
+
+  context: {
+    features: { toolCatalog: true },
+    // Controls which built-in categories appear in catalog
+    toolCategories: ['filesystem', 'web', 'code'],
+  },
+});
+
+// LLM sees: filesystem, web, code, connector:github, connector:slack, connector:microsoft
+```
+
+**Scoping syntax for `toolCategories`:**
+
+```typescript
+// Allowlist (string[] shorthand)
+toolCategories: ['web', 'knowledge']
+
+// Explicit allowlist
+toolCategories: { include: ['web', 'knowledge'] }
+
+// Blocklist (all except these)
+toolCategories: { exclude: ['desktop', 'shell'] }
+
+// No scope = all built-in categories visible
+```
+
+### Pinned Categories
+
+Pinned categories are always loaded and the LLM cannot unload them. Use this for tools the agent must always have access to:
+
+```typescript
+context: {
+  features: { toolCatalog: true },
+  toolCategories: ['filesystem', 'web', 'code'],
+  plugins: {
+    toolCatalog: {
+      pinned: ['filesystem'],  // always loaded, can't unload
+    },
+  },
+}
+```
+
+**Pinned vs always-on tools (`tools` array):**
+- `tools: [myTool]` on `Agent.create()` — individual tools always available, outside the catalog entirely
+- `pinned: ['filesystem']` — entire category loaded via catalog, visible in catalog listings as `[PINNED]`, but cannot be unloaded
+
+**Behavior:**
+- Pinned categories are loaded automatically when the plugin initializes
+- `tool_catalog_unload` returns an error for pinned categories
+- Pinned categories don't count toward `maxLoadedCategories` limit
+- During compaction, pinned categories are never evicted
+
+### Auto-Loading Categories
+
+Pre-load categories so the agent doesn't need an extra turn. Unlike pinned, auto-loaded categories **can** be unloaded by the LLM:
+
+```typescript
+plugins: {
+  toolCatalog: {
+    pinned: ['filesystem'],                     // always loaded
+    autoLoadCategories: ['web', 'knowledge'],   // pre-loaded, can be unloaded
+    maxLoadedCategories: 10,                    // limit (excludes pinned)
+  },
+}
+```
+
+### Dynamic Instructions
+
+The LLM receives dynamic instructions that list exactly which categories are available, with markers:
+
+```
+## Tool Catalog
+
+Your core tools (memory, context, instructions, etc.) are always available.
+Additional tool categories can be loaded on demand from the catalog below.
+
+**Available categories:**
+- filesystem (6 tools) [PINNED]: Read, write, edit, search, and list files
+- web (2 tools): Fetch and process web content
+- code (1 tools): Execute JavaScript code in sandboxed VM
+- connector:github (2 tools): API tools for github
+- connector:slack (3 tools): API tools for slack
+
+**Best practices:**
+- Search first to find the right category before loading.
+- Unload categories you no longer need to keep context lean.
+- Categories marked [PINNED] are always available and cannot be unloaded.
+```
 
 ### ToolCatalogRegistry
 
@@ -3122,21 +3239,6 @@ ToolCatalogRegistry.registerTools('knowledge', [
 
 Built-in tools from `registry.generated.ts` are auto-registered on first access.
 
-### Category Scoping
-
-Restrict which categories an agent can see:
-
-```typescript
-// Allowlist (string[] shorthand)
-toolCategories: ['web', 'knowledge']
-
-// Explicit allowlist
-toolCategories: { include: ['web', 'knowledge'] }
-
-// Blocklist
-toolCategories: { exclude: ['desktop', 'shell'] }
-```
-
 ### Resolving Tool Names
 
 For executors that resolve `string[]` tool names to `ToolFunction[]`:
@@ -3148,23 +3250,6 @@ const tools = ToolCatalogRegistry.resolveTools(
 );
 ```
 
-### Auto-Loading Categories
-
-Pre-load categories so the agent doesn't need an extra turn:
-
-```typescript
-const ctx = AgentContextNextGen.create({
-  model: 'gpt-4',
-  features: { toolCatalog: true },
-  plugins: {
-    toolCatalog: {
-      autoLoadCategories: ['web', 'knowledge'],
-      maxLoadedCategories: 10,
-    },
-  },
-});
-```
-
 ### Tools
 
 | Tool | Description | Permission |
@@ -3172,6 +3257,23 @@ const ctx = AgentContextNextGen.create({
 | `tool_catalog_search` | Browse categories, list tools, keyword search | Always allowed |
 | `tool_catalog_load` | Load a category's tools into the agent | Always allowed |
 | `tool_catalog_unload` | Unload a category to free token budget | Always allowed |
+
+### Full Configuration Reference
+
+```typescript
+interface ToolCatalogPluginConfig {
+  /** Scope for built-in categories (does NOT affect connector categories) */
+  categoryScope?: string[] | { include: string[] } | { exclude: string[] };
+  /** Categories pre-loaded on init (can be unloaded by LLM) */
+  autoLoadCategories?: string[];
+  /** Categories always loaded (cannot be unloaded by LLM) */
+  pinned?: string[];
+  /** Max loaded categories at once, excluding pinned (default: 10) */
+  maxLoadedCategories?: number;
+  /** Auth identities for connector filtering (usually set via Agent.create) */
+  identities?: AuthIdentity[];
+}
+```
 
 ---
 

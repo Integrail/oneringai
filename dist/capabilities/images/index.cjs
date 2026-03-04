@@ -3228,7 +3228,13 @@ var IMAGE_MODELS = {
     /** Imagen 4.0 Ultra: Highest quality */
     IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001",
     /** Imagen 4.0 Fast: Optimized for speed */
-    IMAGEN_4_FAST: "imagen-4.0-fast-generate-001"
+    IMAGEN_4_FAST: "imagen-4.0-fast-generate-001",
+    /** Nano Banana 2: Gemini 3.1 Flash native image gen with 4K support */
+    GEMINI_3_1_FLASH_IMAGE: "gemini-3.1-flash-image-preview",
+    /** Nano Banana Pro: Gemini 3 Pro professional design engine with reasoning */
+    GEMINI_3_PRO_IMAGE: "gemini-3-pro-image-preview",
+    /** Nano Banana: Gemini 2.5 Flash native image gen/editing */
+    GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image"
   },
   [Vendor.Grok]: {
     /** Grok Imagine Image: xAI image generation with editing support */
@@ -3412,7 +3418,7 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
@@ -3523,7 +3529,7 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
@@ -3620,7 +3626,8 @@ var IMAGE_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perImage: 0.08,
+      perImage: 0.06,
+      // Updated per official pricing page (was $0.08)
       currency: "USD"
     }
   },
@@ -3634,7 +3641,7 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-25"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
@@ -3735,6 +3742,141 @@ var IMAGE_MODEL_REGISTRY = {
       currency: "USD"
     }
   },
+  // ======================== Google Nano Banana (Gemini Native Image) ========================
+  "gemini-3.1-flash-image-preview": {
+    name: "gemini-3.1-flash-image-preview",
+    displayName: "Nano Banana 2 (Gemini 3.1 Flash Image)",
+    provider: Vendor.Google,
+    description: "High-efficiency native image generation and editing with 4K support and thinking capabilities",
+    isActive: true,
+    releaseDate: "2026-02-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-03-04"
+    },
+    capabilities: {
+      sizes: ["512x512", "1024x1024", "1536x1536", "auto"],
+      aspectRatios: ["1:1", "1:4", "4:1", "1:8", "8:1"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: true,
+        // Multiple resolution tiers: 0.5K, 1K, 2K, 4K
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 131072 },
+      // 131K input tokens
+      vendorOptions: {
+        outputImageResolution: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution tier",
+          enum: ["0.5K", "1K", "2K", "4K"],
+          default: "1K",
+          controlType: "select"
+        }
+      }
+    },
+    pricing: {
+      // Per-image, varies by resolution: $0.045 (512px), $0.067 (1K), $0.101 (2K), $0.151 (4K)
+      perImageStandard: 0.067,
+      // 1K default
+      perImageHD: 0.151,
+      // 4K
+      currency: "USD"
+    }
+  },
+  "gemini-3-pro-image-preview": {
+    name: "gemini-3-pro-image-preview",
+    displayName: "Nano Banana Pro (Gemini 3 Pro Image)",
+    provider: Vendor.Google,
+    description: "Professional design engine with reasoning for studio-quality 4K visuals, complex layouts, and precise text rendering",
+    isActive: true,
+    releaseDate: "2025-11-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-03-04"
+    },
+    capabilities: {
+      sizes: ["1024x1024", "auto"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: true,
+        // Reasoning-driven design
+        qualityControl: true,
+        // 1K, 2K, 4K tiers
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 65536 },
+      // 65K input tokens
+      vendorOptions: {
+        outputImageResolution: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution tier",
+          enum: ["1K", "2K", "4K"],
+          default: "1K",
+          controlType: "select"
+        }
+      }
+    },
+    pricing: {
+      // $0.134 per 1K/2K image, $0.24 per 4K image
+      perImageStandard: 0.134,
+      // 1K/2K
+      perImageHD: 0.24,
+      // 4K
+      currency: "USD"
+    }
+  },
+  "gemini-2.5-flash-image": {
+    name: "gemini-2.5-flash-image",
+    displayName: "Nano Banana (Gemini 2.5 Flash Image)",
+    provider: Vendor.Google,
+    description: "Native image generation and editing designed for fast, creative workflows",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-03-04"
+    },
+    capabilities: {
+      sizes: ["1024x1024", "auto"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 65536 }
+      // 65K input tokens
+    },
+    pricing: {
+      perImage: 0.039,
+      // $0.039 per image
+      currency: "USD"
+    }
+  },
   // ======================== xAI Grok ========================
   "grok-imagine-image": {
     name: "grok-imagine-image",
@@ -3746,11 +3888,11 @@ var IMAGE_MODEL_REGISTRY = {
     sources: {
       documentation: "https://docs.x.ai/docs/guides/image-generation",
       pricing: "https://docs.x.ai/docs/models",
-      lastVerified: "2026-02-01"
+      lastVerified: "2026-03-04"
     },
     capabilities: {
       sizes: ["1024x1024"],
-      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "2:1", "1:2"],
       maxImagesPerRequest: 10,
       outputFormats: ["png", "jpeg"],
       features: {

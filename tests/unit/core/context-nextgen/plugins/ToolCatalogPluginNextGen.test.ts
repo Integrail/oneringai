@@ -210,8 +210,10 @@ describe('ToolCatalogPluginNextGen', () => {
       scopedPlugin.destroy();
     });
 
-    it('should enforce scope check on connector categories too', async () => {
-      // Scope only allows 'test_cat' — connector:github should be blocked
+    it('should NOT filter connector categories by categoryScope (identities-only)', async () => {
+      // categoryScope only scopes built-in categories, NOT connectors
+      // connector:github is rejected because it's not in discovered connectors (no identities set),
+      // not because of categoryScope
       const scopedPlugin = new ToolCatalogPluginNextGen({
         categoryScope: ['test_cat'],
       });
@@ -222,6 +224,7 @@ describe('ToolCatalogPluginNextGen', () => {
 
       const result = await loadTool.execute({ category: 'connector:github' }) as Record<string, unknown>;
       expect(result.error).toBeDefined();
+      // Error should be about not being available (no connectors discovered), not about scope
       expect((result.error as string)).toContain('not available');
 
       scopedPlugin.destroy();
@@ -456,6 +459,218 @@ describe('ToolCatalogPluginNextGen', () => {
 
       autoPlugin.destroy();
       tm.destroy();
+    });
+  });
+
+  describe('pinned categories', () => {
+    it('should auto-load pinned categories on setToolManager', () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      expect(pinnedPlugin.loadedCategories).toContain('test_cat');
+      expect(tm.isEnabled('test_tool_a')).toBe(true);
+      expect(pinnedPlugin.pinnedCategories.has('test_cat')).toBe(true);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should reject unloading pinned categories', async () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      const tools = pinnedPlugin.getTools();
+      const unloadTool = tools.find(t => t.definition.function.name === 'tool_catalog_unload')!;
+
+      const result = await unloadTool.execute({ category: 'test_cat' }) as Record<string, unknown>;
+      expect(result.error).toBeDefined();
+      expect((result.error as string)).toContain('pinned');
+
+      // Should still be loaded
+      expect(pinnedPlugin.loadedCategories).toContain('test_cat');
+      expect(tm.isEnabled('test_tool_a')).toBe(true);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should not count pinned toward maxLoadedCategories', async () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+        maxLoadedCategories: 1,
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      // test_cat is pinned and loaded, maxLoadedCategories is 1
+      // Loading another category should succeed because pinned don't count
+      const tools = pinnedPlugin.getTools();
+      const loadTool = tools.find(t => t.definition.function.name === 'tool_catalog_load')!;
+
+      const result = await loadTool.execute({ category: 'other_cat' }) as Record<string, unknown>;
+      expect(result.error).toBeUndefined();
+      expect(result.loaded).toBe(1);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should skip pinned categories during compact', async () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      // Load a non-pinned category too
+      const tools = pinnedPlugin.getTools();
+      const loadTool = tools.find(t => t.definition.function.name === 'tool_catalog_load')!;
+      await loadTool.execute({ category: 'other_cat' });
+
+      // Compact should only unload other_cat, not test_cat
+      const freed = await pinnedPlugin.compact(10000);
+      expect(freed).toBeGreaterThan(0);
+      expect(pinnedPlugin.loadedCategories).toContain('test_cat');
+      expect(pinnedPlugin.loadedCategories).not.toContain('other_cat');
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should not be compactable when only pinned categories are loaded', () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      expect(pinnedPlugin.isCompactable()).toBe(false);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should not duplicate-load when pinned overlaps autoLoadCategories', () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+        autoLoadCategories: ['test_cat', 'other_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      // Both should be loaded
+      expect(pinnedPlugin.loadedCategories).toContain('test_cat');
+      expect(pinnedPlugin.loadedCategories).toContain('other_cat');
+
+      // test_cat is pinned, other_cat is not
+      expect(pinnedPlugin.pinnedCategories.has('test_cat')).toBe(true);
+      expect(pinnedPlugin.pinnedCategories.has('other_cat')).toBe(false);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should include pinned info in search results', async () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      const tools = pinnedPlugin.getTools();
+      const searchTool = tools.find(t => t.definition.function.name === 'tool_catalog_search')!;
+
+      const result = await searchTool.execute({}) as Record<string, unknown>;
+      const cats = result.categories as Array<{ name: string; pinned: boolean }>;
+      const testCat = cats.find(c => c.name === 'test_cat');
+      expect(testCat?.pinned).toBe(true);
+
+      const otherCat = cats.find(c => c.name === 'other_cat');
+      expect(otherCat?.pinned).toBe(false);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+  });
+
+  describe('dynamic instructions', () => {
+    it('should include available categories in instructions', () => {
+      const instructions = plugin.getInstructions();
+      expect(instructions).toContain('test_cat');
+      expect(instructions).toContain('other_cat');
+      expect(instructions).toContain('Available categories');
+    });
+
+    it('should mark pinned categories in instructions', () => {
+      const pinnedPlugin = new ToolCatalogPluginNextGen({
+        pinned: ['test_cat'],
+      });
+      const tm = new ToolManager();
+      pinnedPlugin.setToolManager(tm);
+
+      const instructions = pinnedPlugin.getInstructions();
+      expect(instructions).toContain('test_cat');
+      expect(instructions).toContain('[PINNED]');
+      // other_cat should NOT be marked as pinned
+      expect(instructions).not.toMatch(/other_cat.*\[PINNED\]/);
+
+      pinnedPlugin.destroy();
+      tm.destroy();
+    });
+
+    it('should mention that core tools are always available', () => {
+      const instructions = plugin.getInstructions();
+      expect(instructions).toContain('core tools');
+      expect(instructions).toContain('always available');
+    });
+
+    it('should respect categoryScope in instructions', () => {
+      const scopedPlugin = new ToolCatalogPluginNextGen({
+        categoryScope: ['test_cat'],
+      });
+      scopedPlugin.setToolManager(toolManager);
+
+      const instructions = scopedPlugin.getInstructions();
+      expect(instructions).toContain('test_cat');
+      expect(instructions).not.toContain('other_cat');
+
+      scopedPlugin.destroy();
+    });
+  });
+
+  describe('connector scope separation', () => {
+    it('should not apply categoryScope to connector categories in search', async () => {
+      // Even with categoryScope=['test_cat'], if a connector category exists
+      // in the discovered list, it should still be searchable
+      // (We can't easily mock ConnectorTools.discoverAll here, but we verify
+      // that the scope check in searchConnectorCategory validates against
+      // discovered set, not categoryScope)
+      const scopedPlugin = new ToolCatalogPluginNextGen({
+        categoryScope: ['test_cat'],
+      });
+      scopedPlugin.setToolManager(toolManager);
+
+      const tools = scopedPlugin.getTools();
+      const searchTool = tools.find(t => t.definition.function.name === 'tool_catalog_search')!;
+
+      // Searching for a connector category that isn't discovered returns error
+      // about not being available (not about scope)
+      const result = await searchTool.execute({ category: 'connector:fake' }) as Record<string, unknown>;
+      expect(result.error).toBeDefined();
+      expect((result.error as string)).toContain('not available');
+
+      // built-in category blocked by scope returns different error
+      const result2 = await searchTool.execute({ category: 'other_cat' }) as Record<string, unknown>;
+      expect(result2.error).toBeDefined();
+      expect((result2.error as string)).toContain('not available');
+
+      scopedPlugin.destroy();
     });
   });
 

@@ -121,8 +121,19 @@ describe('TTSModel Registry', () => {
       expect(cost).toBe(0.0075); // Half the cost
     });
 
-    it('should return null for model without pricing', () => {
-      const cost = calculateTTSCost('gemini-tts', 1000);
+    it('should calculate cost for Google TTS (token-based)', () => {
+      const cost = calculateTTSCost('gemini-2.5-flash-preview-tts', 0, {
+        inputTokens: 1000,
+        outputTokens: 5000,
+      });
+      // Input: 1000/1M * $0.50 = $0.0005
+      // Output: 5000/1M * $10.00 = $0.05
+      expect(cost).toBeCloseTo(0.0505, 4);
+    });
+
+    it('should return null for Google TTS without token counts', () => {
+      // Google TTS has no per1kCharacters pricing, so without tokens it returns null
+      const cost = calculateTTSCost('gemini-2.5-flash-preview-tts', 1000);
       expect(cost).toBeNull();
     });
 

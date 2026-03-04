@@ -1642,7 +1642,7 @@ await agent.run('Find available meeting slots for alice and bob this week');
 
 Supports both **delegated** (`/me` — user signs in) and **application** (`/users/{id}` — app-only) permission modes. See the [User Guide](./USER_GUIDE.md#microsoft-graph-connector-tools) for full parameter reference.
 
-### 23. Tool Catalog (NEW)
+### 23. Tool Catalog
 
 When agents have 100+ available tools, sending all definitions to the LLM wastes tokens and degrades performance. The Tool Catalog lets agents discover and load only the categories they need:
 
@@ -1659,13 +1659,21 @@ ToolCatalogRegistry.registerTools('knowledge', [
   { name: 'entity_search', displayName: 'Entity Search', description: 'Search entities', tool: entitySearchTool, safeByDefault: true },
 ]);
 
-// Enable tool catalog on an agent
+// Enable tool catalog with scoping
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
+  // Identities control which connector categories are visible
+  identities: [{ connector: 'github' }, { connector: 'slack' }],
   context: {
     features: { toolCatalog: true },
-    toolCategories: ['filesystem', 'knowledge'],  // optional scope
+    toolCategories: ['filesystem', 'knowledge'],  // scope for built-in categories
+    plugins: {
+      toolCatalog: {
+        pinned: ['filesystem'],       // always loaded, LLM can't unload
+        autoLoadCategories: ['knowledge'],  // pre-loaded, LLM can unload
+      },
+    },
   },
 });
 
@@ -1676,8 +1684,10 @@ await agent.run('Search for information about quantum computing');
 
 **Key Features:**
 - **Dynamic loading** — Agent loads only needed categories, saving token budget
-- **Category scoping** — Restrict visible categories per agent (allowlist/blocklist)
-- **Connector discovery** — Connector tools auto-discovered as categories
+- **Pinned categories** — Always-loaded categories that the LLM cannot unload
+- **Dual scoping** — `toolCategories` scopes built-in categories, `identities` scopes connector categories
+- **Dynamic instructions** — LLM sees exactly which categories are available, with `[PINNED]` markers
+- **Connector discovery** — Connector tools auto-discovered as categories, filtered by `identities`
 - **Registry API** — `ToolCatalogRegistry.resolveTools()` for app-level tool resolution
 
 See the [User Guide](./USER_GUIDE.md#tool-catalog) for full documentation.

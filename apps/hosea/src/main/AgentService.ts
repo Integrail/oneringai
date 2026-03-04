@@ -214,6 +214,10 @@ export interface StoredAgentConfig {
   permissionsEnabled: boolean;
   // Selected tools
   tools: string[];
+  // Tool catalog
+  toolCatalogEnabled: boolean;
+  pinnedCategories: string[];
+  toolCategoryScope: string[];   // empty = all built-in categories
   // MCP servers (optional)
   mcpServers?: AgentMCPServerRef[];
   // Metadata
@@ -633,6 +637,7 @@ export class AgentService {
         workingMemory: config.workingMemoryEnabled,
         inContextMemory: config.inContextMemoryEnabled,
         persistentInstructions: config.persistentInstructionsEnabled,
+        toolCatalog: config.toolCatalogEnabled,
         // Note: history and permissions are Hosea-specific, not part of NextGen ContextFeatures
         // They are stored in typeConfig instead
       },
@@ -657,6 +662,8 @@ export class AgentService {
         cacheMaxEntries: config.cacheMaxEntries,
         cacheEnabled: config.cacheEnabled,
         tools: config.tools,
+        pinnedCategories: config.pinnedCategories,
+        toolCategoryScope: config.toolCategoryScope,
         lastUsedAt: config.lastUsedAt,
         isActive: config.isActive,
       },
@@ -701,6 +708,9 @@ export class AgentService {
       maxInContextEntries: (typeConfig.maxInContextEntries as number) ?? 20,
       maxInContextTokens: (typeConfig.maxInContextTokens as number) ?? 4000,
       persistentInstructionsEnabled: features.persistentInstructions ?? false,
+      toolCatalogEnabled: features.toolCatalog ?? false,
+      pinnedCategories: (typeConfig.pinnedCategories as string[]) ?? [],
+      toolCategoryScope: (typeConfig.toolCategoryScope as string[]) ?? [],
       permissionsEnabled: (typeConfig.permissionsEnabled as boolean) ?? true,
       tools: (typeConfig.tools as string[]) ?? [],
       createdAt: new Date(definition.createdAt).getTime(),
@@ -3478,6 +3488,9 @@ export class AgentService {
       maxInContextEntries: 20,
       maxInContextTokens: 4000,
       persistentInstructionsEnabled: false,
+      toolCatalogEnabled: false,
+      pinnedCategories: [],
+      toolCategoryScope: [],
       permissionsEnabled: true,
       tools: [],
     };
@@ -3960,7 +3973,11 @@ export class AgentService {
           workingMemory: agentConfig.workingMemoryEnabled,
           inContextMemory: agentConfig.inContextMemoryEnabled,
           persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
+          toolCatalog: agentConfig.toolCatalogEnabled ?? false,
         },
+        toolCategories: agentConfig.toolCategoryScope.length > 0
+          ? agentConfig.toolCategoryScope
+          : undefined,
         plugins: {
           workingMemory: agentConfig.workingMemoryEnabled
             ? {
@@ -3993,6 +4010,9 @@ export class AgentService {
                 },
               }
             : undefined,
+          toolCatalog: agentConfig.toolCatalogEnabled ? {
+            pinned: agentConfig.pinnedCategories,
+          } : undefined,
         },
       };
 

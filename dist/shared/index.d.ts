@@ -13,6 +13,8 @@ interface ILLMDescription {
     description?: string;
     /** Whether the model is currently available for use */
     isActive: boolean;
+    /** Whether this model is a preferred/recommended choice for its vendor */
+    preferred?: boolean;
     /** Release date (YYYY-MM-DD format) */
     releaseDate?: string;
     /** Knowledge cutoff date */
@@ -90,15 +92,25 @@ interface ILLMDescription {
 }
 /**
  * Model name constants organized by vendor
- * Updated: January 2026 - Contains only verified, currently available models
+ * Updated: March 2026 - Contains only verified, currently available models
  */
 declare const LLM_MODELS: {
     readonly openai: {
+        readonly GPT_5_3_CODEX: "gpt-5.3-codex";
+        readonly GPT_5_3_CHAT: "gpt-5.3-chat-latest";
         readonly GPT_5_2: "gpt-5.2";
         readonly GPT_5_2_PRO: "gpt-5.2-pro";
+        readonly GPT_5_2_CODEX: "gpt-5.2-codex";
+        readonly GPT_5_2_CHAT: "gpt-5.2-chat-latest";
+        readonly GPT_5_1: "gpt-5.1";
+        readonly GPT_5_1_CODEX: "gpt-5.1-codex";
+        readonly GPT_5_1_CODEX_MAX: "gpt-5.1-codex-max";
+        readonly GPT_5_1_CODEX_MINI: "gpt-5.1-codex-mini";
+        readonly GPT_5_1_CHAT: "gpt-5.1-chat-latest";
         readonly GPT_5: "gpt-5";
         readonly GPT_5_MINI: "gpt-5-mini";
         readonly GPT_5_NANO: "gpt-5-nano";
+        readonly GPT_5_CHAT: "gpt-5-chat-latest";
         readonly GPT_4_1: "gpt-4.1";
         readonly GPT_4_1_MINI: "gpt-4.1-mini";
         readonly GPT_4_1_NANO: "gpt-4.1-nano";
@@ -108,15 +120,21 @@ declare const LLM_MODELS: {
         readonly O1: "o1";
     };
     readonly anthropic: {
+        readonly CLAUDE_OPUS_4_6: "claude-opus-4-6";
+        readonly CLAUDE_SONNET_4_6: "claude-sonnet-4-6";
         readonly CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101";
         readonly CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929";
         readonly CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001";
         readonly CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805";
+        readonly CLAUDE_OPUS_4: "claude-opus-4-20250514";
         readonly CLAUDE_SONNET_4: "claude-sonnet-4-20250514";
         readonly CLAUDE_SONNET_3_7: "claude-3-7-sonnet-20250219";
         readonly CLAUDE_HAIKU_3: "claude-3-haiku-20240307";
     };
     readonly google: {
+        readonly GEMINI_3_1_PRO_PREVIEW: "gemini-3.1-pro-preview";
+        readonly GEMINI_3_1_FLASH_LITE_PREVIEW: "gemini-3.1-flash-lite-preview";
+        readonly GEMINI_3_1_FLASH_IMAGE_PREVIEW: "gemini-3.1-flash-image-preview";
         readonly GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview";
         readonly GEMINI_3_PRO_PREVIEW: "gemini-3-pro-preview";
         readonly GEMINI_3_PRO_IMAGE_PREVIEW: "gemini-3-pro-image-preview";
@@ -139,7 +157,7 @@ declare const LLM_MODELS: {
 };
 /**
  * Complete model registry with all model metadata
- * Updated: January 2026 - Verified from official vendor documentation
+ * Updated: March 2026 - Verified from official vendor documentation
  */
 declare const MODEL_REGISTRY: Record<string, ILLMDescription>;
 /**

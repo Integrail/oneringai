@@ -565,6 +565,9 @@ export interface HoseaAPI {
       cacheMaxEntries: number;
       permissionsEnabled: boolean;
       tools: string[];
+      toolCatalogEnabled: boolean;
+      pinnedCategories: string[];
+      toolCategoryScope: string[];
       mcpServers?: Array<{ serverName: string; selectedTools?: string[] }>;
       createdAt: number;
       updatedAt: number;
@@ -602,6 +605,9 @@ export interface HoseaAPI {
       cacheMaxEntries: number;
       permissionsEnabled: boolean;
       tools: string[];
+      toolCatalogEnabled: boolean;
+      pinnedCategories: string[];
+      toolCategoryScope: string[];
       mcpServers?: Array<{ serverName: string; selectedTools?: string[] }>;
       createdAt: number;
       updatedAt: number;

@@ -85,14 +85,24 @@ interface ContextFeatures {
   workingMemory?: boolean;        // WorkingMemoryPluginNextGen (default: true)
   inContextMemory?: boolean;      // InContextMemoryPluginNextGen (default: false)
   persistentInstructions?: boolean; // PersistentInstructionsPluginNextGen (default: false)
+  userInfo?: boolean;             // UserInfoPluginNextGen (default: false)
+  toolCatalog?: boolean;          // ToolCatalogPluginNextGen (default: false)
 }
 
 export const DEFAULT_FEATURES: Required<ContextFeatures> = {
   workingMemory: true,
-  inContextMemory: false,
+  inContextMemory: true,
   persistentInstructions: false,
+  userInfo: false,
+  toolCatalog: false,
 };
 ```
+
+**Tool Catalog scoping:**
+- `toolCategories` scopes built-in categories only (filesystem, web, code, etc.)
+- `identities` scopes connector categories only (connector:github, connector:slack, etc.)
+- `pinned` categories are always loaded and cannot be unloaded by the LLM
+- Plugin tools (memory, context, etc.) are always available, separate from catalog
 
 **Usage:**
 ```typescript
