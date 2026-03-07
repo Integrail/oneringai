@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-02-27
+**Generated:** 2026-03-04
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -1302,7 +1302,7 @@ setSpeed(speed: number): void
 
 ### ITTSModelDescription `interface`
 
-📍 [`src/domain/entities/TTSModel.ts:78`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:82`](src/domain/entities/TTSModel.ts)
 
 Complete TTS model description
 
@@ -1429,19 +1429,24 @@ Response from text-to-speech synthesis
 
 ### calculateTTSCost `function`
 
-📍 [`src/domain/entities/TTSModel.ts:297`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:313`](src/domain/entities/TTSModel.ts)
 
 Calculate estimated cost for TTS
+For OpenAI models: based on character count
+For Google models: based on input/output token count
 
 ```typescript
-export function calculateTTSCost(modelName: string, characterCount: number): number | null
+export function calculateTTSCost(
+  modelName: string,
+  characterCount: number,
+  options?:
 ```
 
 ---
 
 ### getTTSModelsWithFeature `function`
 
-📍 [`src/domain/entities/TTSModel.ts:286`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:300`](src/domain/entities/TTSModel.ts)
 
 Get TTS models that support a specific feature
 
@@ -1455,7 +1460,7 @@ export function getTTSModelsWithFeature(
 
 ### TTS_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/TTSModel.ts:126`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:130`](src/domain/entities/TTSModel.ts)
 
 Complete TTS model registry
 Last full audit: January 2026
@@ -1551,13 +1556,13 @@ Last full audit: January 2026
     name: 'gemini-2.5-flash-preview-tts',
     displayName: 'Gemini 2.5 Flash TTS',
     provider: Vendor.Google,
-    description: 'Google Gemini 2.5 Flash TTS - optimized for low latency',
+    description: 'Google Gemini 2.5 Flash TTS - optimized for low latency, 30 voices, 70+ languages',
     isActive: true,
     releaseDate: '2025-01-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -1571,20 +1576,25 @@ Last full audit: January 2026
         voiceCloning: false,
         wordTimestamps: false,
       },
-      limits: { maxInputLength: 32000 }, // 32k tokens
+      limits: { maxInputLength: 32000 }, // 32k token context window
+    },
+    pricing: {
+      perMInputTokens: 0.50, // $0.50 per 1M input tokens
+      perMOutputTokens: 10.00, // $10.00 per 1M output tokens
+      currency: 'USD',
     },
   }` | - |
 | `'gemini-2.5-pro-preview-tts'` | `{
     name: 'gemini-2.5-pro-preview-tts',
     displayName: 'Gemini 2.5 Pro TTS',
     provider: Vendor.Google,
-    description: 'Google Gemini 2.5 Pro TTS - optimized for quality',
+    description: 'Google Gemini 2.5 Pro TTS - optimized for quality, 30 voices, 70+ languages',
     isActive: true,
     releaseDate: '2025-01-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -1598,7 +1608,12 @@ Last full audit: January 2026
         voiceCloning: false,
         wordTimestamps: false,
       },
-      limits: { maxInputLength: 32000 }, // 32k tokens
+      limits: { maxInputLength: 32000 }, // 32k token context window
+    },
+    pricing: {
+      perMInputTokens: 1.00, // $1.00 per 1M input tokens
+      perMOutputTokens: 20.00, // $20.00 per 1M output tokens
+      currency: 'USD',
     },
   }` | - |
 
@@ -2453,7 +2468,7 @@ getConnector(): Connector
 
 ### IImageModelDescription `interface`
 
-📍 [`src/domain/entities/ImageModel.ts:93`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:94`](src/domain/entities/ImageModel.ts)
 
 Complete image model description
 
@@ -2610,7 +2625,7 @@ Options for creating an ImageGeneration instance
 
 ### ImageModelCapabilities `interface`
 
-📍 [`src/domain/entities/ImageModel.ts:34`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:35`](src/domain/entities/ImageModel.ts)
 
 Image model capabilities
 
@@ -2653,7 +2668,7 @@ Image model capabilities
 
 ### ImageModelPricing `interface`
 
-📍 [`src/domain/entities/ImageModel.ts:80`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:81`](src/domain/entities/ImageModel.ts)
 
 Image model pricing
 
@@ -2754,19 +2769,19 @@ Simplified options for quick generation
 
 ### AspectRatio `type`
 
-📍 [`src/domain/entities/ImageModel.ts:29`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:30`](src/domain/entities/ImageModel.ts)
 
 Supported aspect ratios
 
 ```typescript
-type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3'
+type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3' | '1:4' | '4:1' | '1:8' | '8:1' | '2:1' | '1:2'
 ```
 
 ---
 
 ### calculateImageCost `function`
 
-📍 [`src/domain/entities/ImageModel.ts:774`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:909`](src/domain/entities/ImageModel.ts)
 
 Calculate estimated cost for image generation
 
@@ -2824,7 +2839,7 @@ export function createMessageWithImages(
 
 ### getImageModelsWithFeature `function`
 
-📍 [`src/domain/entities/ImageModel.ts:763`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:898`](src/domain/entities/ImageModel.ts)
 
 Get image models that support a specific feature
 
@@ -2862,7 +2877,7 @@ export async function readClipboardImage(): Promise&lt;ClipboardImageResult&gt;
 
 ### IMAGE_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/ImageModel.ts:135`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:142`](src/domain/entities/ImageModel.ts)
 
 Complete image model registry
 Last full audit: January 2026
@@ -3044,7 +3059,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -3155,7 +3170,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -3252,7 +3267,7 @@ Last full audit: January 2026
       },
     },
     pricing: {
-      perImage: 0.08,
+      perImage: 0.06, // Updated per official pricing page (was $0.08)
       currency: 'USD',
     },
   }` | - |
@@ -3266,7 +3281,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -3367,6 +3382,129 @@ Last full audit: January 2026
       currency: 'USD',
     },
   }` | - |
+| `'gemini-3.1-flash-image-preview'` | `{
+    name: 'gemini-3.1-flash-image-preview',
+    displayName: 'Nano Banana 2 (Gemini 3.1 Flash Image)',
+    provider: Vendor.Google,
+    description: 'High-efficiency native image generation and editing with 4K support and thinking capabilities',
+    isActive: true,
+    releaseDate: '2026-02-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview',
+      pricing: 'https://ai.google.dev/pricing',
+      lastVerified: '2026-03-04',
+    },
+    capabilities: {
+      sizes: ['512x512', '1024x1024', '1536x1536', 'auto'],
+      aspectRatios: ['1:1', '1:4', '4:1', '1:8', '8:1'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: true, // Multiple resolution tiers: 0.5K, 1K, 2K, 4K
+        transparency: false,
+        promptRevision: false,
+      },
+      limits: { maxPromptLength: 131072 }, // 131K input tokens
+      vendorOptions: {
+        outputImageResolution: {
+          type: 'enum',
+          label: 'Resolution',
+          description: 'Output image resolution tier',
+          enum: ['0.5K', '1K', '2K', '4K'],
+          default: '1K',
+          controlType: 'select',
+        },
+      },
+    },
+    pricing: {
+      // Per-image, varies by resolution: $0.045 (512px), $0.067 (1K), $0.101 (2K), $0.151 (4K)
+      perImageStandard: 0.067, // 1K default
+      perImageHD: 0.151, // 4K
+      currency: 'USD',
+    },
+  }` | - |
+| `'gemini-3-pro-image-preview'` | `{
+    name: 'gemini-3-pro-image-preview',
+    displayName: 'Nano Banana Pro (Gemini 3 Pro Image)',
+    provider: Vendor.Google,
+    description: 'Professional design engine with reasoning for studio-quality 4K visuals, complex layouts, and precise text rendering',
+    isActive: true,
+    releaseDate: '2025-11-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview',
+      pricing: 'https://ai.google.dev/pricing',
+      lastVerified: '2026-03-04',
+    },
+    capabilities: {
+      sizes: ['1024x1024', 'auto'],
+      aspectRatios: ['1:1', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: true, // Reasoning-driven design
+        qualityControl: true, // 1K, 2K, 4K tiers
+        transparency: false,
+        promptRevision: false,
+      },
+      limits: { maxPromptLength: 65536 }, // 65K input tokens
+      vendorOptions: {
+        outputImageResolution: {
+          type: 'enum',
+          label: 'Resolution',
+          description: 'Output image resolution tier',
+          enum: ['1K', '2K', '4K'],
+          default: '1K',
+          controlType: 'select',
+        },
+      },
+    },
+    pricing: {
+      // $0.134 per 1K/2K image, $0.24 per 4K image
+      perImageStandard: 0.134, // 1K/2K
+      perImageHD: 0.24, // 4K
+      currency: 'USD',
+    },
+  }` | - |
+| `'gemini-2.5-flash-image'` | `{
+    name: 'gemini-2.5-flash-image',
+    displayName: 'Nano Banana (Gemini 2.5 Flash Image)',
+    provider: Vendor.Google,
+    description: 'Native image generation and editing designed for fast, creative workflows',
+    isActive: true,
+    releaseDate: '2025-10-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image',
+      pricing: 'https://ai.google.dev/pricing',
+      lastVerified: '2026-03-04',
+    },
+    capabilities: {
+      sizes: ['1024x1024', 'auto'],
+      aspectRatios: ['1:1', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false,
+      },
+      limits: { maxPromptLength: 65536 }, // 65K input tokens
+    },
+    pricing: {
+      perImage: 0.039, // $0.039 per image
+      currency: 'USD',
+    },
+  }` | - |
 | `'grok-imagine-image'` | `{
     name: 'grok-imagine-image',
     displayName: 'Grok Imagine Image',
@@ -3377,11 +3515,11 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
       pricing: 'https://docs.x.ai/docs/models',
-      lastVerified: '2026-02-01',
+      lastVerified: '2026-03-04',
     },
     capabilities: {
       sizes: ['1024x1024'],
-      aspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'],
+      aspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '2:1', '1:2'],
       maxImagesPerRequest: 10,
       outputFormats: ['png', 'jpeg'],
       features: {
@@ -4126,13 +4264,13 @@ Video Model Registry
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
-      resolutions: [], // Veo 2.0 uses aspectRatio only, no resolution control
+      resolutions: ['720p'], // Veo 2 only supports 720p
       aspectRatios: ['16:9', '9:16'],
       maxFps: 24,
       audio: false,
-      imageToVideo: true,
+      imageToVideo: false, // Veo 2 does not support reference images
       videoExtension: false,
-      frameControl: true,
+      frameControl: true, // First/last frame interpolation supported
       features: {
         upscaling: false,
         styleControl: false,
@@ -4141,7 +4279,7 @@ Video Model Registry
       },
     },
     pricing: {
-      perSecond: 0.03,
+      perSecond: 0.35, // Updated per official pricing page (was $0.03)
       currency: 'USD',
     },
   }` | - |
@@ -4153,13 +4291,13 @@ Video Model Registry
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ['720p'], // Fast model only supports 720p
+      resolutions: ['720p', '1080p', '4k'], // 1080p/4k require 8s duration
       aspectRatios: ['16:9', '9:16'],
       maxFps: 24,
-      audio: true,
-      imageToVideo: true,
-      videoExtension: false,
-      frameControl: false,
+      audio: true, // Native audio generation
+      imageToVideo: true, // Up to 3 reference images
+      videoExtension: true, // Supported (720p only)
+      frameControl: true, // First/last frame interpolation
       features: {
         upscaling: false,
         styleControl: false,
@@ -4168,7 +4306,7 @@ Video Model Registry
       },
     },
     pricing: {
-      perSecond: 0.75,
+      perSecond: 0.15, // $0.15 for 720p/1080p, $0.35 for 4K
       currency: 'USD',
     },
   }` | - |
@@ -4183,9 +4321,9 @@ Video Model Registry
       resolutions: ['720p', '1080p', '4k'], // 1080p and 4k require 8s duration
       aspectRatios: ['16:9', '9:16'],
       maxFps: 30,
-      audio: true,
-      imageToVideo: true,
-      videoExtension: true,
+      audio: true, // Native audio generation
+      imageToVideo: true, // Up to 3 reference images
+      videoExtension: true, // Supported (720p only)
       frameControl: true,
       features: {
         upscaling: true,
@@ -4195,7 +4333,7 @@ Video Model Registry
       },
     },
     pricing: {
-      perSecond: 0.75,
+      perSecond: 0.40, // $0.40 for 720p/1080p, $0.60 for 4K
       currency: 'USD',
     },
   }` | - |
@@ -10604,7 +10742,7 @@ constructor(
 
 ### ToolCatalogPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts:141`](src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts:132`](src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -13583,17 +13721,18 @@ Tool call detected and starting
 
 ### ToolCatalogPluginConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts:37`](src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts:48`](src/core/context-nextgen/plugins/ToolCatalogPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `categoryScope?` | `categoryScope?: ToolCategoryScope;` | Scope filter for which categories are visible |
-| `autoLoadCategories?` | `autoLoadCategories?: string[];` | Categories to pre-load on initialization |
-| `maxLoadedCategories?` | `maxLoadedCategories?: number;` | Maximum loaded categories at once (default: 10) |
-| `identities?` | `identities?: AuthIdentity[];` | Auth identities for connector filtering |
+| `categoryScope?` | `categoryScope?: ToolCategoryScope;` | Scope filter for which built-in categories are visible (does NOT affect connector categories) |
+| `autoLoadCategories?` | `autoLoadCategories?: string[];` | Categories to pre-load on initialization (can be unloaded by LLM) |
+| `pinned?` | `pinned?: string[];` | Categories that are always loaded and cannot be unloaded by the LLM |
+| `maxLoadedCategories?` | `maxLoadedCategories?: number;` | Maximum loaded categories at once, excluding pinned (default: 10) |
+| `identities?` | `identities?: AuthIdentity[];` | Auth identities for connector category filtering |
 
 </details>
 
@@ -14473,7 +14612,7 @@ export function createEditMeetingTool(
 
 ### createExecuteJavaScriptTool `function`
 
-📍 [`src/tools/code/executeJavaScript.ts:217`](src/tools/code/executeJavaScript.ts)
+📍 [`src/tools/code/executeJavaScript.ts:219`](src/tools/code/executeJavaScript.ts)
 
 Create an execute_javascript tool.
 
@@ -15926,6 +16065,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 | `provider` | `provider: string;` | Vendor/provider (Vendor.OpenAI, Vendor.Anthropic, etc.) |
 | `description?` | `description?: string;` | Optional description of the model |
 | `isActive` | `isActive: boolean;` | Whether the model is currently available for use |
+| `preferred?` | `preferred?: boolean;` | Whether this model is a preferred/recommended choice for its vendor |
 | `releaseDate?` | `releaseDate?: string;` | Release date (YYYY-MM-DD format) |
 | `knowledgeCutoff?` | `knowledgeCutoff?: string;` | Knowledge cutoff date |
 | `features` | `features: {
@@ -16050,7 +16190,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:1517`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2170`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -16066,7 +16206,7 @@ export function calculateCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:1505`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2158`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -16078,7 +16218,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:1488`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2141`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -16090,7 +16230,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:1497`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2150`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -16117,21 +16257,96 @@ export function resolveModelCapabilities(
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:192`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:215`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
-Updated: January 2026 - Verified from official vendor documentation
+Updated: March 2026 - Verified from official vendor documentation
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `'gpt-5.3-codex'` | `{
+    name: 'gpt-5.3-codex',
+    provider: Vendor.OpenAI,
+    description: 'Latest codex model for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh',
+    isActive: true,
+    releaseDate: '2026-02-01',
+    knowledgeCutoff: '2025-08-31',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 400000,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 14,
+      },
+    },
+  }` | - |
+| `'gpt-5.3-chat-latest'` | `{
+    name: 'gpt-5.3-chat-latest',
+    provider: Vendor.OpenAI,
+    description: 'Latest GPT-5.3 chat model for general-purpose use',
+    isActive: true,
+    releaseDate: '2026-02-01',
+    knowledgeCutoff: '2025-08-31',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128000,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175,
+      },
+      output: {
+        tokens: 16000,
+        text: true,
+        cpm: 14,
+      },
+    },
+  }` | - |
 | `'gpt-5.2'` | `{
     name: 'gpt-5.2',
     provider: Vendor.OpenAI,
     description: 'Flagship model for coding and agentic tasks. Reasoning.effort: none, low, medium, high, xhigh',
     isActive: true,
+    preferred: true,
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -16158,6 +16373,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 1.75,
+        cpmCached: 0.175,
       },
       output: {
         tokens: 128000,
@@ -16176,7 +16392,7 @@ Updated: January 2026 - Verified from official vendor documentation
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: true,
+      structuredOutput: false,
       functionCalling: true,
       fineTuning: false,
       predictedOutputs: false,
@@ -16202,6 +16418,275 @@ Updated: January 2026 - Verified from official vendor documentation
         tokens: 128000,
         text: true,
         cpm: 168,
+      },
+    },
+  }` | - |
+| `'gpt-5.2-codex'` | `{
+    name: 'gpt-5.2-codex',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5.2 codex for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2025-12-01',
+    knowledgeCutoff: '2025-08-31',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 400000,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 14,
+      },
+    },
+  }` | - |
+| `'gpt-5.2-chat-latest'` | `{
+    name: 'gpt-5.2-chat-latest',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5.2 chat model for general-purpose use',
+    isActive: true,
+    releaseDate: '2025-12-01',
+    knowledgeCutoff: '2025-08-31',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128000,
+        text: true,
+        image: true,
+        cpm: 1.75,
+        cpmCached: 0.175,
+      },
+      output: {
+        tokens: 16000,
+        text: true,
+        cpm: 14,
+      },
+    },
+  }` | - |
+| `'gpt-5.1'` | `{
+    name: 'gpt-5.1',
+    provider: Vendor.OpenAI,
+    description: 'Intelligent reasoning model for coding and agentic tasks. Reasoning.effort: none, low, medium, high',
+    isActive: true,
+    releaseDate: '2025-10-01',
+    knowledgeCutoff: '2024-09-30',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 400000,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 10,
+      },
+    },
+  }` | - |
+| `'gpt-5.1-codex'` | `{
+    name: 'gpt-5.1-codex',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5.1 codex for coding and agentic tasks with reasoning',
+    isActive: true,
+    releaseDate: '2025-10-01',
+    knowledgeCutoff: '2024-09-30',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 400000,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 10,
+      },
+    },
+  }` | - |
+| `'gpt-5.1-codex-max'` | `{
+    name: 'gpt-5.1-codex-max',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5.1 codex max for maximum reasoning depth on coding tasks',
+    isActive: true,
+    releaseDate: '2025-10-01',
+    knowledgeCutoff: '2024-09-30',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 400000,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 10,
+      },
+    },
+  }` | - |
+| `'gpt-5.1-codex-mini'` | `{
+    name: 'gpt-5.1-codex-mini',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5.1 codex mini for cost-efficient coding tasks',
+    isActive: true,
+    releaseDate: '2025-10-01',
+    knowledgeCutoff: '2024-09-30',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 400000,
+        text: true,
+        image: true,
+        cpm: 0.25,
+        cpmCached: 0.025,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 2,
+      },
+    },
+  }` | - |
+| `'gpt-5.1-chat-latest'` | `{
+    name: 'gpt-5.1-chat-latest',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5.1 chat model for general-purpose use',
+    isActive: true,
+    releaseDate: '2025-10-01',
+    knowledgeCutoff: '2024-09-30',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128000,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125,
+      },
+      output: {
+        tokens: 16000,
+        text: true,
+        cpm: 10,
       },
     },
   }` | - |
@@ -16236,6 +16721,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 1.25,
+        cpmCached: 0.125,
       },
       output: {
         tokens: 128000,
@@ -16275,6 +16761,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 0.25,
+        cpmCached: 0.025,
       },
       output: {
         tokens: 128000,
@@ -16314,11 +16801,46 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 0.05,
+        cpmCached: 0.005,
       },
       output: {
         tokens: 128000,
         text: true,
         cpm: 0.4,
+      },
+    },
+  }` | - |
+| `'gpt-5-chat-latest'` | `{
+    name: 'gpt-5-chat-latest',
+    provider: Vendor.OpenAI,
+    description: 'GPT-5 chat model for general-purpose use',
+    isActive: true,
+    releaseDate: '2025-08-01',
+    knowledgeCutoff: '2024-09-30',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128000,
+        text: true,
+        image: true,
+        cpm: 1.25,
+        cpmCached: 0.125,
+      },
+      output: {
+        tokens: 16000,
+        text: true,
+        cpm: 10,
       },
     },
   }` | - |
@@ -16328,7 +16850,7 @@ Updated: January 2026 - Verified from official vendor documentation
     description: 'GPT-4.1 specialized for coding with 1M token context window',
     isActive: true,
     releaseDate: '2025-04-14',
-    knowledgeCutoff: '2025-04-01',
+    knowledgeCutoff: '2024-06-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -16347,6 +16869,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 2,
+        cpmCached: 0.50,
       },
       output: {
         tokens: 32768,
@@ -16361,7 +16884,7 @@ Updated: January 2026 - Verified from official vendor documentation
     description: 'Efficient GPT-4.1 model, beats GPT-4o in many benchmarks at 83% lower cost',
     isActive: true,
     releaseDate: '2025-04-14',
-    knowledgeCutoff: '2025-04-01',
+    knowledgeCutoff: '2024-06-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -16380,6 +16903,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 0.4,
+        cpmCached: 0.10,
       },
       output: {
         tokens: 16384,
@@ -16394,7 +16918,7 @@ Updated: January 2026 - Verified from official vendor documentation
     description: 'Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion',
     isActive: true,
     releaseDate: '2025-04-14',
-    knowledgeCutoff: '2025-04-01',
+    knowledgeCutoff: '2024-06-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -16413,6 +16937,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 0.1,
+        cpmCached: 0.025,
       },
       output: {
         tokens: 16384,
@@ -16424,10 +16949,10 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'gpt-4o'` | `{
     name: 'gpt-4o',
     provider: Vendor.OpenAI,
-    description: 'Versatile omni model with audio support. Legacy but still available',
+    description: 'Versatile omni model. Legacy but still available',
     isActive: true,
     releaseDate: '2024-05-13',
-    knowledgeCutoff: '2024-04-01',
+    knowledgeCutoff: '2023-10-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -16437,7 +16962,7 @@ Updated: January 2026 - Verified from official vendor documentation
       predictedOutputs: true,
       realtime: true,
       vision: true,
-      audio: true,
+      audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
@@ -16445,13 +16970,12 @@ Updated: January 2026 - Verified from official vendor documentation
         tokens: 128000,
         text: true,
         image: true,
-        audio: true,
         cpm: 2.5,
+        cpmCached: 1.25,
       },
       output: {
         tokens: 16384,
         text: true,
-        audio: true,
         cpm: 10,
       },
     },
@@ -16459,10 +16983,10 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'gpt-4o-mini'` | `{
     name: 'gpt-4o-mini',
     provider: Vendor.OpenAI,
-    description: 'Fast, affordable omni model with audio support',
+    description: 'Fast, affordable omni model',
     isActive: true,
     releaseDate: '2024-07-18',
-    knowledgeCutoff: '2024-04-01',
+    knowledgeCutoff: '2023-10-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -16472,7 +16996,7 @@ Updated: January 2026 - Verified from official vendor documentation
       predictedOutputs: false,
       realtime: true,
       vision: true,
-      audio: true,
+      audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
@@ -16480,13 +17004,12 @@ Updated: January 2026 - Verified from official vendor documentation
         tokens: 128000,
         text: true,
         image: true,
-        audio: true,
         cpm: 0.15,
+        cpmCached: 0.075,
       },
       output: {
         tokens: 16384,
         text: true,
-        audio: true,
         cpm: 0.6,
       },
     },
@@ -16497,7 +17020,7 @@ Updated: January 2026 - Verified from official vendor documentation
     description: 'Fast reasoning model tailored for coding, math, and science',
     isActive: true,
     releaseDate: '2025-01-31',
-    knowledgeCutoff: '2024-10-01',
+    knowledgeCutoff: '2023-10-01',
     features: {
       reasoning: true,
       streaming: true,
@@ -16506,11 +17029,11 @@ Updated: January 2026 - Verified from official vendor documentation
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: true,
+      vision: false,
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: false,
+      promptCaching: true,
       parameters: {
         temperature: false,
         topP: false,
@@ -16520,8 +17043,8 @@ Updated: January 2026 - Verified from official vendor documentation
       input: {
         tokens: 200000,
         text: true,
-        image: true,
         cpm: 1.1,
+        cpmCached: 0.55,
       },
       output: {
         tokens: 100000,
@@ -16536,7 +17059,7 @@ Updated: January 2026 - Verified from official vendor documentation
     description: 'Advanced reasoning model for complex problems',
     isActive: true,
     releaseDate: '2024-12-17',
-    knowledgeCutoff: '2024-10-01',
+    knowledgeCutoff: '2023-10-01',
     features: {
       reasoning: true,
       streaming: true,
@@ -16549,7 +17072,7 @@ Updated: January 2026 - Verified from official vendor documentation
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: false,
+      promptCaching: true,
       parameters: {
         temperature: false,
         topP: false,
@@ -16561,6 +17084,7 @@ Updated: January 2026 - Verified from official vendor documentation
         text: true,
         image: true,
         cpm: 15,
+        cpmCached: 7.50,
       },
       output: {
         tokens: 100000,
@@ -16569,10 +17093,82 @@ Updated: January 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
+| `'claude-opus-4-6'` | `{
+    name: 'claude-opus-4-6',
+    provider: Vendor.Anthropic,
+    description: 'The most intelligent model for building agents and coding. 128K output, adaptive thinking',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2026-02-01',
+    knowledgeCutoff: '2025-05-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 200000, // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 5,
+        cpmCached: 0.5,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 25,
+      },
+    },
+  }` | - |
+| `'claude-sonnet-4-6'` | `{
+    name: 'claude-sonnet-4-6',
+    provider: Vendor.Anthropic,
+    description: 'Best combination of speed and intelligence. Adaptive thinking, 1M context beta',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2026-02-01',
+    knowledgeCutoff: '2025-08-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 200000, // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3,
+      },
+      output: {
+        tokens: 64000,
+        text: true,
+        cpm: 15,
+      },
+    },
+  }` | - |
 | `'claude-opus-4-5-20251101'` | `{
     name: 'claude-opus-4-5-20251101',
     provider: Vendor.Anthropic,
-    description: 'Premium model combining maximum intelligence with practical performance',
+    description: 'Legacy Opus 4.5. Premium model combining maximum intelligence with practical performance',
     isActive: true,
     releaseDate: '2025-11-01',
     knowledgeCutoff: '2025-05-01',
@@ -16607,7 +17203,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'claude-sonnet-4-5-20250929'` | `{
     name: 'claude-sonnet-4-5-20250929',
     provider: Vendor.Anthropic,
-    description: 'Smart model for complex agents and coding. Best balance of intelligence, speed, cost',
+    description: 'Legacy Sonnet 4.5. Smart model for complex agents and coding',
     isActive: true,
     releaseDate: '2025-09-29',
     knowledgeCutoff: '2025-01-01',
@@ -16626,7 +17222,7 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 200000,
+        tokens: 200000, // 1M with beta header
         text: true,
         image: true,
         cpm: 3,
@@ -16709,10 +17305,45 @@ Updated: January 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
+| `'claude-opus-4-20250514'` | `{
+    name: 'claude-opus-4-20250514',
+    provider: Vendor.Anthropic,
+    description: 'Legacy Opus 4. Agentic tasks and reasoning',
+    isActive: true,
+    releaseDate: '2025-05-14',
+    knowledgeCutoff: '2025-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 200000,
+        text: true,
+        image: true,
+        cpm: 15,
+        cpmCached: 1.5,
+      },
+      output: {
+        tokens: 32000,
+        text: true,
+        cpm: 75,
+      },
+    },
+  }` | - |
 | `'claude-sonnet-4-20250514'` | `{
     name: 'claude-sonnet-4-20250514',
     provider: Vendor.Anthropic,
-    description: 'Legacy Sonnet 4. Default for most users, supports 1M context beta',
+    description: 'Legacy Sonnet 4. Supports 1M context beta',
     isActive: true,
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
@@ -16747,7 +17378,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'claude-3-7-sonnet-20250219'` | `{
     name: 'claude-3-7-sonnet-20250219',
     provider: Vendor.Anthropic,
-    description: 'Claude 3.7 Sonnet with extended thinking, supports 128K output beta',
+    description: 'Deprecated. Claude 3.7 Sonnet with extended thinking',
     isActive: true,
     releaseDate: '2025-02-19',
     knowledgeCutoff: '2024-10-01',
@@ -16773,7 +17404,7 @@ Updated: January 2026 - Verified from official vendor documentation
         cpmCached: 0.3,
       },
       output: {
-        tokens: 64000, // 128K with beta header
+        tokens: 64000,
         text: true,
         cpm: 15,
       },
@@ -16782,7 +17413,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'claude-3-haiku-20240307'` | `{
     name: 'claude-3-haiku-20240307',
     provider: Vendor.Anthropic,
-    description: 'Fast legacy model. Recommend migrating to Haiku 4.5',
+    description: 'Deprecated. Retiring April 19, 2026. Migrate to Haiku 4.5',
     isActive: true,
     releaseDate: '2024-03-07',
     knowledgeCutoff: '2023-08-01',
@@ -16814,13 +17445,14 @@ Updated: January 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
-| `'gemini-3-flash-preview'` | `{
-    name: 'gemini-3-flash-preview',
+| `'gemini-3.1-pro-preview'` | `{
+    name: 'gemini-3.1-pro-preview',
     provider: Vendor.Google,
-    description: 'Pro-grade reasoning with Flash-level latency and efficiency',
+    description: 'Advanced intelligence with powerful agentic and coding capabilities. Replaces gemini-3-pro-preview',
     isActive: true,
-    releaseDate: '2025-11-18',
-    knowledgeCutoff: '2025-08-01',
+    preferred: true,
+    releaseDate: '2026-02-01',
+    knowledgeCutoff: '2025-01-01',
     features: {
       reasoning: true,
       streaming: true,
@@ -16835,27 +17467,134 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1000000,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.15,
+        cpm: 2.00,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.6,
+        cpm: 12.00,
+      },
+    },
+  }` | - |
+| `'gemini-3.1-flash-lite-preview'` | `{
+    name: 'gemini-3.1-flash-lite-preview',
+    provider: Vendor.Google,
+    description: 'High performance, budget-friendly for high-volume agentic tasks and data extraction',
+    isActive: true,
+    releaseDate: '2026-03-01',
+    knowledgeCutoff: '2025-01-01',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1048576,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.25,
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 1.50,
+      },
+    },
+  }` | - |
+| `'gemini-3.1-flash-image-preview'` | `{
+    name: 'gemini-3.1-flash-image-preview',
+    provider: Vendor.Google,
+    description: 'High-efficiency image generation with up to 4K output, search grounding support',
+    isActive: true,
+    releaseDate: '2026-02-01',
+    knowledgeCutoff: '2025-01-01',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: false,
+      input: {
+        tokens: 131072,
+        text: true,
+        image: true,
+        cpm: 0.25,
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        image: true,
+        cpm: 1.50,
+      },
+    },
+  }` | - |
+| `'gemini-3-flash-preview'` | `{
+    name: 'gemini-3-flash-preview',
+    provider: Vendor.Google,
+    description: 'Most powerful agentic and coding model with frontier-class reasoning',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2025-12-01',
+    knowledgeCutoff: '2025-01-01',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1048576,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.50,
+        cpmCached: 0.05,
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 3.00,
       },
     },
   }` | - |
 | `'gemini-3-pro-preview'` | `{
     name: 'gemini-3-pro-preview',
     provider: Vendor.Google,
-    description: 'Most advanced reasoning Gemini model for complex tasks',
+    description: 'Deprecated. Shutting down March 9, 2026. Migrate to gemini-3.1-pro-preview',
     isActive: true,
     releaseDate: '2025-11-18',
-    knowledgeCutoff: '2025-08-01',
+    knowledgeCutoff: '2025-01-01',
     features: {
       reasoning: true,
       streaming: true,
@@ -16870,7 +17609,7 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1000000,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
@@ -16887,14 +17626,14 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'gemini-3-pro-image-preview'` | `{
     name: 'gemini-3-pro-image-preview',
     provider: Vendor.Google,
-    description: 'Highest quality image generation model',
+    description: 'Professional-grade image generation and editing with reasoning',
     isActive: true,
     releaseDate: '2025-11-18',
-    knowledgeCutoff: '2025-08-01',
+    knowledgeCutoff: '2025-01-01',
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: false,
+      structuredOutput: true,
       functionCalling: false,
       fineTuning: false,
       predictedOutputs: false,
@@ -16903,15 +17642,15 @@ Updated: January 2026 - Verified from official vendor documentation
       audio: false,
       video: false,
       batchAPI: true,
-      promptCaching: true,
+      promptCaching: false,
       input: {
-        tokens: 1000000,
+        tokens: 65536,
         text: true,
         image: true,
         cpm: 1.25,
       },
       output: {
-        tokens: 65536,
+        tokens: 32768,
         text: true,
         image: true,
         cpm: 10,
@@ -16921,7 +17660,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'gemini-2.5-pro'` | `{
     name: 'gemini-2.5-pro',
     provider: Vendor.Google,
-    description: 'Advanced multimodal model built for deep reasoning and agents',
+    description: 'Most advanced model for complex tasks with deep reasoning and coding',
     isActive: true,
     releaseDate: '2025-03-01',
     knowledgeCutoff: '2025-01-01',
@@ -16939,12 +17678,13 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1000000,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
         cpm: 1.25,
+        cpmCached: 0.125,
       },
       output: {
         tokens: 65536,
@@ -16956,7 +17696,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'gemini-2.5-flash'` | `{
     name: 'gemini-2.5-flash',
     provider: Vendor.Google,
-    description: 'Fast, cost-effective model with excellent reasoning',
+    description: 'Best price-performance for low-latency, high-volume tasks with reasoning',
     isActive: true,
     releaseDate: '2025-06-17',
     knowledgeCutoff: '2025-01-01',
@@ -16974,24 +17714,25 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1000000,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.15,
+        cpm: 0.30,
+        cpmCached: 0.03,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.6,
+        cpm: 2.50,
       },
     },
   }` | - |
 | `'gemini-2.5-flash-lite'` | `{
     name: 'gemini-2.5-flash-lite',
     provider: Vendor.Google,
-    description: 'Lowest latency for high-volume tasks, summarization, classification',
+    description: 'Fastest and most budget-friendly multimodal model in the 2.5 family',
     isActive: true,
     releaseDate: '2025-06-17',
     knowledgeCutoff: '2025-01-01',
@@ -17009,31 +17750,31 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1000000,
+        tokens: 1048576,
         text: true,
         image: true,
         audio: true,
         video: true,
-        cpm: 0.075,
+        cpm: 0.10,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 0.3,
+        cpm: 0.40,
       },
     },
   }` | - |
 | `'gemini-2.5-flash-image'` | `{
     name: 'gemini-2.5-flash-image',
     provider: Vendor.Google,
-    description: 'Image generation and editing model',
+    description: 'Fast native image generation and editing (Nano Banana)',
     isActive: true,
-    releaseDate: '2025-09-01',
-    knowledgeCutoff: '2025-01-01',
+    releaseDate: '2025-10-01',
+    knowledgeCutoff: '2025-06-01',
     features: {
-      reasoning: true,
+      reasoning: false,
       streaming: true,
-      structuredOutput: false,
+      structuredOutput: true,
       functionCalling: false,
       fineTuning: false,
       predictedOutputs: false,
@@ -17044,13 +17785,13 @@ Updated: January 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 1000000,
+        tokens: 65536,
         text: true,
         image: true,
         cpm: 0.15,
       },
       output: {
-        tokens: 65536,
+        tokens: 32768,
         text: true,
         image: true,
         cpm: 0.6,
@@ -17075,13 +17816,14 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2000000,
         text: true,
         image: true,
         cpm: 0.20,
+        cpmCached: 0.05,
       },
       output: {
         tokens: 65536,
@@ -17108,13 +17850,14 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2000000,
         text: true,
         image: true,
         cpm: 0.20,
+        cpmCached: 0.05,
       },
       output: {
         tokens: 65536,
@@ -17141,12 +17884,13 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 256000,
         text: true,
         cpm: 0.20,
+        cpmCached: 0.02,
       },
       output: {
         tokens: 32768,
@@ -17158,7 +17902,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'grok-4-fast-reasoning'` | `{
     name: 'grok-4-fast-reasoning',
     provider: Vendor.Grok,
-    description: 'Fast Grok 4 with reasoning capabilities, 2M context window',
+    description: 'Fast Grok 4 with reasoning capabilities, 2M context window, vision support',
     isActive: true,
     releaseDate: '2025-09-01',
     knowledgeCutoff: '2024-11-01',
@@ -17170,15 +17914,17 @@ Updated: January 2026 - Verified from official vendor documentation
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: false,
+      vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2000000,
         text: true,
+        image: true,
         cpm: 0.20,
+        cpmCached: 0.05,
       },
       output: {
         tokens: 65536,
@@ -17205,13 +17951,14 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 2000000,
         text: true,
         image: true,
         cpm: 0.20,
+        cpmCached: 0.05,
       },
       output: {
         tokens: 65536,
@@ -17223,12 +17970,12 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'grok-4-0709'` | `{
     name: 'grok-4-0709',
     provider: Vendor.Grok,
-    description: 'Grok 4 flagship model (July 2025 release), 256K context, vision support',
+    description: 'Grok 4 flagship model (July 2025 release), 256K context, vision support, reasoning',
     isActive: true,
     releaseDate: '2025-07-09',
     knowledgeCutoff: '2024-11-01',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -17238,13 +17985,14 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 256000,
         text: true,
         image: true,
         cpm: 3.00,
+        cpmCached: 0.75,
       },
       output: {
         tokens: 32768,
@@ -17256,12 +18004,12 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'grok-3-mini'` | `{
     name: 'grok-3-mini',
     provider: Vendor.Grok,
-    description: 'Lightweight, cost-efficient model for simpler tasks, 131K context',
+    description: 'Lightweight, cost-efficient model with reasoning, 131K context',
     isActive: true,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2024-11-01',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -17271,12 +18019,13 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 131072,
         text: true,
         cpm: 0.30,
+        cpmCached: 0.07,
       },
       output: {
         tokens: 32768,
@@ -17303,12 +18052,13 @@ Updated: January 2026 - Verified from official vendor documentation
       vision: false,
       audio: false,
       video: false,
-      batchAPI: false,
-      promptCaching: false,
+      batchAPI: true,
+      promptCaching: true,
       input: {
         tokens: 131072,
         text: true,
         cpm: 3.00,
+        cpmCached: 0.75,
       },
       output: {
         tokens: 32768,
@@ -17320,7 +18070,7 @@ Updated: January 2026 - Verified from official vendor documentation
 | `'grok-2-vision-1212'` | `{
     name: 'grok-2-vision-1212',
     provider: Vendor.Grok,
-    description: 'Vision-capable model for image understanding, 32K context',
+    description: 'Legacy vision model for image understanding, 32K context. Not in current xAI docs',
     isActive: true,
     releaseDate: '2024-12-12',
     knowledgeCutoff: '2024-11-01',
@@ -26394,7 +27144,7 @@ Default: 0 (disabled - relies on each tool's own timeout) |
 
 ### AgenticLoopEvents `interface`
 
-📍 [`src/capabilities/agents/types/EventTypes.ts:170`](src/capabilities/agents/types/EventTypes.ts)
+📍 [`src/capabilities/agents/types/EventTypes.ts:177`](src/capabilities/agents/types/EventTypes.ts)
 
 Map of all event names to their payload types
 
@@ -26421,6 +27171,7 @@ Map of all event names to their payload types
 | `'tool:error'` | `'tool:error': ToolErrorEvent;` | - |
 | `'tool:timeout'` | `'tool:timeout': ToolTimeoutEvent;` | - |
 | `'hook:error'` | `'hook:error': HookErrorEvent;` | - |
+| `'execution:empty_output'` | `'execution:empty_output': ExecutionEmptyOutputEvent;` | - |
 | `'circuit:opened'` | `'circuit:opened': CircuitOpenedEvent;` | - |
 | `'circuit:half-open'` | `'circuit:half-open': CircuitHalfOpenEvent;` | - |
 | `'circuit:closed'` | `'circuit:closed': CircuitClosedEvent;` | - |
@@ -29065,7 +29816,7 @@ Used to track where information came from and when it was last verified
 
 ### IterationCompleteEvent `interface`
 
-📍 [`src/capabilities/agents/types/EventTypes.ts:70`](src/capabilities/agents/types/EventTypes.ts)
+📍 [`src/capabilities/agents/types/EventTypes.ts:77`](src/capabilities/agents/types/EventTypes.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30558,7 +31309,7 @@ Complete service definition - single source of truth
 
 ### ServiceInfo `interface`
 
-📍 [`src/domain/entities/Services.ts:463`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:479`](src/domain/entities/Services.ts)
 
 Service info lookup (derived from SERVICE_DEFINITIONS)
 
@@ -30866,7 +31617,7 @@ Content types based on OpenAI Responses API format
 
 ### AgentEventName `type`
 
-📍 [`src/capabilities/agents/types/EventTypes.ts:206`](src/capabilities/agents/types/EventTypes.ts)
+📍 [`src/capabilities/agents/types/EventTypes.ts:215`](src/capabilities/agents/types/EventTypes.ts)
 
 ```typescript
 type AgentEventName = AgenticLoopEventName
@@ -30876,7 +31627,7 @@ type AgentEventName = AgenticLoopEventName
 
 ### AgentEvents `type`
 
-📍 [`src/capabilities/agents/types/EventTypes.ts:205`](src/capabilities/agents/types/EventTypes.ts)
+📍 [`src/capabilities/agents/types/EventTypes.ts:214`](src/capabilities/agents/types/EventTypes.ts)
 
 Agent events - alias for AgenticLoopEvents for cleaner API
 This is the preferred export name going forward.
@@ -30889,7 +31640,7 @@ type AgentEvents = AgenticLoopEvents
 
 ### AgenticLoopEventName `type`
 
-📍 [`src/capabilities/agents/types/EventTypes.ts:199`](src/capabilities/agents/types/EventTypes.ts)
+📍 [`src/capabilities/agents/types/EventTypes.ts:208`](src/capabilities/agents/types/EventTypes.ts)
 
 ```typescript
 type AgenticLoopEventName = keyof AgenticLoopEvents
@@ -31345,7 +32096,7 @@ type ServiceCategory = | 'major-vendors'
 
 ### ServiceType `type`
 
-📍 [`src/domain/entities/Services.ts:434`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:450`](src/domain/entities/Services.ts)
 
 Service type - union of all service IDs
 
@@ -31470,7 +32221,7 @@ export function createRoutineExecutionRecord(
 
 ### detectServiceFromURL `function`
 
-📍 [`src/domain/entities/Services.ts:512`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:528`](src/domain/entities/Services.ts)
 
 Detect service type from a URL
 
@@ -31608,7 +32359,7 @@ export function formatRecipients(emails: unknown[]):
 
 ### getAllServiceIds `function`
 
-📍 [`src/domain/entities/Services.ts:548`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:564`](src/domain/entities/Services.ts)
 
 Get all service IDs
 
@@ -31700,7 +32451,7 @@ export function getRoutineProgress(execution: RoutineExecution): number
 
 ### getServiceDefinition `function`
 
-📍 [`src/domain/entities/Services.ts:534`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:550`](src/domain/entities/Services.ts)
 
 Get service definition by service type
 
@@ -31712,7 +32463,7 @@ export function getServiceDefinition(serviceType: string): ServiceDefinition | u
 
 ### getServiceInfo `function`
 
-📍 [`src/domain/entities/Services.ts:527`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:543`](src/domain/entities/Services.ts)
 
 Get service info by service type
 
@@ -31724,7 +32475,7 @@ export function getServiceInfo(serviceType: string): ServiceInfo | undefined
 
 ### getServicesByCategory `function`
 
-📍 [`src/domain/entities/Services.ts:541`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:557`](src/domain/entities/Services.ts)
 
 Get all services in a category
 
@@ -31781,7 +32532,7 @@ export function isExcludedExtension(
 
 ### isKnownService `function`
 
-📍 [`src/domain/entities/Services.ts:555`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:571`](src/domain/entities/Services.ts)
 
 Check if a service ID is known
 
