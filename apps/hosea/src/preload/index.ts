@@ -229,7 +229,10 @@ export type StreamChunk =
   | { type: 'routine:task_failed'; executionId: string; taskId: string; taskName: string; progress: number; error: string }
   | { type: 'routine:step'; executionId: string; step: { timestamp: number; taskName: string; type: string; data?: Record<string, unknown> } }
   | { type: 'routine:completed'; executionId: string; progress: number }
-  | { type: 'routine:failed'; executionId: string; error: string };
+  | { type: 'routine:failed'; executionId: string; error: string }
+  // Browser user control handoff events
+  | { type: 'browser:user_has_control'; reason?: string }
+  | { type: 'browser:agent_has_control' };
 
 /**
  * Browser state info for IPC
@@ -312,6 +315,9 @@ export interface HoseaAPI {
     destroyInstance: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
     streamInstance: (instanceId: string, message: string) => Promise<{ success: boolean }>;
     cancelInstance: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    // Browser user control handoff
+    takeUserControl: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    handBackToAgent: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
     statusInstance: (instanceId: string) => Promise<{
       found: boolean;
       initialized: boolean;
@@ -1267,6 +1273,8 @@ const api: HoseaAPI = {
     destroyInstance: (instanceId) => ipcRenderer.invoke('agent:destroy-instance', instanceId),
     streamInstance: (instanceId, message) => ipcRenderer.invoke('agent:stream-instance', instanceId, message),
     cancelInstance: (instanceId) => ipcRenderer.invoke('agent:cancel-instance', instanceId),
+    takeUserControl: (instanceId) => ipcRenderer.invoke('agent:take-user-control', instanceId),
+    handBackToAgent: (instanceId) => ipcRenderer.invoke('agent:hand-back-to-agent', instanceId),
     statusInstance: (instanceId) => ipcRenderer.invoke('agent:status-instance', instanceId),
     listInstances: () => ipcRenderer.invoke('agent:list-instances'),
     // Instance-aware streaming listeners (include instanceId in callback)

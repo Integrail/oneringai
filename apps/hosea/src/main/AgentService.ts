@@ -443,7 +443,10 @@ export type StreamChunk =
   | { type: 'routine:task_failed'; executionId: string; taskId: string; taskName: string; progress: number; error: string }
   | { type: 'routine:step'; executionId: string; step: { timestamp: number; taskName: string; type: string; data?: Record<string, unknown> } }
   | { type: 'routine:completed'; executionId: string; progress: number }
-  | { type: 'routine:failed'; executionId: string; error: string };
+  | { type: 'routine:failed'; executionId: string; error: string }
+  // Browser user control handoff events
+  | { type: 'browser:user_has_control'; reason?: string }
+  | { type: 'browser:agent_has_control' };
 
 /**
  * HOSEA UI Capabilities System Prompt
@@ -4063,6 +4066,10 @@ export class AgentService {
               });
             },
             getInstanceId: () => instanceId,
+            onAgentStuck: (instId: string) => {
+              // Trigger auto-pause via BrowserService event (Trigger 2)
+              this.browserService?.emit('browser:agent-stuck', instId);
+            },
           })
         );
         logger.info(`[createInstance] HoseaUIPlugin registered for instance ${instanceId}`);
@@ -4323,6 +4330,49 @@ export class AgentService {
     if ('cancel' in instance.agent && typeof instance.agent.cancel === 'function') {
       instance.agent.cancel();
     }
+    return { success: true };
+  }
+
+  /**
+   * Take user control of the browser - pauses the agent
+   */
+  takeUserControl(instanceId: string, reason?: string): { success: boolean; error?: string } {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      return { success: false, error: `Instance "${instanceId}" not found` };
+    }
+
+    const pauseReason = reason || 'User took manual control';
+    instance.agent.pause(pauseReason);
+
+    // Emit stream chunk so UI knows
+    this.streamEmitter?.(instanceId, {
+      type: 'browser:user_has_control',
+      reason: pauseReason,
+    } as StreamChunk);
+
+    logger.info(`[takeUserControl] Agent ${instanceId} paused: ${pauseReason}`);
+    return { success: true };
+  }
+
+  /**
+   * Hand control back to the agent - resumes execution
+   */
+  handBackToAgent(instanceId: string): { success: boolean; error?: string } {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      return { success: false, error: `Instance "${instanceId}" not found` };
+    }
+
+    // Resume the agent
+    instance.agent.resume();
+
+    // Emit stream chunk so UI knows
+    this.streamEmitter?.(instanceId, {
+      type: 'browser:agent_has_control',
+    } as StreamChunk);
+
+    logger.info(`[handBackToAgent] Agent ${instanceId} resumed`);
     return { success: true };
   }
 

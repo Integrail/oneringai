@@ -23,6 +23,11 @@ export enum StreamEventType {
   REASONING_DONE = 'response.reasoning.done',
   RESPONSE_COMPLETE = 'response.complete',
   ERROR = 'response.error',
+
+  // Voice pseudo-streaming events
+  AUDIO_CHUNK_READY = 'response.audio_chunk.ready',
+  AUDIO_CHUNK_ERROR = 'response.audio_chunk.error',
+  AUDIO_STREAM_COMPLETE = 'response.audio_stream.complete',
 }
 
 /**
@@ -179,6 +184,49 @@ export interface ErrorEvent extends BaseStreamEvent {
   recoverable: boolean;
 }
 
+// =============================================================================
+// Voice Pseudo-Streaming Events
+// =============================================================================
+
+/**
+ * Audio chunk ready - TTS synthesis complete for a text chunk
+ */
+export interface AudioChunkReadyEvent extends BaseStreamEvent {
+  type: StreamEventType.AUDIO_CHUNK_READY;
+  /** Sequential index for ordered playback */
+  chunk_index: number;
+  /** Source text that was synthesized */
+  text: string;
+  /** Audio data as base64 string (survives JSON/IPC serialization) */
+  audio_base64: string;
+  /** Audio format */
+  format: string;
+  /** Duration in seconds (if available from TTS provider) */
+  duration_seconds?: number;
+  /** Characters used for this chunk */
+  characters_used?: number;
+}
+
+/**
+ * Audio chunk error - TTS synthesis failed for a text chunk
+ */
+export interface AudioChunkErrorEvent extends BaseStreamEvent {
+  type: StreamEventType.AUDIO_CHUNK_ERROR;
+  chunk_index: number;
+  text: string;
+  error: string;
+}
+
+/**
+ * Audio stream complete - all TTS chunks have been processed
+ */
+export interface AudioStreamCompleteEvent extends BaseStreamEvent {
+  type: StreamEventType.AUDIO_STREAM_COMPLETE;
+  total_chunks: number;
+  total_characters: number;
+  total_duration_seconds?: number;
+}
+
 /**
  * Union type of all stream events
  * Discriminated by 'type' field for type narrowing
@@ -197,7 +245,10 @@ export type StreamEvent =
   | ToolExecutionDoneEvent
   | IterationCompleteEvent
   | ResponseCompleteEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | AudioChunkReadyEvent
+  | AudioChunkErrorEvent
+  | AudioStreamCompleteEvent;
 
 /**
  * Type guard to check if event is a specific type
@@ -246,4 +297,16 @@ export function isResponseComplete(event: StreamEvent): event is ResponseComplet
 
 export function isErrorEvent(event: StreamEvent): event is ErrorEvent {
   return event.type === StreamEventType.ERROR;
+}
+
+export function isAudioChunkReady(event: StreamEvent): event is AudioChunkReadyEvent {
+  return event.type === StreamEventType.AUDIO_CHUNK_READY;
+}
+
+export function isAudioChunkError(event: StreamEvent): event is AudioChunkErrorEvent {
+  return event.type === StreamEventType.AUDIO_CHUNK_ERROR;
+}
+
+export function isAudioStreamComplete(event: StreamEvent): event is AudioStreamCompleteEvent {
+  return event.type === StreamEventType.AUDIO_STREAM_COMPLETE;
 }

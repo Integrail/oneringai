@@ -37,6 +37,8 @@ interface SidebarPanelProps {
   onPinContextKey?: (key: string, pinned: boolean) => void;
   /** Routine execution state for Routines tab */
   routineExecution?: TabState['routineExecution'];
+  /** Browser user control handoff state */
+  userHasControl?: TabState['userHasControl'];
 }
 
 const MIN_WIDTH = 280;
@@ -60,6 +62,7 @@ export function SidebarPanel({
   pinnedContextKeys,
   onPinContextKey,
   routineExecution,
+  userHasControl,
 }: SidebarPanelProps): React.ReactElement | null {
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -200,6 +203,7 @@ export function SidebarPanel({
               <DynamicUIPanel
                 content={dynamicUIContent}
                 onAction={onDynamicUIAction}
+                userHasControl={userHasControl}
               />
             )}
           </>

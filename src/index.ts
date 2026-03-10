@@ -110,6 +110,16 @@ export type {
 } from './capabilities/video/index.js';
 export { createVideoProvider } from './core/createVideoProvider.js';
 
+// Speech Capabilities (Voice pseudo-streaming)
+export { VoiceStream, SentenceChunkingStrategy, AudioPlaybackQueue } from './capabilities/speech/index.js';
+export type {
+  IChunkingStrategy,
+  ChunkingOptions,
+  VoiceStreamConfig,
+  VoiceStreamEvents,
+  AudioChunkPlaybackCallback,
+} from './capabilities/speech/index.js';
+
 // Search Capabilities (NEW - Connector-based web search)
 export { SearchProvider } from './capabilities/search/index.js';
 export type {
@@ -603,6 +613,9 @@ export type {
   IterationCompleteEvent,
   ResponseCompleteEvent,
   ErrorEvent,
+  AudioChunkReadyEvent,
+  AudioChunkErrorEvent,
+  AudioStreamCompleteEvent,
 } from './domain/entities/StreamEvent.js';
 export {
   isStreamEvent,
@@ -614,6 +627,9 @@ export {
   isToolCallArgumentsDone,
   isResponseComplete,
   isErrorEvent,
+  isAudioChunkReady,
+  isAudioChunkError,
+  isAudioStreamComplete,
 } from './domain/entities/StreamEvent.js';
 export { StreamState } from './domain/entities/StreamState.js';
 export { StreamHelpers } from './capabilities/agents/StreamHelpers.js';

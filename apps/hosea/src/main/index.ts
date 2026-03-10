@@ -156,6 +156,13 @@ async function setupIPC(): Promise<void> {
   // ============ Proactive Overlay Detection ============
   // When the browser detects a popup/modal/overlay, proactively notify the agent
   // so it can decide how to handle it (dismiss, interact, etc.)
+  // ============ Browser User Control Handoff ============
+  // When agent appears stuck on browser tools (Trigger 2), auto-pause
+  browserService.on('browser:agent-stuck', (instanceId: string) => {
+    console.log(`[HOSEA] Agent appears stuck on ${instanceId}, auto-pausing`);
+    agentService!.takeUserControl(instanceId, 'Agent appears stuck. You may need to assist.');
+  });
+
   browserService.on('browser:overlay-detected', (instanceId: string, overlayData: unknown) => {
     console.log(`[HOSEA] Overlay detected for ${instanceId}:`, overlayData);
 
@@ -247,6 +254,15 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('agent:cancel-instance', readyHandler(async (_event, instanceId: string) => {
     return agentService!.cancelInstance(instanceId);
+  }));
+
+  // Browser user control handoff (Trigger 1: user clicks "Take Control")
+  ipcMain.handle('agent:take-user-control', readyHandler(async (_event, instanceId: string) => {
+    return agentService!.takeUserControl(instanceId);
+  }));
+
+  ipcMain.handle('agent:hand-back-to-agent', readyHandler(async (_event, instanceId: string) => {
+    return agentService!.handBackToAgent(instanceId);
   }));
 
   ipcMain.handle('agent:status-instance', async (_event, instanceId: string) => {

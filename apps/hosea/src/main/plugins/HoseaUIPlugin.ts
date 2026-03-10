@@ -5,6 +5,8 @@
  * When browser tools execute, this plugin sends UI events to show the browser view
  * in the Hosea UI.
  *
+ * Also tracks consecutive browser tool failures to detect stuck agents (Trigger 2).
+ *
  * This plugin runs in the tool execution pipeline and intercepts browser tool results
  * to emit Dynamic UI content via the provided callback.
  */
@@ -56,6 +58,18 @@ export interface HoseaUIPluginOptions {
    * Called for each tool execution to determine which instance the UI belongs to.
    */
   getInstanceId: () => string;
+
+  /**
+   * Called when the agent appears stuck on browser tools (N consecutive failures).
+   * Typically wired to trigger auto-pause via browserService.emit('browser:agent-stuck').
+   */
+  onAgentStuck?: (instanceId: string) => void;
+
+  /**
+   * Number of consecutive browser tool failures before triggering stuck detection.
+   * Default: 3
+   */
+  stuckThreshold?: number;
 }
 
 /**
@@ -67,6 +81,11 @@ const BROWSER_UI_TOOLS = new Set([
   'browser_go_forward',
   'browser_reload',
 ]);
+
+/**
+ * All browser tool names tracked for stuck detection
+ */
+const BROWSER_TOOLS_PREFIX = 'browser_';
 
 /**
  * HoseaUIPlugin - Emits Dynamic UI content for browser tools.
@@ -96,10 +115,19 @@ export class HoseaUIPlugin implements IToolExecutionPlugin {
 
   private emitDynamicUI: HoseaUIPluginOptions['emitDynamicUI'];
   private getInstanceId: HoseaUIPluginOptions['getInstanceId'];
+  private onAgentStuck: HoseaUIPluginOptions['onAgentStuck'];
+  private stuckThreshold: number;
+
+  /** Consecutive browser tool failure count per instance */
+  private failureCounters: Map<string, number> = new Map();
+  /** Track instances that have already been reported as stuck (avoid repeated triggers) */
+  private stuckReported: Set<string> = new Set();
 
   constructor(options: HoseaUIPluginOptions) {
     this.emitDynamicUI = options.emitDynamicUI;
     this.getInstanceId = options.getInstanceId;
+    this.onAgentStuck = options.onAgentStuck;
+    this.stuckThreshold = options.stuckThreshold ?? 3;
   }
 
   /**
@@ -107,8 +135,8 @@ export class HoseaUIPlugin implements IToolExecutionPlugin {
    * This ensures we have the correct instance ID even if it changes during execution.
    */
   async beforeExecute(ctx: PluginExecutionContext): Promise<BeforeExecuteResult> {
-    // Only track instance ID for browser tools
-    if (BROWSER_UI_TOOLS.has(ctx.toolName)) {
+    // Track instance ID for browser tools (both UI and stuck detection)
+    if (ctx.toolName.startsWith(BROWSER_TOOLS_PREFIX) || BROWSER_UI_TOOLS.has(ctx.toolName)) {
       ctx.metadata.set('hosea:instanceId', this.getInstanceId());
     }
     // Continue with original args
@@ -117,8 +145,36 @@ export class HoseaUIPlugin implements IToolExecutionPlugin {
 
   /**
    * After browser tool execution, emit Dynamic UI content if successful.
+   * Also track consecutive failures for stuck detection.
    */
   async afterExecute(ctx: PluginExecutionContext, result: unknown): Promise<unknown> {
+    const isBrowserTool = ctx.toolName.startsWith(BROWSER_TOOLS_PREFIX);
+
+    // Stuck detection: track consecutive browser tool failures
+    if (isBrowserTool && this.onAgentStuck) {
+      const instanceId = ctx.metadata.get('hosea:instanceId') as string || this.getInstanceId();
+      const typedResult = result as { success?: boolean; error?: string };
+
+      if (typedResult && typedResult.success === false) {
+        const count = (this.failureCounters.get(instanceId) || 0) + 1;
+        this.failureCounters.set(instanceId, count);
+
+        if (count >= this.stuckThreshold && !this.stuckReported.has(instanceId)) {
+          this.stuckReported.add(instanceId);
+          this.onAgentStuck(instanceId);
+        }
+      } else {
+        // Success or non-browser tool: reset counter
+        this.failureCounters.delete(instanceId);
+        this.stuckReported.delete(instanceId);
+      }
+    } else if (!isBrowserTool) {
+      // Non-browser tool call: reset stuck counter for this instance
+      const instanceId = this.getInstanceId();
+      this.failureCounters.delete(instanceId);
+      this.stuckReported.delete(instanceId);
+    }
+
     // Only handle browser tools that should show UI
     if (!BROWSER_UI_TOOLS.has(ctx.toolName)) {
       return result;
@@ -161,5 +217,13 @@ export class HoseaUIPlugin implements IToolExecutionPlugin {
     });
 
     return result;
+  }
+
+  /**
+   * Reset stuck detection state for an instance (call when agent resumes).
+   */
+  resetStuckState(instanceId: string): void {
+    this.failureCounters.delete(instanceId);
+    this.stuckReported.delete(instanceId);
   }
 }

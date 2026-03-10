@@ -474,6 +474,7 @@ function ChatPageContent(): React.ReactElement {
         pinnedContextKeys={activeTab?.pinnedContextKeys || []}
         onPinContextKey={(key, pinned) => pinContextKey(key, pinned)}
         routineExecution={activeTab?.routineExecution}
+        userHasControl={activeTab?.userHasControl}
       />
 
       {/* New Tab Modal */}

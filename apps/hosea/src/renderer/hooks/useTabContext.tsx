@@ -42,6 +42,8 @@ export interface TabState {
   // In-context memory entries visible in UI
   contextEntries: ContextEntryForUI[];
   pinnedContextKeys: string[];
+  // Browser user control handoff state
+  userHasControl: { active: boolean; reason?: string } | null;
   // Routine execution state (in-memory only, derived from StreamChunk events)
   routineExecution: {
     executionId: string;
@@ -358,6 +360,21 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         else if (chunk.type === 'routine:failed' && updatedTab.routineExecution) {
           updatedTab.routineExecution = { ...updatedTab.routineExecution, status: 'failed' };
         }
+        // Browser user control handoff events
+        else if (chunk.type === 'browser:user_has_control') {
+          updatedTab.userHasControl = { active: true, reason: chunk.reason };
+          // Add a system message explaining what happened
+          const systemMsg: Message = {
+            id: `system-control-${Date.now()}`,
+            role: 'assistant',
+            content: `**Agent paused** — ${chunk.reason || 'User took manual control of the browser.'}\n\nUse the browser to resolve the issue, then click **Hand Back to Agent** to continue.`,
+            timestamp: Date.now(),
+          };
+          updatedTab.messages = [...updatedTab.messages, systemMsg];
+        }
+        else if (chunk.type === 'browser:agent_has_control') {
+          updatedTab.userHasControl = null;
+        }
 
         newTabs.set(tab.instanceId, updatedTab);
         return newTabs;
@@ -389,6 +406,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         updatedTab.streamingThinking = '';
         updatedTab.activeToolCalls = new Map();
         updatedTab.isLoading = false;
+        updatedTab.userHasControl = null;
 
         newTabs.set(tab.instanceId, updatedTab);
         return newTabs;
@@ -444,6 +462,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         hasDynamicUIUpdate: false,
         contextEntries: [],
         pinnedContextKeys: [],
+        userHasControl: null,
         routineExecution: null,
       };
 

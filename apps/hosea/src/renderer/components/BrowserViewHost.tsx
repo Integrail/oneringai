@@ -15,6 +15,8 @@ import {
   ExternalLink,
   AlertCircle,
   AlertTriangle,
+  Hand,
+  Play,
 } from 'lucide-react';
 
 interface BrowserViewHostProps {
@@ -32,6 +34,8 @@ interface BrowserViewHostProps {
   isLoading?: boolean;
   /** Minimum height for the browser view */
   minHeight?: number;
+  /** Whether the user currently has manual control of the browser */
+  userHasControl?: { active: boolean; reason?: string } | null;
 }
 
 interface DetectedOverlay {
@@ -61,6 +65,7 @@ export function BrowserViewHost({
   pageTitle = '',
   isLoading = false,
   minHeight = 300,
+  userHasControl = null,
 }: BrowserViewHostProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const [browserState, setBrowserState] = useState<BrowserState>({
@@ -249,6 +254,22 @@ export function BrowserViewHost({
     }
   };
 
+  const handleTakeControl = async () => {
+    try {
+      await window.hosea.agent.takeUserControl(instanceId);
+    } catch (err) {
+      console.error('[BrowserViewHost] Failed to take control:', err);
+    }
+  };
+
+  const handleHandBack = async () => {
+    try {
+      await window.hosea.agent.handBackToAgent(instanceId);
+    } catch (err) {
+      console.error('[BrowserViewHost] Failed to hand back:', err);
+    }
+  };
+
   return (
     <div className="browser-view-host">
       {/* URL Bar */}
@@ -316,6 +337,29 @@ export function BrowserViewHost({
           >
             <ExternalLink size={16} />
           </Button>
+
+          {/* Take Control / Hand Back toggle */}
+          {userHasControl?.active ? (
+            <Button
+              variant="success"
+              size="sm"
+              onClick={handleHandBack}
+              title="Hand control back to the agent"
+              className="browser-view-host__hand-back-btn"
+            >
+              <Play size={16} />
+              <span className="ms-1">Hand Back</span>
+            </Button>
+          ) : (
+            <Button
+              variant="outline-warning"
+              size="sm"
+              onClick={handleTakeControl}
+              title="Pause the agent and take manual control of the browser"
+            >
+              <Hand size={16} />
+            </Button>
+          )}
         </div>
       )}
 
@@ -347,6 +391,25 @@ export function BrowserViewHost({
               </span>
             )}
           </span>
+        </div>
+      )}
+
+      {/* User has control banner */}
+      {userHasControl?.active && (
+        <div className="browser-view-host__control-banner">
+          <Hand size={16} />
+          <span className="browser-view-host__control-banner-text">
+            <strong>You have control.</strong>
+            {userHasControl.reason && ` ${userHasControl.reason}`}
+          </span>
+          <Button
+            variant="success"
+            size="sm"
+            onClick={handleHandBack}
+          >
+            <Play size={14} className="me-1" />
+            Hand Back to Agent
+          </Button>
         </div>
       )}
 

@@ -12,9 +12,11 @@ import { BrowserViewHost } from './BrowserViewHost';
 interface DynamicUIPanelProps {
   content: DynamicUIContent | null;
   onAction?: (action: string, elementId?: string, value?: unknown) => void;
+  /** Browser user control handoff state */
+  userHasControl?: { active: boolean; reason?: string } | null;
 }
 
-export function DynamicUIPanel({ content, onAction }: DynamicUIPanelProps): React.ReactElement {
+export function DynamicUIPanel({ content, onAction, userHasControl }: DynamicUIPanelProps): React.ReactElement {
   const handleAction = useCallback((action: string, elementId?: string, value?: unknown) => {
     if (onAction) {
       onAction(action, elementId, value);
@@ -48,6 +50,7 @@ export function DynamicUIPanel({ content, onAction }: DynamicUIPanelProps): Reac
             key={element.id || `element-${index}`}
             element={element}
             onAction={handleAction}
+            userHasControl={userHasControl}
           />
         ))}
       </div>
@@ -59,9 +62,10 @@ export function DynamicUIPanel({ content, onAction }: DynamicUIPanelProps): Reac
 interface ElementRendererProps {
   element: DynamicUIElement;
   onAction: (action: string, elementId?: string, value?: unknown) => void;
+  userHasControl?: { active: boolean; reason?: string } | null;
 }
 
-function DynamicUIElementRenderer({ element, onAction }: ElementRendererProps): React.ReactElement | null {
+function DynamicUIElementRenderer({ element, onAction, userHasControl }: ElementRendererProps): React.ReactElement | null {
   switch (element.type) {
     case 'text':
       return <TextElement element={element} />;
@@ -96,14 +100,14 @@ function DynamicUIElementRenderer({ element, onAction }: ElementRendererProps): 
     case 'card':
       return <CardElement element={element} onAction={onAction} />;
     case 'browser':
-      return <BrowserElement element={element} />;
+      return <BrowserElement element={element} userHasControl={userHasControl} />;
     default:
       return null;
   }
 }
 
 // Browser element component - embeds a live browser view
-function BrowserElement({ element }: { element: DynamicUIElement }): React.ReactElement | null {
+function BrowserElement({ element, userHasControl }: { element: DynamicUIElement; userHasControl?: { active: boolean; reason?: string } | null }): React.ReactElement | null {
   if (!element.instanceId) {
     return (
       <div className="dynamic-ui__browser-error">
@@ -121,6 +125,7 @@ function BrowserElement({ element }: { element: DynamicUIElement }): React.React
       currentUrl={element.currentUrl}
       pageTitle={element.pageTitle}
       isLoading={element.isLoading}
+      userHasControl={userHasControl}
     />
   );
 }

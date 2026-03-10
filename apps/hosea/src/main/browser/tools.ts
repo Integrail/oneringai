@@ -905,6 +905,7 @@ export function createBrowserTools(
         return 'Dismissing overlay';
       },
     },
+
   ];
 }
 
