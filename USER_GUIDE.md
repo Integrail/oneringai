@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.4.6
-**Last Updated:** 2026-03-04
+**Version:** 0.4.7
+**Last Updated:** 2026-03-10
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -10607,5 +10607,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-03-04
-**Version:** 0.4.6
+**Last Updated:** 2026-03-10
+**Version:** 0.4.7
