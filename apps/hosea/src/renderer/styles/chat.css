@@ -1381,6 +1381,15 @@
   color: var(--color-white);
 }
 
+.chat-tabs__action--stop {
+  color: var(--color-danger, #dc3545);
+}
+
+.chat-tabs__action--stop:hover {
+  background-color: var(--color-danger, #dc3545);
+  color: var(--color-white);
+}
+
 /* New Tab Modal - Agent List */
 .new-tab-modal__agent-list {
   max-height: 400px;

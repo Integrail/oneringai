@@ -697,9 +697,11 @@ export type { IConnectorAccessPolicy, ConnectorAccessContext } from './domain/in
 // Audio Interfaces
 export type {
   ITextToSpeechProvider,
+  IStreamingTextToSpeechProvider,
   ISpeechToTextProvider,
   TTSOptions,
   TTSResponse,
+  TTSStreamChunk,
   STTOptions,
   STTResponse,
   STTOutputFormat,

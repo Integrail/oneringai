@@ -5,7 +5,13 @@
 
 import OpenAI from 'openai';
 import { BaseMediaProvider } from '../base/BaseMediaProvider.js';
-import type { ITextToSpeechProvider, TTSOptions, TTSResponse } from '../../../domain/interfaces/IAudioProvider.js';
+import type {
+  IStreamingTextToSpeechProvider,
+  TTSOptions,
+  TTSResponse,
+  TTSStreamChunk,
+} from '../../../domain/interfaces/IAudioProvider.js';
+import type { AudioFormat } from '../../../domain/types/SharedTypes.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import type { OpenAIMediaConfig } from '../../../domain/types/ProviderConfig.js';
 import type { IVoiceInfo } from '../../../domain/entities/SharedVoices.js';
@@ -16,7 +22,7 @@ import {
   ProviderError,
 } from '../../../domain/errors/AIErrors.js';
 
-export class OpenAITTSProvider extends BaseMediaProvider implements ITextToSpeechProvider {
+export class OpenAITTSProvider extends BaseMediaProvider implements IStreamingTextToSpeechProvider {
   readonly name: string = 'openai-tts';
   readonly vendor = 'openai' as const;
   readonly capabilities: ProviderCapabilities = {
@@ -97,6 +103,71 @@ export class OpenAITTSProvider extends BaseMediaProvider implements ITextToSpeec
       'tts.synthesize',
       { model: options.model, voice: options.voice }
     );
+  }
+
+  /**
+   * Check if streaming is supported for the given format
+   */
+  supportsStreaming(format?: AudioFormat): boolean {
+    // OpenAI supports chunked transfer for all formats, but PCM and WAV
+    // are best suited (no container framing issues)
+    if (!format) return true;
+    return ['pcm', 'wav', 'mp3', 'opus', 'aac', 'flac'].includes(format);
+  }
+
+  /**
+   * Stream TTS audio chunks as they arrive from the API
+   */
+  async *synthesizeStream(options: TTSOptions): AsyncIterableIterator<TTSStreamChunk> {
+    const format = this.mapFormat(options.format);
+
+    const requestParams: OpenAI.Audio.SpeechCreateParams = {
+      model: options.model,
+      input: options.input,
+      voice: options.voice as OpenAI.Audio.SpeechCreateParams['voice'],
+      response_format: format,
+      speed: options.speed,
+    };
+
+    if (options.vendorOptions?.instructions) {
+      (requestParams as any).instructions = options.vendorOptions.instructions;
+    }
+
+    this.logOperationStart('tts.synthesizeStream', {
+      model: options.model,
+      voice: options.voice,
+      inputLength: options.input.length,
+      format,
+    });
+
+    try {
+      const response = await this.client.audio.speech.create(requestParams);
+
+      // response.body is a ReadableStream (Web) — iterate via async iterator
+      const body = response.body as any;
+      if (!body) {
+        throw new Error('No response body from OpenAI TTS API');
+      }
+
+      // Node.js Readable or Web ReadableStream — both support async iteration
+      let totalBytes = 0;
+      for await (const chunk of body) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buf.length;
+        yield { audio: buf, isFinal: false };
+      }
+
+      // Signal final
+      yield { audio: Buffer.alloc(0), isFinal: true };
+
+      this.logOperationComplete('tts.synthesizeStream', {
+        model: options.model,
+        totalBytes,
+      });
+    } catch (error: any) {
+      this.handleError(error);
+      throw error;
+    }
   }
 
   /**

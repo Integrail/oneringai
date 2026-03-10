@@ -234,7 +234,7 @@ export type StreamChunk =
   | { type: 'browser:user_has_control'; reason?: string }
   | { type: 'browser:agent_has_control' }
   // Voice pseudo-streaming events
-  | { type: 'voice:chunk'; chunkIndex: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
+  | { type: 'voice:chunk'; chunkIndex: number; subIndex?: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
   | { type: 'voice:error'; chunkIndex: number; error: string; text: string }
   | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number };
 

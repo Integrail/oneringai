@@ -5,7 +5,13 @@
 
 import { Connector } from './Connector.js';
 import { createTTSProvider } from './createAudioProvider.js';
-import type { ITextToSpeechProvider, TTSOptions, TTSResponse } from '../domain/interfaces/IAudioProvider.js';
+import type {
+  ITextToSpeechProvider,
+  IStreamingTextToSpeechProvider,
+  TTSOptions,
+  TTSResponse,
+  TTSStreamChunk,
+} from '../domain/interfaces/IAudioProvider.js';
 import type { AudioFormat } from '../domain/types/SharedTypes.js';
 import { getTTSModelInfo, getTTSModelsByVendor, type ITTSModelDescription, type IVoiceInfo } from '../domain/entities/TTSModel.js';
 import * as fs from 'fs/promises';
@@ -105,6 +111,45 @@ export class TextToSpeech {
   ): Promise<void> {
     const response = await this.synthesize(text, options);
     await fs.writeFile(filePath, response.audio);
+  }
+
+  // ======================== Streaming Methods ========================
+
+  /**
+   * Check if the underlying provider supports streaming TTS
+   */
+  supportsStreaming(format?: AudioFormat): boolean {
+    const provider = this.provider as IStreamingTextToSpeechProvider;
+    return typeof provider.supportsStreaming === 'function' && provider.supportsStreaming(format);
+  }
+
+  /**
+   * Stream TTS audio chunks as they arrive from the API.
+   * Falls back to buffered synthesis yielding a single chunk if provider doesn't support streaming.
+   */
+  async *synthesizeStream(
+    text: string,
+    options?: Partial<Omit<TTSOptions, 'model' | 'input'>>
+  ): AsyncIterableIterator<TTSStreamChunk> {
+    const fullOptions: TTSOptions = {
+      model: this.config.model ?? this.getDefaultModel(),
+      input: text,
+      voice: options?.voice ?? this.config.voice ?? this.getDefaultVoice(),
+      format: options?.format ?? this.config.format,
+      speed: options?.speed ?? this.config.speed,
+      vendorOptions: options?.vendorOptions,
+    };
+
+    const provider = this.provider as IStreamingTextToSpeechProvider;
+
+    if (typeof provider.synthesizeStream === 'function' && provider.supportsStreaming?.(fullOptions.format)) {
+      // True streaming path
+      yield* provider.synthesizeStream(fullOptions);
+    } else {
+      // Fallback: buffered synthesis → single chunk
+      const response = await this.provider.synthesize(fullOptions);
+      yield { audio: response.audio, isFinal: true };
+    }
   }
 
   // ======================== Introspection Methods ========================

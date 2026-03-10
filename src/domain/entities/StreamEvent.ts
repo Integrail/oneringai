@@ -195,6 +195,8 @@ export interface AudioChunkReadyEvent extends BaseStreamEvent {
   type: StreamEventType.AUDIO_CHUNK_READY;
   /** Sequential index for ordered playback */
   chunk_index: number;
+  /** Sub-chunk index within a chunk (for streaming TTS mode) */
+  sub_index?: number;
   /** Source text that was synthesized */
   text: string;
   /** Audio data as base64 string (survives JSON/IPC serialization) */

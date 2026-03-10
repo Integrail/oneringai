@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Plus, PanelRightOpen, PanelRightClose, Volume2, VolumeX } from 'lucide-react';
+import { Plus, PanelRightOpen, PanelRightClose, Volume2, VolumeX, CircleStop } from 'lucide-react';
 import { Tab } from './Tab';
 import { useTabContext } from '../../hooks/useTabContext';
 
@@ -12,9 +12,11 @@ interface TabBarProps {
   onNewTabClick: () => void;
   showInternals: boolean;
   onToggleInternals: () => void;
+  isVoicePlaying?: boolean;
+  onSkipVoice?: () => void;
 }
 
-export function TabBar({ onNewTabClick, showInternals, onToggleInternals }: TabBarProps): React.ReactElement {
+export function TabBar({ onNewTabClick, showInternals, onToggleInternals, isVoicePlaying, onSkipVoice }: TabBarProps): React.ReactElement {
   const { tabs, activeTabId, tabOrder, switchTab, closeTab, isMaxTabsReached, toggleVoiceover } = useTabContext();
   const activeTab = activeTabId ? tabs.get(activeTabId) : null;
 
@@ -61,6 +63,17 @@ export function TabBar({ onNewTabClick, showInternals, onToggleInternals }: TabB
             title={activeTab.voiceoverEnabled ? 'Turn off voiceover' : 'Turn on voiceover'}
           >
             {activeTab.voiceoverEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+        )}
+
+        {isVoicePlaying && onSkipVoice && (
+          <button
+            type="button"
+            className="chat-tabs__action chat-tabs__action--stop"
+            onClick={onSkipVoice}
+            title="Stop voice playback"
+          >
+            <CircleStop size={18} />
           </button>
         )}
 

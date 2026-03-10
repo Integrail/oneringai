@@ -7436,6 +7436,65 @@ const formats = tts.getSupportedFormats();  // ['mp3', 'opus', 'aac', ...]
 const models = tts.listAvailableModels();
 ```
 
+#### Streaming TTS
+
+For real-time voice applications, TTS audio can be streamed as chunks arrive from the API instead of waiting for the entire response to buffer. This is useful for voice assistants and interactive agents.
+
+```typescript
+import { TextToSpeech } from '@everworker/oneringai';
+
+const tts = TextToSpeech.create({
+  connector: 'openai',
+  model: 'tts-1-hd',
+  voice: 'nova',
+});
+
+// Check if provider supports streaming
+console.log(tts.supportsStreaming('pcm'));  // true for OpenAI
+
+// Stream PCM audio chunks
+for await (const chunk of tts.synthesizeStream('Hello, world!', { format: 'pcm' })) {
+  if (chunk.audio.length > 0) {
+    // Process raw PCM data (24kHz, 16-bit signed LE, mono)
+    playPCMChunk(chunk.audio);
+  }
+  if (chunk.isFinal) break;
+}
+
+// Non-streaming providers gracefully fall back to buffered synthesis
+// (yields a single chunk with isFinal: true)
+```
+
+**VoiceStream** wraps an agent's text stream and interleaves audio events:
+
+```typescript
+import { VoiceStream } from '@everworker/oneringai';
+
+const voice = VoiceStream.create({
+  ttsConnector: 'openai',
+  ttsModel: 'tts-1-hd',
+  voice: 'nova',
+  format: 'mp3',       // MP3 recommended for broad compatibility
+  streaming: false,     // Set true + format 'pcm' for low-latency streaming
+});
+
+// Wraps agent stream — text events pass through, audio events interleaved
+for await (const event of voice.wrap(agent.stream('Tell me a story'))) {
+  if (event.type === 'response.output_text.delta') {
+    process.stdout.write(event.delta);
+  } else if (event.type === 'response.audio_chunk.ready') {
+    playAudio(event.audio_base64, event.format);
+  }
+}
+```
+
+**Streaming notes:**
+- **MP3 format** (default) is recommended — best compatibility and quality
+- **PCM format** enables streaming mode but browser playback is experimental
+- Streaming providers (OpenAI) yield chunks as they arrive from the API
+- Non-streaming providers fall back to buffered synthesis automatically
+- VoiceStream accumulates small API chunks into ~125ms buffers before emitting events
+
 ### Speech-to-Text
 
 #### Basic Usage

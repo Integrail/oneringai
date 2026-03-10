@@ -12,6 +12,7 @@ A desktop application for interacting with AI agents and generative AI in genera
 - **Tool integration** - Enable/disable agent tools, with auto-tools provided by connectors
 - **Universal Connector** - system to connect to ANY vendor that has an API, with 40+ templates and more coming
 - **Multimedia Studio** - generate images, videos, speech, etc - depending on the connectors you added
+- **Voice / TTS** - agents can speak responses aloud with per-agent voice settings (model, voice, format, speed). Supports OpenAI TTS models. Toggle voiceover on/off during chat with skip control
 - **Native experience** - Electron-based desktop app for macOS, Windows, Linux
 - **And much, much more!**
 

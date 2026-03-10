@@ -94,6 +94,13 @@ export interface VoiceStreamConfig {
 
   /** Vendor-specific TTS options passthrough */
   vendorOptions?: Record<string, unknown>;
+
+  /**
+   * Enable streaming TTS. When true, audio chunks are yielded as they arrive
+   * from the API instead of buffering the entire response. Best with format 'pcm'.
+   * Default: false
+   */
+  streaming?: boolean;
 }
 
 // =============================================================================

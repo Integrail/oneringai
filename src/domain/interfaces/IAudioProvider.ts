@@ -65,6 +65,32 @@ export interface ITextToSpeechProvider extends IProvider {
   listVoices?(): Promise<IVoiceInfo[]>;
 }
 
+/**
+ * A single chunk of streamed TTS audio
+ */
+export interface TTSStreamChunk {
+  /** Audio data for this chunk */
+  audio: Buffer;
+  /** True when this is the last chunk */
+  isFinal: boolean;
+}
+
+/**
+ * Streaming Text-to-Speech provider interface (opt-in extension)
+ * Providers that support chunked transfer implement this alongside ITextToSpeechProvider.
+ */
+export interface IStreamingTextToSpeechProvider extends ITextToSpeechProvider {
+  /**
+   * Check if streaming is supported for the given format
+   */
+  supportsStreaming(format?: AudioFormat): boolean;
+
+  /**
+   * Stream TTS audio chunks as they arrive from the API
+   */
+  synthesizeStream(options: TTSOptions): AsyncIterableIterator<TTSStreamChunk>;
+}
+
 // =============================================================================
 // Speech-to-Text (STT)
 // =============================================================================

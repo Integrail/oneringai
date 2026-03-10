@@ -1029,6 +1029,22 @@ console.log(detailed.words);  // [{ word, start, end }, ...]
 const english = await stt.translate(frenchAudio);
 ```
 
+**Streaming TTS** — for real-time voice applications:
+
+```typescript
+// Stream audio chunks as they arrive from the API
+for await (const chunk of tts.synthesizeStream('Hello!', { format: 'pcm' })) {
+  if (chunk.audio.length > 0) playPCMChunk(chunk.audio);  // 24kHz 16-bit LE mono
+  if (chunk.isFinal) break;
+}
+
+// VoiceStream wraps agent text streams with interleaved audio events
+const voice = VoiceStream.create({
+  ttsConnector: 'openai', ttsModel: 'tts-1-hd', voice: 'nova',
+});
+for await (const event of voice.wrap(agent.stream('Tell me a story'))) { ... }
+```
+
 **Available Models:**
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)

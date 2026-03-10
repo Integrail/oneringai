@@ -1939,10 +1939,15 @@ export function AgentEditorPage(): React.ReactElement {
                               setFormData({ ...formData, voiceFormat: e.target.value })
                             }
                           >
-                            {(ttsCapabilities?.formats || ['mp3', 'opus', 'aac', 'flac', 'wav']).map((fmt) => (
+                            {(ttsCapabilities?.formats || ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm']).map((fmt) => (
                               <option key={fmt} value={fmt}>{fmt.toUpperCase()}</option>
                             ))}
                           </Form.Select>
+                          {formData.voiceFormat === 'pcm' && (
+                            <Form.Text className="text-info">
+                              PCM format enables low-latency streaming playback.
+                            </Form.Text>
+                          )}
                         </Form.Group>
                       </Col>
 

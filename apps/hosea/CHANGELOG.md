@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Voice / TTS Support** — Agents can now speak responses aloud using text-to-speech
+  - **Agent Editor**: Voice tab with TTS connector, model, voice, format, and speed settings
+  - **Chat voiceover toggle**: Speaker icon enables/disables voice during chat. Audio plays as sentences complete (pseudo-streaming via VoiceStream)
+  - **Skip button**: Stop current voice playback mid-sentence
+  - **Supported formats**: MP3 (default, recommended), Opus, AAC, FLAC, WAV. PCM format available but streaming playback is experimental (known quality issues)
+  - **Multi-vendor**: Works with any TTS connector (OpenAI tts-1, tts-1-hd, gpt-4o-mini-tts)
 - **What's New Popup** — Shows release highlights after every version update. Appears once after the license acceptance step. Includes a version dropdown to browse previous releases. Content is stored as markdown files in `src/renderer/whatsnew/` and bundled at build time via Vite `?raw` imports.
 - **Local AI with Ollama** — Run AI models locally without API keys or cloud services
   - **OllamaService** (main process) — Full lifecycle management: auto-detect existing installations, download binary (~70MB), start/stop server, pull/delete models

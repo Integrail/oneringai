@@ -456,7 +456,7 @@ export type StreamChunk =
   | { type: 'browser:user_has_control'; reason?: string }
   | { type: 'browser:agent_has_control' }
   // Voice pseudo-streaming events
-  | { type: 'voice:chunk'; chunkIndex: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
+  | { type: 'voice:chunk'; chunkIndex: number; subIndex?: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
   | { type: 'voice:error'; chunkIndex: number; error: string; text: string }
   | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number };
 
@@ -4209,12 +4209,16 @@ export class AgentService {
           });
         }
 
+        const voiceFormat = (agentConfig.voiceFormat ?? 'mp3') as string;
+        const useStreaming = voiceFormat === 'pcm';
+
         instance.voiceStream = VoiceStream.create({
           ttsConnector: ttsConnectorName,
           ttsModel: agentConfig.voiceModel,
           voice: agentConfig.voiceVoice,
-          format: (agentConfig.voiceFormat ?? 'mp3') as any,
+          format: voiceFormat as any,
           speed: agentConfig.voiceSpeed ?? 1.0,
+          streaming: useStreaming,
         });
 
         logger.info(`[setVoiceover] Enabled voiceover for instance ${instanceId} (model: ${agentConfig.voiceModel}, voice: ${agentConfig.voiceVoice})`);
@@ -4306,6 +4310,7 @@ export class AgentService {
           else if (e.type === 'text:delta' || e.type === 'response.output_text.delta') {
             if (!suppressText) {
               const delta = (e as any).delta || '';
+              if (!delta || delta.length <= 3) logger.debug(`[voice] First text delta at ${Date.now()}`);
               yield { type: 'text', content: delta };
             }
           }
@@ -4344,6 +4349,7 @@ export class AgentService {
           }
           // Done events
           else if (e.type === 'text:done' || e.type === 'response.complete') {
+            logger.info(`[voice] Text stream done at ${Date.now()}`);
             yield { type: 'done' };
           }
           // Error events
@@ -4382,9 +4388,14 @@ export class AgentService {
           }
           // Voice pseudo-streaming events (from VoiceStream.wrap)
           else if (e.type === 'response.audio_chunk.ready') {
+            const subIdx = (e as any).sub_index;
+            if (subIdx === 0 || subIdx === undefined) {
+              logger.info(`[voice] Yielding audio chunk ${(e as any).chunk_index}, text: "${((e as any).text || '').slice(0, 40)}..."`);
+            }
             yield {
               type: 'voice:chunk',
               chunkIndex: (e as any).chunk_index,
+              subIndex: (e as any).sub_index,
               audioBase64: (e as any).audio_base64,
               format: (e as any).format,
               durationSeconds: (e as any).duration_seconds,

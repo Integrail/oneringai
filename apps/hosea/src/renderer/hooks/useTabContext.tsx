@@ -138,6 +138,27 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
 
     // Set up stream chunk handler
     window.hosea.agent.onStreamChunkInstance((instanceId: string, chunk: StreamChunk) => {
+      // Voice events don't modify tab state — dispatch outside setTabs to avoid
+      // React StrictMode double-invocation of the state updater
+      if (chunk.type === 'voice:chunk') {
+        window.dispatchEvent(new CustomEvent('hosea:voice-chunk', {
+          detail: { instanceId, chunkIndex: chunk.chunkIndex, subIndex: chunk.subIndex, audioBase64: chunk.audioBase64, format: chunk.format, durationSeconds: chunk.durationSeconds, text: chunk.text },
+        }));
+        return;
+      }
+      if (chunk.type === 'voice:error') {
+        window.dispatchEvent(new CustomEvent('hosea:voice-error', {
+          detail: { instanceId, chunkIndex: chunk.chunkIndex, error: chunk.error, text: chunk.text },
+        }));
+        return;
+      }
+      if (chunk.type === 'voice:complete') {
+        window.dispatchEvent(new CustomEvent('hosea:voice-complete', {
+          detail: { instanceId, totalChunks: chunk.totalChunks, totalDurationSeconds: chunk.totalDurationSeconds },
+        }));
+        return;
+      }
+
       setTabs(prevTabs => {
         // Direct lookup - Map key IS the instanceId
         const tab = prevTabs.get(instanceId);
@@ -380,20 +401,6 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         }
         else if (chunk.type === 'browser:agent_has_control') {
           updatedTab.userHasControl = null;
-        }
-        // Voice events - forward to playback hook via CustomEvent
-        else if (chunk.type === 'voice:chunk') {
-          window.dispatchEvent(new CustomEvent('hosea:voice-chunk', {
-            detail: { instanceId, chunkIndex: chunk.chunkIndex, audioBase64: chunk.audioBase64, format: chunk.format, durationSeconds: chunk.durationSeconds, text: chunk.text },
-          }));
-        } else if (chunk.type === 'voice:error') {
-          window.dispatchEvent(new CustomEvent('hosea:voice-error', {
-            detail: { instanceId, chunkIndex: chunk.chunkIndex, error: chunk.error, text: chunk.text },
-          }));
-        } else if (chunk.type === 'voice:complete') {
-          window.dispatchEvent(new CustomEvent('hosea:voice-complete', {
-            detail: { instanceId, totalChunks: chunk.totalChunks, totalDurationSeconds: chunk.totalDurationSeconds },
-          }));
         }
 
         newTabs.set(tab.instanceId, updatedTab);

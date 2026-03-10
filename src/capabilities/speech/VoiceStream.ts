@@ -59,6 +59,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
   private maxConcurrentTTS: number;
   private maxQueuedChunks: number;
   private vendorOptions?: Record<string, unknown>;
+  private streaming: boolean;
 
   // Pipeline state
   private chunkIndex = 0;
@@ -75,6 +76,8 @@ export class VoiceStream extends EventEmitter implements IDisposable {
 
   // Audio event buffer for interleaving with text events
   private audioEventBuffer: StreamEvent[] = [];
+  // Async notification: resolves when new events are pushed to audioEventBuffer
+  private bufferNotify: (() => void) | null = null;
 
   // Queue backpressure
   private queueWaiters: Array<() => void> = [];
@@ -101,6 +104,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     this.maxConcurrentTTS = config.maxConcurrentTTS ?? 2;
     this.maxQueuedChunks = config.maxQueuedChunks ?? 5;
     this.vendorOptions = config.vendorOptions;
+    this.streaming = config.streaming ?? false;
   }
 
   // ======================== Public API ========================
@@ -153,11 +157,15 @@ export class VoiceStream extends EventEmitter implements IDisposable {
         yield* this.drainAudioBuffer();
       }
 
-      // Drain audio events as each pending TTS job completes (low latency)
-      while (this.activeJobs.size > 0) {
-        // Wait for the next job to finish
-        await Promise.race(Array.from(this.activeJobs.values()).map((j) => j.promise));
-        // Immediately yield any audio events that became ready
+      // Drain audio events as they arrive (sub-chunk granularity for streaming)
+      while (this.activeJobs.size > 0 || this.audioEventBuffer.length > 0) {
+        if (this.audioEventBuffer.length === 0) {
+          // Wait for either a buffer push or all jobs to finish
+          await Promise.race([
+            this.waitForBufferNotify(),
+            ...Array.from(this.activeJobs.values()).map((j) => j.promise),
+          ]);
+        }
         yield* this.drainAudioBuffer();
       }
 
@@ -218,6 +226,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     this.interrupted = false;
     this.lastResponseId = '';
     this.audioEventBuffer = [];
+    this.bufferNotify = null;
     this.slotWaiters = [];
     this.queueWaiters = [];
     this.chunker.reset();
@@ -271,6 +280,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
   /**
    * Execute TTS for a single text chunk.
    * Respects concurrency semaphore.
+   * Branches on streaming mode: yields sub-chunks or a single buffered chunk.
    */
   private async executeTTS(index: number, text: string): Promise<void> {
     // Wait for a TTS concurrency slot
@@ -283,35 +293,95 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     this.activeTTSCount++;
 
     try {
-      const response = await this.tts.synthesize(text, {
-        format: this.format as any,
-        speed: this.speed,
-        vendorOptions: this.vendorOptions,
-      });
+      const ttsStart = Date.now();
 
-      if (this.interrupted) return;
+      if (this.streaming && this.tts.supportsStreaming(this.format as any)) {
+        // Streaming path: accumulate small API chunks into ~125ms buffers before emitting
+        let subIndex = 0;
+        const streamFormat = this.format === 'mp3' ? 'pcm' : this.format;
+        // 24kHz * 2 bytes * 0.125s = 6000 bytes per ~125ms of audio
+        const MIN_BUFFER_BYTES = 6000;
+        const pendingBuffers: Buffer[] = [];
+        let pendingSize = 0;
 
-      if (response.durationSeconds) {
-        this.totalDuration += response.durationSeconds;
+        const flushPending = () => {
+          if (pendingSize === 0) return;
+          const merged = Buffer.concat(pendingBuffers, pendingSize);
+          pendingBuffers.length = 0;
+          pendingSize = 0;
+
+          const currentSubIndex = subIndex++;
+          const audioEvent: AudioChunkReadyEvent = {
+            type: StreamEventType.AUDIO_CHUNK_READY,
+            response_id: this.lastResponseId,
+            chunk_index: index,
+            sub_index: currentSubIndex,
+            text: currentSubIndex === 0 ? text : '',
+            audio_base64: merged.toString('base64'),
+            format: streamFormat,
+          };
+          this.pushAudioEvent(audioEvent);
+        };
+
+        for await (const chunk of this.tts.synthesizeStream(text, {
+          format: streamFormat as any,
+          speed: this.speed,
+          vendorOptions: this.vendorOptions,
+        })) {
+          if (this.interrupted) return;
+
+          if (chunk.audio.length > 0) {
+            pendingBuffers.push(chunk.audio);
+            pendingSize += chunk.audio.length;
+
+            if (pendingSize >= MIN_BUFFER_BYTES) {
+              flushPending();
+            }
+          }
+
+          if (chunk.isFinal) {
+            break;
+          }
+        }
+
+        // Flush any remaining accumulated data
+        flushPending();
+
+        console.log(`[VoiceStream] TTS chunk ${index} streamed ${subIndex} sub-chunks in ${Date.now() - ttsStart}ms, text: "${text.slice(0, 40)}..."`);
+        this.emit('audio:ready', { chunkIndex: index, text });
+      } else {
+        // Buffered path: single chunk
+        const response = await this.tts.synthesize(text, {
+          format: this.format as any,
+          speed: this.speed,
+          vendorOptions: this.vendorOptions,
+        });
+
+        if (this.interrupted) return;
+
+        if (response.durationSeconds) {
+          this.totalDuration += response.durationSeconds;
+        }
+
+        const audioEvent: AudioChunkReadyEvent = {
+          type: StreamEventType.AUDIO_CHUNK_READY,
+          response_id: this.lastResponseId,
+          chunk_index: index,
+          text,
+          audio_base64: response.audio.toString('base64'),
+          format: response.format,
+          duration_seconds: response.durationSeconds,
+          characters_used: response.charactersUsed,
+        };
+
+        this.pushAudioEvent(audioEvent);
+        console.log(`[VoiceStream] TTS chunk ${index} ready in ${Date.now() - ttsStart}ms, text: "${text.slice(0, 40)}..."`);
+        this.emit('audio:ready', {
+          chunkIndex: index,
+          text,
+          durationSeconds: response.durationSeconds,
+        });
       }
-
-      const audioEvent: AudioChunkReadyEvent = {
-        type: StreamEventType.AUDIO_CHUNK_READY,
-        response_id: this.lastResponseId,
-        chunk_index: index,
-        text,
-        audio_base64: response.audio.toString('base64'),
-        format: response.format,
-        duration_seconds: response.durationSeconds,
-        characters_used: response.charactersUsed,
-      };
-
-      this.audioEventBuffer.push(audioEvent);
-      this.emit('audio:ready', {
-        chunkIndex: index,
-        text,
-        durationSeconds: response.durationSeconds,
-      });
     } catch (error) {
       if (this.interrupted) return;
 
@@ -323,7 +393,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
         error: (error as Error).message,
       };
 
-      this.audioEventBuffer.push(errorEvent);
+      this.pushAudioEvent(errorEvent);
       this.emit('audio:error', {
         chunkIndex: index,
         text,
@@ -344,14 +414,26 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     }
   }
 
+  // ======================== Buffer Notification ========================
+
   /**
-   * Wait for all active TTS jobs to complete.
+   * Push an audio event and wake up the consumer in wrap()
    */
-  private async waitForAllJobs(): Promise<void> {
-    while (this.activeJobs.size > 0) {
-      const jobs = Array.from(this.activeJobs.values());
-      await Promise.allSettled(jobs.map((j) => j.promise));
+  private pushAudioEvent(event: StreamEvent): void {
+    this.audioEventBuffer.push(event);
+    if (this.bufferNotify) {
+      this.bufferNotify();
+      this.bufferNotify = null;
     }
+  }
+
+  /**
+   * Wait until a new event is pushed to the audio buffer
+   */
+  private waitForBufferNotify(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.bufferNotify = resolve;
+    });
   }
 
   // ======================== Semaphore / Backpressure ========================
@@ -383,6 +465,10 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     this.slotWaiters = [];
     for (const waiter of this.queueWaiters) waiter();
     this.queueWaiters = [];
+    if (this.bufferNotify) {
+      this.bufferNotify();
+      this.bufferNotify = null;
+    }
   }
 
   private cleanup(): void {

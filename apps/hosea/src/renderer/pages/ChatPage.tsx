@@ -405,7 +405,7 @@ function ChatPageContent(): React.ReactElement {
   const activeTab = getActiveTab();
 
   // Voice playback - runs in background, plays audio chunks as they arrive
-  useVoiceoverPlayback(
+  const { isPlaying: isVoicePlaying, skipCurrent: skipVoice } = useVoiceoverPlayback(
     activeTab?.instanceId ?? null,
     activeTab?.voiceoverEnabled ?? false,
   );
@@ -449,6 +449,8 @@ function ChatPageContent(): React.ReactElement {
           onNewTabClick={handleNewTabClick}
           showInternals={sidebar.isOpen}
           onToggleInternals={handleToggleSidebar}
+          isVoicePlaying={isVoicePlaying}
+          onSkipVoice={skipVoice}
         />
 
         {/* Chat content */}

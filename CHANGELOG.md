@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Streaming TTS interface** — New `IStreamingTextToSpeechProvider` interface with `supportsStreaming()` and `synthesizeStream()` methods. Providers can opt in to chunked audio delivery. Exported `TTSStreamChunk` type.
+
+- **OpenAI TTS streaming** — `OpenAITTSProvider` implements `IStreamingTextToSpeechProvider`. Iterates the response body stream, yielding PCM/WAV/MP3 chunks as they arrive from the API.
+
+- **TextToSpeech streaming API** — `TextToSpeech.supportsStreaming(format?)` and `synthesizeStream(text, options?)` with automatic fallback to buffered `synthesize()` for non-streaming providers.
+
+- **VoiceStream streaming mode** — New `streaming` config flag on `VoiceStreamConfig`. When enabled, `executeTTS()` uses `synthesizeStream()` and accumulates small API chunks into ~125ms buffers before emitting `AudioChunkReadyEvent`s with `sub_index` for sub-chunk ordering.
+
+- **StreamEvent sub_index** — `AudioChunkReadyEvent` now has optional `sub_index` field for streaming TTS sub-chunk ordering within a text chunk.
+
 ## [0.4.6] - 2026-03-04
 
 ### Added
