@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-03-04
+**Generated:** 2026-03-10
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -12,7 +12,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 ## Table of Contents
 
 - [Core](#core) (9 items)
-- [Text-to-Speech (TTS)](#text-to-speech-tts-) (9 items)
+- [Text-to-Speech (TTS)](#text-to-speech-tts-) (10 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (24 items)
 - [Video Generation](#video-generation) (18 items)
@@ -20,7 +20,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (29 items)
 - [Tools & Function Calling](#tools-function-calling) (137 items)
-- [Streaming](#streaming) (19 items)
+- [Streaming](#streaming) (29 items)
 - [Model Registry](#model-registry) (10 items)
 - [OAuth & External APIs](#oauth-external-apis) (39 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (49 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (294 items)
+- [Other](#other) (299 items)
 
 ## Core
 
@@ -1038,7 +1038,7 @@ Convert text to spoken audio
 
 ### TextToSpeech `class`
 
-📍 [`src/core/TextToSpeech.ts:49`](src/core/TextToSpeech.ts)
+📍 [`src/core/TextToSpeech.ts:55`](src/core/TextToSpeech.ts)
 
 TextToSpeech capability class
 Provides text-to-speech synthesis with model introspection
@@ -1126,6 +1126,37 @@ async toFile(
 - `options`: `Partial&lt;Omit&lt;TTSOptions, "model" | "input"&gt;&gt; | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
+
+#### `supportsStreaming()`
+
+Check if the underlying provider supports streaming TTS
+
+```typescript
+supportsStreaming(format?: AudioFormat): boolean
+```
+
+**Parameters:**
+- `format`: `AudioFormat | undefined` *(optional)*
+
+**Returns:** `boolean`
+
+#### `synthesizeStream()`
+
+Stream TTS audio chunks as they arrive from the API.
+Falls back to buffered synthesis yielding a single chunk if provider doesn't support streaming.
+
+```typescript
+async *synthesizeStream(
+    text: string,
+    options?: Partial&lt;Omit&lt;TTSOptions, 'model' | 'input'&gt;&gt;
+  ): AsyncIterableIterator&lt;TTSStreamChunk&gt;
+```
+
+**Parameters:**
+- `text`: `string`
+- `options`: `Partial&lt;Omit&lt;TTSOptions, "model" | "input"&gt;&gt; | undefined` *(optional)*
+
+**Returns:** `AsyncIterableIterator&lt;TTSStreamChunk&gt;`
 
 #### `getModelInfo()`
 
@@ -1320,7 +1351,7 @@ Complete TTS model description
 
 ### TextToSpeechConfig `interface`
 
-📍 [`src/core/TextToSpeech.ts:16`](src/core/TextToSpeech.ts)
+📍 [`src/core/TextToSpeech.ts:22`](src/core/TextToSpeech.ts)
 
 Configuration for TextToSpeech capability
 
@@ -1422,6 +1453,24 @@ Response from text-to-speech synthesis
 | `format` | `format: AudioFormat;` | Format of the audio |
 | `durationSeconds?` | `durationSeconds?: number;` | Duration in seconds (if available) |
 | `charactersUsed?` | `charactersUsed?: number;` | Number of characters used (for billing) |
+
+</details>
+
+---
+
+### TTSStreamChunk `interface`
+
+📍 [`src/domain/interfaces/IAudioProvider.ts:71`](src/domain/interfaces/IAudioProvider.ts)
+
+A single chunk of streamed TTS audio
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `audio` | `audio: Buffer;` | Audio data for this chunk |
+| `isFinal` | `isFinal: boolean;` | True when this is the last chunk |
 
 </details>
 
@@ -2032,7 +2081,7 @@ STT model capabilities
 
 ### STTOptions `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:80`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:106`](src/domain/interfaces/IAudioProvider.ts)
 
 Options for speech-to-text transcription
 
@@ -2057,7 +2106,7 @@ Options for speech-to-text transcription
 
 ### STTResponse `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:132`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:158`](src/domain/interfaces/IAudioProvider.ts)
 
 Response from speech-to-text transcription
 
@@ -2090,7 +2139,7 @@ type STTOutputFormat = 'json' | 'text' | 'srt' | 'vtt' | 'verbose_json'
 
 ### STTOutputFormat `type`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:75`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:101`](src/domain/interfaces/IAudioProvider.ts)
 
 STT output format types
 
@@ -13658,7 +13707,7 @@ Default: true |
 
 ### ToolCallArgumentsDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:87`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:92`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments delta - incremental JSON
 
@@ -13680,7 +13729,7 @@ Tool call arguments delta - incremental JSON
 
 ### ToolCallArgumentsDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:99`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:104`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments complete
 
@@ -13701,7 +13750,7 @@ Tool call arguments complete
 
 ### ToolCallStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:77`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:82`](src/domain/entities/StreamEvent.ts)
 
 Tool call detected and starting
 
@@ -13821,7 +13870,7 @@ Tool execution context - tracks all tool calls in a generation
 
 ### ToolExecutionDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:120`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:125`](src/domain/entities/StreamEvent.ts)
 
 Tool execution complete
 
@@ -13862,7 +13911,7 @@ Default: true (if crypto.randomUUID is available) |
 
 ### ToolExecutionStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:110`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:115`](src/domain/entities/StreamEvent.ts)
 
 Tool execution starting
 
@@ -15071,7 +15120,7 @@ export function hydrateCustomTool(
 
 ### isToolCallArgumentsDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:223`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:276`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDelta(
@@ -15083,7 +15132,7 @@ export function isToolCallArgumentsDelta(
 
 ### isToolCallArgumentsDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:229`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:282`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDone(
@@ -15095,7 +15144,7 @@ export function isToolCallArgumentsDone(
 
 ### isToolCallStart `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:219`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:272`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
@@ -15695,9 +15744,194 @@ createSnapshot()
 
 ---
 
+### VoiceStream `class`
+
+📍 [`src/capabilities/speech/VoiceStream.ts:54`](src/capabilities/speech/VoiceStream.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+private constructor(config: VoiceStreamConfig)
+```
+
+**Parameters:**
+- `config`: `VoiceStreamConfig`
+
+</details>
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create a new VoiceStream instance
+
+```typescript
+static create(config: VoiceStreamConfig): VoiceStream
+```
+
+**Parameters:**
+- `config`: `VoiceStreamConfig`
+
+**Returns:** `VoiceStream`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `wrap()`
+
+Transform an agent text stream into an augmented stream with audio events.
+Original text events pass through unchanged; audio events are interleaved.
+
+The generator yields events in this order:
+1. All original StreamEvents (pass-through)
+2. AudioChunkReady/AudioChunkError events as TTS completes
+3. AudioStreamComplete as the final audio event
+
+```typescript
+async *wrap(
+    textStream: AsyncIterableIterator&lt;StreamEvent&gt;
+  ): AsyncIterableIterator&lt;StreamEvent&gt;
+```
+
+**Parameters:**
+- `textStream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+#### `interrupt()`
+
+Interrupt audio generation. Cancels pending TTS and flushes queue.
+Call this when the user sends a new message mid-speech.
+Active HTTP requests cannot be cancelled but their results will be discarded.
+
+```typescript
+interrupt(): void
+```
+
+**Returns:** `void`
+
+#### `reset()`
+
+Reset state for a new stream. Called automatically by wrap().
+
+```typescript
+reset(): void
+```
+
+**Returns:** `void`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tts` | `tts: TextToSpeech` | - |
+| `chunker` | `chunker: IChunkingStrategy` | - |
+| `format` | `format: string` | - |
+| `speed` | `speed: number` | - |
+| `maxConcurrentTTS` | `maxConcurrentTTS: number` | - |
+| `maxQueuedChunks` | `maxQueuedChunks: number` | - |
+| `vendorOptions?` | `vendorOptions: Record&lt;string, unknown&gt; | undefined` | - |
+| `streaming` | `streaming: boolean` | - |
+| `chunkIndex` | `chunkIndex: number` | - |
+| `totalCharacters` | `totalCharacters: number` | - |
+| `totalDuration` | `totalDuration: number` | - |
+| `activeJobs` | `activeJobs: Map&lt;number, TTSJob&gt;` | - |
+| `activeTTSCount` | `activeTTSCount: number` | - |
+| `interrupted` | `interrupted: boolean` | - |
+| `lastResponseId` | `lastResponseId: string` | - |
+| `slotWaiters` | `slotWaiters: (() =&gt; void)[]` | - |
+| `audioEventBuffer` | `audioEventBuffer: StreamEvent[]` | - |
+| `bufferNotify` | `bufferNotify: (() =&gt; void) | null` | - |
+| `queueWaiters` | `queueWaiters: (() =&gt; void)[]` | - |
+
+</details>
+
+---
+
+### AudioChunkErrorEvent `interface`
+
+📍 [`src/domain/entities/StreamEvent.ts:215`](src/domain/entities/StreamEvent.ts)
+
+Audio chunk error - TTS synthesis failed for a text chunk
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: StreamEventType.AUDIO_CHUNK_ERROR;` | - |
+| `chunk_index` | `chunk_index: number;` | - |
+| `text` | `text: string;` | - |
+| `error` | `error: string;` | - |
+
+</details>
+
+---
+
+### AudioChunkReadyEvent `interface`
+
+📍 [`src/domain/entities/StreamEvent.ts:194`](src/domain/entities/StreamEvent.ts)
+
+Audio chunk ready - TTS synthesis complete for a text chunk
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: StreamEventType.AUDIO_CHUNK_READY;` | - |
+| `chunk_index` | `chunk_index: number;` | Sequential index for ordered playback |
+| `sub_index?` | `sub_index?: number;` | Sub-chunk index within a chunk (for streaming TTS mode) |
+| `text` | `text: string;` | Source text that was synthesized |
+| `audio_base64` | `audio_base64: string;` | Audio data as base64 string (survives JSON/IPC serialization) |
+| `format` | `format: string;` | Audio format |
+| `duration_seconds?` | `duration_seconds?: number;` | Duration in seconds (if available from TTS provider) |
+| `characters_used?` | `characters_used?: number;` | Characters used for this chunk |
+
+</details>
+
+---
+
+### AudioStreamCompleteEvent `interface`
+
+📍 [`src/domain/entities/StreamEvent.ts:225`](src/domain/entities/StreamEvent.ts)
+
+Audio stream complete - all TTS chunks have been processed
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: StreamEventType.AUDIO_STREAM_COMPLETE;` | - |
+| `total_chunks` | `total_chunks: number;` | - |
+| `total_characters` | `total_characters: number;` | - |
+| `total_duration_seconds?` | `total_duration_seconds?: number;` | - |
+
+</details>
+
+---
+
 ### ErrorEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:172`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:177`](src/domain/entities/StreamEvent.ts)
 
 Error event
 
@@ -15718,9 +15952,49 @@ Error event
 
 ---
 
+### IStreamingTextToSpeechProvider `interface`
+
+📍 [`src/domain/interfaces/IAudioProvider.ts:82`](src/domain/interfaces/IAudioProvider.ts)
+
+Streaming Text-to-Speech provider interface (opt-in extension)
+Providers that support chunked transfer implement this alongside ITextToSpeechProvider.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `supportsStreaming()`
+
+Check if streaming is supported for the given format
+
+```typescript
+supportsStreaming(format?: AudioFormat): boolean;
+```
+
+**Parameters:**
+- `format`: `AudioFormat | undefined` *(optional)*
+
+**Returns:** `boolean`
+
+#### `synthesizeStream()`
+
+Stream TTS audio chunks as they arrive from the API
+
+```typescript
+synthesizeStream(options: TTSOptions): AsyncIterableIterator&lt;TTSStreamChunk&gt;;
+```
+
+**Parameters:**
+- `options`: `TTSOptions`
+
+**Returns:** `AsyncIterableIterator&lt;TTSStreamChunk&gt;`
+
+</details>
+
+---
+
 ### IterationCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:132`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:137`](src/domain/entities/StreamEvent.ts)
 
 Iteration complete - end of agentic loop iteration
 
@@ -15740,7 +16014,7 @@ Iteration complete - end of agentic loop iteration
 
 ### OutputTextDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:55`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:60`](src/domain/entities/StreamEvent.ts)
 
 Text delta - incremental text output
 
@@ -15762,7 +16036,7 @@ Text delta - incremental text output
 
 ### OutputTextDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:67`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:72`](src/domain/entities/StreamEvent.ts)
 
 Text output complete for this item
 
@@ -15782,7 +16056,7 @@ Text output complete for this item
 
 ### ReasoningDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:153`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:158`](src/domain/entities/StreamEvent.ts)
 
 Reasoning/thinking delta - incremental reasoning output
 
@@ -15802,7 +16076,7 @@ Reasoning/thinking delta - incremental reasoning output
 
 ### ReasoningDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:163`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:168`](src/domain/entities/StreamEvent.ts)
 
 Reasoning/thinking complete for this item
 
@@ -15821,7 +16095,7 @@ Reasoning/thinking complete for this item
 
 ### ResponseCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:142`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:147`](src/domain/entities/StreamEvent.ts)
 
 Response complete - final event
 
@@ -15842,7 +16116,7 @@ Response complete - final event
 
 ### ResponseCreatedEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:39`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:44`](src/domain/entities/StreamEvent.ts)
 
 Response created - first event in stream
 
@@ -15861,7 +16135,7 @@ Response created - first event in stream
 
 ### ResponseInProgressEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:48`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:53`](src/domain/entities/StreamEvent.ts)
 
 Response in progress
 
@@ -15871,6 +16145,57 @@ Response in progress
 | Property | Type | Description |
 |----------|------|-------------|
 | `type` | `type: StreamEventType.RESPONSE_IN_PROGRESS;` | - |
+
+</details>
+
+---
+
+### VoiceStreamConfig `interface`
+
+📍 [`src/capabilities/speech/types.ts:63`](src/capabilities/speech/types.ts)
+
+Configuration for VoiceStream
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ttsConnector` | `ttsConnector: string | Connector;` | TTS connector name or instance |
+| `ttsModel?` | `ttsModel?: string;` | TTS model (e.g., 'tts-1-hd', 'gpt-4o-mini-tts') |
+| `voice?` | `voice?: string;` | Voice ID (e.g., 'nova', 'alloy') |
+| `format?` | `format?: AudioFormat;` | Audio output format. Default: 'mp3' |
+| `speed?` | `speed?: number;` | Speech speed (0.25 to 4.0). Default: 1.0 |
+| `chunkingStrategy?` | `chunkingStrategy?: IChunkingStrategy;` | Custom chunking strategy. Default: SentenceChunkingStrategy |
+| `chunkingOptions?` | `chunkingOptions?: ChunkingOptions;` | Options for default chunking strategy (ignored if chunkingStrategy provided) |
+| `maxConcurrentTTS?` | `maxConcurrentTTS?: number;` | Maximum concurrent TTS synthesis requests. Default: 2 |
+| `maxQueuedChunks?` | `maxQueuedChunks?: number;` | Maximum queued chunks waiting for TTS.
+When full, wrap() awaits a free slot (lossless backpressure).
+Default: 5 |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific TTS options passthrough |
+| `streaming?` | `streaming?: boolean;` | Enable streaming TTS. When true, audio chunks are yielded as they arrive
+from the API instead of buffering the entire response. Best with format 'pcm'.
+Default: false |
+
+</details>
+
+---
+
+### VoiceStreamEvents `interface`
+
+📍 [`src/capabilities/speech/types.ts:113`](src/capabilities/speech/types.ts)
+
+Events emitted by VoiceStream via EventEmitter
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `'audio:ready'` | `'audio:ready': (data: { chunkIndex: number; text: string; durationSeconds?: number }) =&gt; void;` | - |
+| `'audio:error'` | `'audio:error': (data: { chunkIndex: number; text: string; error: Error }) =&gt; void;` | - |
+| `'audio:complete'` | `'audio:complete': (data: { totalChunks: number; totalDurationSeconds?: number }) =&gt; void;` | - |
+| `'audio:interrupted'` | `'audio:interrupted': (data: { pendingChunks: number }) =&gt; void;` | - |
 
 </details>
 
@@ -15901,6 +16226,9 @@ Stream event type enum
 | `REASONING_DONE` | `response.reasoning.done` | - |
 | `RESPONSE_COMPLETE` | `response.complete` | - |
 | `ERROR` | `response.error` | - |
+| `AUDIO_CHUNK_READY` | `response.audio_chunk.ready` | - |
+| `AUDIO_CHUNK_ERROR` | `response.audio_chunk.error` | - |
+| `AUDIO_STREAM_COMPLETE` | `response.audio_stream.complete` | - |
 
 </details>
 
@@ -15908,7 +16236,7 @@ Stream event type enum
 
 ### StreamEvent `type`
 
-📍 [`src/domain/entities/StreamEvent.ts:186`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:236`](src/domain/entities/StreamEvent.ts)
 
 Union type of all stream events
 Discriminated by 'type' field for type narrowing
@@ -15928,13 +16256,46 @@ type StreamEvent = | ResponseCreatedEvent
   | IterationCompleteEvent
   | ResponseCompleteEvent
   | ErrorEvent
+  | AudioChunkReadyEvent
+  | AudioChunkErrorEvent
+  | AudioStreamCompleteEvent
+```
+
+---
+
+### isAudioChunkError `function`
+
+📍 [`src/domain/entities/StreamEvent.ts:308`](src/domain/entities/StreamEvent.ts)
+
+```typescript
+export function isAudioChunkError(event: StreamEvent): event is AudioChunkErrorEvent
+```
+
+---
+
+### isAudioChunkReady `function`
+
+📍 [`src/domain/entities/StreamEvent.ts:304`](src/domain/entities/StreamEvent.ts)
+
+```typescript
+export function isAudioChunkReady(event: StreamEvent): event is AudioChunkReadyEvent
+```
+
+---
+
+### isAudioStreamComplete `function`
+
+📍 [`src/domain/entities/StreamEvent.ts:312`](src/domain/entities/StreamEvent.ts)
+
+```typescript
+export function isAudioStreamComplete(event: StreamEvent): event is AudioStreamCompleteEvent
 ```
 
 ---
 
 ### isErrorEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:247`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:300`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isErrorEvent(event: StreamEvent): event is ErrorEvent
@@ -15944,7 +16305,7 @@ export function isErrorEvent(event: StreamEvent): event is ErrorEvent
 
 ### isOutputTextDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:215`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:268`](src/domain/entities/StreamEvent.ts)
 
 Type guards for specific events
 
@@ -15956,7 +16317,7 @@ export function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaE
 
 ### isReasoningDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:235`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:288`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEvent
@@ -15966,7 +16327,7 @@ export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEve
 
 ### isReasoningDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:239`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:292`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
@@ -15976,7 +16337,7 @@ export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
 
 ### isResponseComplete `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:243`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:296`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent
@@ -15986,7 +16347,7 @@ export function isResponseComplete(event: StreamEvent): event is ResponseComplet
 
 ### isStreamEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:205`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:258`](src/domain/entities/StreamEvent.ts)
 
 Type guard to check if event is a specific type
 
@@ -16190,7 +16551,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:2170`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2173`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -16206,7 +16567,7 @@ export function calculateCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:2158`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2161`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -16218,7 +16579,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:2141`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2144`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -16230,7 +16591,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:2150`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2153`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -16327,6 +16688,9 @@ Updated: March 2026 - Verified from official vendor documentation
       video: false,
       batchAPI: true,
       promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
       input: {
         tokens: 128000,
         text: true,
@@ -22874,7 +23238,7 @@ has(id: string): boolean;
 
 ### ISpeechToTextProvider `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:152`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:178`](src/domain/interfaces/IAudioProvider.ts)
 
 Speech-to-Text provider interface
 
@@ -23251,7 +23615,7 @@ cancel(): void;
 
 ### SegmentTimestamp `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:121`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:147`](src/domain/interfaces/IAudioProvider.ts)
 
 Segment-level timestamp
 
@@ -23435,7 +23799,7 @@ User information is stored per userId - each user has their own isolated data.
 
 ### WordTimestamp `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:112`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:138`](src/domain/interfaces/IAudioProvider.ts)
 
 Word-level timestamp
 
@@ -24358,6 +24722,67 @@ destroy(): void
 ```
 
 **Returns:** `void`
+
+</details>
+
+---
+
+### AudioPlaybackQueue `class`
+
+📍 [`src/capabilities/speech/AudioPlaybackQueue.ts:26`](src/capabilities/speech/AudioPlaybackQueue.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(onReady: AudioChunkPlaybackCallback)
+```
+
+**Parameters:**
+- `onReady`: `AudioChunkPlaybackCallback`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `enqueue()`
+
+Enqueue an audio chunk event. If it's the next expected chunk,
+it (and any subsequent buffered chunks) are immediately delivered
+to the callback in order.
+
+```typescript
+enqueue(event: AudioChunkReadyEvent): void
+```
+
+**Parameters:**
+- `event`: `AudioChunkReadyEvent`
+
+**Returns:** `void`
+
+#### `reset()`
+
+Reset the queue (e.g., on interruption or new stream).
+
+```typescript
+reset(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `buffer` | `buffer: Map&lt;number, AudioChunkReadyEvent&gt;` | - |
+| `nextPlayIndex` | `nextPlayIndex: number` | - |
+| `onReady` | `onReady: AudioChunkPlaybackCallback` | - |
 
 </details>
 
@@ -26520,6 +26945,82 @@ static create(config: SearchProviderConfig): ISearchProvider
 
 ---
 
+### SentenceChunkingStrategy `class`
+
+📍 [`src/capabilities/speech/SentenceSplitter.ts:43`](src/capabilities/speech/SentenceSplitter.ts)
+
+Default chunking strategy that splits text at sentence boundaries.
+
+Handles:
+- Sentence terminators (. ? !) followed by whitespace
+- Abbreviation exclusion (Dr., Mr., U.S., e.g., etc.)
+- Numeric decimals (3.14, $1.50)
+- Paragraph breaks (\n\n)
+- Fenced code block tracking (``` ... ```)
+- Markdown stripping
+- Min/max chunk length enforcement
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options?: ChunkingOptions)
+```
+
+**Parameters:**
+- `options`: `ChunkingOptions | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `feed()`
+
+```typescript
+feed(delta: string): string[]
+```
+
+**Parameters:**
+- `delta`: `string`
+
+**Returns:** `string[]`
+
+#### `flush()`
+
+```typescript
+flush(): string | null
+```
+
+**Returns:** `string | null`
+
+#### `reset()`
+
+```typescript
+reset(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `buffer` | `buffer: string` | - |
+| `inCodeBlock` | `inCodeBlock: boolean` | - |
+| `codeBlockBuffer` | `codeBlockBuffer: string` | - |
+| `options` | `options: Required&lt;ChunkingOptions&gt;` | - |
+| `abbreviations` | `abbreviations: Set&lt;string&gt;` | - |
+
+</details>
+
+---
+
 ### SerperProvider `class`
 
 📍 [`src/capabilities/search/providers/SerperProvider.ts:15`](src/capabilities/search/providers/SerperProvider.ts)
@@ -27452,6 +27953,27 @@ Result of a bash command execution
 | `truncated?` | `truncated?: boolean;` | - |
 | `error?` | `error?: string;` | - |
 | `backgroundId?` | `backgroundId?: string;` | - |
+
+</details>
+
+---
+
+### ChunkingOptions `interface`
+
+📍 [`src/capabilities/speech/types.ts:39`](src/capabilities/speech/types.ts)
+
+Options for the default SentenceChunkingStrategy
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `minChunkLength?` | `minChunkLength?: number;` | Minimum characters before emitting a chunk. Default: 20 |
+| `maxChunkLength?` | `maxChunkLength?: number;` | Maximum characters per chunk. Forces split at clause boundary. Default: 500 |
+| `skipCodeBlocks?` | `skipCodeBlocks?: boolean;` | Skip text inside fenced code blocks. Default: true |
+| `stripMarkdown?` | `stripMarkdown?: boolean;` | Strip markdown formatting (bold, italic, links, headings). Default: true |
+| `additionalAbbreviations?` | `additionalAbbreviations?: string[];` | Additional abbreviations to recognize (e.g., ['Corp.', 'Ltd.']) |
 
 </details>
 
@@ -28928,6 +29450,57 @@ Base interface for all capability providers
 |----------|------|-------------|
 | `name` | `readonly name: string;` | Provider name |
 | `connector` | `readonly connector: Connector;` | Connector used for authentication |
+
+</details>
+
+---
+
+### IChunkingStrategy `interface`
+
+📍 [`src/capabilities/speech/types.ts:18`](src/capabilities/speech/types.ts)
+
+Interface for text chunking strategies used by VoiceStream.
+Implementations accumulate streaming text deltas and emit complete
+chunks suitable for TTS synthesis.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `feed()`
+
+Feed a text delta from the stream.
+Returns any completed chunks (sentences/phrases).
+Keeps partial text in an internal buffer.
+
+```typescript
+feed(delta: string): string[];
+```
+
+**Parameters:**
+- `delta`: `string`
+
+**Returns:** `string[]`
+
+#### `flush()`
+
+Flush remaining buffered text as a final chunk.
+Called when the text stream ends.
+
+```typescript
+flush(): string | null;
+```
+
+**Returns:** `string | null`
+
+#### `reset()`
+
+Reset internal state for reuse
+
+```typescript
+reset(): void;
+```
+
+**Returns:** `void`
 
 </details>
 
@@ -31683,6 +32256,18 @@ Aspect ratios - normalized across all visual modalities (images, video)
 
 ```typescript
 type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '21:9' | '3:2' | '2:3'
+```
+
+---
+
+### AudioChunkPlaybackCallback `type`
+
+📍 [`src/capabilities/speech/types.ts:127`](src/capabilities/speech/types.ts)
+
+Callback invoked when the next in-order audio chunk is ready for playback
+
+```typescript
+type AudioChunkPlaybackCallback = (event: AudioChunkReadyEvent) =&gt; void
 ```
 
 ---
