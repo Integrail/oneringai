@@ -1,5 +1,5 @@
 /**
- * HOSEA Main App Component
+ * Everworker Desktop Main App Component
  */
 
 import React, { useState, useCallback, useEffect, useContext, createContext, Component, ErrorInfo, ReactNode } from 'react';
@@ -100,7 +100,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <Alert variant="danger">
             <Alert.Heading>Something went wrong</Alert.Heading>
             <p>
-              HOSEA encountered an unexpected error. This is usually caused by a
+              Everworker Desktop encountered an unexpected error. This is usually caused by a
               temporary issue with the AI service or network connection.
             </p>
             <hr />
@@ -370,7 +370,7 @@ function AppContent(): React.ReactElement {
     return (
       <div className="app-loading">
         <Spinner animation="border" variant="primary" />
-        <p className="mt-3 text-muted">Starting HOSEA...</p>
+        <p className="mt-3 text-muted">Starting Everworker Desktop...</p>
       </div>
     );
   }
@@ -391,7 +391,7 @@ function AppContent(): React.ReactElement {
       <>
         <div className="app-loading">
           <Spinner animation="border" variant="primary" />
-          <p className="mt-3 text-muted">Starting HOSEA...</p>
+          <p className="mt-3 text-muted">Starting Everworker Desktop...</p>
         </div>
         <WhatsNewModal show={showWhatsNew} onClose={handleWhatsNewClose} />
       </>

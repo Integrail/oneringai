@@ -1,7 +1,7 @@
 {
   "name": "@everworker/hosea",
   "version": "0.2.0",
-  "description": "HOSEA - Human-Oriented System for Engaging Agents - Desktop UI for OneRing AI",
+  "description": "Everworker Desktop - AI Agent Desktop Application powered by OneRing AI",
   "author": {
     "name": "Everworker.ai",
     "email": "anton@everworker.ai",
@@ -72,7 +72,7 @@
   },
   "build": {
     "appId": "ai.everworker.hosea",
-    "productName": "HOSEA",
+    "productName": "Everworker Desktop",
     "directories": {
       "output": "release"
     },

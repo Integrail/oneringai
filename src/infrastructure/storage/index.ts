@@ -38,3 +38,7 @@ export type { FileUserInfoStorageConfig } from './FileUserInfoStorage.js';
 // Routine definition storage (for reusable task-based workflows)
 export { FileRoutineDefinitionStorage, createFileRoutineDefinitionStorage } from './FileRoutineDefinitionStorage.js';
 export type { FileRoutineDefinitionStorageConfig } from './FileRoutineDefinitionStorage.js';
+
+// Routine execution storage (for execution history and tracking)
+export { FileRoutineExecutionStorage, createFileRoutineExecutionStorage } from './FileRoutineExecutionStorage.js';
+export type { FileRoutineExecutionStorageConfig } from './FileRoutineExecutionStorage.js';

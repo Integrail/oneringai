@@ -1,7 +1,7 @@
 /**
- * Hosea Tool Registration
+ * Everworker Desktop Tool Registration
  *
- * Registers Hosea-specific tool categories (browser, desktop) with the core
+ * Registers desktop-specific tool categories (browser, desktop) with the core
  * ToolCatalogRegistry at app startup. Replaces the old provider-based
  * UnifiedToolCatalog architecture.
  */
@@ -82,7 +82,7 @@ const DESKTOP_TOOL_METADATA: Array<{
 let _browserService: BrowserService | null = null;
 
 /**
- * Register Hosea-specific tool categories with ToolCatalogRegistry.
+ * Register desktop-specific tool categories with ToolCatalogRegistry.
  *
  * Call this at app startup (in AgentService constructor). Browser tools use
  * factories since they need a BrowserService instance at runtime.
@@ -195,7 +195,7 @@ function registerConnectorTools(): void {
 }
 
 /**
- * Invalidate and re-register all Hosea tools.
+ * Invalidate and re-register all desktop tools.
  * Call this after connector changes to refresh the catalog.
  */
 export function invalidateHoseaTools(): void {

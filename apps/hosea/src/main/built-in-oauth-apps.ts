@@ -5,7 +5,7 @@
  * Users can click a vendor logo on the Connections page and authorize immediately
  * without needing to set up their own OAuth application.
  *
- * Override via config file: ~/.everworker/hosea/built-in-oauth-apps.json
+ * Override via config file: ~/.everworker/desktop/built-in-oauth-apps.json
  */
 
 import { existsSync, readFileSync } from 'node:fs';

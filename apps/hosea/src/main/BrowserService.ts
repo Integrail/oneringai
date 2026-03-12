@@ -613,7 +613,7 @@ export class BrowserService extends EventEmitter {
           }
         }, 1000);
 
-        console.log('[HOSEA] Overlay watcher installed');
+        console.log('[EW Desktop] Overlay watcher installed');
       })()
     `;
 

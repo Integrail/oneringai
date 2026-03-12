@@ -1,10 +1,10 @@
-# Hosea Plugin System - Implementation Plan
+# Everworker Desktop Plugin System - Implementation Plan
 
-> Runtime-loadable tool plugins for pre-built Hosea Electron app
+> Runtime-loadable tool plugins for pre-built Everworker Desktop Electron app
 
 ## 1. Overview
 
-Allow users of the pre-built Hosea app (installed via dmg/exe/AppImage) to extend the agent with custom tools by loading JavaScript plugins at runtime. Plugins are discovered from a well-known directory on disk and optionally installed via npm packages through the UI.
+Allow users of the pre-built Everworker Desktop app (installed via dmg/exe/AppImage) to extend the agent with custom tools by loading JavaScript plugins at runtime. Plugins are discovered from a well-known directory on disk and optionally installed via npm packages through the UI.
 
 ### Goals
 
@@ -120,7 +120,7 @@ export interface PluginActivationContext {
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Hosea Main Process                                  │
+│  Everworker Desktop Main Process                     │
 │                                                      │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │  UnifiedToolCatalog                             │ │
@@ -158,7 +158,7 @@ export interface PluginActivationContext {
 └──────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────┐
-│  Hosea Renderer                                      │
+│  Everworker Desktop Renderer                         │
 │                                                      │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │  PluginsPage                    (NEW)           │ │

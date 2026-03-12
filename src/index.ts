@@ -1189,6 +1189,8 @@ export type { FileRoutineDefinitionStorageConfig } from './infrastructure/storag
 
 // RoutineExecution Storage
 export type { IRoutineExecutionStorage } from './domain/interfaces/IRoutineExecutionStorage.js';
+export { FileRoutineExecutionStorage, createFileRoutineExecutionStorage } from './infrastructure/storage/index.js';
+export type { FileRoutineExecutionStorageConfig } from './infrastructure/storage/index.js';
 
 // Scheduling & Triggers
 export type { IScheduler, ScheduleHandle, ScheduleSpec } from './domain/interfaces/IScheduler.js';

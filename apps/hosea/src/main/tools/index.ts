@@ -1,7 +1,7 @@
 /**
- * Hosea Tools Module
+ * Everworker Desktop Tools Module
  *
- * Registers Hosea-specific tool categories with the core ToolCatalogRegistry.
+ * Registers desktop-specific tool categories with the core ToolCatalogRegistry.
  */
 
 export { registerHoseaTools, updateBrowserService, invalidateHoseaTools } from './registration.js';

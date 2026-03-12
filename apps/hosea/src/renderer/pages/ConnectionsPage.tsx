@@ -365,7 +365,7 @@ export function ConnectionsPage(): React.ReactElement {
               </Form.Group>
               {isDev && (
                 <div className="text-muted mt-1" style={{ fontSize: '0.7rem' }}>
-                  Dev mode: default is <code>{defaultEWUrl}</code>. Override with <code>HOSEA_EW_URL</code> env var.
+                  Dev mode: default is <code>{defaultEWUrl}</code>. Override with <code>EW_DESKTOP_URL</code> env var.
                 </div>
               )}
             </div>

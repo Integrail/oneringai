@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to HOSEA will be documented in this file.
+All notable changes to Everworker Desktop will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -20,9 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Smart model recommendations** — Based on system RAM: qwen3:8b (<12GB), qwen3:14b (12-24GB), qwen3:30b (24GB+)
   - **Settings > Local AI** — New settings tab with full Ollama management: status, model list, pull/delete, auto-start toggle, system info
   - **Onboarding integration** — SetupModal now shows "Run Locally with Ollama" as a first-class option alongside "Add API Key" for new users with no connectors
-  - **LLM Connectors page** — Managed Ollama connector shows "Managed by HOSEA" badge; hint banner for users without Ollama set up
-  - **External Ollama detection** — If Ollama is already installed or running externally, HOSEA detects and reuses it without redundant downloads
-  - **Auto-start** — Optional auto-start on HOSEA launch (enabled by default)
+  - **LLM Connectors page** — Managed Ollama connector shows "Managed by Everworker Desktop" badge; hint banner for users without Ollama set up
+  - **External Ollama detection** — If Ollama is already installed or running externally, Everworker Desktop detects and reuses it without redundant downloads
+  - **Auto-start** — Optional auto-start on Everworker Desktop launch (enabled by default)
   - **IPC + Preload bridge** — Full `window.hosea.ollama` API with push events for download progress, pull progress, and state changes
   - Binary stored at `~/.everworker/hosea/ollama/`, config at `~/.everworker/hosea/ollama-config.json`
   - Supports macOS (arm64/x64), Linux (amd64/arm64); Windows download stubbed with manual install fallback
@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.5] - 2026-02-08
 
 ### Added
-- **Everworker Backend Proxy Integration** - Connect HOSEA to an Everworker backend for centrally managed AI connectors
+- **Everworker Backend Proxy Integration** - Connect Everworker Desktop to an Everworker backend for centrally managed AI connectors
   - API keys managed on the EW server, not stored on desktops
   - JWT-based authentication with `llm:proxy` scope
   - Transparent HTTP reverse proxy - all vendor SDKs work without changes via `baseURL` override
@@ -116,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EW Sync counter** - Sync now reports "X added, Y updated, Z removed" instead of showing "0 added" on re-sync
 - **EW Proxy: 0 connectors available** - Proxy discovery endpoint now reads from the oneringai `Connector` registry (populated by V25 startup) instead of a separate empty Map
 - **EW discovery endpoint** - Now includes `type` ('llm' | 'universal') and `serviceType` fields for each connector
-- **Improved logging** - Added detailed logging for EW connection testing and connector discovery on both Hosea and EW sides
+- **Improved logging** - Added detailed logging for EW connection testing and connector discovery on both Everworker Desktop and EW sides
 
 ### Changed
 - **Universal Connectors page** - Now shows EW/Local source badges, similar to LLM Providers page; EW-managed connectors show "Managed" instead of Edit
@@ -128,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-02-05
 
 ### Added
-- Initial release of HOSEA (Human-Oriented System for Engaging Agents)
+- Initial release of Everworker Desktop (Human-Oriented System for Engaging Agents)
 - **Desktop Application** - Electron-based cross-platform UI for AI agents
 - **Chat Interface** - Multi-turn conversation with AI agents
 - **Agent Configuration** - Configure connectors, models, and tools

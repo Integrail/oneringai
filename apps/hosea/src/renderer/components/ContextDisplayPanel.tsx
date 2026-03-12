@@ -1,7 +1,7 @@
 /**
- * ContextDisplayPanel — Hosea wrapper around @everworker/react-ui shared component.
+ * ContextDisplayPanel — Everworker Desktop wrapper around @everworker/react-ui shared component.
  *
- * Hosea-specific features:
+ * Everworker Desktop-specific features:
  * - Pin/unpin entries (persisted via IPC)
  * - Custom filter: shows showInUI=true OR pinned entries
  * - Drag-and-drop reorder with own localStorage namespace

@@ -159,7 +159,7 @@ export function ConnectorCreatePage(): React.ReactElement {
       return;
     }
 
-    // Validate required fields (skip redirectUri for auth_code — Hosea auto-sets it)
+    // Validate required fields (skip redirectUri for auth_code — app auto-sets it)
     const isAuthCode = selectedAuthTemplate.type === 'oauth' && selectedAuthTemplate.flow === 'authorization_code';
     const fieldsToValidate = isAuthCode
       ? selectedAuthTemplate.requiredFields.filter(f => f !== 'redirectUri')

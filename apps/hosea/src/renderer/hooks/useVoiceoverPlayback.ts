@@ -154,7 +154,7 @@ class PCMStreamPlayer {
 
     // Create buffer at PCM_SAMPLE_RATE (24kHz) — browser auto-resamples to ctx.sampleRate
     const audioBuffer = this.ctx.createBuffer(1, float32.length, PCM_SAMPLE_RATE);
-    audioBuffer.copyToChannel(float32, 0);
+    audioBuffer.copyToChannel(float32 as Float32Array<ArrayBuffer>, 0);
 
     const source = this.ctx.createBufferSource();
     source.buffer = audioBuffer;

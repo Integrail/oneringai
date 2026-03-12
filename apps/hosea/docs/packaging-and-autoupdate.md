@@ -1,8 +1,8 @@
-# HOSEA Packaging and Auto-Update Architecture
+# Everworker Desktop Packaging and Auto-Update Architecture
 
 ## Overview
 
-This document describes the packaging and auto-update architecture for HOSEA. All components described here have been **fully implemented**.
+This document describes the packaging and auto-update architecture for Everworker Desktop. All components described here have been **fully implemented**.
 
 **Current Release:** v0.1.0 (February 2025)
 **GitHub Releases:** https://github.com/Integrail/oneringai/releases
@@ -91,7 +91,7 @@ The build config includes **critical file exclusions** to prevent bundling the e
 
 **Why exclusions are critical:**
 
-HOSEA uses `"@everworker/oneringai": "file:../.."`  which symlinks to the parent directory. Without exclusions, electron-builder bundles:
+The app uses `"@everworker/oneringai": "file:../.."`  which symlinks to the parent directory. Without exclusions, electron-builder bundles:
 - The entire `apps/` folder (including hosea itself → recursive!)
 - Source code, tests, coverage (~9GB total)
 
@@ -196,7 +196,7 @@ Optional but recommended to avoid "Unknown publisher" warnings:
 
 3. **macOS test:**
    - Mount the `.dmg` file
-   - Drag HOSEA to Applications
+   - Drag Everworker Desktop to Applications
    - Launch from Applications folder
    - Verify app opens and works correctly
 
@@ -285,7 +285,7 @@ The auto-updater checks these manifests to detect new versions.
 
 **Alternative options** (not currently used):
 
-- **S3**: `"provider": "s3", "bucket": "hosea-updates"`
+- **S3**: `"provider": "s3", "bucket": "everworker-updates"`
 - **Generic server**: `"provider": "generic", "url": "https://updates.example.com"`
 
 ### Phase 6: Main Process - AutoUpdater Service

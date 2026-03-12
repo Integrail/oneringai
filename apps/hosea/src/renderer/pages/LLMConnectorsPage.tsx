@@ -259,7 +259,7 @@ export function LLMConnectorsPage(): React.ReactElement {
                     </div>
                     <div className="card__footer">
                       {isManagedOllama ? (
-                        <small className="text-muted">{'Managed by HOSEA \u2014 Settings > Local AI'}</small>
+                        <small className="text-muted">{'Managed by Everworker Desktop \u2014 Settings > Local AI'}</small>
                       ) : !isEW ? (
                         <Button
                           variant="outline-secondary"

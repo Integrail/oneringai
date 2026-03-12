@@ -1,9 +1,9 @@
 /**
- * HoseaUIPlugin
+ * HoseaUIPlugin (legacy name)
  *
  * Tool execution plugin that emits Dynamic UI content for browser tools.
  * When browser tools execute, this plugin sends UI events to show the browser view
- * in the Hosea UI.
+ * in the Everworker Desktop UI.
  *
  * Also tracks consecutive browser tool failures to detect stuck agents (Trigger 2).
  *

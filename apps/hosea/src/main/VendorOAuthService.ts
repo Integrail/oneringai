@@ -1,7 +1,7 @@
 /**
  * Vendor OAuth Service
  *
- * Orchestrates generic OAuth flows for vendor connectors in the Hosea Electron app.
+ * Orchestrates generic OAuth flows for vendor connectors in the Everworker Desktop Electron app.
  * Generalises the EWAuthService pattern (BrowserWindow + navigation monitoring)
  * to work with any OAuth vendor via the core library's Connector API.
  *

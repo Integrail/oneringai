@@ -1,5 +1,5 @@
 /**
- * HOSEA - Human-Oriented System for Engaging Agents
+ * Everworker Desktop - AI Agent Desktop Application
  *
  * Electron main process - handles window management and IPC with the agent.
  */
@@ -18,7 +18,7 @@ import { sendTelemetryPing } from './telemetry.js';
 import type { Rectangle } from './browser/types.js';
 
 /**
- * Get the data directory for HOSEA
+ * Get the data directory for Everworker Desktop
  * - macOS/Linux: ~/.everworker/hosea
  * - Windows: %USERPROFILE%\.everworker\hosea (e.g., C:\Users\name\.everworker\hosea)
  */
@@ -67,7 +67,7 @@ async function createWindow(): Promise<void> {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'HOSEA',
+    title: 'Everworker Desktop',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -110,7 +110,7 @@ function safeHandler<T>(
     try {
       return await handler(...args);
     } catch (error) {
-      console.error('[HOSEA] IPC handler error:', error);
+      console.error('[EW Desktop] IPC handler error:', error);
       return defaultValue;
     }
   };
@@ -133,7 +133,7 @@ async function setupIPC(): Promise<void> {
   // Initialize agent service with fast essential init only (dirs + config + log level)
   // Heavy initialization (connectors, tools, agents) is deferred to after window shows
   const dataDir = getDataDir();
-  console.log('HOSEA data directory:', dataDir);
+  console.log('Everworker Desktop data directory:', dataDir);
   agentService = await AgentService.createFast(dataDir, isDev);
 
   // Initialize browser service (pass null window for now, set later when window is created)
@@ -159,12 +159,12 @@ async function setupIPC(): Promise<void> {
   // ============ Browser User Control Handoff ============
   // When agent appears stuck on browser tools (Trigger 2), auto-pause
   browserService.on('browser:agent-stuck', (instanceId: string) => {
-    console.log(`[HOSEA] Agent appears stuck on ${instanceId}, auto-pausing`);
+    console.log(`[EW Desktop] Agent appears stuck on ${instanceId}, auto-pausing`);
     agentService!.takeUserControl(instanceId, 'Agent appears stuck. You may need to assist.');
   });
 
   browserService.on('browser:overlay-detected', (instanceId: string, overlayData: unknown) => {
-    console.log(`[HOSEA] Overlay detected for ${instanceId}:`, overlayData);
+    console.log(`[EW Desktop] Overlay detected for ${instanceId}:`, overlayData);
 
     // Send as a special stream chunk that the agent will see
     mainWindow?.webContents.send('agent:stream-chunk', instanceId, {
@@ -199,7 +199,7 @@ async function setupIPC(): Promise<void> {
       mainWindow?.webContents.send('agent:stream-end');
       return { success: true };
     } catch (error) {
-      console.error('[HOSEA] Stream error:', error);
+      console.error('[EW Desktop] Stream error:', error);
       mainWindow?.webContents.send('agent:stream-end');
       return { success: false, error: String(error) };
     }
@@ -240,7 +240,7 @@ async function setupIPC(): Promise<void> {
       mainWindow?.webContents.send('agent:stream-end', instanceId);
       return { success: true };
     } catch (error) {
-      console.error('[HOSEA] Stream instance error:', error);
+      console.error('[EW Desktop] Stream instance error:', error);
       // Send error chunk BEFORE stream-end so UI knows what happened
       const errorMessage = error instanceof Error ? error.message : String(error);
       mainWindow?.webContents.send('agent:stream-chunk', instanceId, {
@@ -1241,11 +1241,11 @@ app.whenReady().then(async () => {
   createAppMenu();
 
   // Phase 2: Heavy initialization in background (connectors, tools, agents)
-  // Window is already visible showing "Starting HOSEA..." spinner
+  // Window is already visible showing "Starting Everworker Desktop..." spinner
   agentService!.initializeHeavy().then(() => {
     // Notify renderer that service is fully ready
     mainWindow?.webContents.send('service:ready');
-    console.log('[HOSEA] Service fully initialized, notified renderer');
+    console.log('[EW Desktop] Service fully initialized, notified renderer');
 
     // Send telemetry ping (fire-and-forget, after heavy init so it doesn't delay startup)
     try {
@@ -1290,8 +1290,8 @@ app.on('before-quit', async () => {
 // These prevent the app from crashing due to unhandled errors in IPC handlers or tools
 
 process.on('uncaughtException', (error, origin) => {
-  console.error('[HOSEA] Uncaught exception:', error);
-  console.error('[HOSEA] Origin:', origin);
+  console.error('[EW Desktop] Uncaught exception:', error);
+  console.error('[EW Desktop] Origin:', origin);
   // Don't crash - log and continue unless it's truly fatal
   // Send error to renderer if possible
   try {
@@ -1306,7 +1306,7 @@ process.on('uncaughtException', (error, origin) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[HOSEA] Unhandled rejection:', reason);
+  console.error('[EW Desktop] Unhandled rejection:', reason);
   // Don't crash - log and continue
   // Send error to renderer if possible
   try {

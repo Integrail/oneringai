@@ -78,7 +78,10 @@ import {
   createProvider,
   // Routines
   FileRoutineDefinitionStorage,
+  FileRoutineExecutionStorage,
   createRoutineDefinition,
+  createExecutionRecorder,
+  createRoutineExecutionRecord,
   executeRoutine,
   type RoutineDefinition,
   type RoutineDefinitionInput,
@@ -211,6 +214,8 @@ export interface StoredAgentConfig {
   maxInContextTokens: number;
   // Persistent instructions
   persistentInstructionsEnabled: boolean;
+  // User info
+  userInfoEnabled: boolean;
   // Tool permissions
   permissionsEnabled: boolean;
   // Selected tools
@@ -375,6 +380,9 @@ interface HoseaConfig {
     fontSize: number;
     streamResponses: boolean;
   };
+  routines: {
+    maxExecutionLogs: number;
+  };
 }
 
 /**
@@ -461,15 +469,15 @@ export type StreamChunk =
   | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number };
 
 /**
- * HOSEA UI Capabilities System Prompt
+ * Everworker Desktop UI Capabilities System Prompt
  *
  * This is automatically prepended to all agent instructions to inform them
  * about the rich markdown rendering capabilities available in the UI.
  */
 const HOSEA_UI_CAPABILITIES_PROMPT = `
-## HOSEA UI Rendering Capabilities
+## Everworker Desktop UI Rendering Capabilities
 
-You are running inside HOSEA, a desktop chat interface with advanced markdown rendering. Your responses will be displayed with rich formatting. Use these capabilities to provide better, more visual responses:
+You are running inside Everworker Desktop, a desktop chat interface with advanced markdown rendering. Your responses will be displayed with rich formatting. Use these capabilities to provide better, more visual responses:
 
 ### Basic Markdown
 - **Bold**, *italic*, ~~strikethrough~~, \`inline code\`
@@ -535,7 +543,7 @@ Create interactive mindmaps from markdown hierarchies:
 \`\`\`
 
 ### Displaying Generated Media (Images, Video, Audio)
-When a media generation tool returns a result with a \`location\` field containing a local file path, display it immediately. Use the **raw file path** (no file:// prefix). HOSEA's renderer automatically handles local paths.
+When a media generation tool returns a result with a \`location\` field containing a local file path, display it immediately. Use the **raw file path** (no file:// prefix). The renderer automatically handles local paths.
 
 **Images** — use markdown image syntax:
 \`\`\`
@@ -552,7 +560,7 @@ When a media generation tool returns a result with a \`location\` field containi
 [Play: description](/path/to/media/video.mp4)
 \`\`\`
 
-HOSEA renders audio/video links as inline players automatically. Do NOT use image syntax (\`![]()\`) for audio or video files.
+Everworker Desktop renders audio/video links as inline players automatically. Do NOT use image syntax (\`![]()\`) for audio or video files.
 
 ### Best Practices
 1. Use diagrams and charts when explaining complex concepts, processes, or data
@@ -573,6 +581,9 @@ const DEFAULT_CONFIG: HoseaConfig = {
     theme: 'system',
     fontSize: 14,
     streamResponses: true,
+  },
+  routines: {
+    maxExecutionLogs: 100,
   },
 };
 
@@ -636,7 +647,7 @@ export class AgentService {
   // ============ Conversion Helpers ============
 
   /**
-   * Convert Hosea's StoredAgentConfig to library's StoredAgentDefinition
+   * Convert app's StoredAgentConfig to library's StoredAgentDefinition
    */
   private toStoredDefinition(config: StoredAgentConfig): StoredAgentDefinition {
     return {
@@ -655,11 +666,12 @@ export class AgentService {
         workingMemory: config.workingMemoryEnabled,
         inContextMemory: config.inContextMemoryEnabled,
         persistentInstructions: config.persistentInstructionsEnabled,
+        userInfo: config.userInfoEnabled,
         toolCatalog: config.toolCatalogEnabled,
-        // Note: history and permissions are Hosea-specific, not part of NextGen ContextFeatures
+        // Note: history and permissions are app-specific, not part of NextGen ContextFeatures
         // They are stored in typeConfig instead
       },
-      // Store all Hosea-specific settings in typeConfig
+      // Store all app-specific settings in typeConfig
       typeConfig: {
         temperature: config.temperature,
         contextStrategy: config.contextStrategy,
@@ -671,7 +683,7 @@ export class AgentService {
         contextAllocationPercent: config.contextAllocationPercent,
         maxInContextEntries: config.maxInContextEntries,
         maxInContextTokens: config.maxInContextTokens,
-        // History and permissions are Hosea-specific features (not in NextGen)
+        // History and permissions are app-specific features (not in NextGen)
         historyEnabled: config.historyEnabled,
         permissionsEnabled: config.permissionsEnabled,
         maxHistoryMessages: config.maxHistoryMessages,
@@ -696,7 +708,7 @@ export class AgentService {
   }
 
   /**
-   * Convert library's StoredAgentDefinition to Hosea's StoredAgentConfig
+   * Convert library's StoredAgentDefinition to app's StoredAgentConfig
    */
   private fromStoredDefinition(definition: StoredAgentDefinition): StoredAgentConfig {
     const typeConfig = definition.typeConfig ?? {};
@@ -733,6 +745,7 @@ export class AgentService {
       maxInContextEntries: (typeConfig.maxInContextEntries as number) ?? 20,
       maxInContextTokens: (typeConfig.maxInContextTokens as number) ?? 4000,
       persistentInstructionsEnabled: features.persistentInstructions ?? false,
+      userInfoEnabled: features.userInfo ?? false,
       toolCatalogEnabled: features.toolCatalog ?? false,
       pinnedCategories: (typeConfig.pinnedCategories as string[]) ?? [],
       toolCategoryScope: (typeConfig.toolCategoryScope as string[]) ?? [],
@@ -769,7 +782,7 @@ export class AgentService {
       () => new FileAgentDefinitionStorage({ baseDirectory: this.dataDir }),
     );
 
-    // Register Hosea-specific tool categories (browser, desktop) with core ToolCatalogRegistry
+    // Register app-specific tool categories (browser, desktop) with core ToolCatalogRegistry
     registerHoseaTools();
 
     // Create the ready promise for deferred initialization
@@ -789,11 +802,17 @@ export class AgentService {
   private initializeStorageRegistry(): void {
     const baseDirectory = join(this.dataDir, '..');
 
+    const maxExecutionLogs = this.config.routines?.maxExecutionLogs ?? 100;
+
     StorageRegistry.configure({
       // Per-agent session storage factory — all agents use the same base directory
       sessions: (agentId: string) => new FileContextStorage({
         agentId,
         baseDirectory,
+      }),
+      // Routine execution storage with configurable retention
+      routineExecutions: () => new FileRoutineExecutionStorage({
+        maxRecords: maxExecutionLogs,
       }),
     });
   }
@@ -2693,7 +2712,7 @@ export class AgentService {
   }
 
   /**
-   * Get the redirect URI that Hosea uses for OAuth callbacks.
+   * Get the redirect URI that the app uses for OAuth callbacks.
    */
   getOAuthRedirectUri(): string {
     return OAuthCallbackServer.redirectUri;
@@ -3439,6 +3458,7 @@ export class AgentService {
             workingMemory: agentConfig.workingMemoryEnabled,
             inContextMemory: agentConfig.inContextMemoryEnabled,
             persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
+            userInfo: agentConfig.userInfoEnabled ?? false,
           },
           // Plugin-specific configurations
           plugins: {
@@ -3520,6 +3540,7 @@ export class AgentService {
       maxInContextEntries: 20,
       maxInContextTokens: 4000,
       persistentInstructionsEnabled: false,
+      userInfoEnabled: false,
       toolCatalogEnabled: false,
       pinnedCategories: [],
       toolCategoryScope: [],
@@ -4006,6 +4027,7 @@ export class AgentService {
           workingMemory: agentConfig.workingMemoryEnabled,
           inContextMemory: agentConfig.inContextMemoryEnabled,
           persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
+          userInfo: agentConfig.userInfoEnabled ?? false,
           toolCatalog: agentConfig.toolCatalogEnabled ?? false,
         },
         toolCategories: agentConfig.toolCategoryScope.length > 0
@@ -5560,8 +5582,23 @@ export class AgentService {
       throw new Error(`Routine "${routineId}" not found`);
     }
 
-    const executionId = `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emitter = this.streamEmitter;
+
+    // Create execution record and persist it
+    const connectorName = instance.agent.connector?.name ?? 'unknown';
+    const model = instance.agent.model ?? 'unknown';
+    const record = createRoutineExecutionRecord(definition, connectorName, model);
+    const executionId = record.executionId;
+
+    // Resolve execution storage and insert the record
+    const execStorageFactory = StorageRegistry.get('routineExecutions');
+    const execStorage = execStorageFactory
+      ? execStorageFactory()
+      : new FileRoutineExecutionStorage({ maxRecords: this.config.routines?.maxExecutionLogs ?? 100 });
+    await execStorage.insert(undefined, record);
+
+    // Create recorder for persistent execution tracking
+    const recorder = createExecutionRecorder({ storage: execStorage, executionId });
 
     // Emit started event
     emitter?.(instanceId, {
@@ -5571,11 +5608,13 @@ export class AgentService {
       taskCount: definition.tasks.length,
     });
 
-    // Fire-and-forget — execution state flows via stream events
+    // Fire-and-forget — execution state flows via stream events AND is persisted
     executeRoutine({
       definition,
       agent: instance.agent,
-      onTaskStarted: (task) => {
+      hooks: recorder.hooks,
+      onTaskStarted: (task, execution) => {
+        recorder.onTaskStarted(task, execution);
         emitter?.(instanceId, {
           type: 'routine:task_started',
           executionId,
@@ -5584,6 +5623,7 @@ export class AgentService {
         });
       },
       onTaskComplete: (task, execution) => {
+        recorder.onTaskComplete(task, execution);
         emitter?.(instanceId, {
           type: 'routine:task_completed',
           executionId,
@@ -5594,6 +5634,7 @@ export class AgentService {
         });
       },
       onTaskFailed: (task, execution) => {
+        recorder.onTaskFailed(task, execution);
         emitter?.(instanceId, {
           type: 'routine:task_failed',
           executionId,
@@ -5603,7 +5644,8 @@ export class AgentService {
           error: task.result?.error || 'Unknown error',
         });
       },
-      onTaskValidation: (task, result) => {
+      onTaskValidation: (task, result, execution) => {
+        recorder.onTaskValidation(task, result, execution);
         emitter?.(instanceId, {
           type: 'routine:step',
           executionId,
@@ -5615,13 +5657,15 @@ export class AgentService {
           },
         });
       },
-    }).then((execution) => {
+    }).then(async (execution) => {
+      await recorder.finalize(execution);
       emitter?.(instanceId, {
         type: 'routine:completed',
         executionId,
         progress: execution.progress,
       });
-    }).catch((error) => {
+    }).catch(async (error) => {
+      await recorder.finalize(null, error instanceof Error ? error : new Error(String(error)));
       emitter?.(instanceId, {
         type: 'routine:failed',
         executionId,

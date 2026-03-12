@@ -1,7 +1,7 @@
 /**
  * EverWorker Authentication Service
  *
- * Manages the browser-based authentication flow between Hosea and EverWorker.
+ * Manages the browser-based authentication flow between Everworker Desktop and EverWorker.
  * Opens a BrowserWindow to the EW login page, monitors for the token callback,
  * and returns the token to the caller.
  */

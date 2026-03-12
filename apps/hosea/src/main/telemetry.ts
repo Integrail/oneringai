@@ -1,5 +1,5 @@
 /**
- * Telemetry - Phone home functionality for Hosea installations.
+ * Telemetry - Phone home functionality for Everworker Desktop installations.
  *
  * Sends basic system info on startup to track installations.
  * Opt-out: set telemetryEnabled = false in settings.

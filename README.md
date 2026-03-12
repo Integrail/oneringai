@@ -65,7 +65,7 @@
 **Part 1**. [Your AI Agent Forgets Everything. Here’s How We Fixed It.](https://medium.com/superstringtheory/your-ai-agent-forgets-everything-heres-how-we-fixed-it-276b39aedbb3): context management plugins
 
 
-## HOSEA APP
+## EVERWORKER DESKTOP APP
 We realize that library alone in these times is not enough to get you excited, so we built a FREE FOREVER desktop app on top of this library to showcase its power! It's as easy to start using as cloning this library's repo, and then `cd apps/hosea` and then `npm install` and then `npm run dev`. Or watch the video first:
 
 [![Watch the demo](https://img.youtube.com/vi/_LzDiuOQD8Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=_LzDiuOQD8Y)
@@ -1151,7 +1151,7 @@ await agent.run('Run npm test and report any failures');
 
 ### 17. Custom Tool Generation (NEW)
 
-Let agents **create their own tools** at runtime — draft, test, iterate, save, and reuse. The agent writes JavaScript code, validates it, tests it in the VM sandbox, and persists it for future use. All 6 meta-tools are auto-registered and visible in Hosea.
+Let agents **create their own tools** at runtime — draft, test, iterate, save, and reuse. The agent writes JavaScript code, validates it, tests it in the VM sandbox, and persists it for future use. All 6 meta-tools are auto-registered and visible in Everworker Desktop.
 
 ```typescript
 import { createCustomToolMetaTools, hydrateCustomTool } from '@everworker/oneringai';

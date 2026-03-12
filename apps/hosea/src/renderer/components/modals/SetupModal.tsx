@@ -196,7 +196,7 @@ export function SetupModal({
   const renderChoiceStep = () => (
     <>
       <Modal.Body>
-        <p className="text-muted mb-4">Choose how you'd like to use AI with HOSEA:</p>
+        <p className="text-muted mb-4">Choose how you'd like to use AI with Everworker Desktop:</p>
 
         <div className="d-grid gap-3">
           <Button
@@ -398,7 +398,7 @@ export function SetupModal({
 
   const getTitle = () => {
     switch (step) {
-      case 'choice': return 'Welcome to HOSEA';
+      case 'choice': return 'Welcome to Everworker Desktop';
       case 'connector': return 'Select Connector';
       case 'new-connector': return 'Add Connector';
       case 'model': return 'Select Model';

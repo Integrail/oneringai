@@ -575,6 +575,7 @@ export interface HoseaAPI {
       maxInContextEntries: number;
       maxInContextTokens: number;
       persistentInstructionsEnabled: boolean;
+      userInfoEnabled: boolean;
       // @deprecated - not used in NextGen context
       historyEnabled: boolean;
       maxHistoryMessages: number;
@@ -622,6 +623,7 @@ export interface HoseaAPI {
       maxInContextEntries: number;
       maxInContextTokens: number;
       persistentInstructionsEnabled: boolean;
+      userInfoEnabled: boolean;
       // @deprecated - not used in NextGen context
       historyEnabled: boolean;
       maxHistoryMessages: number;

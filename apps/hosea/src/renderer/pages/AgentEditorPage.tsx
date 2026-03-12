@@ -128,6 +128,8 @@ interface AgentFormData {
   maxInContextTokens: number;
   // Persistent instructions
   persistentInstructionsEnabled: boolean;
+  // User info
+  userInfoEnabled: boolean;
   // Tool permissions
   permissionsEnabled: boolean;
   // Selected tools
@@ -172,6 +174,8 @@ const defaultFormData: AgentFormData = {
   maxInContextTokens: 4000,
   // Persistent instructions
   persistentInstructionsEnabled: false,
+  // User info
+  userInfoEnabled: false,
   // Tool permissions
   permissionsEnabled: true,
   // Tools
@@ -273,6 +277,7 @@ export function AgentEditorPage(): React.ReactElement {
               maxInContextEntries: existingAgent.maxInContextEntries,
               maxInContextTokens: existingAgent.maxInContextTokens,
               persistentInstructionsEnabled: existingAgent.persistentInstructionsEnabled ?? false,
+              userInfoEnabled: existingAgent.userInfoEnabled ?? false,
               permissionsEnabled: existingAgent.permissionsEnabled ?? true,
               tools: existingAgent.tools,
               toolCatalogEnabled: existingAgent.toolCatalogEnabled ?? false,
@@ -1545,6 +1550,24 @@ export function AgentEditorPage(): React.ReactElement {
                     />
                     <Form.Text className="text-muted d-block">
                       Disk-persisted custom rules
+                    </Form.Text>
+                  </Col>
+
+                  <Col md={4} lg={2}>
+                    <Form.Check
+                      type="switch"
+                      id="user-info-enabled"
+                      label="User Info"
+                      checked={formData.userInfoEnabled}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          userInfoEnabled: e.target.checked,
+                        })
+                      }
+                    />
+                    <Form.Text className="text-muted d-block">
+                      Persistent user preferences
                     </Form.Text>
                   </Col>
 

@@ -1,6 +1,6 @@
-# Releasing HOSEA
+# Releasing Everworker Desktop
 
-This document describes how to release new versions of the HOSEA desktop application.
+This document describes how to release new versions of the Everworker Desktop desktop application.
 
 ## Prerequisites
 
@@ -86,9 +86,9 @@ This will:
 **Output files:**
 | Platform | File | Typical Size |
 |----------|------|--------------|
-| macOS (Apple Silicon) | `HOSEA-X.Y.Z-arm64.dmg` | ~180MB |
-| Windows | `HOSEA Setup X.Y.Z.exe` | ~150MB |
-| Linux | `HOSEA-X.Y.Z-arm64.AppImage` | ~200MB |
+| macOS (Apple Silicon) | `Everworker Desktop-X.Y.Z-arm64.dmg` | ~180MB |
+| Windows | `Everworker Desktop Setup X.Y.Z.exe` | ~150MB |
+| Linux | `Everworker Desktop-X.Y.Z-arm64.AppImage` | ~200MB |
 
 ### 5. Finalize GitHub Release
 
@@ -98,7 +98,7 @@ After electron-builder uploads the files:
 2. Find the draft release (will be named by version number)
 3. Edit the release:
    - **Tag**: Change to `hosea-vX.Y.Z`
-   - **Title**: "HOSEA vX.Y.Z"
+   - **Title**: "Everworker Desktop vX.Y.Z"
    - **Description**: Add changelog entries and download instructions
 4. Uncheck "Set as a pre-release" if this is a stable release
 5. Click "Publish release"
@@ -114,7 +114,7 @@ curl -X PATCH \
   -H "Authorization: token $GH_TOKEN" \
   -H "Content-Type: application/json" \
   "https://api.github.com/repos/Integrail/oneringai/releases/$RELEASE_ID" \
-  -d '{"tag_name": "hosea-vX.Y.Z", "name": "HOSEA vX.Y.Z", "draft": false}'
+  -d '{"tag_name": "hosea-vX.Y.Z", "name": "Everworker Desktop vX.Y.Z", "draft": false}'
 ```
 
 ## Quick Reference
@@ -155,7 +155,7 @@ To create one:
 | Build command | `npm run dev` | `npm run build && npm run package` |
 | Output | Hot-reload dev server | `release/*.dmg/exe/AppImage` |
 
-**Note:** HOSEA always uses the local `@everworker/oneringai` library, not the npm-published version.
+**Note:** Everworker Desktop always uses the local `@everworker/oneringai` library, not the npm-published version.
 
 ## App Info
 
@@ -163,14 +163,14 @@ To create one:
 |-------|-------|
 | **Package** | `@everworker/hosea` |
 | **App ID** | `ai.everworker.hosea` |
-| **Product Name** | HOSEA |
+| **Product Name** | Everworker Desktop |
 | **GitHub** | https://github.com/Integrail/oneringai/tree/main/apps/hosea |
 
 ## Build Configuration
 
 ### Critical: File Exclusions
 
-HOSEA uses a local file dependency (`@everworker/oneringai: "file:../.."`). Without proper exclusions, electron-builder would include the **entire parent repository** (~9GB) including:
+Everworker Desktop uses a local file dependency (`@everworker/oneringai: "file:../.."`). Without proper exclusions, electron-builder would include the **entire parent repository** (~9GB) including:
 - The `apps/` folder (recursive nightmare - hosea inside oneringai inside hosea)
 - Source files, tests, coverage reports
 - Documentation and examples
@@ -223,14 +223,14 @@ For unsigned builds (development), this is normal. For production:
 
 ## Tag Naming Convention
 
-HOSEA uses prefixed tags to distinguish from core library releases:
+Everworker Desktop uses prefixed tags to distinguish from core library releases:
 
 - Core library: `v0.1.0`, `v0.2.0`, etc.
-- HOSEA: `hosea-v0.1.0`, `hosea-v0.2.0`, etc.
+- Everworker Desktop: `hosea-v0.1.0`, `hosea-v0.2.0`, etc.
 
 ## Auto-Update System
 
-HOSEA includes built-in auto-update functionality via `electron-updater`.
+Everworker Desktop includes built-in auto-update functionality via `electron-updater`.
 
 ### How It Works
 
@@ -260,7 +260,7 @@ These YAML files contain version, download URL, and checksums.
 
 ### Testing Updates
 
-1. Install an older version of HOSEA
+1. Install an older version of Everworker Desktop
 2. Create a new release with a higher version number
 3. Launch the installed app
 4. After ~5 seconds, update notification should appear

@@ -136,7 +136,7 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
     });
   };
 
-  // Custom message renderer preserving Hosea's visual style
+  // Custom message renderer preserving Everworker Desktop's visual style
   const renderHoseaMessage = useCallback((message: IChatMessage, index: number) => {
     if (message.role === 'user') {
       return (
@@ -286,7 +286,7 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
             <div className="chat__welcome-icon">
               <Bot size={40} />
             </div>
-            <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
+            <h2 className="chat__welcome-title">Welcome to Everworker Desktop</h2>
             <p className="chat__welcome-subtitle">
               {tab.status.initialized
                 ? `Connected to ${tab.agentName}. Start a conversation!`
@@ -364,7 +364,7 @@ function EmptyTabsState({ onCreateTab }: { onCreateTab: () => void }): React.Rea
       <div className="chat__welcome-icon">
         <Bot size={40} />
       </div>
-      <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
+      <h2 className="chat__welcome-title">Welcome to Everworker Desktop</h2>
       <p className="chat__welcome-subtitle">
         Create a new tab to start chatting with an agent.
       </p>

@@ -1,7 +1,7 @@
 /**
  * License Acceptance Modal - shown on first launch
  *
- * Users must accept the Everworker Commercial License before using HOSEA.
+ * Users must accept the Everworker Commercial License before using Everworker Desktop.
  * Acceptance is persisted via electron-store so it only shows once.
  */
 
@@ -134,7 +134,7 @@ export function LicenseAcceptanceModal({
       </Modal.Header>
       <Modal.Body>
         <p className="text-muted mb-3" style={{ fontSize: '14px' }}>
-          Please read and accept the Everworker Commercial License to continue using HOSEA.
+          Please read and accept the Everworker Commercial License to continue using Everworker Desktop.
         </p>
         <div
           ref={scrollRef}

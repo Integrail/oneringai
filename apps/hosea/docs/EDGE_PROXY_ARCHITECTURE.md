@@ -1,4 +1,4 @@
-# Edge Proxy Architecture for Hosea
+# Edge Proxy Architecture for Everworker Desktop
 
 ## TL;DR
 
@@ -6,7 +6,7 @@ Deploy a Cloudflare Workers edge proxy that:
 1. **Validates** user JWT tokens (custom auth, not Supabase)
 2. **Injects** vendor API keys (OpenAI, Anthropic, Google, Grok)
 3. **Deducts** tokens from user balance (token economy, not USD)
-4. **Streams** responses back to Hosea client
+4. **Streams** responses back to the client
 
 **Token Economy:**
 - Users have TOKEN balance (abstracts vendor pricing)
@@ -16,16 +16,16 @@ Deploy a Cloudflare Workers edge proxy that:
 
 **Hybrid mode:** Users can fall back to their own API keys if they prefer.
 
-**Estimated work:** 2 new packages (edge-proxy, auth-server), ~15 modified files in Hosea/library.
+**Estimated work:** 2 new packages (edge-proxy, auth-server), ~15 modified files in the app/library.
 
 ---
 
 ## Current State
 
-Hosea is an Electron desktop app where:
+Everworker Desktop is an Electron desktop app where:
 - Users enter their own API keys locally
 - Keys stored in `~/.everworker/hosea/connectors/*.json`
-- Direct API calls: `Hosea → Provider → Vendor API`
+- Direct API calls: `App → Provider → Vendor API`
 
 ## Goal
 
@@ -42,7 +42,7 @@ Centralize API key management so users:
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         CURRENT FLOW                                 │
 │                                                                      │
-│  Hosea App → Provider → OpenAI/Anthropic/Google (direct)            │
+│  App → Provider → OpenAI/Anthropic/Google (direct)                  │
 │             (user's keys)                                            │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -51,11 +51,11 @@ Centralize API key management so users:
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         NEW FLOW                                     │
 │                                                                      │
-│  Hosea App → Edge Proxy → OpenAI/Anthropic/Google                   │
+│  App → Edge Proxy → OpenAI/Anthropic/Google                         │
 │  (user token)  (your keys)                                          │
 │                                                                      │
 │  ┌──────────┐      ┌─────────────────┐      ┌──────────────┐        │
-│  │  Hosea   │ ───► │  Edge Worker    │ ───► │  Vendor API  │        │
+│  │  App     │ ───► │  Edge Worker    │ ───► │  Vendor API  │        │
 │  │  (user)  │      │  (Cloudflare/   │      │  (OpenAI,    │        │
 │  │          │ ◄─── │   Vercel Edge)  │ ◄─── │   Anthropic) │        │
 │  └──────────┘      └─────────────────┘      └──────────────┘        │
@@ -190,10 +190,10 @@ export default app;
 ### 2. Custom Auth Server
 
 **User Registration Flow:**
-1. User opens Hosea → "Sign In" button
+1. User opens the app → "Sign In" button
 2. Email/password or OAuth flow (Google, GitHub)
 3. Backend issues JWT token (RS256 signed)
-4. Token stored locally in Hosea (Electron safeStorage)
+4. Token stored locally in the app (Electron safeStorage)
 5. All API requests include token in header
 
 **Custom Auth Backend (Node.js/Express or Cloudflare Worker):**
@@ -311,7 +311,7 @@ CREATE INDEX idx_usage_user_id ON usage(user_id);
 CREATE INDEX idx_usage_created_at ON usage(created_at);
 ```
 
-### 3. Hosea Client Changes
+### 3. Everworker Desktop Client Changes
 
 **New Connector Type: `proxy`**
 
@@ -435,7 +435,7 @@ apps/hosea/
 │       └── index.ts            # Add auth API
 ```
 
-**AuthService.ts (Hosea Client):**
+**AuthService.ts (Everworker Desktop Client):**
 ```typescript
 import { safeStorage } from 'electron';
 
@@ -608,16 +608,16 @@ export class ProxyTextProvider extends BaseTextProvider {
 
 ### New User
 
-1. **Download & Install Hosea**
+1. **Download & Install Everworker Desktop**
 2. **Launch → See "Sign In" screen**
 3. **Click "Sign in with Google"** → Browser opens
-4. **Complete OAuth** → Redirected back to Hosea
-5. **Hosea stores JWT locally**
+4. **Complete OAuth** → Redirected back to the app
+5. **App stores JWT locally**
 6. **Ready to chat** - no API keys needed!
 
 ### Existing User (Migration)
 
-1. **Update Hosea** to new version
+1. **Update Everworker Desktop** to new version
 2. **See prompt:** "We now manage API keys for you! Sign in to continue."
 3. **Sign in** → JWT stored
 4. **Old connectors preserved** (can still use own keys if desired)
@@ -1125,13 +1125,13 @@ app.get('/billing/usage', async (c) => {
 - `packages/edge-proxy/` - Cloudflare Worker for LLM API proxying
 - `packages/auth-server/` - Cloudflare Worker for auth + billing
 
-### New Files (Hosea Client)
+### New Files (Everworker Desktop Client)
 - `apps/hosea/src/main/AuthService.ts` - Custom JWT auth client
 - `apps/hosea/src/renderer/pages/LoginPage.tsx` - Login/signup UI
 - `apps/hosea/src/renderer/pages/BillingPage.tsx` - Usage + upgrade UI
 - `apps/hosea/src/renderer/contexts/AuthContext.tsx` - Auth state management
 
-### Modified Files (Hosea Client)
+### Modified Files (Everworker Desktop Client)
 - `apps/hosea/src/main/AgentService.ts` - Support proxy connectors
 - `apps/hosea/src/main/ipc-handlers.ts` - Add auth + billing handlers
 - `apps/hosea/src/preload/index.ts` - Expose auth API to renderer
@@ -1161,7 +1161,7 @@ app.get('/billing/usage', async (c) => {
    - Stripe checkout flow (test mode)
    - Webhook handling (subscription events)
 
-3. **Hosea Client Tests**
+3. **Everworker Desktop Client Tests**
    - Fresh install → sign up → chat works
    - Token storage in safeStorage (encrypted)
    - Auto token refresh when expired

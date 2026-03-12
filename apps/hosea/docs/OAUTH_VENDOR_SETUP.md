@@ -1,6 +1,6 @@
 # OAuth Vendor Setup Guide (Desktop / Electron)
 
-Hosea uses OAuth 2.0 Authorization Code + PKCE for authenticating users with third-party services. The infrastructure is fully implemented — this document covers how to register your app with each vendor.
+Everworker Desktop uses OAuth 2.0 Authorization Code + PKCE for authenticating users with third-party services. The infrastructure is fully implemented — this document covers how to register your app with each vendor.
 
 **Redirect URI for all vendors:** `http://localhost:19876/oauth/callback`
 
@@ -9,11 +9,11 @@ Hosea uses OAuth 2.0 Authorization Code + PKCE for authenticating users with thi
 ## Architecture Overview
 
 ```
-User clicks "Connect" in Hosea
-  → Hosea opens system browser → vendor OAuth consent page
+User clicks "Connect" in the app
+  → App opens system browser → vendor OAuth consent page
   → User approves
   → Vendor redirects to http://localhost:19876/oauth/callback
-  → Hosea captures auth code, exchanges for tokens (PKCE)
+  → App captures auth code, exchanges for tokens (PKCE)
   → Tokens stored locally (AES-256-GCM encrypted)
 ```
 
@@ -37,7 +37,7 @@ All flows use the existing `VendorOAuthService` + `OAuthCallbackServer` in `apps
 **Steps:**
 
 1. Go to Azure Portal → App Registrations → **"New registration"**
-   - Name: `Hosea by Everworker`
+   - Name: `Everworker Desktop`
    - Supported account types: **"Accounts in any organizational directory and personal Microsoft accounts"** (multi-tenant + personal)
    - Redirect URI: Platform = **"Mobile and desktop applications"**, URI = `http://localhost:19876/oauth/callback`
 2. After creation, note the **Application (client) ID** — this is your `clientId`
@@ -47,7 +47,7 @@ All flows use the existing `VendorOAuthService` + `OAuthCallbackServer` in `apps
 4. Go to **"API permissions"** → Add Microsoft Graph **delegated** permissions (see scope table below)
 5. For admin-consent scopes: click **"Grant admin consent for [tenant]"** (requires Global Admin)
 
-**Do NOT create a client secret** — Hosea is a public client using PKCE.
+**Do NOT create a client secret** — the app is a public client using PKCE.
 
 **Connector config:**
 ```json
@@ -114,7 +114,7 @@ All flows use the existing `VendorOAuthService` + `OAuthCallbackServer` in `apps
 2. Enable required APIs: Gmail API, Google Calendar API, Google Drive API, etc.
 3. Go to **Credentials** → **"Create Credentials"** → **"OAuth client ID"**
    - Application type: **"Desktop app"**
-   - Name: `Hosea Desktop`
+   - Name: `Everworker Desktop`
 4. Download the JSON — note **Client ID** and **Client Secret**
 5. Go to **"OAuth consent screen"**:
    - User Type: **"External"**
@@ -164,7 +164,7 @@ All flows use the existing `VendorOAuthService` + `OAuthCallbackServer` in `apps
 **Steps:**
 
 1. Go to GitHub Settings → Developer settings → **GitHub Apps** → **"New GitHub App"**
-   - App name: `Hosea by Everworker`
+   - App name: `Everworker Desktop`
    - Homepage URL: your website
    - Callback URL: `http://localhost:19876/oauth/callback`
    - Check **"Request user authorization (OAuth) during installation"**
@@ -215,7 +215,7 @@ All flows use the existing `VendorOAuthService` + `OAuthCallbackServer` in `apps
 **Steps:**
 
 1. Log into a Salesforce org → **Setup** → **Apps** → **App Manager** → **"New Connected App"**
-   - Connected App Name: `Hosea by Everworker`
+   - Connected App Name: `Everworker Desktop`
    - Contact Email: your email
 2. Under **"API (Enable OAuth Settings)"**:
    - Check **"Enable OAuth Settings"**
@@ -339,7 +339,7 @@ These vendors support the same Authorization Code + PKCE pattern. Register using
 
 ## Tier 3: API Key Only (No OAuth)
 
-These services use static API keys. Users enter their key directly in Hosea's connector settings.
+These services use static API keys. Users enter their key directly in the app's connector settings.
 
 | Vendor | Auth Model |
 |--------|-----------|
@@ -356,7 +356,7 @@ These services use static API keys. Users enter their key directly in Hosea's co
 
 ## Token Storage
 
-Hosea stores all OAuth tokens locally using AES-256-GCM encryption:
+Everworker Desktop stores all OAuth tokens locally using AES-256-GCM encryption:
 - **Location**: `~/.oneringai/oauth/tokens/` (file permissions 0o600)
 - **Encryption key**: Set `OAUTH_ENCRYPTION_KEY` env var for persistence across restarts
 - **Filenames**: SHA256-hashed (no sensitive data in filesystem)

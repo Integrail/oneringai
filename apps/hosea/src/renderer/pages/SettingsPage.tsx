@@ -18,6 +18,9 @@ interface AppConfig {
     fontSize: number;
     streamResponses: boolean;
   };
+  routines: {
+    maxExecutionLogs: number;
+  };
 }
 
 const defaultConfig: AppConfig = {
@@ -26,6 +29,9 @@ const defaultConfig: AppConfig = {
     theme: 'system',
     fontSize: 14,
     streamResponses: true,
+  },
+  routines: {
+    maxExecutionLogs: 100,
   },
 };
 
@@ -315,7 +321,7 @@ export function SettingsPage(): React.ReactElement {
 
   return (
     <div className="page">
-      <PageHeader title="Settings" subtitle="Configure your HOSEA experience" />
+      <PageHeader title="Settings" subtitle="Configure your Everworker Desktop experience" />
 
       <div className="page__content">
         <Row>
@@ -342,7 +348,7 @@ export function SettingsPage(): React.ReactElement {
             {activeSection === 'appearance' && (
               <div>
                 <h3 className="h5 mb-1">Appearance</h3>
-                <p className="text-muted mb-4">Customize how HOSEA looks</p>
+                <p className="text-muted mb-4">Customize how Everworker Desktop looks</p>
 
                 <Card>
                   <Card.Body>
@@ -399,6 +405,27 @@ export function SettingsPage(): React.ReactElement {
                     <Form.Text className="text-muted">
                       Show AI responses as they are generated
                     </Form.Text>
+
+                    <hr className="my-3" />
+
+                    <Form.Group className="mb-0">
+                      <Form.Label>
+                        Max routine execution logs: {config.routines?.maxExecutionLogs ?? 100}
+                      </Form.Label>
+                      <Form.Range
+                        min={10}
+                        max={500}
+                        step={10}
+                        value={config.routines?.maxExecutionLogs ?? 100}
+                        onChange={(e) =>
+                          handleConfigChange('routines.maxExecutionLogs', parseInt(e.target.value))
+                        }
+                        style={{ maxWidth: 300 }}
+                      />
+                      <Form.Text className="text-muted">
+                        Older completed/failed execution logs are automatically deleted when the limit is reached
+                      </Form.Text>
+                    </Form.Group>
                   </Card.Body>
                 </Card>
               </div>
@@ -808,8 +835,8 @@ export function SettingsPage(): React.ReactElement {
 
             {activeSection === 'about' && (
               <div>
-                <h3 className="h5 mb-1">About HOSEA</h3>
-                <p className="text-muted mb-4">Human-Oriented System for Engaging Agents</p>
+                <h3 className="h5 mb-1">About Everworker Desktop</h3>
+                <p className="text-muted mb-4">AI Agent Desktop Application by Everworker.ai</p>
 
                 <Card>
                   <Card.Body className="text-center">
@@ -817,9 +844,9 @@ export function SettingsPage(): React.ReactElement {
                       className="sidebar__logo mx-auto mb-3"
                       style={{ width: 60, height: 60, fontSize: 24 }}
                     >
-                      H
+                      EW
                     </div>
-                    <h4>HOSEA</h4>
+                    <h4>Everworker Desktop</h4>
                     <p className="text-muted mb-4">Version {appVersion}</p>
 
                     <table className="table table-sm mb-0">

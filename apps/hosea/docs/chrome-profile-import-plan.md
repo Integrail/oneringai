@@ -1,8 +1,8 @@
-# Chrome Profile & Password Import for Hosea
+# Chrome Profile & Password Import for Everworker Desktop
 
 ## Overview
 
-Add two features to the Hosea Electron app:
+Add two features to the Everworker Desktop Electron app:
 1. **Chrome Profile Import** - Import cookies, localStorage, history from Chrome to make the browser automation look human-like
 2. **Chrome Password Manager Access** - Import saved passwords for autofill functionality
 
@@ -10,7 +10,7 @@ Add two features to the Hosea Electron app:
 
 ## Current Architecture
 
-Hosea already has:
+The app already has:
 - Cookie persistence at `~/.everworker/hosea/browser_cookies/` (JSON format)
 - Isolated session partitions: `persist:browser_{instanceId}`
 - Stealth configuration for anti-bot detection

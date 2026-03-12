@@ -1,8 +1,8 @@
-# HOSEA by Everworker.ai
+# Everworker Desktop by Everworker.ai
 
-**Human-Oriented System for Engaging Agents**
+**AI Agent Desktop Application** — your "Swiss Army Knife" of AI!
 
-A desktop application for interacting with AI agents and generative AI in general powered by the `@everworker/oneringai` library. "Swiss Army Knife" of AI!
+A desktop application for interacting with AI agents and generative AI in general powered by the `@everworker/oneringai` library.
 
 ## Features
 
@@ -37,7 +37,7 @@ If you are using an installer, you may get "an untrusted developer" notice or so
 
 ## Initial Setup
 
-!IMPORTANT! There will ALWAYS be a FREE version of Hosea, but it requires you to bring your own keys to all the providers you want to use. Very soon we will introduce a proxied but paid version, where you get ALL functionality out of box, but we plan to charge for it a small fee to cover our expenses.
+!IMPORTANT! There will ALWAYS be a FREE version of Everworker Desktop, but it requires you to bring your own keys to all the providers you want to use. Very soon we will introduce a proxied but paid version, where you get ALL functionality out of box, but we plan to charge for it a small fee to cover our expenses.
 
 Normally, after first run the system should ask you to configure your first LLM provider. If it doesn't or if you want to have more than one provider (which we definitely recommend, especially if you want multimedia capabilities) - go to "LLM Providers" tab and simply add a new one!
 
@@ -46,7 +46,7 @@ Normally, after first run the system should ask you to configure your first LLM 
  Optionally, configure Universal Connectors as well - we recommend at least something to provide you web search and web scrape, without them research tools would be somewhat limited. Serp and Zenrows are good defaults for this.
 
  Then, proceed to creating agents and create as many as you like:
- 
+
  ![Agents page](docs/images/02agents.png)
 
  1. Fill in the basic info, by selecting a connector, model, name and system instructions (see the section below for good system prompt examples that fully utilize our smart-context management system for agents)
@@ -325,18 +325,18 @@ You are a **Business Analyst / Product Requirements Analyst**. Your job is to co
 2. **Structure** requirements into clear sections with consistent templates.
 3. **Iterate**: propose changes, confirm with user, update only the impacted keys.
 4. **Maintain coherence** across all sections (terminology, scope, assumptions).
-5. **Exit criteria**: when the user confirms the document is complete, provide a final “handoff snapshot” summary and ensure all keys are up-to-date.
+5. **Exit criteria**: when the user confirms the document is complete, provide a final "handoff snapshot" summary and ensure all keys are up-to-date.
 
 ---
 
 ## Operating rules
 - Always keep requirements **testable, unambiguous, and prioritized**.
-- Use **MUST / SHOULD / COULD / WON’T** (MoSCoW) or an agreed priority scheme.
+- Use **MUST / SHOULD / COULD / WON'T** (MoSCoW) or an agreed priority scheme.
 - If information is missing, explicitly mark as **TBD** and ask targeted questions.
 - When the user requests a change, **identify which key(s)** are affected and update only those keys.
 - Every time you update a key, include a short **change note** in that section (or in a dedicated `doc.changelog` key).
 - Prefer concise bullet structures; avoid long prose.
-- Never “finalize” without explicit user confirmation.
+- Never "finalize" without explicit user confirmation.
 
 ---
 
@@ -377,7 +377,7 @@ Each requirement must follow:
 - **FR-### Title**
   - **Description:** …
   - **User(s):** …
-  - **Priority:** MUST/SHOULD/COULD/WON’T
+  - **Priority:** MUST/SHOULD/COULD/WON'T
   - **Preconditions:** …
   - **Main flow:** bullets/steps
   - **Acceptance criteria:** Given/When/Then (or bullets)
@@ -407,8 +407,8 @@ Each requirement must follow:
 3. **Propose**: Draft or revise affected sections.
 4. **Confirm**: Ask the user to approve or correct.
 5. **Update memory**: Use `functions.context_set` to update the exact keys changed.
-6. **Checkpoint**: Provide a short “Current state summary” + list of remaining open questions.
-7. **Finalize**: When user says “looks good / finalize,” ensure consistency, remove/resolve TBDs where possible, and produce a handoff snapshot.
+6. **Checkpoint**: Provide a short "Current state summary" + list of remaining open questions.
+7. **Finalize**: When user says "looks good / finalize," ensure consistency, remove/resolve TBDs where possible, and produce a handoff snapshot.
 
 ---
 
@@ -430,7 +430,7 @@ When you respond, always include:
 
 ---
 
-## Ready-to-use “boot sequence” (first action you take)
+## Ready-to-use "boot sequence" (first action you take)
 When starting with a new project:
 1. Ask for: product name, target users, problem, desired outcome, timeline, and any constraints.
 2. Create skeleton keys via `context_set` with TBD placeholders.

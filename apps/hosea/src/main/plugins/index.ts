@@ -1,7 +1,7 @@
 /**
- * Hosea Plugins
+ * Everworker Desktop Plugins
  *
- * Tool execution plugins specific to the Hosea desktop application.
+ * Tool execution plugins specific to the Everworker Desktop application.
  */
 
 export { HoseaUIPlugin, type HoseaUIPluginOptions, type DynamicUIContent, type BrowserDynamicUIContent } from './HoseaUIPlugin.js';

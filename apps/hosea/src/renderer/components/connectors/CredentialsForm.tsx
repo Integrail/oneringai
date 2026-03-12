@@ -149,7 +149,7 @@ interface CredentialsFormProps {
   authType?: 'api_key' | 'oauth';
   /** OAuth flow type */
   oauthFlow?: string;
-  /** Hosea's OAuth redirect URI (shown as info, auto-filled for auth_code) */
+  /** OAuth redirect URI (shown as info, auto-filled for auth_code) */
   oauthRedirectUri?: string;
   /** Available scopes from auth template (enables ScopeSelector) */
   availableScopes?: string[];
@@ -170,7 +170,7 @@ export function CredentialsForm({
   availableScopes,
   scopeDescriptions,
 }: CredentialsFormProps): React.ReactElement {
-  // For authorization_code OAuth, hide redirectUri (auto-set by Hosea) and scope (use defaults)
+  // For authorization_code OAuth, hide redirectUri (auto-set by the app) and scope (use defaults)
   const isAuthCodeOAuth = authType === 'oauth' && oauthFlow === 'authorization_code';
   const hiddenFields = isAuthCodeOAuth ? new Set(['redirectUri']) : new Set<string>();
   const filteredRequired = requiredFields.filter(f => !hiddenFields.has(f));

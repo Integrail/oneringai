@@ -148,8 +148,8 @@ export function SettingsModal({
 
           <Tab eventKey="about" title="About">
             <div className="py-3 text-center">
-              <h4>HOSEA</h4>
-              <p className="text-muted">Human-Oriented System for Engaging Agents</p>
+              <h4>Everworker Desktop</h4>
+              <p className="text-muted">AI Agent Desktop Application by Everworker.ai</p>
               <p>Version {appVersion}</p>
               <hr />
               <p className="small text-muted">
