@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.2.1] - 2026-03-12
+
 ### Added
+- **Multimedia Connector Selector** — Choose which connector to use for image, video, and TTS generation. Dropdown appears when multiple multimedia-capable connectors are configured. Models filter to the selected connector's vendor. Connector name is passed through to generation calls for explicit key selection.
+- **Audio Streaming** — Basic audio streaming support for text-to-speech during agent conversations
+- **Chat History Page** — Browse and search past agent conversations
+- **User Info Plugin** — New agent context plugin (`userInfo` feature flag) for persistent user preferences across sessions and agents. User-scoped storage at `~/.oneringai/users/<userId>/user_info.json`
+- **Tool Categories & Catalog** — Reorganized tool system with categories (filesystem, web, code, desktop, routines, etc.) and dynamic tool catalog plugin for agents
+- **Routine Tools Migration** — Routine execution tools updated to the new tool registration system
 - **Voice / TTS Support** — Agents can now speak responses aloud using text-to-speech
   - **Agent Editor**: Voice tab with TTS connector, model, voice, format, and speed settings
   - **Chat voiceover toggle**: Speaker icon enables/disables voice during chat. Audio plays as sentences complete (pseudo-streaming via VoiceStream)
@@ -79,11 +89,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Current Context entries not appearing** - Context entries with `showInUI: true` were not reliably delivered to the renderer due to the 100ms debounce timer firing after the stream ended. Added a final flush of InContextMemory entries at the end of each `streamInstance()` call to guarantee delivery.
+- **Multimedia connector selection** — Image, video, and TTS generation no longer silently picks the first connector for a vendor. Users can now explicitly choose which connector (API key) to use.
+- **Better agent error handling** — Improved error messages and recovery during agent execution
 
 ### Changed
 - **Settings > Everworker Backend** - Complete UI redesign for multi-profile management
   - Replaced single URL/token form with profile-based card layout
   - Added Add/Edit modal, Delete confirmation, and per-profile action buttons (Test, Sync, Activate, Edit, Delete)
+- **Product name** — App renamed from "HOSEA" to "Everworker Desktop"
 
 ### Fixed
 - **Version display** - About page now shows actual app version instead of hardcoded "0.1.0"
