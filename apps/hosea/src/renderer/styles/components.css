@@ -86,65 +86,7 @@
   gap: var(--spacing-2);
 }
 
-/* Agent Card */
-.agent-card {
-  cursor: pointer;
-}
-
-.agent-card__header {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-3);
-}
-
-.agent-card__avatar {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  border-radius: var(--radius-lg);
-  color: var(--color-white);
-  font-weight: var(--font-weight-bold);
-}
-
-.agent-card__info {
-  flex: 1;
-  min-width: 0;
-}
-
-.agent-card__name {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-gray-900);
-  margin: 0 0 var(--spacing-1);
-}
-
-.agent-card__model {
-  font-size: var(--font-size-sm);
-  color: var(--color-gray-500);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agent-card__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  margin-top: var(--spacing-3);
-  padding-top: var(--spacing-3);
-  border-top: 1px solid var(--color-gray-100);
-}
-
-.agent-card__meta-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  font-size: var(--font-size-sm);
-  color: var(--color-gray-500);
-}
+/* Agent Card styles moved to agents.css */
 
 /* Badges */
 .badge {

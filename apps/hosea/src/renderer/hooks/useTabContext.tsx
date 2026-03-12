@@ -497,7 +497,15 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
 
     try {
       // Create the agent instance
-      const result = await window.hosea.agent.createInstance(agentConfigId);
+      let result = await window.hosea.agent.createInstance(agentConfigId);
+      if (!result.success && result.error?.includes('Maximum number of instances')) {
+        // Destroy backend instances that have no corresponding React tab (orphans from previous sessions)
+        const backendInstances = await window.hosea.agent.listInstances();
+        const trackedIds = new Set(Array.from(tabs.values()).map((t) => t.instanceId));
+        const orphans = backendInstances.filter((i: { instanceId: string }) => !trackedIds.has(i.instanceId));
+        await Promise.all(orphans.map((i: { instanceId: string }) => window.hosea.agent.destroyInstance(i.instanceId)));
+        result = await window.hosea.agent.createInstance(agentConfigId);
+      }
       if (!result.success || !result.instanceId) {
         console.error('Failed to create instance:', result.error);
         return null;
