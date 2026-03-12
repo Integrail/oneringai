@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-03-12
+
+### Fixed
+
+- **Agent: ToolManager listener leak** — `tool:registered` event listener on ToolManager was never removed during `Agent.destroy()`. Now stores listener reference and removes it on cleanup, preventing accumulation across agent creation/destruction cycles.
+
+- **HookManager: No destroy method** — `HookManager` had no `destroy()` method, leaving internal `hooks`, `hookErrorCounts`, and `disabledHooks` maps alive after agent destruction. Added `destroy()` that clears all internal state.
+
+- **CircuitBreaker: Unbounded failures array** — `failures` array could grow indefinitely within the time window under high error rates. Now capped at `max(failureThreshold * 2, 20)` after pruning.
+
+- **Bash tool: Background process memory leak** — Background processes had no limit on concurrent count or output buffer size. Added `MAX_BACKGROUND_PROCESSES` (20) and `MAX_OUTPUT_LINES` (1000) caps.
+
+- **RateLimiter: Unbounded wait queue** — `waitQueue` had no size limit, allowing thousands of queued promises under heavy load. Added `maxQueueSize` config (default: 500) that rejects with `RateLimitError` when exceeded.
+
+- **StorageRegistry: No per-entry removal** — Added `StorageRegistry.remove(key)` method for cleaning up individual storage backends without resetting the entire registry.
+
+- **BrowserService: Event listener leak on destroy** — 9+ event listeners on `webContents` were never removed in `destroyBrowser()`. Now calls `webContents.removeAllListeners()` before `close()`.
+
+- **BaseAgent: Auto-save after destroy** — Auto-save interval callback could execute after agent destruction. Added `_isDestroyed` guard to skip saves on destroyed agents.
+
+- **webFetch: AbortController timeout leak** — `clearTimeout` was only called on the success path. Moved to `finally` block to ensure cleanup on all error paths.
+
 ## [0.4.7] - 2026-03-10
 
 ### Added
