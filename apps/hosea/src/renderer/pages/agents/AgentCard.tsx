@@ -56,7 +56,7 @@ export function AgentCard({
   }
 
   return (
-    <div className={cardClass} onClick={handleCardClick} onKeyDown={handleCardKeyDown} role="button" tabIndex={0}>
+    <div className={cardClass} onClick={handleCardClick} onKeyDown={handleCardKeyDown} tabIndex={0}>
       {/* Body */}
       <div className="agent-card__body">
         {/* Top row */}
@@ -82,6 +82,7 @@ export function AgentCard({
           </div>
 
           <button
+            type="button"
             className="agent-card__menu-btn"
             onClick={(e) => e.stopPropagation()}
             aria-label="More options"
@@ -132,6 +133,7 @@ export function AgentCard({
           {isConnectorAvailable ? (
             <>
               <button
+                type="button"
                 className="btn-card btn-card-edit"
                 onClick={(e) => { e.stopPropagation(); onEdit(agent.id); }}
                 aria-label="Edit agent"
@@ -140,6 +142,7 @@ export function AgentCard({
                 Edit
               </button>
               <button
+                type="button"
                 className="btn-card btn-card-chat"
                 onClick={(e) => { e.stopPropagation(); onChat(agent.id); }}
                 aria-label="Chat with agent"
@@ -151,6 +154,7 @@ export function AgentCard({
           ) : (
             <>
               <button
+                type="button"
                 className="btn-card btn-card-fix"
                 onClick={(e) => { e.stopPropagation(); onFixConnector(agent.id); }}
                 aria-label="Fix connector"
@@ -159,6 +163,7 @@ export function AgentCard({
                 Fix connector
               </button>
               <button
+                type="button"
                 className="btn-card btn-card-disabled"
                 disabled
                 aria-label="Chat with agent"

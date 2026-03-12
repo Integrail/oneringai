@@ -59,9 +59,17 @@ export function AgentsPage(): React.ReactElement {
   const handleCreateAgent = () => navigate('agent-editor', { mode: 'create' });
 
   const handleChat = useCallback(async (agentId: string) => {
-    const agent = agents.find((a) => a.id === agentId);
-    const tabId = await createTab(agentId, agent?.name ?? 'Assistant');
-    if (tabId) navigate('chat');
+    try {
+      const agent = agents.find((a) => a.id === agentId);
+      const tabId = await createTab(agentId, agent?.name ?? 'Assistant');
+      if (tabId) {
+        navigate('chat');
+      } else {
+        console.error('[AgentsPage] createTab returned null for agentId:', agentId);
+      }
+    } catch (err) {
+      console.error('[AgentsPage] handleChat error:', err);
+    }
   }, [agents, createTab, navigate]);
 
   const handleEdit = (agentId: string) => navigate('agent-editor', { mode: 'edit', id: agentId });
