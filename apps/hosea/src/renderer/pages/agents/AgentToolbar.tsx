@@ -3,12 +3,13 @@
  * Includes search box, active filter button, and visible count label.
  */
 import React from 'react';
-import { Search, CheckCircle } from 'lucide-react';
+import { Search, CheckCircle, Archive } from 'lucide-react';
 import type { AgentFilters } from './agentTypes.js';
 
 interface AgentToolbarProps {
   filters: AgentFilters;
   activeCount: number;
+  archivedCount: number;
   totalVisible: number;
   onFiltersChange: (filters: AgentFilters) => void;
 }
@@ -16,6 +17,7 @@ interface AgentToolbarProps {
 export function AgentToolbar({
   filters,
   activeCount,
+  archivedCount,
   totalVisible,
   onFiltersChange,
 }: AgentToolbarProps): React.ReactElement {
@@ -27,9 +29,20 @@ export function AgentToolbar({
     onFiltersChange({ ...filters, activeOnly: !filters.activeOnly });
   };
 
+  const handleArchivedFilterClick = () => {
+    onFiltersChange({ ...filters, showArchived: !filters.showArchived });
+  };
+
   const filterBtnClass = [
     'agents-filter-btn',
     filters.activeOnly ? 'agents-filter-btn--active' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const archivedBtnClass = [
+    'agents-filter-btn',
+    filters.showArchived ? 'agents-filter-btn--active' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -47,11 +60,19 @@ export function AgentToolbar({
         />
       </div>
 
-      <button className={filterBtnClass} onClick={handleActiveFilterClick}>
+      <button type="button" className={filterBtnClass} onClick={handleActiveFilterClick}>
         <CheckCircle size={13} />
         Active
         {activeCount > 0 && <span className="agents-filter-count">{activeCount}</span>}
       </button>
+
+      {archivedCount > 0 && (
+        <button type="button" className={archivedBtnClass} onClick={handleArchivedFilterClick}>
+          <Archive size={13} />
+          Archived
+          <span className="agents-filter-count">{archivedCount}</span>
+        </button>
+      )}
 
       <span className="agents-toolbar-count">{totalVisible} agents</span>
     </div>

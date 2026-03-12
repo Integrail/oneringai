@@ -88,12 +88,15 @@ export function computeStats(agents: AgentListItem[]): AgentStats {
 }
 
 /**
- * Filter agents by query string (name, model, connector) and active-only flag.
+ * Filter agents by query string (name, model, connector), active-only flag,
+ * and archived visibility.
  * Note: `activeOnly` filters on `agent.isActive` (user-set stored flag),
  * NOT on `isActiveToday()` (recency from lastUsedAt).
  */
 export function filterAgents(agents: AgentListItem[], filters: AgentFilters): AgentListItem[] {
   return agents.filter((a) => {
+    if (!filters.showArchived && a.isArchived) return false;
+    if (filters.showArchived && !a.isArchived) return false;
     if (filters.activeOnly && !a.isActive) return false;
     if (!filters.query) return true;
     const q = filters.query.toLowerCase();

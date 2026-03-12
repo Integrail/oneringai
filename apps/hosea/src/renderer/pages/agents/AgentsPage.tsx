@@ -22,7 +22,7 @@ export function AgentsPage(): React.ReactElement {
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [connectors, setConnectors] = useState<ConnectorListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState<AgentFilters>({ query: '', activeOnly: false });
+  const [filters, setFilters] = useState<AgentFilters>({ query: '', activeOnly: false, showArchived: false });
 
   const loadData = useCallback(async () => {
     try {
@@ -53,7 +53,8 @@ export function AgentsPage(): React.ReactElement {
 
   const stats = React.useMemo(() => computeStats(agents), [agents]);
   const visibleAgents = React.useMemo(() => filterAgents(agents, filters), [agents, filters]);
-  const activeCount = React.useMemo(() => agents.filter((a) => a.isActive).length, [agents]);
+  const activeCount = React.useMemo(() => agents.filter((a) => a.isActive && !a.isArchived).length, [agents]);
+  const archivedCount = React.useMemo(() => agents.filter((a) => a.isArchived).length, [agents]);
 
   // Handlers
   const handleCreateAgent = () => navigate('agent-editor', { mode: 'create' });
@@ -74,6 +75,37 @@ export function AgentsPage(): React.ReactElement {
 
   const handleEdit = (agentId: string) => navigate('agent-editor', { mode: 'edit', id: agentId });
   const handleFixConnector = () => navigate('llm-connectors');
+
+  const handleRename = useCallback(async (agentId: string, newName: string) => {
+    try {
+      await window.hosea.agentConfig.update(agentId, { name: newName });
+      setAgents((prev) => prev.map((a) => a.id === agentId ? { ...a, name: newName } : a));
+    } catch (err) {
+      console.error('[AgentsPage] handleRename error:', err);
+    }
+  }, []);
+
+  const handleCopyId = useCallback((agentId: string) => {
+    navigator.clipboard.writeText(agentId).catch(() => {});
+  }, []);
+
+  const handleArchive = useCallback(async (agentId: string) => {
+    try {
+      await window.hosea.agentConfig.update(agentId, { isArchived: true });
+      setAgents((prev) => prev.map((a) => a.id === agentId ? { ...a, isArchived: true } : a));
+    } catch (err) {
+      console.error('[AgentsPage] handleArchive error:', err);
+    }
+  }, []);
+
+  const handleUnarchive = useCallback(async (agentId: string) => {
+    try {
+      await window.hosea.agentConfig.update(agentId, { isArchived: false });
+      setAgents((prev) => prev.map((a) => a.id === agentId ? { ...a, isArchived: false } : a));
+    } catch (err) {
+      console.error('[AgentsPage] handleUnarchive error:', err);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -119,6 +151,7 @@ export function AgentsPage(): React.ReactElement {
           <AgentToolbar
             filters={filters}
             activeCount={activeCount}
+            archivedCount={archivedCount}
             totalVisible={visibleAgents.length}
             onFiltersChange={setFilters}
           />
@@ -149,6 +182,10 @@ export function AgentsPage(): React.ReactElement {
                 onChat={handleChat}
                 onEdit={handleEdit}
                 onFixConnector={handleFixConnector}
+                onRename={handleRename}
+                onCopyId={handleCopyId}
+                onArchive={handleArchive}
+                onUnarchive={handleUnarchive}
               />
             ))}
 

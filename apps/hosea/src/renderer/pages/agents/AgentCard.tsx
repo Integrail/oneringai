@@ -3,7 +3,7 @@
  * Renders avatar (initials + deterministic color), metadata, capability chips,
  * and action buttons. All interaction is handled via callbacks.
  */
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { AlertTriangle, MoreVertical, MessageSquare, Pencil, Wrench } from 'lucide-react';
 import type { AgentListItem } from './agentTypes.js';
 import {
@@ -14,6 +14,7 @@ import {
   formatTimeAgo,
   isActiveToday,
 } from './agentUtils.js';
+import { AgentContextMenu } from './AgentContextMenu.js';
 
 interface AgentCardProps {
   agent: AgentListItem;
@@ -22,6 +23,10 @@ interface AgentCardProps {
   onChat: (id: string) => void;
   onEdit: (id: string) => void;
   onFixConnector: (id: string) => void;
+  onRename: (id: string, newName: string) => void;
+  onCopyId: (id: string) => void;
+  onArchive: (id: string) => void;
+  onUnarchive: (id: string) => void;
 }
 
 export function AgentCard({
@@ -31,28 +36,63 @@ export function AgentCard({
   onChat,
   onEdit,
   onFixConnector,
+  onRename,
+  onCopyId,
+  onArchive,
+  onUnarchive,
 }: AgentCardProps): React.ReactElement {
   const desc = getDescription(agent.instructions);
   const chips = getCapabilityChips(agent);
   const activeToday = isActiveToday(agent);
 
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(agent.name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
   const cardClass = [
     'agent-card',
     agent.isActive ? 'agent-card--active' : '',
     !isConnectorAvailable ? 'agent-card--broken' : '',
+    agent.isArchived ? 'agent-card--archived' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   function handleCardClick() {
-    if (isConnectorAvailable) onChat(agent.id);
+    if (isConnectorAvailable && !renaming) onChat(agent.id);
   }
 
   function handleCardKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (isConnectorAvailable) onChat(agent.id);
+      if (isConnectorAvailable && !renaming) onChat(agent.id);
     }
+  }
+
+  function handleMenuClick(e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    setMenuAnchor(e.currentTarget);
+  }
+
+  function handleRenameStart(id: string) {
+    setRenameValue(agent.name);
+    setRenaming(true);
+    // Focus input after render
+    setTimeout(() => renameInputRef.current?.select(), 0);
+  }
+
+  function handleRenameCommit() {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== agent.name) {
+      onRename(agent.id, trimmed);
+    }
+    setRenaming(false);
+  }
+
+  function handleRenameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') handleRenameCommit();
+    if (e.key === 'Escape') setRenaming(false);
   }
 
   return (
@@ -70,9 +110,25 @@ export function AgentCard({
 
           <div className="agent-card__info">
             <div className="agent-card__name">
-              {agent.name}
-              {isEwConnector && <span className="agent-card__ew-badge">EW</span>}
-              {!isConnectorAvailable && <AlertTriangle size={13} className="agent-card__warn" />}
+              {renaming ? (
+                <input
+                  ref={renameInputRef}
+                  className="agent-card__rename-input"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleRenameCommit}
+                  onKeyDown={handleRenameKeyDown}
+                  onClick={(e) => e.stopPropagation()}
+                  maxLength={80}
+                  autoFocus
+                />
+              ) : (
+                <>
+                  {agent.name}
+                  {isEwConnector && <span className="agent-card__ew-badge">EW</span>}
+                  {!isConnectorAvailable && <AlertTriangle size={13} className="agent-card__warn" />}
+                </>
+              )}
             </div>
             <div className="agent-card__meta">
               <span className="agent-card__model-pill">{agent.model}</span>
@@ -84,7 +140,7 @@ export function AgentCard({
           <button
             type="button"
             className="agent-card__menu-btn"
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleMenuClick}
             aria-label="More options"
           >
             <MoreVertical size={16} />
@@ -175,6 +231,20 @@ export function AgentCard({
           )}
         </div>
       </div>
+
+      {/* Context menu portal */}
+      {menuAnchor && (
+        <AgentContextMenu
+          agentId={agent.id}
+          isArchived={agent.isArchived ?? false}
+          anchorEl={menuAnchor}
+          onClose={() => setMenuAnchor(null)}
+          onCopyId={onCopyId}
+          onRename={handleRenameStart}
+          onArchive={onArchive}
+          onUnarchive={onUnarchive}
+        />
+      )}
     </div>
   );
 }

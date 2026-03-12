@@ -663,3 +663,90 @@
   .agent-card { animation: none; }
   .agent-card__status-dot--online { animation: none; }
 }
+
+/* ============================================================
+   9. Archived card state
+   ============================================================ */
+
+.agent-card--archived {
+  opacity: 0.55;
+}
+
+.agent-card--archived:hover {
+  opacity: 0.8;
+}
+
+/* ============================================================
+   10. Inline rename input
+   ============================================================ */
+
+.agent-card__rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  background: var(--color-white);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--spacing-1);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+  line-height: var(--line-height-tight);
+}
+
+/* ============================================================
+   11. Context menu dropdown
+   ============================================================ */
+
+.agent-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 176px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-1) 0;
+  animation: agent-menu-in 80ms ease-out;
+}
+
+@keyframes agent-menu-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.agent-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-700);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.agent-menu__item:hover {
+  background: var(--color-gray-50);
+  color: var(--color-gray-900);
+}
+
+.agent-menu__item--danger {
+  color: var(--color-danger);
+}
+
+.agent-menu__item--danger:hover {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+}
+
+.agent-menu__divider {
+  height: 1px;
+  background: var(--color-gray-100);
+  margin: var(--spacing-1) 0;
+}

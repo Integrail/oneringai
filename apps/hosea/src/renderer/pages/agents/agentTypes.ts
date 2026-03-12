@@ -17,6 +17,7 @@ export interface AgentListItem {
   persistentInstructionsEnabled: boolean;
   lastUsedAt?: number;
   isActive: boolean;
+  isArchived?: boolean;
 }
 
 /** Connector as returned by window.hosea.connector.list() */
@@ -44,4 +45,5 @@ export interface AgentStats {
 export interface AgentFilters {
   query: string;
   activeOnly: boolean;
+  showArchived: boolean;
 }
