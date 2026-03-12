@@ -288,6 +288,25 @@ export interface GitHubPRCommentsResult {
 }
 
 /**
+ * A branch entry
+ */
+export interface GitHubBranchEntry {
+  name: string;
+  sha: string;
+  protected: boolean;
+}
+
+/**
+ * Result from list_branches tool
+ */
+export interface GitHubListBranchesResult {
+  success: boolean;
+  branches?: GitHubBranchEntry[];
+  count?: number;
+  error?: string;
+}
+
+/**
  * Result from create_pr tool
  */
 export interface GitHubCreatePRResult {

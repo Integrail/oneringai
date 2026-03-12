@@ -466,7 +466,10 @@ export type StreamChunk =
   // Voice pseudo-streaming events
   | { type: 'voice:chunk'; chunkIndex: number; subIndex?: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
   | { type: 'voice:error'; chunkIndex: number; error: string; text: string }
-  | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number };
+  | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number }
+  // Stream status events (retry, incomplete, failed)
+  | { type: 'retry'; attempt: number; maxAttempts: number; reason: string; delayMs: number }
+  | { type: 'status'; status: 'completed' | 'incomplete' | 'failed'; stopReason?: string };
 
 /**
  * Everworker Desktop UI Capabilities System Prompt
@@ -600,6 +603,7 @@ export interface AgentInstance {
   // Voice pseudo-streaming
   voiceStream?: VoiceStream;
   voiceoverEnabled: boolean;
+  sessionSaveEnabled: boolean;
 }
 
 /** Maximum concurrent agent instances (memory limit) */
@@ -4023,6 +4027,7 @@ export class AgentService {
         responseReserve: agentConfig.responseReserve,
         strategy: agentConfig.contextStrategy, // Already NextGen type
         storage: sessionStorage,
+        journalFilter: ['user', 'assistant'],
         features: {
           workingMemory: agentConfig.workingMemoryEnabled,
           inContextMemory: agentConfig.inContextMemoryEnabled,
@@ -4137,6 +4142,7 @@ export class AgentService {
         sessionStorage,
         createdAt: Date.now(),
         voiceoverEnabled: false,
+        sessionSaveEnabled: false,
       };
       this.instances.set(instanceId, agentInstance);
 
@@ -4260,6 +4266,49 @@ export class AgentService {
   }
 
   /**
+   * Enable or disable session saving for an agent instance.
+   * When enabled, session state and chat history are saved after each turn.
+   */
+  async setSessionSave(instanceId: string, enabled: boolean): Promise<{ success: boolean; error?: string }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) return { success: false, error: 'Instance not found' };
+
+    instance.sessionSaveEnabled = enabled;
+
+    // On enable, await initial save to establish sessionId before returning.
+    // This prevents a race where addUserMessage fires before _sessionId is set,
+    // causing duplicate journal entries (buffered + direct).
+    if (enabled) {
+      try {
+        const ctx = instance.agent.context as AgentContextNextGen;
+        await ctx.save(instanceId);
+      } catch (err) {
+        logger.warn(`[setSessionSave] Initial save failed: ${err}`);
+      }
+    }
+
+    logger.info(`[setSessionSave] Session save ${enabled ? 'enabled' : 'disabled'} for ${instanceId}`);
+    return { success: true };
+  }
+
+  /**
+   * Save session for an instance if session saving is enabled.
+   * Called after each completed turn (stream end).
+   */
+  async saveInstanceSession(instanceId: string): Promise<void> {
+    const instance = this.instances.get(instanceId);
+    if (!instance?.sessionSaveEnabled) return;
+
+    try {
+      const ctx = instance.agent.context as AgentContextNextGen;
+      await ctx.save(instanceId);
+      logger.debug(`[saveInstanceSession] Saved session for instance ${instanceId}`);
+    } catch (err) {
+      logger.warn(`[saveInstanceSession] Failed for ${instanceId}: ${err}`);
+    }
+  }
+
+  /**
    * Get an agent instance by ID
    */
   getInstance(instanceId: string): AgentInstance | null {
@@ -4332,7 +4381,6 @@ export class AgentService {
           else if (e.type === 'text:delta' || e.type === 'response.output_text.delta') {
             if (!suppressText) {
               const delta = (e as any).delta || '';
-              if (!delta || delta.length <= 3) logger.debug(`[voice] First text delta at ${Date.now()}`);
               yield { type: 'text', content: delta };
             }
           }
@@ -4371,8 +4419,23 @@ export class AgentService {
           }
           // Done events
           else if (e.type === 'text:done' || e.type === 'response.complete') {
-            logger.info(`[voice] Text stream done at ${Date.now()}`);
+            const status = (e as any).status;
+            const stopReason = (e as any).stop_reason;
+            // If non-normal completion, emit status info before done
+            if (status && status !== 'completed') {
+              yield { type: 'status', status, stopReason };
+            }
             yield { type: 'done' };
+          }
+          // Retry events
+          else if (e.type === 'response.retry') {
+            yield {
+              type: 'retry',
+              attempt: (e as any).attempt,
+              maxAttempts: (e as any).max_attempts,
+              reason: (e as any).reason,
+              delayMs: (e as any).delay_ms,
+            };
           }
           // Error events
           else if (e.type === 'error' || e.type === 'response.error') {

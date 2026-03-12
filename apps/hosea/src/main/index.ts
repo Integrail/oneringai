@@ -237,10 +237,14 @@ async function setupIPC(): Promise<void> {
       for await (const chunk of stream) {
         mainWindow?.webContents.send('agent:stream-chunk', instanceId, chunk);
       }
+      // Save session if enabled (after full turn completes)
+      await agentService!.saveInstanceSession(instanceId);
       mainWindow?.webContents.send('agent:stream-end', instanceId);
       return { success: true };
     } catch (error) {
       console.error('[EW Desktop] Stream instance error:', error);
+      // Still save session on error (preserves partial conversation)
+      await agentService!.saveInstanceSession(instanceId).catch(() => {});
       // Send error chunk BEFORE stream-end so UI knows what happened
       const errorMessage = error instanceof Error ? error.message : String(error);
       mainWindow?.webContents.send('agent:stream-chunk', instanceId, {
@@ -259,6 +263,11 @@ async function setupIPC(): Promise<void> {
   // Voice pseudo-streaming
   ipcMain.handle('agent:set-voiceover', readyHandler(async (_event, instanceId: string, enabled: boolean) => {
     return agentService!.setVoiceover(instanceId, enabled);
+  }));
+
+  // Session saving toggle
+  ipcMain.handle('agent:set-session-save', readyHandler(async (_event, instanceId: string, enabled: boolean) => {
+    return agentService!.setSessionSave(instanceId, enabled);
   }));
 
   ipcMain.handle('agent:get-voice-config', readyHandler(async (_event, agentConfigId: string) => {

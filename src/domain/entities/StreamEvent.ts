@@ -22,6 +22,7 @@ export enum StreamEventType {
   REASONING_DELTA = 'response.reasoning.delta',
   REASONING_DONE = 'response.reasoning.done',
   RESPONSE_COMPLETE = 'response.complete',
+  RETRY = 'response.retry',
   ERROR = 'response.error',
 
   // Voice pseudo-streaming events
@@ -150,6 +151,19 @@ export interface ResponseCompleteEvent extends BaseStreamEvent {
   usage: TokenUsage;
   iterations: number;
   duration_ms?: number;
+  /** Raw provider stop reason for diagnostics (e.g., 'end_turn', 'max_tokens', 'SAFETY') */
+  stop_reason?: string;
+}
+
+/**
+ * Retry event - emitted when agent retries an empty/incomplete LLM response
+ */
+export interface RetryEvent extends BaseStreamEvent {
+  type: StreamEventType.RETRY;
+  attempt: number;
+  max_attempts: number;
+  reason: string;
+  delay_ms: number;
 }
 
 /**
@@ -247,6 +261,7 @@ export type StreamEvent =
   | ToolExecutionDoneEvent
   | IterationCompleteEvent
   | ResponseCompleteEvent
+  | RetryEvent
   | ErrorEvent
   | AudioChunkReadyEvent
   | AudioChunkErrorEvent

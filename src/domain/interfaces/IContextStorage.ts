@@ -9,6 +9,7 @@
  */
 
 import type { InputItem } from '../entities/Message.js';
+import type { IHistoryJournal } from './IHistoryJournal.js';
 
 /**
  * Serialized context state for persistence.
@@ -175,6 +176,22 @@ export interface IContextStorage {
    * Falls back to getPath() if not implemented.
    */
   getLocation?(): string;
+
+  /**
+   * History journal companion for full conversation logging.
+   *
+   * When present, AgentContextNextGen automatically appends every message
+   * to the journal (append-only, fire-and-forget). The journal is never
+   * affected by compaction, preserving full conversation history.
+   *
+   * Storage implementations create the appropriate journal for their backend:
+   * - FileContextStorage → FileHistoryJournal (JSONL files)
+   * - MongoContextStorage → MongoHistoryJournal (collection)
+   *
+   * Consumers never configure the journal separately — it comes for free
+   * with the storage backend.
+   */
+  readonly journal?: IHistoryJournal;
 }
 
 /**

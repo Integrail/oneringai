@@ -43,6 +43,10 @@ export class StreamState {
   public currentIteration: number;
   public usage: TokenUsage;
   public status: 'in_progress' | 'completed' | 'incomplete' | 'failed';
+  /** Status reported by the provider's RESPONSE_COMPLETE event. Defaults to 'incomplete' (safe if never received). */
+  public providerStatus: 'completed' | 'incomplete' | 'failed' = 'incomplete';
+  /** Raw stop reason from provider (e.g., 'end_turn', 'max_tokens', 'SAFETY') */
+  public stopReason?: string;
   public startTime: Date;
   public endTime?: Date;
 
@@ -310,6 +314,8 @@ export class StreamState {
       completedToolCallsCount: this.completedToolCalls.length,
       durationMs: this.getDuration(),
       usage: { ...this.usage },
+      providerStatus: this.providerStatus,
+      stopReason: this.stopReason,
     };
   }
 
@@ -336,6 +342,8 @@ export class StreamState {
     this.toolCallBuffers.clear();
     this.completedToolCalls = [];
     this.toolResults.clear();
+    this.providerStatus = 'incomplete';
+    this.stopReason = undefined;
   }
 
   /**
@@ -354,6 +362,8 @@ export class StreamState {
       currentIteration: this.currentIteration,
       usage: { ...this.usage },
       status: this.status,
+      providerStatus: this.providerStatus,
+      stopReason: this.stopReason,
       startTime: this.startTime,
       endTime: this.endTime,
     };

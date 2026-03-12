@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Alert, Button, Spinner } from 'react-bootstrap';
-import { Send, Square, Bot, User, Copy, Share, AlertCircle } from 'lucide-react';
+import { Send, Square, Bot, User, Copy, Share, AlertCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   MessageList,
   ExecutionProgress,
@@ -137,7 +137,9 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
   };
 
   // Custom message renderer preserving Everworker Desktop's visual style
-  const renderHoseaMessage = useCallback((message: IChatMessage, index: number) => {
+  const renderHoseaMessage = useCallback((msg: IChatMessage, index: number) => {
+    // Cast to Message to access Hosea-specific fields (retryInfo, warning)
+    const message = msg as Message;
     if (message.role === 'user') {
       return (
         <div key={message.id || index} className="message message--user">
@@ -177,6 +179,22 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
               <AlertCircle size={16} className="me-2" />
               <span>{message.error}</span>
             </Alert>
+          )}
+
+          {/* Warning display (e.g., truncation) */}
+          {message.warning && (
+            <Alert variant="warning" className="message__warning mb-2">
+              <AlertTriangle size={16} className="me-2" />
+              <span>{message.warning}</span>
+            </Alert>
+          )}
+
+          {/* Retry indicator */}
+          {message.retryInfo && message.isStreaming && (
+            <div className="message__retry-indicator">
+              <Loader2 size={14} className="spin me-2" />
+              <span>Retrying ({message.retryInfo.attempt}/{message.retryInfo.maxAttempts})...</span>
+            </div>
           )}
 
           {/* Thinking block */}

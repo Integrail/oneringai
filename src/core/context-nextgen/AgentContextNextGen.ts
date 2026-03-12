@@ -64,6 +64,7 @@ import type {
 } from './snapshot.js';
 import { formatPluginDisplayName } from './snapshot.js';
 import type { IContextStorage, StoredContextSession } from '../../domain/interfaces/IContextStorage.js';
+import type { IHistoryJournal, HistoryEntry, HistoryEntryType } from '../../domain/interfaces/IHistoryJournal.js';
 import type { IConnectorRegistry } from '../../domain/interfaces/IConnectorRegistry.js';
 import { Connector } from '../Connector.js';
 
@@ -125,7 +126,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities' | 'toolCategories'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities' | 'toolCategories' | 'journalFilter'>> & {
     features: Required<ContextFeatures>;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -183,6 +184,23 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Callback for beforeCompaction hook (set by Agent) */
   private _beforeCompactionCallback: BeforeCompactionCallback | null = null;
 
+  /**
+   * Monotonically increasing turn counter for history journal.
+   * A "turn" increments on each user message.
+   */
+  private _turnIndex = 0;
+
+  /**
+   * Pre-sessionId history buffer.
+   * Entries are buffered here until the first save() establishes a sessionId,
+   * at which point the buffer is flushed to the journal.
+   * No extra memory cost — these items are already in _conversation.
+   */
+  private _historyBuffer: HistoryEntry[] = [];
+
+  /** Filter for journal entry types. When set, only matching types are journaled. */
+  private readonly _journalFilter: HistoryEntryType[] | undefined;
+
   // ============================================================================
   // Static Factory
   // ============================================================================
@@ -222,6 +240,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     this._agentId = this._config.agentId;
     this._userId = config.userId;
     this._identities = config.identities;
+    this._journalFilter = config.journalFilter;
 
     // Resolve session storage: explicit config > StorageRegistry factory > undefined
     const sessionFactory = StorageRegistry.get('sessions');
@@ -676,6 +695,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     // User message becomes current input
     this._currentInput = [message];
 
+    // Journal: append user message and increment turn
+    this._turnIndex++;
+    this._journalAppend('user', [message]);
+
     this.emit('message:added', { role: 'user', index: this._conversation.length });
 
     return id;
@@ -741,6 +764,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       };
 
       this._conversation.push(message);
+
+      // Journal: append assistant message (same turn as the user message)
+      this._journalAppend('assistant', [message]);
+
       this.emit('message:added', { role: 'assistant', index: this._conversation.length - 1 });
     }
 
@@ -795,6 +822,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     // Tool results become current input
     this._currentInput = [message];
 
+    // Journal: append tool results (same turn as the preceding assistant tool_use)
+    this._journalAppend('tool_result', [message]);
+
     this.emit('message:added', { role: 'tool', index: this._conversation.length });
 
     return id;
@@ -812,6 +842,17 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    */
   getCurrentInput(): ReadonlyArray<InputItem> {
     return this._currentInput;
+  }
+
+  /**
+   * Get the history journal (if storage supports it).
+   *
+   * The journal provides read access to full conversation history,
+   * independent of context compaction. Returns null if storage is not
+   * configured or doesn't support journaling.
+   */
+  get journal(): IHistoryJournal | null {
+    return this._storage?.journal ?? null;
   }
 
   /**
@@ -1573,6 +1614,17 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     const targetSessionId = sessionId ?? this._sessionId ?? this.generateId();
 
+    // Flush history buffer on first save (entries buffered before sessionId was set)
+    const journal = this._storage.journal;
+    if (this._historyBuffer.length > 0 && journal) {
+      try {
+        await journal.append(targetSessionId, this._historyBuffer);
+      } catch (err) {
+        logger.warn({ err: (err as Error).message }, 'History journal buffer flush failed');
+      }
+      this._historyBuffer = [];
+    }
+
     // Use provided state override or build from current state
     const state: SerializedContextState = stateOverride ?? this.getState();
 
@@ -1616,6 +1668,28 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     }
 
     this._sessionId = sessionId;
+
+    // Restore turn index from journal (if available) so new entries continue the sequence
+    const journal = this._storage.journal;
+    if (journal) {
+      try {
+        const count = await journal.count(sessionId);
+        if (count > 0) {
+          // Read the last entry to get the highest turnIndex
+          const lastEntries = await journal.read(sessionId, { offset: count - 1, limit: 1 });
+          const lastEntry = lastEntries[0];
+          if (lastEntry) {
+            this._turnIndex = lastEntry.turnIndex + 1;
+          }
+        }
+      } catch {
+        // Non-critical — turnIndex will start from 0 if journal is unavailable
+      }
+    }
+
+    // Clear any stale buffer (we're loading a saved session, not continuing a new one)
+    this._historyBuffer = [];
+
     return true;
   }
 
@@ -2000,6 +2074,46 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /**
    * Generate unique ID.
    */
+  /**
+   * Append items to the history journal.
+   *
+   * If a sessionId is established and storage supports journaling,
+   * appends directly (fire-and-forget, non-blocking).
+   * Otherwise, buffers entries until the first save().
+   *
+   * No extra memory cost for the buffer — items are already in _conversation.
+   */
+  private _journalAppend(type: HistoryEntryType, items: InputItem[]): void {
+    const journal = this._storage?.journal;
+    if (!journal && !this._storage) {
+      // No storage at all — skip entirely (no buffering for throwaway conversations)
+      return;
+    }
+
+    // Apply journal filter — skip entry types not in the allowlist
+    if (this._journalFilter && !this._journalFilter.includes(type)) {
+      return;
+    }
+
+    const entries: HistoryEntry[] = items.map(item => ({
+      timestamp: Date.now(),
+      type,
+      item,
+      turnIndex: this._turnIndex,
+    }));
+
+    if (this._sessionId && journal) {
+      // Session established and journal available — append directly
+      journal.append(this._sessionId, entries).catch(err => {
+        logger.warn({ err: (err as Error).message }, 'History journal append failed');
+      });
+    } else {
+      // No session yet, or storage doesn't support journal — buffer
+      // Buffer will be flushed on first save() if journal is available
+      this._historyBuffer.push(...entries);
+    }
+  }
+
   private generateId(): string {
     return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }

@@ -158,10 +158,10 @@ describe('GitHub Tools', () => {
       expect(ConnectorTools.hasServiceTools('github')).toBe(true);
     });
 
-    it('should return 8 tools (7 GitHub + 1 generic API) via ConnectorTools.for()', () => {
+    it('should return 9 tools (8 GitHub + 1 generic API) via ConnectorTools.for()', () => {
       const connector = createMockConnector('my-github');
       const tools = ConnectorTools.for(connector);
-      expect(tools).toHaveLength(8);
+      expect(tools).toHaveLength(9);
     });
 
     it('should prefix tool names with connector name', () => {
@@ -173,16 +173,17 @@ describe('GitHub Tools', () => {
       expect(names).toContain('my-github_search_files');
       expect(names).toContain('my-github_search_code');
       expect(names).toContain('my-github_read_file');
+      expect(names).toContain('my-github_list_branches');
       expect(names).toContain('my-github_get_pr');
       expect(names).toContain('my-github_pr_files');
       expect(names).toContain('my-github_pr_comments');
       expect(names).toContain('my-github_create_pr');
     });
 
-    it('should return 7 tools via serviceTools()', () => {
+    it('should return 8 tools via serviceTools()', () => {
       const connector = createMockConnector('gh-svc');
       const tools = ConnectorTools.serviceTools(connector);
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(8);
     });
   });
 

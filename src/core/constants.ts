@@ -112,6 +112,25 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
   WINDOW_MS: 300_000,
 } as const;
 
+// ============ Empty Response Retry Defaults ============
+
+/**
+ * Retry configuration for empty/incomplete LLM responses
+ */
+export const EMPTY_RESPONSE_RETRY = {
+  /** Maximum retry attempts for empty responses */
+  MAX_RETRIES: 2,
+
+  /** Initial backoff delay in ms */
+  INITIAL_DELAY_MS: 1000,
+
+  /** Maximum backoff delay in ms */
+  MAX_DELAY_MS: 5000,
+
+  /** Whether retry is enabled by default */
+  ENABLED: true,
+} as const;
+
 // ============ History Defaults ============
 
 /**

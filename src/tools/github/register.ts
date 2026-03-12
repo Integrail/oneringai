@@ -15,12 +15,13 @@ import { createGetPRTool } from './getPR.js';
 import { createPRFilesTool } from './prFiles.js';
 import { createPRCommentsTool } from './prComments.js';
 import { createCreatePRTool } from './createPR.js';
+import { createListBranchesTool } from './listBranches.js';
 
 /**
  * Register GitHub tools with the ConnectorTools framework.
  *
  * After calling this, `ConnectorTools.for('my-github-connector')` will
- * return all 7 GitHub tools plus the generic API tool.
+ * return all 8 GitHub tools plus the generic API tool.
  */
 export function registerGitHubTools(): void {
   ConnectorTools.registerService('github', (connector: Connector, userId?: string) => {
@@ -28,6 +29,7 @@ export function registerGitHubTools(): void {
       createSearchFilesTool(connector, userId),
       createSearchCodeTool(connector, userId),
       createGitHubReadFileTool(connector, userId),
+      createListBranchesTool(connector, userId),
       createGetPRTool(connector, userId),
       createPRFilesTool(connector, userId),
       createPRCommentsTool(connector, userId),

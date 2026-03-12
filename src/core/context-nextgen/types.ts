@@ -621,6 +621,14 @@ export interface AgentContextNextGenConfig {
    * Default: 0 (disabled - relies on each tool's own timeout)
    */
   toolExecutionTimeout?: number;
+
+  /**
+   * Filter which message types are written to the history journal.
+   * When set, only entries matching these types are appended.
+   * Default: undefined (all types journaled).
+   * Example: ['user', 'assistant'] to exclude tool_result entries.
+   */
+  journalFilter?: import('../../domain/interfaces/IHistoryJournal.js').HistoryEntryType[];
 }
 
 /**

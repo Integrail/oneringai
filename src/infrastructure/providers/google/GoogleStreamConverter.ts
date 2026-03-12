@@ -5,6 +5,7 @@
 import { randomUUID } from 'crypto';
 import { GenerateContentResponse } from '@google/genai';
 import { StreamEvent, StreamEventType, ReasoningDeltaEvent, ReasoningDoneEvent } from '../../../domain/entities/StreamEvent.js';
+import { mapGoogleStatus } from '../shared/ResponseBuilder.js';
 
 /**
  * Converts Google Gemini streaming responses to our unified StreamEvent format
@@ -18,6 +19,7 @@ export class GoogleStreamConverter {
   private hadToolCalls: boolean = false;
   private reasoningBuffer: string = '';
   private wasThinking: boolean = false;
+  private lastFinishReason: string | undefined = undefined;
 
   // External storage for thought signatures (shared with GoogleConverter)
   private thoughtSignatureStorage: Map<string, string> | null = null;
@@ -54,6 +56,7 @@ export class GoogleStreamConverter {
     this.hadToolCalls = false;
     this.reasoningBuffer = '';
     this.wasThinking = false;
+    this.lastFinishReason = undefined;
 
     let lastUsage: { input_tokens: number; output_tokens: number; total_tokens: number } = {
       input_tokens: 0,
@@ -110,13 +113,17 @@ export class GoogleStreamConverter {
       }
     }
 
-    // Final completion event with actual usage
+    // Final completion event with actual usage and proper status from finishReason
+    const rawStatus = mapGoogleStatus(this.lastFinishReason);
+    const finalStatus: 'completed' | 'failed' | 'incomplete' =
+      rawStatus === 'completed' ? 'completed' : rawStatus === 'failed' ? 'failed' : 'incomplete';
     yield {
       type: StreamEventType.RESPONSE_COMPLETE,
       response_id: this.responseId,
-      status: 'completed',
+      status: finalStatus,
       usage: lastUsage,
       iterations: 1,
+      stop_reason: this.lastFinishReason,
     };
   }
 
@@ -141,6 +148,9 @@ export class GoogleStreamConverter {
     const events: StreamEvent[] = [];
 
     const candidate = chunk.candidates?.[0];
+    if (candidate?.finishReason) {
+      this.lastFinishReason = candidate.finishReason as string;
+    }
     if (!candidate?.content?.parts) return events;
 
     for (const part of candidate.content.parts) {
@@ -293,6 +303,7 @@ export class GoogleStreamConverter {
     this.hadToolCalls = false;
     this.reasoningBuffer = '';
     this.wasThinking = false;
+    this.lastFinishReason = undefined;
   }
 
   /**

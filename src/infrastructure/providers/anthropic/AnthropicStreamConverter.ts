@@ -11,6 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 import { BaseStreamConverter } from '../base/BaseStreamConverter.js';
+import { mapAnthropicStatus } from '../shared/ResponseBuilder.js';
 
 /**
  * Block info tracked during streaming
@@ -29,6 +30,9 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
 
   /** Map of content block index to block info */
   private contentBlockIndex: Map<number, ContentBlockInfo> = new Map();
+
+  /** Captured stop_reason from message_delta event */
+  private stopReason: string | null = null;
 
   /**
    * Convert a single Anthropic event to our StreamEvent(s)
@@ -67,6 +71,7 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
   override clear(): void {
     super.clear();
     this.contentBlockIndex.clear();
+    this.stopReason = null;
   }
 
   // ==========================================================================
@@ -177,7 +182,13 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
       this.updateUsage(undefined, event.usage.output_tokens);
     }
 
-    // No events to emit - we'll include usage in message_stop
+    // Capture stop_reason (available in event.delta.stop_reason)
+    const delta = event.delta as { stop_reason?: string | null; stop_sequence?: string | null };
+    if (delta.stop_reason) {
+      this.stopReason = delta.stop_reason;
+    }
+
+    // No events to emit - we'll include usage and status in message_stop
     return [];
   }
 
@@ -185,6 +196,9 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
    * Handle message_stop event (final event)
    */
   private handleMessageStop(): StreamEvent[] {
-    return [this.emitResponseComplete('completed')];
+    const rawStatus = mapAnthropicStatus(this.stopReason);
+    const status: 'completed' | 'failed' | 'incomplete' =
+      rawStatus === 'completed' ? 'completed' : rawStatus === 'failed' ? 'failed' : 'incomplete';
+    return [this.emitResponseComplete(status, this.stopReason || undefined)];
   }
 }

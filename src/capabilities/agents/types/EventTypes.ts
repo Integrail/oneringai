@@ -61,6 +61,15 @@ export interface ExecutionEmptyOutputEvent {
   usage?: import('../../../domain/entities/Response.js').TokenUsage;
 }
 
+export interface ExecutionRetryEvent {
+  executionId: string;
+  attempt: number;
+  maxAttempts: number;
+  reason: string;
+  delayMs: number;
+  timestamp: Date;
+}
+
 export interface ExecutionMaxIterationsEvent {
   executionId: string;
   iteration: number;
@@ -199,6 +208,7 @@ export interface AgenticLoopEvents {
   'hook:error': HookErrorEvent;
 
   'execution:empty_output': ExecutionEmptyOutputEvent;
+  'execution:retry': ExecutionRetryEvent;
 
   'circuit:opened': CircuitOpenedEvent;
   'circuit:half-open': CircuitHalfOpenEvent;

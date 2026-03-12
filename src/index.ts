@@ -238,6 +238,15 @@ export type {
 } from './domain/interfaces/IContextStorage.js';
 export { CONTEXT_SESSION_FORMAT_VERSION } from './domain/interfaces/IContextStorage.js';
 
+// History Journal (Append-Only Conversation Log)
+export type {
+  IHistoryJournal,
+  HistoryEntry,
+  HistoryEntryType,
+  HistoryReadOptions,
+} from './domain/interfaces/IHistoryJournal.js';
+export { FileHistoryJournal } from './infrastructure/storage/index.js';
+
 // Agent Definition Storage (Agent Configuration Persistence)
 export type {
   IAgentDefinitionStorage,
@@ -1019,6 +1028,7 @@ export {
   createPRFilesTool,
   createPRCommentsTool,
   createCreatePRTool,
+  createListBranchesTool,
   parseRepository,
   resolveRepository,
 } from './tools/index.js';
@@ -1033,6 +1043,8 @@ export type {
   GitHubPRCommentsResult,
   GitHubPRCommentEntry,
   GitHubCreatePRResult,
+  GitHubListBranchesResult,
+  GitHubBranchEntry,
 } from './tools/index.js';
 
 // Microsoft Graph connector tools (auto-registered with ConnectorTools for Microsoft service)

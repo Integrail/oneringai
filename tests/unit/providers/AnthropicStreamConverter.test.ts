@@ -336,12 +336,86 @@ describe('AnthropicStreamConverter', () => {
       expect(complete.usage.total_tokens).toBe(150);
     });
 
-    it('should emit RESPONSE_COMPLETE on message_stop', async () => {
+    it('should emit RESPONSE_COMPLETE with status from stop_reason', async () => {
       const events: Anthropic.MessageStreamEvent[] = [
         {
           type: 'message_start',
           message: {
             id: 'msg_stop',
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: 'claude-3-opus',
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 0, output_tokens: 0 }
+          }
+        },
+        {
+          type: 'message_delta',
+          delta: { stop_reason: 'end_turn', stop_sequence: null },
+          usage: { input_tokens: 0, output_tokens: 0 }
+        } as any,
+        { type: 'message_stop' }
+      ];
+
+      const stream = converter.convertStream(createMockStream(events), 'claude-3-opus');
+      const results: any[] = [];
+
+      for await (const event of stream) {
+        results.push(event);
+      }
+
+      const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
+
+      expect(complete).toBeDefined();
+      expect(complete.status).toBe('completed');
+      expect(complete.stop_reason).toBe('end_turn');
+    });
+
+    it('should emit incomplete status when stop_reason is max_tokens', async () => {
+      const events: Anthropic.MessageStreamEvent[] = [
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_trunc',
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: 'claude-3-opus',
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 0, output_tokens: 0 }
+          }
+        },
+        {
+          type: 'message_delta',
+          delta: { stop_reason: 'max_tokens', stop_sequence: null },
+          usage: { input_tokens: 0, output_tokens: 100 }
+        } as any,
+        { type: 'message_stop' }
+      ];
+
+      const stream = converter.convertStream(createMockStream(events), 'claude-3-opus');
+      const results: any[] = [];
+
+      for await (const event of stream) {
+        results.push(event);
+      }
+
+      const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
+
+      expect(complete).toBeDefined();
+      expect(complete.status).toBe('incomplete');
+      expect(complete.stop_reason).toBe('max_tokens');
+    });
+
+    it('should emit incomplete when no message_delta with stop_reason', async () => {
+      const events: Anthropic.MessageStreamEvent[] = [
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_no_delta',
             type: 'message',
             role: 'assistant',
             content: [],
@@ -364,7 +438,8 @@ describe('AnthropicStreamConverter', () => {
       const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
 
       expect(complete).toBeDefined();
-      expect(complete.status).toBe('completed');
+      // No message_delta received → stopReason is null → mapAnthropicStatus returns 'incomplete'
+      expect(complete.status).toBe('incomplete');
     });
   });
 

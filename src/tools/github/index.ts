@@ -13,6 +13,7 @@
  * - pr_files — Get PR changed files with diffs
  * - pr_comments — Get PR comments and reviews
  * - create_pr — Create a pull request
+ * - list_branches — List repository branches
  */
 
 // Side-effect: register GitHub tool factories with ConnectorTools
@@ -30,6 +31,8 @@ export type {
   GitHubPRCommentsResult,
   GitHubPRCommentEntry,
   GitHubCreatePRResult,
+  GitHubListBranchesResult,
+  GitHubBranchEntry,
   GitHubAPIError,
 } from './types.js';
 
@@ -44,3 +47,4 @@ export { createGetPRTool } from './getPR.js';
 export { createPRFilesTool } from './prFiles.js';
 export { createPRCommentsTool } from './prComments.js';
 export { createCreatePRTool } from './createPR.js';
+export { createListBranchesTool } from './listBranches.js';

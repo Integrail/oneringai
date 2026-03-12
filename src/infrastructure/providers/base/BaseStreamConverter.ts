@@ -280,7 +280,10 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
   /**
    * Create RESPONSE_COMPLETE event
    */
-  protected emitResponseComplete(status: 'completed' | 'failed' | 'incomplete' = 'completed'): StreamEvent {
+  protected emitResponseComplete(
+    status: 'completed' | 'failed' | 'incomplete' = 'completed',
+    stopReason?: string
+  ): StreamEvent {
     return {
       type: StreamEventType.RESPONSE_COMPLETE,
       response_id: this.responseId,
@@ -291,6 +294,7 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
         total_tokens: this.usage.inputTokens + this.usage.outputTokens,
       },
       iterations: 1,
+      stop_reason: stopReason,
     };
   }
 

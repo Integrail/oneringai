@@ -25,6 +25,8 @@ import type {
   SerializedContextState,
 } from '../../domain/interfaces/IContextStorage.js';
 import { CONTEXT_SESSION_FORMAT_VERSION } from '../../domain/interfaces/IContextStorage.js';
+import type { IHistoryJournal } from '../../domain/interfaces/IHistoryJournal.js';
+import { FileHistoryJournal } from './FileHistoryJournal.js';
 
 /**
  * Configuration for FileContextStorage
@@ -108,6 +110,9 @@ export class FileContextStorage implements IContextStorage {
   private readonly prettyPrint: boolean;
   private index: SessionIndex | null = null;
 
+  /** History journal companion — appends full conversation history as JSONL */
+  readonly journal: IHistoryJournal;
+
   constructor(config: FileContextStorageConfig) {
     this.agentId = config.agentId;
     const sanitizedAgentId = sanitizeId(config.agentId);
@@ -117,6 +122,9 @@ export class FileContextStorage implements IContextStorage {
     // Sessions are stored in: <baseDir>/<agentId>/sessions/
     this.sessionsDirectory = join(baseDir, sanitizedAgentId, 'sessions');
     this.indexPath = join(this.sessionsDirectory, '_index.json');
+
+    // Journal lives alongside session files
+    this.journal = new FileHistoryJournal(this.sessionsDirectory);
   }
 
   /**
@@ -196,6 +204,9 @@ export class FileContextStorage implements IContextStorage {
       }
       // Ignore if file doesn't exist
     }
+
+    // Clean up journal file
+    await this.journal.clear(sessionId);
 
     // Remove from index
     await this.removeFromIndex(sessionId);

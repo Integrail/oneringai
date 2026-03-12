@@ -14,8 +14,13 @@ export type SidebarTab = 'look_inside' | 'dynamic_ui' | 'routines';
 
 // ============ Types ============
 
-// Re-export shared types for backwards compat
-export type Message = IChatMessage;
+// Re-export shared types with Hosea-specific extensions
+export type Message = IChatMessage & {
+  /** Retry information if the response is being retried */
+  retryInfo?: { attempt: number; maxAttempts: number };
+  /** Non-fatal warning (e.g., response truncation) */
+  warning?: string;
+};
 export type ToolCallInfo = IToolCallInfo;
 
 export interface TabState {
@@ -47,6 +52,7 @@ export interface TabState {
   // Voice/voiceover state
   voiceConfigured: boolean;
   voiceoverEnabled: boolean;
+  sessionSaveEnabled: boolean;
   // Routine execution state (in-memory only, derived from StreamChunk events)
   routineExecution: {
     executionId: string;
@@ -94,6 +100,9 @@ export interface TabContextValue {
 
   // Voice
   toggleVoiceover: () => Promise<void>;
+
+  // Session saving
+  toggleSessionSave: () => Promise<void>;
 
   // State helpers
   isMaxTabsReached: boolean;
@@ -315,6 +324,36 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
           updatedTab.isLoading = false;
           updatedTab.streamingContent = '';
         }
+        // Retry events - show retry indicator on the streaming message
+        else if (chunk.type === 'retry') {
+          const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
+          if (lastMsg?.isStreaming) {
+            updatedTab.messages = [
+              ...updatedTab.messages.slice(0, -1),
+              { ...lastMsg, retryInfo: { attempt: chunk.attempt, maxAttempts: chunk.maxAttempts } },
+            ];
+          }
+        }
+        // Status events - handle failed/incomplete responses
+        else if (chunk.type === 'status') {
+          const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
+          if (lastMsg?.isStreaming) {
+            if (chunk.status === 'failed') {
+              const reason = chunk.stopReason === 'SAFETY' ? 'Content was blocked by safety filters.'
+                : chunk.stopReason === 'RECITATION' ? 'Response blocked due to recitation policy.'
+                : `Response failed (${chunk.stopReason || 'unknown reason'}).`;
+              updatedTab.messages = [
+                ...updatedTab.messages.slice(0, -1),
+                { ...lastMsg, error: reason },
+              ];
+            } else if (chunk.status === 'incomplete') {
+              updatedTab.messages = [
+                ...updatedTab.messages.slice(0, -1),
+                { ...lastMsg, warning: `Response was truncated (${chunk.stopReason || 'max tokens reached'}).` },
+              ];
+            }
+          }
+        }
         // UI control events
         else if (chunk.type === 'ui:show_sidebar') {
           setSidebar(prev => ({
@@ -492,6 +531,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
         userHasControl: null,
         voiceConfigured: false,
         voiceoverEnabled: false,
+        sessionSaveEnabled: false,
         routineExecution: null,
       };
 
@@ -759,6 +799,25 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     }
   }, [activeTabId, tabs]);
 
+  const toggleSessionSave = useCallback(async (): Promise<void> => {
+    const tab = activeTabId ? tabs.get(activeTabId) : null;
+    if (!tab) return;
+
+    const newEnabled = !tab.sessionSaveEnabled;
+    const result = await window.hosea.agent.setSessionSave(tab.instanceId, newEnabled);
+    if (result.success) {
+      setTabs(prev => {
+        const currentTab = prev.get(tab.instanceId);
+        if (!currentTab) return prev;
+        const newTabs = new Map(prev);
+        newTabs.set(tab.instanceId, { ...currentTab, sessionSaveEnabled: newEnabled });
+        return newTabs;
+      });
+    } else {
+      console.error('Failed to toggle session save:', result.error);
+    }
+  }, [activeTabId, tabs]);
+
   const value: TabContextValue = {
     tabs,
     activeTabId,
@@ -781,6 +840,8 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     pinContextKey,
     // Voice
     toggleVoiceover,
+    // Session saving
+    toggleSessionSave,
     isMaxTabsReached: tabs.size >= MAX_TABS,
     tabCount: tabs.size,
   };

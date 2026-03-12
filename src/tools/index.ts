@@ -157,6 +157,7 @@ export {
   createPRFilesTool,
   createPRCommentsTool,
   createCreatePRTool,
+  createListBranchesTool,
   // Utilities
   parseRepository,
   resolveRepository,
@@ -172,6 +173,8 @@ export type {
   GitHubPRCommentsResult,
   GitHubPRCommentEntry,
   GitHubCreatePRResult,
+  GitHubListBranchesResult,
+  GitHubBranchEntry,
 } from './github/index.js';
 
 // ============================================================================

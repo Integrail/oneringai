@@ -234,9 +234,13 @@ export type StreamChunk =
   | { type: 'browser:user_has_control'; reason?: string }
   | { type: 'browser:agent_has_control' }
   // Voice pseudo-streaming events
+  // Voice pseudo-streaming events
   | { type: 'voice:chunk'; chunkIndex: number; subIndex?: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
   | { type: 'voice:error'; chunkIndex: number; error: string; text: string }
-  | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number };
+  | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number }
+  // Stream status events (retry, incomplete, failed)
+  | { type: 'retry'; attempt: number; maxAttempts: number; reason: string; delayMs: number }
+  | { type: 'status'; status: 'completed' | 'incomplete' | 'failed'; stopReason?: string };
 
 /**
  * Browser state info for IPC
@@ -331,6 +335,8 @@ export interface HoseaAPI {
       agentConfigId: string | null;
     }>;
     listInstances: () => Promise<Array<{ instanceId: string; agentConfigId: string; createdAt: number }>>;
+    // Session saving
+    setSessionSave: (instanceId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
     // Voice pseudo-streaming
     setVoiceover: (instanceId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
     getVoiceConfig: (agentConfigId: string) => Promise<{
@@ -1308,6 +1314,8 @@ const api: HoseaAPI = {
     handBackToAgent: (instanceId) => ipcRenderer.invoke('agent:hand-back-to-agent', instanceId),
     statusInstance: (instanceId) => ipcRenderer.invoke('agent:status-instance', instanceId),
     listInstances: () => ipcRenderer.invoke('agent:list-instances'),
+    // Session saving
+    setSessionSave: (instanceId, enabled) => ipcRenderer.invoke('agent:set-session-save', instanceId, enabled),
     // Voice pseudo-streaming
     setVoiceover: (instanceId, enabled) => ipcRenderer.invoke('agent:set-voiceover', instanceId, enabled),
     getVoiceConfig: (agentConfigId) => ipcRenderer.invoke('agent:get-voice-config', agentConfigId),

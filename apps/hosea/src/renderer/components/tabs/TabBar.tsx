@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Plus, PanelRightOpen, PanelRightClose, Volume2, VolumeX, CircleStop } from 'lucide-react';
+import { Plus, PanelRightOpen, PanelRightClose, Volume2, VolumeX, CircleStop, Save } from 'lucide-react';
 import { Tab } from './Tab';
 import { useTabContext } from '../../hooks/useTabContext';
 
@@ -17,7 +17,7 @@ interface TabBarProps {
 }
 
 export function TabBar({ onNewTabClick, showInternals, onToggleInternals, isVoicePlaying, onSkipVoice }: TabBarProps): React.ReactElement {
-  const { tabs, activeTabId, tabOrder, switchTab, closeTab, isMaxTabsReached, toggleVoiceover } = useTabContext();
+  const { tabs, activeTabId, tabOrder, switchTab, closeTab, isMaxTabsReached, toggleVoiceover, toggleSessionSave } = useTabContext();
   const activeTab = activeTabId ? tabs.get(activeTabId) : null;
 
   return (
@@ -74,6 +74,17 @@ export function TabBar({ onNewTabClick, showInternals, onToggleInternals, isVoic
             title="Stop voice playback"
           >
             <CircleStop size={18} />
+          </button>
+        )}
+
+        {activeTab && (
+          <button
+            type="button"
+            className={`chat-tabs__action ${activeTab.sessionSaveEnabled ? 'chat-tabs__action--active' : ''}`}
+            onClick={toggleSessionSave}
+            title={activeTab.sessionSaveEnabled ? 'Turn off session saving' : 'Turn on session saving'}
+          >
+            <Save size={18} />
           </button>
         )}
 

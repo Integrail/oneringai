@@ -283,10 +283,16 @@ describe('GoogleStreamConverter', () => {
   });
 
   describe('Completion', () => {
-    it('should emit RESPONSE_COMPLETE at end of stream', async () => {
-      const chunks = [
-        createTextChunk('Done')
-      ];
+    it('should emit RESPONSE_COMPLETE with STOP finishReason as completed', async () => {
+      const chunks: GenerateContentResponse[] = [{
+        candidates: [{
+          content: { parts: [{ text: 'Done' }], role: 'model' },
+          finishReason: 'STOP' as any,
+          index: 0,
+          safetyRatings: []
+        }],
+        usageMetadata: undefined
+      } as any];
 
       const stream = converter.convertStream(createMockStream(chunks), 'gemini-1.5-pro');
       const results: any[] = [];
@@ -299,7 +305,75 @@ describe('GoogleStreamConverter', () => {
 
       expect(complete).toBeDefined();
       expect(complete.status).toBe('completed');
+      expect(complete.stop_reason).toBe('STOP');
       expect(complete.iterations).toBe(1);
+    });
+
+    it('should emit incomplete status for MAX_TOKENS finishReason', async () => {
+      const chunks: GenerateContentResponse[] = [{
+        candidates: [{
+          content: { parts: [{ text: 'Truncated...' }], role: 'model' },
+          finishReason: 'MAX_TOKENS' as any,
+          index: 0,
+          safetyRatings: []
+        }],
+        usageMetadata: undefined
+      } as any];
+
+      const stream = converter.convertStream(createMockStream(chunks), 'gemini-1.5-pro');
+      const results: any[] = [];
+
+      for await (const event of stream) {
+        results.push(event);
+      }
+
+      const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
+
+      expect(complete).toBeDefined();
+      expect(complete.status).toBe('incomplete');
+      expect(complete.stop_reason).toBe('MAX_TOKENS');
+    });
+
+    it('should emit failed status for SAFETY finishReason', async () => {
+      const chunks: GenerateContentResponse[] = [{
+        candidates: [{
+          content: { parts: [{ text: '' }], role: 'model' },
+          finishReason: 'SAFETY' as any,
+          index: 0,
+          safetyRatings: []
+        }],
+        usageMetadata: undefined
+      } as any];
+
+      const stream = converter.convertStream(createMockStream(chunks), 'gemini-1.5-pro');
+      const results: any[] = [];
+
+      for await (const event of stream) {
+        results.push(event);
+      }
+
+      const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
+
+      expect(complete).toBeDefined();
+      expect(complete.status).toBe('failed');
+      expect(complete.stop_reason).toBe('SAFETY');
+    });
+
+    it('should emit incomplete status when no finishReason', async () => {
+      const chunks = [createTextChunk('Done')];
+
+      const stream = converter.convertStream(createMockStream(chunks), 'gemini-1.5-pro');
+      const results: any[] = [];
+
+      for await (const event of stream) {
+        results.push(event);
+      }
+
+      const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
+
+      expect(complete).toBeDefined();
+      // No finishReason → mapGoogleStatus(undefined) → 'incomplete'
+      expect(complete.status).toBe('incomplete');
     });
   });
 

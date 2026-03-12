@@ -14,7 +14,7 @@ import { ExecutionContext, HistoryMode } from '../capabilities/agents/ExecutionC
 import { HookManager } from '../capabilities/agents/HookManager.js';
 import { InputItem, MessageRole, OutputItem } from '../domain/entities/Message.js';
 import { AgentResponse } from '../domain/entities/Response.js';
-import { StreamEvent, StreamEventType, isToolCallArgumentsDone, isReasoningDelta } from '../domain/entities/StreamEvent.js';
+import { StreamEvent, StreamEventType, ResponseCompleteEvent, isToolCallArgumentsDone, isReasoningDelta } from '../domain/entities/StreamEvent.js';
 import { StreamState } from '../domain/entities/StreamState.js';
 import { Tool, ToolCall, ToolCallState, ToolResult } from '../domain/entities/Tool.js';
 import { Content, ContentType } from '../domain/entities/Content.js';
@@ -27,7 +27,8 @@ import { Vendor } from './Vendor.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { PermissionCheckContext } from './permissions/types.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
-import { AGENT_DEFAULTS } from './constants.js';
+import { AGENT_DEFAULTS, EMPTY_RESPONSE_RETRY } from './constants.js';
+import { calculateBackoff, BackoffConfig } from '../infrastructure/resilience/BackoffStrategy.js';
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
 import type { AgentContextNextGenConfig, ContextFeatures } from './context-nextgen/types.js';
 import type {
@@ -106,6 +107,17 @@ export interface AgentConfig extends BaseAgentConfig {
     hookFailureMode?: 'fail' | 'warn' | 'ignore';
     toolFailureMode?: 'fail' | 'continue';
     maxConsecutiveErrors?: number;
+  };
+  /** Configuration for retrying empty/incomplete LLM responses */
+  emptyResponseRetry?: {
+    /** Enable retry for empty responses (default: true) */
+    enabled?: boolean;
+    /** Max retry attempts (default: 2) */
+    maxRetries?: number;
+    /** Initial backoff delay ms (default: 1000) */
+    initialDelayMs?: number;
+    /** Max backoff delay ms (default: 5000) */
+    maxDelayMs?: number;
   };
 }
 
@@ -538,10 +550,18 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         (item as any).content.some((c: Content) => c.type === ContentType.OUTPUT_TEXT && (c as any).text?.trim())
       );
     if (!hasTextOutput) {
+      const hadToolCalls = response.output?.some((item: OutputItem) =>
+        'content' in item && Array.isArray((item as any).content) &&
+        (item as any).content.some((c: Content) => c.type === ContentType.TOOL_USE)
+      ) ?? false;
       console.warn(
         `[Agent] WARNING: ${methodName} completed with zero text output ` +
-        `(executionId=${executionId}, iterations=${this.executionContext?.metrics.iterationCount ?? '?'}, ` +
-        `tokens=${response.usage?.total_tokens ?? 0})`,
+        `(status=${response.status}, executionId=${executionId}, ` +
+        `iterations=${this.executionContext?.metrics.iterationCount ?? '?'}, ` +
+        `tokens=${response.usage?.total_tokens ?? 0}, ` +
+        `hadToolCalls=${hadToolCalls}` +
+        (response.error ? `, error=${response.error.type}: ${response.error.message}` : '') +
+        `)`,
       );
       this.emit('execution:empty_output', {
         executionId,
@@ -618,6 +638,21 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     let iteration = 0;
     let finalResponse: AgentResponse | null = null;
 
+    // Empty response retry config
+    const runRetryConfig = {
+      enabled: this._config.emptyResponseRetry?.enabled ?? EMPTY_RESPONSE_RETRY.ENABLED,
+      maxRetries: this._config.emptyResponseRetry?.maxRetries ?? EMPTY_RESPONSE_RETRY.MAX_RETRIES,
+      initialDelayMs: this._config.emptyResponseRetry?.initialDelayMs ?? EMPTY_RESPONSE_RETRY.INITIAL_DELAY_MS,
+      maxDelayMs: this._config.emptyResponseRetry?.maxDelayMs ?? EMPTY_RESPONSE_RETRY.MAX_DELAY_MS,
+    };
+    const runRetryBackoffConfig: BackoffConfig = {
+      strategy: 'exponential',
+      initialDelayMs: runRetryConfig.initialDelayMs,
+      maxDelayMs: runRetryConfig.maxDelayMs,
+      jitter: true,
+    };
+    let runEmptyRetryCount = 0;
+
     try {
       while (iteration < maxIterations) {
         const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
@@ -651,19 +686,48 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         // Extract tool calls
         const toolCalls = this.extractToolCalls(response.output);
 
-        // Add assistant response to AgentContext
+        // If no tool calls, check for empty response retry before committing to context
+        if (toolCalls.length === 0) {
+          const hasText = !!(response.output_text?.trim());
+          const shouldRetry = !hasText &&
+            response.status !== 'failed' &&
+            runRetryConfig.enabled &&
+            runEmptyRetryCount < runRetryConfig.maxRetries;
+
+          if (shouldRetry) {
+            runEmptyRetryCount++;
+            const delay = calculateBackoff(runEmptyRetryCount, runRetryBackoffConfig);
+            this._logger.warn(
+              { attempt: runEmptyRetryCount, maxAttempts: runRetryConfig.maxRetries, status: response.status },
+              'Empty LLM response in run(), retrying...',
+            );
+            this.emit('execution:retry', {
+              executionId,
+              attempt: runEmptyRetryCount,
+              maxAttempts: runRetryConfig.maxRetries,
+              reason: `Empty response (status: ${response.status})`,
+              delayMs: delay,
+              timestamp: new Date(),
+            });
+            await new Promise(resolve => setTimeout(resolve, delay));
+            // Don't add empty response to context, don't increment iteration — just retry
+            continue;
+          }
+
+          // Accept the response
+          runEmptyRetryCount = 0;
+          this._agentContext.addAssistantResponse(response.output);
+          this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
+          finalResponse = response;
+          break;
+        }
+
+        // Add assistant response to AgentContext (has tool calls, always accept)
         this._agentContext.addAssistantResponse(response.output);
 
         // Emit tool detection
         if (toolCalls.length > 0) {
           this.emit('tool:detected', { executionId, iteration, toolCalls, timestamp: new Date() });
-        }
-
-        // If no tool calls, we're done
-        if (toolCalls.length === 0) {
-          this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
-          finalResponse = response;
-          break;
         }
 
         // Execute tools with hooks
@@ -829,7 +893,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       id: executionId,
       object: 'response',
       created_at: Math.floor(startTime / 1000),
-      status: 'completed',
+      status: streamState.providerStatus || 'completed',
       model: this.model,
       output,
       output_text: outputText || undefined,
@@ -846,6 +910,21 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     // Create a single StreamState for the entire execution (tracks usage across iterations)
     const globalStreamState = new StreamState(executionId, this.model);
     let iteration = 0;
+
+    // Empty response retry config
+    const retryConfig = {
+      enabled: this._config.emptyResponseRetry?.enabled ?? EMPTY_RESPONSE_RETRY.ENABLED,
+      maxRetries: this._config.emptyResponseRetry?.maxRetries ?? EMPTY_RESPONSE_RETRY.MAX_RETRIES,
+      initialDelayMs: this._config.emptyResponseRetry?.initialDelayMs ?? EMPTY_RESPONSE_RETRY.INITIAL_DELAY_MS,
+      maxDelayMs: this._config.emptyResponseRetry?.maxDelayMs ?? EMPTY_RESPONSE_RETRY.MAX_DELAY_MS,
+    };
+    const retryBackoffConfig: BackoffConfig = {
+      strategy: 'exponential',
+      initialDelayMs: retryConfig.initialDelayMs,
+      maxDelayMs: retryConfig.maxDelayMs,
+      jitter: true,
+    };
+    let emptyRetryCount = 0;
 
     try {
       // Main agentic loop
@@ -896,10 +975,62 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         // Build tool calls from accumulated map
         const toolCalls = this._buildToolCallsFromMap(toolCallsMap);
 
-        // No tool calls? We're done - add assistant message and exit
+        // No tool calls? Check if we should retry or finish
         if (toolCalls.length === 0) {
+          const hasText = iterationStreamState.hasText();
+          const hasReasoning = iterationStreamState.hasReasoning();
+          const providerStatus = iterationStreamState.providerStatus;
+
+          // Retry logic: empty response (no text, no reasoning) that isn't a hard failure
+          const shouldRetry = !hasText && !hasReasoning &&
+            providerStatus !== 'failed' &&
+            retryConfig.enabled &&
+            emptyRetryCount < retryConfig.maxRetries;
+
+          if (shouldRetry) {
+            emptyRetryCount++;
+            const delay = calculateBackoff(emptyRetryCount, retryBackoffConfig);
+
+            this._logger.warn(
+              { attempt: emptyRetryCount, maxAttempts: retryConfig.maxRetries, status: providerStatus, stopReason: iterationStreamState.stopReason },
+              'Empty LLM response, retrying...',
+            );
+
+            // Emit retry event so UI can show "Retrying..."
+            yield {
+              type: StreamEventType.RETRY,
+              response_id: executionId,
+              attempt: emptyRetryCount,
+              max_attempts: retryConfig.maxRetries,
+              reason: `Empty response from provider (status: ${providerStatus}, stop_reason: ${iterationStreamState.stopReason ?? 'none'})`,
+              delay_ms: delay,
+            };
+            this.emit('execution:retry', {
+              executionId,
+              attempt: emptyRetryCount,
+              maxAttempts: retryConfig.maxRetries,
+              reason: `Empty response (status: ${providerStatus})`,
+              delayMs: delay,
+              timestamp: new Date(),
+            });
+
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            // Clear iteration state and retry (don't increment iteration, don't add to context)
+            iterationStreamState.clear();
+            toolCallsMap.clear();
+            continue;
+          }
+
+          // Accept the response (even if empty/incomplete) — we tried our best
+          emptyRetryCount = 0;
+
+          // Update global status from the final iteration
+          globalStreamState.providerStatus = providerStatus;
+          globalStreamState.stopReason = iterationStreamState.stopReason;
+
           // Add the final assistant response to conversation history
-          // (this also moves user message from _currentInput to _conversation)
           this._addStreamingAssistantMessage(iterationStreamState, []);
 
           yield {
@@ -913,10 +1044,11 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           yield {
             type: StreamEventType.RESPONSE_COMPLETE,
             response_id: executionId,
-            status: 'completed',
+            status: providerStatus,
             usage: globalStreamState.usage,
             iterations: iteration,
             duration_ms: Date.now() - startTime,
+            stop_reason: iterationStreamState.stopReason,
           };
 
           break;
@@ -1261,7 +1393,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
             buffer.args = event.arguments;
           }
         } else if (event.type === StreamEventType.RESPONSE_COMPLETE) {
-          streamState.updateUsage(event.usage);
+          const completeEvent = event as ResponseCompleteEvent;
+          streamState.updateUsage(completeEvent.usage);
+          streamState.providerStatus = completeEvent.status;
+          streamState.stopReason = completeEvent.stop_reason;
           // Don't yield provider's RESPONSE_COMPLETE - we emit our own at the end
           continue;
         }
