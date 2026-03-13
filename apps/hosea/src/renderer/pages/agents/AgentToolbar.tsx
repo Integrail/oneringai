@@ -25,12 +25,13 @@ export function AgentToolbar({
     onFiltersChange({ ...filters, query: e.target.value });
   };
 
+  // Mutually exclusive: clicking one clears the other
   const handleActiveFilterClick = () => {
-    onFiltersChange({ ...filters, activeOnly: !filters.activeOnly });
+    onFiltersChange({ ...filters, activeOnly: !filters.activeOnly, showArchived: false });
   };
 
   const handleArchivedFilterClick = () => {
-    onFiltersChange({ ...filters, showArchived: !filters.showArchived });
+    onFiltersChange({ ...filters, showArchived: !filters.showArchived, activeOnly: false });
   };
 
   const filterBtnClass = [
