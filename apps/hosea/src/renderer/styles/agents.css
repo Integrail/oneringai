@@ -314,6 +314,8 @@
   align-items: center;
   gap: var(--spacing-1);
   flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--color-gray-400);
 }
 
 .agent-card__meta-dot {
