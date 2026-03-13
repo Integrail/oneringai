@@ -238,6 +238,8 @@ export interface StoredAgentConfig {
   updatedAt: number;
   lastUsedAt?: number;
   isActive: boolean;
+  isArchived?: boolean;
+  isPinned?: boolean;
 
   // DEPRECATED - kept for backward compatibility with old stored configs
   /** @deprecated Not used in NextGen */
