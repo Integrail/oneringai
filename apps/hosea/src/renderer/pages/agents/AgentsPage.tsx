@@ -57,6 +57,13 @@ export function AgentsPage(): React.ReactElement {
   const activeCount = React.useMemo(() => agents.filter((a) => a.isActive && !a.isArchived).length, [agents]);
   const archivedCount = React.useMemo(() => agents.filter((a) => a.isArchived).length, [agents]);
 
+  // Auto-exit archived view when no archived agents remain
+  useEffect(() => {
+    if (filters.showArchived && archivedCount === 0) {
+      setFilters((f) => ({ ...f, showArchived: false }));
+    }
+  }, [archivedCount, filters.showArchived]);
+
   // Handlers
   const handleCreateAgent = () => navigate('agent-editor', { mode: 'create' });
 
