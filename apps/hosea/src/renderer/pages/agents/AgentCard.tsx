@@ -4,7 +4,7 @@
  * and action buttons. All interaction is handled via callbacks.
  */
 import React, { useRef, useState } from 'react';
-import { AlertTriangle, MoreVertical, MessageSquare, Pencil, Wrench, Pin, Star } from 'lucide-react';
+import { AlertTriangle, MoreVertical, MessageSquare, Pencil, Wrench, Pin as PinIcon, Star } from 'lucide-react';
 import type { AgentListItem } from './agentTypes.js';
 import {
   getInitials,
@@ -107,13 +107,6 @@ export function AgentCard({
 
   return (
     <div className={cardClass} onClick={handleCardClick} onKeyDown={handleCardKeyDown} tabIndex={0}>
-      {/* Pin indicator */}
-      {agent.isPinned && (
-        <div className="agent-card__pin-badge" title="Pinned">
-          <Pin size={11} />
-        </div>
-      )}
-
       {/* Body */}
       <div className="agent-card__body">
         {/* Top row */}
@@ -154,6 +147,12 @@ export function AgentCard({
               via {agent.connector}
             </div>
           </div>
+
+          {agent.isPinned && (
+            <div className="agent-card__pin-icon" title="Pinned">
+              <PinIcon size={12} />
+            </div>
+          )}
 
           <button
             type="button"

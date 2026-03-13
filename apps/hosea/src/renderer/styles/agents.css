@@ -670,21 +670,30 @@
    ============================================================ */
 
 .agent-card--pinned {
-  border-color: var(--color-primary-light);
+  border-color: var(--color-gray-200);
 }
 
-.agent-card__pin-badge {
-  position: absolute;
-  top: 8px;
-  right: 36px;
+.agent-card--pinned::before {
+  content: '';
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 40%, transparent) 100%);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  margin: -1px -1px 0;
+}
+
+/* Pin icon slot — inline in top row, only shown when pinned */
+
+.agent-card__pin-icon {
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   color: var(--color-primary);
-  opacity: 0.6;
-}
-
-.agent-card {
-  position: relative;
+  opacity: 0.5;
+  margin-right: -2px;
 }
 
 .agent-card__default-badge {
