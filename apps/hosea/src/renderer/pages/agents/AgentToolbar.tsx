@@ -35,9 +35,6 @@ export function AgentToolbar({
     onFiltersChange({ ...filters, showArchived: !filters.showArchived, activeOnly: false });
   };
 
-  const filterBtnClass = clsx('agents-filter-btn', filters.activeOnly && 'agents-filter-btn--active');
-  const archivedBtnClass = clsx('agents-filter-btn', filters.showArchived && 'agents-filter-btn--active');
-
   return (
     <div className="agents-toolbar">
       <div className="agents-search-box">
@@ -51,14 +48,22 @@ export function AgentToolbar({
         />
       </div>
 
-      <button type="button" className={filterBtnClass} onClick={handleActiveFilterClick}>
+      <button
+        type="button"
+        className={clsx('agents-filter-btn', filters.activeOnly && 'agents-filter-btn--active')}
+        onClick={handleActiveFilterClick}
+      >
         <CheckCircle size={13} />
         Active
         {activeCount > 0 && <span className="agents-filter-count">{activeCount}</span>}
       </button>
 
       {archivedCount > 0 && (
-        <button type="button" className={archivedBtnClass} onClick={handleArchivedFilterClick}>
+        <button
+          type="button"
+          className={clsx('agents-filter-btn', filters.showArchived && 'agents-filter-btn--active')}
+          onClick={handleArchivedFilterClick}
+        >
           <Archive size={13} />
           Archived
           <span className="agents-filter-count">{archivedCount}</span>

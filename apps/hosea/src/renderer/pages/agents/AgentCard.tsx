@@ -61,14 +61,6 @@ export function AgentCard({
   const [renameValue, setRenameValue] = useState(agent.name);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const cardClass = clsx(
-    'agent-card',
-    agent.isActive && 'agent-card--active',
-    !isConnectorAvailable && 'agent-card--broken',
-    agent.isArchived && 'agent-card--archived',
-    agent.isPinned && 'agent-card--pinned',
-  );
-
   function handleCardClick() {
     if (isConnectorAvailable && !renaming && !menuAnchor) onChat(agent.id);
   }
@@ -105,7 +97,18 @@ export function AgentCard({
   }
 
   return (
-    <div className={cardClass} onClick={handleCardClick} onKeyDown={handleCardKeyDown} tabIndex={0}>
+    <div
+      className={clsx(
+        'agent-card',
+        agent.isActive && 'agent-card--active',
+        !isConnectorAvailable && 'agent-card--broken',
+        agent.isArchived && 'agent-card--archived',
+        agent.isPinned && 'agent-card--pinned',
+      )}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      tabIndex={0}
+    >
       {/* Body */}
       <div className="agent-card__body">
         {/* Top row */}
