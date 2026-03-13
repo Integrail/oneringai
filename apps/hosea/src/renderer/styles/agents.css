@@ -185,7 +185,7 @@
   color: var(--color-gray-400);
   white-space: nowrap;
   flex-shrink: 0;
-  padding-left: 4px;
+  margin-left: auto;
 }
 
 /* ============================================================
