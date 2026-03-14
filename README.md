@@ -36,6 +36,8 @@
   - [22. Microsoft Graph Connector Tools](#22-microsoft-graph-connector-tools-new) — Email, calendar, meetings, and Teams transcripts
   - [23. Tool Catalog](#23-tool-catalog-new) — Dynamic tool loading/unloading for agents with 100+ tools
   - [24. Async (Non-Blocking) Tools](#24-async-non-blocking-tools-new) — Background tool execution with auto-continuation
+  - [25. Long-Running Sessions (Suspend/Resume)](#25-long-running-sessions-suspendresume-new) — Suspend agent loops waiting for external input, resume days later
+  - [26. Agent Registry](#26-agent-registry-new) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -92,6 +94,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
 - 🔌 **Tool Execution Plugins** - NEW: Pluggable pipeline for logging, analytics, UI updates, custom behavior
 - 💾 **Session Persistence** - Save and resume conversations with full state restoration
+- ⏸️ **Long-Running Sessions** - NEW: Suspend agent loops via `SuspendSignal`, resume hours/days later with `Agent.hydrate()`
 - 👤 **Multi-User Support** - Set `userId` once, flows automatically to all tool executions and session metadata
 - 🔒 **Auth Identities** - Restrict agents to specific connectors (and accounts), composable with access policies
 - 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
@@ -119,6 +122,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - ⏰ **Scheduling & Triggers** - NEW: `SimpleScheduler` for interval/one-time schedules, `EventEmitterTrigger` for webhook/queue-driven execution
 - 📦 **Tool Catalog** - NEW: Dynamic tool loading/unloading — agents discover and load only the categories they need at runtime
 - **Async Tools** - NEW: Non-blocking tool execution — long-running tools run in background while the agent continues reasoning, with auto-continuation when results arrive
+- 📡 **Agent Registry** - NEW: Global tracking of all active agents — deep inspection, parent/child hierarchy, event fan-in, external control
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
@@ -690,7 +694,7 @@ const agent = Agent.create({
   },
 });
 
-// Agent now has memory_store, memory_retrieve, memory_delete, memory_query tools
+// Agent now has unified store_get, store_set, store_delete, store_list, store_action tools
 await agent.run('Check weather for SF and remember the result');
 ```
 
@@ -798,11 +802,12 @@ const agent = Agent.create({
 **Available Features:**
 | Feature | Default | Plugin | Associated Tools |
 |---------|---------|--------|------------------|
-| `workingMemory` | `true` | WorkingMemoryPluginNextGen | `memory_store/retrieve/delete/query/cleanup_raw` |
-| `inContextMemory` | `false` | InContextMemoryPluginNextGen | `context_set/delete/list` |
-| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | `instructions_set/remove/list/clear` |
-| `userInfo` | `false` | UserInfoPluginNextGen | `user_info_set/get/remove/clear`, `todo_add/update/remove` |
+| `workingMemory` | `true` | WorkingMemoryPluginNextGen | Unified `store_*` tools (store="memory"). Actions: cleanup_raw, query |
+| `inContextMemory` | `false` | InContextMemoryPluginNextGen | Unified `store_*` tools (store="context") |
+| `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | Unified `store_*` tools (store="instructions"). Actions: clear |
+| `userInfo` | `false` | UserInfoPluginNextGen | Unified `store_*` tools (store="user_info") + `todo_add/update/remove` |
 | `toolCatalog` | `false` | ToolCatalogPluginNextGen | `tool_catalog_search/load/unload` |
+| `sharedWorkspace` | `false` | SharedWorkspacePluginNextGen | Unified `store_*` tools (store="workspace"). Actions: log, history, archive, clear |
 
 **AgentContextNextGen architecture:**
 - **Plugin-first design** - All features are composable plugins
@@ -847,16 +852,16 @@ plugin.set('user_prefs', 'User preferences', { verbose: true }, 'high');
 // Store data with UI display - shown in the host app's sidebar panel
 plugin.set('dashboard', 'Progress dashboard', '## Progress\n- [x] Step 1\n- [ ] Step 2', 'normal', true);
 
-// LLM can use context_set/context_delete/context_list tools
+// LLM uses unified store tools: store_set("context", ...), store_get("context", ...), etc.
 // Or access directly via plugin API
 const state = plugin.get('current_state');  // { step: 2, status: 'active' }
 ```
 
 **Key Difference from WorkingMemory:**
-- **WorkingMemory**: External storage + index → requires `memory_retrieve()` for values
+- **WorkingMemory**: External storage + index → requires `store_get("memory", key)` for values
 - **InContextMemory**: Full values in context → instant access, no retrieval needed
 
-**UI Display (`showInUI`):** Entries with `showInUI: true` are displayed in the host application's sidebar panel with full markdown rendering (code blocks, tables, charts, diagrams, etc.). The LLM sets this via the `context_set` tool. Users can also pin specific entries to always display them regardless of the agent's setting. See the [User Guide](./USER_GUIDE.md#ui-display-showInUI) for details.
+**UI Display (`showInUI`):** Entries with `showInUI: true` are displayed in the host application's sidebar panel with full markdown rendering (code blocks, tables, charts, diagrams, etc.). The LLM sets this via `store_set("context", key, { ..., showInUI: true })`. Users can also pin specific entries to always display them regardless of the agent's setting. See the [User Guide](./USER_GUIDE.md#ui-display-showInUI) for details.
 
 **Use cases:** Session state, user preferences, counters, flags, small accumulated results, live dashboards.
 
@@ -878,7 +883,7 @@ const agent = Agent.create({
   },
 });
 
-// LLM can now use instructions_set/remove/list/clear tools
+// LLM uses unified store tools: store_set("instructions", ...), store_delete("instructions", ...), etc.
 // Instructions persist to ~/.oneringai/agents/my-assistant/custom_instructions.json
 ```
 
@@ -888,11 +893,11 @@ const agent = Agent.create({
 - 🔄 **Auto-Load** - Instructions loaded automatically on agent start
 - 🛡️ **Never Compacted** - Critical instructions always preserved in context
 
-**Available Tools:**
-- `instructions_set` - Add or update a single instruction by key
-- `instructions_remove` - Remove a single instruction by key
-- `instructions_list` - List all instructions with keys and content
-- `instructions_clear` - Remove all instructions (requires confirmation)
+**Store Tools (via unified `store_*` interface):**
+- `store_set("instructions", key, { content })` - Add or update a single instruction by key
+- `store_delete("instructions", key)` - Remove a single instruction by key
+- `store_list("instructions")` - List all instructions with keys and content
+- `store_action("instructions", "clear", { confirm: true })` - Remove all instructions
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
 
@@ -914,9 +919,9 @@ const agent = Agent.create({
   },
 });
 
-// LLM can now use user_info_set/get/remove/clear tools
+// LLM uses unified store tools: store_set("user_info", ...), store_get("user_info", ...), etc.
 // Data persists to ~/.oneringai/users/alice/user_info.json
-// All entries are automatically shown in context — no need to call user_info_get each turn
+// All entries are automatically shown in context — no need to call store_get each turn
 ```
 
 **Key Features:**
@@ -925,11 +930,11 @@ const agent = Agent.create({
 - 👥 **User-Scoped** - Data is per-user, not per-agent — different agents share the same user data
 - 🔧 **LLM-Modifiable** - Agent can update user info during execution
 
-**User Info Tools:**
-- `user_info_set` - Store/update user information by key (`key`, `value`, `description?`)
-- `user_info_get` - Retrieve one entry by key, or all entries if no key
-- `user_info_remove` - Remove a specific entry
-- `user_info_clear` - Clear all entries (requires confirmation)
+**Store Tools (via unified `store_*` interface):**
+- `store_set("user_info", key, { value, description? })` - Store/update user information
+- `store_get("user_info", key?)` - Retrieve one entry or all entries
+- `store_delete("user_info", key)` - Remove a specific entry
+- `store_action("user_info", "clear", { confirm: true })` - Clear all entries
 
 **TODO Tools** (built into the same plugin):
 - `todo_add` - Create a TODO (`title`, `description?`, `people?`, `dueDate?`, `tags?`)
@@ -1329,7 +1334,7 @@ console.log(execution.status); // 'completed' | 'failed'
 
 **Key Features:**
 - **Task Dependencies** - DAG-based ordering via `dependsOn`
-- **Memory Bridging** - In-context memory (`context_set`) + working memory (`memory_store`) persist across tasks while conversation is cleared
+- **Memory Bridging** - In-context memory (`store_set("context", ...)`) + working memory (`store_set("memory", ...)`) persist across tasks while conversation is cleared
 - **LLM Validation** - Self-reflection against completion criteria with configurable score thresholds
 - **Retry Logic** - Configurable `maxAttempts` per task with automatic retry on validation failure
 - **Smart Error Classification** - Permanent errors (auth, config, model-not-found) skip retry; transient errors retry normally
@@ -1791,6 +1796,123 @@ if (agent2.hasPendingAsyncTools()) {
 - **Clean cleanup** — `agent.destroy()` cancels all pending async tools
 
 See the [User Guide](./USER_GUIDE.md#async-non-blocking-tools) for the full guide.
+
+### 25. Long-Running Sessions (Suspend/Resume)
+
+Some workflows span hours or days — an agent sends an email, then waits for a reply. With `SuspendSignal`, tools can pause the agent loop, and external events resume it later:
+
+```typescript
+import { Agent, SuspendSignal, ToolFunction } from '@everworker/oneringai';
+
+// Tool that suspends the agent loop
+const presentToUser: ToolFunction = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'send_results_email',
+      description: 'Email analysis results to the user and wait for their reply',
+      parameters: {
+        type: 'object',
+        properties: { to: { type: 'string' }, body: { type: 'string' } },
+        required: ['to', 'body'],
+      },
+    },
+  },
+  execute: async (args) => {
+    const { messageId } = await emailService.send(args.to, args.body);
+    return SuspendSignal.create({
+      result: `Email sent to ${args.to}. Waiting for reply.`,
+      correlationId: `email:${messageId}`,
+      metadata: { messageId },
+    });
+  },
+};
+
+// Run agent — it suspends when the tool returns SuspendSignal
+const response = await agent.run('Analyze data and email results to user@example.com');
+// response.status === 'suspended'
+// response.suspension.correlationId === 'email:msg_123'
+// response.suspension.sessionId — saved automatically
+
+// --- Days later: email reply arrives via webhook ---
+
+// Resolve which session to resume
+const ref = await correlationStorage.resolve('email:msg_123');
+
+// Reconstruct agent from stored definition + session
+const resumedAgent = await Agent.hydrate(ref.sessionId, { agentId: ref.agentId });
+
+// Customize before running (add hooks, tools, etc.)
+resumedAgent.tools.register(presentToUser);
+
+// Continue with user's reply — may complete or suspend again!
+const result = await resumedAgent.run('Thanks, but also look at Q2 data');
+```
+
+**How It Works:**
+1. Tool returns `SuspendSignal.create({ result, correlationId })` instead of a normal result
+2. Agent loop adds the `result` as normal tool output, does a final wrap-up LLM call (no tools)
+3. Session is saved automatically; correlation mapping stored for routing
+4. `AgentResponse` has `status: 'suspended'` with full `suspension` metadata
+5. Later, `Agent.hydrate()` reconstructs from stored definition + session
+6. Caller customizes (hooks, tools), then `run(input)` continues the loop
+
+**Key Features:**
+- **Zero LLM awareness** — The LLM just calls tools; suspension is handled by the loop
+- **Multi-step workflows** — Resume can lead to another suspension (natural chains)
+- **Configurable TTL** — Default 7 days, per-signal via `ttl` option
+- **Correlation storage** — Pluggable via `StorageRegistry.set('correlations', myStorage)`
+- **Full state restoration** — Conversation history + all plugin states (memory, instructions, etc.)
+
+See the [User Guide](./USER_GUIDE.md#long-running-sessions-suspendresume) for the full guide.
+
+### 26. Agent Registry
+
+Every `Agent` automatically registers with `AgentRegistry` on creation and unregisters on destroy. Query, inspect, and control all agents from one place:
+
+```typescript
+import { Agent, AgentRegistry } from '@everworker/oneringai';
+
+// Agents auto-register — no setup needed
+const researcher = Agent.create({ connector: 'openai', model: 'gpt-4', name: 'researcher' });
+const coder = Agent.create({ connector: 'anthropic', model: 'claude-sonnet-4-6', name: 'coder' });
+
+// Query
+AgentRegistry.count;                          // 2
+AgentRegistry.getByName('researcher');         // [researcher]
+AgentRegistry.filter({ status: 'idle' });     // [researcher, coder]
+
+// Aggregate stats
+AgentRegistry.getStats();
+// { total: 2, byStatus: { idle: 2, ... }, byModel: { 'gpt-4': 1, ... }, ... }
+
+// Deep inspection — full context, conversation, plugins, tools, metrics
+const inspection = await AgentRegistry.inspect(researcher.registryId);
+// inspection.context.plugins     — all plugin states (working memory, etc.)
+// inspection.context.tools       — all registered tools with call counts
+// inspection.conversation        — full InputItem[] array
+// inspection.execution.metrics   — tokens, tool calls, errors, durations
+
+// Parent/child hierarchy (for agent-spawns-agent patterns)
+const child = Agent.create({
+  connector: 'openai', model: 'gpt-4',
+  parentAgentId: researcher.registryId,   // link to parent
+});
+AgentRegistry.getChildren(researcher.registryId);  // [child]
+AgentRegistry.getTree(researcher.registryId);      // recursive tree
+
+// Event fan-in — all events from all agents through one listener
+AgentRegistry.onAgentEvent((agentId, name, event, data) => {
+  console.log(`[${name}] ${event}`);  // "[researcher] execution:start"
+});
+
+// External control
+AgentRegistry.pauseAgent(researcher.registryId);
+AgentRegistry.cancelAll('shutting down');
+AgentRegistry.destroyMatching({ model: 'gpt-4' });
+```
+
+See the [User Guide](./USER_GUIDE.md#agent-registry) for the full API reference.
 
 ---
 

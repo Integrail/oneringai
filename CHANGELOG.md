@@ -5,13 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-14
+
+### Added
+- **Unified Store Tools**: 5 generic `store_*` tools (`store_get`, `store_set`, `store_delete`, `store_list`, `store_action`) replace 19 plugin-specific CRUD tools. All IStoreHandler plugins automatically get these tools — zero boilerplate.
+- **`IStoreHandler` Interface**: New interface for building custom CRUD plugins. Implement it alongside `IContextPluginNextGen` and your plugin automatically gets store tools when registered.
+- **`SharedWorkspacePluginNextGen`**: New plugin for multi-agent coordination. Storage-agnostic bulletin board with inline content, external references, versioning, author tracking, and append-only conversation log. Enable via `features.sharedWorkspace: true`.
+- **`StoreToolsManager`**: Central manager that routes `store_*` tool calls to the correct IStoreHandler plugin. Uses `descriptionFactory` to dynamically list available stores and their schemas.
+- **Store Comparison in Tool Descriptions**: Each `store_*` tool dynamically describes all available stores with "use for / NOT for" guidance, preventing LLM confusion about which store to use.
+
+### Changed
+- **InContextMemoryPluginNextGen**: Now implements `IStoreHandler` (storeId: `"context"`). Old tools `context_set`, `context_delete`, `context_list` removed.
+- **WorkingMemoryPluginNextGen**: Now implements `IStoreHandler` (storeId: `"memory"`). Old tools `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw` removed. Tier-specific operations available via `store_action("memory", "cleanup_raw")` and `store_action("memory", "query", {...})`.
+- **PersistentInstructionsPluginNextGen**: Now implements `IStoreHandler` (storeId: `"instructions"`). Old tools `instructions_set`, `instructions_remove`, `instructions_list`, `instructions_clear` removed. Clear available via `store_action("instructions", "clear", { confirm: true })`.
+- **UserInfoPluginNextGen**: Now implements `IStoreHandler` (storeId: `"user_info"`). Old tools `user_info_set`, `user_info_get`, `user_info_remove`, `user_info_clear` removed. TODO tools (`todo_add`, `todo_update`, `todo_remove`) remain independent.
+- **Permission Allowlist**: Updated to include `store_get`, `store_set`, `store_delete`, `store_list`, `store_action`. Old 18 CRUD tool names removed.
+
+### Breaking Changes
+- Old CRUD tool names removed entirely (not deprecated). Client apps that enable features via `features.workingMemory: true` etc. are unaffected — tools change automatically under the hood.
+- Plugin names, feature flags, programmatic APIs, and session persistence formats are all unchanged.
+
 ## [Unreleased]
 
 ### Added
 
+- **AgentRegistry — Global Agent Tracking, Observability & Control** — New static registry (`AgentRegistry`) that automatically tracks all active `Agent` instances. Agents auto-register on creation and auto-unregister on destroy — zero user effort. Provides:
+  - **Query**: `get(id)`, `getByName(name)`, `filter({ name, model, connector, status, parentAgentId })`, `list()`, `count`
+  - **Lightweight snapshots**: `listInfo()`, `filterInfo()` returning `AgentInfo` objects
+  - **Deep async inspection**: `inspect(id)`, `inspectAll()`, `inspectMatching()` — returns full `IContextSnapshot` (plugins, tools, budget, systemPrompt), complete `InputItem[]` conversation, execution metrics, audit trail, circuit breaker states, tool stats, and child agent info
+  - **Aggregate metrics**: `getStats()` (counts by status/model/connector), `getAggregateMetrics()` (total tokens, tool calls, errors across fleet)
+  - **Parent/child hierarchy**: `getChildren(parentId)`, `getParent(childId)`, `getTree(rootId)` (recursive `AgentTreeNode` for visualization)
+  - **Events**: `on/off/once` for `agent:registered`, `agent:unregistered`, `agent:statusChanged`, `registry:empty`
+  - **Event fan-in**: `onAgentEvent(listener)` — receive ALL events from ALL agents through one callback (ideal for dashboards/logging)
+  - **External control**: `pauseAgent(id)`, `resumeAgent(id)`, `cancelAgent(id)`, `destroyAgent(id)`, plus `*Matching(filter)` and `*All()` bulk variants
+  - New properties on `BaseAgent`: `registryId` (UUID, unique per instance), `parentAgentId` (links to parent for agent hierarchies)
+  - New config: `parentAgentId?: string` on `BaseAgentConfig` / `AgentConfig`
+  - New exported types: `AgentStatus`, `AgentInfo`, `AgentFilter`, `AgentRegistryStats`, `AggregateMetrics`, `AgentTreeNode`, `AgentInspection`, `AgentRegistryEvents`, `AgentEventListener`, `IRegistrableAgent`
+
+- **Long-Running Sessions (Suspend/Resume)** — Tools can now signal the agent loop to suspend via `SuspendSignal.create({ result, correlationId, metadata })`. When detected, the loop does a final wrap-up LLM call, saves the session and correlation mapping, and returns an `AgentResponse` with `status: 'suspended'` and a `suspension` field containing `correlationId`, `sessionId`, `agentId`, `resumeAs`, `expiresAt`, and `metadata`. Later, `Agent.hydrate(sessionId, { agentId })` reconstructs the agent from stored definition + session state, allowing the caller to add hooks/tools before calling `agent.run(userReply)` to continue. New types: `SuspendSignal`, `SuspendSignalOptions`, `ICorrelationStorage`, `SessionRef`, `CorrelationSummary`. New storage: `FileCorrelationStorage` (default, file-based at `~/.oneringai/correlations/`). New `StorageRegistry` key: `correlations`. New event: `execution:suspended`.
+
 - **Async (Non-Blocking) Tool Execution** — Tools with `blocking: false` now execute in the background while the agentic loop continues. The LLM receives an immediate placeholder result, and when the real result arrives, it is delivered as a new user message. Supports auto-continuation (re-enters the agentic loop automatically) or manual continuation via `agent.continueWithAsyncResults()`. Configurable via `asyncTools: { autoContinue, batchWindowMs, asyncTimeout }` on `AgentConfig`. Includes 5 new events (`async:tool:started`, `async:tool:complete`, `async:tool:error`, `async:tool:timeout`, `async:continuation:start`), public accessors (`hasPendingAsyncTools()`, `getPendingAsyncTools()`, `cancelAsyncTool()`, `cancelAllAsyncTools()`), and `pendingAsyncTools` on `AgentResponse`. New exported types: `AsyncToolConfig`, `PendingAsyncTool`, `PendingAsyncToolStatus`.
 
 ### Fixed
+
+- **Memory leak: async batch timer not cleared on destroy** — `Agent.destroy()` now clears `_asyncBatchTimer`, preventing post-destroy callbacks and GC retention of destroyed agent instances.
+
+- **Memory leak: beforeCompactionCallback not cleared on context destroy** — `AgentContextNextGen.destroy()` now nulls out the `_beforeCompactionCallback`, breaking the Agent→Context→callback→Agent reference cycle that could prevent garbage collection.
+
+- **Memory leak: Connector circuit breaker listeners not removed** — `Connector.dispose()` now calls `removeAllListeners()` on the circuit breaker before dropping the reference.
+
+- **Unhandled async error in `_flushAsyncResults`** — The `setTimeout` callback that schedules async result flushing now checks `_isDestroyed` and wraps the call in try/catch with error logging.
+
+- **Race condition: auto-save log noise during destroy** — Auto-save interval now suppresses log output if the agent was destroyed between the `_isDestroyed` check and the async `save()` completion.
+
+- **Improved tool argument parse error messages** — `executeToolWithHooks` now provides descriptive errors when tool arguments are invalid JSON. Tracking-only parse failures now log at debug level instead of being silently swallowed.
+
+- **Null guard on LLM response** — Agent loop now guards against null/undefined responses from `generateWithHooks` before accessing `response.output`.
+
+### Changed
+
+- **DRY: Shared storage utilities** — Extracted duplicated `sanitizeId`, `sanitizeUserId`, `DEFAULT_USER_ID`, `ensureDirectory`, and `getErrorMessage` into `src/infrastructure/storage/utils.ts`. Updated 8 storage files to import from shared utilities instead of maintaining local copies.
+
+- **`InMemoryStorage`: `structuredClone()` replaces `JSON.parse(JSON.stringify())`** — Faster deep cloning with better type support (handles Date, Map, Set, etc.).
+
+- **Async file reads in providers** — Replaced `readFileSync` with `await fs.promises.readFile` in `clipboardImage.ts`, `OpenAISoraProvider.ts`, `GrokImagineProvider.ts`, and `GoogleImageProvider.ts` to avoid blocking the event loop.
 
 - **Stream: `_buildToolCallsFromMap()` hardcoded `blocking: true`** — Tool calls built from streaming responses now correctly read the `blocking` field from tool definitions instead of always setting `blocking: true`.
 

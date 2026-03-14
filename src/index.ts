@@ -27,8 +27,8 @@
  */
 
 // ============ Core API (Primary) ============
-export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL } from './core/index.js';
-export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, CatalogRegistryEntry } from './core/index.js';
+export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL, SuspendSignal } from './core/index.js';
+export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, CatalogRegistryEntry, SuspendSignalOptions } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContextNextGen - Clean, Simple Context Management
@@ -43,10 +43,14 @@ export {
   PersistentInstructionsPluginNextGen,
   UserInfoPluginNextGen,
   ToolCatalogPluginNextGen,
+  SharedWorkspacePluginNextGen,
   // Compaction strategies
   DefaultCompactionStrategy,
   // Strategy Registry
   StrategyRegistry,
+  // Unified store tools
+  StoreToolsManager,
+  isStoreHandler,
 } from './core/index.js';
 export type {
   AuthIdentity,
@@ -75,6 +79,18 @@ export type {
   UserInfoPluginConfig,
   SerializedUserInfoState,
   ToolCatalogPluginConfig,
+  SharedWorkspaceConfig,
+  SharedWorkspaceEntry,
+  WorkspaceLogEntry,
+  SerializedSharedWorkspaceState,
+  // Store handler types
+  IStoreHandler,
+  StoreEntrySchema,
+  StoreGetResult,
+  StoreSetResult,
+  StoreDeleteResult,
+  StoreListResult,
+  StoreActionResult,
   // Compaction strategy types
   ICompactionStrategy,
   CompactionContext,
@@ -266,6 +282,14 @@ export type {
   MediaStorageEntry,
   MediaStorageListOptions,
 } from './domain/interfaces/IMediaStorage.js';
+
+// Correlation Storage (Suspend/Resume Session Mapping)
+export type {
+  ICorrelationStorage,
+  SessionRef,
+  CorrelationSummary,
+  CorrelationListOptions,
+} from './domain/interfaces/ICorrelationStorage.js';
 
 // ============ Error Handling ============
 export { ErrorHandler, globalErrorHandler } from './core/index.js';
@@ -488,6 +512,10 @@ export type {
 } from './domain/entities/CustomToolDefinition.js';
 export { FileCustomToolStorage, createFileCustomToolStorage } from './infrastructure/storage/index.js';
 export type { FileCustomToolStorageConfig } from './infrastructure/storage/index.js';
+
+// Correlation Storage Implementations (for suspend/resume session mapping)
+export { FileCorrelationStorage, createFileCorrelationStorage } from './infrastructure/storage/index.js';
+export type { FileCorrelationStorageConfig } from './infrastructure/storage/index.js';
 
 // Tool Context (ToolContext is the canonical interface for tool execution context)
 export type { ToolContext, ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';

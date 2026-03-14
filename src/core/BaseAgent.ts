@@ -12,6 +12,7 @@
  * Use Agent instead.
  */
 
+import { randomUUID } from 'crypto';
 import { EventEmitter } from 'eventemitter3';
 import { Connector } from './Connector.js';
 import { ToolManager } from './ToolManager.js';
@@ -217,6 +218,9 @@ export interface BaseAgentConfig {
   /** Lifecycle hooks for customization */
   lifecycleHooks?: AgentLifecycleHooks;
 
+  /** Parent agent's registryId (for tracking agent hierarchies) */
+  parentAgentId?: string;
+
   /**
    * Hard timeout in milliseconds for any single tool execution.
    * Acts as a safety net at the ToolManager level: if a tool's own timeout
@@ -284,9 +288,11 @@ export abstract class BaseAgent<
   TEvents extends Record<string, any> = BaseAgentEvents,
 > extends EventEmitter<TEvents> {
   // ===== Core Properties =====
+  readonly registryId: string;
   readonly name: string;
   readonly connector: Connector;
   readonly model: string;
+  readonly parentAgentId: string | undefined;
 
   // ===== Protected State =====
   protected _config: TConfig;
@@ -315,12 +321,18 @@ export abstract class BaseAgent<
     super();
     this._config = config;
 
+    // Set registry ID (unique across all agents)
+    this.registryId = randomUUID();
+
     // Resolve connector
     this.connector = this.resolveConnector(config.connector);
 
     // Set name
     this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
     this.model = config.model;
+
+    // Parent agent tracking (for agent hierarchies)
+    this.parentAgentId = config.parentAgentId;
 
     // Create logger
     this._logger = logger.child({
@@ -449,10 +461,14 @@ export abstract class BaseAgent<
         try {
           if (this._agentContext.sessionId) {
             await this._agentContext.save();
-            this._logger.debug({ sessionId: this._agentContext.sessionId }, 'Auto-saved session');
+            if (!this._isDestroyed) {
+              this._logger.debug({ sessionId: this._agentContext.sessionId }, 'Auto-saved session');
+            }
           }
         } catch (error) {
-          this._logger.error({ error: (error as Error).message }, 'Auto-save failed');
+          if (!this._isDestroyed) {
+            this._logger.error({ error: (error as Error).message }, 'Auto-save failed');
+          }
         }
       }, interval);
     }

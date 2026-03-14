@@ -84,9 +84,8 @@ describe('ToolPermissionManager - Expiration & Edge Cases', () => {
   it('should always allow safe (default allowlisted) tools without approval', () => {
     const safeTools = [
       'read_file', 'glob', 'grep', 'list_directory',
-      'memory_store', 'memory_retrieve', 'memory_delete', 'memory_query',
-      'context_set', 'context_delete', 'context_list', 'context_stats',
-      'instructions_set', 'instructions_remove', 'instructions_list', 'instructions_clear',
+      'store_get', 'store_set', 'store_delete', 'store_list', 'store_action',
+      'context_stats',
       '_start_planning', '_modify_plan', '_report_progress', '_request_approval',
     ];
 

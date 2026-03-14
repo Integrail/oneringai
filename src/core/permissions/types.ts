@@ -320,32 +320,15 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
   'grep',
   'list_directory',
 
-  // Memory management (internal state - safe)
-  'memory_store',
-  'memory_retrieve',
-  'memory_delete',
-  'memory_query',
-  'memory_cleanup_raw',
+  // Unified store tools (CRUD for all IStoreHandler plugins)
+  'store_get',
+  'store_set',
+  'store_delete',
+  'store_list',
+  'store_action',
 
   // Context introspection (unified tool)
   'context_stats',
-
-  // In-context memory tools
-  'context_set',
-  'context_delete',
-  'context_list',
-
-  // Persistent instructions tools
-  'instructions_set',
-  'instructions_remove',
-  'instructions_list',
-  'instructions_clear',
-
-  // User info tools (user-specific data - safe)
-  'user_info_set',
-  'user_info_get',
-  'user_info_remove',
-  'user_info_clear',
 
   // TODO tools (user-specific data - safe)
   'todo_add',

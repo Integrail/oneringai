@@ -16,6 +16,7 @@
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { sanitizeId } from './utils.js';
 import type {
   IContextStorage,
   StoredContextSession,
@@ -86,14 +87,7 @@ function getDefaultBaseDirectory(): string {
  * Sanitize ID for use as a directory/file name
  * Removes or replaces characters that are not safe for filenames
  */
-function sanitizeId(id: string): string {
-  return id
-    .replace(/[^a-zA-Z0-9_-]/g, '_')  // Replace unsafe chars with underscore
-    .replace(/_+/g, '_')               // Collapse multiple underscores
-    .replace(/^_|_$/g, '')             // Remove leading/trailing underscores
-    .toLowerCase()                      // Normalize to lowercase
-    || 'default';                       // Fallback if empty
-}
+// sanitizeId imported from ./utils.js
 
 /**
  * Current format version (imported from interface)

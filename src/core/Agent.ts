@@ -37,6 +37,10 @@ import type {
   AgentDefinitionMetadata,
 } from '../domain/interfaces/IAgentDefinitionStorage.js';
 import { StorageRegistry } from './StorageRegistry.js';
+import { AgentRegistry } from './AgentRegistry.js';
+import { SuspendSignal } from './SuspendSignal.js';
+import type { ICorrelationStorage, SessionRef } from '../domain/interfaces/ICorrelationStorage.js';
+import { FileCorrelationStorage } from '../infrastructure/storage/FileCorrelationStorage.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -269,6 +273,70 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     return new Agent(config);
   }
 
+  /**
+   * Hydrate an agent from stored definition + saved session.
+   *
+   * Returns a fully reconstructed Agent with conversation history and plugin
+   * states restored. The caller can customize the agent (add tools, hooks, etc.)
+   * before calling `run()` to continue execution.
+   *
+   * This is the primary API for resuming suspended sessions.
+   *
+   * @param sessionId - Session ID to load
+   * @param options - Agent ID and optional overrides
+   * @returns Agent instance ready for customization and `run()`
+   *
+   * @example
+   * ```typescript
+   * // Reconstruct agent and load session
+   * const agent = await Agent.hydrate('session-456', { agentId: 'my-agent' });
+   *
+   * // Customize (add hooks, tools, etc.)
+   * agent.lifecycleHooks = { onError: myErrorHandler };
+   * agent.tools.register(presentToUser(emailService));
+   *
+   * // Continue with user's reply
+   * const result = await agent.run('Thanks, but also look at Q2 data');
+   * ```
+   */
+  static async hydrate(
+    sessionId: string,
+    options: {
+      /** Agent ID to load definition for */
+      agentId: string;
+      /** Optional definition storage override */
+      definitionStorage?: IAgentDefinitionStorage;
+      /** Optional config overrides (e.g., connector, model) */
+      overrides?: Partial<AgentConfig>;
+    }
+  ): Promise<Agent> {
+    const agent = await Agent.fromStorage(
+      options.agentId,
+      options.definitionStorage,
+      options.overrides,
+    );
+    if (!agent) {
+      throw new Error(`Agent definition not found: ${options.agentId}`);
+    }
+
+    // Load session state (conversation + plugin states)
+    const loaded = await agent.loadSession(sessionId);
+    if (!loaded) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    // Clean up correlations for this session
+    const correlationStorage = StorageRegistry.get('correlations') as ICorrelationStorage | undefined;
+    if (correlationStorage) {
+      const correlationIds = await correlationStorage.listBySession(sessionId);
+      for (const id of correlationIds) {
+        await correlationStorage.delete(id);
+      }
+    }
+
+    return agent;
+  }
+
   // ===== Constructor =====
 
   private constructor(config: AgentConfig) {
@@ -342,6 +410,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
     // Initialize session (from BaseAgent)
     this.initializeSession(config.session);
+
+    // Auto-register with AgentRegistry for global tracking/observability
+    AgentRegistry.register(this);
   }
 
   // ===== Abstract Method Implementations =====
@@ -663,7 +734,14 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
       // If async results arrived while we were running, schedule a flush
       if (this._asyncResultQueue.length > 0 && (this._config.asyncTools?.autoContinue !== false)) {
-        setTimeout(() => this._flushAsyncResults(), 0);
+        setTimeout(() => {
+          if (this._isDestroyed) return;
+          try {
+            this._flushAsyncResults();
+          } catch (err) {
+            this._logger.error({ error: (err as Error).message }, 'Error flushing async results');
+          }
+        }, 0);
       }
     }
   }
@@ -724,6 +802,11 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Generate LLM response
       const response = await this.generateWithHooks(prepared.input, iteration, executionId);
 
+      if (!response || !response.output) {
+        this._logger.warn({ executionId, iteration }, 'Empty or malformed response from LLM');
+        break;
+      }
+
       // Extract tool calls
       const toolCalls = this.extractToolCalls(response.output);
 
@@ -774,8 +857,86 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Execute tools with hooks
       const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
 
+      // Check for SuspendSignal in tool results
+      let suspendSignal: SuspendSignal | null = null;
+      for (const result of toolResults) {
+        if (SuspendSignal.is(result.content)) {
+          suspendSignal = result.content;
+          // Replace SuspendSignal with its display result for the LLM
+          result.content = suspendSignal.result;
+          break;
+        }
+      }
+
       // Add tool results to AgentContext
       this._agentContext.addToolResults(toolResults);
+
+      // If a tool signaled suspension, do final wrap-up and return
+      if (suspendSignal) {
+        this._logger.info(
+          { correlationId: suspendSignal.correlationId },
+          'SuspendSignal detected, suspending agent loop',
+        );
+
+        // Final LLM call WITHOUT tools (mirrors max-iterations wrap-up)
+        const suspendPrepared = await this._agentContext.prepare();
+        const suspendResponse = await this._provider.generate({
+          model: this.model,
+          input: suspendPrepared.input,
+          instructions: this._config.instructions,
+          tools: [], // No tools — force text-only wrap-up
+          temperature: this._config.temperature,
+          vendorOptions: this._config.vendorOptions,
+        });
+        this._agentContext.addAssistantResponse(suspendResponse.output);
+
+        // Generate session ID if not already set
+        const sessionId = this._agentContext.sessionId ?? `suspended-${randomUUID()}`;
+
+        // Save session state
+        await this.saveSession(sessionId);
+
+        // Save correlation mapping
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + suspendSignal.ttl);
+        const correlationRef: SessionRef = {
+          agentId: this._agentContext.agentId,
+          sessionId,
+          suspendedAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          resumeAs: suspendSignal.resumeAs,
+          metadata: suspendSignal.metadata,
+        };
+
+        const correlationStorage = StorageRegistry.resolve(
+          'correlations' as keyof import('./StorageRegistry.js').StorageConfig,
+          () => new FileCorrelationStorage(),
+        ) as ICorrelationStorage;
+        await correlationStorage.save(suspendSignal.correlationId, correlationRef);
+
+        // Set response status to suspended
+        suspendResponse.status = 'suspended';
+        suspendResponse.suspension = {
+          correlationId: suspendSignal.correlationId,
+          sessionId,
+          agentId: this._agentContext.agentId,
+          resumeAs: suspendSignal.resumeAs,
+          expiresAt: expiresAt.toISOString(),
+          metadata: suspendSignal.metadata,
+        };
+
+        // Emit suspension event
+        this.emit('execution:suspended' as any, {
+          executionId,
+          sessionId,
+          correlationId: suspendSignal.correlationId,
+          expiresAt: expiresAt.toISOString(),
+          timestamp: now,
+        });
+
+        finalResponse = suspendResponse;
+        break;
+      }
 
       // Record iteration metrics
       this._recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared);
@@ -1590,7 +1751,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         let parsedArgs: Record<string, unknown> = {};
         try {
           parsedArgs = JSON.parse(toolCall.function.arguments);
-        } catch { /* ignore parse errors */ }
+        } catch (parseErr) {
+          this._logger.debug({ tool: toolCall.function.name, error: (parseErr as Error).message }, 'Failed to parse tool arguments for tracking');
+        }
 
         const mockResult: ToolResult = {
           tool_use_id: toolCall.id,
@@ -1630,7 +1793,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         let parsedArgs: Record<string, unknown> = {};
         try {
           parsedArgs = JSON.parse(toolCall.function.arguments);
-        } catch { /* ignore parse errors */ }
+        } catch (parseErr) {
+          this._logger.debug({ tool: toolCall.function.name, error: (parseErr as Error).message }, 'Failed to parse tool arguments for tracking');
+        }
 
         const toolResult: ToolResult = {
           tool_use_id: toolCall.id,
@@ -1691,7 +1856,12 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
     try {
       // Execute tool (timeout is handled by ToolManager per-tool)
-      const args = JSON.parse(toolCall.function.arguments);
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(toolCall.function.arguments);
+      } catch (parseError) {
+        throw new Error(`Failed to parse tool arguments for ${toolCall.function.name}: ${(parseError as Error).message}`);
+      }
       const result = await this._agentContext.tools.execute(toolCall.function.name, args);
 
       toolCall.state = ToolCallState.COMPLETED;
@@ -2397,6 +2567,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
     // Cancel all pending async tools
     this.cancelAllAsyncTools();
+    if (this._asyncBatchTimer) {
+      clearTimeout(this._asyncBatchTimer);
+      this._asyncBatchTimer = null;
+    }
     this._continuationInProgress = false;
     this._executionActive = false;
 
@@ -2424,6 +2598,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       }
     }
     this._cleanupCallbacks = [];
+
+    // Unregister from AgentRegistry
+    AgentRegistry.unregister(this.registryId, 'destroyed');
 
     // Call base destroy (handles session, tool manager, permission manager cleanup)
     this.baseDestroy();
