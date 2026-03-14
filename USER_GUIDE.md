@@ -3055,48 +3055,54 @@ The agent ID is sanitized to be filesystem-safe (lowercase, special chars replac
 
 ### Available Tools
 
-The LLM has access to four tools for managing persistent instructions:
+The LLM manages persistent instructions through the unified `store_*` tools with `store="instructions"`:
 
-#### instructions_set
+#### store_set("instructions", ...)
 
 Add or update a single instruction by key:
 
 ```typescript
 // Tool call from LLM
 {
-  "name": "instructions_set",
+  "name": "store_set",
   "arguments": {
+    "store": "instructions",
     "key": "personality",
-    "content": "Always be friendly and helpful. Use clear, simple language."
+    "data": {
+      "content": "Always be friendly and helpful. Use clear, simple language."
+    }
   }
 }
 // Returns: { "success": true, "message": "Instruction 'personality' added", "key": "personality", "contentLength": 57 }
 ```
 
-#### instructions_remove
+#### store_delete("instructions", ...)
 
 Remove a single instruction by key:
 
 ```typescript
 // Tool call from LLM
 {
-  "name": "instructions_remove",
+  "name": "store_delete",
   "arguments": {
+    "store": "instructions",
     "key": "personality"
   }
 }
 // Returns: { "success": true, "message": "Instruction 'personality' removed", "key": "personality" }
 ```
 
-#### instructions_list
+#### store_list("instructions")
 
 List all instructions with their keys and content:
 
 ```typescript
 // Tool call from LLM
 {
-  "name": "instructions_list",
-  "arguments": {}
+  "name": "store_list",
+  "arguments": {
+    "store": "instructions"
+  }
 }
 // Returns: {
 //   "count": 2,
@@ -3108,16 +3114,18 @@ List all instructions with their keys and content:
 // }
 ```
 
-#### instructions_clear
+#### store_action("instructions", "clear", ...)
 
 Remove all instructions (requires confirmation):
 
 ```typescript
 // Tool call from LLM
 {
-  "name": "instructions_clear",
+  "name": "store_action",
   "arguments": {
-    "confirm": true  // Must be true, otherwise rejected
+    "store": "instructions",
+    "action": "clear",
+    "params": { "confirm": true }
   }
 }
 // Returns: { "success": true, "message": "All custom instructions cleared" }
@@ -3198,9 +3206,9 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   systemPrompt: `You are a learning assistant. When the user expresses preferences or
-gives feedback about your responses, use instructions_set to remember them for
+gives feedback about your responses, use store_set("instructions", key, { content }) to remember them for
 future sessions. Use descriptive keys like "user_preferences", "response_style", etc.
-Review your instructions with instructions_list at the start of each conversation.`,
+Review your instructions with store_list("instructions") at the start of each conversation.`,
   context: {
     agentId: 'learning-assistant',
     features: { persistentInstructions: true },
@@ -3208,7 +3216,7 @@ Review your instructions with instructions_list at the start of each conversatio
 });
 
 // User: "I prefer when you explain things with analogies"
-// Agent calls: instructions_set({ key: "response_style", content: "Explain concepts using analogies when possible" })
+// Agent calls: store_set("instructions", "response_style", { content: "Explain concepts using analogies when possible" })
 // Next session, agent sees this in context automatically
 ```
 
@@ -3281,7 +3289,7 @@ If upgrading from the previous single-string persistent instructions:
 
 1. **File storage**: Auto-migrated. Legacy `custom_instructions.md` files are read as a single `legacy_instructions` entry and converted to `custom_instructions.json` on next save. No action needed.
 2. **Custom storage backends**: Update `load()` to return `InstructionEntry[] | null` and `save()` to accept `InstructionEntry[]` instead of `string`.
-3. **Tool API**: `instructions_append` is removed — use `instructions_set(key, content)` to add new entries. `instructions_get` is removed — use `instructions_list()` to see all entries.
+3. **Tool API**: `instructions_append` is removed — use `store_set("instructions", key, { content })` to add new entries. `instructions_get` is removed — use `store_list("instructions")` to see all entries.
 4. **Programmatic API**: `plugin.set(content)` → `plugin.set(key, content)`. `plugin.append(section)` → `plugin.set(newKey, section)`. `plugin.get()` now returns `InstructionEntry[] | null` (or a single `InstructionEntry` when called with a key).
 5. **Session state**: Existing saved sessions with old format (`{ content: string | null }`) are auto-migrated on `restoreState()`.
 
@@ -3440,7 +3448,7 @@ await agent.run('Now tell me more about the first item');
 
 Store user-specific preferences and context that persist across sessions and agents. Unlike other plugins, user info is **user-scoped** (not agent-scoped) — different agents share the same user's data.
 
-User info entries are **automatically injected into the LLM system message** as markdown, so the LLM always knows the user's preferences without needing to call `user_info_get` each turn.
+User info entries are **automatically injected into the LLM system message** as markdown, so the LLM always knows the user's preferences without needing to call `store_get("user_info")` each turn.
 
 ### Setup
 
@@ -3488,12 +3496,12 @@ const agent = Agent.create({
 
 ### User Info Tools
 
-| Tool | Description | Permission |
-|------|-------------|------------|
-| `user_info_set` | Store/update entry by key (`key`, `value`, `description?`) | Always allowed |
-| `user_info_get` | Retrieve one entry by key, or all entries (key optional) | Always allowed |
-| `user_info_remove` | Remove a specific entry by key | Always allowed |
-| `user_info_clear` | Clear all entries (requires `confirm: true`) | Requires approval |
+| Tool Call | Description | Permission |
+|-----------|-------------|------------|
+| `store_set("user_info", key, { value, description? })` | Store/update entry by key | Always allowed |
+| `store_get("user_info", key?)` | Retrieve one entry by key, or all entries (key optional) | Always allowed |
+| `store_delete("user_info", key)` | Remove a specific entry by key | Always allowed |
+| `store_action("user_info", "clear", { confirm: true })` | Clear all entries | Requires approval |
 
 ### TODO Tools
 
@@ -3956,16 +3964,16 @@ Tasks with no dependencies run first. A task only becomes eligible when all its 
 
 Between tasks, conversation history is cleared but **memory plugins persist**. This is how tasks share information:
 
-- **In-Context Memory** (`context_set`): Small key results that subsequent tasks see immediately in context. No retrieval call needed.
+- **In-Context Memory** (`store_set("context", ...)`): Small key results that subsequent tasks see immediately in context. No retrieval call needed.
   ```
-  Task 1 calls: context_set("api_endpoints", "Found 3 endpoints: /users, /orders, /products")
+  Task 1 calls: store_set("context", "api_endpoints", { description: "...", value: "Found 3 endpoints: /users, /orders, /products" })
   Task 2 sees this automatically in its context window
   ```
 
-- **Working Memory** (`memory_store` / `memory_retrieve`): Larger data stored externally, retrieved on demand.
+- **Working Memory** (`store_set("memory", ...)` / `store_get("memory", ...)`): Larger data stored externally, retrieved on demand.
   ```
-  Task 1 calls: memory_store("raw_data", "Full API response...", "findings")
-  Task 2 calls: memory_retrieve("raw_data") → gets the full response
+  Task 1 calls: store_set("memory", "raw_data", { description: "Full API response", value: "...", tier: "findings" })
+  Task 2 calls: store_get("memory", "raw_data") → gets the full response
   ```
 
 The default system prompt instructs the agent on this pattern. You can override it via `prompts.system`.
