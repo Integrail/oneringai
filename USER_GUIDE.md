@@ -103,8 +103,19 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Multi-Tenant Isolation
     - Using with Agent and ConnectorTools
 31. [Agent Registry](#agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
-32. [Advanced Features](#advanced-features)
-33. [Production Deployment](#production-deployment)
+32. [Agent Orchestrator](#agent-orchestrator) — Autonomous agent teams, shared workspace, parallel/sequential workflows
+    - Quick Start
+    - Architecture
+    - OrchestratorConfig
+    - Orchestration Tools (create_agent, assign_turn, assign_parallel, assign_turn_async, send_message)
+    - Workspace Delta
+    - Workflow Examples (Sequential Review, Parallel Research, Async Turns)
+    - Agent.inject()
+    - Worker Agent Lifecycle
+    - Custom System Prompt
+    - Per-Type Configuration
+33. [Advanced Features](#advanced-features)
+34. [Production Deployment](#production-deployment)
 
 ---
 
@@ -11320,6 +11331,290 @@ AgentRegistry.destroyAll();
 | | `cancelAll(reason?)` | `number` | Cancel all |
 | | `destroyAll()` | `number` | Destroy all |
 | **Housekeeping** | `clear()` | `void` | Clear registry (testing) |
+
+---
+
+## Agent Orchestrator
+
+Create autonomous agent teams that coordinate through a shared workspace. The orchestrator is a regular Agent with special tools — no subclass needed.
+
+### Quick Start
+
+```typescript
+import { createOrchestrator, Connector, Vendor } from '@everworker/oneringai';
+
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentTypes: {
+    architect: {
+      systemPrompt: 'You are a senior software architect. Design clean, scalable systems. Use the shared workspace to publish your designs.',
+      tools: [readFile, writeFile],
+    },
+    critic: {
+      systemPrompt: 'You are a thorough code reviewer. Read artifacts from the workspace, find issues, and post your review back to the workspace.',
+      tools: [readFile, grep],
+    },
+    developer: {
+      systemPrompt: 'You are a senior developer. Read the plan from the workspace, implement it, and update the workspace with your progress.',
+      tools: [readFile, writeFile, editFile, bash],
+    },
+  },
+});
+
+const result = await orchestrator.run('Build an auth module with JWT support');
+console.log(result.output_text);
+```
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Orchestrator (Agent)                    │
+│                                                           │
+│  System prompt: auto-generated from agentTypes            │
+│  Tools: 7 orchestration tools + workspace store tools     │
+│                                                           │
+├─────────────────────────────────────────────────────────┤
+│           SharedWorkspace (shared instance)               │
+│  - entries: plans, code, reviews, status                  │
+│  - log: team conversation                                 │
+│  - All agents read/write via store_*("workspace", ...)    │
+├─────────────────────────────────────────────────────────┤
+│                    Worker Agents                          │
+│  - Persistent (remember reasoning across turns)           │
+│  - Own context + shared workspace                         │
+│  - Receive workspace delta at turn start                  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │Architect │  │  Critic  │  │Developer │               │
+│  └──────────┘  └──────────┘  └──────────┘               │
+└─────────────────────────────────────────────────────────┘
+```
+
+### OrchestratorConfig
+
+```typescript
+interface OrchestratorConfig {
+  connector: string;           // Connector for LLM access
+  model: string;               // Model for orchestrator (default for workers too)
+  systemPrompt?: string;       // Custom prompt (overrides auto-generated)
+  agentTypes: Record<string, AgentTypeConfig>;  // Available worker types
+  workspace?: Partial<SharedWorkspaceConfig>;    // Workspace settings
+  features?: Partial<ContextFeatures>;           // Orchestrator context features
+  name?: string;               // Orchestrator name (default: 'orchestrator')
+  agentId?: string;            // For session persistence
+  maxIterations?: number;      // Max loop iterations (default: 100)
+}
+
+interface AgentTypeConfig {
+  systemPrompt: string;        // Role-defining prompt
+  tools?: ToolFunction[];      // Role-specific tools
+  model?: string;              // Override model per type
+  connector?: string;          // Override connector per type
+  features?: Partial<ContextFeatures>;  // Worker context features
+}
+```
+
+### Orchestration Tools
+
+The orchestrator gets 7 tools automatically:
+
+#### Team Management
+
+| Tool | Description |
+|------|-------------|
+| `create_agent(name, type)` | Spawn a worker from `agentTypes`. The agent is persistent — it remembers reasoning across turns. |
+| `list_agents()` | Returns all workers with name, model, status (idle/running/paused). |
+| `destroy_agent(name)` | Destroy a worker and free its resources. |
+
+#### Turn Assignment
+
+| Tool | Blocking | Description |
+|------|----------|-------------|
+| `assign_turn(agent, instruction, timeout?)` | Yes | Assign work and **wait** for result. Use for sequential workflows. Default timeout: 300s. |
+| `assign_turn_async(agent, instruction, timeout?)` | **No** | Assign work **without waiting**. Result delivered later via async continuation. Use to run agents in parallel or continue planning while a worker executes. |
+| `assign_parallel(assignments[], timeout?)` | Yes | Start multiple agents simultaneously, wait for **all** results. Convenience for fan-out patterns. |
+
+#### Communication
+
+| Tool | Description |
+|------|-------------|
+| `send_message(agent, message)` | Inject a message into an agent's context. If the agent is running, the message appears on its next iteration. If idle, it's seen on the next turn. Uses `Agent.inject()`. |
+
+### Workspace Delta
+
+When a worker starts a turn, its instruction is automatically prepended with a workspace delta showing what changed since that worker's last turn:
+
+```
+[Workspace changes since your last turn]
+- NEW: "auth_plan" (v1, by architect) — JWT auth design with refresh tokens
+- UPDATED: "requirements" (v1→v2, by orchestrator) — Added rate limiting requirement
+Recent log:
+  [architect] Designed API following RESTful patterns
+  [orchestrator] Added rate limiting to requirements
+
+Design the authentication module based on the approved plan.
+```
+
+### Workflow Examples
+
+#### Sequential Review Cycle
+
+```typescript
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentTypes: {
+    architect: { systemPrompt: 'You are a software architect...', tools: [readFile, writeFile] },
+    critic: { systemPrompt: 'You are a code reviewer...', tools: [readFile] },
+    developer: { systemPrompt: 'You are a developer...', tools: [readFile, writeFile, editFile, bash] },
+  },
+});
+
+// The orchestrator LLM naturally follows this pattern:
+// 1. create_agent("arch", "architect")
+// 2. create_agent("rev", "critic")
+// 3. create_agent("dev", "developer")
+// 4. assign_turn("arch", "Design the auth module")
+// 5. assign_turn("rev", "Review the architecture plan")
+// 6. If issues: assign_turn("arch", "Address reviewer feedback")
+// 7. assign_turn("dev", "Implement the approved plan")
+// 8. assign_turn("rev", "Review the implementation")
+// 9. If issues: assign_turn("dev", "Fix review comments")
+// 10. Final acceptance
+
+const result = await orchestrator.run('Build a JWT auth module with refresh tokens');
+```
+
+#### Parallel Research
+
+```typescript
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentTypes: {
+    researcher: {
+      systemPrompt: 'You are a research analyst. Search the web, analyze findings, and post results to the workspace.',
+      tools: [webSearchTool, webFetchTool],
+    },
+    synthesizer: {
+      systemPrompt: 'You are an analyst. Read research findings from the workspace and produce a comprehensive summary.',
+    },
+  },
+});
+
+// The orchestrator will:
+// 1. Create 3 researchers
+// 2. assign_parallel to all 3 with different research angles
+// 3. Create synthesizer
+// 4. assign_turn("synthesizer", "Combine all research findings")
+
+const result = await orchestrator.run('Research the top 3 competitors in the AI agent space');
+```
+
+#### Async Turns (Non-Blocking)
+
+```typescript
+// The orchestrator can use assign_turn_async to start work without waiting:
+//
+// 1. assign_turn_async("researcher-1", "Research competitor A")
+//    → Returns immediately: "researcher-1 is working..."
+//
+// 2. assign_turn_async("researcher-2", "Research competitor B")
+//    → Returns immediately: "researcher-2 is working..."
+//
+// 3. Orchestrator continues: updates workspace, plans next steps
+//
+// 4. [Async Tool Results] researcher-1 completed: "Found 5 key insights..."
+//    → Orchestrator processes result
+//
+// 5. [Async Tool Results] researcher-2 completed: "Analysis complete..."
+//    → Orchestrator processes result
+//
+// This leverages the existing async tools infrastructure (blocking: false).
+// Results are delivered via auto-continuation when workers finish.
+```
+
+### Agent.inject()
+
+The `inject()` method enables orchestrator-to-worker communication:
+
+```typescript
+// Inject a message into a running or idle agent
+agent.inject('Please also consider rate limiting in your design');
+agent.inject('Switch to OAuth2 instead of JWT', 'developer');  // 'developer' role
+
+// The message is queued and delivered on the agent's next agentic loop iteration.
+// Safe to call while the agent is running.
+```
+
+This is used internally by the `send_message` orchestration tool, but can also be called directly on any Agent instance.
+
+### Worker Agent Lifecycle
+
+Workers are **persistent** — they remember their reasoning across turns:
+
+1. **Created** via `create_agent(name, type)` — gets system prompt, tools, shared workspace
+2. **Assigned turns** — each `assign_turn` calls `agent.run(instruction)` on the same instance
+3. **Context accumulates** — the worker's context grows with each turn (compaction handles limits)
+4. **Destroyed** via `destroy_agent(name)` or when the orchestrator is destroyed
+
+### Custom System Prompt
+
+Override the auto-generated prompt for specialized workflows:
+
+```typescript
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  systemPrompt: `You are a QA team lead. For every task:
+1. Create a "developer" agent to write code
+2. Create a "tester" agent to write tests
+3. Run them in parallel with assign_parallel
+4. If tests fail, send the failure details back to the developer
+5. Repeat until all tests pass`,
+  agentTypes: {
+    developer: { systemPrompt: '...', tools: [writeFile, editFile] },
+    tester: { systemPrompt: '...', tools: [readFile, bash] },
+  },
+});
+```
+
+### Per-Type Configuration
+
+Each agent type can have its own model, connector, and features:
+
+```typescript
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',  // Default
+  agentTypes: {
+    planner: {
+      systemPrompt: 'You are a strategic planner...',
+      model: 'gpt-4',      // Use the best model for planning
+      connector: 'openai',
+    },
+    coder: {
+      systemPrompt: 'You are a fast coder...',
+      model: 'gpt-4o-mini',  // Use a faster/cheaper model for coding
+      connector: 'openai',
+      tools: [readFile, writeFile, editFile, bash],
+    },
+    reviewer: {
+      systemPrompt: 'You are a code reviewer...',
+      model: 'claude-sonnet-4-20250514',  // Different provider entirely
+      connector: 'anthropic',
+      tools: [readFile, grep],
+    },
+  },
+});
+```
 
 ---
 

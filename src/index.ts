@@ -27,8 +27,8 @@
  */
 
 // ============ Core API (Primary) ============
-export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL, SuspendSignal } from './core/index.js';
-export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, CatalogRegistryEntry, SuspendSignalOptions } from './core/index.js';
+export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistry, Agent, Vendor, VENDORS, isVendor, createProvider, getVendorDefaultBaseURL, SuspendSignal, createOrchestrator, buildOrchestrationTools, buildWorkspaceDelta } from './core/index.js';
+export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, CatalogRegistryEntry, SuspendSignalOptions, OrchestratorConfig, AgentTypeConfig, OrchestrationToolsContext } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContextNextGen - Clean, Simple Context Management

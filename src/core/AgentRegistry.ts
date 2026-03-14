@@ -152,6 +152,7 @@ export interface IRegistrableAgent {
   pause?(): void;
   resume?(): void;
   cancel?(reason?: string): void;
+  inject?(message: string, role?: 'user' | 'developer'): void;
 
   // Events
   on(event: string, listener: (...args: unknown[]) => void): this;

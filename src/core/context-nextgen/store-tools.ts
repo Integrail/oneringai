@@ -31,6 +31,13 @@ export class StoreToolsManager {
   }
 
   /**
+   * Unregister a store handler by storeId.
+   */
+  unregisterHandler(storeId: string): boolean {
+    return this.handlers.delete(storeId);
+  }
+
+  /**
    * Get a handler by storeId.
    */
   getHandler(storeId: string): IStoreHandler | undefined {

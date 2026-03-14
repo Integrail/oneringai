@@ -222,6 +222,7 @@ src/
 │   ├── constants.ts            # All default values
 │   ├── TextToSpeech.ts, SpeechToText.ts
 │   ├── createProvider.ts, createAudioProvider.ts, createImageProvider.ts, createVideoProvider.ts
+│   ├── orchestrator/           # createOrchestrator, orchestration tools
 │   ├── permissions/            # ToolPermissionManager
 │   └── mcp/                    # MCPClient, MCPRegistry
 ├── domain/
@@ -930,6 +931,87 @@ const myTool: ToolFunction = {
   describeCall: (args) => args.key,  // For logging
 };
 ```
+
+## Agent Orchestrator (`src/core/orchestrator/`)
+
+Multi-agent coordination via `createOrchestrator()`. The orchestrator is a regular Agent with orchestration tools — no subclass.
+
+### Usage
+
+```typescript
+import { createOrchestrator } from '@everworker/oneringai';
+
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentTypes: {
+    architect: { systemPrompt: '...', tools: [readFile, writeFile] },
+    critic: { systemPrompt: '...', tools: [readFile] },
+    developer: { systemPrompt: '...', tools: [readFile, writeFile, editFile, bash] },
+  },
+});
+
+const result = await orchestrator.run('Build an auth module');
+```
+
+### Architecture
+
+- **Orchestrator** = Agent with 7 orchestration tools + shared workspace
+- **Workers** = persistent Agent instances created via `create_agent` tool
+- **SharedWorkspacePlugin** = shared bulletin board (same instance on all agents)
+- **Workspace Delta** = workers auto-receive "what changed since your last turn"
+- **Async turns** = `assign_turn_async` uses `blocking: false` (async tools infrastructure)
+
+### Orchestration Tools (7)
+
+| Tool | Blocking | Purpose |
+|------|----------|---------|
+| `create_agent(name, type)` | yes | Spawn worker from `agentTypes` |
+| `list_agents()` | yes | Show team status |
+| `destroy_agent(name)` | yes | Remove worker |
+| `assign_turn(agent, instruction, timeout?)` | **yes** | Sequential — wait for result |
+| `assign_turn_async(agent, instruction, timeout?)` | **no** | Async — result via continuation |
+| `assign_parallel(assignments[], timeout?)` | yes | Fan-out, wait for all |
+| `send_message(agent, message)` | yes | Inject into running/idle agent |
+
+### Agent.inject()
+
+```typescript
+agent.inject('Please also consider rate limiting', 'user');
+```
+
+Queues a message into a running agent's context. Processed on next agentic loop iteration. Used by `send_message` tool internally.
+
+### OrchestratorConfig
+
+```typescript
+interface OrchestratorConfig {
+  connector: string;
+  model: string;
+  systemPrompt?: string;            // Override auto-generated prompt
+  agentTypes: Record<string, AgentTypeConfig>;
+  workspace?: Partial<SharedWorkspaceConfig>;
+  name?: string;                    // Default: 'orchestrator'
+  agentId?: string;                 // For session persistence
+  maxIterations?: number;           // Default: 100
+}
+
+interface AgentTypeConfig {
+  systemPrompt: string;
+  tools?: ToolFunction[];
+  model?: string;                   // Override per-type
+  connector?: string;               // Override per-type
+}
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/core/orchestrator/createOrchestrator.ts` | Factory + system prompt + worker factory |
+| `src/core/orchestrator/tools.ts` | 7 tool definitions + workspace delta builder |
+| `src/core/orchestrator/index.ts` | Exports |
+| `src/core/Agent.ts` | `inject()` method |
 
 ---
 

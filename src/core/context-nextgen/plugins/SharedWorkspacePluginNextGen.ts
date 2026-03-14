@@ -182,16 +182,23 @@ export class SharedWorkspacePluginNextGen implements IContextPluginNextGen, ISto
       });
 
     let freed = 0;
+    let entriesRemoved = false;
     for (const entry of sortedEntries) {
       if (freed >= targetTokensToFree) break;
       const entryTokens = this.estimator.estimateTokens(this.formatEntry(entry));
       this.entries.delete(entry.key);
       freed += entryTokens;
+      entriesRemoved = true;
     }
 
     this._tokenCache = null;
     const content = await this.getContent();
     const after = content ? this.estimator.estimateTokens(content) : 0;
+
+    // H1: Notify listeners when compact removes entries
+    if (entriesRemoved && this.config.onEntriesChanged) {
+      this.config.onEntriesChanged(Array.from(this.entries.values()));
+    }
 
     return Math.max(0, before - after);
   }
@@ -206,6 +213,8 @@ export class SharedWorkspacePluginNextGen implements IContextPluginNextGen, ISto
     this.log = [];
     this._destroyed = true;
     this._tokenCache = null;
+    // M6: Release callback closure to prevent keeping external objects alive
+    this.config.onEntriesChanged = undefined;
   }
 
   getState(): SerializedSharedWorkspaceState {
@@ -504,5 +513,8 @@ export class SharedWorkspacePluginNextGen implements IContextPluginNextGen, ISto
       const [key] = sorted.shift()!;
       this.entries.delete(key);
     }
+
+    // H2: Invalidate token cache after removing entries
+    this._tokenCache = null;
   }
 }

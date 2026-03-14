@@ -38,6 +38,7 @@
   - [24. Async (Non-Blocking) Tools](#24-async-non-blocking-tools-new) — Background tool execution with auto-continuation
   - [25. Long-Running Sessions (Suspend/Resume)](#25-long-running-sessions-suspendresume-new) — Suspend agent loops waiting for external input, resume days later
   - [26. Agent Registry](#26-agent-registry-new) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
+  - [27. Agent Orchestrator](#27-agent-orchestrator-new) — Multi-agent teams with shared workspace, async turns, and parallel execution
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -1913,6 +1914,60 @@ AgentRegistry.destroyMatching({ model: 'gpt-4' });
 ```
 
 See the [User Guide](./USER_GUIDE.md#agent-registry) for the full API reference.
+
+### 27. Agent Orchestrator (NEW)
+
+Create autonomous agent teams that coordinate through a shared workspace:
+
+```typescript
+import { createOrchestrator, Connector, Vendor } from '@everworker/oneringai';
+
+Connector.create({ name: 'openai', vendor: Vendor.OpenAI, auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! } });
+
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentTypes: {
+    architect: {
+      systemPrompt: 'You are a senior software architect. Design clean, scalable systems.',
+      tools: [readFile, writeFile],
+    },
+    critic: {
+      systemPrompt: 'You are a thorough code reviewer. Find issues and suggest improvements.',
+      tools: [readFile, grep],
+    },
+    developer: {
+      systemPrompt: 'You are a senior developer. Write clean, tested code.',
+      tools: [readFile, writeFile, editFile, bash],
+    },
+  },
+});
+
+// The orchestrator LLM decides the workflow
+const result = await orchestrator.run('Build an auth module with JWT support');
+```
+
+**How it works:**
+- The orchestrator is a regular Agent with 7 coordination tools
+- Workers are persistent Agent instances that remember reasoning across turns
+- All agents share a workspace (bulletin board) for artifacts and status
+- Workers receive "what changed since your last turn" at each turn start
+
+**Orchestration tools:**
+
+| Tool | Type | Purpose |
+|------|------|---------|
+| `create_agent(name, type)` | blocking | Spawn a worker from predefined types |
+| `assign_turn(agent, instruction)` | blocking | Give agent a task, wait for result |
+| `assign_turn_async(agent, instruction)` | **non-blocking** | Start agent in background, result delivered later |
+| `assign_parallel([{agent, instruction}...])` | blocking | Fan-out to multiple agents, wait for all |
+| `send_message(agent, message)` | blocking | Inject message into running/idle agent |
+| `list_agents()` | blocking | See team status |
+| `destroy_agent(name)` | blocking | Remove a worker |
+
+**Async turns** leverage the existing async tools infrastructure — the orchestrator continues planning while workers execute in the background.
+
+See the [User Guide](./USER_GUIDE.md#agent-orchestrator) for detailed examples including iterative review cycles, parallel research, and custom workflows.
 
 ---
 

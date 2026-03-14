@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SharedWorkspacePluginNextGen`**: New plugin for multi-agent coordination. Storage-agnostic bulletin board with inline content, external references, versioning, author tracking, and append-only conversation log. Enable via `features.sharedWorkspace: true`.
 - **`StoreToolsManager`**: Central manager that routes `store_*` tool calls to the correct IStoreHandler plugin. Uses `descriptionFactory` to dynamically list available stores and their schemas.
 - **Store Comparison in Tool Descriptions**: Each `store_*` tool dynamically describes all available stores with "use for / NOT for" guidance, preventing LLM confusion about which store to use.
+- **Agent Orchestrator** (`createOrchestrator()`): Factory for creating an orchestrator Agent that coordinates a team of worker agents. The orchestrator is a regular Agent with orchestration tools — no subclass needed.
+- **7 Orchestration Tools**: `create_agent`, `list_agents`, `destroy_agent`, `assign_turn` (blocking), `assign_turn_async` (non-blocking, leverages async tools infrastructure), `assign_parallel` (fan-out), `send_message` (inject into running/idle agents).
+- **`Agent.inject()`**: New method to queue messages into a running agent's context, processed on the next agentic loop iteration. Enables orchestrator-to-worker communication during turns.
+- **Async Turn Assignment**: `assign_turn_async` uses the existing async tools infrastructure (`blocking: false`) — the orchestrator continues its loop while workers execute in the background. Results are delivered via auto-continuation.
+- **Workspace Delta**: Workers automatically receive a "what changed since your last turn" summary at the start of each turn, built from workspace entry timestamps.
+- **Default Orchestrator System Prompt**: Auto-generated from `agentTypes` config, describes available agent types, coordination tools, and workflow patterns.
+- **`src/core/orchestrator/`**: New module with `createOrchestrator.ts` (factory + system prompt), `tools.ts` (7 orchestration tool definitions), and `index.ts` (exports).
+
+### Fixed
+- **[CRITICAL] Timer leaks in orchestration tools**: `assign_turn`, `assign_turn_async`, and `assign_parallel` now properly clear timeout timers in `finally` blocks when `agent.run()` resolves before the timeout. Previously leaked 1+ timers per tool call.
+- **[CRITICAL] Shared workspace double-destroy**: When orchestrator is destroyed, the shared workspace plugin is no longer destroyed from worker contexts (only from the orchestrator). Added `registerPlugin(plugin, { skipDestroyOnContextDestroy: true })` option.
+- **[CRITICAL] Worker agents not cleaned up on orchestrator destroy**: `orchestrator.destroy()` now destroys all worker agents and clears the shared workspace.
+- **SharedWorkspacePlugin `compact()` callback**: `compact()` now triggers `onEntriesChanged` callback when entries are removed, matching `storeSet`/`storeDelete`/`storeAction('clear')` behavior.
+- **SharedWorkspacePlugin token cache in `enforceMaxEntries()`**: Token cache is now properly invalidated after entries are evicted by the max-entries limit.
+- **SharedWorkspacePlugin callback leak on destroy**: `onEntriesChanged` callback is cleared on `destroy()` to prevent keeping external objects alive.
+- **Injection queue type safety**: `_pendingInjections` is now typed as `Message[]` instead of `InputItem[]`, eliminating unsafe casts when draining injections.
+- **Injection queue unbounded growth**: `inject()` now drops oldest messages when queue exceeds 100 entries.
+- **`destroy_agent` on running agent**: Now returns an error if the agent is currently running instead of destroying mid-execution.
+- **Duplicate agents in `assign_parallel`**: Validates that each agent name appears only once in assignments to prevent concurrent runs on the same context.
+- **Max agents limit**: `create_agent` enforces a configurable `maxAgents` limit (default: 20) to prevent unbounded agent creation.
+- **Workspace delta cap**: Delta builder now caps entries (20) and log lines (10) to prevent very large deltas for agents that haven't run in a while.
+- **`orchestratorAgent` used before assignment**: `parentAgentId` now uses a deferred variable set after orchestrator creation.
+- **`StoreToolsManager.unregisterHandler()`**: Added missing method to remove store handlers.
 
 ### Changed
 - **InContextMemoryPluginNextGen**: Now implements `IStoreHandler` (storeId: `"context"`). Old tools `context_set`, `context_delete`, `context_list` removed.

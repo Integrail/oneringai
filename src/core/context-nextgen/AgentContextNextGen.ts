@@ -210,6 +210,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** Whether the 5 generic store_* tools have been registered with ToolManager */
   private _storeToolsRegistered = false;
+  /** Plugins that should NOT be destroyed when this context is destroyed (shared across agents) */
+  private _skipDestroyPlugins = new Set<string>();
 
   // ============================================================================
   // Static Factory
@@ -648,7 +650,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    * Register a plugin.
    * Plugin's tools are automatically registered with ToolManager.
    */
-  registerPlugin(plugin: IContextPluginNextGen): void {
+  registerPlugin(plugin: IContextPluginNextGen, options?: { skipDestroyOnContextDestroy?: boolean }): void {
     this.assertNotDestroyed();
 
     if (this._plugins.has(plugin.name)) {
@@ -656,6 +658,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     }
 
     this._plugins.set(plugin.name, plugin);
+
+    if (options?.skipDestroyOnContextDestroy) {
+      this._skipDestroyPlugins.add(plugin.name);
+    }
 
     // Register plugin's own tools (non-store tools like todo_*)
     const tools = plugin.getTools();
@@ -2167,11 +2173,14 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   destroy(): void {
     if (this._destroyed) return;
 
-    // Destroy plugins
-    for (const plugin of this._plugins.values()) {
-      plugin.destroy();
+    // Destroy plugins (skip shared ones that are owned by another context)
+    for (const [name, plugin] of this._plugins) {
+      if (!this._skipDestroyPlugins.has(name)) {
+        plugin.destroy();
+      }
     }
     this._plugins.clear();
+    this._skipDestroyPlugins.clear();
 
     // Destroy store tools manager
     this._storeToolsManager.destroy();

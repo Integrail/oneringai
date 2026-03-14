@@ -176,6 +176,12 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   private _continuationInProgress = false;
   private _executionActive = false;
 
+  // Message injection queue (for orchestrator send_message)
+  // M4: Use Message[] instead of InputItem[] for type safety (inject() only creates Messages)
+  private _pendingInjections: import('../domain/entities/Message.js').Message[] = [];
+  /** M3: Maximum injection queue size to prevent unbounded growth */
+  private static readonly MAX_PENDING_INJECTIONS = 100;
+
   // ===== Static Factory =====
 
   /**
@@ -1150,6 +1156,20 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         if (shouldExit) {
           this.emit('execution:cancelled', { executionId, iteration, timestamp: new Date() });
           break;
+        }
+
+        // Drain any injected messages (from orchestrator send_message or external callers)
+        // M4: _pendingInjections is now typed as Message[] — no unsafe cast needed
+        if (this._pendingInjections.length > 0) {
+          const injections = this._pendingInjections.splice(0);
+          for (const msg of injections) {
+            this._agentContext.addUserMessage(
+              msg.content
+                .map(c => 'text' in c ? (c as { text: string }).text : '')
+                .filter(Boolean)
+                .join('\n')
+            );
+          }
         }
 
         // Prepare context (handles compaction)
@@ -2282,6 +2302,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     }
     this._asyncToolTracker.clear();
     this._asyncResultQueue = [];
+    this._pendingInjections = [];
     if (this._asyncBatchTimer) {
       clearTimeout(this._asyncBatchTimer);
       this._asyncBatchTimer = null;
@@ -2370,6 +2391,28 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       executionId: this.executionContext?.executionId || 'unknown',
       reason: reason || 'Manual cancellation',
       timestamp: new Date(),
+    });
+  }
+
+  /**
+   * Inject a message into this agent's context, to be processed on the next
+   * agentic loop iteration. Safe to call while the agent is running.
+   *
+   * Used by orchestrator tools (send_message) to communicate with workers
+   * during or between turns.
+   *
+   * @param message - Text message to inject
+   * @param role - Message role: 'user' (default) or 'developer'
+   */
+  inject(message: string, role: 'user' | 'developer' = 'user'): void {
+    // M3: Drop oldest injections if queue is full
+    if (this._pendingInjections.length >= Agent.MAX_PENDING_INJECTIONS) {
+      this._pendingInjections.shift();
+    }
+    this._pendingInjections.push({
+      type: 'message',
+      role: role === 'developer' ? MessageRole.DEVELOPER : MessageRole.USER,
+      content: [{ type: ContentType.INPUT_TEXT, text: message }],
     });
   }
 

@@ -146,6 +146,12 @@ export type {
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
 export { createProvider, createProviderAsync, getVendorDefaultBaseURL } from './createProvider.js';
 
+// Orchestrator
+export { createOrchestrator } from './orchestrator/index.js';
+export type { OrchestratorConfig, AgentTypeConfig } from './orchestrator/index.js';
+export { buildOrchestrationTools, buildWorkspaceDelta } from './orchestrator/index.js';
+export type { OrchestrationToolsContext } from './orchestrator/index.js';
+
 // Centralized constants
 export {
   TASK_DEFAULTS,
