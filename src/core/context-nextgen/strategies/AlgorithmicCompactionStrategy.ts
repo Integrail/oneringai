@@ -166,7 +166,7 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
       for (const pair of toolPairs) {
         if (pair.resultSizeBytes > this.toolResultSizeThreshold) {
           const key = this.generateKey(pair.toolName, pair.toolUseId);
-          const desc = this.generateDescription(pair.toolName, pair.toolArgs);
+          const desc = this.generateDescription(pair.toolName, pair.toolArgs, context);
 
           await memory.store(key, desc, pair.resultContent, {
             tier: 'raw',
@@ -316,12 +316,24 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
 
   /**
    * Generate a description for the stored tool result.
-   * Format: "Result of <tool_name>(<arg_summary>)"
+   * Uses tool's describeCall for rich arg summaries (e.g., "grep: \"TODO\" in *.ts"),
+   * falls back to generic key=value summary.
    */
-  private generateDescription(toolName: string, toolArgs: unknown): string {
-    const argSummary = this.summarizeArgs(toolArgs, 100);
-    const desc = `Result of ${toolName}(${argSummary})`;
-    // Truncate to 150 chars (Working Memory limit)
+  private generateDescription(toolName: string, toolArgs: unknown, context?: CompactionContext): string {
+    // Try tool's own describeCall first — produces rich descriptions like
+    // 'src/core/Agent.ts [lines 100-200]' or '"TODO|FIXME" in *.ts (src/)'
+    const toolDesc = context?.describeToolCall?.(toolName, toolArgs);
+    if (toolDesc) {
+      const desc = `${toolName}: ${toolDesc}`;
+      return desc.length > 150 ? desc.slice(0, 147) + '...' : desc;
+    }
+
+    // Fallback to generic arg summary
+    const argSummary = this.summarizeArgs(toolArgs, 120);
+    if (!argSummary) {
+      return `Result of ${toolName}()`;
+    }
+    const desc = `${toolName}(${argSummary})`;
     return desc.length > 150 ? desc.slice(0, 147) + '...' : desc;
   }
 

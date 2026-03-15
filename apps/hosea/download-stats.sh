@@ -1,5 +1,5 @@
 #!/bin/bash
-# HOSEA Download Statistics
+# Everworker Desktop Download Statistics
 # Usage: ./download-stats.sh [version]
 # Examples:
 #   ./download-stats.sh          # All releases
@@ -54,7 +54,7 @@ data = json.load(sys.stdin)
 print(sum(a['downloads'] for a in data['assets']))
 " 2>/dev/null)
 
-    echo -e "${BOLD}${CYAN}HOSEA v${version}${RESET}  ${DIM}(${published})${RESET}  ${BOLD}Total: ${total} downloads${RESET}"
+    echo -e "${BOLD}${CYAN}Everworker Desktop v${version}${RESET}  ${DIM}(${published})${RESET}  ${BOLD}Total: ${total} downloads${RESET}"
 
     # Print per-asset breakdown
     echo "$assets" | python3 -c "
@@ -69,8 +69,10 @@ for a in sorted(data['assets'], key=lambda x: x['name']):
         platform = 'macOS Apple Silicon'
     elif '.dmg' in name:
         platform = 'macOS Intel'
+    elif 'arm64.exe' in name:
+        platform = 'Windows ARM64'
     elif '.exe' in name:
-        platform = 'Windows'
+        platform = 'Windows x64'
     elif 'arm64.AppImage' in name:
         platform = 'Linux ARM64'
     elif '.AppImage' in name:
@@ -88,9 +90,9 @@ for a in sorted(data['assets'], key=lambda x: x['name']):
 
 # Header
 echo ""
-echo -e "${BOLD}═══════════════════════════════════════════${RESET}"
-echo -e "${BOLD}  HOSEA Download Statistics${RESET}"
-echo -e "${BOLD}═══════════════════════════════════════════${RESET}"
+echo -e "${BOLD}══════════════════════════════════════════════════${RESET}"
+echo -e "${BOLD}  Everworker Desktop Download Statistics${RESET}"
+echo -e "${BOLD}══════════════════════════════════════════════════${RESET}"
 echo ""
 
 if [ -n "$1" ]; then
@@ -110,8 +112,8 @@ else
         GRAND_TOTAL=$((GRAND_TOTAL + count))
     done
 
-    echo -e "${BOLD}═══════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}══════════════════════════════════════════════════${RESET}"
     echo -e "${BOLD}${GREEN}  Grand Total: ${GRAND_TOTAL} downloads${RESET}"
-    echo -e "${BOLD}═══════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}══════════════════════════════════════════════════${RESET}"
     echo ""
 fi

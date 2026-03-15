@@ -1387,6 +1387,16 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       estimateTokens(item: InputItem): number {
         return self.estimateItemTokens(item);
       },
+
+      describeToolCall(toolName: string, toolArgs: unknown): string | undefined {
+        const reg = self._tools.getRegistration(toolName);
+        if (!reg?.tool.describeCall) return undefined;
+        try {
+          return reg.tool.describeCall(toolArgs as Record<string, unknown>);
+        } catch {
+          return undefined;
+        }
+      },
     };
   }
 

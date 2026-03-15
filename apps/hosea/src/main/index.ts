@@ -281,6 +281,18 @@ async function setupIPC(): Promise<void> {
     return agentService!.getPermissionRules(instanceId);
   }));
 
+  ipcMain.handle('agent:add-permission-rule', readyHandler(async (_event, instanceId: string, rule: unknown) => {
+    return agentService!.addPermissionRule(instanceId, rule as Record<string, unknown>);
+  }));
+
+  ipcMain.handle('agent:update-permission-rule', readyHandler(async (_event, instanceId: string, ruleId: string, updates: unknown) => {
+    return agentService!.updatePermissionRule(instanceId, ruleId, updates as Record<string, unknown>);
+  }));
+
+  ipcMain.handle('agent:get-available-tools', readyHandler(async (_event, instanceId: string) => {
+    return agentService!.getInstanceTools(instanceId);
+  }));
+
   ipcMain.handle('agent:delete-permission-rule', readyHandler(async (_event, instanceId: string, ruleId: string) => {
     return agentService!.deletePermissionRule(instanceId, ruleId);
   }));

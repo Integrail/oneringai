@@ -16,7 +16,8 @@ import {
   Alert,
   Collapse,
 } from 'react-bootstrap';
-import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight, Server, Wrench, RefreshCw, Cloud } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight, Server, Wrench, RefreshCw, Cloud, Shield } from 'lucide-react';
+import { PermissionRulesEditor, type IPermissionRuleInfo, type INewPermissionRule } from '@everworker/react-ui';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
 import { useConnectorVersion } from '../App';
@@ -254,7 +255,7 @@ export function AgentEditorPage(): React.ReactElement {
         ]);
         setConnectors(connectorsList);
         setModelsByVendor(models);
-        setAvailableTools(tools);
+        setAvailableTools(Array.isArray(tools) ? tools : []);
         setUniversalConnectors(uniConns);
         setMCPServers(mcpServersList);
         setStrategies(strategyList);
@@ -799,6 +800,14 @@ export function AgentEditorPage(): React.ReactElement {
           </Nav.Item>
           <Nav.Item>
             <Nav.Link eventKey="voice">Voice</Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="permissions">
+              Permissions
+              {formData.permissionsEnabled && (
+                <Badge bg="success" className="ms-2">ON</Badge>
+              )}
+            </Nav.Link>
           </Nav.Item>
           <Nav.Item>
             <Nav.Link eventKey="orchestrator">
@@ -1613,7 +1622,7 @@ export function AgentEditorPage(): React.ReactElement {
                     </Form.Text>
                   </Col>
 
-                  {/* History Management and Tool Permissions removed - not in NextGen */}
+                  {/* Tool Permissions configured in Permissions tab */}
                 </Row>
               </Card.Body>
             </Card>
@@ -2027,6 +2036,15 @@ export function AgentEditorPage(): React.ReactElement {
             </Card>
           </>
         )}
+        {/* Permissions Tab */}
+        {activeTab === 'permissions' && (
+          <PermissionsTabContent
+            formData={formData}
+            setFormData={setFormData}
+            agentId={agentId}
+          />
+        )}
+
         {/* Orchestrator Tab */}
         {activeTab === 'orchestrator' && (
           <>
@@ -2155,5 +2173,144 @@ export function AgentEditorPage(): React.ReactElement {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Permissions tab content — toggle + full CRUD rules editor
+ */
+function PermissionsTabContent({
+  formData,
+  setFormData,
+  agentId,
+}: {
+  formData: AgentFormData;
+  setFormData: (data: AgentFormData) => void;
+  agentId: string | null;
+}) {
+  const [rules, setRules] = useState<IPermissionRuleInfo[]>([]);
+  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [loadingRules, setLoadingRules] = useState(false);
+  const [instanceId, setInstanceId] = useState<string | null>(null);
+
+  // Find running instance for this agent
+  const resolveInstance = useCallback(async (): Promise<string | null> => {
+    if (!agentId) return null;
+    const instances = await window.hosea.agent.listInstances();
+    const instance = instances.find((i) => i.agentConfigId === agentId);
+    return instance?.instanceId ?? null;
+  }, [agentId]);
+
+  // Load rules and available tools
+  const loadData = useCallback(async () => {
+    const instId = await resolveInstance();
+    setInstanceId(instId);
+    if (!instId) {
+      setRules([]);
+      setAvailableTools([]);
+      return;
+    }
+    setLoadingRules(true);
+    try {
+      const [rulesResult, toolsResult] = await Promise.all([
+        window.hosea.agent.getPermissionRules(instId),
+        window.hosea.agent.getAvailableTools(instId),
+      ]);
+      if (rulesResult.success && rulesResult.rules) {
+        setRules(rulesResult.rules as IPermissionRuleInfo[]);
+      }
+      if (toolsResult.success && toolsResult.tools) {
+        setAvailableTools(toolsResult.tools);
+      }
+    } catch (error) {
+      console.error('Error loading permission data:', error);
+    } finally {
+      setLoadingRules(false);
+    }
+  }, [resolveInstance]);
+
+  useEffect(() => {
+    if (formData.permissionsEnabled) {
+      loadData();
+    }
+  }, [formData.permissionsEnabled, loadData]);
+
+  const handleAddRule = useCallback(async (rule: INewPermissionRule) => {
+    if (!instanceId) return;
+    await window.hosea.agent.addPermissionRule(instanceId, rule as any);
+    loadData();
+  }, [instanceId, loadData]);
+
+  const handleUpdateRule = useCallback(async (ruleId: string, updates: Partial<IPermissionRuleInfo>) => {
+    if (!instanceId) return;
+    await window.hosea.agent.updatePermissionRule(instanceId, ruleId, updates as any);
+    loadData();
+  }, [instanceId, loadData]);
+
+  const handleToggleRule = useCallback(async (ruleId: string, enabled: boolean) => {
+    if (!instanceId) return;
+    await window.hosea.agent.togglePermissionRule(instanceId, ruleId, enabled);
+    loadData();
+  }, [instanceId, loadData]);
+
+  const handleDeleteRule = useCallback(async (ruleId: string) => {
+    if (!instanceId) return;
+    await window.hosea.agent.deletePermissionRule(instanceId, ruleId);
+    loadData();
+  }, [instanceId, loadData]);
+
+  const handleClearSession = useCallback(async () => {
+    if (!instanceId) return;
+    await window.hosea.agent.clearSessionApprovals(instanceId);
+  }, [instanceId]);
+
+  return (
+    <>
+      <Card className="mb-4">
+        <Card.Header>
+          <strong><Shield size={16} className="me-2" />Tool Permissions</strong>
+        </Card.Header>
+        <Card.Body>
+          <Form.Check
+            type="switch"
+            id="permissions-enabled"
+            label="Enable tool permission prompts"
+            checked={formData.permissionsEnabled}
+            onChange={(e) => setFormData({ ...formData, permissionsEnabled: e.target.checked })}
+          />
+          <Form.Text className="text-muted d-block mb-3">
+            When enabled, the agent will ask for your permission before running tools like bash, file writes, and web requests.
+            Read-only tools (file reads, searches) are always allowed. Your decisions can be saved as persistent rules.
+          </Form.Text>
+
+          {formData.permissionsEnabled && (
+            <>
+              <hr />
+              {!agentId ? (
+                <Alert variant="info" className="mb-0">
+                  Save the agent first, then create an instance to manage permission rules.
+                </Alert>
+              ) : !instanceId && !loadingRules ? (
+                <Alert variant="info" className="mb-0">
+                  Start a chat with this agent to manage permission rules. Rules require a running agent instance.
+                </Alert>
+              ) : loadingRules ? (
+                <div className="text-muted text-center py-3">Loading rules...</div>
+              ) : (
+                <PermissionRulesEditor
+                  rules={rules}
+                  availableTools={availableTools}
+                  onAddRule={handleAddRule}
+                  onUpdateRule={handleUpdateRule}
+                  onToggleRule={handleToggleRule}
+                  onDeleteRule={handleDeleteRule}
+                  onClearSession={handleClearSession}
+                />
+              )}
+            </>
+          )}
+        </Card.Body>
+      </Card>
+    </>
   );
 }

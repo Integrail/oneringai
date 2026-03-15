@@ -137,6 +137,34 @@ export type {
   AudioChunkPlaybackCallback,
 } from './capabilities/speech/index.js';
 
+// Voice Calling Capabilities (Twilio, telephony)
+export { VoiceBridge, VoiceSession, TextPipeline, EnergyVAD, TwilioAdapter } from './capabilities/voice/index.js';
+export { mulawToPcm, pcmToMulaw, resamplePcm, twilioToStt, sttToTwilio } from './capabilities/voice/index.js';
+export type {
+  AudioFrame,
+  AudioEncoding,
+  VADEvent,
+  IVoiceActivityDetector,
+  EnergyVADConfig,
+  CallDirection,
+  SessionState,
+  VoiceSessionInfo,
+  CallEndReason,
+  CallSummary,
+  VoiceBridgeConfig,
+  TextPipelineConfig,
+  PipelineConfig,
+  VoiceHooks,
+  IVoicePipeline,
+  VoicePipelineEvents,
+  ITelephonyAdapter,
+  TelephonyAdapterEvents,
+  IncomingCallInfo,
+  TwilioAdapterConfig,
+} from './capabilities/voice/index.js';
+export type { VoiceBridgeEvents } from './capabilities/voice/index.js';
+export type { VoiceSessionEvents } from './capabilities/voice/index.js';
+
 // Search Capabilities (NEW - Connector-based web search)
 export { SearchProvider } from './capabilities/search/index.js';
 export type {

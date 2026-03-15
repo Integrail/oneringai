@@ -936,6 +936,13 @@ export interface CompactionContext {
   /** Strategy name for logging */
   readonly strategyName: string;
 
+  /**
+   * Describe a tool call using the tool's describeCall function.
+   * Returns a human-readable summary of the tool call args (e.g., "src/core/Agent.ts [lines 100-200]").
+   * Returns undefined if the tool is not found or has no describeCall.
+   */
+  describeToolCall?(toolName: string, toolArgs: unknown): string | undefined;
+
   // === Methods for strategy to modify state (controlled access) ===
 
   /**

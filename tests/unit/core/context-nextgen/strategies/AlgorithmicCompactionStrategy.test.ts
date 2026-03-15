@@ -366,6 +366,52 @@ describe('AlgorithmicCompactionStrategy', () => {
       expect(description).toContain('path=');
     });
 
+    it('should use describeToolCall from context when available', async () => {
+      const mockMemory = createMockWorkingMemory();
+      const largeResult = 'x'.repeat(2000);
+
+      const conversation = [
+        createToolUseMessage('tool-abc12345', 'grep', { pattern: 'TODO|FIXME', glob: '*.ts', path: 'src/' }),
+        createToolResultMessage('tool-abc12345', largeResult),
+      ];
+
+      const context = createMockContext(conversation, mockMemory);
+      // Add describeToolCall that mimics grep's describeCall
+      (context as Record<string, unknown>).describeToolCall = (toolName: string, args: unknown) => {
+        if (toolName === 'grep') {
+          const a = args as Record<string, string>;
+          return `"${a.pattern}" in ${a.glob} (${a.path})`;
+        }
+        return undefined;
+      };
+
+      const strategy = new AlgorithmicCompactionStrategy();
+      await strategy.consolidate(context);
+
+      const description = mockMemory.store.mock.calls[0][1];
+      expect(description).toBe('grep: "TODO|FIXME" in *.ts (src/)');
+    });
+
+    it('should fall back to summarizeArgs when describeToolCall returns undefined', async () => {
+      const mockMemory = createMockWorkingMemory();
+      const largeResult = 'x'.repeat(2000);
+
+      const conversation = [
+        createToolUseMessage('tool-abc12345', 'custom_tool', { query: 'test' }),
+        createToolResultMessage('tool-abc12345', largeResult),
+      ];
+
+      const context = createMockContext(conversation, mockMemory);
+      (context as Record<string, unknown>).describeToolCall = () => undefined;
+
+      const strategy = new AlgorithmicCompactionStrategy();
+      await strategy.consolidate(context);
+
+      const description = mockMemory.store.mock.calls[0][1];
+      expect(description).toContain('custom_tool');
+      expect(description).toContain('query=');
+    });
+
     it('should truncate long descriptions', async () => {
       const mockMemory = createMockWorkingMemory();
       const largeResult = 'x'.repeat(2000);

@@ -152,7 +152,7 @@ export function ToolConnectorsPage(): React.ReactElement {
         window.hosea.universalConnector.list(),
         window.hosea.connector.list(),
       ]);
-      setTools(registry);
+      setTools(Array.isArray(registry) ? registry : []);
       setUniversalConnectors(uniConns);
       setLlmConnectors(llmConns);
     } catch (error) {

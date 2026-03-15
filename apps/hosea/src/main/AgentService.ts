@@ -4022,6 +4022,65 @@ export class AgentService {
   }
 
   /**
+   * Add a new permission rule.
+   */
+  async addPermissionRule(instanceId: string, ruleData: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) return { success: false, error: 'Instance not found' };
+
+    try {
+      const now = new Date().toISOString();
+      const rule = {
+        id: crypto.randomUUID(),
+        toolName: String(ruleData.toolName ?? '*'),
+        action: (ruleData.action as 'allow' | 'deny' | 'ask') ?? 'allow',
+        conditions: ruleData.conditions as Array<{ argName: string; operator: string; value: string }> | undefined,
+        unconditional: Boolean(ruleData.unconditional),
+        enabled: ruleData.enabled !== false,
+        description: ruleData.description as string | undefined,
+        createdBy: 'user' as const,
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: (ruleData.expiresAt as string | null) ?? undefined,
+      };
+      await instance.agent.policyManager.userRules.addRule(rule);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Update an existing permission rule.
+   */
+  async updatePermissionRule(instanceId: string, ruleId: string, updates: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) return { success: false, error: 'Instance not found' };
+
+    try {
+      const updated = await instance.agent.policyManager.userRules.updateRule(ruleId, updates as any);
+      return { success: updated, error: updated ? undefined : 'Rule not found' };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Get available tool names for an instance.
+   */
+  async getInstanceTools(instanceId: string): Promise<{ success: boolean; tools?: string[]; error?: string }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) return { success: false, error: 'Instance not found' };
+
+    try {
+      const tools = instance.agent.tools.list().map(t => t.definition.function.name);
+      return { success: true, tools: tools.sort() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
    * Delete a permission rule.
    */
   async deletePermissionRule(instanceId: string, ruleId: string): Promise<{ success: boolean; error?: string }> {

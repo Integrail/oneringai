@@ -445,9 +445,12 @@ export interface HoseaAPI {
     respondToolApproval: (instanceId: string, response: ToolApprovalResponse) => Promise<{ success: boolean; error?: string }>;
     // Permission rules management
     getPermissionRules: (instanceId: string) => Promise<{ success: boolean; rules?: UserPermissionRuleForUI[]; error?: string }>;
+    addPermissionRule: (instanceId: string, rule: Omit<UserPermissionRuleForUI, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>) => Promise<{ success: boolean; error?: string }>;
+    updatePermissionRule: (instanceId: string, ruleId: string, updates: Partial<UserPermissionRuleForUI>) => Promise<{ success: boolean; error?: string }>;
     deletePermissionRule: (instanceId: string, ruleId: string) => Promise<{ success: boolean; error?: string }>;
     togglePermissionRule: (instanceId: string, ruleId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
     clearSessionApprovals: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    getAvailableTools: (instanceId: string) => Promise<{ success: boolean; tools?: string[]; error?: string }>;
   };
 
   // Connectors
@@ -1463,9 +1466,12 @@ const api: HoseaAPI = {
     respondToolApproval: (instanceId, response) => ipcRenderer.invoke('agent:respond-tool-approval', instanceId, response),
     // Permission rules management
     getPermissionRules: (instanceId) => ipcRenderer.invoke('agent:get-permission-rules', instanceId),
+    addPermissionRule: (instanceId, rule) => ipcRenderer.invoke('agent:add-permission-rule', instanceId, rule),
+    updatePermissionRule: (instanceId, ruleId, updates) => ipcRenderer.invoke('agent:update-permission-rule', instanceId, ruleId, updates),
     deletePermissionRule: (instanceId, ruleId) => ipcRenderer.invoke('agent:delete-permission-rule', instanceId, ruleId),
     togglePermissionRule: (instanceId, ruleId, enabled) => ipcRenderer.invoke('agent:toggle-permission-rule', instanceId, ruleId, enabled),
     clearSessionApprovals: (instanceId) => ipcRenderer.invoke('agent:clear-session-approvals', instanceId),
+    getAvailableTools: (instanceId) => ipcRenderer.invoke('agent:get-available-tools', instanceId),
   },
 
   connector: {
