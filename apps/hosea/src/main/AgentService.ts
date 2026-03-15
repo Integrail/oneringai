@@ -3525,6 +3525,7 @@ export class AgentService {
         // Wire permission approval callback when permissions enabled
         ...(agentConfig.permissionsEnabled ? {
           permissions: {
+            policies: [],
             onApprovalRequired: this.createApprovalCallback('default'),
             userRulesStorage: new FileUserPermissionRulesStorage(),
           },

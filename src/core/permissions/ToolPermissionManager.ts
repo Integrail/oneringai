@@ -68,8 +68,8 @@ export class ToolPermissionManager extends EventEmitter {
   private defaultScope: PermissionScope;
   private defaultRiskLevel: RiskLevel;
 
-  // Optional approval callback
-  private onApprovalRequired?: (context: PermissionCheckContext) => Promise<ApprovalDecision>;
+  // Optional approval callback (accepts new ApprovalRequestContext or legacy PermissionCheckContext)
+  private onApprovalRequired?: (context: any) => Promise<ApprovalDecision>;
 
   constructor(config?: AgentPermissionsConfig) {
     super();

@@ -728,29 +728,7 @@ export class PermissionPolicyManager extends EventEmitter {
     return new PermissionPolicyManager({
       policies,
       chain: chainConfig,
-      onApprovalRequired: config.onApprovalRequired
-        ? async (ctx) => {
-            // Adapt new ApprovalRequestContext to legacy PermissionCheckContext
-            const legacyContext = {
-              toolCall: {
-                id: ctx.executionId ?? '',
-                type: 'function' as const,
-                blocking: true,
-                state: 'pending' as const,
-                function: {
-                  name: ctx.toolName,
-                  arguments: JSON.stringify(ctx.args),
-                },
-              },
-              parsedArgs: ctx.args,
-              config: ctx.toolPermissionConfig ?? {},
-              executionId: ctx.executionId ?? '',
-              iteration: ctx.iteration ?? 0,
-              agentType: 'agent' as const,
-            };
-            return config.onApprovalRequired!(legacyContext as any);
-          }
-        : undefined,
+      onApprovalRequired: config.onApprovalRequired,
     });
   }
 

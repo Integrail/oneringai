@@ -264,12 +264,10 @@ export interface AgentPermissionsConfig {
 
   /**
    * Callback invoked when a tool needs approval.
+   * Receives full ApprovalRequestContext with tool info, risk level, args.
    * Return an ApprovalDecision to approve/deny.
-   *
-   * If not provided, the existing `approve:tool` hook system is used.
-   * This callback runs BEFORE hooks, providing a first-pass check.
    */
-  onApprovalRequired?: (context: PermissionCheckContext) => Promise<ApprovalDecision>;
+  onApprovalRequired?: (context: ApprovalRequestContext) => Promise<ApprovalDecision>;
 
   /**
    * Whether to inherit permission state from parent session.

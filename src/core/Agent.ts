@@ -1936,11 +1936,21 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // so the LLM loop gets informed and can adjust
       if (error instanceof ToolPermissionDeniedError) {
         this.emit('tool:error', { executionId, iteration, toolCall, error, timestamp: new Date() });
+
+        // Build an informative message so the LLM understands and adjusts behavior
+        const policyInfo = error.details?.policyName ? ` (policy: ${error.details.policyName})` : '';
+        const approvalHint = error.details?.approvalRequired
+          ? ' The user was asked for permission and denied it.'
+          : ' This tool is blocked by a permission policy.';
+
         return {
           tool_use_id: toolCall.id,
           tool_name: toolCall.function.name,
           tool_args: {},
-          content: `Permission denied: ${error.reason}`,
+          content: `PERMISSION DENIED for tool '${toolCall.function.name}': ${error.reason}${policyInfo}.${approvalHint}\n\n`
+            + 'Do NOT retry this exact tool call — the user has explicitly denied permission. '
+            + 'Inform the user that the operation was blocked and ask how they would like to proceed, '
+            + 'or try an alternative approach that does not require this tool.',
           state: ToolCallState.FAILED,
           executionTime: Date.now() - toolStartTime,
         };
