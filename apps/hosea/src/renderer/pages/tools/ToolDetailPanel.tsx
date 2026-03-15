@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import type { ToolListItem, ToolSchemaParam } from './toolTypes.js';
 import { getCatIcon, getCatLabel } from './toolUtils.js';
 
@@ -10,26 +11,24 @@ interface Props {
 
 export function ToolDetailPanel({ tool, schema, panelWidth, onClose }: Props) {
   if (!tool) {
-    return (
-      <div className="detail-panel detail-panel--hidden" style={{ width: 0 }} />
-    );
+    return <div className="detail-panel detail-panel--hidden" />;
   }
+
+  const safe = tool.safeByDefault;
 
   return (
     <div className="detail-panel" style={{ width: panelWidth }}>
       <div className="pn-header">
-        <div
-          className="pn-header__icon"
-          style={{ background: `color-mix(in srgb, var(--cat-${tool.category}) 15%, white)` }}
-        >
+        <div className={clsx('pn-header__icon', `tool-icon--${tool.category}`)}>
+
           {getCatIcon(tool.category)}
         </div>
         <div className="pn-header__info">
           <div className="pn-header__name">{tool.name}</div>
           <div className="pn-header__badges">
             <span className="pn-header__cat-badge">{getCatLabel(tool.category)}</span>
-            <span className={`perm-badge perm-badge--${tool.safeByDefault ? 'safe' : 'approval'}`}>
-              {tool.safeByDefault ? '✓ Auto-allowed' : '⚠ Approval'}
+            <span className={clsx('perm-badge', safe ? 'perm-badge--safe' : 'perm-badge--approval')}>
+              {safe ? '✓ Auto-allowed' : '⚠ Approval'}
             </span>
           </div>
         </div>
@@ -48,13 +47,9 @@ export function ToolDetailPanel({ tool, schema, panelWidth, onClose }: Props) {
 
         {schema !== null && (
           <div>
-            <div className="pn-section__label">
-              Parameters ({schema.length})
-            </div>
+            <div className="pn-section__label">Parameters ({schema.length})</div>
             {schema.length === 0 ? (
-              <div className="pn-section__text" style={{ color: 'var(--color-gray-400)', fontStyle: 'italic' }}>
-                No parameters
-              </div>
+              <div className="pn-section__text pn-no-params">No parameters</div>
             ) : (
               <div className="pn-params-list">
                 {schema.map((param) => (
@@ -62,7 +57,7 @@ export function ToolDetailPanel({ tool, schema, panelWidth, onClose }: Props) {
                     <div className="param-row__head">
                       <span className="param-row__name">{param.name}</span>
                       <span className="param-row__type">{param.type}</span>
-                      <span className={`param-row__required param-row__required--${param.required ? 'yes' : 'no'}`}>
+                      <span className={clsx('param-row__required', param.required ? 'param-row__required--yes' : 'param-row__required--no')}>
                         {param.required ? 'required' : 'optional'}
                       </span>
                     </div>
@@ -78,16 +73,14 @@ export function ToolDetailPanel({ tool, schema, panelWidth, onClose }: Props) {
 
         <div>
           <div className="pn-section__label">Permission</div>
-          <div className={`pn-perm-box pn-perm-box--${tool.safeByDefault ? 'safe' : 'approval'}`}>
-            <div className="pn-perm-box__icon">
-              {tool.safeByDefault ? '✓' : '⚠'}
-            </div>
+          <div className={clsx('pn-perm-box', safe ? 'pn-perm-box--safe' : 'pn-perm-box--approval')}>
+            <div className="pn-perm-box__icon">{safe ? '✓' : '⚠'}</div>
             <div>
               <div className="pn-perm-box__title">
-                {tool.safeByDefault ? 'Auto-allowed' : 'Requires approval'}
+                {safe ? 'Auto-allowed' : 'Requires approval'}
               </div>
               <div className="pn-perm-box__sub">
-                {tool.safeByDefault
+                {safe
                   ? 'Runs automatically without user approval.'
                   : 'Agent must request user approval before each use.'}
               </div>

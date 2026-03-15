@@ -12,6 +12,16 @@
   --tool-primary: #b91030;
   --tool-primary-hover: #9f0d29;
   --tool-primary-light: #fdf2f4;
+}
+
+.tools-page .page__content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.tools-page {
 
   /* Category color map (used via data-cat attribute) */
   --cat-filesystem: #3b82f6;
@@ -63,6 +73,26 @@
   flex-shrink: 0;
   color: var(--color-gray-500);
   font-size: 15px;
+}
+
+.tools-stat-icon--safe { color: #065f46; }
+.tools-stat-icon--approval { color: #92400e; }
+
+/* Per-category icon backgrounds */
+.tool-icon--filesystem  { background: color-mix(in srgb, var(--cat-filesystem)   15%, white); }
+.tool-icon--shell       { background: color-mix(in srgb, var(--cat-shell)        15%, white); }
+.tool-icon--web         { background: color-mix(in srgb, var(--cat-web)          15%, white); }
+.tool-icon--code        { background: color-mix(in srgb, var(--cat-code)         15%, white); }
+.tool-icon--json        { background: color-mix(in srgb, var(--cat-json)         15%, white); }
+.tool-icon--routines    { background: color-mix(in srgb, var(--cat-routines)     15%, white); }
+.tool-icon--desktop     { background: color-mix(in srgb, var(--cat-desktop)      15%, white); }
+.tool-icon--custom-tools { background: color-mix(in srgb, var(--cat-custom-tools) 15%, white); }
+.tool-icon--other       { background: color-mix(in srgb, var(--cat-other)        15%, white); }
+
+/* "No parameters" placeholder */
+.pn-no-params {
+  color: var(--color-gray-400);
+  font-style: italic;
 }
 
 .tools-stat-value {

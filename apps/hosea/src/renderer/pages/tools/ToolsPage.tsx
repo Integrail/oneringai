@@ -160,7 +160,7 @@ export function ToolsPage(): React.ReactElement {
         </div>
       </div>
 
-      <div className="page__content" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+      <div className="page__content">
         {/* Stats bar */}
         <div className="tools-stats-bar">
           <div className="tools-stat-item">
@@ -171,14 +171,14 @@ export function ToolsPage(): React.ReactElement {
             </div>
           </div>
           <div className="tools-stat-item">
-            <div className="tools-stat-icon" style={{ color: '#065f46' }}>✓</div>
+            <div className="tools-stat-icon tools-stat-icon--safe">✓</div>
             <div>
               <div className="tools-stat-value">{stats.autoAllowed}</div>
               <div className="tools-stat-label">Auto-allowed</div>
             </div>
           </div>
           <div className="tools-stat-item">
-            <div className="tools-stat-icon" style={{ color: '#92400e' }}>⚠</div>
+            <div className="tools-stat-icon tools-stat-icon--approval">⚠</div>
             <div>
               <div className="tools-stat-value">{stats.approval}</div>
               <div className="tools-stat-label">Need Approval</div>

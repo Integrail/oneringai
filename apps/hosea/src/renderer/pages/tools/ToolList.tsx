@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import type { ToolCategoryId, ToolListItem } from './toolTypes.js';
 import { getCatIcon, getCatLabel, groupByCategory } from './toolUtils.js';
 
@@ -55,23 +56,18 @@ interface ToolRowProps {
 }
 
 function ToolRow({ tool, selected, onSelect, onToggle }: ToolRowProps) {
-  const rowClass = [
-    'tool-row',
-    selected ? 'tool-row--selected' : '',
-    !tool.enabled ? 'tool-row--disabled' : '',
-  ].filter(Boolean).join(' ');
-
   function handleToggle(e: React.MouseEvent) {
     e.stopPropagation();
     onToggle(tool.name, !tool.enabled);
   }
 
   return (
-    <div className={rowClass} onClick={() => onSelect(tool.name)}>
-      <div
-        className="tool-row__icon"
-        style={{ background: `color-mix(in srgb, var(--cat-${tool.category}) 15%, white)` }}
-      >
+    <div
+      className={clsx('tool-row', selected && 'tool-row--selected', !tool.enabled && 'tool-row--disabled')}
+      onClick={() => onSelect(tool.name)}
+    >
+      <div className={clsx('tool-row__icon', `tool-icon--${tool.category}`)}>
+
         {getCatIcon(tool.category)}
       </div>
       <div className="tool-row__body">
@@ -79,11 +75,11 @@ function ToolRow({ tool, selected, onSelect, onToggle }: ToolRowProps) {
         <div className="tool-row__desc">{tool.description}</div>
       </div>
       <div className="tool-row__meta">
-        <span className={`perm-badge perm-badge--${tool.safeByDefault ? 'safe' : 'approval'}`}>
+        <span className={clsx('perm-badge', tool.safeByDefault ? 'perm-badge--safe' : 'perm-badge--approval')}>
           {tool.safeByDefault ? 'Safe' : 'Approval'}
         </span>
         <button
-          className={`tool-toggle${tool.enabled ? ' tool-toggle--on' : ''}`}
+          className={clsx('tool-toggle', tool.enabled && 'tool-toggle--on')}
           onClick={handleToggle}
           title={tool.enabled ? 'Disable tool' : 'Enable tool'}
         >
