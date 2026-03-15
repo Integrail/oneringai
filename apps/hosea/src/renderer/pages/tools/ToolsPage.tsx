@@ -82,6 +82,12 @@ export function ToolsPage(): React.ReactElement {
     setSchema(null);
   }, []);
 
+  const handleSelectCat = useCallback((cat: string) => {
+    setSelectedCat(cat);
+    setSelectedTool(null);
+    setSchema(null);
+  }, []);
+
   const handleToggle = useCallback(async (name: string, enabled: boolean) => {
     setTools((prev) => prev.map((t) => t.name === name ? { ...t, enabled } : t));
     try {
@@ -228,7 +234,7 @@ export function ToolsPage(): React.ReactElement {
           <ToolCategoryNav
             categories={categories}
             selected={selectedCat}
-            onSelect={setSelectedCat}
+            onSelect={handleSelectCat}
           />
 
           <ToolList
