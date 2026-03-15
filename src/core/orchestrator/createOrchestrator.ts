@@ -238,13 +238,14 @@ export function createOrchestrator(config: OrchestratorConfig): Agent {
   // C3: Wrap destroy to clean up all workers + shared workspace
   const originalDestroy = orchestratorAgent.destroy.bind(orchestratorAgent);
   orchestratorAgent.destroy = () => {
-    // Destroy all worker agents first
-    for (const [name, agent] of agents) {
-      if (!agent.isDestroyed) {
-        agent.destroy();
+    // Destroy all worker agents first (collect before iterating to avoid mutation during iteration)
+    const workerAgents = Array.from(agents.values());
+    for (const worker of workerAgents) {
+      if (!worker.isDestroyed) {
+        worker.destroy();
       }
-      agents.delete(name);
     }
+    agents.clear();
     lastTurnTimestamps.clear();
 
     // Now destroy the orchestrator (which will destroy workspace via its context)

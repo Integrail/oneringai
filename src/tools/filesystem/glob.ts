@@ -146,6 +146,8 @@ WHEN TO USE:
       },
     },
 
+    permission: { scope: 'always' as const, riskLevel: 'low' as const },
+
     describeCall: (args: GlobArgs): string => {
       if (args.path) {
         return `${args.pattern} in ${args.path}`;

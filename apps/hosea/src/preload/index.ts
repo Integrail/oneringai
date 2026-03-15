@@ -238,9 +238,47 @@ export type StreamChunk =
   | { type: 'voice:chunk'; chunkIndex: number; subIndex?: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
   | { type: 'voice:error'; chunkIndex: number; error: string; text: string }
   | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number }
+  // Orchestrator worker events
+  | { type: 'orchestrator:worker_created'; worker: WorkerInfoForUI }
+  | { type: 'orchestrator:worker_destroyed'; workerName: string }
+  | { type: 'orchestrator:worker_status'; workerName: string; status: WorkerStatus }
+  | { type: 'orchestrator:worker_tool_start'; workerName: string; tool: string; description: string }
+  | { type: 'orchestrator:worker_tool_end'; workerName: string; tool: string; durationMs?: number }
+  | { type: 'orchestrator:worker_turn_start'; workerName: string }
+  | { type: 'orchestrator:worker_turn_end'; workerName: string; success: boolean }
+  | { type: 'orchestrator:workspace_update'; entries: WorkspaceEntryForUI[] }
   // Stream status events (retry, incomplete, failed)
   | { type: 'retry'; attempt: number; maxAttempts: number; reason: string; delayMs: number }
   | { type: 'status'; status: 'completed' | 'incomplete' | 'failed'; stopReason?: string };
+
+/**
+ * Worker status for orchestrator UI
+ */
+export type WorkerStatus = 'idle' | 'running' | 'paused' | 'destroyed';
+
+/**
+ * Worker info for orchestrator UI
+ */
+export interface WorkerInfoForUI {
+  name: string;
+  type: string;
+  model: string;
+  status: WorkerStatus;
+  registryId: string;
+  createdAt: number;
+}
+
+/**
+ * Workspace entry for orchestrator UI
+ */
+export interface WorkspaceEntryForUI {
+  key: string;
+  summary: string;
+  status: string;
+  author: string;
+  version: number;
+  updatedAt: number;
+}
 
 /**
  * Browser state info for IPC
@@ -354,6 +392,9 @@ export interface HoseaAPI {
     // Context entry pinning (for "Current Context" UI display)
     pinContextKey: (agentConfigId: string, key: string, pinned: boolean) => Promise<{ success: boolean; error?: string }>;
     getPinnedContextKeys: (agentConfigId: string) => Promise<string[]>;
+    // Orchestrator worker inspection
+    inspectWorker: (instanceId: string, workerRegistryId: string) => Promise<unknown>;
+    listWorkers: (instanceId: string) => Promise<{ workers: unknown[] }>;
   };
 
   // Connectors
@@ -1362,6 +1403,9 @@ const api: HoseaAPI = {
     // Context entry pinning
     pinContextKey: (agentConfigId, key, pinned) => ipcRenderer.invoke('agent:pin-context-key', agentConfigId, key, pinned),
     getPinnedContextKeys: (agentConfigId) => ipcRenderer.invoke('agent:get-pinned-context-keys', agentConfigId),
+    // Orchestrator worker inspection
+    inspectWorker: (instanceId, workerRegistryId) => ipcRenderer.invoke('agent:inspect-worker', instanceId, workerRegistryId),
+    listWorkers: (instanceId) => ipcRenderer.invoke('agent:list-workers', instanceId),
   },
 
   connector: {

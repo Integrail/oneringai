@@ -412,8 +412,6 @@ function buildAssignParallelTool(ctx: OrchestrationToolsContext): ToolFunction {
       }
 
       // Run all in parallel
-      // C1: Track timers for cleanup
-      const timers: Array<ReturnType<typeof setTimeout>> = [];
       const promises = assignments.map(async (a) => {
         const agent = ctx.agents.get(a.agent)!;
         const delta = buildWorkspaceDelta(a.agent, ctx.workspace, ctx.lastTurnTimestamps);
@@ -425,7 +423,6 @@ function buildAssignParallelTool(ctx: OrchestrationToolsContext): ToolFunction {
             agent.run(fullInstruction),
             new Promise<never>((_, reject) => {
               timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs / 1000}s`)), timeoutMs);
-              timers.push(timer);
             }),
           ]);
 

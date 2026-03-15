@@ -7616,6 +7616,1402 @@ agent.tools.executionPipeline.use(new HoseaUIPlugin({
 
 ---
 
+## Tool Permissions
+
+The policy-based permission system provides composable policies, per-user rules with argument inspection, and pluggable storage. Permissions are enforced at the ToolManager pipeline level — all tool execution is gated, whether from Agent's agentic loop, direct API calls, or orchestrator workers.
+
+### Architecture Overview
+
+Permission evaluation follows a 3-tier model, checked in this order:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  1. USER RULES PRE-CHECK (highest priority, FINAL)           │
+│     Per-user persistent rules with argument conditions.       │
+│     When matched: result is FINAL, no further evaluation.     │
+│     Specificity-based: more conditions > fewer conditions.    │
+├──────────────────────────────────────────────────────────────┤
+│  2. PARENT DELEGATION PRE-CHECK (orchestrator workers)       │
+│     Parent deny is FINAL — worker cannot override.            │
+│     Parent allow does NOT skip worker restrictions.           │
+├──────────────────────────────────────────────────────────────┤
+│  3. POLICY CHAIN (composable policies)                       │
+│     Deny short-circuits immediately.                          │
+│     Allow is remembered but does NOT short-circuit.           │
+│     All abstain → defaultVerdict (default: 'deny').           │
+│                                                              │
+│     If deny + needsApproval → APPROVAL FLOW                 │
+│     → onApprovalRequired callback                            │
+│     → optional persistent rule creation                      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Detailed evaluation flow in `PermissionPolicyManager.check()`:
+
+```
+PermissionPolicyManager.check(context):
+  1. UserPermissionRulesEngine.evaluate()
+     → allow? → DONE (skip chain entirely)
+     → deny?  → DONE (skip chain entirely)
+     → ask?   → approval dialog
+     → no match → fall through
+
+  2. Parent delegation (if orchestrator worker)
+     → parent deny → DONE
+     → parent allow → continue
+
+  3. PolicyChain.evaluate()
+     → BlocklistPolicy (pri 5) → AllowlistPolicy (pri 10) → RateLimitPolicy (pri 20)
+     → RolePolicy (pri 30) → PathRestrictionPolicy (pri 50) → BashFilterPolicy (pri 50)
+     → UrlAllowlistPolicy (pri 50) → SessionApprovalPolicy (pri 90)
+
+  4. If deny + needsApproval → onApprovalRequired callback
+     → approved? → cache approval, optionally create persistent rule
+     → denied? → optionally create persistent deny rule
+```
+
+Key design principles:
+
+- **User rules are supreme** — when a user rule matches, no policy can override it. This guarantees users always have final say.
+- **Deny short-circuits** — in the policy chain, a deny verdict stops evaluation immediately. No later policy can override a deny.
+- **Allow does NOT short-circuit** — an allow verdict is remembered, but evaluation continues. This ensures argument-level restrictions (e.g., BashFilterPolicy blocking `rm -rf /`) always run even if AllowlistPolicy already allowed `bash`.
+- **All abstain = deny** — if no policy has an opinion, the default is to deny (configurable to `'allow'` for backward compatibility).
+
+### Quick Start
+
+#### Zero-Config (Backward Compatible)
+
+The permission system is always active but backward compatible. Without any configuration, tools auto-execute using the default allowlist:
+
+```typescript
+import { Agent, Connector, Vendor } from '@everworker/oneringai';
+
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// No permissions config — uses default allowlist, all other tools auto-execute
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [readFile, writeFile, bash],
+});
+// read_file: auto-allowed (in DEFAULT_ALLOWLIST)
+// write_file: follows tool self-declaration (scope: 'session')
+// bash: follows tool self-declaration (scope: 'once')
+```
+
+#### Simple Policy Configuration
+
+Add path restrictions and bash command filtering:
+
+```typescript
+import {
+  Agent,
+  PathRestrictionPolicy,
+  BashFilterPolicy,
+} from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  permissions: {
+    // Allowlist is auto-merged with DEFAULT_ALLOWLIST
+    allowlist: ['my_safe_tool'],
+    blocklist: ['dangerous_tool'],
+
+    // Approval callback — invoked when a tool needs user approval
+    onApprovalRequired: async (ctx) => {
+      console.log(`Tool '${ctx.toolName}' needs approval. Args:`, ctx.args);
+      // In a real app, show a UI dialog
+      return { approved: true, scope: 'session' };
+    },
+
+    // Custom policies
+    policies: [
+      new PathRestrictionPolicy({
+        allowedPaths: ['/workspace', '/tmp'],
+      }),
+      new BashFilterPolicy({
+        denyPatterns: [/rm\s+-rf/, /sudo/],
+        allowCommands: ['ls', 'cat', 'echo', 'npm'],
+      }),
+    ],
+  },
+});
+```
+
+### Per-User Permission Rules
+
+User permission rules are persistent, per-user, and have the highest evaluation priority. When a user rule matches, its result is final — no policy can override it.
+
+#### UserPermissionRule Model
+
+```typescript
+interface UserPermissionRule {
+  /** Unique rule ID (UUID) */
+  id: string;
+
+  /** Tool name this rule applies to. Use '*' for all tools. */
+  toolName: string;
+
+  /** What to do when this rule matches */
+  action: 'allow' | 'deny' | 'ask';
+
+  /**
+   * Argument conditions (optional). ALL conditions must match (AND logic).
+   * If empty/omitted, rule applies to ALL calls of this tool (blanket rule).
+   */
+  conditions?: ArgumentCondition[];
+
+  /**
+   * If true, this rule is absolute — more specific rules CANNOT override it.
+   * "Allow bash unconditionally" means even a "bash + rm -rf → ask" rule is ignored.
+   * @default false
+   */
+  unconditional?: boolean;
+
+  /** Whether this rule is active */
+  enabled: boolean;
+
+  /** Human-readable description (shown in settings UI) */
+  description?: string;
+
+  /** How this rule was created */
+  createdBy: 'user' | 'approval_dialog' | 'admin' | 'system';
+
+  /** ISO timestamp of creation */
+  createdAt: string;
+
+  /** ISO timestamp of last update */
+  updatedAt: string;
+
+  /** Optional expiry (ISO timestamp). Null/undefined = never expires. */
+  expiresAt?: string | null;
+}
+```
+
+#### ArgumentCondition Operators
+
+All 8 operators for inspecting argument values:
+
+```typescript
+interface ArgumentCondition {
+  /** Argument name to inspect (e.g., 'command', 'path', 'url') */
+  argName: string;
+
+  /** Comparison operator */
+  operator: ConditionOperator;
+
+  /** Value to compare against. For 'matches'/'not_matches', a regex string. */
+  value: string;
+
+  /** Case-insensitive comparison. @default true */
+  ignoreCase?: boolean;
+}
+
+type ConditionOperator =
+  | 'starts_with'    // value starts with the given string
+  | 'not_starts_with'
+  | 'contains'       // value contains the given string
+  | 'not_contains'
+  | 'equals'         // exact equality
+  | 'not_equals'
+  | 'matches'        // regex match
+  | 'not_matches';   // regex negation
+```
+
+Examples of each operator:
+
+```typescript
+// Allow bash only for npm commands
+{ argName: 'command', operator: 'starts_with', value: 'npm' }
+
+// Deny commands containing 'sudo'
+{ argName: 'command', operator: 'contains', value: 'sudo' }
+
+// Allow write_file only for .ts files
+{ argName: 'path', operator: 'matches', value: '\\.ts$' }
+
+// Deny web_fetch for non-HTTPS URLs
+{ argName: 'url', operator: 'not_starts_with', value: 'https://' }
+
+// Allow edit_file only for a specific file
+{ argName: 'file_path', operator: 'equals', value: '/workspace/config.json' }
+
+// Deny bash commands matching dangerous patterns
+{ argName: 'command', operator: 'not_matches', value: 'rm\\s+-rf|dd\\s+if=|mkfs' }
+```
+
+#### Specificity Resolution
+
+When multiple rules match a tool call, specificity determines the winner:
+
+1. **Unconditional rules** are checked first. If matched, they are FINAL — no other rule can override them.
+2. **Conditional rules** are ranked by number of matching conditions. More conditions = more specific = higher priority.
+3. **Blanket rules** (no conditions) are the fallback with specificity 0.
+4. **Ties** are broken by `updatedAt` — most recently updated rule wins.
+
+```typescript
+// Example: these rules coexist without conflict
+const rules: UserPermissionRule[] = [
+  // Blanket: allow bash by default (specificity: 0)
+  { id: '1', toolName: 'bash', action: 'allow', enabled: true,
+    createdBy: 'user', createdAt: '...', updatedAt: '...' },
+
+  // Conditional: ask before rm commands (specificity: 1, overrides blanket)
+  { id: '2', toolName: 'bash', action: 'ask',
+    conditions: [{ argName: 'command', operator: 'contains', value: 'rm' }],
+    enabled: true, createdBy: 'user', createdAt: '...', updatedAt: '...' },
+
+  // More specific: deny rm -rf (specificity: 2, overrides the 'ask' above)
+  { id: '3', toolName: 'bash', action: 'deny',
+    conditions: [
+      { argName: 'command', operator: 'contains', value: 'rm' },
+      { argName: 'command', operator: 'contains', value: '-rf' },
+    ],
+    enabled: true, createdBy: 'user', createdAt: '...', updatedAt: '...' },
+];
+```
+
+#### Meta-Arguments
+
+Use special `__` prefixed argument names to match against tool registration metadata instead of call arguments:
+
+| Meta-Arg | Matches Against |
+|----------|----------------|
+| `__toolCategory` | Tool's registered category (e.g., `filesystem`, `web`, `shell`) |
+| `__toolSource` | Tool's source (e.g., `built-in`, `connector:github`, `mcp`, `custom`) |
+| `__toolNamespace` | Tool's registered namespace |
+
+```typescript
+// Deny all MCP tools
+{
+  id: '1', toolName: '*', action: 'deny',
+  conditions: [{ argName: '__toolSource', operator: 'starts_with', value: 'mcp' }],
+  enabled: true, createdBy: 'admin', createdAt: '...', updatedAt: '...',
+}
+
+// Allow only filesystem category tools
+{
+  id: '2', toolName: '*', action: 'allow',
+  conditions: [{ argName: '__toolCategory', operator: 'equals', value: 'filesystem' }],
+  enabled: true, createdBy: 'admin', createdAt: '...', updatedAt: '...',
+}
+
+// Block all desktop tools
+{
+  id: '3', toolName: '*', action: 'deny',
+  conditions: [{ argName: '__toolCategory', operator: 'equals', value: 'desktop' }],
+  enabled: true, createdBy: 'user', createdAt: '...', updatedAt: '...',
+}
+```
+
+#### CRUD API
+
+Manage rules programmatically via the `UserPermissionRulesEngine`:
+
+```typescript
+const engine = agent.policyManager.userRules;
+
+// Add a rule
+await engine.addRule({
+  id: crypto.randomUUID(),
+  toolName: 'bash',
+  action: 'ask',
+  conditions: [{ argName: 'command', operator: 'contains', value: 'rm' }],
+  enabled: true,
+  description: 'Ask before any rm commands',
+  createdBy: 'user',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+}, userId);
+
+// Update a rule
+await engine.updateRule(ruleId, { action: 'deny' }, userId);
+
+// Remove a rule
+await engine.removeRule(ruleId, userId);
+
+// Get all rules
+const allRules = engine.getRules();
+
+// Get rules for a specific tool
+const bashRules = engine.getRulesForTool('bash');
+
+// Get a single rule by ID
+const rule = engine.getRule(ruleId);
+
+// Enable/disable a rule
+await engine.enableRule(ruleId, userId);
+await engine.disableRule(ruleId, userId);
+```
+
+Rules auto-save to storage (if configured) after every mutation. Expired rules (past `expiresAt`) are automatically cleaned on evaluation.
+
+### Approval Dialog Integration
+
+When a policy denies a tool call with `needsApproval: true`, the `onApprovalRequired` callback is invoked. This is where your application shows an approval UI.
+
+#### Full Approval Callback Example
+
+```typescript
+import type { ApprovalRequestContext, ApprovalDecision } from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  permissions: {
+    onApprovalRequired: async (ctx: ApprovalRequestContext): Promise<ApprovalDecision> => {
+      // ctx contains rich context for the approval dialog
+      console.log(`Tool: ${ctx.toolName}`);
+      console.log(`Risk level: ${ctx.riskLevel}`);
+      console.log(`Arguments:`, ctx.args);
+      console.log(`Reason: ${ctx.decision.reason}`);
+      console.log(`Policy: ${ctx.decision.policyName}`);
+
+      if (ctx.approvalMessage) {
+        console.log(`Message: ${ctx.approvalMessage}`);
+      }
+      if (ctx.sensitiveArgs) {
+        console.log(`Sensitive args: ${ctx.sensitiveArgs.join(', ')}`);
+      }
+
+      // Show your UI dialog here...
+      const userChoice = await showApprovalDialog(ctx);
+
+      if (userChoice === 'allow_once') {
+        return { approved: true, scope: 'once' };
+      }
+
+      if (userChoice === 'allow_session') {
+        return { approved: true, scope: 'session' };
+      }
+
+      if (userChoice === 'always_allow') {
+        return {
+          approved: true,
+          scope: 'always',
+          remember: true,  // creates a persistent user rule
+        };
+      }
+
+      if (userChoice === 'always_allow_with_conditions') {
+        return {
+          approved: true,
+          createRule: {
+            description: 'Allow write_file in /workspace',
+            conditions: [
+              { argName: 'path', operator: 'starts_with', value: '/workspace/' },
+            ],
+          },
+        };
+      }
+
+      if (userChoice === 'deny_forever') {
+        return {
+          approved: false,
+          scope: 'never',
+          remember: true,  // creates a persistent deny rule
+        };
+      }
+
+      return { approved: false, reason: 'User denied' };
+    },
+  },
+});
+```
+
+#### ApprovalRequestContext Fields
+
+The callback receives a rich context extending `PolicyContext`:
+
+```typescript
+interface ApprovalRequestContext extends PolicyContext {
+  /** The deny decision that triggered this approval request */
+  decision: PolicyDecision;
+
+  /** Tool's risk level (from tool permission config or default) */
+  riskLevel: RiskLevel;  // 'low' | 'medium' | 'high' | 'critical'
+
+  /** Custom approval message (from tool permission config) */
+  approvalMessage?: string;
+
+  /** Argument names to highlight as sensitive in approval UI */
+  sensitiveArgs?: string[];
+
+  /** Policy-provided approval scope key */
+  approvalKey?: string;
+
+  /** Suggested approval scope */
+  approvalScope?: 'once' | 'session' | 'persistent';
+}
+```
+
+The base `PolicyContext` provides:
+
+```typescript
+interface PolicyContext {
+  toolName: string;                      // Tool being invoked
+  args: Record<string, unknown>;         // Parsed arguments
+  userId?: string;                       // From ToolContext.userId
+  roles?: string[];                      // From agent config userRoles
+  agentId?: string;
+  parentAgentId?: string;                // For orchestrator workers
+  sessionId?: string;
+  iteration?: number;                    // Agentic loop iteration
+  executionId?: string;                  // For tracing
+  toolSource?: string;                   // built-in, connector:xxx, mcp, custom
+  toolCategory?: string;                 // filesystem, web, shell, etc.
+  toolNamespace?: string;
+  toolTags?: string[];
+  toolPermissionConfig?: ToolPermissionConfig;  // Merged tool + registration config
+}
+```
+
+#### ApprovalDecision with createRule
+
+When the user wants to remember their decision, include `createRule` in the response:
+
+```typescript
+interface ApprovalDecision {
+  approved: boolean;
+  scope?: PermissionScope;   // 'once' | 'session' | 'always' | 'never'
+  reason?: string;           // Reason for denial
+  approvedBy?: string;       // Identifier of approver
+  remember?: boolean;        // Create persistent rule (shorthand)
+
+  /** Explicit rule creation with argument conditions */
+  createRule?: {
+    description?: string;
+    conditions?: ArgumentCondition[];
+    expiresAt?: string | null;   // ISO timestamp, null = never
+    unconditional?: boolean;
+  };
+}
+```
+
+#### Approval-to-Rule Creation Flow
+
+When the user approves with `createRule` or `remember: true`, the system automatically creates a persistent `UserPermissionRule`:
+
+```
+User clicks "Always Allow" in dialog
+    ↓
+ApprovalDecision { approved: true, remember: true, scope: 'always' }
+    ↓
+PermissionPolicyManager.createRuleFromApproval()
+    ↓
+UserPermissionRulesEngine.addRule({
+  toolName, action: 'allow', createdBy: 'approval_dialog'
+})
+    ↓
+Rule persisted to IUserPermissionRulesStorage
+    ↓
+Next call: user rule matches → immediate allow (no policy chain, no dialog)
+```
+
+### Built-in Policies
+
+The library ships 8 composable policies. Each can be used independently or combined in a chain. Policies are sorted by priority (lower number = runs first).
+
+#### AllowlistPolicy
+
+Auto-allows tools by name. Returns `allow` for listed tools, `abstain` for others. Note: allow does NOT short-circuit, so later policies (e.g., BashFilterPolicy) can still deny based on arguments.
+
+```typescript
+import { AllowlistPolicy, DEFAULT_ALLOWLIST } from '@everworker/oneringai';
+
+// Merge custom tools with defaults
+const policy = new AllowlistPolicy([
+  ...DEFAULT_ALLOWLIST,    // read_file, glob, grep, store_*, etc.
+  'my_safe_tool',
+  'another_safe_tool',
+]);
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:allowlist` |
+| Priority | 10 |
+| Verdict | `allow` or `abstain` |
+
+Default allowlisted tools: `read_file`, `glob`, `grep`, `list_directory`, `store_get`, `store_set`, `store_delete`, `store_list`, `store_action`, `context_stats`, `todo_add`, `todo_update`, `todo_remove`, `tool_catalog_search`, `tool_catalog_load`, `tool_catalog_unload`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`.
+
+Runtime modification:
+
+```typescript
+policy.add('new_safe_tool');
+policy.remove('store_delete');
+policy.has('read_file');     // true
+policy.getAll();             // string[]
+
+// Via PermissionPolicyManager shortcuts
+agent.policyManager.allowlistAdd('my_tool');
+agent.policyManager.allowlistRemove('my_tool');
+```
+
+#### BlocklistPolicy
+
+Permanently blocks tools by name. Returns `deny` without `needsApproval` — no user approval can override a blocklisted tool. Runs at the highest policy priority to block before any other policy can allow.
+
+```typescript
+import { BlocklistPolicy } from '@everworker/oneringai';
+
+const policy = new BlocklistPolicy([
+  'dangerous_tool',
+  'deprecated_tool',
+]);
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:blocklist` |
+| Priority | 5 (runs before allowlist) |
+| Verdict | `deny` (hard block) or `abstain` |
+
+Runtime modification:
+
+```typescript
+policy.add('newly_dangerous_tool');
+policy.remove('dangerous_tool');
+
+// Via PermissionPolicyManager shortcuts (auto-removes from opposite list)
+agent.policyManager.blocklistAdd('bad_tool');   // also removes from allowlist
+agent.policyManager.blocklistRemove('bad_tool');
+```
+
+#### SessionApprovalPolicy
+
+Manages session-level approval caching based on tool self-declarations. Reads `PolicyContext.toolPermissionConfig` to determine behavior:
+
+- `scope: 'always'` — auto-allow (tool declares itself safe)
+- `scope: 'never'` — hard deny (tool is disabled)
+- `scope: 'session'` — check approval cache, deny with `needsApproval` if not cached
+- `scope: 'once'` — always deny with `needsApproval` for every call
+- No config — `abstain` (tool has no permission declaration)
+
+```typescript
+import { SessionApprovalPolicy } from '@everworker/oneringai';
+
+const policy = new SessionApprovalPolicy('once'); // default scope for undeclared tools
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:session-approval` |
+| Priority | 90 (runs late, after argument-inspecting policies) |
+| Verdict | `allow`, `deny` (with or without `needsApproval`), or `abstain` |
+
+Approval cache management:
+
+```typescript
+// Programmatically approve a tool for the session
+agent.policyManager.approve('write_file', {
+  scope: 'session',
+  approvedBy: 'admin',
+});
+
+// With TTL expiration
+agent.policyManager.approve('bash', {
+  scope: 'session',
+  ttlMs: 300000, // 5 minutes
+});
+
+// Revoke an approval
+agent.policyManager.revoke('write_file');
+
+// Check cache
+agent.policyManager.isApproved('write_file'); // true/false
+
+// Clear all session approvals
+agent.policyManager.clearSession();
+```
+
+#### PathRestrictionPolicy
+
+Restricts file operations to allowed directory roots. Canonicalizes paths (resolves `..`, normalizes separators, best-effort symlink resolution for existing files).
+
+```typescript
+import { PathRestrictionPolicy } from '@everworker/oneringai';
+
+const policy = new PathRestrictionPolicy({
+  // Required: allowed path prefixes (canonicalized at construction)
+  allowedPaths: ['/workspace', '/tmp', process.cwd()],
+
+  // Optional: customize which tools are checked
+  // Default: write_file, edit_file, read_file, list_directory, glob, grep
+  tools: ['write_file', 'edit_file', 'read_file', 'list_directory', 'glob', 'grep'],
+
+  // Optional: which argument names contain file paths
+  // Default: path, file_path, target_path, directory, pattern
+  pathArgs: ['path', 'file_path', 'target_path', 'directory', 'pattern'],
+
+  // Optional: resolve symlinks for existing files
+  resolveSymlinks: true,  // default: true
+
+  // Optional: base path for resolving relative paths
+  basePath: process.cwd(),  // default: process.cwd()
+});
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:path-restriction` |
+| Priority | 50 |
+| Verdict | `deny` (with `needsApproval`, argument-scoped key) or `abstain` |
+
+The policy returns `abstain` for tools not in its list, so non-filesystem tools are unaffected. When denying, it provides an argument-scoped approval key (e.g., `write_file:/workspace/foo.txt`) so users can approve access to specific paths for the session.
+
+#### BashFilterPolicy
+
+Best-effort command filtering for the `bash` tool. Checks deny patterns first (any match = deny), then allow patterns (any match = abstain).
+
+**Important**: This is a guardrail, NOT a sandbox. Shell command obfuscation can bypass string-based filtering. For strong isolation, combine with blocklisting bash by default, path restrictions, or container/sandbox execution.
+
+```typescript
+import { BashFilterPolicy } from '@everworker/oneringai';
+
+const policy = new BashFilterPolicy({
+  // Deny patterns (checked first, any match → deny with needsApproval)
+  denyPatterns: [
+    /rm\s+-rf/,
+    /sudo\s+/,
+    /chmod\s+777/,
+    /curl.*\|.*sh/,     // pipe curl to shell
+  ],
+  denyCommands: ['shutdown', 'reboot', 'mkfs'],
+
+  // Allow patterns (if matched after deny check, abstain → other policies decide)
+  allowPatterns: [/^(ls|cat|echo|pwd|whoami)/],
+  allowCommands: ['npm', 'node', 'git', 'tsc', 'npx'],
+
+  // Argument containing the command (default: 'command')
+  commandArg: 'command',
+});
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:bash-filter` |
+| Priority | 50 |
+| Verdict | `deny` (with `needsApproval`, command-scoped key) or `abstain` |
+
+Only applies to the `bash` tool — all other tools get `abstain`. If neither deny nor allow patterns match, the policy abstains and lets other policies decide.
+
+#### UrlAllowlistPolicy
+
+Restricts URL-based tools to allowed domains. Uses proper `URL` parsing (not regex over raw strings). Validates both protocol and hostname.
+
+```typescript
+import { UrlAllowlistPolicy } from '@everworker/oneringai';
+
+const policy = new UrlAllowlistPolicy({
+  allowedDomains: [
+    'api.github.com',       // exact match (also matches www.api.github.com)
+    '.example.com',         // suffix: matches sub.example.com, NOT example.com
+    'internal.corp.net',    // exact + subdomains
+  ],
+
+  // Optional configuration
+  allowedProtocols: ['http:', 'https:'],  // default
+  tools: ['web_fetch', 'web_search', 'web_scrape'],  // default
+  urlArgs: ['url', 'query', 'target_url'],  // default
+});
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:url-allowlist` |
+| Priority | 50 |
+| Verdict | `deny` (with `needsApproval`, domain-scoped key) or `abstain` |
+
+Domain matching rules:
+- `"example.com"` matches exactly `example.com` and subdomains like `www.example.com`
+- `".example.com"` (leading dot) matches `sub.example.com` but NOT `example.com` itself
+- `"evil-example.com"` does NOT match `example.com`
+- Non-URL arguments (e.g., plain search queries) are silently skipped
+
+#### RolePolicy
+
+Role-based access control. Users can have multiple roles. Deny beats allow across all matched rules.
+
+```typescript
+import { RolePolicy } from '@everworker/oneringai';
+
+const policy = new RolePolicy([
+  {
+    role: 'admin',
+    allowTools: ['*'],  // admins can use everything
+  },
+  {
+    role: 'developer',
+    allowTools: ['read_file', 'write_file', 'edit_file', 'bash', 'glob', 'grep'],
+    denyTools: ['desktop_mouse_click'],  // no desktop automation
+  },
+  {
+    role: 'viewer',
+    allowTools: ['read_file', 'glob', 'grep', 'list_directory'],
+    denyTools: ['write_file', 'edit_file', 'bash'],
+  },
+  {
+    role: 'restricted',
+    denyTools: ['*'],  // deny everything (overrides any allow from other roles)
+  },
+]);
+
+// Set user roles on the agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userRoles: ['developer'],  // passed to PolicyContext.roles
+  permissions: {
+    policies: [policy],
+  },
+});
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:role` |
+| Priority | 30 |
+| Verdict | `allow`, `deny` (hard block, no approval), or `abstain` |
+
+If a user has roles `['developer', 'restricted']`, deny from `restricted` beats allow from `developer`. If no user roles are set, the policy abstains.
+
+#### RateLimitPolicy
+
+Per-tool rate limiting with a sliding window. In-memory only — counters reset on process restart.
+
+```typescript
+import { RateLimitPolicy } from '@everworker/oneringai';
+
+const policy = new RateLimitPolicy({
+  limits: {
+    'web_fetch': { maxCalls: 10, windowMs: 60_000 },   // 10 per minute
+    'bash': { maxCalls: 5, windowMs: 30_000 },          // 5 per 30 seconds
+    'web_search': { maxCalls: 20, windowMs: 60_000 },   // 20 per minute
+  },
+
+  // Optional: default limit for tools not explicitly configured
+  defaultLimit: { maxCalls: 100, windowMs: 60_000 },
+});
+```
+
+| Property | Value |
+|----------|-------|
+| Name | `builtin:rate-limit` |
+| Priority | 20 |
+| Verdict | `deny` (hard block, no approval) or `abstain` |
+
+Rate limit denials are hard blocks — no approval override. The deny reason includes retry timing (e.g., "retry after 12345ms").
+
+```typescript
+// Reset counters
+policy.reset('web_fetch');  // reset one tool
+policy.reset();             // reset all tools
+```
+
+For distributed rate limiting across processes, implement a custom `IPermissionPolicy` with external state (e.g., Redis).
+
+### Tool Self-Declaration
+
+Tool authors can declare permission defaults directly on the tool definition. These are read by `SessionApprovalPolicy` via `PolicyContext.toolPermissionConfig`.
+
+#### ToolPermissionConfig Fields
+
+```typescript
+interface ToolPermissionConfig {
+  /** When approval is required: 'once' | 'session' | 'always' | 'never' */
+  scope?: PermissionScope;
+
+  /** Risk classification: 'low' | 'medium' | 'high' | 'critical' */
+  riskLevel?: RiskLevel;
+
+  /** Custom message shown in approval UI */
+  approvalMessage?: string;
+
+  /** Argument names to highlight as sensitive (also used for audit redaction) */
+  sensitiveArgs?: string[];
+
+  /** Expiration time for session approvals (ms) */
+  sessionTTLMs?: number;
+}
+```
+
+#### Declaring on a Tool
+
+```typescript
+const myTool: ToolFunction = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'deploy_service',
+      description: 'Deploy a service to production',
+      parameters: {
+        type: 'object',
+        properties: {
+          service: { type: 'string' },
+          environment: { type: 'string' },
+        },
+        required: ['service', 'environment'],
+      },
+    },
+  },
+  execute: async (args) => { /* ... */ },
+  permission: {
+    scope: 'once',          // require approval every time
+    riskLevel: 'critical',
+    approvalMessage: 'This will deploy to production. Are you sure?',
+    sensitiveArgs: ['environment'],
+    sessionTTLMs: 300_000,  // session approvals expire after 5 minutes
+  },
+};
+```
+
+#### Registration-Time Override
+
+Application developers can override tool declarations at registration time:
+
+```typescript
+agent.tools.register(myTool, {
+  permission: {
+    scope: 'session',      // override: approve once per session instead of every call
+    riskLevel: 'medium',   // downgrade risk from critical
+  },
+});
+```
+
+The merged config (registration override > tool declaration) is passed to policies as `PolicyContext.toolPermissionConfig`.
+
+#### Default Permissions for Built-in Tool Categories
+
+| Category | Tools | Default Scope | Risk Level |
+|----------|-------|--------------|------------|
+| Filesystem (read) | read_file, glob, grep, list_directory | `always` | `low` |
+| Filesystem (write) | write_file, edit_file | `session` | `medium` |
+| Shell | bash | `once` | `high` |
+| Web | web_fetch, web_search, web_scrape | `session` | `medium` |
+| Desktop (read) | desktop_get_*, desktop_window_list | `always` | `low` |
+| Desktop (action) | desktop_mouse_*, desktop_screenshot, desktop_keyboard_key, desktop_window_focus | `session` | `medium` |
+| Desktop (input) | desktop_keyboard_type | `once` | `high` |
+| Store tools | store_*, context_stats | `always` | `low` |
+| Code execution | execute_javascript | `once` | `high` |
+| Custom tools meta | custom_tool_save, custom_tool_delete | `session` | `medium` |
+| Custom tools meta | custom_tool_test | `once` | `high` |
+| Orchestrator | create_agent, list_agents, assign_turn, etc. | `always` | `low` |
+| Meta-tools | _start_planning, _modify_plan, _report_progress, _request_approval | `always` | `low` |
+
+### Storage (Clean Architecture)
+
+The permission system uses Clean Architecture storage interfaces. All storage is optional — the system works entirely in-memory without persistence.
+
+#### IUserPermissionRulesStorage
+
+Stores per-user permission rules:
+
+```typescript
+interface IUserPermissionRulesStorage {
+  /** Load all rules for a user. Returns null if no rules exist. */
+  load(userId: string | undefined): Promise<UserPermissionRule[] | null>;
+
+  /** Save all rules for a user (full replacement). */
+  save(userId: string | undefined, rules: UserPermissionRule[]): Promise<void>;
+
+  /** Delete all rules for a user. */
+  delete(userId: string | undefined): Promise<void>;
+
+  /** Check if rules exist for a user. */
+  exists(userId: string | undefined): Promise<boolean>;
+
+  /** Get storage path (for debugging/display). */
+  getPath(userId: string | undefined): string;
+}
+```
+
+The `userId` parameter is always optional — when `undefined`, implementations default to `'default'` user. Reference storage path: `~/.oneringai/users/<userId>/permission_rules.json`.
+
+```typescript
+// Reference implementation — file-based
+import { FileUserPermissionRulesStorage } from '@everworker/oneringai';
+
+const storage = new FileUserPermissionRulesStorage();
+
+// Custom implementation
+class MongoPermissionRulesStorage implements IUserPermissionRulesStorage {
+  async load(userId) { /* query MongoDB */ }
+  async save(userId, rules) { /* upsert to MongoDB */ }
+  async delete(userId) { /* delete from MongoDB */ }
+  async exists(userId) { /* check existence */ }
+  getPath(userId) { return `mongodb://permissions/${userId ?? 'default'}`; }
+}
+```
+
+#### IPermissionAuditStorage
+
+Append-only storage for permission audit trail:
+
+```typescript
+interface IPermissionAuditStorage {
+  /** Append an audit entry. */
+  append(entry: PermissionAuditEntry): Promise<void>;
+
+  /** Query audit entries with optional filtering. */
+  query(options?: AuditQueryOptions): Promise<PermissionAuditEntry[]>;
+
+  /** Clear entries older than the given date. */
+  clear(before?: string): Promise<void>;
+
+  /** Count entries matching the given criteria. */
+  count(options?: AuditQueryOptions): Promise<number>;
+}
+
+interface AuditQueryOptions {
+  toolName?: string;
+  userId?: string;
+  agentId?: string;
+  decision?: 'allow' | 'deny';
+  finalOutcome?: string;
+  since?: string;  // ISO date
+  limit?: number;
+  offset?: number;
+}
+```
+
+#### IPermissionPolicyStorage
+
+Stores serialized policy definitions for persistence. Policies can be loaded from storage and instantiated via the `PolicyFactoryRegistry`:
+
+```typescript
+interface IPermissionPolicyStorage {
+  /** Save policy definitions for a user. */
+  save(userId: string | undefined, policies: StoredPolicyDefinition[]): Promise<void>;
+
+  /** Load policy definitions for a user. Returns null if none exist. */
+  load(userId: string | undefined): Promise<StoredPolicyDefinition[] | null>;
+
+  /** Delete policy definitions for a user. */
+  delete(userId: string | undefined): Promise<void>;
+
+  /** Check if policy definitions exist for a user. */
+  exists(userId: string | undefined): Promise<boolean>;
+}
+
+interface StoredPolicyDefinition {
+  name: string;                          // Policy name
+  type: string;                          // Maps to IPermissionPolicyFactory
+  config: Record<string, unknown>;       // Policy-specific configuration
+  enabled: boolean;                      // Whether policy is active
+  priority?: number;                     // Evaluation priority
+  createdAt: string;                     // ISO timestamp
+  updatedAt: string;                     // ISO timestamp
+}
+```
+
+#### StorageRegistry Integration
+
+Configure permission storage globally via `StorageRegistry`, or pass directly in the agent config:
+
+```typescript
+import { StorageRegistry, FileUserPermissionRulesStorage } from '@everworker/oneringai';
+
+// Global configuration
+StorageRegistry.configure({
+  permissionRules: (ctx) => new MongoPermissionRulesStorage(ctx?.tenantId),
+});
+
+// Or per-agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  permissions: {
+    userRulesStorage: new FileUserPermissionRulesStorage(),
+    auditStorage: new MyAuditStorage(),
+    policyStorage: new MyPolicyStorage(),
+  },
+});
+```
+
+### Orchestrator Delegation
+
+When using the orchestrator pattern, worker agents cannot exceed the permissions of their parent (orchestrator).
+
+#### setParentEvaluator
+
+```typescript
+import { createOrchestrator, PathRestrictionPolicy, BashFilterPolicy } from '@everworker/oneringai';
+
+// Orchestrator with strict permissions
+const orchestrator = createOrchestrator({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentTypes: {
+    developer: {
+      systemPrompt: 'Write code',
+      tools: [readFile, writeFile, bash],
+    },
+  },
+});
+
+// Add policies to orchestrator — workers inherit these restrictions
+orchestrator.policyManager.addPolicy(
+  new PathRestrictionPolicy({ allowedPaths: ['/workspace'] })
+);
+orchestrator.policyManager.addPolicy(
+  new BashFilterPolicy({ denyPatterns: [/rm\s+-rf/, /sudo/] })
+);
+// All workers are now restricted to /workspace and cannot run rm -rf or sudo
+```
+
+Delegation rules:
+- **Parent deny is FINAL** — worker cannot override a parent deny, even with its own user rules.
+- **Parent allow does NOT skip worker restrictions** — if the parent allows `bash`, the worker's BashFilterPolicy still runs.
+- **Parent approval callback is NOT invoked** during delegation check — only the worker's approval callback triggers.
+
+Programmatic delegation for custom agent hierarchies:
+
+```typescript
+import { PermissionPolicyManager } from '@everworker/oneringai';
+
+const parentManager = PermissionPolicyManager.fromConfig({ /* parent policies */ });
+const workerManager = PermissionPolicyManager.fromConfig({ /* worker policies */ });
+
+// Worker cannot exceed parent permissions
+workerManager.setParentEvaluator(parentManager);
+
+// Check parent
+const parent = workerManager.getParentEvaluator(); // PermissionPolicyManager | undefined
+```
+
+### Audit Trail
+
+Every permission check is recorded as a `PermissionAuditEntry` with centralized argument redaction.
+
+#### PermissionAuditEntry Format
+
+```typescript
+interface PermissionAuditEntry {
+  id: string;                    // Unique entry ID (UUID)
+  timestamp: string;             // ISO timestamp
+  toolName: string;              // Tool that was checked
+  decision: 'allow' | 'deny';   // Policy evaluation result
+  finalOutcome:                  // Final execution outcome
+    | 'executed'                 // Tool was allowed and executed
+    | 'blocked'                  // Tool was hard-blocked
+    | 'approval_granted'         // User approved via dialog
+    | 'approval_denied';         // User denied via dialog
+  reason: string;                // Human-readable reason
+  policyName?: string;           // Policy that made the deciding verdict
+  userId?: string;               // User who triggered the check
+  agentId?: string;              // Agent that triggered the check
+  args?: Record<string, unknown>; // Redacted arguments
+  executionId?: string;          // Execution ID for correlation
+  approvalRequired?: boolean;    // Whether approval was requested
+  approvalKey?: string;          // Approval cache key
+  metadata?: Record<string, unknown>;
+}
+```
+
+#### Centralized Redaction
+
+Arguments are automatically redacted before inclusion in audit entries. Three layers of protection:
+
+1. **Tool-declared `sensitiveArgs`** — argument names listed in `ToolPermissionConfig.sensitiveArgs` are replaced with `[REDACTED]`.
+2. **Built-in sensitive keys** — arguments with names matching common secret patterns are replaced with `[REDACTED]`: `token`, `password`, `secret`, `authorization`, `apikey`, `api_key`, `credential`, `private_key`, `access_token`, `refresh_token`, `client_secret`, `passphrase`, `key`.
+3. **Truncation** — string values longer than 500 characters are truncated with `...[truncated]`.
+
+#### Event Emission
+
+The `PermissionPolicyManager` emits events for every decision:
+
+```typescript
+const manager = agent.policyManager;
+
+manager.on('permission:allow', (entry: PermissionAuditEntry) => {
+  console.log(`Allowed: ${entry.toolName} by ${entry.policyName}`);
+});
+
+manager.on('permission:deny', (entry: PermissionAuditEntry) => {
+  console.log(`Denied: ${entry.toolName} — ${entry.reason}`);
+});
+
+manager.on('permission:approval_granted', (entry: PermissionAuditEntry) => {
+  console.log(`Approved by user: ${entry.toolName}`);
+});
+
+manager.on('permission:approval_denied', (entry: PermissionAuditEntry) => {
+  console.log(`User denied: ${entry.toolName}`);
+});
+
+// Catch-all audit event (fires for EVERY decision, in addition to specific events)
+manager.on('permission:audit', (entry: PermissionAuditEntry) => {
+  myAuditLog.record(entry);
+});
+
+// Policy lifecycle events
+manager.on('policy:added', ({ name }) => console.log(`Policy added: ${name}`));
+manager.on('policy:removed', ({ name }) => console.log(`Policy removed: ${name}`));
+manager.on('session:cleared', () => console.log('Session approvals cleared'));
+```
+
+If audit storage is configured, entries are automatically persisted (fire-and-forget — audit storage failures are non-fatal and do not affect tool execution).
+
+### Migration from Legacy System
+
+The original `ToolPermissionManager` is deprecated. The new `PermissionPolicyManager` is fully backward compatible.
+
+#### ToolPermissionManager to PermissionPolicyManager
+
+The legacy config is automatically translated when passed to `Agent.create()`:
+
+| Legacy Config | Policy Translation |
+|--------------|-------------------|
+| `blocklist: [...]` | `BlocklistPolicy` |
+| `allowlist: [...]` | `AllowlistPolicy` (merged with `DEFAULT_ALLOWLIST`) |
+| `defaultScope: 'once'` | `SessionApprovalPolicy('once')` |
+| `onApprovalRequired: fn` | Passed through with adapter wrapping |
+
+Detection: if the config object contains `policies` or `policyChain`, it uses the new `AgentPolicyConfig` path. Otherwise, it uses the legacy `AgentPermissionsConfig` path.
+
+```typescript
+// Legacy config — still works, auto-translated to policies
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  permissions: {
+    defaultScope: 'session',
+    allowlist: ['my_tool'],
+    blocklist: ['bad_tool'],
+    onApprovalRequired: async (ctx) => ({ approved: true }),
+  },
+});
+agent.permissions.approve('tool');  // ToolPermissionManager (deprecated)
+
+// New policy config — explicitly uses policies
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  permissions: {
+    allowlist: ['my_tool'],
+    blocklist: ['bad_tool'],
+    policies: [
+      new PathRestrictionPolicy({ allowedPaths: ['/workspace'] }),
+      new BashFilterPolicy({ denyPatterns: [/rm\s+-rf/] }),
+    ],
+    policyChain: { defaultVerdict: 'deny' },
+    onApprovalRequired: async (ctx) => ({ approved: true }),
+    userRulesStorage: new FileUserPermissionRulesStorage(),
+  },
+});
+agent.policyManager.userRules.addRule(rule);  // PermissionPolicyManager
+```
+
+#### Programmatic Translation
+
+```typescript
+import { PermissionPolicyManager } from '@everworker/oneringai';
+
+// From legacy config
+const manager = PermissionPolicyManager.fromLegacyConfig({
+  allowlist: ['my_tool'],
+  blocklist: ['bad_tool'],
+  defaultScope: 'session',
+});
+
+// From new config with policies
+const manager = PermissionPolicyManager.fromConfig({
+  allowlist: ['my_tool'],
+  policies: [new PathRestrictionPolicy({ allowedPaths: ['/workspace'] })],
+  policyChain: { defaultVerdict: 'deny' },
+  userRulesStorage: new FileUserPermissionRulesStorage(),
+  auditStorage: new MyAuditStorage(),
+});
+```
+
+Note: when using `fromLegacyConfig` without an `onApprovalRequired` callback, the chain default verdict is automatically set to `'allow'` to preserve backward compatibility (pre-policy-system behavior where all tools auto-execute). The strict `'deny'` default applies only when policies are explicitly configured via `AgentPolicyConfig`.
+
+#### Accessing the Manager
+
+```typescript
+// New API (preferred)
+const policyManager = agent.policyManager;
+
+// Deprecated (still works for backward compatibility)
+const legacyManager = agent.permissions;
+```
+
+### Pipeline Enforcement
+
+The permission system is enforced via `PermissionEnforcementPlugin`, registered at priority 1 on the ToolManager's execution pipeline. This guarantees all tool calls are checked regardless of entry point:
+
+```
+ToolManager.execute()
+    ↓
+ToolExecutionPipeline.beforeExecute()
+    ↓
+PermissionEnforcementPlugin (priority: 1, runs FIRST)
+    ↓
+PolicyContext built from: tool args + ToolContext + registration metadata
+    ↓
+PermissionPolicyManager.check()
+    ↓
+If denied → throws ToolPermissionDeniedError
+If allowed → execution continues to next plugin / tool handler
+```
+
+The `PermissionEnforcementPlugin` is automatically wired by `BaseAgent` during construction:
+
+```typescript
+// This happens automatically in BaseAgent constructor:
+this._agentContext.tools.setPermissionManager(this._policyManager);
+```
+
+The plugin builds `PolicyContext` automatically from:
+- Tool call arguments (from the execution pipeline context)
+- `ToolContext` (userId, agentId, sessionId, roles)
+- Tool registration metadata (source, category, namespace, tags, permission config)
+
+### Complete Example
+
+A full example combining user rules, multiple policies, approval dialog, storage, and audit logging:
+
+```typescript
+import {
+  Agent, Connector, Vendor,
+  PathRestrictionPolicy,
+  BashFilterPolicy,
+  UrlAllowlistPolicy,
+  RateLimitPolicy,
+  RolePolicy,
+  FileUserPermissionRulesStorage,
+} from '@everworker/oneringai';
+import type {
+  ApprovalRequestContext,
+  ApprovalDecision,
+  PermissionAuditEntry,
+} from '@everworker/oneringai';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create agent with full permission configuration
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  userId: 'alice',
+  userRoles: ['developer'],
+
+  permissions: {
+    // Lists
+    allowlist: ['my_custom_tool'],
+    blocklist: ['legacy_dangerous_tool'],
+
+    // Composable policies
+    policies: [
+      // Restrict file access to project directory
+      new PathRestrictionPolicy({
+        allowedPaths: ['/workspace', '/tmp'],
+      }),
+
+      // Filter bash commands
+      new BashFilterPolicy({
+        denyPatterns: [/rm\s+-rf/, /sudo/, /curl.*\|.*sh/],
+        allowCommands: ['npm', 'node', 'git', 'tsc', 'ls', 'cat'],
+      }),
+
+      // Restrict web access to known APIs
+      new UrlAllowlistPolicy({
+        allowedDomains: ['api.github.com', '.npmjs.org', '.googleapis.com'],
+      }),
+
+      // Rate limiting
+      new RateLimitPolicy({
+        limits: {
+          'web_fetch': { maxCalls: 30, windowMs: 60_000 },
+          'bash': { maxCalls: 10, windowMs: 60_000 },
+        },
+      }),
+
+      // Role-based access
+      new RolePolicy([
+        { role: 'developer', allowTools: ['*'], denyTools: ['desktop_mouse_click'] },
+        { role: 'viewer', allowTools: ['read_file', 'glob', 'grep'] },
+      ]),
+    ],
+
+    // Policy chain config — strict deny by default
+    policyChain: { defaultVerdict: 'deny' },
+
+    // Per-user rules storage (persistent)
+    userRulesStorage: new FileUserPermissionRulesStorage(),
+
+    // Approval dialog
+    onApprovalRequired: async (ctx: ApprovalRequestContext): Promise<ApprovalDecision> => {
+      console.log(`[APPROVAL NEEDED] ${ctx.toolName}`);
+      console.log(`  Risk: ${ctx.riskLevel}`);
+      console.log(`  Reason: ${ctx.decision.reason}`);
+      console.log(`  Args: ${JSON.stringify(ctx.args)}`);
+
+      // Auto-approve low-risk tools for the session
+      if (ctx.riskLevel === 'low') {
+        return { approved: true, scope: 'session' };
+      }
+
+      // Always deny critical tools without asking
+      if (ctx.riskLevel === 'critical') {
+        return { approved: false, reason: 'Critical tools require admin approval' };
+      }
+
+      // Prompt the user for medium/high risk tools
+      const answer = await promptUser(`Allow ${ctx.toolName}? (y/n/always)`);
+      if (answer === 'always') {
+        return {
+          approved: true,
+          createRule: {
+            description: `User approved ${ctx.toolName}`,
+            conditions: ctx.approvalKey !== ctx.toolName
+              ? [{ argName: 'path', operator: 'starts_with', value: ctx.args.path as string }]
+              : undefined,
+          },
+        };
+      }
+      return { approved: answer === 'y' };
+    },
+  },
+});
+
+// Listen to audit events
+agent.policyManager.on('permission:audit', (entry: PermissionAuditEntry) => {
+  console.log(`[AUDIT] ${entry.decision} ${entry.toolName}: ${entry.reason}`);
+});
+
+// Add a user rule programmatically
+await agent.policyManager.userRules.addRule({
+  id: crypto.randomUUID(),
+  toolName: 'write_file',
+  action: 'allow',
+  conditions: [
+    { argName: 'path', operator: 'starts_with', value: '/workspace/src/' },
+  ],
+  enabled: true,
+  description: 'Allow writing to src directory',
+  createdBy: 'admin',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+}, 'alice');
+
+// Run the agent — all tool calls are permission-checked automatically
+const result = await agent.run('Read the README and refactor the auth module');
+```
+
+---
+
 ## MCP (Model Context Protocol)
 
 The Model Context Protocol (MCP) is an open standard that enables seamless integration between AI applications and external data sources and tools. The library provides a complete MCP client implementation with support for both local (stdio) and remote (HTTP/HTTPS) servers.

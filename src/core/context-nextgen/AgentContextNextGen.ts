@@ -1083,10 +1083,19 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       }
     }
 
-    // 3. Plugin Instructions (how to use each plugin)
+    // 3. Store System Overview + Plugin Instructions
     const instructionParts: string[] = [];
     let totalInstructionTokens = 0;
 
+    // If any CRUD stores are registered, add a unified overview block first
+    const storeSchemas = this._storeToolsManager.getSchemas();
+    if (storeSchemas.length > 0) {
+      const overview = this._storeToolsManager.buildOverview();
+      instructionParts.push(overview);
+      totalInstructionTokens += this._estimator.estimateTokens(overview);
+    }
+
+    // Per-plugin instructions (behavior, rules, workflows — NOT tool listing)
     for (const plugin of this._plugins.values()) {
       const instructions = plugin.getInstructions();
       if (instructions) {

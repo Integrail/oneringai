@@ -18,7 +18,8 @@ import { Connector } from './Connector.js';
 import { ToolManager } from './ToolManager.js';
 import type { ToolOptions } from './ToolManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
-import type { AgentPermissionsConfig } from './permissions/types.js';
+import { PermissionPolicyManager } from './permissions/PermissionPolicyManager.js';
+import type { AgentPermissionsConfig, AgentPolicyConfig } from './permissions/types.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
@@ -212,8 +213,11 @@ export interface BaseAgentConfig {
   /** Session configuration (uses AgentContext persistence) */
   session?: BaseSessionConfig;
 
-  /** Permission configuration */
-  permissions?: AgentPermissionsConfig;
+  /** Permission configuration (legacy or policy-based) */
+  permissions?: AgentPermissionsConfig | AgentPolicyConfig;
+
+  /** User roles for permission policy evaluation */
+  userRoles?: string[];
 
   /** Lifecycle hooks for customization */
   lifecycleHooks?: AgentLifecycleHooks;
@@ -298,6 +302,7 @@ export abstract class BaseAgent<
   protected _config: TConfig;
   protected _agentContext: AgentContextNextGen;  // SINGLE SOURCE OF TRUTH for tools and sessions
   protected _permissionManager: ToolPermissionManager;
+  protected _policyManager: PermissionPolicyManager;
   protected _ownsContext = true;
   protected _isDestroyed = false;
   protected _cleanupCallbacks: Array<() => void | Promise<void>> = [];
@@ -352,8 +357,21 @@ export abstract class BaseAgent<
       }
     }
 
-    // Initialize permission manager (uses tools from AgentContext)
+    // Initialize permission managers (legacy + policy-based)
     this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
+    this._policyManager = this.initializePolicyManager(config);
+
+    // Wire policy manager into ToolManager pipeline for enforcement
+    this._agentContext.tools.setPermissionManager(this._policyManager);
+
+    // Thread roles into tool context
+    if (config.userRoles) {
+      const existing = this._agentContext.tools.getToolContext();
+      this._agentContext.tools.setToolContext({
+        ...existing,
+        roles: config.userRoles,
+      });
+    }
 
     // Initialize lifecycle hooks
     this._lifecycleHooks = config.lifecycleHooks ?? {};
@@ -417,7 +435,7 @@ export abstract class BaseAgent<
   }
 
   /**
-   * Initialize permission manager
+   * Initialize legacy permission manager (backward compat)
    */
   protected initializePermissionManager(
     config?: AgentPermissionsConfig,
@@ -435,6 +453,23 @@ export abstract class BaseAgent<
     }
 
     return manager;
+  }
+
+  /**
+   * Initialize policy-based permission manager.
+   * If config includes `policies` field, uses AgentPolicyConfig path.
+   * Otherwise, translates legacy AgentPermissionsConfig to policies.
+   */
+  protected initializePolicyManager(config: TConfig): PermissionPolicyManager {
+    const permsConfig = config.permissions;
+
+    // Check if using new policy config (has `policies` or `policyChain` field)
+    if (permsConfig && ('policies' in permsConfig || 'policyChain' in permsConfig)) {
+      return PermissionPolicyManager.fromConfig(permsConfig as AgentPolicyConfig);
+    }
+
+    // Legacy config — translate to policies
+    return PermissionPolicyManager.fromLegacyConfig(permsConfig ?? {});
   }
 
   /**
@@ -629,9 +664,19 @@ export abstract class BaseAgent<
 
   /**
    * Permission management. Returns ToolPermissionManager for approval control.
+   * @deprecated Use `policyManager` for the new policy-based system.
    */
   get permissions(): ToolPermissionManager {
     return this._permissionManager;
+  }
+
+  /**
+   * Policy-based permission manager.
+   * Provides composable policies, argument inspection, role-based access,
+   * centralized audit, and enforcement at the ToolManager pipeline level.
+   */
+  get policyManager(): PermissionPolicyManager {
+    return this._policyManager;
   }
 
   // ===== Tool Management =====
@@ -1091,8 +1136,9 @@ export abstract class BaseAgent<
       this._agentContext.destroy();
     }
 
-    // Cleanup permission manager listeners
+    // Cleanup permission managers
     this._permissionManager.removeAllListeners();
+    this._policyManager.destroy();
 
     // Remove all event listeners
     this.removeAllListeners();

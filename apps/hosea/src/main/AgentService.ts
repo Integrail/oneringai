@@ -85,6 +85,13 @@ import {
   executeRoutine,
   type RoutineDefinition,
   type RoutineDefinitionInput,
+  // Orchestrator
+  createOrchestrator,
+  AgentRegistry,
+  type AgentTypeConfig,
+  type AgentInfo,
+  type RegistryAgentStatus,
+  type AgentEventListener,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import { ToolCatalogRegistry } from '@everworker/oneringai';
@@ -240,6 +247,13 @@ export interface StoredAgentConfig {
   isActive: boolean;
   isArchived?: boolean;
   isPinned?: boolean;
+
+  // Orchestrator mode
+  isOrchestrator?: boolean;
+  /** References to existing agent configs used as child agent types */
+  orchestratorChildAgents?: Array<{ agentConfigId: string; alias: string }>;
+  /** Max worker agents (default: 20) */
+  orchestratorMaxAgents?: number;
 
   // DEPRECATED - kept for backward compatibility with old stored configs
   /** @deprecated Not used in NextGen */
@@ -469,6 +483,15 @@ export type StreamChunk =
   | { type: 'voice:chunk'; chunkIndex: number; subIndex?: number; audioBase64: string; format: string; durationSeconds?: number; text: string }
   | { type: 'voice:error'; chunkIndex: number; error: string; text: string }
   | { type: 'voice:complete'; totalChunks: number; totalDurationSeconds?: number }
+  // Orchestrator worker events
+  | { type: 'orchestrator:worker_created'; worker: { name: string; type: string; model: string; status: string; registryId: string; createdAt: number } }
+  | { type: 'orchestrator:worker_destroyed'; workerName: string }
+  | { type: 'orchestrator:worker_status'; workerName: string; status: string }
+  | { type: 'orchestrator:worker_tool_start'; workerName: string; tool: string; description: string }
+  | { type: 'orchestrator:worker_tool_end'; workerName: string; tool: string; durationMs?: number }
+  | { type: 'orchestrator:worker_turn_start'; workerName: string }
+  | { type: 'orchestrator:worker_turn_end'; workerName: string; success: boolean }
+  | { type: 'orchestrator:workspace_update'; entries: Array<{ key: string; summary: string; status: string; author: string; version: number; updatedAt: number }> }
   // Stream status events (retry, incomplete, failed)
   | { type: 'retry'; attempt: number; maxAttempts: number; reason: string; delayMs: number }
   | { type: 'status'; status: 'completed' | 'incomplete' | 'failed'; stopReason?: string };
@@ -606,6 +629,8 @@ export interface AgentInstance {
   voiceStream?: VoiceStream;
   voiceoverEnabled: boolean;
   sessionSaveEnabled: boolean;
+  // Orchestrator cleanup (AgentRegistry event listeners)
+  orchestratorCleanup?: () => void;
 }
 
 /** Maximum concurrent agent instances (memory limit) */
@@ -4078,21 +4103,170 @@ export class AgentService {
         },
       };
 
-      // Create agent (only basic Agent type in NextGen - other types deprecated)
-      // Pass only plain (non-connector) tools; connector tools registered separately below.
-      const agent = Agent.create({
-        connector: agentConfig.connector,
-        model: agentConfig.model,
-        name: agentConfig.name,
-        tools: plainTools,
-        instructions: fullInstructions,
-        temperature: agentConfig.temperature,
-        context: contextConfig,
-      });
+      // Create agent — branch for orchestrator mode vs regular agent
+      let agent: Agent;
+      let orchestratorCleanup: (() => void) | undefined;
 
-      // Register connector-produced tools with source tracking
-      for (const [connName, connTools] of connectorToolGroups) {
-        agent.tools.registerConnectorTools(connName, connTools);
+      if (agentConfig.isOrchestrator) {
+        // ---- ORCHESTRATOR MODE ----
+        // Build agentTypes from child agent references
+        const agentTypes: Record<string, AgentTypeConfig> = {};
+        for (const child of agentConfig.orchestratorChildAgents ?? []) {
+          const childConfig = this.agents.get(child.agentConfigId);
+          if (!childConfig) {
+            logger.warn(`[createInstance] Child agent config "${child.agentConfigId}" not found for alias "${child.alias}", skipping`);
+            continue;
+          }
+          // Resolve the child's tools
+          const childTools = ToolCatalogRegistry.resolveTools(
+            childConfig.tools,
+            { includeConnectors: true, context: toolCreationContext },
+          );
+          agentTypes[child.alias] = {
+            systemPrompt: childConfig.instructions || '',
+            tools: childTools,
+            model: childConfig.model,
+            connector: childConfig.connector,
+          };
+        }
+
+        logger.info(`[createInstance] Creating orchestrator with ${Object.keys(agentTypes).length} agent types: ${Object.keys(agentTypes).join(', ')}`);
+
+        // Create orchestrator agent (gets 7 orchestration tools + shared workspace automatically)
+        agent = createOrchestrator({
+          connector: agentConfig.connector,
+          model: agentConfig.model,
+          name: agentConfig.name,
+          systemPrompt: fullInstructions,
+          agentTypes,
+          maxAgents: agentConfig.orchestratorMaxAgents ?? 20,
+          maxIterations: agentConfig.maxIterations,
+          agentId: agentConfigId,
+        });
+
+        // Register the orchestrator's own tools from config (separate from orchestration tools)
+        for (const tool of plainTools) {
+          if (!agent.tools.has(tool.definition.function.name)) {
+            agent.tools.register(tool);
+          }
+        }
+        for (const [connName, connTools] of connectorToolGroups) {
+          agent.tools.registerConnectorTools(connName, connTools);
+        }
+
+        // Subscribe to AgentRegistry events for worker visibility in UI
+        if (this.streamEmitter) {
+          const streamEmitter = this.streamEmitter;
+          const orchestratorRegistryId = agent.registryId;
+          // Track known child agent IDs for O(1) lookup in high-frequency event handlers
+          const childAgentIds = new Set<string>();
+
+          // Worker created
+          const onRegistered = ({ info }: { agent: unknown; info: AgentInfo }) => {
+            if (info.parentAgentId !== orchestratorRegistryId) return;
+            childAgentIds.add(info.id);
+            streamEmitter(instanceId, {
+              type: 'orchestrator:worker_created',
+              worker: {
+                name: info.name,
+                // The worker name IS the type alias used in create_agent(name, type)
+                // We can't recover the type here, so we use the name
+                type: info.name,
+                model: info.model,
+                status: info.status as 'idle' | 'running' | 'paused' | 'destroyed',
+                registryId: info.id,
+                createdAt: info.createdAt.getTime(),
+              },
+            });
+          };
+          AgentRegistry.on('agent:registered', onRegistered);
+
+          // Worker destroyed — only emit for known children
+          const onUnregistered = ({ id, name }: { id: string; name: string; reason: string }) => {
+            if (!childAgentIds.has(id)) return;
+            childAgentIds.delete(id);
+            streamEmitter(instanceId, {
+              type: 'orchestrator:worker_destroyed',
+              workerName: name,
+            });
+          };
+          AgentRegistry.on('agent:unregistered', onUnregistered);
+
+          // Worker status changes — use cached Set for O(1) check
+          const onStatusChanged = ({ id, name, current }: { id: string; name: string; previous: RegistryAgentStatus; current: RegistryAgentStatus }) => {
+            if (!childAgentIds.has(id)) return;
+            streamEmitter(instanceId, {
+              type: 'orchestrator:worker_status',
+              workerName: name,
+              status: current as 'idle' | 'running' | 'paused' | 'destroyed',
+            });
+          };
+          AgentRegistry.on('agent:statusChanged', onStatusChanged);
+
+          // Fan-in for tool events from workers — use cached Set for O(1) check
+          const fanInListener: AgentEventListener = (agentId: string, agentName: string, event: string, data: unknown) => {
+            if (!childAgentIds.has(agentId)) return;
+
+            const d = data as Record<string, unknown>;
+            if (event === 'tool:start') {
+              streamEmitter(instanceId, {
+                type: 'orchestrator:worker_tool_start',
+                workerName: agentName,
+                tool: (d.name as string) ?? '',
+                description: (d.description as string) ?? '',
+              });
+            } else if (event === 'tool:complete') {
+              streamEmitter(instanceId, {
+                type: 'orchestrator:worker_tool_end',
+                workerName: agentName,
+                tool: (d.name as string) ?? '',
+                durationMs: d.durationMs as number | undefined,
+              });
+            } else if (event === 'execution:start') {
+              streamEmitter(instanceId, {
+                type: 'orchestrator:worker_turn_start',
+                workerName: agentName,
+              });
+            } else if (event === 'execution:complete') {
+              streamEmitter(instanceId, {
+                type: 'orchestrator:worker_turn_end',
+                workerName: agentName,
+                success: true,
+              });
+            } else if (event === 'execution:error') {
+              streamEmitter(instanceId, {
+                type: 'orchestrator:worker_turn_end',
+                workerName: agentName,
+                success: false,
+              });
+            }
+          };
+          AgentRegistry.onAgentEvent(fanInListener);
+
+          orchestratorCleanup = () => {
+            AgentRegistry.off('agent:registered', onRegistered);
+            AgentRegistry.off('agent:unregistered', onUnregistered);
+            AgentRegistry.off('agent:statusChanged', onStatusChanged);
+            AgentRegistry.offAgentEvent(fanInListener);
+            childAgentIds.clear();
+          };
+        }
+      } else {
+        // ---- REGULAR AGENT ----
+        agent = Agent.create({
+          connector: agentConfig.connector,
+          model: agentConfig.model,
+          name: agentConfig.name,
+          tools: plainTools,
+          instructions: fullInstructions,
+          temperature: agentConfig.temperature,
+          context: contextConfig,
+        });
+
+        // Register connector-produced tools with source tracking
+        for (const [connName, connTools] of connectorToolGroups) {
+          agent.tools.registerConnectorTools(connName, connTools);
+        }
       }
 
       // Register MCP tools with the agent if configured
@@ -4107,9 +4281,6 @@ export class AgentService {
         }
       }
 
-      // NOTE: Browser tools are now resolved through ToolCatalogRegistry when selected
-      // No need for separate registration - they're part of agentConfig.tools
-
       // Register HoseaUIPlugin for browser tool UI integration
       // This plugin emits Dynamic UI content when browser tools execute
       if (this.streamEmitter) {
@@ -4117,7 +4288,6 @@ export class AgentService {
         agent.tools.executionPipeline.use(
           new HoseaUIPlugin({
             emitDynamicUI: (instId: string, content: DynamicUIContent) => {
-              // Send Dynamic UI content to renderer via the stream emitter
               console.log(`[HoseaUIPlugin.emitDynamicUI] Sending to renderer for ${instId}`);
               streamEmitter(instId, {
                 type: 'ui:set_dynamic_content',
@@ -4126,7 +4296,6 @@ export class AgentService {
             },
             getInstanceId: () => instanceId,
             onAgentStuck: (instId: string) => {
-              // Trigger auto-pause via BrowserService event (Trigger 2)
               this.browserService?.emit('browser:agent-stuck', instId);
             },
           })
@@ -4145,6 +4314,7 @@ export class AgentService {
         createdAt: Date.now(),
         voiceoverEnabled: false,
         sessionSaveEnabled: false,
+        orchestratorCleanup,
       };
       this.instances.set(instanceId, agentInstance);
 
@@ -4173,6 +4343,12 @@ export class AgentService {
       const instance = this.instances.get(instanceId);
       if (!instance) {
         return { success: false, error: `Instance "${instanceId}" not found` };
+      }
+
+      // Clean up orchestrator event listeners before destroying
+      if (instance.orchestratorCleanup) {
+        instance.orchestratorCleanup();
+        instance.orchestratorCleanup = undefined;
       }
 
       // Cancel any ongoing operations

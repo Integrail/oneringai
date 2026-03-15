@@ -65,20 +65,10 @@ const KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 // Instructions
 // ============================================================================
 
-const USER_INFO_INSTRUCTIONS = `User Info stores key-value information about the current user.
-Store name: 'user_info'. NOT for agent-specific state (use 'context' or 'memory').
-Data is user-specific and persists across sessions and agents.
-User info is automatically shown in context — no need to retrieve every turn.
+const USER_INFO_INSTRUCTIONS = `Store: "user_info". Automatically shown in context \u2014 no need to retrieve every turn.
+It is also perfectly fine to search the web and other external sources for information about the user and then store it in user info for future use.
 
-**To manage:**
-- \`store_set({ store: "user_info", key: "...", value: ..., description?: "..." })\`: Store/update user information
-- \`store_get({ store: "user_info", key?: "..." })\`: Retrieve one entry by key, or all entries if no key
-- \`store_delete({ store: "user_info", key: "..." })\`: Remove a specific entry
-- \`store_action({ store: "user_info", action: "clear", params: { confirm: true } })\`: Remove all entries (destructive!)
-
-**Use for:** User preferences, context, metadata (theme, language, timezone, role, etc.) It is also perfectly fine to search the web and other external sources for information about the user and then store it in user info for future use.
-
-**Important:** Do not store sensitive information (passwords, tokens, PII) in user info. It is not encrypted and may be accessible to other parts of the system. Always follow best practices for security.
+**Important:** Do not store sensitive information (passwords, tokens, PII) in user info.
 
 **Rules after each user message:** If the user provides new information about themselves, update user info accordingly. If they ask to change or remove existing information, do that as well. Always keep user info up to date with the latest information provided by the user. Learn about the user proactively!
 
@@ -767,6 +757,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen, IStoreHandl
   private createTodoAddTool(): ToolFunction {
     return {
       definition: todoAddDefinition,
+      permission: { scope: 'always' as const, riskLevel: 'low' as const },
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         this.assertNotDestroyed();
         await this.ensureInitialized();
@@ -831,7 +822,6 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen, IStoreHandl
           todo: todoValue,
         };
       },
-      permission: { scope: 'always', riskLevel: 'low' },
       describeCall: (args) => `add todo '${args.title}'`,
     };
   }
@@ -839,6 +829,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen, IStoreHandl
   private createTodoUpdateTool(): ToolFunction {
     return {
       definition: todoUpdateDefinition,
+      permission: { scope: 'always' as const, riskLevel: 'low' as const },
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         this.assertNotDestroyed();
         await this.ensureInitialized();
@@ -917,7 +908,6 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen, IStoreHandl
           todo: updatedValue,
         };
       },
-      permission: { scope: 'always', riskLevel: 'low' },
       describeCall: (args) => `update todo '${args.id}'`,
     };
   }
@@ -925,6 +915,7 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen, IStoreHandl
   private createTodoRemoveTool(): ToolFunction {
     return {
       definition: todoRemoveDefinition,
+      permission: { scope: 'always' as const, riskLevel: 'low' as const },
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         this.assertNotDestroyed();
         await this.ensureInitialized();
@@ -952,7 +943,6 @@ export class UserInfoPluginNextGen implements IContextPluginNextGen, IStoreHandl
           id,
         };
       },
-      permission: { scope: 'always', riskLevel: 'low' },
       describeCall: (args) => `remove todo '${args.id}'`,
     };
   }

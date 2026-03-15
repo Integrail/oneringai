@@ -74,14 +74,7 @@ const DEFAULT_CONFIG = {
 // Instructions
 // ============================================================================
 
-const IN_CONTEXT_MEMORY_INSTRUCTIONS = `Store name: "context". Use store_set({ store: "context", key: "...", description: "...", value: ..., priority?: "...", showInUI?: true/false }).
-Live Context stores key-value pairs DIRECTLY in your context window.
-Values are immediately visible every turn — no retrieval needed.
-
-**Use for:** Current state, counters, flags, preferences, small accumulated results.
-**NOT for:** Large data (use "memory" — stored externally, won't waste context tokens).
-**NOT for:** Persistent rules across sessions (use "instructions").
-**NOT for:** User profile data shared across agents (use "user_info").
+const IN_CONTEXT_MEMORY_INSTRUCTIONS = `Store: "context". Values are DIRECTLY visible in your context window every turn \u2014 no retrieval needed.
 
 **Priority levels** (for eviction when space is tight):
 - \`low\`: Evicted first. Temporary data.
@@ -89,11 +82,9 @@ Values are immediately visible every turn — no retrieval needed.
 - \`high\`: Keep longer. Important state.
 - \`critical\`: Never auto-evicted.
 
-**UI Display:** Set \`showInUI: true\` in data to display the entry in the user's side panel.
+**UI Display:** Set \`showInUI: true\` to display the entry in the user's side panel.
 Values shown in the UI support the same rich markdown formatting as the chat window
-(see formatting instructions above). Use this for dashboards, progress displays, and results the user should see.
-
-**Tools:** store_set, store_get, store_delete, store_list \u2014 all with store: "context".`;
+(see formatting instructions above). Use this for dashboards, progress displays, and results the user should see.`;
 
 // ============================================================================
 // Plugin Implementation

@@ -63,10 +63,8 @@ describe('PersistentInstructionsPluginNextGen', () => {
 
     it('should provide instructions', () => {
       const instructions = plugin.getInstructions();
-      expect(instructions).toContain('Persistent Instructions');
-      expect(instructions).toContain('store_set');
-      expect(instructions).toContain('store_delete');
-      expect(instructions).toContain('store: "instructions"');
+      expect(instructions).toContain('Store: "instructions"');
+      expect(instructions).toContain('content');
     });
 
     it('should NOT be compactable', () => {

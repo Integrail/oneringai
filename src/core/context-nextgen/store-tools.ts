@@ -84,6 +84,38 @@ export class StoreToolsManager {
   // ============================================================================
 
   /**
+   * Build the unified overview block for system instructions.
+   * Emitted once when any IStoreHandler plugins are registered.
+   * Covers: what store_* tools are, available stores, and when to use each.
+   */
+  buildOverview(): string {
+    const schemas = this.getSchemas();
+    if (schemas.length === 0) return '';
+
+    const storeLines = schemas.map(s =>
+      `- **"${s.storeId}"** (${s.displayName}): ${s.description}\n  ${s.usageHint}`,
+    );
+
+    return `## Data Stores
+
+You have ${schemas.length} data store${schemas.length > 1 ? 's' : ''} accessible through 5 unified tools: \`store_set\`, \`store_get\`, \`store_delete\`, \`store_list\`, \`store_action\`.
+
+Every call requires a \`store\` parameter to select the target store. Pass all other fields as top-level parameters (flat — no nested \`data\` or \`params\` wrapper).
+
+**Available stores:**
+${storeLines.join('\n')}
+
+**Quick reference:**
+- \`store_set({ store: "...", key: "...", ...fields })\` — create or update an entry
+- \`store_get({ store: "...", key?: "..." })\` — retrieve one entry or all
+- \`store_delete({ store: "...", key: "..." })\` — remove an entry
+- \`store_list({ store: "...", ...filters? })\` — list entries with optional filtering
+- \`store_action({ store: "...", action: "...", ...params? })\` — store-specific operations
+
+See each store's section below for behavior rules, workflows, and store-specific fields.`;
+  }
+
+  /**
    * Build the store comparison section for tool descriptions.
    * Called dynamically via descriptionFactory so it always reflects current handlers.
    */
@@ -91,27 +123,34 @@ export class StoreToolsManager {
     const schemas = this.getSchemas();
     if (schemas.length === 0) return 'No stores available.';
 
-    const lines: string[] = ['Available stores:'];
+    const lines: string[] = [];
     for (const schema of schemas) {
-      lines.push(`- "${schema.storeId}": ${schema.displayName} — ${schema.description}`);
-      lines.push(`  ${schema.usageHint}`);
-
       if (mode === 'set') {
-        lines.push(`  Fields (pass as top-level params): ${schema.setDataFields.replace(/\n/g, ', ')}`);
-      }
-
-      if (mode === 'action' && schema.actions) {
+        // For store_set: show store ID + required/optional fields
+        lines.push(`- "${schema.storeId}": ${schema.setDataFields.replace(/\n/g, ', ')}`);
+      } else if (mode === 'action' && schema.actions) {
+        // For store_action: show store ID + available actions
         const actionNames = Object.keys(schema.actions);
         if (actionNames.length > 0) {
           const actionDescs = actionNames.map(a => {
             const info = schema.actions?.[a];
             return `${a}${info?.destructive ? ' (destructive)' : ''}: ${info?.description ?? ''}`;
           });
-          lines.push(`  Actions: ${actionDescs.join('; ')}`);
+          lines.push(`- "${schema.storeId}": ${actionDescs.join('; ')}`);
         }
+      } else {
+        // For get/delete/list: just list store IDs
+        lines.push(`"${schema.storeId}"`);
       }
     }
-    return lines.join('\n');
+
+    if (mode === 'set') {
+      return `Store-specific fields (pass as top-level params):\n${lines.join('\n')}`;
+    }
+    if (mode === 'action') {
+      return `Store-specific actions:\n${lines.join('\n')}`;
+    }
+    return `Available stores: ${lines.join(', ')}`;
   }
 
   // ============================================================================

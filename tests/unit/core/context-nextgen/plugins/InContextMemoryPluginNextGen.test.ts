@@ -31,9 +31,8 @@ describe('InContextMemoryPluginNextGen', () => {
 
     it('should provide instructions', () => {
       const instructions = plugin.getInstructions();
-      expect(instructions).toContain('Live Context');
-      expect(instructions).toContain('store_set');
-      expect(instructions).toContain('store: "context"');
+      expect(instructions).toContain('Store: "context"');
+      expect(instructions).toContain('Priority levels');
     });
 
     it('should be compactable', () => {

@@ -145,6 +145,8 @@ EXAMPLES:
       },
     },
 
+    permission: { scope: 'once' as const, riskLevel: 'high' as const, sensitiveArgs: ['command'] },
+
     describeCall: (args: BashArgs): string => {
       const cmd = args.command;
       const maxLen = 60;

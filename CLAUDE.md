@@ -344,11 +344,31 @@ AgentContextNextGen uses `ICompactionStrategy` implementations registered via `S
 
 Custom strategies can be registered via `StrategyRegistry.register(MyStrategy)`.
 
-## Tool Permissions
+## Tool Permissions (Policy-Based System)
 
-Default allowlist (no approval needed): `read_file`, `glob`, `grep`, `list_directory`, `store_get`, `store_set`, `store_delete`, `store_list`, `store_action`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`
+**Architecture**: 3-tier evaluation in `PermissionPolicyManager.check()`:
+1. **User rules pre-check** (highest priority, FINAL) — per-user persistent rules with argument conditions
+2. **Parent delegation** (orchestrator workers) — parent deny is final
+3. **Policy chain** (built-in policies) — deny short-circuits, allow continues
 
-Require approval: `write_file`, `edit_file`, `bash`, `web_*`, `desktop_*`, `execute_javascript`, custom tools
+**Tool self-declaration**: All built-in tools declare `ToolPermissionConfig`:
+- `scope: 'always'` (auto-allow): read_file, glob, grep, list_directory, json_manipulate, store_*, todo_*, tool_catalog_*, desktop_get_*, desktop_window_list, orchestrator tools, meta-tools
+- `scope: 'session'` (ask once): write_file, edit_file, web_fetch, desktop_mouse_*, desktop_screenshot, desktop_keyboard_key, desktop_window_focus, custom_tool_save/delete, routine tools
+- `scope: 'once'` (ask every time): bash, execute_javascript, custom_tool_test, desktop_keyboard_type
+
+**User rules override everything**: `agent.policyManager.userRules` — CRUD API for persistent rules with argument conditions.
+
+**Built-in policies**: AllowlistPolicy, BlocklistPolicy, SessionApprovalPolicy, PathRestrictionPolicy, BashFilterPolicy, UrlAllowlistPolicy, RolePolicy, RateLimitPolicy
+
+**Key files**:
+- `src/core/permissions/PermissionPolicyManager.ts` — top-level manager
+- `src/core/permissions/UserPermissionRulesEngine.ts` — per-user rules with specificity matching
+- `src/core/permissions/PermissionEnforcementPlugin.ts` — ToolManager pipeline plugin
+- `src/core/permissions/PolicyChain.ts` — policy evaluation engine
+- `src/core/permissions/policies/` — 8 built-in policies
+- `src/domain/interfaces/IUserPermissionRulesStorage.ts` — Clean Architecture storage
+
+**Permission allowlist** (backward compat, in DEFAULT_ALLOWLIST): `read_file`, `glob`, `grep`, `list_directory`, `store_get`, `store_set`, `store_delete`, `store_list`, `store_action`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`, `tool_catalog_search`, `tool_catalog_load`, `tool_catalog_unload`, `todo_add`, `todo_update`, `todo_remove`, `context_stats`
 
 ## Working Memory Scopes
 

@@ -127,6 +127,8 @@ Fetch an Excel spreadsheet:
     timeout: 15000,
   },
 
+  permission: { scope: 'session' as const, riskLevel: 'low' as const, sensitiveArgs: ['url'] },
+
   execute: async (args: WebFetchArgs): Promise<WebFetchResult> => {
     try {
       // Validate URL

@@ -70,12 +70,9 @@ describe('UserInfoPluginNextGen', () => {
 
     it('should provide instructions', () => {
       const instructions = plugin.getInstructions();
-      expect(instructions).toContain('User Info');
-      expect(instructions).toContain('store_set');
-      expect(instructions).toContain('store_get');
-      expect(instructions).toContain('store_delete');
-      expect(instructions).toContain('store: "user_info"');
-      expect(instructions).toContain('automatically shown in context');
+      expect(instructions).toContain('Store: "user_info"');
+      expect(instructions).toContain('Learn about the user proactively');
+      expect(instructions).toContain('Automatically shown in context');
     });
 
     it('should NOT be compactable', () => {

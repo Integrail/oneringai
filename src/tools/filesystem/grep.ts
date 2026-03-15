@@ -261,6 +261,8 @@ WHEN TO USE:
       },
     },
 
+    permission: { scope: 'always' as const, riskLevel: 'low' as const },
+
     describeCall: (args: GrepArgs): string => {
       const parts = [`"${args.pattern}"`];
       if (args.glob) parts.push(`in ${args.glob}`);

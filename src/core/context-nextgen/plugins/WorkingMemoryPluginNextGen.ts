@@ -75,10 +75,7 @@ export interface WorkingMemoryPluginConfig {
 // Instructions
 // ============================================================================
 
-const WORKING_MEMORY_INSTRUCTIONS = `Store name: "memory". Your EXTERNAL notepad \u2014 data stored outside context window.
-You see entry descriptions in context but must call store_get to read full values.
-Use for: large data, research findings, intermediate results, analysis.
-NOT for: small state you check every turn (use "context" \u2014 values appear directly in context).
+const WORKING_MEMORY_INSTRUCTIONS = `Store: "memory". You see entry descriptions in context but must call store_get to read full values.
 
 **Tier System** (for research/analysis):
 - \`raw\`: Low priority, evicted first. Unprocessed data to summarize later.
@@ -89,9 +86,7 @@ NOT for: small state you check every turn (use "context" \u2014 values appear di
 1. Store raw data: \`store_set({ store: "memory", key: "topic", description: "...", value: ..., tier: "raw" })\`
 2. Process and summarize: \`store_set({ store: "memory", key: "topic", description: "...", value: ..., tier: "summary" })\`
 3. Extract findings: \`store_set({ store: "memory", key: "topic", description: "...", value: ..., tier: "findings" })\`
-4. Clean up raw: \`store_action({ store: "memory", action: "cleanup_raw" })\` or \`store_delete({ store: "memory", key: "..." })\`
-
-**Tools:** store_set, store_get, store_delete, store_list, store_action \u2014 all with store: "memory".`;
+4. Clean up raw: \`store_action({ store: "memory", action: "cleanup_raw" })\` or \`store_delete({ store: "memory", key: "..." })\``;
 
 // ============================================================================
 // Plugin Implementation

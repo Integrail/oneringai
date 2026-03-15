@@ -285,7 +285,7 @@ export function createGenerateRoutine(storage?: IRoutineDefinitionStorage): Tool
       },
     },
 
-    permission: { scope: 'session', riskLevel: 'medium' },
+    permission: { scope: 'session' as const, riskLevel: 'medium' as const },
 
     execute: async (args: GenerateRoutineArgs, context?: ToolContext): Promise<GenerateRoutineResult> => {
       try {

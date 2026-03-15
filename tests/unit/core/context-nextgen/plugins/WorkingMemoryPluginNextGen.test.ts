@@ -31,10 +31,9 @@ describe('WorkingMemoryPluginNextGen', () => {
 
     it('should provide instructions', () => {
       const instructions = plugin.getInstructions();
-      expect(instructions).toContain('Store name: "memory"');
-      expect(instructions).toContain('store_get');
+      expect(instructions).toContain('Store: "memory"');
+      expect(instructions).toContain('Tier System');
       expect(instructions).toContain('store_set');
-      expect(instructions).toContain('store: "memory"');
     });
 
     it('should be compactable', () => {

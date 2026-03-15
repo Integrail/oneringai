@@ -83,9 +83,7 @@ const DEFAULT_CONFIG: Required<Omit<SharedWorkspaceConfig, 'onEntriesChanged'>> 
 // Instructions
 // ============================================================================
 
-const SHARED_WORKSPACE_INSTRUCTIONS = `Store name: "workspace". Use store_set({ store: "workspace", key: "...", summary: "...", content?: "...", references?: [...], status?: "...", tags?: [...] }).
-Shared Workspace is a team bulletin board — visible to ALL agents in the team.
-Entries track shared artifacts, plans, reviews, and task status.
+const SHARED_WORKSPACE_INSTRUCTIONS = `Store: "workspace". Visible to ALL agents in the team.
 
 **Content model:**
 - \`content\`: Inline text for collaborative documents (plans, specs, notes)
@@ -94,17 +92,7 @@ Entries track shared artifacts, plans, reviews, and task status.
 
 **Versioning:** Each update auto-increments the entry's version number and tracks the author.
 
-**Use for:** Shared plans, code reviews, task status, collaborative documents.
-**NOT for:** Private notes only you need (use "context" — your private scratch space).
-**NOT for:** Persistent rules (use "instructions").
-
-**Tools:**
-- store_set({ store: "workspace", key, summary, content?, references?, status?, tags?, author? })
-- store_get({ store: "workspace", key? }) \u2014 get one entry or all
-- store_delete({ store: "workspace", key })
-- store_list({ store: "workspace", status?, tags?, author? })
-- store_action({ store: "workspace", action: "log", params: { message, author? } }) \u2014 append to shared log
-- store_action({ store: "workspace", action: "history", params: { limit? } }) \u2014 see recent log entries`;
+**Actions:** \`store_action({ store: "workspace", action: "log", message: "..." })\` \u2014 append to shared conversation log. \`store_action({ store: "workspace", action: "history", limit?: 20 })\` \u2014 see recent log entries.`;
 
 // ============================================================================
 // Plugin Implementation

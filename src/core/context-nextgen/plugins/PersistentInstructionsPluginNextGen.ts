@@ -56,17 +56,8 @@ const KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 // Instructions
 // ============================================================================
 
-const PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = `Persistent Instructions are stored on disk and survive across sessions.
-Each instruction is a keyed entry that can be independently managed.
-Store name: "instructions". NOT for temporary state (use "context") or user info (use "user_info").
-
-**To modify:**
-- \`store_set({ store: "instructions", key: "...", content: "..." })\`: Add or update a single instruction by key
-- \`store_delete({ store: "instructions", key: "..." })\`: Remove a single instruction by key
-- \`store_list({ store: "instructions" })\`: List all instructions with keys and content
-- \`store_action({ store: "instructions", action: "clear", params: { confirm: true } })\`: Remove all instructions (destructive!)
-
-**Use for:** Agent personality, user preferences, learned rules, guidelines.`;
+const PERSISTENT_INSTRUCTIONS_INSTRUCTIONS = `Store: "instructions". Stored on disk, survives across sessions. Each instruction is a keyed entry.
+The \`content\` field must be a string. Use \`store_action({ store: "instructions", action: "clear", confirm: true })\` to remove all (destructive).`;
 
 // ============================================================================
 // Key Validation

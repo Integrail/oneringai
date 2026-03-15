@@ -415,7 +415,7 @@ describe('StoreToolsManager', () => {
       const tools = manager.getTools();
       const setTool = tools.find(t => t.definition.function.name === 'store_set')!;
       const desc = setTool.descriptionFactory!();
-      expect(desc).toContain('Fields (pass as top-level params):');
+      expect(desc).toContain('Store-specific fields');
       expect(desc).toContain('value (required)');
     });
 
@@ -427,10 +427,42 @@ describe('StoreToolsManager', () => {
       const tools = manager.getTools();
       const actionTool = tools.find(t => t.definition.function.name === 'store_action')!;
       const desc = actionTool.descriptionFactory!();
-      expect(desc).toContain('Actions:');
+      expect(desc).toContain('Store-specific actions');
       expect(desc).toContain('cleanup');
       expect(desc).toContain('wipe');
       expect(desc).toContain('destructive');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // buildOverview
+  // --------------------------------------------------------------------------
+
+  describe('buildOverview', () => {
+    it('should return empty string when no handlers', () => {
+      expect(manager.buildOverview()).toBe('');
+    });
+
+    it('should include store count, tool names, and store listings', () => {
+      manager.registerHandler(createMockHandler('notes'));
+      manager.registerHandler(createMockHandler('memory'));
+      const overview = manager.buildOverview();
+      expect(overview).toContain('2 data stores');
+      expect(overview).toContain('store_set');
+      expect(overview).toContain('store_get');
+      expect(overview).toContain('store_delete');
+      expect(overview).toContain('store_list');
+      expect(overview).toContain('store_action');
+      expect(overview).toContain('"notes"');
+      expect(overview).toContain('"memory"');
+      expect(overview).toContain('Quick reference');
+    });
+
+    it('should use singular when only one store', () => {
+      manager.registerHandler(createMockHandler('notes'));
+      const overview = manager.buildOverview();
+      expect(overview).toContain('1 data store');
+      expect(overview).not.toContain('1 data stores');
     });
   });
 

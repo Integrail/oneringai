@@ -18,7 +18,7 @@ import { StreamEvent, StreamEventType, ResponseCompleteEvent, isToolCallArgument
 import { StreamState } from '../domain/entities/StreamState.js';
 import { Tool, ToolCall, ToolCallState, ToolResult, AsyncToolConfig, PendingAsyncTool } from '../domain/entities/Tool.js';
 import { Content, ContentType } from '../domain/entities/Content.js';
-import { ToolTimeoutError } from '../domain/errors/AIErrors.js';
+import { ToolTimeoutError, ToolPermissionDeniedError } from '../domain/errors/AIErrors.js';
 import type { HookConfig, HookName } from '../capabilities/agents/types/HookTypes.js';
 import { AgentEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
@@ -1932,6 +1932,20 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         this.executionContext.metrics.toolFailureCount++;
       }
 
+      // Handle permission denied — return as tool result instead of throwing
+      // so the LLM loop gets informed and can adjust
+      if (error instanceof ToolPermissionDeniedError) {
+        this.emit('tool:error', { executionId, iteration, toolCall, error, timestamp: new Date() });
+        return {
+          tool_use_id: toolCall.id,
+          tool_name: toolCall.function.name,
+          tool_args: {},
+          content: `Permission denied: ${error.reason}`,
+          state: ToolCallState.FAILED,
+          executionTime: Date.now() - toolStartTime,
+        };
+      }
+
       // Emit tool error or timeout
       if (error instanceof ToolTimeoutError) {
         this.emit('tool:timeout', {
@@ -1950,13 +1964,24 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   }
 
   /**
-   * Check tool permission before execution
+   * Check tool permission before execution.
+   *
+   * When the PermissionEnforcementPlugin is active on the ToolManager pipeline,
+   * this becomes a no-op — the pipeline handles enforcement for ALL paths.
+   * This legacy path is kept for backward compatibility when pipeline enforcement
+   * is not active.
    */
   private async checkToolPermission(
     toolCall: ToolCall,
     iteration: number,
     executionId: string
   ): Promise<boolean> {
+    // If pipeline enforcement is active, skip legacy check to avoid double-checking
+    if (this._agentContext.tools.hasPermissionEnforcement()) {
+      return true;
+    }
+
+    // Legacy path: check via ToolPermissionManager
     // Check if blocked first
     if (this._permissionManager.isBlocked(toolCall.function.name)) {
       this.executionContext?.audit('tool_blocked', { reason: 'Tool is blocklisted' }, undefined, toolCall.function.name);

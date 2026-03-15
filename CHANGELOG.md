@@ -5,9 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2026-03-14
+## [0.5.1] - 2026-03-15
 
 ### Added
+- **Policy-Based Tool Permission System**: Complete replacement for the legacy `ToolPermissionManager`. Composable policies with deny-short-circuit / allow-continue semantics. Enforced at `ToolManager` pipeline level — ALL tool execution paths are gated (agent loop, direct API, orchestrator workers).
+- **Per-User Permission Rules** (`UserPermissionRulesEngine`): Persistent, per-user rules with argument-level conditions. User rules have the HIGHEST priority — they override ALL built-in policies. Specificity-based matching (not numeric priorities). Unconditional flag for absolute overrides.
+- **8 Built-in Policies**: `AllowlistPolicy`, `BlocklistPolicy`, `SessionApprovalPolicy`, `PathRestrictionPolicy` (canonicalized paths), `BashFilterPolicy` (best-effort guardrail), `UrlAllowlistPolicy` (parsed URL checking), `RolePolicy` (multi-role, deny beats allow), `RateLimitPolicy` (in-memory).
+- **Approval → Rule Creation**: Approval dialog responses can create persistent user rules via `ApprovalDecision.createRule`. "Always allow" decisions automatically persist as user rules for future sessions.
+- **Argument Conditions**: 8 operators (`starts_with`, `contains`, `equals`, `matches` + negations) with case-insensitive default. Meta-args (`__toolCategory`, `__toolSource`) for matching tool metadata.
+- **Tool Self-Declaration**: All 50+ built-in tools now declare default `ToolPermissionConfig` (scope, riskLevel, sensitiveArgs). App developers can override at registration time.
+- **Clean Architecture Storage**: `IUserPermissionRulesStorage` interface + `FileUserPermissionRulesStorage` reference implementation. Also `IPermissionAuditStorage`, `IPermissionPolicyStorage`, `IPermissionApprovalStorage`.
+- **PermissionEnforcementPlugin**: `IToolExecutionPlugin` at priority 1 on ToolManager pipeline. Throws `ToolPermissionDeniedError` (new typed error).
+- **Centralized Audit Redaction**: Sensitive args auto-redacted (built-in keys + tool-declared sensitiveArgs + truncation for large values).
+- **Orchestrator Delegation**: `setParentEvaluator()` — parent deny is final, parent allow doesn't skip worker restrictions.
+- **`agent.policyManager`**: New public getter for the `PermissionPolicyManager`. `agent.permissions` deprecated.
+- **`agent.policyManager.userRules`**: CRUD API for per-user permission rules (for UI integration).
+
+### Changed
+- **`ToolContext`**: Added `roles?: string[]` and `sessionId?: string` fields.
+- **`BaseAgentConfig`**: Added `userRoles?: string[]` field for role-based access control.
+
+### Deprecated
+- **`ToolPermissionManager`**: Replaced by `PermissionPolicyManager`. Legacy adapter preserved for backward compatibility.
+- **`agent.permissions`**: Use `agent.policyManager` instead.
+
+## [0.5.0] - 2026-03-15
+
+### Added
+- **`AgentRegistry` exported from main index**: `AgentRegistry` class and all its types (`AgentInfo`, `AgentInspection`, `AgentFilter`, `AgentRegistryStats`, `AgentRegistryEvents`, `AgentEventListener`) now exported from `@everworker/oneringai` for external use.
+- **`AgentContextNextGen.registerPlugin()` options**: New `{ skipDestroyOnContextDestroy: true }` option for shared plugins (e.g., SharedWorkspacePlugin in orchestrator).
+- **`StoreToolsManager.unregisterHandler()`**: New method to remove store handlers by storeId.
+- **Everworker Desktop: Orchestrator mode**: Any agent can be designated as an orchestrator via `isOrchestrator` config flag. Orchestrator instances use `createOrchestrator()` with child agent templates built from existing agent configs.
+- **Everworker Desktop: Worker event streaming**: Orchestrator instances subscribe to `AgentRegistry` events and forward worker lifecycle (created/destroyed/status), tool activity (start/end), and turn events as `orchestrator:*` StreamChunk types to the renderer.
+- **Everworker Desktop: Worker inspection IPC**: New `agent:inspect-worker` and `agent:list-workers` IPC handlers for deep worker inspection via `AgentRegistry.inspect()`.
+- **Everworker Desktop: Agent Editor — Orchestrator tab**: New "Orchestrator" tab in agent editor with toggle switch, child agent type picker (from existing agents), editable aliases, and max workers slider.
+- **Everworker Desktop: OrchestratorDashboard**: Horizontal strip above chat messages showing worker pills with live status (idle/running/paused), current tool activity, and workspace entry count. Only visible for orchestrator tabs.
+- **Everworker Desktop: Workers sidebar tab**: 4th sidebar tab (conditional on orchestrator mode) with WorkspaceView (shared workspace entries) and WorkerInspectorPanel (deep inspection via AgentRegistry with 2s polling for conversation, context budget, tool stats).
+
 - **Unified Store Tools**: 5 generic `store_*` tools (`store_get`, `store_set`, `store_delete`, `store_list`, `store_action`) replace 19 plugin-specific CRUD tools. All IStoreHandler plugins automatically get these tools — zero boilerplate.
 - **`IStoreHandler` Interface**: New interface for building custom CRUD plugins. Implement it alongside `IContextPluginNextGen` and your plugin automatically gets store tools when registered.
 - **`SharedWorkspacePluginNextGen`**: New plugin for multi-agent coordination. Storage-agnostic bulletin board with inline content, external references, versioning, author tracking, and append-only conversation log. Enable via `features.sharedWorkspace: true`.
@@ -21,7 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Default Orchestrator System Prompt**: Auto-generated from `agentTypes` config, describes available agent types, coordination tools, and workflow patterns.
 - **`src/core/orchestrator/`**: New module with `createOrchestrator.ts` (factory + system prompt), `tools.ts` (7 orchestration tool definitions), and `index.ts` (exports).
 
+### Added
+- **Orchestrator unit tests**: 68 tests covering `buildOrchestrationTools` (all 7 tools, workspace delta builder, validation, timeouts, partial failures), `createOrchestrator` (factory, system prompt, worker creation, destroy lifecycle, config options).
+
 ### Fixed
+- **Dead `timers` array in `assign_parallel`**: Removed unused `timers` array and `timers.push(timer)` — individual timer cleanup already happens in per-promise `finally` blocks.
+- **Everworker Desktop: React anti-pattern in child agent selector**: Replaced `document.getElementById` DOM manipulation with controlled React state (`selectedChildAgentId`).
+- **Everworker Desktop: Array index as key for child agent list**: Changed `key={idx}` to stable `key={agentConfigId-alias}` to prevent wrong re-renders on deletion.
+- **Everworker Desktop: Silent polling errors in WorkerInspectorPanel**: Added error state — shows "Unable to inspect worker" message instead of being stuck on "Loading..." forever.
+- **Everworker Desktop: Poll interval magic number in WorkerInspectorPanel**: Extracted to `const POLL_INTERVAL_MS = 2000`.
 - **[CRITICAL] Timer leaks in orchestration tools**: `assign_turn`, `assign_turn_async`, and `assign_parallel` now properly clear timeout timers in `finally` blocks when `agent.run()` resolves before the timeout. Previously leaked 1+ timers per tool call.
 - **[CRITICAL] Shared workspace double-destroy**: When orchestrator is destroyed, the shared workspace plugin is no longer destroyed from worker contexts (only from the orchestrator). Added `registerPlugin(plugin, { skipDestroyOnContextDestroy: true })` option.
 - **[CRITICAL] Worker agents not cleaned up on orchestrator destroy**: `orchestrator.destroy()` now destroys all worker agents and clears the shared workspace.
