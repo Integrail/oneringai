@@ -69,50 +69,38 @@ export class SessionApprovalPolicy implements IPermissionPolicy {
       };
     }
 
-    // Session scope: check cache
-    if (scope === 'session') {
-      // Check tool-level approval key
-      if (this.isApproved(ctx.toolName)) {
-        return {
-          verdict: 'allow',
-          reason: `Tool '${ctx.toolName}' approved for session (key: ${ctx.toolName})`,
-          policyName: this.name,
-        };
-      }
-
-      // Also check any argument-scoped keys that might be cached
-      // (e.g., "write_file:/workspace/foo" from PathRestrictionPolicy)
-      for (const key of this.cache.keys()) {
-        if (key.startsWith(ctx.toolName + ':') && this.isApproved(key)) {
-          return {
-            verdict: 'allow',
-            reason: `Tool '${ctx.toolName}' approved for session (key: ${key})`,
-            policyName: this.name,
-          };
-        }
-      }
-
+    // For both 'session' and 'once' scoped tools, check cache first.
+    // The user may have approved with a broader scope than the tool's default
+    // (e.g., tool declares 'once' but user chose "allow for session").
+    if (this.isApproved(ctx.toolName)) {
       return {
-        verdict: 'deny',
-        reason: `Tool '${ctx.toolName}' requires session approval`,
+        verdict: 'allow',
+        reason: `Tool '${ctx.toolName}' approved for session (key: ${ctx.toolName})`,
         policyName: this.name,
-        metadata: {
-          needsApproval: true,
-          approvalKey: ctx.toolName,
-          approvalScope: 'session',
-        },
       };
     }
 
-    // Default: 'once' — always require approval
+    // Also check any argument-scoped keys that might be cached
+    // (e.g., "write_file:/workspace/foo" from PathRestrictionPolicy)
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(ctx.toolName + ':') && this.isApproved(key)) {
+        return {
+          verdict: 'allow',
+          reason: `Tool '${ctx.toolName}' approved for session (key: ${key})`,
+          policyName: this.name,
+        };
+      }
+    }
+
+    // Not cached — deny with approval request
     return {
       verdict: 'deny',
-      reason: `Tool '${ctx.toolName}' requires per-call approval`,
+      reason: `Tool '${ctx.toolName}' requires ${scope === 'once' ? 'per-call' : 'session'} approval`,
       policyName: this.name,
       metadata: {
         needsApproval: true,
         approvalKey: ctx.toolName,
-        approvalScope: 'once',
+        approvalScope: scope,
       },
     };
   }
