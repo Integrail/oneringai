@@ -152,7 +152,7 @@ export interface CallSummary {
  */
 export interface VoiceHooks {
   /**
-   * Called when a new inbound call arrives.
+   * Called when a new call connects (inbound or outbound).
    * Return `false` to reject the call. Return void or true to accept.
    */
   onCallStart?: (session: VoiceSessionInfo) => Promise<boolean | void>;
@@ -218,16 +218,64 @@ export interface TextPipelineConfig {
   };
 }
 
-// v2: export interface RealtimePipelineConfig { pipeline: 'realtime'; ... }
+/**
+ * Realtime pipeline configuration — direct voice-to-voice via OpenAI Realtime API.
+ * No separate STT/TTS needed — the model handles audio natively.
+ */
+export interface RealtimePipelineConfig {
+  pipeline: 'realtime';
 
-export type PipelineConfig = TextPipelineConfig; // v2: | RealtimePipelineConfig
+  /** Voice for the realtime model (e.g., 'alloy', 'echo', 'shimmer'). Default: 'alloy' */
+  voice?: string;
+
+  /**
+   * Turn detection mode:
+   * - 'server_vad': OpenAI handles VAD (default, recommended)
+   * - 'none': Manual turn management
+   */
+  turnDetection?: 'server_vad' | 'none';
+
+  /** VAD threshold (0.0-1.0) for server_vad mode. Default: 0.5 */
+  vadThreshold?: number;
+
+  /** Silence duration in ms before end-of-turn. Default: 500 */
+  silenceDurationMs?: number;
+
+  /** Enable input audio transcription for hooks/logging. Default: true */
+  inputTranscription?: boolean;
+
+  /** Transcription model for input audio. Default: 'gpt-4o-transcribe' */
+  transcriptionModel?: string;
+}
+
+export type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig;
+
+// =============================================================================
+// Transcript Message (conversation log for UI display)
+// =============================================================================
 
 /**
- * VoiceBridge configuration.
- * The bridge creates a fresh Agent per call from this config.
+ * A single entry in the voice call transcript.
+ * Emitted by pipelines for UI display and logging.
  */
-export interface VoiceBridgeConfig extends PipelineConfig {
-  /** Agent configuration — a fresh agent is created per call */
+export interface TranscriptMessage {
+  /** Who produced this message */
+  role: 'caller' | 'agent' | 'tool_use' | 'tool_result';
+  /** Text content (transcript, tool args JSON, or tool result) */
+  text: string;
+  /** Unix timestamp in ms */
+  timestamp: number;
+  /** Tool name (for tool_use / tool_result) */
+  toolName?: string;
+  /** Tool call ID for correlating use/result pairs */
+  toolCallId?: string;
+}
+
+/**
+ * Common fields shared by all VoiceBridge configurations.
+ */
+interface VoiceBridgeBaseConfig {
+  /** Agent configuration — connector, model, instructions, tools */
   agent: AgentConfig;
 
   /** Silence duration (ms) to consider end-of-utterance. Default: 1500 */
@@ -236,8 +284,11 @@ export interface VoiceBridgeConfig extends PipelineConfig {
   /** Allow caller to interrupt agent mid-speech. Default: true */
   interruptible?: boolean;
 
-  /** First thing agent says when call connects (bypasses LLM). */
+  /** First thing agent says when an inbound call connects. */
   greeting?: string;
+
+  /** First thing agent says when an outbound call connects. If omitted, no greeting on outbound. */
+  greetingOutbound?: string;
 
   /** Max concurrent calls. 0 = unlimited. Default: 10 */
   maxConcurrentCalls?: number;
@@ -245,12 +296,19 @@ export interface VoiceBridgeConfig extends PipelineConfig {
   /** Max call duration in seconds. 0 = unlimited. Default: 3600 */
   maxCallDuration?: number;
 
-  /** VAD configuration (for energy-based detector) */
+  /** VAD configuration (for energy-based detector, text pipeline only) */
   vad?: EnergyVADConfig;
 
   /** Lifecycle hooks */
   hooks?: VoiceHooks;
 }
+
+/**
+ * VoiceBridge configuration — discriminated union by pipeline type.
+ */
+export type VoiceBridgeConfig =
+  | (VoiceBridgeBaseConfig & TextPipelineConfig)
+  | (VoiceBridgeBaseConfig & RealtimePipelineConfig);
 
 // =============================================================================
 // Voice Pipeline Interface (strategy pattern)
@@ -259,11 +317,24 @@ export interface VoiceBridgeConfig extends PipelineConfig {
 /**
  * Events emitted by a voice pipeline
  */
+export interface VoicePipelinePlaybackAck {
+  /** Telephony/provider specific acknowledgement token */
+  name: string;
+  /** Milliseconds of assistant audio acknowledged as played */
+  playedMs: number;
+}
+
 export interface VoicePipelineEvents {
   /** Audio ready to send to the caller */
   'audio:out': (frame: AudioFrame) => void;
   /** Session state changed */
   'state:change': (state: SessionState) => void;
+  /** Caller interrupted agent speech (barge-in) */
+  'interrupt': () => void;
+  /** Telephony playback progress acknowledgement */
+  'playback:ack': (ack: VoicePipelinePlaybackAck) => void;
+  /** Transcript entry for UI display (caller text, agent text, tool calls) */
+  'transcript': (entry: TranscriptMessage) => void;
   /** Error during processing */
   'error': (error: Error) => void;
 }
@@ -287,6 +358,9 @@ export interface IVoicePipeline {
 
   /** Interrupt current agent response (e.g., caller spoke during TTS) */
   interrupt(): void;
+
+  /** Notify pipeline of telephony playback progress */
+  onPlaybackAck?(ack: VoicePipelinePlaybackAck): void;
 
   /** Get current pipeline state */
   getState(): SessionState;
@@ -321,11 +395,18 @@ export interface IncomingCallInfo {
 /**
  * Telephony adapter events
  */
+export interface TelephonyMediaTimestamp {
+  /** Twilio media timestamp in ms from stream start */
+  timestamp: number;
+}
+
 export interface TelephonyAdapterEvents {
   /** A new call has been established and audio is flowing */
   'call:connected': (callId: string, info: IncomingCallInfo) => void;
   /** Audio frame received from caller */
   'call:audio': (callId: string, frame: AudioFrame) => void;
+  /** Latest inbound media timestamp from telephony */
+  'call:media_timestamp': (callId: string, info: TelephonyMediaTimestamp) => void;
   /** Call has ended */
   'call:ended': (callId: string, reason: string) => void;
   /** Adapter-level error */
@@ -347,6 +428,9 @@ export interface ITelephonyAdapter {
   /** End a specific call */
   hangup(callId: string): Promise<void>;
 
+  /** Initiate an outbound call. Returns the provider-specific call ID. */
+  makeCall?(config: OutboundCallConfig): Promise<string>;
+
   /** Get all active call IDs */
   getActiveCalls(): string[];
 
@@ -359,12 +443,36 @@ export interface ITelephonyAdapter {
 }
 
 // =============================================================================
+// Outbound Call Config
+// =============================================================================
+
+/**
+ * Configuration for initiating an outbound call.
+ */
+export interface OutboundCallConfig {
+  /** Destination phone number (E.164 format, e.g., '+15558675310') */
+  to: string;
+  /** Caller ID / from phone number (must be a verified Twilio number) */
+  from: string;
+  /** Ring timeout in seconds before giving up. Default: 30 */
+  timeout?: number;
+  /** Enable answering machine detection. Default: false */
+  machineDetection?: boolean;
+}
+
+// =============================================================================
 // Twilio-specific types
 // =============================================================================
 
 export interface TwilioAdapterConfig {
   /** Twilio connector name (for REST API auth) */
   connector: string;
+
+  /**
+   * Twilio Account SID. Required for outbound calls.
+   * For inbound-only, this is extracted from the media stream event.
+   */
+  accountSid?: string;
 
   /**
    * WebSocket server mode:
@@ -384,7 +492,7 @@ export interface TwilioAdapterConfig {
 
   /**
    * Public URL where Twilio can reach this server.
-   * Required for standalone mode. In external mode, you configure this yourself.
+   * Required for standalone mode and outbound calls.
    * Example: 'https://myserver.com' or 'https://abc123.ngrok.io'
    */
   publicUrl?: string;

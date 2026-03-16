@@ -49,6 +49,8 @@ export {
   DefaultCompactionStrategy,
   // Strategy Registry
   StrategyRegistry,
+  // Plugin Registry
+  PluginRegistry,
   // Unified store tools
   StoreToolsManager,
   isStoreHandler,
@@ -57,6 +59,9 @@ export type {
   AuthIdentity,
   AgentContextNextGenConfig,
   ContextFeatures,
+  KnownContextFeatures,
+  ResolvedContextFeatures,
+  KnownPluginConfigs,
   ContextEvents,
   SerializedContextState,
   DirectCallOptions,
@@ -66,6 +71,11 @@ export type {
   PreparedContext,
   OversizedInputResult,
   PluginConfigs,
+  PluginFactory,
+  PluginFactoryContext,
+  PluginRegistryEntry,
+  PluginRegisterOptions,
+  PluginRegistryInfo,
   // IContextStorage exported from domain/interfaces below
   WorkingMemoryPluginConfig,
   SerializedWorkingMemoryState,
@@ -138,7 +148,7 @@ export type {
 } from './capabilities/speech/index.js';
 
 // Voice Calling Capabilities (Twilio, telephony)
-export { VoiceBridge, VoiceSession, TextPipeline, EnergyVAD, TwilioAdapter } from './capabilities/voice/index.js';
+export { VoiceBridge, VoiceSession, TextPipeline, RealtimePipeline, EnergyVAD, TwilioAdapter } from './capabilities/voice/index.js';
 export { mulawToPcm, pcmToMulaw, resamplePcm, twilioToStt, sttToTwilio } from './capabilities/voice/index.js';
 export type {
   AudioFrame,
@@ -153,13 +163,16 @@ export type {
   CallSummary,
   VoiceBridgeConfig,
   TextPipelineConfig,
+  RealtimePipelineConfig,
   PipelineConfig,
+  TranscriptMessage,
   VoiceHooks,
   IVoicePipeline,
   VoicePipelineEvents,
   ITelephonyAdapter,
   TelephonyAdapterEvents,
   IncomingCallInfo,
+  OutboundCallConfig,
   TwilioAdapterConfig,
 } from './capabilities/voice/index.js';
 export type { VoiceBridgeEvents } from './capabilities/voice/index.js';

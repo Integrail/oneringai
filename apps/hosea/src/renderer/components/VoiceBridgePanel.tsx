@@ -5,14 +5,15 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Button, Badge, Spinner } from 'react-bootstrap';
-import { Phone, PhoneOff, PhoneCall, ChevronDown, ChevronRight } from 'lucide-react';
+import { Button, Badge, Spinner, Form, InputGroup } from 'react-bootstrap';
+import { Phone, PhoneOff, PhoneCall, PhoneOutgoing, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface VoiceSession {
   sessionId: string;
   callId: string;
   from: string;
   to: string;
+  direction?: string;
   state: string;
   startedAt: number;
   turns: number;
@@ -43,6 +44,7 @@ interface VoiceBridgeStatus {
 interface VoiceBridgePanelProps {
   agentConfigId: string;
   visible: boolean;
+  fromNumber?: string;
 }
 
 function formatElapsed(startMs: number): string {
@@ -56,12 +58,14 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString();
 }
 
-export function VoiceBridgePanel({ agentConfigId, visible }: VoiceBridgePanelProps): React.ReactElement | null {
+export function VoiceBridgePanel({ agentConfigId, visible, fromNumber }: VoiceBridgePanelProps): React.ReactElement | null {
   const [status, setStatus] = useState<VoiceBridgeStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [dialNumber, setDialNumber] = useState('');
+  const [dialing, setDialing] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -156,6 +160,22 @@ export function VoiceBridgePanel({ agentConfigId, visible }: VoiceBridgePanelPro
     }
   };
 
+  const handleDial = async () => {
+    if (!dialNumber.trim() || !fromNumber) return;
+    setDialing(true);
+    try {
+      const result = await window.hosea.voiceBridge.call(agentConfigId, dialNumber.trim(), fromNumber);
+      if (!result.success) {
+        alert(`Failed to make call: ${result.error}`);
+      } else {
+        setDialNumber('');
+      }
+      await pollStatus();
+    } finally {
+      setDialing(false);
+    }
+  };
+
   if (!visible) return null;
 
   const running = status?.running ?? false;
@@ -228,6 +248,37 @@ export function VoiceBridgePanel({ agentConfigId, visible }: VoiceBridgePanelPro
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Outbound Call */}
+      {running && fromNumber && (
+        <div className="p-2 border-bottom">
+          <div className="text-muted small mb-1">Make Outbound Call:</div>
+          <InputGroup size="sm">
+            <Form.Control
+              type="tel"
+              placeholder="+1 555 867 5309"
+              value={dialNumber}
+              onChange={(e) => setDialNumber(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleDial(); }}
+              disabled={dialing}
+            />
+            <Button
+              variant="success"
+              onClick={handleDial}
+              disabled={dialing || !dialNumber.trim()}
+            >
+              {dialing ? (
+                <Spinner size="sm" animation="border" />
+              ) : (
+                <PhoneOutgoing size={14} />
+              )}
+            </Button>
+          </InputGroup>
+          <div className="text-muted mt-1" style={{ fontSize: '0.7rem' }}>
+            From: {fromNumber}
+          </div>
         </div>
       )}
 

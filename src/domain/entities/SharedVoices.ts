@@ -46,6 +46,24 @@ export const OPENAI_VOICES: IVoiceInfo[] = [
 ];
 
 /**
+ * OpenAI Realtime API voices (subset supported by gpt-realtime models)
+ * Source: https://platform.openai.com/docs/guides/realtime
+ * Last verified: 2026-03-16
+ */
+export const OPENAI_REALTIME_VOICES: IVoiceInfo[] = [
+  { id: 'alloy', name: 'Alloy', language: 'multi', gender: 'neutral', isDefault: true },
+  { id: 'ash', name: 'Ash', language: 'multi', gender: 'male' },
+  { id: 'ballad', name: 'Ballad', language: 'multi', gender: 'male' },
+  { id: 'coral', name: 'Coral', language: 'multi', gender: 'female' },
+  { id: 'echo', name: 'Echo', language: 'multi', gender: 'male' },
+  { id: 'sage', name: 'Sage', language: 'multi', gender: 'female' },
+  { id: 'shimmer', name: 'Shimmer', language: 'multi', gender: 'female' },
+  { id: 'verse', name: 'Verse', language: 'multi', gender: 'neutral' },
+  { id: 'marin', name: 'Marin', language: 'multi', gender: 'female' },
+  { id: 'cedar', name: 'Cedar', language: 'multi', gender: 'male' },
+];
+
+/**
  * Google Gemini TTS voices (30 total)
  * Source: https://ai.google.dev/gemini-api/docs/speech-generation
  * Last verified: 2026-01-25

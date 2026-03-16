@@ -59,6 +59,8 @@ const SAFE_TOOLS = new Set([
   'custom_tool_draft',
   'custom_tool_list',
   'custom_tool_load',
+  'bg_process_output',
+  'bg_process_list',
 ]);
 
 // Tools that require a connector

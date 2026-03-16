@@ -19,6 +19,9 @@ export type {
   AuthIdentity,
   AgentContextNextGenConfig,
   ContextFeatures,
+  KnownContextFeatures,
+  ResolvedContextFeatures,
+  KnownPluginConfigs,
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
@@ -106,3 +109,13 @@ export {
   type StrategyRegistryEntry,
   type StrategyRegisterOptions,
 } from './strategies/index.js';
+
+// Plugin Registry
+export {
+  PluginRegistry,
+  type PluginFactory,
+  type PluginFactoryContext,
+  type PluginRegistryEntry,
+  type PluginRegisterOptions,
+  type PluginRegistryInfo,
+} from './PluginRegistry.js';

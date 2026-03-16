@@ -241,6 +241,11 @@ export class VoiceSession extends EventEmitter {
    * End the session and clean up all resources.
    */
   async end(reason?: CallEndReason): Promise<CallSummary> {
+    // Guard against double-end (can happen when stream stop and hangup race)
+    if (this._state === 'ended') {
+      return this.getSummary();
+    }
+
     if (reason) {
       this._endReason = reason;
     }
@@ -252,12 +257,10 @@ export class VoiceSession extends EventEmitter {
     }
 
     // Transition to ended (via ending if not already)
-    if (this._state !== 'ended') {
-      if (this._state !== 'ending') {
-        this.transition('ending');
-      }
-      this.transition('ended');
+    if (this._state !== 'ending') {
+      this.transition('ending');
     }
+    this.transition('ended');
 
     // Destroy pipeline
     if (this._pipeline) {

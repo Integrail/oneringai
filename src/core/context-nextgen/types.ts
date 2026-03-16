@@ -653,7 +653,11 @@ export interface OversizedInputResult {
 /**
  * Feature flags for enabling/disabling plugins
  */
-export interface ContextFeatures {
+/**
+ * Known feature flags for built-in plugins (provides autocomplete/docs).
+ * External plugins register via PluginRegistry and use arbitrary string keys.
+ */
+export interface KnownContextFeatures {
   /** Enable WorkingMemory plugin (default: true) */
   workingMemory?: boolean;
 
@@ -674,9 +678,22 @@ export interface ContextFeatures {
 }
 
 /**
- * Default feature configuration
+ * Feature flags for enabling/disabling plugins.
+ * Known keys provide autocomplete; arbitrary string keys are also accepted
+ * for externally registered plugins (via PluginRegistry).
  */
-export const DEFAULT_FEATURES: Required<ContextFeatures> = {
+export type ContextFeatures = KnownContextFeatures & { [key: string]: boolean | undefined };
+
+/**
+ * Resolved features — all known keys guaranteed present, plus any extras.
+ * Used internally after merging with DEFAULT_FEATURES.
+ */
+export type ResolvedContextFeatures = Required<KnownContextFeatures> & Record<string, boolean>;
+
+/**
+ * Default feature configuration for built-in plugins.
+ */
+export const DEFAULT_FEATURES: Required<KnownContextFeatures> = {
   workingMemory: true,
   inContextMemory: true,
   persistentInstructions: false,
@@ -694,44 +711,30 @@ export const DEFAULT_FEATURES: Required<ContextFeatures> = {
  * When features are enabled, plugins are created with these configs.
  * The config shapes match each plugin's constructor parameter.
  */
-export interface PluginConfigs {
-  /**
-   * Working memory plugin config (used when features.workingMemory=true).
-   * See WorkingMemoryPluginConfig for full options.
-   */
+/**
+ * Known plugin configurations for built-in plugins (provides autocomplete/docs).
+ */
+export interface KnownPluginConfigs {
+  /** Working memory plugin config. See WorkingMemoryPluginConfig. */
   workingMemory?: Record<string, unknown>;
-
-  /**
-   * In-context memory plugin config (used when features.inContextMemory=true).
-   * See InContextMemoryConfig for full options.
-   */
+  /** In-context memory plugin config. See InContextMemoryConfig. */
   inContextMemory?: Record<string, unknown>;
-
-  /**
-   * Persistent instructions plugin config (used when features.persistentInstructions=true).
-   * Note: agentId is auto-filled from context config if not provided.
-   * See PersistentInstructionsConfig for full options.
-   */
+  /** Persistent instructions plugin config. See PersistentInstructionsConfig. Note: agentId auto-filled. */
   persistentInstructions?: Record<string, unknown>;
-
-  /**
-   * User info plugin config (used when features.userInfo=true).
-   * See UserInfoPluginConfig for full options.
-   */
+  /** User info plugin config. See UserInfoPluginConfig. */
   userInfo?: Record<string, unknown>;
-
-  /**
-   * Tool catalog plugin config (used when features.toolCatalog=true).
-   * See ToolCatalogPluginConfig for full options.
-   */
+  /** Tool catalog plugin config. See ToolCatalogPluginConfig. */
   toolCatalog?: Record<string, unknown>;
-
-  /**
-   * Shared workspace plugin config (used when features.sharedWorkspace=true).
-   * See SharedWorkspaceConfig for full options.
-   */
+  /** Shared workspace plugin config. See SharedWorkspaceConfig. */
   sharedWorkspace?: Record<string, unknown>;
 }
+
+/**
+ * Plugin configurations for auto-initialization.
+ * Known keys provide autocomplete; arbitrary string keys accepted
+ * for externally registered plugins (via PluginRegistry).
+ */
+export type PluginConfigs = KnownPluginConfigs & { [key: string]: Record<string, unknown> | undefined };
 
 /**
  * AgentContextNextGen configuration

@@ -102,6 +102,8 @@ import {
   type AgentEventListener,
   type VoiceSessionInfo,
 } from '@everworker/oneringai';
+// Side-effect: registers DynamicUI plugin factory with PluginRegistry
+import '@everworker/react-ui/plugins';
 import type { BrowserService } from './BrowserService.js';
 import { ToolCatalogRegistry } from '@everworker/oneringai';
 import type { CatalogToolEntry } from '@everworker/oneringai';
@@ -232,6 +234,8 @@ export interface StoredAgentConfig {
   persistentInstructionsEnabled: boolean;
   // User info
   userInfoEnabled: boolean;
+  // Dynamic UI (side-panel cards via InContextMemory showInUI)
+  dynamicUIEnabled: boolean;
   // Tool permissions
   permissionsEnabled: boolean;
   // Selected tools
@@ -271,6 +275,8 @@ export interface StoredAgentConfig {
   voiceBridgePublicUrl?: string;
   voiceBridgeMaxConcurrent?: number;
   voiceBridgeMaxDuration?: number;
+  voiceBridgeFromNumber?: string;
+  voiceBridgeGreetingOutbound?: string;
 
   // Orchestrator mode
   isOrchestrator?: boolean;
@@ -736,6 +742,7 @@ export class AgentService {
         persistentInstructions: config.persistentInstructionsEnabled,
         userInfo: config.userInfoEnabled,
         toolCatalog: config.toolCatalogEnabled,
+        dynamicUI: config.dynamicUIEnabled,
         // Note: history and permissions are app-specific, not part of NextGen ContextFeatures
         // They are stored in typeConfig instead
       },
@@ -785,6 +792,8 @@ export class AgentService {
         voiceBridgePublicUrl: config.voiceBridgePublicUrl,
         voiceBridgeMaxConcurrent: config.voiceBridgeMaxConcurrent,
         voiceBridgeMaxDuration: config.voiceBridgeMaxDuration,
+        voiceBridgeFromNumber: config.voiceBridgeFromNumber,
+        voiceBridgeGreetingOutbound: config.voiceBridgeGreetingOutbound,
       },
     };
   }
@@ -828,6 +837,7 @@ export class AgentService {
       maxInContextTokens: (typeConfig.maxInContextTokens as number) ?? 4000,
       persistentInstructionsEnabled: features.persistentInstructions ?? false,
       userInfoEnabled: features.userInfo ?? false,
+      dynamicUIEnabled: features.dynamicUI ?? false,
       toolCatalogEnabled: features.toolCatalog ?? false,
       pinnedCategories: (typeConfig.pinnedCategories as string[]) ?? [],
       toolCategoryScope: (typeConfig.toolCategoryScope as string[]) ?? [],
@@ -858,6 +868,8 @@ export class AgentService {
       voiceBridgePublicUrl: typeConfig.voiceBridgePublicUrl as string | undefined,
       voiceBridgeMaxConcurrent: (typeConfig.voiceBridgeMaxConcurrent as number | undefined) ?? 5,
       voiceBridgeMaxDuration: (typeConfig.voiceBridgeMaxDuration as number | undefined) ?? 1800,
+      voiceBridgeFromNumber: typeConfig.voiceBridgeFromNumber as string | undefined,
+      voiceBridgeGreetingOutbound: typeConfig.voiceBridgeGreetingOutbound as string | undefined,
     };
   }
 
@@ -3549,12 +3561,12 @@ export class AgentService {
           responseReserve: agentConfig.responseReserve,
           strategy: validStrategy, // Validated strategy from StrategyRegistry
           storage: this.sessionStorage,
-          // Feature toggles (NextGen only has these 3)
           features: {
             workingMemory: agentConfig.workingMemoryEnabled,
-            inContextMemory: agentConfig.inContextMemoryEnabled,
+            inContextMemory: agentConfig.inContextMemoryEnabled || (agentConfig.dynamicUIEnabled ?? false),
             persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
             userInfo: agentConfig.userInfoEnabled ?? false,
+            dynamicUI: agentConfig.dynamicUIEnabled ?? false,
           },
           // Plugin-specific configurations
           plugins: {
@@ -3567,7 +3579,7 @@ export class AgentService {
                   contextAllocationPercent: agentConfig.contextAllocationPercent,
                 }
               : undefined,
-            inContextMemory: agentConfig.inContextMemoryEnabled
+            inContextMemory: (agentConfig.inContextMemoryEnabled || (agentConfig.dynamicUIEnabled ?? false))
               ? {
                   maxEntries: agentConfig.maxInContextEntries,
                   maxTotalTokens: agentConfig.maxInContextTokens,
@@ -3640,11 +3652,12 @@ export class AgentService {
       maxMemoryIndexEntries: 30,
       memorySoftLimitPercent: 80,
       contextAllocationPercent: 10,
-      inContextMemoryEnabled: false,
+      inContextMemoryEnabled: true,
       maxInContextEntries: 20,
       maxInContextTokens: 4000,
       persistentInstructionsEnabled: false,
       userInfoEnabled: false,
+      dynamicUIEnabled: true,
       toolCatalogEnabled: false,
       pinnedCategories: [],
       toolCategoryScope: [],
@@ -3677,6 +3690,8 @@ export class AgentService {
               name: m.name,
               description: m.description,
               contextWindow: m.features.input.tokens,
+              realtime: m.features.realtime ?? false,
+              voices: m.voices,
             })),
         });
       }
@@ -4380,10 +4395,12 @@ export class AgentService {
         journalFilter: ['user', 'assistant'],
         features: {
           workingMemory: agentConfig.workingMemoryEnabled,
-          inContextMemory: agentConfig.inContextMemoryEnabled,
+          // Force inContextMemory on when dynamicUI is enabled (it depends on it)
+          inContextMemory: agentConfig.inContextMemoryEnabled || (agentConfig.dynamicUIEnabled ?? false),
           persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
           userInfo: agentConfig.userInfoEnabled ?? false,
           toolCatalog: agentConfig.toolCatalogEnabled ?? false,
+          dynamicUI: agentConfig.dynamicUIEnabled ?? false,
         },
         toolCategories: agentConfig.toolCategoryScope.length > 0
           ? agentConfig.toolCategoryScope
@@ -4398,7 +4415,8 @@ export class AgentService {
                 contextAllocationPercent: agentConfig.contextAllocationPercent,
               }
             : undefined,
-          inContextMemory: agentConfig.inContextMemoryEnabled
+          // Provide inContextMemory config if enabled directly OR forced by dynamicUI
+          inContextMemory: (agentConfig.inContextMemoryEnabled || (agentConfig.dynamicUIEnabled ?? false))
             ? {
                 maxEntries: agentConfig.maxInContextEntries,
                 maxTotalTokens: agentConfig.maxInContextTokens,
@@ -6459,12 +6477,18 @@ export class AgentService {
         return { success: false, error: 'No Twilio connector configured' };
       }
 
-      if (!config.voiceBridgeSttConnector) {
-        return { success: false, error: 'No STT connector configured' };
-      }
+      // STT/TTS connectors are only required for text pipeline (not realtime)
+      const earlyModelInfo = getModelInfo(config.model);
+      const earlyIsRealtime = earlyModelInfo?.features?.realtime === true;
 
-      if (!config.voiceBridgeTtsConnector && !config.voiceBridgeTtsModel) {
-        return { success: false, error: 'No TTS connector/model configured' };
+      if (!earlyIsRealtime) {
+        if (!config.voiceBridgeSttConnector) {
+          return { success: false, error: 'No STT connector configured' };
+        }
+
+        if (!config.voiceBridgeTtsConnector && !config.voiceBridgeTtsModel) {
+          return { success: false, error: 'No TTS connector/model configured' };
+        }
       }
 
       // Ensure all connectors are registered with the library
@@ -6528,29 +6552,47 @@ export class AgentService {
       }
       logger.info(`[startVoiceBridge] Resolved ${resolvedTools.length} tools from ${config.tools.length} configured names`);
 
-      // Create VoiceBridge
-      const bridge = VoiceBridge.create({
+      // Detect if model supports realtime voice-to-voice
+      const modelInfo = getModelInfo(config.model);
+      const isRealtimeModel = modelInfo?.features?.realtime === true;
+
+      if (isRealtimeModel) {
+        logger.info({ model: config.model }, '[startVoiceBridge] Realtime model detected — using RealtimePipeline');
+      }
+
+      // Create VoiceBridge — auto-select pipeline based on model capabilities
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bridgeConfig: any = {
         agent: {
           connector: config.connector,
           model: config.model,
           instructions: config.instructions,
           tools: resolvedTools,
         },
-        pipeline: 'text',
-        stt: {
-          connector: sttConnectorName,
-          model: config.voiceBridgeSttModel,
-        },
-        tts: {
-          connector: ttsConnectorName,
-          model: config.voiceBridgeTtsModel || config.voiceModel || 'tts-1',
-          voice: config.voiceBridgeTtsVoice || config.voiceVoice || 'nova',
-        },
         greeting: config.voiceBridgeGreeting,
+        greetingOutbound: config.voiceBridgeGreetingOutbound,
         interruptible: config.voiceBridgeInterruptible ?? true,
         maxConcurrentCalls: config.voiceBridgeMaxConcurrent ?? 5,
         maxCallDuration: config.voiceBridgeMaxDuration ?? 1800,
-        hooks: {
+      };
+
+      if (isRealtimeModel) {
+        bridgeConfig.pipeline = 'realtime';
+        bridgeConfig.voice = config.voiceBridgeTtsVoice || config.voiceVoice || 'alloy';
+      } else {
+        bridgeConfig.pipeline = 'text';
+        bridgeConfig.stt = {
+          connector: sttConnectorName,
+          model: config.voiceBridgeSttModel,
+        };
+        bridgeConfig.tts = {
+          connector: ttsConnectorName,
+          model: config.voiceBridgeTtsModel || config.voiceModel || 'tts-1',
+          voice: config.voiceBridgeTtsVoice || config.voiceVoice || 'nova',
+        };
+      }
+
+      bridgeConfig.hooks = {
           onCallStart: async (session) => {
             this.pushVoiceBridgeLog(agentConfigId, 'info', `Call started from ${session.from} to ${session.to}`);
             this.mainWindowSender?.('voice-bridge:call-start', {
@@ -6576,31 +6618,39 @@ export class AgentService {
             });
           },
           beforeAgentResponse: async (text, session) => {
-            // Emit caller transcript to renderer
-            this.mainWindowSender?.('voice-bridge:transcript', {
-              agentConfigId,
-              sessionId: session.sessionId,
-              role: 'caller',
-              text,
-              timestamp: Date.now(),
-            });
+            // For text pipeline: emit transcript to renderer
+            // (realtime pipeline uses bridge.on('transcript') instead to avoid duplicates)
+            if (!isRealtimeModel) {
+              this.mainWindowSender?.('voice-bridge:transcript', {
+                agentConfigId,
+                sessionId: session.sessionId,
+                from: session.from,
+                role: 'caller',
+                text,
+                timestamp: Date.now(),
+              });
+            }
             this.pushVoiceBridgeLog(agentConfigId, 'info', `Caller: "${text}"`);
             return text;
           },
           afterAgentResponse: async (text, session) => {
-            // Emit agent response transcript to renderer
-            this.mainWindowSender?.('voice-bridge:transcript', {
-              agentConfigId,
-              sessionId: session.sessionId,
-              role: 'agent',
-              text,
-              timestamp: Date.now(),
-            });
+            // For text pipeline: emit transcript to renderer
+            if (!isRealtimeModel) {
+              this.mainWindowSender?.('voice-bridge:transcript', {
+                agentConfigId,
+                sessionId: session.sessionId,
+                from: session.from,
+                role: 'agent',
+                text,
+                timestamp: Date.now(),
+              });
+            }
             this.pushVoiceBridgeLog(agentConfigId, 'info', `Agent: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
             return text;
           },
-        },
-      });
+      };
+
+      const bridge = VoiceBridge.create(bridgeConfig);
 
       // Wire bridge events for logging
       bridge.on('session:created', (info) => {
@@ -6613,10 +6663,32 @@ export class AgentService {
       bridge.on('error', (error, sessionId) => {
         this.pushVoiceBridgeLog(agentConfigId, 'error', `Bridge error: ${error.message}${sessionId ? ` (session: ${sessionId})` : ''}`);
       });
+      // Forward transcript events from realtime pipeline to renderer
+      bridge.on('transcript', (info, entry) => {
+        this.mainWindowSender?.('voice-bridge:transcript', {
+          agentConfigId,
+          sessionId: info.sessionId,
+          from: info.from,
+          role: entry.role === 'caller' ? 'caller' : 'agent',
+          text: entry.text,
+          timestamp: entry.timestamp,
+          toolName: entry.toolName,
+          toolCallId: entry.toolCallId,
+        });
+        if (entry.role === 'tool_use') {
+          this.pushVoiceBridgeLog(agentConfigId, 'info', `Tool call: ${entry.toolName}(${entry.text.slice(0, 80)})`);
+        } else if (entry.role === 'tool_result') {
+          this.pushVoiceBridgeLog(agentConfigId, 'info', `Tool result: ${entry.toolName} → ${entry.text.slice(0, 80)}`);
+        }
+      });
+
+      // Extract accountSid from Twilio connector credentials (needed for outbound calls)
+      const accountSid = twilioUc.credentials?.accountId as string | undefined;
 
       // Create TwilioAdapter in standalone mode
       const adapter = TwilioAdapter.createStandalone({
         connector: config.voiceBridgeTwilioConnector,
+        accountSid,
         port,
         publicUrl,
       });
@@ -6657,6 +6729,31 @@ export class AgentService {
       return { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * Make an outbound call via a running voice bridge
+   */
+  async makeVoiceBridgeCall(
+    agentConfigId: string,
+    to: string,
+    from: string
+  ): Promise<{ success: boolean; callId?: string; error?: string }> {
+    try {
+      const entry = this.voiceBridges.get(agentConfigId);
+      if (!entry) {
+        return { success: false, error: 'Voice bridge is not running' };
+      }
+
+      const callId = await entry.bridge.makeCall(to, from);
+      this.pushVoiceBridgeLog(agentConfigId, 'info', `Outbound call initiated to ${to} from ${from}`);
+
+      return { success: true, callId };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.pushVoiceBridgeLog(agentConfigId, 'error', `Outbound call failed: ${msg}`);
+      return { success: false, error: msg };
     }
   }
 
@@ -6714,6 +6811,7 @@ export class AgentService {
     callId: string;
     from: string;
     to: string;
+    direction: string;
     state: string;
     startedAt: number;
     turns: number;
@@ -6723,6 +6821,7 @@ export class AgentService {
       callId: session.callId,
       from: session.from,
       to: session.to,
+      direction: session.direction,
       state: session.state,
       startedAt: session.startedAt.getTime(),
       turns: session.turns,

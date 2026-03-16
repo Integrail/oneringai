@@ -14,6 +14,13 @@
 import { EventEmitter } from 'eventemitter3';
 import type { InputItem } from '../domain/entities/Message.js';
 import type { IContextSnapshot } from './context-nextgen/snapshot.js';
+import { DEFAULT_FEATURES } from './context-nextgen/types.js';
+import type { ResolvedContextFeatures } from './context-nextgen/types.js';
+
+/** All known features set to false — used as fallback for destroyed/unavailable agents */
+const DEFAULT_FEATURES_ALL_FALSE = Object.fromEntries(
+  Object.keys(DEFAULT_FEATURES).map(k => [k, false]),
+);
 import type { ExecutionMetrics, AuditEntry } from '../capabilities/agents/ExecutionContext.js';
 import type { ToolManagerStats } from './ToolManager.js';
 import type { CircuitState } from '../infrastructure/resilience/CircuitBreaker.js';
@@ -739,7 +746,7 @@ export class AgentRegistry {
           available: false,
           agentId: info.id,
           model: info.model,
-          features: { workingMemory: false, inContextMemory: false, persistentInstructions: false, userInfo: false, toolCatalog: false, sharedWorkspace: false },
+          features: { ...DEFAULT_FEATURES_ALL_FALSE } as ResolvedContextFeatures,
           budget: { maxTokens: 0, responseReserve: 0, systemMessageTokens: 0, toolsTokens: 0, conversationTokens: 0, currentInputTokens: 0, totalUsed: 0, available: 0, utilizationPercent: 0, breakdown: { systemPrompt: 0, persistentInstructions: 0, pluginInstructions: 0, pluginContents: {}, tools: 0, conversation: 0, currentInput: 0 } },
           strategy: 'unknown',
           messagesCount: 0,

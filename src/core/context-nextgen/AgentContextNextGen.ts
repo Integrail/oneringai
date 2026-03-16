@@ -36,13 +36,15 @@ import { ContentType } from '../../domain/entities/Content.js';
 import type { ToolResult } from '../../domain/entities/Tool.js';
 import type { OutputItem } from '../../domain/entities/Message.js';
 import { simpleTokenEstimator } from './BasePluginNextGen.js';
+import { PluginRegistry } from './PluginRegistry.js';
+import type { PluginFactoryContext } from './PluginRegistry.js';
 
 import type {
   AuthIdentity,
   IContextPluginNextGen,
   ITokenEstimator,
   AgentContextNextGenConfig,
-  ContextFeatures,
+  ResolvedContextFeatures,
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
@@ -131,7 +133,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** Configuration */
   private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities' | 'toolCategories' | 'journalFilter'>> & {
-    features: Required<ContextFeatures>;
+    features: ResolvedContextFeatures;
     storage?: IContextStorage;
     systemPrompt?: string;
     toolCategories?: ToolCategoryScope;
@@ -343,6 +345,49 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       this.registerPlugin(new SharedWorkspacePluginNextGen(swConfig));
     }
 
+    // 7. External plugins from PluginRegistry
+    const registeredPlugins = PluginRegistry.getAll();
+    if (registeredPlugins.size > 0) {
+      const factoryContext: PluginFactoryContext = {
+        agentId: this._agentId,
+        userId: this._userId,
+        features: features as Record<string, boolean | undefined>,
+      };
+
+      for (const [featureKey, entry] of registeredPlugins) {
+        if (!features[featureKey]) continue; // Feature not enabled
+
+        // Validate dependencies
+        if (entry.dependencies?.length) {
+          const missingDeps = entry.dependencies.filter(dep => !features[dep]);
+          if (missingDeps.length > 0) {
+            throw new Error(
+              `Plugin '${entry.pluginName}' requires features: ${missingDeps.join(', ')}. ` +
+              `Enable them in features configuration.`,
+            );
+          }
+        }
+
+        // Skip if already manually registered (manual takes precedence)
+        if (this._plugins.has(entry.pluginName)) {
+          logger.debug(
+            { plugin: entry.pluginName },
+            `Plugin '${entry.pluginName}' already registered, skipping auto-init from PluginRegistry`,
+          );
+          continue;
+        }
+
+        const pluginConfig = configs[featureKey] as Record<string, unknown> | undefined;
+        const plugin = entry.factory(pluginConfig, factoryContext);
+        this.registerPlugin(plugin);
+
+        logger.debug(
+          { plugin: entry.pluginName, featureKey },
+          `Auto-initialized external plugin '${entry.pluginName}' from PluginRegistry`,
+        );
+      }
+    }
+
     // Validate strategy dependencies now that plugins are initialized
     this.validateStrategyDependencies(this._compactionStrategy);
   }
@@ -485,7 +530,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   }
 
   /** Get feature configuration */
-  get features(): Required<ContextFeatures> {
+  get features(): ResolvedContextFeatures {
     return this._config.features;
   }
 

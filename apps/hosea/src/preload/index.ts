@@ -739,6 +739,8 @@ export interface HoseaAPI {
       voiceBridgePublicUrl?: string;
       voiceBridgeMaxConcurrent?: number;
       voiceBridgeMaxDuration?: number;
+      voiceBridgeFromNumber?: string;
+      voiceBridgeGreetingOutbound?: string;
       createdAt: number;
       updatedAt: number;
       lastUsedAt?: number;
@@ -801,6 +803,8 @@ export interface HoseaAPI {
       voiceBridgePublicUrl?: string;
       voiceBridgeMaxConcurrent?: number;
       voiceBridgeMaxDuration?: number;
+      voiceBridgeFromNumber?: string;
+      voiceBridgeGreetingOutbound?: string;
       createdAt: number;
       updatedAt: number;
       lastUsedAt?: number;
@@ -1338,6 +1342,7 @@ export interface HoseaAPI {
       logs: Array<{ timestamp: number; level: string; message: string }>;
     }>;
     logs: (agentConfigId: string) => Promise<Array<{ timestamp: number; level: string; message: string }>>;
+    call: (agentConfigId: string, to: string, from: string) => Promise<{ success: boolean; callId?: string; error?: string }>;
     onCallStart: (callback: (data: { agentConfigId: string; session: { sessionId: string; from: string; to: string; state: string } }) => void) => void;
     onCallEnd: (callback: (data: { agentConfigId: string; session: { sessionId: string; from: string; to: string }; summary: { duration: number; turns: number; endReason: string } }) => void) => void;
     onError: (callback: (data: { agentConfigId: string; error: string; sessionId?: string }) => void) => void;
@@ -1735,6 +1740,7 @@ const api: HoseaAPI = {
     stop: (agentConfigId) => ipcRenderer.invoke('voice-bridge:stop', agentConfigId),
     status: (agentConfigId) => ipcRenderer.invoke('voice-bridge:status', agentConfigId),
     logs: (agentConfigId) => ipcRenderer.invoke('voice-bridge:logs', agentConfigId),
+    call: (agentConfigId, to, from) => ipcRenderer.invoke('voice-bridge:call', agentConfigId, to, from),
     onCallStart: (callback) => {
       ipcRenderer.on('voice-bridge:call-start', (_e, data) => callback(data));
     },

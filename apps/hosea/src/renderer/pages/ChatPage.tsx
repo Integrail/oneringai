@@ -481,6 +481,7 @@ function ChatPageContent(): React.ReactElement {
 
   // Voice bridge panel
   const [voiceBridgeEnabled, setVoiceBridgeEnabled] = useState(false);
+  const [voiceBridgeFromNumber, setVoiceBridgeFromNumber] = useState('');
 
   const activeTab = getActiveTab();
 
@@ -488,11 +489,16 @@ function ChatPageContent(): React.ReactElement {
   useEffect(() => {
     if (!activeTab?.agentConfigId) {
       setVoiceBridgeEnabled(false);
+      setVoiceBridgeFromNumber('');
       return;
     }
     window.hosea.agentConfig.get(activeTab.agentConfigId).then((config) => {
       setVoiceBridgeEnabled(config?.voiceBridgeEnabled ?? false);
-    }).catch(() => setVoiceBridgeEnabled(false));
+      setVoiceBridgeFromNumber(config?.voiceBridgeFromNumber ?? '');
+    }).catch(() => {
+      setVoiceBridgeEnabled(false);
+      setVoiceBridgeFromNumber('');
+    });
   }, [activeTab?.agentConfigId]);
 
   // Voice playback - runs in background, plays audio chunks as they arrive
@@ -563,6 +569,7 @@ function ChatPageContent(): React.ReactElement {
         <VoiceBridgePanel
           agentConfigId={activeTab.agentConfigId}
           visible={voiceBridgeEnabled}
+          fromNumber={voiceBridgeFromNumber || undefined}
         />
       )}
 

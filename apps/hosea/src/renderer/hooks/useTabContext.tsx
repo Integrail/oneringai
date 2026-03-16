@@ -599,7 +599,7 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
             id: `vb-${data.role}-${data.timestamp}-${Math.random().toString(36).slice(2, 6)}`,
             role: data.role === 'caller' ? 'user' : 'assistant',
             content: data.role === 'caller'
-              ? `**[Phone: ${data.sessionId.slice(0, 8)}]** ${data.text}`
+              ? `**[${data.from || 'Caller'}]** ${data.text}`
               : data.text,
             timestamp: data.timestamp,
           };

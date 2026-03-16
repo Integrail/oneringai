@@ -1,5 +1,7 @@
 import { Vendor } from '../../core/Vendor.js';
 import type { Vendor as VendorType } from '../../core/Vendor.js';
+import type { IVoiceInfo } from './SharedVoices.js';
+import { OPENAI_REALTIME_VOICES } from './SharedVoices.js';
 
 /**
  * Complete description of an LLM model including capabilities, pricing, and features
@@ -25,6 +27,9 @@ export interface ILLMDescription {
 
   /** Knowledge cutoff date */
   knowledgeCutoff?: string;
+
+  /** Built-in voices for realtime/audio models (undefined = no built-in voices) */
+  voices?: IVoiceInfo[];
 
   /** Model capabilities and pricing */
   features: {
@@ -1250,6 +1255,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     preferred: true,
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
     features: {
       reasoning: false,
       streaming: true,
@@ -1286,6 +1292,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: true,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
+    voices: OPENAI_REALTIME_VOICES,
     features: {
       reasoning: false,
       streaming: true,
@@ -1322,6 +1329,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: true,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
+    voices: OPENAI_REALTIME_VOICES,
     features: {
       reasoning: false,
       streaming: true,

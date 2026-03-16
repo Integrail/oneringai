@@ -35,6 +35,10 @@ import type {
   FindElementsResult,
   Rectangle,
   BrowserInstance,
+  ConsoleMessage,
+  ConsoleMessageLevel,
+  ConsoleReadOptions,
+  ConsoleReadResult,
 } from './browser/types.js';
 import {
   type StealthConfig,
@@ -92,6 +96,12 @@ export class BrowserService extends EventEmitter {
 
   /** Track last known mouse position per instance for human-like movement */
   private mousePositions: Map<string, Point> = new Map();
+
+  /** Console message buffers per instance (capped at MAX_CONSOLE_BUFFER_SIZE) */
+  private consoleBuffers: Map<string, ConsoleMessage[]> = new Map();
+
+  /** Max console messages to buffer per instance */
+  private static readonly MAX_CONSOLE_BUFFER_SIZE = 1000;
 
   constructor(mainWindow: BrowserWindow | null = null, stealthConfig?: Partial<StealthConfig>) {
     super();
@@ -311,9 +321,22 @@ export class BrowserService extends EventEmitter {
         });
       });
 
-      // ============ Listen for Overlay Detection from Page ============
-      // The injected script sends messages via console.log with a special prefix
-      webContents.on('console-message', (_event, _level, message) => {
+      // ============ Listen for Console Messages ============
+      // Buffer all console messages for browser_console_read tool
+      // Also intercepts overlay detection messages (prefixed with __HOSEA_OVERLAY__)
+      this.consoleBuffers.set(instanceId, []);
+
+      webContents.on('console-message', (_event, level, message, line, sourceId) => {
+        // Map Electron numeric level to named level
+        const levelMap: Record<number, ConsoleMessageLevel> = {
+          0: 'verbose',
+          1: 'info',
+          2: 'warning',
+          3: 'error',
+        };
+        const namedLevel = levelMap[level] || 'info';
+
+        // Handle overlay detection (internal protocol, don't buffer)
         if (message.startsWith('__HOSEA_OVERLAY__:')) {
           try {
             const overlayData = JSON.parse(message.slice('__HOSEA_OVERLAY__:'.length));
@@ -321,6 +344,29 @@ export class BrowserService extends EventEmitter {
             this.emit('browser:overlay-detected', instanceId, overlayData);
           } catch (e) {
             // Ignore parse errors
+          }
+          return;
+        }
+
+        // Skip our own stealth injection logs
+        if (message.startsWith('[Stealth]') || message.startsWith('[EW Desktop]') || message.startsWith('[CookieConsent]')) {
+          return;
+        }
+
+        // Buffer the message
+        const buffer = this.consoleBuffers.get(instanceId);
+        if (buffer) {
+          buffer.push({
+            level: namedLevel,
+            message,
+            source: sourceId || undefined,
+            line: line || undefined,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Cap buffer size (drop oldest)
+          if (buffer.length > BrowserService.MAX_CONSOLE_BUFFER_SIZE) {
+            buffer.splice(0, buffer.length - BrowserService.MAX_CONSOLE_BUFFER_SIZE);
           }
         }
       });
@@ -621,6 +667,48 @@ export class BrowserService extends EventEmitter {
   }
 
   /**
+   * Read console messages from the buffer with optional filtering
+   */
+  readConsole(instanceId: string, options: ConsoleReadOptions = {}): ConsoleReadResult {
+    const buffer = this.consoleBuffers.get(instanceId);
+    if (!buffer) {
+      return { success: false, messages: [], totalBuffered: 0, cleared: false, error: 'Browser instance not found' };
+    }
+
+    const totalBuffered = buffer.length;
+    const { level = 'all', search, limit = 100, clear = false } = options;
+
+    // Filter by level
+    let filtered = buffer;
+    if (level !== 'all') {
+      const levelFilter: Record<string, ConsoleMessageLevel[]> = {
+        errors: ['error'],
+        warnings: ['warning', 'error'],
+        info: ['info', 'warning', 'error'],
+        verbose: ['verbose', 'info', 'warning', 'error'],
+      };
+      const allowedLevels = levelFilter[level] || ['info', 'warning', 'error'];
+      filtered = filtered.filter((m) => allowedLevels.includes(m.level));
+    }
+
+    // Filter by search text
+    if (search) {
+      const lowerSearch = search.toLowerCase();
+      filtered = filtered.filter((m) => m.message.toLowerCase().includes(lowerSearch));
+    }
+
+    // Return most recent first, capped by limit
+    const messages = filtered.slice(-limit).reverse();
+
+    // Clear buffer if requested
+    if (clear) {
+      this.consoleBuffers.set(instanceId, []);
+    }
+
+    return { success: true, messages, totalBuffered, cleared: clear };
+  }
+
+  /**
    * Destroy a browser instance
    */
   async destroyBrowser(instanceId: string): Promise<{ success: boolean; error?: string }> {
@@ -669,6 +757,7 @@ export class BrowserService extends EventEmitter {
       this.browsers.delete(instanceId);
       this.instances.delete(instanceId);
       this.mousePositions.delete(instanceId);
+      this.consoleBuffers.delete(instanceId);
 
       console.log(`[BrowserService] Destroyed browser instance: ${instanceId}`);
       this.emit('browser:destroyed', instanceId);

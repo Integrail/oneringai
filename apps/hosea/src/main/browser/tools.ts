@@ -10,7 +10,7 @@
 
 import type { ToolFunction } from '@everworker/oneringai';
 import type { BrowserService } from '../BrowserService.js';
-import type { NavigateOptions, ContentFormat, GetContentOptions, CookieData } from './types.js';
+import type { NavigateOptions, ContentFormat, GetContentOptions, CookieData, ConsoleReadOptions } from './types.js';
 
 /**
  * Dynamic UI content for browser element
@@ -906,6 +906,89 @@ export function createBrowserTools(
       },
     },
 
+    // ============ Console Access ============
+
+    {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'browser_console_read',
+          description:
+            'Read the browser DevTools console output. All console messages (log, warn, error, info, debug) from the page are automatically captured from the moment the browser opens — no setup needed. Call this tool at any time to see what the page has logged. Use this to: diagnose why a page is broken or not working (check for JavaScript errors/exceptions), monitor failed network requests or API calls that log errors, verify that page scripts are running correctly, read application state or debug output logged by the page, troubleshoot form submissions or interactions that silently fail, check for CORS errors or security warnings. Returns messages newest-first. Typical workflow: navigate to a page, interact with it, then call browser_console_read with level="errors" to check if anything went wrong. Use search to find specific error messages. Use clear=true to reset the buffer and only capture fresh messages from that point forward.',
+          parameters: {
+            type: 'object',
+            properties: {
+              level: {
+                type: 'string',
+                enum: ['all', 'errors', 'warnings', 'info'],
+                description:
+                  'Filter by severity level. "all" (default) shows everything including debug/verbose messages. "errors" shows only errors. "warnings" shows warnings and errors. "info" shows info, warnings, and errors.',
+              },
+              search: {
+                type: 'string',
+                description:
+                  'Filter messages containing this text (case-insensitive). Examples: "404", "TypeError", "fetch", "undefined".',
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum number of messages to return. Default: 100. Most recent messages are returned first.',
+              },
+              clear: {
+                type: 'boolean',
+                description: 'Clear the console buffer after reading. Default: false. Use true to reset and only see new messages on next read.',
+              },
+            },
+            required: [],
+          },
+        },
+      },
+      execute: async (args: { level?: string; search?: string; limit?: number; clear?: boolean }) => {
+        const instanceId = getInstanceId();
+        const options: ConsoleReadOptions = {
+          level: args.level as ConsoleReadOptions['level'],
+          search: args.search,
+          limit: args.limit,
+          clear: args.clear,
+        };
+
+        const result = browserService.readConsole(instanceId, options);
+
+        if (result.success) {
+          const response: Record<string, unknown> = {
+            success: true,
+            messageCount: result.messages.length,
+            totalBuffered: result.totalBuffered,
+            messages: result.messages.map((m) => ({
+              level: m.level,
+              message: m.message,
+              source: m.source,
+              line: m.line,
+              timestamp: m.timestamp,
+            })),
+          };
+
+          if (result.cleared) {
+            response.cleared = true;
+          }
+
+          if (result.messages.length === 0) {
+            response.message = result.totalBuffered === 0
+              ? 'No console messages have been logged'
+              : 'No messages match the specified filters';
+          }
+
+          return response;
+        }
+        return result;
+      },
+      describeCall: (args: { level?: string; search?: string }) => {
+        const parts = ['Reading console'];
+        if (args.level && args.level !== 'all') parts.push(`(${args.level})`);
+        if (args.search) parts.push(`matching "${args.search}"`);
+        return parts.join(' ');
+      },
+    },
+
   ];
 }
 
@@ -932,6 +1015,7 @@ export const BROWSER_TOOL_NAMES = [
   'browser_clear_cookies',
   'browser_detect_overlays',
   'browser_dismiss_overlay',
+  'browser_console_read',
 ] as const;
 
 export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];

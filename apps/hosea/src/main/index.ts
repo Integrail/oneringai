@@ -876,6 +876,10 @@ async function setupIPC(): Promise<void> {
     return agentService!.getVoiceBridgeLogs(agentConfigId);
   }));
 
+  ipcMain.handle('voice-bridge:call', readyHandler(async (_event, agentConfigId: string, to: string, from: string) => {
+    return agentService!.makeVoiceBridgeCall(agentConfigId, to, from);
+  }));
+
   // Multimedia - STT (require heavy init)
   ipcMain.handle('multimedia:get-available-stt-models', readyHandler(async (_event, connectorName?: string) => {
     return agentService!.getAvailableSTTModels(connectorName);

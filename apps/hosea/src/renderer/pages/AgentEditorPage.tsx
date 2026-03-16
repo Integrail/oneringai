@@ -102,6 +102,8 @@ interface ModelInfo {
   name: string;
   description?: string;
   contextWindow: number;
+  realtime?: boolean;
+  voices?: Array<{ id: string; name: string; gender: string; isDefault?: boolean }>;
 }
 
 interface AgentFormData {
@@ -131,6 +133,8 @@ interface AgentFormData {
   persistentInstructionsEnabled: boolean;
   // User info
   userInfoEnabled: boolean;
+  // Dynamic UI
+  dynamicUIEnabled: boolean;
   // Tool permissions
   permissionsEnabled: boolean;
   // Selected tools
@@ -157,11 +161,13 @@ interface AgentFormData {
   voiceBridgeTtsModel: string;
   voiceBridgeTtsVoice: string;
   voiceBridgeGreeting: string;
+  voiceBridgeGreetingOutbound: string;
   voiceBridgeInterruptible: boolean;
   voiceBridgePort: number;
   voiceBridgePublicUrl: string;
   voiceBridgeMaxConcurrent: number;
   voiceBridgeMaxDuration: number;
+  voiceBridgeFromNumber: string;
   // Orchestrator mode
   isOrchestrator: boolean;
   orchestratorChildAgents: Array<{ agentConfigId: string; alias: string }>;
@@ -195,6 +201,8 @@ const defaultFormData: AgentFormData = {
   persistentInstructionsEnabled: false,
   // User info
   userInfoEnabled: false,
+  // Dynamic UI
+  dynamicUIEnabled: true,
   // Tool permissions
   permissionsEnabled: true,
   // Tools
@@ -221,11 +229,13 @@ const defaultFormData: AgentFormData = {
   voiceBridgeTtsModel: '',
   voiceBridgeTtsVoice: '',
   voiceBridgeGreeting: '',
+  voiceBridgeGreetingOutbound: '',
   voiceBridgeInterruptible: true,
   voiceBridgePort: 3000,
   voiceBridgePublicUrl: '',
   voiceBridgeMaxConcurrent: 5,
   voiceBridgeMaxDuration: 1800,
+  voiceBridgeFromNumber: '',
   // Orchestrator mode
   isOrchestrator: false,
   orchestratorChildAgents: [],
@@ -327,6 +337,7 @@ export function AgentEditorPage(): React.ReactElement {
               maxInContextTokens: existingAgent.maxInContextTokens,
               persistentInstructionsEnabled: existingAgent.persistentInstructionsEnabled ?? false,
               userInfoEnabled: existingAgent.userInfoEnabled ?? false,
+              dynamicUIEnabled: existingAgent.dynamicUIEnabled ?? false,
               permissionsEnabled: existingAgent.permissionsEnabled ?? true,
               tools: existingAgent.tools,
               toolCatalogEnabled: existingAgent.toolCatalogEnabled ?? false,
@@ -349,11 +360,13 @@ export function AgentEditorPage(): React.ReactElement {
               voiceBridgeTtsModel: existingAgent.voiceBridgeTtsModel ?? '',
               voiceBridgeTtsVoice: existingAgent.voiceBridgeTtsVoice ?? '',
               voiceBridgeGreeting: existingAgent.voiceBridgeGreeting ?? '',
+              voiceBridgeGreetingOutbound: (existingAgent as Record<string, unknown>).voiceBridgeGreetingOutbound as string ?? '',
               voiceBridgeInterruptible: existingAgent.voiceBridgeInterruptible ?? true,
               voiceBridgePort: existingAgent.voiceBridgePort ?? 3000,
               voiceBridgePublicUrl: existingAgent.voiceBridgePublicUrl ?? '',
               voiceBridgeMaxConcurrent: existingAgent.voiceBridgeMaxConcurrent ?? 5,
               voiceBridgeMaxDuration: existingAgent.voiceBridgeMaxDuration ?? 1800,
+              voiceBridgeFromNumber: existingAgent.voiceBridgeFromNumber ?? '',
               // Orchestrator
               isOrchestrator: (existingAgent as Record<string, unknown>).isOrchestrator as boolean ?? false,
               orchestratorChildAgents: ((existingAgent as Record<string, unknown>).orchestratorChildAgents as AgentFormData['orchestratorChildAgents']) ?? [],
@@ -1672,6 +1685,26 @@ export function AgentEditorPage(): React.ReactElement {
                     </Form.Text>
                   </Col>
 
+                  <Col md={4} lg={2}>
+                    <Form.Check
+                      type="switch"
+                      id="dynamic-ui-enabled"
+                      label="Dynamic UI"
+                      checked={formData.dynamicUIEnabled}
+                      onChange={(e) => {
+                        const updates: Partial<AgentFormData> = { dynamicUIEnabled: e.target.checked };
+                        // Auto-enable In-Context Memory when Dynamic UI is turned on
+                        if (e.target.checked && !formData.inContextMemoryEnabled) {
+                          updates.inContextMemoryEnabled = true;
+                        }
+                        setFormData({ ...formData, ...updates });
+                      }}
+                    />
+                    <Form.Text className="text-muted d-block">
+                      Side panel cards for dashboards &amp; results
+                    </Form.Text>
+                  </Col>
+
                   <Col md={4} lg={3}>
                     <Form.Check
                       type="switch"
@@ -2198,7 +2231,49 @@ export function AgentEditorPage(): React.ReactElement {
                       </Col>
                     </Row>
 
-                    {/* STT Configuration */}
+                    {/* Realtime model detection */}
+                    {(() => {
+                      const selectedModelInfo = getModelsForConnector().find(m => m.id === formData.model);
+                      const isRealtime = selectedModelInfo?.realtime === true;
+                      const realtimeVoices = selectedModelInfo?.voices;
+
+                      if (isRealtime) {
+                        return (
+                          <>
+                            <div className="alert alert-info mt-3 mb-3 py-2 small">
+                              Realtime model — audio is handled natively. No separate STT/TTS needed.
+                            </div>
+                            <h6 className="mb-2">Realtime Voice</h6>
+                            <Row className="g-3 mb-3">
+                              <Col>
+                                <div className="d-flex flex-wrap gap-2">
+                                  {(realtimeVoices ?? []).map((v) => (
+                                    <Button
+                                      key={v.id}
+                                      size="sm"
+                                      variant={(formData.voiceBridgeTtsVoice || 'alloy') === v.id ? 'primary' : 'outline-secondary'}
+                                      onClick={() => setFormData({ ...formData, voiceBridgeTtsVoice: v.id })}
+                                    >
+                                      {v.name}
+                                      {v.isDefault && ' *'}
+                                    </Button>
+                                  ))}
+                                </div>
+                                <Form.Text className="text-muted">
+                                  Voice used by the realtime model for speech output.
+                                </Form.Text>
+                              </Col>
+                            </Row>
+                          </>
+                        );
+                      }
+
+                      return null;
+                    })()}
+
+                    {/* STT Configuration (text pipeline only) */}
+                    {!getModelsForConnector().find(m => m.id === formData.model)?.realtime && (
+                    <>
                     <h6 className="mt-3 mb-2">Speech-to-Text (STT)</h6>
                     <Row className="g-3 mb-3">
                       <Col md={6}>
@@ -2293,22 +2368,43 @@ export function AgentEditorPage(): React.ReactElement {
                         </Col>
                       </Row>
                     )}
+                    </>
+                    )}
 
                     {/* Call Settings */}
                     <h6 className="mt-3 mb-2">Call Settings</h6>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Greeting Message</Form.Label>
-                      <Form.Control
-                        as="textarea"
-                        rows={2}
-                        value={formData.voiceBridgeGreeting}
-                        onChange={(e) => setFormData({ ...formData, voiceBridgeGreeting: e.target.value })}
-                        placeholder="Hello! How can I help you today?"
-                      />
-                      <Form.Text className="text-muted">
-                        First thing the agent says when a call connects (bypasses LLM).
-                      </Form.Text>
-                    </Form.Group>
+                    <Row className="g-3 mb-3">
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>Inbound Greeting</Form.Label>
+                          <Form.Control
+                            as="textarea"
+                            rows={2}
+                            value={formData.voiceBridgeGreeting}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgeGreeting: e.target.value })}
+                            placeholder="Hello! How can I help you today?"
+                          />
+                          <Form.Text className="text-muted">
+                            First thing the agent says when receiving a call.
+                          </Form.Text>
+                        </Form.Group>
+                      </Col>
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>Outbound Greeting</Form.Label>
+                          <Form.Control
+                            as="textarea"
+                            rows={2}
+                            value={formData.voiceBridgeGreetingOutbound}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgeGreetingOutbound: e.target.value })}
+                            placeholder="Hi, this is Ada from Everworker..."
+                          />
+                          <Form.Text className="text-muted">
+                            First thing the agent says when making an outbound call. Leave empty to let the callee speak first.
+                          </Form.Text>
+                        </Form.Group>
+                      </Col>
+                    </Row>
 
                     <Row className="g-3 mb-3">
                       <Col md={3}>
@@ -2373,6 +2469,22 @@ export function AgentEditorPage(): React.ReactElement {
                           />
                           <Form.Text className="text-muted">
                             Twilio needs a public URL to reach this server. Use ngrok or similar tunneling service.
+                          </Form.Text>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                    <Row className="mt-3">
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>Outbound Caller ID (From Number)</Form.Label>
+                          <Form.Control
+                            type="tel"
+                            value={formData.voiceBridgeFromNumber}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgeFromNumber: e.target.value })}
+                            placeholder="+15551234567"
+                          />
+                          <Form.Text className="text-muted">
+                            Your Twilio phone number for outbound calls. Must be verified in your Twilio account.
                           </Form.Text>
                         </Form.Group>
                       </Col>

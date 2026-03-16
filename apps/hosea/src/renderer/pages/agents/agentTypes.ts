@@ -15,6 +15,7 @@ export interface AgentListItem {
   workingMemoryEnabled: boolean;
   inContextMemoryEnabled: boolean;
   persistentInstructionsEnabled: boolean;
+  dynamicUIEnabled: boolean;
   lastUsedAt?: number;
   isActive: boolean;
   isArchived?: boolean;

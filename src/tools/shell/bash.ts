@@ -7,7 +7,7 @@
  * Features:
  * - Configurable timeouts
  * - Output truncation for large outputs
- * - Background execution support
+ * - Background execution via BackgroundProcessManager
  * - Blocked command patterns for safety
  * - Working directory persistence
  */
@@ -20,6 +20,7 @@ import {
   DEFAULT_SHELL_CONFIG,
   isBlockedCommand,
 } from './types.js';
+import { BackgroundProcessManager } from './BackgroundProcessManager.js';
 
 /**
  * Arguments for the bash tool
@@ -33,41 +34,6 @@ export interface BashArgs {
   description?: string;
   /** Run the command in the background */
   run_in_background?: boolean;
-}
-
-// Track background processes
-const MAX_BACKGROUND_PROCESSES = 20;
-const MAX_COMPLETED_PROCESSES = 50;
-const MAX_OUTPUT_LINES = 1000;
-const backgroundProcesses: Map<string, { process: ReturnType<typeof spawn>; output: string[] }> = new Map();
-
-/**
- * Evict oldest completed background processes when over capacity
- */
-function evictCompletedProcesses(): void {
-  if (backgroundProcesses.size <= MAX_COMPLETED_PROCESSES) return;
-
-  const completed: string[] = [];
-  for (const [id, bg] of backgroundProcesses) {
-    if (bg.process.killed || bg.process.exitCode !== null) {
-      completed.push(id);
-    }
-  }
-
-  // Delete oldest completed entries (Map preserves insertion order)
-  const toRemove = completed.length - MAX_COMPLETED_PROCESSES;
-  if (toRemove > 0) {
-    for (let i = 0; i < toRemove && i < completed.length; i++) {
-      backgroundProcesses.delete(completed[i]!);
-    }
-  }
-}
-
-/**
- * Generate a unique ID for background processes
- */
-function generateBackgroundId(): string {
-  return `bg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
 /**
@@ -90,6 +56,11 @@ USAGE:
 - Working directory persists between commands
 - Commands timeout after 2 minutes by default (configurable up to 10 minutes)
 - Large outputs (>100KB) will be truncated
+
+BACKGROUND EXECUTION:
+- Set run_in_background=true for long-running commands (dev servers, watchers, builds)
+- Returns a background ID immediately
+- Use bg_process_output to check output, bg_process_list to see all processes, bg_process_kill to stop
 
 IMPORTANT: This tool is for terminal operations like git, npm, docker, etc.
 For file operations, prefer dedicated tools:
@@ -119,7 +90,7 @@ EXAMPLES:
 - Run npm install: { "command": "npm install", "description": "Install dependencies" }
 - Check git status: { "command": "git status", "description": "Show working tree status" }
 - Run tests: { "command": "npm test", "timeout": 300000, "description": "Run test suite" }
-- Build project: { "command": "npm run build", "description": "Build the project" }`,
+- Start dev server: { "command": "npm run dev", "run_in_background": true, "description": "Start dev server" }`,
         parameters: {
           type: 'object',
           properties: {
@@ -137,7 +108,7 @@ EXAMPLES:
             },
             run_in_background: {
               type: 'boolean',
-              description: 'Run the command in the background. Returns immediately with a background ID.',
+              description: 'Run the command in the background. Returns immediately with a background ID. Use bg_process_output to read output later, bg_process_kill to stop it.',
             },
           },
           required: ['command'],
@@ -199,49 +170,22 @@ EXAMPLES:
 
         // Handle background execution
         if (run_in_background && mergedConfig.allowBackground) {
-          // Enforce max concurrent background processes
-          if (backgroundProcesses.size >= MAX_BACKGROUND_PROCESSES) {
-            try { process.kill(-childProcess.pid!, 'SIGTERM'); } catch { /* ignore */ }
+          const result = BackgroundProcessManager.register(command, childProcess);
+          if ('error' in result) {
+            try { if (childProcess.pid) process.kill(-childProcess.pid, 'SIGTERM'); } catch { /* ignore */ }
             resolve({
               success: false,
               stdout: '',
-              stderr: `Too many background processes (max: ${MAX_BACKGROUND_PROCESSES}). Kill some before starting new ones.`,
+              stderr: result.error,
               exitCode: 1,
             });
             return;
           }
 
-          const bgId = generateBackgroundId();
-          const output: string[] = [];
-
-          backgroundProcesses.set(bgId, { process: childProcess, output });
-
-          childProcess.stdout.on('data', (data) => {
-            if (output.length < MAX_OUTPUT_LINES) {
-              output.push(data.toString());
-            }
-          });
-
-          childProcess.stderr.on('data', (data) => {
-            if (output.length < MAX_OUTPUT_LINES) {
-              output.push(data.toString());
-            }
-          });
-
-          childProcess.on('close', () => {
-            // Keep output for a short time after completion, then evict
-            setTimeout(() => {
-              backgroundProcesses.delete(bgId);
-            }, 60000); // 60 seconds
-
-            // Evict oldest completed entries if over capacity
-            evictCompletedProcesses();
-          });
-
           resolve({
             success: true,
-            backgroundId: bgId,
-            stdout: `Command started in background with ID: ${bgId}`,
+            backgroundId: result.id,
+            stdout: `Command started in background with ID: ${result.id}. Use bg_process_output to check output, bg_process_list to see all processes, bg_process_kill to stop.`,
           });
           return;
         }
@@ -373,31 +317,27 @@ EXAMPLES:
 
 /**
  * Get output from a background process
+ * @deprecated Use BackgroundProcessManager.readOutput() or bg_process_output tool instead
  */
 export function getBackgroundOutput(bgId: string): { found: boolean; output?: string; running?: boolean } {
-  const bg = backgroundProcesses.get(bgId);
-  if (!bg) {
-    return { found: false };
-  }
+  const info = BackgroundProcessManager.getInfo(bgId);
+  if (!info) return { found: false };
 
+  const result = BackgroundProcessManager.readOutput(bgId, { tail: 1000 });
   return {
     found: true,
-    output: bg.output.join(''),
-    running: !bg.process.killed && bg.process.exitCode === null,
+    output: result.lines?.join('\n') ?? '',
+    running: info.status === 'running',
   };
 }
 
 /**
  * Kill a background process
+ * @deprecated Use BackgroundProcessManager.kill() or bg_process_kill tool instead
  */
 export function killBackgroundProcess(bgId: string): boolean {
-  const bg = backgroundProcesses.get(bgId);
-  if (!bg) {
-    return false;
-  }
-
-  bg.process.kill('SIGTERM');
-  return true;
+  const result = BackgroundProcessManager.kill(bgId);
+  return result.success;
 }
 
 /**

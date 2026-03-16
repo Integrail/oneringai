@@ -8,7 +8,7 @@
  * of new/custom plugins without code changes.
  */
 
-import type { ContextBudget, ContextFeatures } from './types.js';
+import type { ContextBudget, ResolvedContextFeatures } from './types.js';
 
 // ============================================================================
 // Context Snapshot (Main)
@@ -29,7 +29,7 @@ export interface IContextSnapshot {
   model: string;
 
   /** Feature flags */
-  features: Required<ContextFeatures>;
+  features: ResolvedContextFeatures;
 
   /** Token budget breakdown */
   budget: ContextBudget;

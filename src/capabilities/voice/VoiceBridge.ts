@@ -28,15 +28,18 @@ import { EventEmitter } from 'events';
 import { logger } from '../../infrastructure/observability/Logger.js';
 import { VoiceSession } from './VoiceSession.js';
 import { TextPipeline } from './pipelines/TextPipeline.js';
+import { RealtimePipeline } from './pipelines/RealtimePipeline.js';
 import { EnergyVAD } from './EnergyVAD.js';
 import type {
   VoiceBridgeConfig,
   ITelephonyAdapter,
-  IVoicePipeline,
   IncomingCallInfo,
   AudioFrame,
   VoiceSessionInfo,
   CallSummary,
+  CallDirection,
+  TranscriptMessage,
+  IVoicePipeline,
 } from './types.js';
 
 // =============================================================================
@@ -46,6 +49,7 @@ import type {
 export interface VoiceBridgeEvents {
   'session:created': (info: VoiceSessionInfo) => void;
   'session:ended': (info: VoiceSessionInfo, summary: CallSummary) => void;
+  'transcript': (info: VoiceSessionInfo, entry: TranscriptMessage) => void;
   'error': (error: Error, sessionId?: string) => void;
 }
 
@@ -65,7 +69,9 @@ export class VoiceBridge extends EventEmitter {
   private config: VoiceBridgeConfig;
   private sessions = new Map<string, VoiceSession>();
   private callToSession = new Map<string, string>();
+  private pendingOutbound = new Map<string, CallDirection>();
   private cleanupTimers = new Set<ReturnType<typeof setTimeout>>();
+  private endingSessions = new Set<string>();
   private adapter: ITelephonyAdapter | null = null;
   private destroyed = false;
 
@@ -89,6 +95,7 @@ export class VoiceBridge extends EventEmitter {
 
     adapter.on('call:connected', this.handleCallConnected);
     adapter.on('call:audio', this.handleCallAudio);
+    adapter.on('call:media_timestamp', this.handleMediaTimestamp);
     adapter.on('call:ended', this.handleCallEnded);
     adapter.on('error', this.handleAdapterError);
 
@@ -100,6 +107,7 @@ export class VoiceBridge extends EventEmitter {
 
     this.adapter.off('call:connected', this.handleCallConnected);
     this.adapter.off('call:audio', this.handleCallAudio);
+    this.adapter.off('call:media_timestamp', this.handleMediaTimestamp);
     this.adapter.off('call:ended', this.handleCallEnded);
     this.adapter.off('error', this.handleAdapterError);
 
@@ -139,6 +147,39 @@ export class VoiceBridge extends EventEmitter {
     }
   }
 
+  // ─── Outbound Calls ────────────────────────────────────────────
+
+  /**
+   * Initiate an outbound call.
+   * The adapter places the call via the telephony provider. When the callee
+   * answers and the media stream connects, the normal session lifecycle
+   * (agent creation, pipeline, hooks) kicks in automatically.
+   *
+   * @returns callId from the telephony provider
+   */
+  async makeCall(to: string, from: string): Promise<string> {
+    if (this.destroyed) {
+      throw new Error('VoiceBridge is destroyed');
+    }
+    if (!this.adapter) {
+      throw new Error('No adapter attached');
+    }
+    if (!this.adapter.makeCall) {
+      throw new Error('Adapter does not support outbound calls');
+    }
+
+    const maxConcurrent = this.config.maxConcurrentCalls ?? DEFAULT_MAX_CONCURRENT;
+    if (maxConcurrent > 0 && this.activeSessionCount >= maxConcurrent) {
+      throw new Error('Max concurrent calls reached');
+    }
+
+    const callId = await this.adapter.makeCall({ to, from });
+    this.pendingOutbound.set(callId, 'outbound');
+
+    logger.info({ callId, to, from }, '[VoiceBridge] Outbound call initiated');
+    return callId;
+  }
+
   // ─── Adapter Event Handlers ──────────────────────────────────────
 
   private handleCallConnected = async (callId: string, info: IncomingCallInfo): Promise<void> => {
@@ -171,6 +212,17 @@ export class VoiceBridge extends EventEmitter {
     await this.endSession(session);
   };
 
+  private handleMediaTimestamp = (callId: string, info: { timestamp: number }): void => {
+    const sessionId = this.callToSession.get(callId);
+    if (!sessionId) return;
+
+    const session = this.sessions.get(sessionId);
+    const pipeline = session?.pipeline as (IVoicePipeline & {
+      onTelephonyTimestamp?: (timestamp: number) => void;
+    }) | undefined;
+    pipeline?.onTelephonyTimestamp?.(info.timestamp);
+  };
+
   private handleAdapterError = (error: Error, callId?: string): void => {
     if (callId) {
       const sessionId = this.callToSession.get(callId);
@@ -198,7 +250,16 @@ export class VoiceBridge extends EventEmitter {
       return;
     }
 
-    const session = new VoiceSession(info);
+    // Detect if this is an outbound call we initiated
+    const direction: CallDirection = this.pendingOutbound.has(callId)
+      || info.metadata?.direction === 'outbound'
+      ? 'outbound'
+      : 'inbound';
+    if (this.pendingOutbound.has(callId)) {
+      this.pendingOutbound.delete(callId);
+    }
+
+    const session = new VoiceSession(info, direction);
     this.sessions.set(session.sessionId, session);
     this.callToSession.set(callId, session.sessionId);
 
@@ -214,7 +275,10 @@ export class VoiceBridge extends EventEmitter {
       return;
     }
 
-    session.createAgent(this.config.agent);
+    // Only create Agent for text pipeline (realtime handles LLM internally via WebSocket)
+    if (this.config.pipeline !== 'realtime') {
+      session.createAgent(this.config.agent);
+    }
 
     const pipeline = this.createPipeline(session);
     session.setPipeline(pipeline);
@@ -238,6 +302,12 @@ export class VoiceBridge extends EventEmitter {
       if (this.adapter?.clearAudio) {
         this.adapter.clearAudio(callId);
       }
+      this.fireHook('onInterrupt', session.getInfo());
+    });
+
+    // Forward transcript events (used by realtime pipeline, and optionally text pipeline)
+    pipeline.on('transcript', (entry: TranscriptMessage) => {
+      this.emit('transcript', session.getInfo(), entry);
     });
 
     const maxDuration = this.config.maxCallDuration ?? DEFAULT_MAX_DURATION;
@@ -263,25 +333,32 @@ export class VoiceBridge extends EventEmitter {
   }
 
   private async endSession(session: VoiceSession): Promise<void> {
-    if (session.state === 'ended') return;
-    const summary = await session.end();
+    if (session.state === 'ended' || this.endingSessions.has(session.sessionId)) return;
+    this.endingSessions.add(session.sessionId);
+    try {
+      const summary = await session.end();
 
-    await this.fireHook('onCallEnd', session.getInfo(), summary);
+      await this.fireHook('onCallEnd', session.getInfo(), summary);
 
-    this.emit('session:ended', session.getInfo(), summary);
+      this.emit('session:ended', session.getInfo(), summary);
 
-    this.callToSession.delete(session.callId);
-    // Delay removal so late lookups can find the ended session
-    const timer = setTimeout(() => {
-      this.sessions.delete(session.sessionId);
-      this.cleanupTimers.delete(timer);
-    }, 2000);
-    this.cleanupTimers.add(timer);
+      this.callToSession.delete(session.callId);
+      // Delay removal so late lookups can find the ended session
+      const timer = setTimeout(() => {
+        this.sessions.delete(session.sessionId);
+        this.endingSessions.delete(session.sessionId);
+        this.cleanupTimers.delete(timer);
+      }, 2000);
+      this.cleanupTimers.add(timer);
 
-    logger.info(
-      { sessionId: session.sessionId, duration: summary.duration, turns: summary.turns, reason: summary.endReason },
-      '[VoiceBridge] Call ended'
-    );
+      logger.info(
+        { sessionId: session.sessionId, duration: summary.duration, turns: summary.turns, reason: summary.endReason },
+        '[VoiceBridge] Call ended'
+      );
+    } catch (error) {
+      this.endingSessions.delete(session.sessionId);
+      throw error;
+    }
   }
 
   // ─── Pipeline Factory ────────────────────────────────────────────
@@ -289,21 +366,44 @@ export class VoiceBridge extends EventEmitter {
   private createPipeline(session: VoiceSession): IVoicePipeline {
     const { pipeline } = this.config;
 
+    // Resolve greeting based on call direction
+    const greeting = session.direction === 'outbound'
+      ? this.config.greetingOutbound   // undefined = no greeting on outbound
+      : this.config.greeting;
+
     if (pipeline === 'text') {
+      const cfg = this.config as VoiceBridgeConfig & { pipeline: 'text' };
       const vad = new EnergyVAD({
-        silenceTimeout: this.config.silenceTimeout ?? DEFAULT_SILENCE_TIMEOUT,
-        ...this.config.vad,
+        silenceTimeout: cfg.silenceTimeout ?? DEFAULT_SILENCE_TIMEOUT,
+        ...cfg.vad,
       });
 
       return new TextPipeline({
         agent: session.agent!,
         session,
-        stt: this.config.stt,
-        tts: this.config.tts,
+        stt: cfg.stt,
+        tts: cfg.tts,
         vad,
-        interruptible: this.config.interruptible ?? true,
-        greeting: this.config.greeting,
-        hooks: this.config.hooks,
+        interruptible: cfg.interruptible ?? true,
+        greeting,
+        hooks: cfg.hooks,
+      });
+    }
+
+    if (pipeline === 'realtime') {
+      const cfg = this.config as VoiceBridgeConfig & { pipeline: 'realtime' };
+      return new RealtimePipeline({
+        agentConfig: cfg.agent,
+        session,
+        voice: cfg.voice,
+        turnDetection: cfg.turnDetection,
+        vadThreshold: cfg.vadThreshold,
+        silenceDurationMs: cfg.silenceDurationMs,
+        inputTranscription: cfg.inputTranscription,
+        transcriptionModel: cfg.transcriptionModel,
+        greeting,
+        interruptible: cfg.interruptible ?? true,
+        hooks: cfg.hooks,
       });
     }
 
@@ -355,6 +455,7 @@ export class VoiceBridge extends EventEmitter {
     this.detach();
     this.sessions.clear();
     this.callToSession.clear();
+    this.pendingOutbound.clear();
     this.removeAllListeners();
 
     logger.info('[VoiceBridge] Destroyed');

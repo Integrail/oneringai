@@ -44,6 +44,7 @@ export type { VoiceSessionEvents } from './VoiceSession.js';
 
 // Pipelines
 export { TextPipeline } from './pipelines/TextPipeline.js';
+export { RealtimePipeline } from './pipelines/RealtimePipeline.js';
 
 // VAD
 export { EnergyVAD } from './EnergyVAD.js';
@@ -72,7 +73,9 @@ export type {
   // Bridge config
   VoiceBridgeConfig,
   TextPipelineConfig,
+  RealtimePipelineConfig,
   PipelineConfig,
+  TranscriptMessage,
 
   // Hooks
   VoiceHooks,
@@ -85,6 +88,7 @@ export type {
   ITelephonyAdapter,
   TelephonyAdapterEvents,
   IncomingCallInfo,
+  OutboundCallConfig,
 
   // Twilio
   TwilioAdapterConfig,

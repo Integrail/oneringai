@@ -41,6 +41,7 @@ import type {
   TwilioAdapterConfig,
   AudioFrame,
   IncomingCallInfo,
+  OutboundCallConfig,
 } from '../../types.js';
 
 // =============================================================================
@@ -95,6 +96,11 @@ interface TwilioOutboundMessage {
 // Per-call WebSocket state
 // =============================================================================
 
+interface PendingPlaybackMark {
+  name: string;
+  playedMs: number;
+}
+
 interface MediaStreamState {
   callId: string;
   streamSid: string;
@@ -104,6 +110,10 @@ interface MediaStreamState {
   info: IncomingCallInfo;
   /** Counter for periodic debug logging of inbound audio frames */
   inboundFrameCount: number;
+  /** Total assistant audio duration queued to Twilio */
+  outboundQueuedMs: number;
+  /** Marks awaiting Twilio playback acknowledgement */
+  pendingPlaybackMarks: PendingPlaybackMark[];
 }
 
 // =============================================================================
@@ -115,6 +125,7 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
   private connector: Connector;
   private streams = new Map<string, MediaStreamState>();
   private streamSidToCallId = new Map<string, string>();
+  private pendingOutbound = new Set<string>();
   private destroyed = false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private server: any = null;
@@ -141,6 +152,56 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
       : config.connector as unknown as Connector;
   }
 
+  // ─── Twilio REST API Helper ─────────────────────────────────────
+
+  /**
+   * Make a Twilio REST API call with proper Basic Auth.
+   *
+   * Twilio requires HTTP Basic Auth = base64(AccountSid:AuthToken).
+   * The Connector.fetch() doesn't support two-part Basic Auth natively,
+   * so we construct it manually here.
+   */
+  private async twilioFetch(
+    path: string,
+    options: { method: string; headers?: Record<string, string>; body?: string }
+  ): Promise<Response> {
+    const accountSid = this.config.accountSid;
+    if (!accountSid) {
+      throw new Error('accountSid is required for Twilio REST API calls');
+    }
+
+    // Get the auth token from the connector
+    const authToken = this.connector.getApiKey();
+    const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+    const baseUrl = this.connector.baseURL || 'https://api.twilio.com/2010-04-01';
+    const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
+
+    logger.debug({ url, method: options.method }, '[TwilioAdapter] REST API request');
+
+    const response = await fetch(url, {
+      method: options.method,
+      headers: {
+        ...options.headers,
+        'Authorization': `Basic ${basicAuth}`,
+      },
+      body: options.body,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      logger.error({
+        url,
+        method: options.method,
+        status: response.status,
+        statusText: response.statusText,
+        errorBody,
+      }, '[TwilioAdapter] REST API error');
+      throw new Error(`Twilio API error ${response.status}: ${errorBody}`);
+    }
+
+    return response;
+  }
+
   // ─── Standalone Server ───────────────────────────────────────────
 
   async start(): Promise<void> {
@@ -158,6 +219,8 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
     this.server = http.createServer((req: any, res: any) => {
       if (req.method === 'POST' && req.url === this.config.webhookPath) {
         this.handleWebhookRequest(req, res);
+      } else if (req.method === 'POST' && req.url === '/voice-outbound') {
+        this.handleOutboundWebhookRequest(req, res);
       } else {
         res.writeHead(404);
         res.end('Not found');
@@ -236,6 +299,9 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
             break;
 
           case 'mark':
+            if (streamState && msg.mark) {
+              this.handlePlaybackMark(streamState, msg.mark);
+            }
             break;
         }
       } catch (error) {
@@ -328,9 +394,31 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
         },
       };
 
+      const chunkMs = Math.max(1, Math.round((mulaw.length / 8000) * 1000));
+      state.outboundQueuedMs += chunkMs;
+      const markName = `assistant:${state.outboundQueuedMs}:${Date.now()}`;
+      const markMsg: TwilioOutboundMessage = {
+        event: 'mark',
+        streamSid: state.streamSid,
+        mark: {
+          name: markName,
+        },
+      };
+      state.pendingPlaybackMarks.push({ name: markName, playedMs: state.outboundQueuedMs });
+
       try {
         if (state.ws.readyState === 1) {
           state.ws.send(JSON.stringify(outMsg));
+          state.ws.send(JSON.stringify(markMsg));
+          if (state.pendingPlaybackMarks.length <= 3 || state.pendingPlaybackMarks.length % 25 === 0) {
+            logger.debug({
+              callId,
+              queuedMs: state.outboundQueuedMs,
+              pendingMarks: state.pendingPlaybackMarks.length,
+              chunkMs,
+              markName,
+            }, '[TwilioAdapter] Queued outbound audio with playback mark');
+          }
         }
       } catch (sendError) {
         logger.debug({ callId, error: sendError }, '[TwilioAdapter] WebSocket send failed');
@@ -351,7 +439,11 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
           streamSid: state.streamSid,
         };
         state.ws.send(JSON.stringify(clearMsg));
-        logger.debug({ callId }, '[TwilioAdapter] Sent clear (barge-in)');
+        state.pendingPlaybackMarks = [];
+        logger.info({
+          callId,
+          queuedMs: state.outboundQueuedMs,
+        }, '[TwilioAdapter] Sent clear (barge-in)');
       }
     } catch (error) {
       logger.debug({ callId, error }, '[TwilioAdapter] Clear send failed');
@@ -373,9 +465,9 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
     this.cleanupStream(callId);
 
     try {
-      const accountSid = (state.info.metadata.accountSid as string) || '';
-      if (accountSid) {
-        await this.connector.fetch(
+      const accountSid = (state.info.metadata.accountSid as string) || this.config.accountSid || '';
+      if (accountSid && this.config.accountSid) {
+        await this.twilioFetch(
           `/Accounts/${accountSid}/Calls/${callId}.json`,
           {
             method: 'POST',
@@ -383,9 +475,14 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
             body: 'Status=completed',
           }
         );
+        logger.info({ callId }, '[TwilioAdapter] REST hangup succeeded');
+      } else {
+        logger.warn({ callId, hasAccountSid: !!accountSid, hasConfigSid: !!this.config.accountSid },
+          '[TwilioAdapter] Cannot send REST hangup — no accountSid available');
       }
     } catch (error) {
-      logger.debug({ callId, error }, '[TwilioAdapter] REST hangup failed');
+      logger.error({ callId, error: error instanceof Error ? error.message : String(error) },
+        '[TwilioAdapter] REST hangup failed');
     }
   }
 
@@ -417,11 +514,101 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
     }
     this.streams.clear();
     this.streamSidToCallId.clear();
+    this.pendingOutbound.clear();
 
     await this.stop();
     this.removeAllListeners();
 
     logger.info('TwilioAdapter destroyed');
+  }
+
+  // ─── Outbound Calls ────────────────────────────────────────────
+
+  /**
+   * Initiate an outbound call via Twilio REST API.
+   * When the callee answers, Twilio hits /voice-outbound which returns
+   * TwiML to connect a media stream (same pipeline as inbound).
+   *
+   * @returns The Twilio CallSid
+   */
+  async makeCall(config: OutboundCallConfig): Promise<string> {
+    const accountSid = this.config.accountSid;
+    if (!accountSid) {
+      throw new Error('accountSid is required in TwilioAdapterConfig for outbound calls');
+    }
+    if (!this.config.publicUrl) {
+      throw new Error('publicUrl is required in TwilioAdapterConfig for outbound calls');
+    }
+
+    const callbackUrl = `${this.config.publicUrl}/voice-outbound`;
+
+    const body = new URLSearchParams({
+      To: config.to,
+      From: config.from,
+      Url: callbackUrl,
+    });
+
+    if (config.timeout) {
+      body.set('Timeout', String(config.timeout));
+    }
+    if (config.machineDetection) {
+      body.set('MachineDetection', 'Enable');
+    }
+
+    logger.info({
+      to: config.to,
+      from: config.from,
+      callbackUrl,
+      accountSid: accountSid.slice(0, 8) + '...',
+    }, '[TwilioAdapter] Initiating outbound call');
+
+    const response = await this.twilioFetch(
+      `/Accounts/${accountSid}/Calls.json`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      }
+    );
+
+    const data = await response.json() as { sid: string };
+    const callSid = data.sid;
+
+    this.pendingOutbound.add(callSid);
+    logger.info({ callSid, to: config.to }, '[TwilioAdapter] Outbound call initiated');
+
+    return callSid;
+  }
+
+  /**
+   * Returns a webhook handler for outbound calls (external mode).
+   * When callee answers, Twilio POSTs to this endpoint.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  outboundWebhookHandler(): (req: any, res: any) => void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (req: any, res: any) => {
+      this.handleOutboundWebhookRequest(req, res);
+    };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleOutboundWebhookRequest(_req: any, res: any): void {
+    const wsUrl = this.config.publicUrl
+      ? `${this.config.publicUrl.replace(/^http/, 'ws')}${this.config.mediaStreamPath}`
+      : `wss://localhost:${this.config.port}${this.config.mediaStreamPath}`;
+
+    const twiml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Response>',
+      '  <Connect>',
+      `    <Stream url="${wsUrl}" />`,
+      '  </Connect>',
+      '</Response>',
+    ].join('\n');
+
+    res.writeHead(200, { 'Content-Type': 'text/xml' });
+    res.end(twiml);
   }
 
   // ─── Internal: Webhook ───────────────────────────────────────────
@@ -507,6 +694,12 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
     const start = msg.start!;
     const callId = start.customParameters?.callSid || start.callSid;
 
+    // Detect if this is an outbound call we initiated
+    const isOutbound = this.pendingOutbound.has(callId);
+    if (isOutbound) {
+      this.pendingOutbound.delete(callId);
+    }
+
     const info: IncomingCallInfo = {
       callId,
       from: start.customParameters?.from || 'unknown',
@@ -516,6 +709,7 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
         streamSid: start.streamSid,
         tracks: start.tracks,
         mediaFormat: start.mediaFormat,
+        direction: isOutbound ? 'outbound' : 'inbound',
       },
     };
 
@@ -526,6 +720,8 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
       startTime: Date.now(),
       info,
       inboundFrameCount: 0,
+      outboundQueuedMs: 0,
+      pendingPlaybackMarks: [],
     };
 
     this.streams.set(callId, state);
@@ -562,7 +758,42 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
       );
     }
 
+    this.emit('call:media_timestamp', state.callId, { timestamp: frame.timestamp });
     this.emit('call:audio', state.callId, frame);
+  }
+
+  private handlePlaybackMark(
+    state: MediaStreamState,
+    mark: NonNullable<TwilioMediaMessage['mark']>
+  ): void {
+    const pendingIndex = state.pendingPlaybackMarks.findIndex((entry) => entry.name === mark.name);
+    if (pendingIndex === -1) {
+      logger.debug({
+        callId: state.callId,
+        markName: mark.name,
+        pendingMarks: state.pendingPlaybackMarks.map(entry => entry.name).slice(0, 5),
+      }, '[TwilioAdapter] Unexpected playback mark');
+      return;
+    }
+
+    const [pending] = state.pendingPlaybackMarks.splice(pendingIndex, 1);
+    if (!pending) {
+      logger.debug({ callId: state.callId, markName: mark.name }, '[TwilioAdapter] Playback mark disappeared before ack handling');
+      return;
+    }
+    if (pendingIndex > 0) {
+      state.pendingPlaybackMarks.splice(0, pendingIndex);
+    }
+    logger.debug({
+      callId: state.callId,
+      markName: mark.name,
+      playedMs: pending.playedMs,
+      remainingMarks: state.pendingPlaybackMarks.length,
+    }, '[TwilioAdapter] Playback mark acknowledged');
+    this.emit('call:playback_mark', state.callId, {
+      name: mark.name,
+      playedMs: pending.playedMs,
+    });
   }
 
   private handleStreamStop(state: MediaStreamState): void {

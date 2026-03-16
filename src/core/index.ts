@@ -75,6 +75,8 @@ export {
   DefaultCompactionStrategy,
   // Strategy Registry
   StrategyRegistry,
+  // Plugin Registry
+  PluginRegistry,
   // Unified store tools
   StoreToolsManager,
   isStoreHandler,
@@ -86,6 +88,9 @@ export type {
   AuthIdentity,
   AgentContextNextGenConfig,
   ContextFeatures,
+  KnownContextFeatures,
+  ResolvedContextFeatures,
+  KnownPluginConfigs,
   ContextBudget,
   PreparedContext,
   OversizedInputResult,
@@ -127,6 +132,12 @@ export type {
   // Strategy Registry types
   StrategyInfo,
   StrategyRegistryEntry,
+  // Plugin Registry types
+  PluginFactory,
+  PluginFactoryContext,
+  PluginRegistryEntry,
+  PluginRegisterOptions,
+  PluginRegistryInfo,
   // Snapshot types
   IContextSnapshot,
   IPluginSnapshot,

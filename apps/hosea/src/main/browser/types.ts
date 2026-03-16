@@ -305,6 +305,44 @@ export interface Rectangle {
   height: number;
 }
 
+// ============ Console Types ============
+
+export type ConsoleMessageLevel = 'verbose' | 'info' | 'warning' | 'error';
+
+export interface ConsoleMessage {
+  /** Log level */
+  level: ConsoleMessageLevel;
+  /** Message text */
+  message: string;
+  /** Source file URL */
+  source?: string;
+  /** Line number in source */
+  line?: number;
+  /** Timestamp (ISO string) */
+  timestamp: string;
+}
+
+export interface ConsoleReadOptions {
+  /** Filter by level: 'all' (default), 'errors', 'warnings', 'info' */
+  level?: 'all' | 'errors' | 'warnings' | 'info';
+  /** Text search (case-insensitive substring match) */
+  search?: string;
+  /** Max messages to return (default: 100, most recent first) */
+  limit?: number;
+  /** Clear the buffer after reading (default: false) */
+  clear?: boolean;
+}
+
+export interface ConsoleReadResult {
+  success: boolean;
+  messages: ConsoleMessage[];
+  /** Total messages in buffer (before filtering) */
+  totalBuffered: number;
+  /** Whether buffer was cleared */
+  cleared: boolean;
+  error?: string;
+}
+
 // ============ Cookie Types ============
 
 export interface CookieData {

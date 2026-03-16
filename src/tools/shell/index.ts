@@ -1,10 +1,13 @@
 /**
  * Shell Tools
  *
- * Tools for executing shell commands and managing processes.
+ * Tools for executing shell commands and managing background processes.
  *
  * Available tools:
- * - bash: Execute shell commands
+ * - bash: Execute shell commands (foreground or background)
+ * - bg_process_output: Read output from background processes
+ * - bg_process_list: List all background processes
+ * - bg_process_kill: Stop a background process
  *
  * @example
  * ```typescript
@@ -13,7 +16,7 @@
  * const agent = Agent.create({
  *   connector: 'openai',
  *   model: 'gpt-4',
- *   tools: [tools.bash]
+ *   tools: [tools.bash, tools.bgProcessOutput, tools.bgProcessList, tools.bgProcessKill]
  * });
  * ```
  */
@@ -29,6 +32,14 @@ export {
   isBlockedCommand,
 } from './types.js';
 
+// Background Process Manager
+export {
+  BackgroundProcessManager,
+  OutputRingBuffer,
+  type BackgroundProcessInfo,
+  type BackgroundProcessStatus,
+} from './BackgroundProcessManager.js';
+
 // Bash Tool
 export {
   bash,
@@ -36,3 +47,19 @@ export {
   getBackgroundOutput,
   killBackgroundProcess,
 } from './bash.js';
+
+// Background Process Tools
+export {
+  bgProcessOutput,
+  createBgProcessOutputTool,
+} from './bgProcessOutput.js';
+
+export {
+  bgProcessList,
+  createBgProcessListTool,
+} from './bgProcessList.js';
+
+export {
+  bgProcessKill,
+  createBgProcessKillTool,
+} from './bgProcessKill.js';

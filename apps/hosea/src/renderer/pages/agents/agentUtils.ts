@@ -40,7 +40,7 @@ export function getDescription(instructions: string, maxLen = 120): string {
  * Order: tool count → specific tool types → memory features
  */
 export function getCapabilityChips(agent: Pick<AgentListItem,
-  'tools' | 'workingMemoryEnabled' | 'inContextMemoryEnabled' | 'persistentInstructionsEnabled'
+  'tools' | 'workingMemoryEnabled' | 'inContextMemoryEnabled' | 'persistentInstructionsEnabled' | 'dynamicUIEnabled'
 >): CapabilityChip[] {
   const chips: CapabilityChip[] = [];
   const t = agent.tools;
@@ -54,6 +54,7 @@ export function getCapabilityChips(agent: Pick<AgentListItem,
   if (agent.workingMemoryEnabled) chips.push({ label: 'Working memory' });
   if (agent.inContextMemoryEnabled) chips.push({ label: 'In-context memory' });
   if (agent.persistentInstructionsEnabled) chips.push({ label: 'Persistent memory' });
+  if (agent.dynamicUIEnabled) chips.push({ label: 'Dynamic UI' });
 
   return chips;
 }
