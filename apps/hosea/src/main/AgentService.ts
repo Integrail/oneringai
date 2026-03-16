@@ -34,9 +34,13 @@ import {
   calculateVideoCost,
   TextToSpeech,
   VoiceStream,
+  VoiceBridge,
+  TwilioAdapter,
   getTTSModelInfo,
   getActiveTTSModels,
   calculateTTSCost,
+  getActiveSTTModels,
+  getSTTModelInfo,
   // Vendor templates
   listVendors as listVendorTemplates,
   listVendorsByCategory,
@@ -96,6 +100,7 @@ import {
   type AgentInfo,
   type RegistryAgentStatus,
   type AgentEventListener,
+  type VoiceSessionInfo,
 } from '@everworker/oneringai';
 import type { BrowserService } from './BrowserService.js';
 import { ToolCatalogRegistry } from '@everworker/oneringai';
@@ -251,6 +256,21 @@ export interface StoredAgentConfig {
   isActive: boolean;
   isArchived?: boolean;
   isPinned?: boolean;
+
+  // Voice Bridge (Phone Calling)
+  voiceBridgeEnabled?: boolean;
+  voiceBridgeTwilioConnector?: string;
+  voiceBridgeSttConnector?: string;
+  voiceBridgeSttModel?: string;
+  voiceBridgeTtsConnector?: string;
+  voiceBridgeTtsModel?: string;
+  voiceBridgeTtsVoice?: string;
+  voiceBridgeGreeting?: string;
+  voiceBridgeInterruptible?: boolean;
+  voiceBridgePort?: number;
+  voiceBridgePublicUrl?: string;
+  voiceBridgeMaxConcurrent?: number;
+  voiceBridgeMaxDuration?: number;
 
   // Orchestrator mode
   isOrchestrator?: boolean;
@@ -678,6 +698,11 @@ export class AgentService {
   // Compaction event log (last N events for each instance/agent)
   private compactionLogs: Map<string, Array<{ timestamp: number; tokensToFree: number; message: string }>> = new Map();
   private readonly MAX_COMPACTION_LOG_ENTRIES = 20;
+  // Voice bridge instances (agentConfigId → bridge + adapter)
+  private voiceBridges = new Map<string, { bridge: VoiceBridge; adapter: TwilioAdapter }>();
+  // Voice bridge log buffer (agentConfigId → ring buffer of log entries)
+  private voiceBridgeLogs = new Map<string, Array<{ timestamp: number; level: string; message: string }>>();
+  private readonly MAX_VOICE_BRIDGE_LOG_ENTRIES = 200;
   // Everworker backend profiles (multi-profile support)
   private ewProfiles: EverworkerProfilesConfig = { version: 2, activeProfileId: null, profiles: [] };
   // Main window sender for push events to renderer
@@ -746,6 +771,20 @@ export class AgentService {
         voiceVoice: config.voiceVoice,
         voiceFormat: config.voiceFormat,
         voiceSpeed: config.voiceSpeed,
+        // Voice Bridge (Phone Calling)
+        voiceBridgeEnabled: config.voiceBridgeEnabled,
+        voiceBridgeTwilioConnector: config.voiceBridgeTwilioConnector,
+        voiceBridgeSttConnector: config.voiceBridgeSttConnector,
+        voiceBridgeSttModel: config.voiceBridgeSttModel,
+        voiceBridgeTtsConnector: config.voiceBridgeTtsConnector,
+        voiceBridgeTtsModel: config.voiceBridgeTtsModel,
+        voiceBridgeTtsVoice: config.voiceBridgeTtsVoice,
+        voiceBridgeGreeting: config.voiceBridgeGreeting,
+        voiceBridgeInterruptible: config.voiceBridgeInterruptible,
+        voiceBridgePort: config.voiceBridgePort,
+        voiceBridgePublicUrl: config.voiceBridgePublicUrl,
+        voiceBridgeMaxConcurrent: config.voiceBridgeMaxConcurrent,
+        voiceBridgeMaxDuration: config.voiceBridgeMaxDuration,
       },
     };
   }
@@ -805,6 +844,20 @@ export class AgentService {
       voiceVoice: typeConfig.voiceVoice as string | undefined,
       voiceFormat: (typeConfig.voiceFormat as string | undefined) ?? 'mp3',
       voiceSpeed: (typeConfig.voiceSpeed as number | undefined) ?? 1.0,
+      // Voice Bridge (Phone Calling)
+      voiceBridgeEnabled: Boolean(typeConfig.voiceBridgeEnabled ?? false),
+      voiceBridgeTwilioConnector: typeConfig.voiceBridgeTwilioConnector as string | undefined,
+      voiceBridgeSttConnector: typeConfig.voiceBridgeSttConnector as string | undefined,
+      voiceBridgeSttModel: typeConfig.voiceBridgeSttModel as string | undefined,
+      voiceBridgeTtsConnector: typeConfig.voiceBridgeTtsConnector as string | undefined,
+      voiceBridgeTtsModel: typeConfig.voiceBridgeTtsModel as string | undefined,
+      voiceBridgeTtsVoice: typeConfig.voiceBridgeTtsVoice as string | undefined,
+      voiceBridgeGreeting: typeConfig.voiceBridgeGreeting as string | undefined,
+      voiceBridgeInterruptible: (typeConfig.voiceBridgeInterruptible as boolean | undefined) ?? true,
+      voiceBridgePort: (typeConfig.voiceBridgePort as number | undefined) ?? 3000,
+      voiceBridgePublicUrl: typeConfig.voiceBridgePublicUrl as string | undefined,
+      voiceBridgeMaxConcurrent: (typeConfig.voiceBridgeMaxConcurrent as number | undefined) ?? 5,
+      voiceBridgeMaxDuration: (typeConfig.voiceBridgeMaxDuration as number | undefined) ?? 1800,
     };
   }
 
@@ -3859,6 +3912,11 @@ export class AgentService {
       }
     }
     this.instances.clear();
+
+    // Stop all voice bridges
+    this.stopAllVoiceBridges().catch((err) => {
+      console.warn('Error stopping voice bridges during destroy:', err);
+    });
   }
 
   /**
@@ -6265,6 +6323,414 @@ export class AgentService {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  // ============ Multimedia - Speech-to-Text ============
+
+  /**
+   * Get available STT models based on configured connectors
+   */
+  getAvailableSTTModels(connectorName?: string): Array<{
+    name: string;
+    displayName: string;
+    vendor: string;
+    connector: string;
+    description?: string;
+  }> {
+    const vendorToConnectors = new Map<string, string[]>();
+    if (connectorName) {
+      const connector = this.connectors.get(connectorName);
+      if (connector) {
+        vendorToConnectors.set(connector.vendor, [connector.name]);
+      }
+    } else {
+      for (const [, c] of this.connectors) {
+        const list = vendorToConnectors.get(c.vendor) || [];
+        list.push(c.name);
+        vendorToConnectors.set(c.vendor, list);
+      }
+    }
+
+    const vendorMapping: Record<string, string[]> = {
+      openai: ['openai'],
+      google: ['google', 'google-vertex'],
+      groq: ['groq'],
+    };
+
+    const allModels = getActiveSTTModels();
+    const results: Array<{
+      name: string;
+      displayName: string;
+      vendor: string;
+      connector: string;
+      description?: string;
+    }> = [];
+
+    for (const model of allModels) {
+      const modelVendor = model.provider.toLowerCase();
+      for (const [connectorVendor, connectorNames] of vendorToConnectors) {
+        const mapped = vendorMapping[connectorVendor] || [connectorVendor];
+        if (mapped.includes(modelVendor)) {
+          for (const cn of connectorNames) {
+            results.push({
+              name: model.name,
+              displayName: model.displayName,
+              vendor: model.provider.toLowerCase(),
+              connector: cn,
+              description: model.description,
+            });
+          }
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get capabilities for a specific STT model
+   */
+  getSTTModelCapabilities(modelName: string): {
+    languages: readonly string[] | string[];
+    inputFormats: readonly string[] | string[];
+    features: Record<string, boolean>;
+  } | null {
+    const model = getSTTModelInfo(modelName);
+    if (!model) return null;
+    return {
+      languages: model.capabilities.languages ?? [],
+      inputFormats: model.capabilities.inputFormats ?? [],
+      features: model.capabilities.features as unknown as Record<string, boolean>,
+    };
+  }
+
+  // ============ Voice Bridge (Phone Calling) ============
+
+  /**
+   * Push a voice bridge log entry to the ring buffer + IPC
+   */
+  private pushVoiceBridgeLog(agentConfigId: string, level: string, message: string): void {
+    let logs = this.voiceBridgeLogs.get(agentConfigId);
+    if (!logs) {
+      logs = [];
+      this.voiceBridgeLogs.set(agentConfigId, logs);
+    }
+    const entry = { timestamp: Date.now(), level, message };
+    logs.push(entry);
+    if (logs.length > this.MAX_VOICE_BRIDGE_LOG_ENTRIES) {
+      logs.shift();
+    }
+    this.mainWindowSender?.('voice-bridge:log', { agentConfigId, ...entry });
+  }
+
+  /**
+   * Start a voice bridge for an agent configuration
+   */
+  async startVoiceBridge(agentConfigId: string): Promise<{ success: boolean; port?: number; error?: string }> {
+    try {
+      // Check if already running
+      if (this.voiceBridges.has(agentConfigId)) {
+        return { success: false, error: 'Voice bridge is already running for this agent' };
+      }
+
+      const config = this.agents.get(agentConfigId);
+      if (!config) {
+        return { success: false, error: `Agent config not found: ${agentConfigId}` };
+      }
+
+      if (!config.voiceBridgeEnabled) {
+        return { success: false, error: 'Voice bridge is not enabled for this agent' };
+      }
+
+      if (!config.voiceBridgeTwilioConnector) {
+        return { success: false, error: 'No Twilio connector configured' };
+      }
+
+      if (!config.voiceBridgeSttConnector) {
+        return { success: false, error: 'No STT connector configured' };
+      }
+
+      if (!config.voiceBridgeTtsConnector && !config.voiceBridgeTtsModel) {
+        return { success: false, error: 'No TTS connector/model configured' };
+      }
+
+      // Ensure all connectors are registered with the library
+      const twilioUc = this.universalConnectors.get(config.voiceBridgeTwilioConnector);
+      if (!twilioUc) {
+        return { success: false, error: `Twilio connector not found: ${config.voiceBridgeTwilioConnector}` };
+      }
+
+      // Ensure Twilio connector is registered (universal connector)
+      if (!Connector.has(config.voiceBridgeTwilioConnector)) {
+        try {
+          createConnectorFromTemplate(
+            config.voiceBridgeTwilioConnector,
+            twilioUc.vendorId,
+            twilioUc.authMethodId,
+            twilioUc.credentials,
+            twilioUc.baseURL ? { baseURL: twilioUc.baseURL } : undefined,
+          );
+        } catch {
+          // May already be registered
+        }
+      }
+
+      // Ensure STT connector is registered
+      const sttConnectorName = config.voiceBridgeSttConnector;
+      const sttConn = this.connectors.get(sttConnectorName);
+      if (sttConn && !Connector.has(sttConnectorName)) {
+        Connector.create({
+          name: sttConnectorName,
+          vendor: sttConn.vendor as Vendor,
+          auth: sttConn.auth,
+          baseURL: sttConn.baseURL,
+        });
+      }
+
+      // Ensure TTS connector is registered
+      const ttsConnectorName = config.voiceBridgeTtsConnector || config.voiceConnector || '';
+      const ttsConn = this.connectors.get(ttsConnectorName);
+      if (ttsConn && !Connector.has(ttsConnectorName)) {
+        Connector.create({
+          name: ttsConnectorName,
+          vendor: ttsConn.vendor as Vendor,
+          auth: ttsConn.auth,
+          baseURL: ttsConn.baseURL,
+        });
+      }
+
+      const port = config.voiceBridgePort ?? 3000;
+      const publicUrl = config.voiceBridgePublicUrl || `http://localhost:${port}`;
+
+      // Resolve the agent's configured tools (same list the user selected in Agent Editor)
+      const toolCreationContext = { instanceId: `vb_${agentConfigId}` };
+      const { plain: plainTools, byConnector: connectorToolGroups } = ToolCatalogRegistry.resolveToolsGrouped(
+        config.tools,  // The agent's saved tool name list
+        toolCreationContext,
+        { includeConnectors: true },
+      );
+      const resolvedTools: ToolFunction[] = [...plainTools];
+      for (const [, connTools] of connectorToolGroups) {
+        resolvedTools.push(...connTools);
+      }
+      logger.info(`[startVoiceBridge] Resolved ${resolvedTools.length} tools from ${config.tools.length} configured names`);
+
+      // Create VoiceBridge
+      const bridge = VoiceBridge.create({
+        agent: {
+          connector: config.connector,
+          model: config.model,
+          instructions: config.instructions,
+          tools: resolvedTools,
+        },
+        pipeline: 'text',
+        stt: {
+          connector: sttConnectorName,
+          model: config.voiceBridgeSttModel,
+        },
+        tts: {
+          connector: ttsConnectorName,
+          model: config.voiceBridgeTtsModel || config.voiceModel || 'tts-1',
+          voice: config.voiceBridgeTtsVoice || config.voiceVoice || 'nova',
+        },
+        greeting: config.voiceBridgeGreeting,
+        interruptible: config.voiceBridgeInterruptible ?? true,
+        maxConcurrentCalls: config.voiceBridgeMaxConcurrent ?? 5,
+        maxCallDuration: config.voiceBridgeMaxDuration ?? 1800,
+        hooks: {
+          onCallStart: async (session) => {
+            this.pushVoiceBridgeLog(agentConfigId, 'info', `Call started from ${session.from} to ${session.to}`);
+            this.mainWindowSender?.('voice-bridge:call-start', {
+              agentConfigId,
+              session: this.serializeSessionInfo(session),
+            });
+          },
+          onCallEnd: async (session, summary) => {
+            this.pushVoiceBridgeLog(agentConfigId, 'info',
+              `Call ended: ${session.from} (${summary.duration}s, ${summary.turns} turns, reason: ${summary.endReason})`);
+            this.mainWindowSender?.('voice-bridge:call-end', {
+              agentConfigId,
+              session: this.serializeSessionInfo(session),
+              summary,
+            });
+          },
+          onError: async (error, session) => {
+            this.pushVoiceBridgeLog(agentConfigId, 'error', `Error: ${error.message} (session: ${session.sessionId})`);
+            this.mainWindowSender?.('voice-bridge:error', {
+              agentConfigId,
+              error: error.message,
+              sessionId: session.sessionId,
+            });
+          },
+          beforeAgentResponse: async (text, session) => {
+            // Emit caller transcript to renderer
+            this.mainWindowSender?.('voice-bridge:transcript', {
+              agentConfigId,
+              sessionId: session.sessionId,
+              role: 'caller',
+              text,
+              timestamp: Date.now(),
+            });
+            this.pushVoiceBridgeLog(agentConfigId, 'info', `Caller: "${text}"`);
+            return text;
+          },
+          afterAgentResponse: async (text, session) => {
+            // Emit agent response transcript to renderer
+            this.mainWindowSender?.('voice-bridge:transcript', {
+              agentConfigId,
+              sessionId: session.sessionId,
+              role: 'agent',
+              text,
+              timestamp: Date.now(),
+            });
+            this.pushVoiceBridgeLog(agentConfigId, 'info', `Agent: "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
+            return text;
+          },
+        },
+      });
+
+      // Wire bridge events for logging
+      bridge.on('session:created', (info) => {
+        this.pushVoiceBridgeLog(agentConfigId, 'info', `Session created: ${info.sessionId} (${info.from})`);
+      });
+      bridge.on('session:ended', (info, summary) => {
+        this.pushVoiceBridgeLog(agentConfigId, 'info',
+          `Session ended: ${info.sessionId} (${summary.duration}s, reason: ${summary.endReason})`);
+      });
+      bridge.on('error', (error, sessionId) => {
+        this.pushVoiceBridgeLog(agentConfigId, 'error', `Bridge error: ${error.message}${sessionId ? ` (session: ${sessionId})` : ''}`);
+      });
+
+      // Create TwilioAdapter in standalone mode
+      const adapter = TwilioAdapter.createStandalone({
+        connector: config.voiceBridgeTwilioConnector,
+        port,
+        publicUrl,
+      });
+
+      // Attach bridge to adapter
+      bridge.attach(adapter);
+
+      // Start the adapter (HTTP/WS server)
+      await adapter.start();
+
+      this.voiceBridges.set(agentConfigId, { bridge, adapter });
+      this.pushVoiceBridgeLog(agentConfigId, 'info', `Voice bridge started on port ${port}`);
+
+      return { success: true, port };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.pushVoiceBridgeLog(agentConfigId, 'error', `Failed to start: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Stop a voice bridge
+   */
+  async stopVoiceBridge(agentConfigId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const entry = this.voiceBridges.get(agentConfigId);
+      if (!entry) {
+        return { success: false, error: 'Voice bridge is not running' };
+      }
+
+      await entry.bridge.destroy();
+      await entry.adapter.stop();
+
+      this.voiceBridges.delete(agentConfigId);
+      this.pushVoiceBridgeLog(agentConfigId, 'info', 'Voice bridge stopped');
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * Get voice bridge status
+   */
+  getVoiceBridgeStatus(agentConfigId: string): {
+    running: boolean;
+    port?: number;
+    publicUrl?: string;
+    activeCalls: number;
+    sessions: Array<{
+      sessionId: string;
+      callId: string;
+      from: string;
+      to: string;
+      state: string;
+      startedAt: number;
+      turns: number;
+    }>;
+    logs: Array<{ timestamp: number; level: string; message: string }>;
+  } {
+    const entry = this.voiceBridges.get(agentConfigId);
+    const config = this.agents.get(agentConfigId);
+    const logs = this.voiceBridgeLogs.get(agentConfigId) ?? [];
+
+    if (!entry) {
+      return { running: false, activeCalls: 0, sessions: [], logs };
+    }
+
+    const activeSessions = entry.bridge.getActiveSessions();
+
+    return {
+      running: true,
+      port: config?.voiceBridgePort ?? 3000,
+      publicUrl: config?.voiceBridgePublicUrl,
+      activeCalls: activeSessions.length,
+      sessions: activeSessions.map(s => this.serializeSessionInfo(s)),
+      logs,
+    };
+  }
+
+  /**
+   * Get voice bridge logs only
+   */
+  getVoiceBridgeLogs(agentConfigId: string): Array<{ timestamp: number; level: string; message: string }> {
+    return this.voiceBridgeLogs.get(agentConfigId) ?? [];
+  }
+
+  /**
+   * Serialize VoiceSessionInfo for IPC (Dates → numbers)
+   */
+  private serializeSessionInfo(session: VoiceSessionInfo): {
+    sessionId: string;
+    callId: string;
+    from: string;
+    to: string;
+    state: string;
+    startedAt: number;
+    turns: number;
+  } {
+    return {
+      sessionId: session.sessionId,
+      callId: session.callId,
+      from: session.from,
+      to: session.to,
+      state: session.state,
+      startedAt: session.startedAt.getTime(),
+      turns: session.turns,
+    };
+  }
+
+  /**
+   * Stop all voice bridges (called on shutdown)
+   */
+  private async stopAllVoiceBridges(): Promise<void> {
+    const stops: Promise<void>[] = [];
+    for (const [id, entry] of this.voiceBridges) {
+      stops.push(
+        entry.bridge.destroy().catch(() => {}).then(() =>
+          entry.adapter.stop().catch(() => {})
+        )
+      );
+      this.pushVoiceBridgeLog(id, 'info', 'Voice bridge stopped (shutdown)');
+    }
+    await Promise.allSettled(stops);
+    this.voiceBridges.clear();
   }
 
   // ============ Routine Methods ============

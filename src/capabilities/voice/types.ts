@@ -341,6 +341,9 @@ export interface ITelephonyAdapter {
   /** Send an audio frame to the caller */
   sendAudio(callId: string, frame: AudioFrame): void;
 
+  /** Clear all buffered outbound audio for a call (barge-in/interrupt) */
+  clearAudio?(callId: string): void;
+
   /** End a specific call */
   hangup(callId: string): Promise<void>;
 

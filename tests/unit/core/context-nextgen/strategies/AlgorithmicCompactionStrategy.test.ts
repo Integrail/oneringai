@@ -54,6 +54,22 @@ function createToolUseMessage(toolUseId: string, toolName: string, input: unknow
   };
 }
 
+// Create a tool_use message with `arguments` field (our Content type format, JSON string)
+function createToolUseMessageWithArguments(toolUseId: string, toolName: string, args: unknown): unknown {
+  return {
+    type: 'message',
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool_use',
+        id: toolUseId,
+        name: toolName,
+        arguments: JSON.stringify(args),
+      },
+    ],
+  };
+}
+
 // Create a tool_result message
 function createToolResultMessage(toolUseId: string, content: unknown): unknown {
   return {
@@ -410,6 +426,25 @@ describe('AlgorithmicCompactionStrategy', () => {
       const description = mockMemory.store.mock.calls[0][1];
       expect(description).toContain('custom_tool');
       expect(description).toContain('query=');
+    });
+
+    it('should parse args from `arguments` JSON string (Content type format)', async () => {
+      const mockMemory = createMockWorkingMemory();
+      const largeResult = 'x'.repeat(2000);
+
+      const conversation = [
+        createToolUseMessageWithArguments('tool-abc12345', 'read_file', { file_path: '/src/Agent.ts', offset: 100, limit: 50 }),
+        createToolResultMessage('tool-abc12345', largeResult),
+      ];
+
+      const context = createMockContext(conversation, mockMemory);
+      const strategy = new AlgorithmicCompactionStrategy();
+      await strategy.consolidate(context);
+
+      const description = mockMemory.store.mock.calls[0][1];
+      expect(description).toContain('read_file');
+      expect(description).toContain('file_path=');
+      expect(description).toContain('/src/Agent.ts');
     });
 
     it('should truncate long descriptions', async () => {

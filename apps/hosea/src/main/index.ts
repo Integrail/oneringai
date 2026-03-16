@@ -855,6 +855,32 @@ async function setupIPC(): Promise<void> {
     });
   }));
 
+  // Voice Bridge operations
+  ipcMain.handle('voice-bridge:start', readyHandler(async (_event, agentConfigId: string) => {
+    return agentService!.startVoiceBridge(agentConfigId);
+  }));
+
+  ipcMain.handle('voice-bridge:stop', readyHandler(async (_event, agentConfigId: string) => {
+    return agentService!.stopVoiceBridge(agentConfigId);
+  }));
+
+  ipcMain.handle('voice-bridge:status', readyHandler(async (_event, agentConfigId: string) => {
+    return agentService!.getVoiceBridgeStatus(agentConfigId);
+  }));
+
+  ipcMain.handle('voice-bridge:logs', readyHandler(async (_event, agentConfigId: string) => {
+    return agentService!.getVoiceBridgeLogs(agentConfigId);
+  }));
+
+  // Multimedia - STT (require heavy init)
+  ipcMain.handle('multimedia:get-available-stt-models', readyHandler(async (_event, connectorName?: string) => {
+    return agentService!.getAvailableSTTModels(connectorName);
+  }));
+
+  ipcMain.handle('multimedia:get-stt-model-capabilities', readyHandler(async (_event, modelName: string) => {
+    return agentService!.getSTTModelCapabilities(modelName);
+  }));
+
   // Dialog operations
   ipcMain.handle('dialog:show-open-dialog', async (_event, options: {
     properties?: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles'>;

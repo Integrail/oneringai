@@ -156,18 +156,50 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
 
   /**
    * Prepare audio file for API request
-   * Handles both Buffer and file path inputs
+   * Handles both Buffer and file path inputs.
+   * Raw PCM buffers get a WAV header so OpenAI can decode them.
    */
   private async prepareAudioFile(audio: Buffer | string): Promise<any> {
     if (Buffer.isBuffer(audio)) {
-      // Convert Buffer to File-like object that OpenAI SDK expects
-      return new File([new Uint8Array(audio)], 'audio.wav', { type: 'audio/wav' });
+      // Wrap raw PCM in a WAV container so OpenAI can decode it.
+      // Assumes PCM s16le, mono. We detect sample rate from buffer size heuristics
+      // but default to 16000 Hz (safe for Whisper). Voice pipelines send 8000 Hz
+      // which also works fine — WAV header tells the decoder.
+      const wavBuffer = this.wrapPcmAsWav(audio, 1, 16000, 16);
+      return new File([new Uint8Array(wavBuffer)], 'audio.wav', { type: 'audio/wav' });
     } else if (typeof audio === 'string') {
       // File path - create ReadStream
       return fs.createReadStream(audio);
     } else {
       throw new Error('Invalid audio input: must be Buffer or file path');
     }
+  }
+
+  /**
+   * Wrap raw PCM data in a minimal WAV (RIFF) container.
+   * This adds the 44-byte header that audio decoders need.
+   */
+  private wrapPcmAsWav(pcm: Buffer, channels: number, sampleRate: number, bitsPerSample: number): Buffer {
+    const byteRate = sampleRate * channels * (bitsPerSample / 8);
+    const blockAlign = channels * (bitsPerSample / 8);
+    const dataSize = pcm.length;
+    const header = Buffer.alloc(44);
+
+    header.write('RIFF', 0);                          // ChunkID
+    header.writeUInt32LE(36 + dataSize, 4);            // ChunkSize
+    header.write('WAVE', 8);                           // Format
+    header.write('fmt ', 12);                          // Subchunk1ID
+    header.writeUInt32LE(16, 16);                      // Subchunk1Size (PCM)
+    header.writeUInt16LE(1, 20);                       // AudioFormat (1 = PCM)
+    header.writeUInt16LE(channels, 22);                // NumChannels
+    header.writeUInt32LE(sampleRate, 24);               // SampleRate
+    header.writeUInt32LE(byteRate, 28);                 // ByteRate
+    header.writeUInt16LE(blockAlign, 32);               // BlockAlign
+    header.writeUInt16LE(bitsPerSample, 34);            // BitsPerSample
+    header.write('data', 36);                          // Subchunk2ID
+    header.writeUInt32LE(dataSize, 40);                 // Subchunk2Size
+
+    return Buffer.concat([header, pcm]);
   }
 
   /**

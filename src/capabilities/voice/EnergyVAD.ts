@@ -8,6 +8,7 @@
  * by implementing IVoiceActivityDetector.
  */
 
+import { logger } from '../../infrastructure/observability/Logger.js';
 import type { AudioFrame, IVoiceActivityDetector, VADEvent, EnergyVADConfig } from './types.js';
 
 const DEFAULTS: Required<EnergyVADConfig> = {
@@ -23,6 +24,7 @@ export class EnergyVAD implements IVoiceActivityDetector {
   private consecutiveSpeechFrames = 0;
   private speechStartTime = 0;
   private lastSpeechTime = 0;
+  private nonPcmWarned = false;
 
   constructor(config?: EnergyVADConfig) {
     this.config = { ...DEFAULTS, ...config };
@@ -40,6 +42,7 @@ export class EnergyVAD implements IVoiceActivityDetector {
       if (!this.isSpeaking && this.consecutiveSpeechFrames >= this.config.speechFramesThreshold) {
         this.isSpeaking = true;
         this.speechStartTime = now;
+        logger.debug({ timestamp: now, energy }, '[EnergyVAD] Speech start detected');
         return 'speech_start';
       }
     } else {
@@ -54,6 +57,10 @@ export class EnergyVAD implements IVoiceActivityDetector {
           speechDuration >= this.config.minSpeechDuration
         ) {
           this.isSpeaking = false;
+          logger.debug(
+            { timestamp: now, speechDurationMs: speechDuration, silenceDurationMs: silenceDuration },
+            '[EnergyVAD] Speech end detected'
+          );
           return 'speech_end';
         }
       }
@@ -71,15 +78,23 @@ export class EnergyVAD implements IVoiceActivityDetector {
 
   /**
    * Calculate RMS (Root Mean Square) energy of an audio frame.
-   * Handles PCM 16-bit signed little-endian. For μ-law/a-law,
-   * the frame should be transcoded to PCM first.
+   * Expects PCM 16-bit signed little-endian. Non-PCM formats produce
+   * inaccurate results — the adapter should transcode to PCM first.
    */
   private calculateRMS(frame: AudioFrame): number {
     const { audio, encoding } = frame;
 
     if (encoding !== 'pcm_s16le') {
-      // For non-PCM formats, use raw byte energy as rough approximation.
-      // In practice, the adapter should transcode to PCM before VAD.
+      // Warn once — non-PCM audio gives inaccurate VAD results
+      if (!this.nonPcmWarned) {
+        this.nonPcmWarned = true;
+        logger.warn(
+          { encoding },
+          '[EnergyVAD] Received non-PCM audio; VAD accuracy will be degraded. Transcode to PCM before VAD.'
+        );
+      }
+
+      // Rough byte-based energy approximation (unsigned 8-bit centered at 128)
       let sum = 0;
       for (let i = 0; i < audio.length; i++) {
         const val = (audio[i]! - 128) / 128;

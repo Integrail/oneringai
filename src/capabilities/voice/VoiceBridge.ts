@@ -65,6 +65,7 @@ export class VoiceBridge extends EventEmitter {
   private config: VoiceBridgeConfig;
   private sessions = new Map<string, VoiceSession>();
   private callToSession = new Map<string, string>();
+  private cleanupTimers = new Set<ReturnType<typeof setTimeout>>();
   private adapter: ITelephonyAdapter | null = null;
   private destroyed = false;
 
@@ -91,7 +92,7 @@ export class VoiceBridge extends EventEmitter {
     adapter.on('call:ended', this.handleCallEnded);
     adapter.on('error', this.handleAdapterError);
 
-    logger.info('VoiceBridge adapter attached');
+    logger.info('[VoiceBridge] Adapter attached');
   }
 
   detach(): void {
@@ -103,6 +104,7 @@ export class VoiceBridge extends EventEmitter {
     this.adapter.off('error', this.handleAdapterError);
 
     this.adapter = null;
+    logger.debug('[VoiceBridge] Adapter detached');
   }
 
   // ─── Session Access ──────────────────────────────────────────────
@@ -217,6 +219,8 @@ export class VoiceBridge extends EventEmitter {
     const pipeline = this.createPipeline(session);
     session.setPipeline(pipeline);
 
+    // Wire pipeline events → adapter.
+    // These listeners are cleaned up by pipeline.destroy() → removeAllListeners()
     pipeline.on('audio:out', (frame: AudioFrame) => {
       if (this.adapter && session.state !== 'ended') {
         this.adapter.sendAudio(callId, frame);
@@ -227,6 +231,13 @@ export class VoiceBridge extends EventEmitter {
       logger.error({ sessionId: session.sessionId, error }, '[VoiceBridge] Pipeline error');
       this.fireHook('onError', error, session.getInfo());
       this.emit('error', error, session.sessionId);
+    });
+
+    // Clear Twilio's audio buffer on actual barge-in interrupt only
+    pipeline.on('interrupt', () => {
+      if (this.adapter?.clearAudio) {
+        this.adapter.clearAudio(callId);
+      }
     });
 
     const maxDuration = this.config.maxCallDuration ?? DEFAULT_MAX_DURATION;
@@ -246,12 +257,13 @@ export class VoiceBridge extends EventEmitter {
 
     this.emit('session:created', session.getInfo());
     logger.info(
-      { sessionId: session.sessionId, callId, from: info.from, to: info.to },
+      { sessionId: session.sessionId, callId, from: info.from, to: info.to, activeSessions: this.activeSessionCount },
       '[VoiceBridge] Call connected'
     );
   }
 
   private async endSession(session: VoiceSession): Promise<void> {
+    if (session.state === 'ended') return;
     const summary = await session.end();
 
     await this.fireHook('onCallEnd', session.getInfo(), summary);
@@ -259,9 +271,12 @@ export class VoiceBridge extends EventEmitter {
     this.emit('session:ended', session.getInfo(), summary);
 
     this.callToSession.delete(session.callId);
-    setTimeout(() => {
+    // Delay removal so late lookups can find the ended session
+    const timer = setTimeout(() => {
       this.sessions.delete(session.sessionId);
-    }, 5000);
+      this.cleanupTimers.delete(timer);
+    }, 2000);
+    this.cleanupTimers.add(timer);
 
     logger.info(
       { sessionId: session.sessionId, duration: summary.duration, turns: summary.turns, reason: summary.endReason },
@@ -331,11 +346,17 @@ export class VoiceBridge extends EventEmitter {
     }
     await Promise.allSettled(endings);
 
+    // Clear all pending cleanup timers
+    for (const timer of this.cleanupTimers) {
+      clearTimeout(timer);
+    }
+    this.cleanupTimers.clear();
+
     this.detach();
     this.sessions.clear();
     this.callToSession.clear();
     this.removeAllListeners();
 
-    logger.info('VoiceBridge destroyed');
+    logger.info('[VoiceBridge] Destroyed');
   }
 }

@@ -724,6 +724,20 @@ export interface HoseaAPI {
       voiceVoice?: string;
       voiceFormat?: string;
       voiceSpeed?: number;
+      // Voice Bridge (Phone Calling)
+      voiceBridgeEnabled?: boolean;
+      voiceBridgeTwilioConnector?: string;
+      voiceBridgeSttConnector?: string;
+      voiceBridgeSttModel?: string;
+      voiceBridgeTtsConnector?: string;
+      voiceBridgeTtsModel?: string;
+      voiceBridgeTtsVoice?: string;
+      voiceBridgeGreeting?: string;
+      voiceBridgeInterruptible?: boolean;
+      voiceBridgePort?: number;
+      voiceBridgePublicUrl?: string;
+      voiceBridgeMaxConcurrent?: number;
+      voiceBridgeMaxDuration?: number;
       createdAt: number;
       updatedAt: number;
       lastUsedAt?: number;
@@ -772,6 +786,20 @@ export interface HoseaAPI {
       voiceVoice?: string;
       voiceFormat?: string;
       voiceSpeed?: number;
+      // Voice Bridge (Phone Calling)
+      voiceBridgeEnabled?: boolean;
+      voiceBridgeTwilioConnector?: string;
+      voiceBridgeSttConnector?: string;
+      voiceBridgeSttModel?: string;
+      voiceBridgeTtsConnector?: string;
+      voiceBridgeTtsModel?: string;
+      voiceBridgeTtsVoice?: string;
+      voiceBridgeGreeting?: string;
+      voiceBridgeInterruptible?: boolean;
+      voiceBridgePort?: number;
+      voiceBridgePublicUrl?: string;
+      voiceBridgeMaxConcurrent?: number;
+      voiceBridgeMaxDuration?: number;
       createdAt: number;
       updatedAt: number;
       lastUsedAt?: number;
@@ -1273,6 +1301,48 @@ export interface HoseaAPI {
       };
       error?: string;
     }>;
+    // STT
+    getAvailableSTTModels: (connectorName?: string) => Promise<Array<{
+      name: string;
+      displayName: string;
+      vendor: string;
+      connector: string;
+      description?: string;
+    }>>;
+    getSTTModelCapabilities: (modelName: string) => Promise<{
+      languages: string[];
+      inputFormats: string[];
+      features: Record<string, boolean>;
+    } | null>;
+  };
+
+  // Voice Bridge (Phone Calling)
+  voiceBridge: {
+    start: (agentConfigId: string) => Promise<{ success: boolean; port?: number; error?: string }>;
+    stop: (agentConfigId: string) => Promise<{ success: boolean; error?: string }>;
+    status: (agentConfigId: string) => Promise<{
+      running: boolean;
+      port?: number;
+      publicUrl?: string;
+      activeCalls: number;
+      sessions: Array<{
+        sessionId: string;
+        callId: string;
+        from: string;
+        to: string;
+        state: string;
+        startedAt: number;
+        turns: number;
+      }>;
+      logs: Array<{ timestamp: number; level: string; message: string }>;
+    }>;
+    logs: (agentConfigId: string) => Promise<Array<{ timestamp: number; level: string; message: string }>>;
+    onCallStart: (callback: (data: { agentConfigId: string; session: { sessionId: string; from: string; to: string; state: string } }) => void) => void;
+    onCallEnd: (callback: (data: { agentConfigId: string; session: { sessionId: string; from: string; to: string }; summary: { duration: number; turns: number; endReason: string } }) => void) => void;
+    onError: (callback: (data: { agentConfigId: string; error: string; sessionId?: string }) => void) => void;
+    onLog: (callback: (data: { agentConfigId: string; timestamp: number; level: string; message: string }) => void) => void;
+    onTranscript: (callback: (data: { agentConfigId: string; sessionId: string; role: 'caller' | 'agent'; text: string; timestamp: number }) => void) => void;
+    removeAllListeners: () => void;
   };
 
   // Shell
@@ -1653,6 +1723,38 @@ const api: HoseaAPI = {
     getTTSModelCapabilities: (modelName) => ipcRenderer.invoke('multimedia:get-tts-model-capabilities', modelName),
     calculateTTSCost: (modelName, charCount) => ipcRenderer.invoke('multimedia:calculate-tts-cost', modelName, charCount),
     synthesizeSpeech: (options) => ipcRenderer.invoke('multimedia:synthesize-speech', options),
+    // STT
+    getAvailableSTTModels: (connectorName?) => ipcRenderer.invoke('multimedia:get-available-stt-models', connectorName),
+    getSTTModelCapabilities: (modelName) => ipcRenderer.invoke('multimedia:get-stt-model-capabilities', modelName),
+  },
+
+  voiceBridge: {
+    start: (agentConfigId) => ipcRenderer.invoke('voice-bridge:start', agentConfigId),
+    stop: (agentConfigId) => ipcRenderer.invoke('voice-bridge:stop', agentConfigId),
+    status: (agentConfigId) => ipcRenderer.invoke('voice-bridge:status', agentConfigId),
+    logs: (agentConfigId) => ipcRenderer.invoke('voice-bridge:logs', agentConfigId),
+    onCallStart: (callback) => {
+      ipcRenderer.on('voice-bridge:call-start', (_e, data) => callback(data));
+    },
+    onCallEnd: (callback) => {
+      ipcRenderer.on('voice-bridge:call-end', (_e, data) => callback(data));
+    },
+    onError: (callback) => {
+      ipcRenderer.on('voice-bridge:error', (_e, data) => callback(data));
+    },
+    onLog: (callback) => {
+      ipcRenderer.on('voice-bridge:log', (_e, data) => callback(data));
+    },
+    onTranscript: (callback) => {
+      ipcRenderer.on('voice-bridge:transcript', (_e, data) => callback(data));
+    },
+    removeAllListeners: () => {
+      ipcRenderer.removeAllListeners('voice-bridge:call-start');
+      ipcRenderer.removeAllListeners('voice-bridge:call-end');
+      ipcRenderer.removeAllListeners('voice-bridge:error');
+      ipcRenderer.removeAllListeners('voice-bridge:log');
+      ipcRenderer.removeAllListeners('voice-bridge:transcript');
+    },
   },
 
   internals: {

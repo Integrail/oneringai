@@ -579,8 +579,39 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
       });
     });
 
+    // Voice bridge transcript → inject messages into matching chat tabs
+    window.hosea.voiceBridge.onTranscript((data: {
+      agentConfigId: string;
+      sessionId: string;
+      role: 'caller' | 'agent';
+      text: string;
+      timestamp: number;
+    }) => {
+      setTabs(prevTabs => {
+        // Find tabs matching this agentConfigId
+        let matched = false;
+        const newTabs = new Map(prevTabs);
+        for (const [id, tab] of prevTabs) {
+          if (tab.agentConfigId !== data.agentConfigId) continue;
+          matched = true;
+
+          const msg: Message = {
+            id: `vb-${data.role}-${data.timestamp}-${Math.random().toString(36).slice(2, 6)}`,
+            role: data.role === 'caller' ? 'user' : 'assistant',
+            content: data.role === 'caller'
+              ? `**[Phone: ${data.sessionId.slice(0, 8)}]** ${data.text}`
+              : data.text,
+            timestamp: data.timestamp,
+          };
+          newTabs.set(id, { ...tab, messages: [...tab.messages, msg] });
+        }
+        return matched ? newTabs : prevTabs;
+      });
+    });
+
     return () => {
       window.hosea.agent.removeStreamInstanceListeners();
+      window.hosea.voiceBridge.removeAllListeners();
       listenersSetup.current = false;
     };
   }, []);

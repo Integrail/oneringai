@@ -22,6 +22,7 @@ import { TabBar, NewTabModal } from '../components/tabs';
 import { OrchestratorDashboard } from '../components/orchestrator';
 import { useTabContext, type Message, type TabState, type SidebarTab } from '../hooks/useTabContext';
 import { useVoiceoverPlayback } from '../hooks/useVoiceoverPlayback';
+import { VoiceBridgePanel } from '../components/VoiceBridgePanel';
 import type { Plan } from '../../preload/index';
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -478,7 +479,21 @@ function ChatPageContent(): React.ReactElement {
   // New tab modal
   const [showNewTabModal, setShowNewTabModal] = useState(false);
 
+  // Voice bridge panel
+  const [voiceBridgeEnabled, setVoiceBridgeEnabled] = useState(false);
+
   const activeTab = getActiveTab();
+
+  // Check if active tab's agent has voice bridge enabled
+  useEffect(() => {
+    if (!activeTab?.agentConfigId) {
+      setVoiceBridgeEnabled(false);
+      return;
+    }
+    window.hosea.agentConfig.get(activeTab.agentConfigId).then((config) => {
+      setVoiceBridgeEnabled(config?.voiceBridgeEnabled ?? false);
+    }).catch(() => setVoiceBridgeEnabled(false));
+  }, [activeTab?.agentConfigId]);
 
   // Voice playback - runs in background, plays audio chunks as they arrive
   const { isPlaying: isVoicePlaying, skipCurrent: skipVoice } = useVoiceoverPlayback(
@@ -542,6 +557,14 @@ function ChatPageContent(): React.ReactElement {
           </div>
         ) : null}
       </div>
+
+      {/* Voice Bridge Panel (right of chat, left of sidebar) */}
+      {voiceBridgeEnabled && activeTab?.agentConfigId && (
+        <VoiceBridgePanel
+          agentConfigId={activeTab.agentConfigId}
+          visible={voiceBridgeEnabled}
+        />
+      )}
 
       {/* Sidebar Panel with tabs */}
       <SidebarPanel

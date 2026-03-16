@@ -102,6 +102,8 @@ interface MediaStreamState {
   ws: any;
   startTime: number;
   info: IncomingCallInfo;
+  /** Counter for periodic debug logging of inbound audio frames */
+  inboundFrameCount: number;
 }
 
 // =============================================================================
@@ -255,6 +257,9 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
 
   // ─── ITelephonyAdapter Implementation ────────────────────────────
 
+  /** Counter for diagnostic logging (first few frames only) */
+  private sendDiagCount = 0;
+
   sendAudio(callId: string, frame: AudioFrame): void {
     const state = this.streams.get(callId);
     if (!state) return;
@@ -267,7 +272,49 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
         const pcm8k = frame.sampleRate !== 8000
           ? resamplePcm(frame.audio, frame.sampleRate, 8000)
           : frame.audio;
+
+        // Diagnostic: log PCM stats for first few frames to verify data integrity
+        if (this.sendDiagCount < 3) {
+          const safeLen = pcm8k.length & ~1;
+          let minSample = 32767, maxSample = -32768, sumAbs = 0;
+          for (let i = 0; i < safeLen; i += 2) {
+            const s = pcm8k.readInt16LE(i);
+            if (s < minSample) minSample = s;
+            if (s > maxSample) maxSample = s;
+            sumAbs += Math.abs(s);
+          }
+          const numSamples = safeLen / 2;
+          const avgAbs = numSamples > 0 ? Math.round(sumAbs / numSamples) : 0;
+          logger.info({
+            callId,
+            diagFrame: this.sendDiagCount,
+            inputEncoding: frame.encoding,
+            inputRate: frame.sampleRate,
+            inputBytes: frame.audio.length,
+            pcm8kBytes: pcm8k.length,
+            pcm8kSamples: numSamples,
+            pcmMin: minSample,
+            pcmMax: maxSample,
+            pcmAvgAbs: avgAbs,
+            durationMs: numSamples > 0 ? Math.round(numSamples / 8) : 0, // ms at 8kHz
+          }, '[TwilioAdapter] DIAG: PCM→mulaw conversion stats');
+        }
+
         mulaw = pcmToMulaw(pcm8k);
+
+        // Diagnostic: verify mulaw output
+        if (this.sendDiagCount < 3) {
+          // Check a few mulaw bytes to see if they look reasonable
+          const first10 = Array.from(mulaw.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+          logger.info({
+            callId,
+            diagFrame: this.sendDiagCount,
+            mulawBytes: mulaw.length,
+            mulawFirst10Hex: first10,
+            base64Length: mulaw.toString('base64').length,
+          }, '[TwilioAdapter] DIAG: mulaw output');
+          this.sendDiagCount++;
+        }
       } else {
         logger.warn({ encoding: frame.encoding }, '[TwilioAdapter] Unsupported audio encoding');
         return;
@@ -281,11 +328,33 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
         },
       };
 
-      if (state.ws.readyState === 1) {
-        state.ws.send(JSON.stringify(outMsg));
+      try {
+        if (state.ws.readyState === 1) {
+          state.ws.send(JSON.stringify(outMsg));
+        }
+      } catch (sendError) {
+        logger.debug({ callId, error: sendError }, '[TwilioAdapter] WebSocket send failed');
       }
     } catch (error) {
-      logger.error({ callId, error }, '[TwilioAdapter] Error sending audio');
+      logger.error({ callId, error }, '[TwilioAdapter] Error encoding audio for send');
+    }
+  }
+
+  clearAudio(callId: string): void {
+    const state = this.streams.get(callId);
+    if (!state) return;
+
+    try {
+      if (state.ws.readyState === 1) {
+        const clearMsg = {
+          event: 'clear',
+          streamSid: state.streamSid,
+        };
+        state.ws.send(JSON.stringify(clearMsg));
+        logger.debug({ callId }, '[TwilioAdapter] Sent clear (barge-in)');
+      }
+    } catch (error) {
+      logger.debug({ callId, error }, '[TwilioAdapter] Clear send failed');
     }
   }
 
@@ -297,8 +366,8 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
       if (state.ws.readyState === 1) {
         state.ws.close();
       }
-    } catch {
-      // Ignore close errors
+    } catch (error) {
+      logger.debug({ callId, error }, '[TwilioAdapter] WebSocket close error (non-fatal)');
     }
 
     this.cleanupStream(callId);
@@ -341,8 +410,8 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
         if (state.ws.readyState === 1) {
           state.ws.close();
         }
-      } catch {
-        // Ignore
+      } catch (error) {
+        logger.debug({ callId, error }, '[TwilioAdapter] WebSocket close error during destroy');
       }
       this.emit('call:ended', callId, 'adapter_destroyed');
     }
@@ -359,12 +428,9 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private handleWebhookRequest(req: any, res: any): void {
-    let body = '';
-    req.on('data', (chunk: string | Buffer) => {
-      body += chunk.toString();
-    });
-    req.on('end', () => {
-      const params = new URLSearchParams(body);
+    // Handle pre-parsed body (Express/Connect bodyParser) or raw stream
+    const processBody = (bodyStr: string) => {
+      const params = new URLSearchParams(bodyStr);
 
       const callSid = params.get('CallSid') || 'unknown';
       const from = params.get('From') || 'unknown';
@@ -391,6 +457,46 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       res.end(twiml);
+    };
+
+    // Express bodyParser may have already parsed the body
+    if (req.body) {
+      // req.body is either a parsed object or a string
+      if (typeof req.body === 'string') {
+        processBody(req.body);
+      } else {
+        // bodyParser.urlencoded() produces an object — re-serialize
+        const bodyStr = new URLSearchParams(req.body).toString();
+        processBody(bodyStr);
+      }
+      return;
+    }
+
+    // Raw stream reading (standalone mode or no bodyParser)
+    const MAX_BODY_SIZE = 65536; // 64KB limit
+    let body = '';
+    let overflow = false;
+
+    req.on('data', (chunk: string | Buffer) => {
+      body += chunk.toString();
+      if (body.length > MAX_BODY_SIZE) {
+        overflow = true;
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (overflow) {
+        logger.warn('[TwilioAdapter] Webhook body too large, rejecting');
+        res.writeHead(413);
+        res.end('Request too large');
+        return;
+      }
+      processBody(body);
+    });
+    req.on('error', (error: Error) => {
+      logger.error({ error }, '[TwilioAdapter] Webhook request read error');
+      res.writeHead(500);
+      res.end('Internal error');
     });
   }
 
@@ -419,6 +525,7 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
       ws,
       startTime: Date.now(),
       info,
+      inboundFrameCount: 0,
     };
 
     this.streams.set(callId, state);
@@ -445,6 +552,15 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
       channels: 1,
       timestamp: parseInt(media.timestamp, 10),
     };
+
+    state.inboundFrameCount++;
+    // Log every 100 frames (~2 seconds at 20ms/frame) to avoid flooding
+    if (state.inboundFrameCount % 100 === 0) {
+      logger.debug(
+        { callId: state.callId, frameCount: state.inboundFrameCount },
+        '[TwilioAdapter] Inbound audio frames received'
+      );
+    }
 
     this.emit('call:audio', state.callId, frame);
   }

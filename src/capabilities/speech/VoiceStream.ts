@@ -25,6 +25,7 @@
 
 import { EventEmitter } from 'events';
 import { TextToSpeech } from '../../core/TextToSpeech.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
 import { StreamEventType } from '../../domain/entities/StreamEvent.js';
 import type {
   StreamEvent,
@@ -204,6 +205,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     this.activeJobs.clear();
     this.activeTTSCount = 0;
     this.audioEventBuffer = [];
+    this.holdBackBuffer = [];
 
     // Release all waiters
     this.releaseAllWaiters();
@@ -229,6 +231,8 @@ export class VoiceStream extends EventEmitter implements IDisposable {
     this.bufferNotify = null;
     this.slotWaiters = [];
     this.queueWaiters = [];
+    this.nextEmitChunkIndex = 0;
+    this.holdBackBuffer = [];
     this.chunker.reset();
   }
 
@@ -304,11 +308,32 @@ export class VoiceStream extends EventEmitter implements IDisposable {
         const pendingBuffers: Buffer[] = [];
         let pendingSize = 0;
 
+        // For PCM s16le, we must always emit an even number of bytes (2 bytes per sample).
+        // OpenAI's streaming chunks can split at arbitrary byte boundaries, so we carry
+        // over any trailing odd byte to the next flush.
+        let carryOver: Buffer | null = null;
+
         const flushPending = () => {
-          if (pendingSize === 0) return;
-          const merged = Buffer.concat(pendingBuffers, pendingSize);
+          if (pendingSize === 0 && !carryOver) return;
+
+          // Prepend any leftover byte from previous flush
+          if (carryOver) {
+            pendingBuffers.unshift(carryOver);
+            pendingSize += carryOver.length;
+            carryOver = null;
+          }
+
+          let merged = Buffer.concat(pendingBuffers, pendingSize);
           pendingBuffers.length = 0;
           pendingSize = 0;
+
+          // Ensure even byte count for PCM s16le
+          if (streamFormat === 'pcm' && merged.length % 2 !== 0) {
+            carryOver = Buffer.from([merged[merged.length - 1]!]);
+            merged = merged.subarray(0, merged.length - 1);
+          }
+
+          if (merged.length === 0) return;
 
           const currentSubIndex = subIndex++;
           const audioEvent: AudioChunkReadyEvent = {
@@ -347,7 +372,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
         // Flush any remaining accumulated data
         flushPending();
 
-        console.log(`[VoiceStream] TTS chunk ${index} streamed ${subIndex} sub-chunks in ${Date.now() - ttsStart}ms, text: "${text.slice(0, 40)}..."`);
+        logger.debug({ chunkIndex: index, subChunks: subIndex, ttsMs: Date.now() - ttsStart }, `[VoiceStream] TTS chunk streamed`);
         this.emit('audio:ready', { chunkIndex: index, text });
       } else {
         // Buffered path: single chunk
@@ -375,7 +400,7 @@ export class VoiceStream extends EventEmitter implements IDisposable {
         };
 
         this.pushAudioEvent(audioEvent);
-        console.log(`[VoiceStream] TTS chunk ${index} ready in ${Date.now() - ttsStart}ms, text: "${text.slice(0, 40)}..."`);
+        logger.debug({ chunkIndex: index, ttsMs: Date.now() - ttsStart }, `[VoiceStream] TTS chunk ready`);
         this.emit('audio:ready', {
           chunkIndex: index,
           text,
@@ -400,6 +425,8 @@ export class VoiceStream extends EventEmitter implements IDisposable {
         error: error as Error,
       });
     } finally {
+      // Signal that this chunk is complete so the next chunk's events can be released
+      this.advanceChunkGate(index);
       this.activeTTSCount--;
       this.releaseTTSSlot();
     }
@@ -416,12 +443,60 @@ export class VoiceStream extends EventEmitter implements IDisposable {
 
   // ======================== Buffer Notification ========================
 
+  /** Next chunk_index we're allowed to emit (ordering gate) */
+  private nextEmitChunkIndex = 0;
+
+  /** Events from future chunks held back until their turn */
+  private holdBackBuffer: StreamEvent[] = [];
+
   /**
-   * Push an audio event and wake up the consumer in wrap()
+   * Push an audio event, respecting chunk_index ordering.
+   * Events for the current chunk_index go directly to the consumer buffer.
+   * Events from later chunks are held back until earlier chunks complete.
    */
   private pushAudioEvent(event: StreamEvent): void {
-    this.audioEventBuffer.push(event);
+    const ev = event as { chunk_index?: number; sub_index?: number };
+
+    if (ev.chunk_index === undefined || ev.chunk_index === this.nextEmitChunkIndex) {
+      // Current chunk or non-indexed event — emit immediately
+      this.audioEventBuffer.push(event);
+    } else if (ev.chunk_index > this.nextEmitChunkIndex) {
+      // Future chunk — hold back
+      this.holdBackBuffer.push(event);
+    } else {
+      // Past chunk (shouldn't happen, but emit anyway)
+      this.audioEventBuffer.push(event);
+    }
+
     if (this.bufferNotify) {
+      this.bufferNotify();
+      this.bufferNotify = null;
+    }
+  }
+
+  /**
+   * Called when a TTS chunk_index finishes (all sub-chunks emitted).
+   * Advances the gate and releases any held-back events for the next chunk.
+   */
+  private advanceChunkGate(completedChunkIndex: number): void {
+    if (completedChunkIndex !== this.nextEmitChunkIndex) return;
+
+    this.nextEmitChunkIndex++;
+
+    // Release held-back events for the next chunk(s)
+    const stillHeld: StreamEvent[] = [];
+    for (const ev of this.holdBackBuffer) {
+      const ci = (ev as { chunk_index?: number }).chunk_index;
+      if (ci === this.nextEmitChunkIndex) {
+        this.audioEventBuffer.push(ev);
+      } else {
+        stillHeld.push(ev);
+      }
+    }
+    this.holdBackBuffer = stillHeld;
+
+    // Wake consumer if we released events
+    if (this.audioEventBuffer.length > 0 && this.bufferNotify) {
       this.bufferNotify();
       this.bufferNotify = null;
     }

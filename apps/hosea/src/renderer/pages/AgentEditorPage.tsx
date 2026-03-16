@@ -148,6 +148,20 @@ interface AgentFormData {
   voiceVoice: string;
   voiceFormat: string;
   voiceSpeed: number;
+  // Voice Bridge (Phone Calling)
+  voiceBridgeEnabled: boolean;
+  voiceBridgeTwilioConnector: string;
+  voiceBridgeSttConnector: string;
+  voiceBridgeSttModel: string;
+  voiceBridgeTtsConnector: string;
+  voiceBridgeTtsModel: string;
+  voiceBridgeTtsVoice: string;
+  voiceBridgeGreeting: string;
+  voiceBridgeInterruptible: boolean;
+  voiceBridgePort: number;
+  voiceBridgePublicUrl: string;
+  voiceBridgeMaxConcurrent: number;
+  voiceBridgeMaxDuration: number;
   // Orchestrator mode
   isOrchestrator: boolean;
   orchestratorChildAgents: Array<{ agentConfigId: string; alias: string }>;
@@ -198,6 +212,20 @@ const defaultFormData: AgentFormData = {
   voiceVoice: '',
   voiceFormat: 'mp3',
   voiceSpeed: 1.0,
+  // Voice Bridge (Phone Calling)
+  voiceBridgeEnabled: false,
+  voiceBridgeTwilioConnector: '',
+  voiceBridgeSttConnector: '',
+  voiceBridgeSttModel: '',
+  voiceBridgeTtsConnector: '',
+  voiceBridgeTtsModel: '',
+  voiceBridgeTtsVoice: '',
+  voiceBridgeGreeting: '',
+  voiceBridgeInterruptible: true,
+  voiceBridgePort: 3000,
+  voiceBridgePublicUrl: '',
+  voiceBridgeMaxConcurrent: 5,
+  voiceBridgeMaxDuration: 1800,
   // Orchestrator mode
   isOrchestrator: false,
   orchestratorChildAgents: [],
@@ -235,6 +263,14 @@ export function AgentEditorPage(): React.ReactElement {
     formats: string[];
     speed: { supported: boolean; min?: number; max?: number; default?: number };
   } | null>(null);
+
+  // Voice Bridge state
+  const [sttModels, setSTTModels] = useState<Array<{ name: string; displayName: string; vendor: string; connector: string }>>([]);
+  const [bridgeTTSModels, setBridgeTTSModels] = useState<Array<{ name: string; displayName: string; vendor: string; connector: string }>>([]);
+  const [bridgeTTSCapabilities, setBridgeTTSCapabilities] = useState<{
+    voices: Array<{ id: string; name: string; language: string; gender: 'male' | 'female' | 'neutral'; style?: string; isDefault?: boolean }>;
+  } | null>(null);
+  const [twilioConnectors, setTwilioConnectors] = useState<UniversalConnector[]>([]);
 
   // Live models fetched from the connector's API (e.g. Ollama)
   const [liveModels, setLiveModels] = useState<string[]>([]);
@@ -304,6 +340,20 @@ export function AgentEditorPage(): React.ReactElement {
               voiceVoice: existingAgent.voiceVoice ?? '',
               voiceFormat: existingAgent.voiceFormat ?? 'mp3',
               voiceSpeed: existingAgent.voiceSpeed ?? 1.0,
+              // Voice Bridge (Phone Calling)
+              voiceBridgeEnabled: existingAgent.voiceBridgeEnabled ?? false,
+              voiceBridgeTwilioConnector: existingAgent.voiceBridgeTwilioConnector ?? '',
+              voiceBridgeSttConnector: existingAgent.voiceBridgeSttConnector ?? '',
+              voiceBridgeSttModel: existingAgent.voiceBridgeSttModel ?? '',
+              voiceBridgeTtsConnector: existingAgent.voiceBridgeTtsConnector ?? '',
+              voiceBridgeTtsModel: existingAgent.voiceBridgeTtsModel ?? '',
+              voiceBridgeTtsVoice: existingAgent.voiceBridgeTtsVoice ?? '',
+              voiceBridgeGreeting: existingAgent.voiceBridgeGreeting ?? '',
+              voiceBridgeInterruptible: existingAgent.voiceBridgeInterruptible ?? true,
+              voiceBridgePort: existingAgent.voiceBridgePort ?? 3000,
+              voiceBridgePublicUrl: existingAgent.voiceBridgePublicUrl ?? '',
+              voiceBridgeMaxConcurrent: existingAgent.voiceBridgeMaxConcurrent ?? 5,
+              voiceBridgeMaxDuration: existingAgent.voiceBridgeMaxDuration ?? 1800,
               // Orchestrator
               isOrchestrator: (existingAgent as Record<string, unknown>).isOrchestrator as boolean ?? false,
               orchestratorChildAgents: ((existingAgent as Record<string, unknown>).orchestratorChildAgents as AgentFormData['orchestratorChildAgents']) ?? [],
@@ -395,6 +445,60 @@ export function AgentEditorPage(): React.ReactElement {
       });
     return () => { cancelled = true; };
   }, [formData.voiceModel]);
+
+  // Load STT models and Twilio connectors when voice bridge is enabled
+  useEffect(() => {
+    if (!formData.voiceBridgeEnabled) {
+      setSTTModels([]);
+      setBridgeTTSModels([]);
+      setBridgeTTSCapabilities(null);
+      setTwilioConnectors([]);
+      return;
+    }
+    let cancelled = false;
+    // Load STT models, TTS models, and Twilio connectors in parallel
+    Promise.all([
+      window.hosea.multimedia.getAvailableSTTModels(),
+      window.hosea.multimedia.getAvailableTTSModels(),
+      window.hosea.universalConnector.list(),
+    ]).then(([stt, tts, uniConns]) => {
+      if (!cancelled) {
+        setSTTModels(stt);
+        setBridgeTTSModels(tts);
+        setTwilioConnectors(uniConns.filter((c: UniversalConnector) => c.vendorId === 'twilio'));
+      }
+    }).catch((err) => {
+      console.error('Failed to load voice bridge data:', err);
+    });
+    return () => { cancelled = true; };
+  }, [formData.voiceBridgeEnabled]);
+
+  // Load bridge TTS voice capabilities when bridge TTS model changes
+  useEffect(() => {
+    if (!formData.voiceBridgeTtsModel) {
+      setBridgeTTSCapabilities(null);
+      return;
+    }
+    let cancelled = false;
+    window.hosea.multimedia.getTTSModelCapabilities(formData.voiceBridgeTtsModel)
+      .then((caps) => {
+        if (!cancelled && caps) {
+          setBridgeTTSCapabilities({ voices: caps.voices as Array<{ id: string; name: string; language: string; gender: 'male' | 'female' | 'neutral'; style?: string; isDefault?: boolean }> });
+          // Auto-select default voice if none selected
+          if (!formData.voiceBridgeTtsVoice && caps.voices?.length) {
+            const defaultVoice = caps.voices.find((v: { isDefault?: boolean }) => v.isDefault);
+            setFormData((prev) => ({
+              ...prev,
+              voiceBridgeTtsVoice: defaultVoice?.id ?? caps.voices[0]?.id ?? '',
+            }));
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBridgeTTSCapabilities(null);
+      });
+    return () => { cancelled = true; };
+  }, [formData.voiceBridgeTtsModel]);
 
   // Get models for selected connector's vendor (from static registry)
   const getModelsForConnector = useCallback((): ModelInfo[] => {
@@ -2026,6 +2130,249 @@ export function AgentEditorPage(): React.ReactElement {
                             {ttsCapabilities?.speed?.supported === false
                               ? 'Speed control not supported for this model'
                               : `${ttsCapabilities?.speed?.min ?? 0.25}x - ${ttsCapabilities?.speed?.max ?? 4.0}x`}
+                          </Form.Text>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </>
+                )}
+              </Card.Body>
+            </Card>
+
+            {/* Voice Bridge (Phone Calling) */}
+            <Card className="mb-4">
+              <Card.Header>
+                <strong>Voice Bridge (Phone Calling)</strong>
+                <InfoTooltip
+                  id="voice-bridge-info"
+                  content="Connect this agent to phone calls via Twilio. Requires a Twilio connector and a public URL (e.g. ngrok)."
+                />
+              </Card.Header>
+              <Card.Body>
+                <Form.Check
+                  type="switch"
+                  id="voice-bridge-enabled"
+                  label="Enable Voice Bridge"
+                  checked={formData.voiceBridgeEnabled}
+                  onChange={(e) =>
+                    setFormData({ ...formData, voiceBridgeEnabled: e.target.checked })
+                  }
+                  className="mb-3"
+                />
+                <Form.Text className="text-muted d-block mb-3">
+                  When enabled, this agent can receive and handle phone calls via Twilio Media Streams.
+                  Start/stop the bridge from the chat page.
+                </Form.Text>
+
+                {formData.voiceBridgeEnabled && (
+                  <>
+                    {/* Twilio Connector Warning */}
+                    {twilioConnectors.length === 0 && (
+                      <Alert variant="warning" className="mb-3">
+                        <AlertCircle size={16} className="me-2" />
+                        No Twilio connector found. Please configure a Twilio connector on the{' '}
+                        <Alert.Link onClick={() => navigate('tool-connectors')}>
+                          Tool Connectors
+                        </Alert.Link>{' '}
+                        page first.
+                      </Alert>
+                    )}
+
+                    {/* Twilio Connector */}
+                    <Row className="g-3 mb-3">
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>Twilio Connector</Form.Label>
+                          <Form.Select
+                            value={formData.voiceBridgeTwilioConnector}
+                            onChange={(e) =>
+                              setFormData({ ...formData, voiceBridgeTwilioConnector: e.target.value })
+                            }
+                          >
+                            <option value="">Select Twilio connector...</option>
+                            {twilioConnectors.map((c) => (
+                              <option key={c.name} value={c.name}>{c.displayName || c.name}</option>
+                            ))}
+                          </Form.Select>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+
+                    {/* STT Configuration */}
+                    <h6 className="mt-3 mb-2">Speech-to-Text (STT)</h6>
+                    <Row className="g-3 mb-3">
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>STT Model</Form.Label>
+                          <Form.Select
+                            value={formData.voiceBridgeSttModel && formData.voiceBridgeSttConnector
+                              ? `${formData.voiceBridgeSttModel}::${formData.voiceBridgeSttConnector}`
+                              : formData.voiceBridgeSttModel}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const sepIdx = val.indexOf('::');
+                              const model = sepIdx >= 0 ? val.slice(0, sepIdx) : val;
+                              const connector = sepIdx >= 0 ? val.slice(sepIdx + 2) : '';
+                              setFormData({
+                                ...formData,
+                                voiceBridgeSttModel: model,
+                                voiceBridgeSttConnector: connector || formData.voiceBridgeSttConnector,
+                              });
+                            }}
+                          >
+                            <option value="">Select STT model...</option>
+                            {sttModels.map((m) => (
+                              <option key={`${m.name}::${m.connector}`} value={`${m.name}::${m.connector}`}>
+                                {m.displayName} ({m.connector})
+                              </option>
+                            ))}
+                          </Form.Select>
+                          {sttModels.length === 0 && (
+                            <Form.Text className="text-warning">
+                              No STT models available. Configure a connector that supports STT (e.g. OpenAI).
+                            </Form.Text>
+                          )}
+                        </Form.Group>
+                      </Col>
+                    </Row>
+
+                    {/* TTS Configuration */}
+                    <h6 className="mt-3 mb-2">Text-to-Speech (TTS)</h6>
+                    <Row className="g-3 mb-3">
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>TTS Model</Form.Label>
+                          <Form.Select
+                            value={formData.voiceBridgeTtsModel && formData.voiceBridgeTtsConnector
+                              ? `${formData.voiceBridgeTtsModel}::${formData.voiceBridgeTtsConnector}`
+                              : formData.voiceBridgeTtsModel}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const sepIdx = val.indexOf('::');
+                              const model = sepIdx >= 0 ? val.slice(0, sepIdx) : val;
+                              const connector = sepIdx >= 0 ? val.slice(sepIdx + 2) : '';
+                              setFormData({
+                                ...formData,
+                                voiceBridgeTtsModel: model,
+                                voiceBridgeTtsConnector: connector || formData.voiceBridgeTtsConnector,
+                                voiceBridgeTtsVoice: '', // Reset voice when model changes
+                              });
+                            }}
+                          >
+                            <option value="">Select TTS model...</option>
+                            {bridgeTTSModels.map((m) => (
+                              <option key={`${m.name}::${m.connector}`} value={`${m.name}::${m.connector}`}>
+                                {m.displayName} ({m.connector})
+                              </option>
+                            ))}
+                          </Form.Select>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+
+                    {/* Voice selector for bridge TTS */}
+                    {formData.voiceBridgeTtsModel && bridgeTTSCapabilities?.voices && (
+                      <Row className="g-3 mb-3">
+                        <Col>
+                          <Form.Label>Voice</Form.Label>
+                          <div className="border rounded p-2" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                            <div className="d-flex flex-wrap gap-2">
+                              {bridgeTTSCapabilities.voices.map((voice) => (
+                                <Button
+                                  key={voice.id}
+                                  size="sm"
+                                  variant={formData.voiceBridgeTtsVoice === voice.id ? 'primary' : 'outline-secondary'}
+                                  onClick={() => setFormData({ ...formData, voiceBridgeTtsVoice: voice.id })}
+                                >
+                                  {voice.name}
+                                  {voice.isDefault && ' *'}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        </Col>
+                      </Row>
+                    )}
+
+                    {/* Call Settings */}
+                    <h6 className="mt-3 mb-2">Call Settings</h6>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Greeting Message</Form.Label>
+                      <Form.Control
+                        as="textarea"
+                        rows={2}
+                        value={formData.voiceBridgeGreeting}
+                        onChange={(e) => setFormData({ ...formData, voiceBridgeGreeting: e.target.value })}
+                        placeholder="Hello! How can I help you today?"
+                      />
+                      <Form.Text className="text-muted">
+                        First thing the agent says when a call connects (bypasses LLM).
+                      </Form.Text>
+                    </Form.Group>
+
+                    <Row className="g-3 mb-3">
+                      <Col md={3}>
+                        <Form.Check
+                          type="switch"
+                          id="voice-bridge-interruptible"
+                          label="Allow interruptions"
+                          checked={formData.voiceBridgeInterruptible}
+                          onChange={(e) => setFormData({ ...formData, voiceBridgeInterruptible: e.target.checked })}
+                        />
+                        <Form.Text className="text-muted">Caller can interrupt agent mid-speech</Form.Text>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Group>
+                          <Form.Label>Max Concurrent Calls</Form.Label>
+                          <Form.Control
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={formData.voiceBridgeMaxConcurrent}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgeMaxConcurrent: parseInt(e.target.value) || 5 })}
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Group>
+                          <Form.Label>Max Call Duration (s)</Form.Label>
+                          <Form.Control
+                            type="number"
+                            min={60}
+                            max={7200}
+                            value={formData.voiceBridgeMaxDuration}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgeMaxDuration: parseInt(e.target.value) || 1800 })}
+                          />
+                        </Form.Group>
+                      </Col>
+                    </Row>
+
+                    {/* Server Settings */}
+                    <h6 className="mt-3 mb-2">Server Settings</h6>
+                    <Row className="g-3">
+                      <Col md={3}>
+                        <Form.Group>
+                          <Form.Label>Port</Form.Label>
+                          <Form.Control
+                            type="number"
+                            min={1024}
+                            max={65535}
+                            value={formData.voiceBridgePort}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgePort: parseInt(e.target.value) || 3000 })}
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col md={6}>
+                        <Form.Group>
+                          <Form.Label>Public URL</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={formData.voiceBridgePublicUrl}
+                            onChange={(e) => setFormData({ ...formData, voiceBridgePublicUrl: e.target.value })}
+                            placeholder="https://abc123.ngrok.io"
+                          />
+                          <Form.Text className="text-muted">
+                            Twilio needs a public URL to reach this server. Use ngrok or similar tunneling service.
                           </Form.Text>
                         </Form.Group>
                       </Col>

@@ -258,10 +258,17 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
         if (block.type === 'tool_use') {
           const toolUseId = block.id as string;
           if (toolUseId) {
+            // Tool args may be in `input` (OpenAI/raw format) or `arguments` (our Content type, JSON string)
+            let toolArgs: unknown = block.input;
+            if (toolArgs === undefined && typeof block.arguments === 'string') {
+              try { toolArgs = JSON.parse(block.arguments); } catch { toolArgs = undefined; }
+            } else if (toolArgs === undefined && typeof block.arguments === 'object') {
+              toolArgs = block.arguments;
+            }
             toolUses.set(toolUseId, {
               index: i,
               toolName: (block.name as string) || 'unknown',
-              toolArgs: block.input,
+              toolArgs,
             });
           }
         } else if (block.type === 'tool_result') {

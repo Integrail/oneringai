@@ -12,6 +12,7 @@ import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
 import { Agent } from '../../core/Agent.js';
 import type { AgentConfig } from '../../core/Agent.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
 import type {
   SessionState,
   CallDirection,
@@ -127,6 +128,7 @@ export class VoiceSession extends EventEmitter {
       this._endedAt = new Date();
     }
 
+    logger.debug({ sessionId: this.sessionId, from: prev, to: newState }, '[VoiceSession] State transition');
     this.emit('state:change', prev, newState, this.getInfo());
   }
 
@@ -261,8 +263,8 @@ export class VoiceSession extends EventEmitter {
     if (this._pipeline) {
       try {
         await this._pipeline.destroy();
-      } catch {
-        // Pipeline cleanup errors are non-fatal
+      } catch (error) {
+        logger.warn({ sessionId: this.sessionId, error }, '[VoiceSession] Pipeline cleanup error');
       }
       this._pipeline = null;
     }
@@ -271,8 +273,8 @@ export class VoiceSession extends EventEmitter {
     if (this._agent) {
       try {
         this._agent.destroy();
-      } catch {
-        // Agent cleanup errors are non-fatal
+      } catch (error) {
+        logger.warn({ sessionId: this.sessionId, error }, '[VoiceSession] Agent cleanup error');
       }
       this._agent = null;
     }
