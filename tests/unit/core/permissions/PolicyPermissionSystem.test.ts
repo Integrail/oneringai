@@ -115,7 +115,7 @@ describe('PolicyChain', () => {
       expect(denyPolicy.evaluate).toHaveBeenCalledTimes(1);
     });
 
-    it('all abstain with default deny → deny', async () => {
+    it('all abstain with default deny → deny with needsApproval', async () => {
       chain.add(mockPolicy('p1', 'abstain', { priority: 10 }));
       chain.add(mockPolicy('p2', 'abstain', { priority: 20 }));
 
@@ -123,6 +123,10 @@ describe('PolicyChain', () => {
 
       expect(result.verdict).toBe('deny');
       expect(result.policyName).toBe('chain:default');
+      // When all policies abstain, needsApproval should be true so the
+      // PermissionPolicyManager triggers the approval flow (asks the user)
+      // instead of silently blocking the tool.
+      expect(result.metadata?.needsApproval).toBe(true);
     });
 
     it('all abstain with defaultVerdict=allow → allow', async () => {

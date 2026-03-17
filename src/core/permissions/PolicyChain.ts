@@ -94,12 +94,23 @@ export class PolicyChain {
       return firstAllow;
     }
 
+    // When all policies abstain and default is deny, mark as needsApproval
+    // so the PermissionPolicyManager triggers the approval flow (asks the user)
+    // instead of silently blocking the tool.
+    const isDeny = this.config.defaultVerdict !== 'allow';
     return {
-      verdict: this.config.defaultVerdict === 'allow' ? 'allow' : 'deny',
-      reason: this.config.defaultVerdict === 'allow'
-        ? 'No policy denied execution (default: allow)'
-        : 'No policy allowed execution (default: deny)',
+      verdict: isDeny ? 'deny' : 'allow',
+      reason: isDeny
+        ? 'No policy allowed execution (default: deny)'
+        : 'No policy denied execution (default: allow)',
       policyName: 'chain:default',
+      ...(isDeny ? {
+        metadata: {
+          needsApproval: true,
+          approvalKey: context.toolName,
+          approvalScope: 'once',
+        },
+      } : {}),
     };
   }
 
