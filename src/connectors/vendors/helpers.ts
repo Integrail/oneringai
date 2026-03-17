@@ -87,10 +87,15 @@ export function buildAuthConfig(
       throw new Error('API key is required for api_key auth');
     }
 
-    // Collect vendor-specific extra fields (those in optionalFields that aren't standard api_key props)
+    // Collect vendor-specific extra fields from BOTH requiredFields and optionalFields
+    // that aren't standard api_key props. E.g., Twilio needs accountId, AWS needs accessKeyId.
     const standardApiKeyFields = new Set(['apiKey', 'headerName', 'headerPrefix']);
     const extra: Record<string, string> = {};
-    for (const field of authTemplate.optionalFields ?? []) {
+    const allTemplateFields = [
+      ...authTemplate.requiredFields,
+      ...(authTemplate.optionalFields ?? []),
+    ];
+    for (const field of allTemplateFields) {
       if (!standardApiKeyFields.has(field) && credentials[field]) {
         extra[field] = credentials[field]!;
       }
