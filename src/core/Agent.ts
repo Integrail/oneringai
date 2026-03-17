@@ -464,12 +464,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
     const startTime = Date.now();
 
-    // Set current input for task type detection
-    const userContent = typeof input === 'string'
-      ? input
-      : input.map(i => JSON.stringify(i)).join('\n');
-    this._agentContext.setCurrentInput(userContent);
-
     // Generate execution ID and create execution context
     const executionId = `exec_${randomUUID()}`;
     this.executionContext = new ExecutionContext(executionId, {
@@ -487,8 +481,11 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     }
 
     // Add user message to AgentContext
+    // NOTE: setCurrentInput() also calls addUserMessage() internally, so we use it
+    // for string input to handle both task-type detection and journaling in one call.
+    // For InputItem[] input, use addInputItems() which doesn't journal (history seeding).
     if (typeof input === 'string') {
-      this._agentContext.addUserMessage(input);
+      this._agentContext.setCurrentInput(input);
     } else {
       this._agentContext.addInputItems(input);
     }
