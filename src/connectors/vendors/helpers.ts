@@ -151,6 +151,28 @@ export function buildAuthConfig(
     );
   }
 
+  // Collect vendor-specific extra fields into auth.extra (same pattern as api_key).
+  // This preserves template fields like tenantId, installationId so they survive
+  // round-trips through save → load → edit → save.
+  const standardOAuthFields = new Set([
+    'clientId', 'clientSecret', 'tokenUrl', 'authorizationUrl',
+    'redirectUri', 'scope', 'usePKCE', 'privateKey', 'privateKeyPath',
+    'issuer', 'subject', 'audience',
+  ]);
+  const oauthExtra: Record<string, string> = {};
+  const allOAuthFields = [
+    ...authTemplate.requiredFields,
+    ...(authTemplate.optionalFields ?? []),
+  ];
+  for (const field of allOAuthFields) {
+    if (!standardOAuthFields.has(field) && credentials[field]) {
+      oauthExtra[field] = credentials[field]!;
+    }
+  }
+  if (Object.keys(oauthExtra).length > 0) {
+    (oauthConfig as any).extra = oauthExtra;
+  }
+
   // Remove undefined properties
   const configAsUnknown = oauthConfig as unknown as Record<string, unknown>;
   Object.keys(configAsUnknown).forEach((key) => {
