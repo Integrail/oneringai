@@ -149,8 +149,11 @@ export class AuthCodePKCEFlow {
     });
 
     // Add client secret if provided (confidential clients)
+    console.log(`[OAuth:exchangeCode] clientId=${this.config.clientId?.substring(0, 8)}... hasSecret=${!!this.config.clientSecret} secretLen=${this.config.clientSecret?.length ?? 0} tokenUrl=${this.config.tokenUrl} redirectUri=${this.config.redirectUri}`);
     if (this.config.clientSecret) {
       params.append('client_secret', this.config.clientSecret);
+    } else {
+      console.warn('[OAuth:exchangeCode] WARNING: No client_secret available — token exchange may fail for confidential clients');
     }
 
     // Add code_verifier if PKCE was used
