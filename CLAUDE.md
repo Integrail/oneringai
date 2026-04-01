@@ -1053,4 +1053,4 @@ interface AgentTypeConfig {
 
 ---
 
-**Version**: 0.5.0 | **Last Updated**: 2026-03-14 | **Architecture**: Connector-First + NextGen Context
+**Version**: 0.5.1 | **Last Updated**: 2026-04-01 | **Architecture**: Connector-First + NextGen Context

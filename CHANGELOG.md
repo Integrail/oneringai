@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-01
+
 ### Added
 - **Per-Call `RunOptions`**: `agent.run(input, options?)` and `agent.stream(input, options?)` now accept an optional `RunOptions` parameter to override `thinking`, `temperature`, and `vendorOptions` per invocation. Enables controlling reasoning effort at each agentic step without changing agent-level config.
 - **`thinking` in `DirectCallOptions`**: `runDirect()` and `streamDirect()` now also support the vendor-agnostic `thinking` config (`enabled`, `budgetTokens`, `effort`).
+- **Tool Catalog: `listAll` parameter** — `tool_catalog_search({ listAll: true })` returns every tool across all available categories and connectors, grouped by category. Includes tool metadata (name, displayName, description, safeByDefault) plus loaded/pinned status per category, and `totalCategories`/`totalTools` counts. Respects `categoryScope` and `identities` scoping.
 
 ### Fixed
 - **Multi-turn Anthropic "must end with user message" error**: Fixed a bug in `AgentContextNextGen.setCurrentInput()` that appended the previous assistant message to `_currentInput`, causing the conversation sent to the API to end with an assistant message on the second+ `run()` call. This triggered Anthropic's "This model does not support assistant message prefill" error.
