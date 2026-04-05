@@ -159,9 +159,9 @@ export { createProvider, createProviderAsync, getVendorDefaultBaseURL } from './
 
 // Orchestrator
 export { createOrchestrator } from './orchestrator/index.js';
-export type { OrchestratorConfig, AgentTypeConfig } from './orchestrator/index.js';
-export { buildOrchestrationTools, buildWorkspaceDelta } from './orchestrator/index.js';
-export type { OrchestrationToolsContext } from './orchestrator/index.js';
+export type { OrchestratorConfig, AgentTypeConfig, DelegationDefaults } from './orchestrator/index.js';
+export { buildOrchestrationTools, buildWorkspaceDelta, createDelegationState } from './orchestrator/index.js';
+export type { OrchestrationToolsContext, DelegationState, DelegationReclaimConfig } from './orchestrator/index.js';
 
 // Centralized constants
 export {

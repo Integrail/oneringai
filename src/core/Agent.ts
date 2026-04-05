@@ -41,6 +41,7 @@ import { AgentRegistry } from './AgentRegistry.js';
 import { SuspendSignal } from './SuspendSignal.js';
 import type { ICorrelationStorage, SessionRef } from '../domain/interfaces/ICorrelationStorage.js';
 import { FileCorrelationStorage } from '../infrastructure/storage/FileCorrelationStorage.js';
+import { ProviderErrorMapper } from '../infrastructure/providers/base/ProviderErrorMapper.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -710,7 +711,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     });
 
     const duration = Date.now() - startTime;
-    this._logger.error({ error: error.message, duration }, `Agent ${methodName} failed`);
+    this._logger.error({ ...ProviderErrorMapper.extractErrorDetails(error), duration }, `Agent ${methodName} failed`);
     metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: 'error' });
   }
 

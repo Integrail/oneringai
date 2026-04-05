@@ -303,6 +303,10 @@ export function createConnectorFromTemplate(
     config.logging = { enabled: true };
   }
 
+  if (options?.vendorOptions && Object.keys(options.vendorOptions).length > 0) {
+    config.options = options.vendorOptions;
+  }
+
   return Connector.create(config);
 }
 
