@@ -154,9 +154,9 @@ describe('GenericOpenAIProvider', () => {
 
     it('should return registry capabilities for registered models', () => {
       // Grok models are in the registry and routed through generic provider
-      const caps = provider.getModelCapabilities('grok-3');
+      const caps = provider.getModelCapabilities('grok-4-1-fast-reasoning');
       expect(caps.supportsTools).toBe(true);
-      expect(caps.maxTokens).toBe(131072);
+      expect(caps.maxTokens).toBe(2000000);
     });
 
     it('should return vendor defaults for unregistered models', () => {
