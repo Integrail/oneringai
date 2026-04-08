@@ -8,15 +8,10 @@ import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfac
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import { AnthropicConfig } from '../../../domain/types/ProviderConfig.js';
-import {
-  ProviderAuthError,
-  ProviderRateLimitError,
-  ProviderContextLengthError,
-} from '../../../domain/errors/AIErrors.js';
 import { AnthropicConverter } from './AnthropicConverter.js';
 import { AnthropicStreamConverter } from './AnthropicStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
-import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
+import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 import { ProviderErrorMapper } from '../base/ProviderErrorMapper.js';
 
 export class AnthropicTextProvider extends BaseTextProvider {
@@ -48,6 +43,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
    * Generate response using Anthropic Messages API
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
+    options = this.applyContextLimitGuardrail(options);
     return this.executeWithCircuitBreaker(async () => {
       try {
         // Convert our format → Anthropic Messages API format
@@ -83,6 +79,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
    * Stream response using Anthropic Messages API
    */
   async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    options = this.applyContextLimitGuardrail(options);
     let streamRef: any;
     try {
       // Convert our format → Anthropic Messages API format
@@ -169,30 +166,9 @@ export class AnthropicTextProvider extends BaseTextProvider {
   }
 
   /**
-   * Handle Anthropic-specific errors
+   * Handle Anthropic-specific errors via unified mapper
    */
   private handleError(error: any, model?: string): never {
-    if (error.status === 401) {
-      throw new ProviderAuthError('anthropic', 'Invalid API key');
-    }
-
-    if (error.status === 429) {
-      const retryAfter = error.headers?.['retry-after'];
-      throw new ProviderRateLimitError(
-        'anthropic',
-        retryAfter ? parseInt(retryAfter) * 1000 : undefined
-      );
-    }
-
-    if (
-      error.type === 'invalid_request_error' &&
-      (error.message?.includes('prompt is too long') ||
-        error.message?.includes('maximum context length'))
-    ) {
-      throw new ProviderContextLengthError('anthropic', resolveMaxContextTokens(model, 200000));
-    }
-
-    // Re-throw other errors
-    throw error;
+    throw ProviderErrorMapper.mapError(error, { providerName: this.name, model });
   }
 }

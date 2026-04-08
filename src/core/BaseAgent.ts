@@ -286,6 +286,9 @@ export interface DirectCallOptions {
 
   /** Vendor-specific options */
   vendorOptions?: Record<string, unknown>;
+
+  /** Skip pre-flight context limit check. Default: false (check is ON) */
+  skipContextLimitCheck?: boolean;
 }
 
 /**
@@ -912,6 +915,7 @@ export abstract class BaseAgent<
       response_format: options.responseFormat,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
+      skipContextLimitCheck: options.skipContextLimitCheck,
     };
 
     this._logger.debug({ inputType: typeof input }, 'runDirect called');
@@ -965,6 +969,7 @@ export abstract class BaseAgent<
       response_format: options.responseFormat,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
+      skipContextLimitCheck: options.skipContextLimitCheck,
     };
 
     this._logger.debug({ inputType: typeof input }, 'streamDirect called');

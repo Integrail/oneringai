@@ -33,6 +33,9 @@ export interface TextGenerateOptions {
   };
   /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
   vendorOptions?: Record<string, any>;
+
+  /** Skip pre-flight context limit check. Default: false (check is ON) */
+  skipContextLimitCheck?: boolean;
 }
 
 export interface ModelCapabilities {

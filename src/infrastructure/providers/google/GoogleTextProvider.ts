@@ -8,15 +8,10 @@ import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfac
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import { GoogleConfig } from '../../../domain/types/ProviderConfig.js';
-import {
-  ProviderAuthError,
-  ProviderRateLimitError,
-  ProviderContextLengthError,
-} from '../../../domain/errors/AIErrors.js';
 import { GoogleConverter } from './GoogleConverter.js';
 import { GoogleStreamConverter } from './GoogleStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
-import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
+import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 import { ProviderErrorMapper } from '../base/ProviderErrorMapper.js';
 
 export class GoogleTextProvider extends BaseTextProvider {
@@ -55,6 +50,7 @@ export class GoogleTextProvider extends BaseTextProvider {
    * Generate response using Google Gemini API
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
+    options = this.applyContextLimitGuardrail(options);
     return this.executeWithCircuitBreaker(async () => {
       try {
         // Convert our format → Google format
@@ -132,6 +128,7 @@ export class GoogleTextProvider extends BaseTextProvider {
    * Stream response using Google Gemini API
    */
   async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    options = this.applyContextLimitGuardrail(options);
     try {
       // Convert our format → Google format
       const googleRequest = await this.converter.convertRequest(options);
@@ -221,24 +218,9 @@ export class GoogleTextProvider extends BaseTextProvider {
   }
 
   /**
-   * Handle Google-specific errors
+   * Handle Google-specific errors via unified mapper
    */
   private handleError(error: any, model?: string): never {
-    const errorMessage = error.message || '';
-
-    if (error.status === 401 || errorMessage.includes('API key not valid')) {
-      throw new ProviderAuthError('google', 'Invalid API key');
-    }
-
-    if (error.status === 429 || errorMessage.includes('Resource exhausted')) {
-      throw new ProviderRateLimitError('google');
-    }
-
-    if (errorMessage.includes('context length') || errorMessage.includes('too long')) {
-      throw new ProviderContextLengthError('google', resolveMaxContextTokens(model, 1048576));
-    }
-
-    // Re-throw other errors
-    throw error;
+    throw ProviderErrorMapper.mapError(error, { providerName: this.name, model });
   }
 }

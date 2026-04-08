@@ -1526,6 +1526,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       vendorOptions: ro?.vendorOptions
         ? { ...this._config.vendorOptions, ...ro.vendorOptions }
         : this._config.vendorOptions,
+      // Context is already managed by AgentContextNextGen.prepare() — skip provider-level check
+      skipContextLimitCheck: true,
     };
 
     // Execute before:llm hook
@@ -1624,6 +1626,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       vendorOptions: sro?.vendorOptions
         ? { ...this._config.vendorOptions, ...sro.vendorOptions }
         : this._config.vendorOptions,
+      // Context is already managed by AgentContextNextGen.prepare() — skip provider-level check
+      skipContextLimitCheck: true,
     };
 
     // Execute before:llm hook

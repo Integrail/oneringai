@@ -8,17 +8,12 @@ import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfac
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import { OpenAIConfig } from '../../../domain/types/ProviderConfig.js';
-import {
-  ProviderAuthError,
-  ProviderRateLimitError,
-  ProviderContextLengthError,
-} from '../../../domain/errors/AIErrors.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 import { OpenAIResponsesConverter } from './OpenAIResponsesConverter.js';
 import { OpenAIResponsesStreamConverter } from './OpenAIResponsesStreamConverter.js';
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
 import { getModelInfo } from '../../../domain/entities/Model.js';
-import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
+import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 import { validateThinkingConfig } from '../shared/validateThinkingConfig.js';
 import { ProviderErrorMapper } from '../base/ProviderErrorMapper.js';
 
@@ -66,6 +61,7 @@ export class OpenAITextProvider extends BaseTextProvider {
    * Generate response using OpenAI Responses API
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
+    options = this.applyContextLimitGuardrail(options);
     // Execute with circuit breaker protection and observability
     return this.executeWithCircuitBreaker(async () => {
       try {
@@ -132,6 +128,7 @@ export class OpenAITextProvider extends BaseTextProvider {
    * Stream response using OpenAI Responses API
    */
   async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    options = this.applyContextLimitGuardrail(options);
     try {
       // Convert to Responses API format
       const { input, instructions } = this.converter.convertInput(
@@ -253,26 +250,9 @@ export class OpenAITextProvider extends BaseTextProvider {
   }
 
   /**
-   * Handle OpenAI-specific errors
+   * Handle OpenAI-specific errors via unified mapper
    */
   private handleError(error: any, model?: string): never {
-    if (error.status === 401) {
-      throw new ProviderAuthError('openai', 'Invalid API key');
-    }
-
-    if (error.status === 429) {
-      const retryAfter = error.headers?.['retry-after'];
-      throw new ProviderRateLimitError(
-        'openai',
-        retryAfter ? parseInt(retryAfter) * 1000 : undefined
-      );
-    }
-
-    if (error.code === 'context_length_exceeded' || error.status === 413) {
-      throw new ProviderContextLengthError('openai', resolveMaxContextTokens(model, 128000));
-    }
-
-    // Re-throw other errors
-    throw error;
+    throw ProviderErrorMapper.mapError(error, { providerName: this.name, model });
   }
 }

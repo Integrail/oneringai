@@ -9,16 +9,11 @@ import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfac
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import { VertexAIConfig } from '../../../domain/types/ProviderConfig.js';
-import {
-  ProviderAuthError,
-  ProviderRateLimitError,
-  ProviderContextLengthError,
-  InvalidConfigError,
-} from '../../../domain/errors/AIErrors.js';
+import { InvalidConfigError } from '../../../domain/errors/AIErrors.js';
 import { GoogleConverter } from '../google/GoogleConverter.js';
 import { GoogleStreamConverter } from '../google/GoogleStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
-import { resolveModelCapabilities, resolveMaxContextTokens } from '../base/ModelCapabilityResolver.js';
+import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 import { ProviderErrorMapper } from '../base/ProviderErrorMapper.js';
 
 export class VertexAITextProvider extends BaseTextProvider {
@@ -70,6 +65,7 @@ export class VertexAITextProvider extends BaseTextProvider {
    * Generate response using Vertex AI
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
+    options = this.applyContextLimitGuardrail(options);
     try {
       // Convert our format → Google format (same as regular Gemini API)
       const googleRequest = await this.converter.convertRequest(options);
@@ -110,6 +106,7 @@ export class VertexAITextProvider extends BaseTextProvider {
    * Stream response using Vertex AI
    */
   async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    options = this.applyContextLimitGuardrail(options);
     try {
       // Convert our format → Google format
       const googleRequest = await this.converter.convertRequest(options);
@@ -139,14 +136,18 @@ export class VertexAITextProvider extends BaseTextProvider {
 
       // Convert Google stream → our StreamEvent format
       const streamConverter = new GoogleStreamConverter();
-      let chunkCount = 0;
-      for await (const event of streamConverter.convertStream(stream, options.model)) {
-        chunkCount++;
-        yield event;
+      try {
+        let chunkCount = 0;
+        for await (const event of streamConverter.convertStream(stream, options.model)) {
+          chunkCount++;
+          yield event;
+        }
+        console.log(
+          `[VertexAITextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`,
+        );
+      } finally {
+        streamConverter.clear();
       }
-      console.log(
-        `[VertexAITextProvider] streamGenerate: stream complete (${chunkCount} events, ${Date.now() - streamStartTime}ms total)`,
-      );
     } catch (error: any) {
       this.logger.error(
         { model: options.model, ...ProviderErrorMapper.extractErrorDetails(error) },
@@ -187,33 +188,9 @@ export class VertexAITextProvider extends BaseTextProvider {
   }
 
   /**
-   * Handle Vertex AI-specific errors
+   * Handle Vertex AI-specific errors via unified mapper
    */
   private handleError(error: any, model?: string): never {
-    const errorMessage = error.message || '';
-
-    // Authentication errors
-    if (
-      error.status === 401 ||
-      error.status === 403 ||
-      errorMessage.includes('not authenticated') ||
-      errorMessage.includes('permission denied')
-    ) {
-      throw new ProviderAuthError(
-        'vertex-ai',
-        'Authentication failed. Make sure you have set up Application Default Credentials or provided service account credentials.'
-      );
-    }
-
-    if (error.status === 429 || errorMessage.includes('Resource exhausted')) {
-      throw new ProviderRateLimitError('vertex-ai');
-    }
-
-    if (errorMessage.includes('context length') || errorMessage.includes('too long')) {
-      throw new ProviderContextLengthError('vertex-ai', resolveMaxContextTokens(model, 1048576));
-    }
-
-    // Re-throw other errors
-    throw error;
+    throw ProviderErrorMapper.mapError(error, { providerName: this.name, model });
   }
 }

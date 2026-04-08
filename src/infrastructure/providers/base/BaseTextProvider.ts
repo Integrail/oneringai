@@ -10,11 +10,7 @@ import { CircuitBreaker, DEFAULT_CIRCUIT_BREAKER_CONFIG } from '../../resilience
 import { logger, FrameworkLogger } from '../../observability/Logger.js';
 import { metrics } from '../../observability/Metrics.js';
 import type { IDisposable } from '../../../domain/interfaces/IDisposable.js';
-import {
-  ProviderAuthError,
-  ProviderRateLimitError,
-  ProviderError,
-} from '../../../domain/errors/AIErrors.js';
+import { enforceContextLimit } from '../shared/enforceContextLimit.js';
 
 export abstract class BaseTextProvider extends BaseProvider implements ITextProvider, IDisposable {
   protected circuitBreaker?: CircuitBreaker;
@@ -202,27 +198,14 @@ export abstract class BaseTextProvider extends BaseProvider implements ITextProv
   }
 
   /**
-   * Map common HTTP error codes to typed provider errors.
-   * Subclasses can override for vendor-specific error mapping and call super.mapError() as fallback.
+   * Apply context limit guardrail to generation options.
+   * Returns the same options if within budget, or trimmed options if over.
+   * This is a safety net — primary context management is in AgentContextNextGen.
    */
-  protected mapError(error: unknown, providerName?: string): Error {
-    const status = (error as any)?.status ?? (error as any)?.statusCode;
-    const name = providerName || this.name || 'unknown';
-
-    if (status === 401 || status === 403) {
-      return new ProviderAuthError(name, (error as Error)?.message || 'Authentication failed');
-    }
-
-    if (status === 429) {
-      const retryAfter = (error as any)?.headers?.['retry-after'];
-      return new ProviderRateLimitError(name, retryAfter ? parseInt(retryAfter) * 1000 : undefined);
-    }
-
-    if (status && status >= 500) {
-      return new ProviderError(name, `Provider error (HTTP ${status}): ${(error as Error)?.message || 'Internal server error'}`);
-    }
-
-    return error instanceof Error ? error : new Error(String(error));
+  protected applyContextLimitGuardrail(options: TextGenerateOptions): TextGenerateOptions {
+    if (options.skipContextLimitCheck) return options;
+    const capabilities = this.getModelCapabilities(options.model);
+    return enforceContextLimit(options, capabilities, this.logger);
   }
 
   /**
