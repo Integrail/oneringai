@@ -512,6 +512,8 @@ export type { IUserInfoStorage, UserInfoEntry } from '../domain/interfaces/IUser
 
 export type { IRoutineDefinitionStorage } from '../domain/interfaces/IRoutineDefinitionStorage.js';
 export type { IRoutineExecutionStorage } from '../domain/interfaces/IRoutineExecutionStorage.js';
+export type { StorageUserContext, StorageUserContextInput } from '../domain/interfaces/StorageContext.js';
+export { resolveStorageUserContext } from '../domain/interfaces/StorageContext.js';
 export type { IUserPermissionRulesStorage } from '../domain/interfaces/IUserPermissionRulesStorage.js';
 
 export type {

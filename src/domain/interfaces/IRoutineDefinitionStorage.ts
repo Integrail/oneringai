@@ -1,22 +1,27 @@
 /**
  * IRoutineDefinitionStorage - Storage interface for routine definitions.
  *
- * Follows the same userId-optional pattern as ICustomToolStorage and IUserInfoStorage.
- * When userId is undefined, defaults to 'default' user in storage implementation.
+ * Accepts StorageUserContextInput (string | undefined | StorageUserContext) for
+ * backward compatibility. Implementations use resolveStorageUserContext() to
+ * normalize the input.
+ *
+ * When bypassOwnerScope is true, operations match by ID only — not scoped
+ * by ownerId. This enables admin operations on system/shared routines.
  */
 
 import type { RoutineDefinition } from '../entities/Routine.js';
+import type { StorageUserContextInput } from './StorageContext.js';
 
 export interface IRoutineDefinitionStorage {
-  save(userId: string | undefined, definition: RoutineDefinition): Promise<void>;
-  load(userId: string | undefined, id: string): Promise<RoutineDefinition | null>;
-  delete(userId: string | undefined, id: string): Promise<void>;
-  exists(userId: string | undefined, id: string): Promise<boolean>;
-  list(userId: string | undefined, options?: {
+  save(context: StorageUserContextInput, definition: RoutineDefinition): Promise<void>;
+  load(context: StorageUserContextInput, id: string): Promise<RoutineDefinition | null>;
+  delete(context: StorageUserContextInput, id: string): Promise<void>;
+  exists(context: StorageUserContextInput, id: string): Promise<boolean>;
+  list(context: StorageUserContextInput, options?: {
     tags?: string[];
     search?: string;
     limit?: number;
     offset?: number;
   }): Promise<RoutineDefinition[]>;
-  getPath(userId: string | undefined): string;
+  getPath(context: StorageUserContextInput): string;
 }

@@ -3,6 +3,10 @@
  *
  * Designed to be storage-agnostic — implementations can back this with
  * MongoDB, PostgreSQL, file system, etc.
+ *
+ * Accepts StorageUserContextInput (string | undefined | StorageUserContext) for
+ * backward compatibility. Implementations use resolveStorageUserContext() to
+ * normalize the input.
  */
 
 import type {
@@ -11,10 +15,11 @@ import type {
   RoutineTaskSnapshot,
 } from '../entities/RoutineExecutionRecord.js';
 import type { RoutineExecutionStatus } from '../entities/Routine.js';
+import type { StorageUserContextInput } from './StorageContext.js';
 
 export interface IRoutineExecutionStorage {
   /** Insert a new execution record. Returns the record ID. */
-  insert(userId: string | undefined, record: RoutineExecutionRecord): Promise<string>;
+  insert(context: StorageUserContextInput, record: RoutineExecutionRecord): Promise<string>;
 
   /** Update top-level fields on an execution record. */
   update(
@@ -35,7 +40,7 @@ export interface IRoutineExecutionStorage {
 
   /** List execution records with optional filters. */
   list(
-    userId: string | undefined,
+    context: StorageUserContextInput,
     options?: {
       routineId?: string;
       status?: RoutineExecutionStatus;
@@ -45,5 +50,5 @@ export interface IRoutineExecutionStorage {
   ): Promise<RoutineExecutionRecord[]>;
 
   /** Check if a routine has a currently running execution. */
-  hasRunning(userId: string | undefined, routineId: string): Promise<boolean>;
+  hasRunning(context: StorageUserContextInput, routineId: string): Promise<boolean>;
 }

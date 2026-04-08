@@ -19,6 +19,7 @@ import { homedir } from 'os';
 import { sanitizeUserId, sanitizeId } from './utils.js';
 import type { IRoutineDefinitionStorage } from '../../domain/interfaces/IRoutineDefinitionStorage.js';
 import type { RoutineDefinition } from '../../domain/entities/Routine.js';
+import { resolveStorageUserContext, type StorageUserContextInput } from '../../domain/interfaces/StorageContext.js';
 
 /**
  * Configuration for FileRoutineDefinitionStorage
@@ -105,7 +106,8 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     return join(this.getUserDirectory(userId), `${sanitizedId}.json`);
   }
 
-  async save(userId: string | undefined, definition: RoutineDefinition): Promise<void> {
+  async save(context: StorageUserContextInput, definition: RoutineDefinition): Promise<void> {
+    const { userId } = resolveStorageUserContext(context);
     const directory = this.getUserDirectory(userId);
     const sanitized = sanitizeId(definition.id);
     const filePath = this.getRoutinePath(userId, sanitized);
@@ -133,7 +135,8 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     await this.updateIndex(userId, definition);
   }
 
-  async load(userId: string | undefined, id: string): Promise<RoutineDefinition | null> {
+  async load(context: StorageUserContextInput, id: string): Promise<RoutineDefinition | null> {
+    const { userId } = resolveStorageUserContext(context);
     const sanitized = sanitizeId(id);
     const filePath = this.getRoutinePath(userId, sanitized);
 
@@ -152,7 +155,8 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     }
   }
 
-  async delete(userId: string | undefined, id: string): Promise<void> {
+  async delete(context: StorageUserContextInput, id: string): Promise<void> {
+    const { userId } = resolveStorageUserContext(context);
     const sanitized = sanitizeId(id);
     const filePath = this.getRoutinePath(userId, sanitized);
 
@@ -167,7 +171,8 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     await this.removeFromIndex(userId, id);
   }
 
-  async exists(userId: string | undefined, id: string): Promise<boolean> {
+  async exists(context: StorageUserContextInput, id: string): Promise<boolean> {
+    const { userId } = resolveStorageUserContext(context);
     const sanitized = sanitizeId(id);
     const filePath = this.getRoutinePath(userId, sanitized);
 
@@ -179,12 +184,13 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     }
   }
 
-  async list(userId: string | undefined, options?: {
+  async list(context: StorageUserContextInput, options?: {
     tags?: string[];
     search?: string;
     limit?: number;
     offset?: number;
   }): Promise<RoutineDefinition[]> {
+    const { userId } = resolveStorageUserContext(context);
     const index = await this.loadIndex(userId);
     let entries = [...index.routines];
 
@@ -221,7 +227,7 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     // Load full definitions for filtered entries
     const results: RoutineDefinition[] = [];
     for (const entry of entries) {
-      const def = await this.load(userId, entry.id);
+      const def = await this.load(context, entry.id);
       if (def) {
         results.push(def);
       }
@@ -230,7 +236,8 @@ export class FileRoutineDefinitionStorage implements IRoutineDefinitionStorage {
     return results;
   }
 
-  getPath(userId: string | undefined): string {
+  getPath(context: StorageUserContextInput): string {
+    const { userId } = resolveStorageUserContext(context);
     return this.getUserDirectory(userId);
   }
 

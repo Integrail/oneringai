@@ -19,6 +19,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { sanitizeUserId, sanitizeId, DEFAULT_USER_ID } from './utils.js';
 import type { IRoutineExecutionStorage } from '../../domain/interfaces/IRoutineExecutionStorage.js';
+import { resolveStorageUserContext, type StorageUserContextInput } from '../../domain/interfaces/StorageContext.js';
 import type {
   RoutineExecutionRecord,
   RoutineExecutionStep,
@@ -70,6 +71,7 @@ interface StoredExecution {
 const STORAGE_VERSION = 1;
 // sanitizeUserId, sanitizeId, DEFAULT_USER_ID imported from ./utils.js
 const DEFAULT_MAX_RECORDS = 100;
+const EXECUTION_CACHE_MAX = 1000;
 
 /**
  * Get the default base directory
@@ -120,9 +122,24 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
   // We store a mapping of executionId -> userId so we can locate the file.
   // Alternative: scan all user dirs. Instead, we embed userId in the stored file and
   // keep a lightweight in-memory cache, plus fall back to scanning.
+  // Bounded to EXECUTION_CACHE_MAX entries to prevent unbounded growth in long-lived processes.
   private executionUserMap = new Map<string, string | undefined>();
 
-  async insert(userId: string | undefined, record: RoutineExecutionRecord): Promise<string> {
+  private cacheUserId(executionId: string, userId: string | undefined): void {
+    this.executionUserMap.set(executionId, userId);
+    if (this.executionUserMap.size > EXECUTION_CACHE_MAX) {
+      // Evict oldest entries (Map preserves insertion order)
+      const excess = this.executionUserMap.size - EXECUTION_CACHE_MAX;
+      const iter = this.executionUserMap.keys();
+      for (let i = 0; i < excess; i++) {
+        const key = iter.next().value;
+        if (key !== undefined) this.executionUserMap.delete(key);
+      }
+    }
+  }
+
+  async insert(context: StorageUserContextInput, record: RoutineExecutionRecord): Promise<string> {
+    const { userId } = resolveStorageUserContext(context);
     const directory = this.getUserDirectory(userId);
     const sanitized = sanitizeId(record.executionId);
     const filePath = this.getExecutionPath(userId, sanitized);
@@ -133,7 +150,7 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
     await this.atomicWrite(filePath, stored);
 
     // Cache the userId mapping
-    this.executionUserMap.set(record.executionId, userId);
+    this.cacheUserId(record.executionId, userId);
 
     await this.updateIndex(userId, record);
     await this.pruneOldRecords(userId);
@@ -193,7 +210,7 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
   }
 
   async list(
-    userId: string | undefined,
+    context: StorageUserContextInput,
     options?: {
       routineId?: string;
       status?: RoutineExecutionStatus;
@@ -201,6 +218,7 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
       offset?: number;
     },
   ): Promise<RoutineExecutionRecord[]> {
+    const { userId } = resolveStorageUserContext(context);
     const index = await this.loadIndex(userId);
     let entries = [...index.executions];
 
@@ -237,14 +255,16 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
     return results;
   }
 
-  async hasRunning(userId: string | undefined, routineId: string): Promise<boolean> {
+  async hasRunning(context: StorageUserContextInput, routineId: string): Promise<boolean> {
+    const { userId } = resolveStorageUserContext(context);
     const index = await this.loadIndex(userId);
     return index.executions.some(
       e => e.routineId === routineId && e.status === 'running'
     );
   }
 
-  getPath(userId: string | undefined): string {
+  getPath(context: StorageUserContextInput): string {
+    const { userId } = resolveStorageUserContext(context);
     return this.getUserDirectory(userId);
   }
 
@@ -304,7 +324,7 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
     const filePath = this.getExecutionPath(userId, sanitized);
     const stored = await this.readStoredExecution(filePath);
     if (stored) {
-      this.executionUserMap.set(executionId, userId);
+      this.cacheUserId(executionId, userId);
     }
     return stored?.record ?? null;
   }
@@ -331,7 +351,7 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
         try {
           await fs.access(filePath);
           const userId = userDir === DEFAULT_USER_ID ? undefined : userDir;
-          this.executionUserMap.set(executionId, userId);
+          this.cacheUserId(executionId, userId);
           return { userId, filePath };
         } catch {
           // Not in this user dir
@@ -464,7 +484,7 @@ export class FileRoutineExecutionStorage implements IRoutineExecutionStorage {
         const stored = JSON.parse(data) as StoredExecution;
         if (stored.record) {
           index.executions.push(this.recordToIndexEntry(stored.record));
-          this.executionUserMap.set(stored.record.executionId, userId);
+          this.cacheUserId(stored.record.executionId, userId);
         }
       } catch {
         // Skip corrupt files
