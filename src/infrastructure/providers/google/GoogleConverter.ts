@@ -308,46 +308,95 @@ export class GoogleConverter {
   }
 
   /**
-   * Convert JSON Schema parameters to Google's format
+   * Convert JSON Schema parameters to Google's format.
+   *
+   * Google Gemini expects uppercase types (STRING, OBJECT, NUMBER, etc.)
+   * and supports a subset of JSON Schema. We preserve as much as possible
+   * including `additionalProperties`, `nullable`, `format`, and `default`.
    */
   private convertParametersSchema(schema: any): any {
     if (!schema) return undefined;
 
     const converted: any = {
-      type: 'OBJECT', // Google uses uppercase 'OBJECT'
+      type: (schema.type || 'object').toUpperCase(),
       properties: {},
     };
 
-    // Convert property types to uppercase
+    // Preserve description at schema level
+    if (schema.description) {
+      converted.description = schema.description;
+    }
+
+    // Convert property types to uppercase and recurse into nested schemas
     if (schema.properties) {
       for (const [key, value] of Object.entries(schema.properties)) {
-        const prop = value as any;
-        converted.properties[key] = {
-          type: prop.type?.toUpperCase() || 'STRING',
-          description: prop.description,
-        };
-
-        // Handle enums
-        if (prop.enum) {
-          converted.properties[key].enum = prop.enum;
-        }
-
-        // Handle nested objects/arrays
-        if (prop.type === 'object' && prop.properties) {
-          converted.properties[key] = this.convertParametersSchema(prop);
-        }
-        if (prop.type === 'array' && prop.items) {
-          converted.properties[key].items = this.convertParametersSchema(prop.items);
-        }
+        converted.properties[key] = this.convertPropertySchema(value);
       }
     }
 
-    // Add required fields
+    // Preserve required fields
     if (schema.required) {
       converted.required = schema.required;
     }
 
+    // Preserve additionalProperties — critical for free-form object params
+    if (schema.additionalProperties !== undefined) {
+      converted.additionalProperties = schema.additionalProperties;
+    }
+
+    // Preserve nullable
+    if (schema.nullable !== undefined) {
+      converted.nullable = schema.nullable;
+    }
+
     return converted;
+  }
+
+  /**
+   * Convert a single property schema to Google's format (recursive).
+   */
+  private convertPropertySchema(value: any): any {
+    if (!value) return { type: 'STRING' };
+
+    const type = value.type || 'string';
+
+    // Nested objects — recurse
+    if (type === 'object') {
+      return this.convertParametersSchema(value);
+    }
+
+    // Arrays — recurse into items
+    if (type === 'array') {
+      const arr: any = {
+        type: 'ARRAY',
+        description: value.description,
+      };
+      if (value.items) {
+        arr.items = this.convertPropertySchema(value.items);
+      }
+      return arr;
+    }
+
+    // Scalar types
+    const prop: any = {
+      type: type.toUpperCase(),
+      description: value.description,
+    };
+
+    if (value.enum) {
+      prop.enum = value.enum;
+    }
+    if (value.format) {
+      prop.format = value.format;
+    }
+    if (value.nullable !== undefined) {
+      prop.nullable = value.nullable;
+    }
+    if (value.default !== undefined) {
+      prop.default = value.default;
+    }
+
+    return prop;
   }
 
   /**
