@@ -69,6 +69,12 @@ export interface PermissionPolicyManagerConfig {
 
   /** Per-user permission rules storage (optional) */
   userRulesStorage?: IUserPermissionRulesStorage;
+
+  /**
+   * When true, ALL tools are auto-approved without any permission checks.
+   * Blocklist is still respected for safety.
+   */
+  autoApproveAll?: boolean;
 }
 
 // ============================================================================
@@ -105,12 +111,16 @@ export class PermissionPolicyManager extends EventEmitter {
   private _blocklistPolicy?: BlocklistPolicy;
   private _sessionApprovalPolicy?: SessionApprovalPolicy;
 
+  // When true, all tools auto-approve (blocklist still respected)
+  private _autoApproveAll: boolean;
+
   constructor(config: PermissionPolicyManagerConfig = {}) {
     super();
 
     this.chain = new PolicyChain(config.chain);
     this._userRulesEngine = new UserPermissionRulesEngine(config.userRulesStorage);
     this.onApprovalRequired = config.onApprovalRequired;
+    this._autoApproveAll = config.autoApproveAll ?? false;
 
     // Register provided policies
     if (config.policies) {
@@ -196,6 +206,29 @@ export class PermissionPolicyManager extends EventEmitter {
    * 5. Approval→rule creation (if user wants to remember)
    */
   async check(context: PolicyContext): Promise<PolicyCheckResult> {
+    // ===== 0. AUTO-APPROVE ALL (autonomous/scheduled execution bypass) =====
+    if (this._autoApproveAll) {
+      // Still respect blocklist for safety
+      if (this._blocklistPolicy) {
+        const blockDecision = this._blocklistPolicy.evaluate(context);
+        if (blockDecision.verdict === 'deny') {
+          await this.audit(context, 'deny', 'blocked', blockDecision);
+          return {
+            allowed: false, blocked: true,
+            reason: blockDecision.reason, policyName: blockDecision.policyName,
+          };
+        }
+      }
+      const autoDecision: PolicyDecision = {
+        verdict: 'allow', reason: 'Auto-approved (autoApproveAll)', policyName: 'auto-approve-all',
+      };
+      await this.audit(context, 'allow', 'executed', autoDecision);
+      return {
+        allowed: true, blocked: false,
+        reason: autoDecision.reason, policyName: autoDecision.policyName,
+      };
+    }
+
     // Lazy-load user rules on first check
     if (!this._userRulesEngine.isLoaded) {
       await this._userRulesEngine.load(context.userId);
@@ -652,6 +685,7 @@ export class PermissionPolicyManager extends EventEmitter {
       policies,
       chain: chainConfig,
       onApprovalRequired: config.onApprovalRequired,
+      autoApproveAll: config.autoApproveAll,
     });
   }
 

@@ -1411,6 +1411,151 @@ describe('PermissionPolicyManager', () => {
     });
   });
 
+  describe('autoApproveAll', () => {
+    it('auto-approves any tool when enabled', async () => {
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+      });
+
+      const result = await manager.check(ctx({
+        toolName: 'bash',
+        args: { command: 'rm -rf /' },
+      }));
+
+      expect(result.allowed).toBe(true);
+      expect(result.blocked).toBe(false);
+      expect(result.reason).toContain('autoApproveAll');
+      expect(result.policyName).toBe('auto-approve-all');
+    });
+
+    it('blocklist still blocks when autoApproveAll is true', async () => {
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+        blocklist: ['dangerous_tool'],
+      });
+
+      const result = await manager.check(ctx({ toolName: 'dangerous_tool' }));
+
+      expect(result.allowed).toBe(false);
+      expect(result.blocked).toBe(true);
+      expect(result.reason).toContain('blocklisted');
+    });
+
+    it('bypasses user deny rules when autoApproveAll is true', async () => {
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+      });
+
+      await manager.userRules.load();
+      await manager.userRules.addRule(makeRule({
+        toolName: 'bash',
+        action: 'deny',
+      }));
+
+      const result = await manager.check(ctx({ toolName: 'bash' }));
+
+      expect(result.allowed).toBe(true);
+    });
+
+    it('bypasses parent evaluator deny when autoApproveAll is true', async () => {
+      const parent = new PermissionPolicyManager({
+        policies: [new BlocklistPolicy(['bash'])],
+      });
+
+      const worker = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+      });
+      worker.setParentEvaluator(parent);
+
+      const result = await worker.check(ctx({ toolName: 'bash' }));
+
+      expect(result.allowed).toBe(true);
+    });
+
+    it('bypasses approval flow when autoApproveAll is true', async () => {
+      const approvalHandler = vi.fn().mockResolvedValue({ approved: false });
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+        onApprovalRequired: approvalHandler,
+      });
+
+      const result = await manager.check(ctx({
+        toolName: 'write_file',
+        toolPermissionConfig: { scope: 'session' },
+      }));
+
+      expect(result.allowed).toBe(true);
+      expect(approvalHandler).not.toHaveBeenCalled();
+    });
+
+    it('emits audit events for auto-approved tools', async () => {
+      const auditEntries: any[] = [];
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+      });
+
+      manager.on('permission:audit', (entry: any) => {
+        auditEntries.push(entry);
+      });
+
+      await manager.check(ctx({ toolName: 'some_tool', args: { key: 'value' } }));
+
+      expect(auditEntries.length).toBe(1);
+      expect(auditEntries[0].decision).toBe('allow');
+      expect(auditEntries[0].finalOutcome).toBe('executed');
+      expect(auditEntries[0].policyName).toBe('auto-approve-all');
+    });
+
+    it('emits deny audit when blocklist blocks with autoApproveAll', async () => {
+      const auditEntries: any[] = [];
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+        blocklist: ['blocked_tool'],
+      });
+
+      manager.on('permission:audit', (entry: any) => {
+        auditEntries.push(entry);
+      });
+
+      await manager.check(ctx({ toolName: 'blocked_tool' }));
+
+      expect(auditEntries.length).toBe(1);
+      expect(auditEntries[0].decision).toBe('deny');
+      expect(auditEntries[0].finalOutcome).toBe('blocked');
+    });
+
+    it('fromLegacyConfig passes autoApproveAll through', () => {
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        autoApproveAll: true,
+      });
+
+      // Verify by checking behavior — a tool that would normally need approval is auto-approved
+      return manager.check(ctx({
+        toolName: 'execute_javascript',
+        toolPermissionConfig: { scope: 'once' },
+      })).then(result => {
+        expect(result.allowed).toBe(true);
+        expect(result.policyName).toBe('auto-approve-all');
+      });
+    });
+
+    it('defaults to false when not specified', async () => {
+      const manager = PermissionPolicyManager.fromLegacyConfig({
+        onApprovalRequired: async () => ({ approved: false }),
+      });
+
+      await manager.userRules.load();
+
+      // A tool needing approval should be denied (not auto-approved)
+      const result = await manager.check(ctx({
+        toolName: 'write_file',
+        toolPermissionConfig: { scope: 'once' },
+      }));
+
+      expect(result.allowed).toBe(false);
+    });
+  });
+
   describe('IDisposable', () => {
     it('destroy cleans up', () => {
       const manager = PermissionPolicyManager.fromLegacyConfig({});

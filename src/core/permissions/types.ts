@@ -233,6 +233,14 @@ export interface ApprovalDecision {
  */
 export interface AgentPermissionsConfig {
   /**
+   * When true, ALL tools are auto-approved without any permission checks.
+   * Use for autonomous/scheduled execution where no interactive approval UI exists.
+   * Blocklist is still respected for safety.
+   * @default false
+   */
+  autoApproveAll?: boolean;
+
+  /**
    * Default permission scope for tools without explicit config.
    * @default 'once'
    */
