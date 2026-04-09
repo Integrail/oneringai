@@ -103,14 +103,17 @@ EXAMPLES:
         const prefix = getUserPathPrefix(connector, args.targetUser);
 
         if (args.replyToMessageId) {
-          // Reply draft: createReply → then PATCH to update body/recipients
-          const replyDraft = await microsoftFetch<GraphMessageResponse>(
+          // Reply draft: createReply → then PATCH to prepend our HTML above quoted original
+          const replyDraft = await microsoftFetch<GraphMessageResponse & { body?: { content?: string } }>(
             connector,
             `${prefix}/messages/${args.replyToMessageId}/createReply`,
             { method: 'POST', userId: effectiveUserId, accountId: effectiveAccountId, body: {} }
           );
 
-          // Update the reply draft with our content
+          // Prepend our HTML body above the quoted original
+          const quotedOriginal = replyDraft.body?.content ?? '';
+          const combinedBody = `${args.body}<br/>${quotedOriginal}`;
+
           const updated = await microsoftFetch<GraphMessageResponse>(
             connector,
             `${prefix}/messages/${replyDraft.id}`,
@@ -120,7 +123,7 @@ EXAMPLES:
               accountId: effectiveAccountId,
               body: {
                 subject: args.subject,
-                body: { contentType: 'HTML', content: args.body },
+                body: { contentType: 'HTML', content: combinedBody },
                 toRecipients: formatRecipients(args.to),
                 ...(args.cc && { ccRecipients: formatRecipients(args.cc) }),
               },

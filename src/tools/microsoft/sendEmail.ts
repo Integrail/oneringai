@@ -40,7 +40,7 @@ export function createSendEmailTool(
 PARAMETER FORMATS:
 - to/cc: plain string array of email addresses. Example: ["alice@contoso.com", "bob@contoso.com"]. Do NOT use objects.
 - subject: plain string. Example: "Meeting tomorrow" or "Re: Meeting tomorrow" for replies.
-- body: HTML string. Example: "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>". Use <p>, <br>, <b>, <ul> tags.
+- body: HTML string for both new emails and replies. Example: "<p>Hi Alice,</p><p>Can we meet at 2pm?</p>". Use <p>, <br>, <b>, <ul> tags. For replies, your HTML is prepended above the automatically-quoted original message.
 - replyToMessageId: Graph message ID string (starts with "AAMk..."). Only set when replying to an existing email.
 - replyAll: boolean. Only used together with replyToMessageId. When true, replies to ALL recipients (To + CC) of the original message. When false or omitted, replies only to the sender. Default: false.
 
@@ -52,7 +52,7 @@ REPLY BEHAVIOR:
 EXAMPLES:
 - Send new email: { "to": ["alice@contoso.com"], "subject": "Meeting tomorrow", "body": "<p>Can we meet at 2pm?</p>" }
 - Reply to sender only: { "to": ["alice@contoso.com"], "subject": "Re: Meeting", "body": "<p>Confirmed!</p>", "replyToMessageId": "AAMkADI1..." }
-- Reply all: { "to": ["alice@contoso.com"], "subject": "Re: Meeting", "body": "<p>Confirmed!</p>", "replyToMessageId": "AAMkADI1...", "replyAll": true }
+- Reply all: { "to": ["alice@contoso.com"], "subject": "Re: Meeting", "body": "<p>Sounds good, see you then.</p>", "replyToMessageId": "AAMkADI1...", "replyAll": true }
 - With CC: { "to": ["alice@contoso.com"], "subject": "Update", "body": "<p>FYI</p>", "cc": ["bob@contoso.com"] }`,
         parameters: {
           type: 'object',
@@ -68,7 +68,7 @@ EXAMPLES:
             },
             body: {
               type: 'string',
-              description: 'Email body as an HTML string. Example: "<p>Hi!</p><p>Can we meet at 2pm?</p>"',
+              description: 'Email body as HTML string (e.g. "<p>Hi!</p>"). For replies, your HTML is prepended above the quoted original message.',
             },
             cc: {
               type: 'array',
@@ -114,23 +114,43 @@ EXAMPLES:
         const prefix = getUserPathPrefix(connector, args.targetUser);
 
         if (args.replyToMessageId) {
-          // Reply to existing message — /reply for sender only, /replyAll for all recipients
-          const replyEndpoint = args.replyAll ? 'replyAll' : 'reply';
+          // 3-step reply flow for rich HTML with quoted original:
+          // 1. createReply/createReplyAll → draft with quoted original in body
+          // 2. PATCH → prepend our HTML above the quoted original
+          // 3. send → send the draft
+
+          // Step 1: Create reply draft (includes quoted original in body.content)
+          const createEndpoint = args.replyAll ? 'createReplyAll' : 'createReply';
+          const replyDraft = await microsoftFetch<{ id: string; body?: { content?: string } }>(
+            connector,
+            `${prefix}/messages/${args.replyToMessageId}/${createEndpoint}`,
+            { method: 'POST', userId: effectiveUserId, accountId: effectiveAccountId, body: {} }
+          );
+
+          // Step 2: Prepend our HTML body above the quoted original
+          const quotedOriginal = replyDraft.body?.content ?? '';
+          const combinedBody = `${args.body}<br/>${quotedOriginal}`;
+
           await microsoftFetch(
             connector,
-            `${prefix}/messages/${args.replyToMessageId}/${replyEndpoint}`,
+            `${prefix}/messages/${replyDraft.id}`,
             {
-              method: 'POST',
+              method: 'PATCH',
               userId: effectiveUserId,
               accountId: effectiveAccountId,
               body: {
-                message: {
-                  toRecipients: formatRecipients(args.to),
-                  ...(args.cc && { ccRecipients: formatRecipients(args.cc) }),
-                },
-                comment: args.body,
+                body: { contentType: 'HTML', content: combinedBody },
+                toRecipients: formatRecipients(args.to),
+                ...(args.cc && { ccRecipients: formatRecipients(args.cc) }),
               },
             }
+          );
+
+          // Step 3: Send the draft
+          await microsoftFetch(
+            connector,
+            `${prefix}/messages/${replyDraft.id}/send`,
+            { method: 'POST', userId: effectiveUserId, accountId: effectiveAccountId }
           );
         } else {
           // Send new email (returns 202 with empty body)
