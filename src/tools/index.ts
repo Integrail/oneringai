@@ -196,6 +196,7 @@ export {
   createMicrosoftListFilesTool,
   createMicrosoftSearchFilesTool,
   // Utilities
+  isAppPermissionAuth,
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,

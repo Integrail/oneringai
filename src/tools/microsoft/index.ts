@@ -39,6 +39,7 @@ export type {
 
 // Utility functions
 export {
+  isAppPermissionAuth,
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,

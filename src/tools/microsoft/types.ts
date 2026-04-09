@@ -12,18 +12,31 @@ import type { Connector } from '../../core/Connector.js';
 // ============================================================================
 
 /**
+ * Check whether a connector uses app-level (non-delegated) authentication.
+ * App-level connectors access resources on behalf of the application, not a
+ * specific signed-in user, so Microsoft Graph calls must use `/users/{id}`
+ * instead of `/me`.
+ */
+export function isAppPermissionAuth(connector: Connector): boolean {
+  const auth = connector.config.auth;
+  if (auth.type === 'oauth' && auth.flow === 'client_credentials') return true;
+  if (auth.type === 'oauth' && auth.flow === 'jwt_bearer') return true;
+  if (auth.type === 'jwt') return true;
+  return false;
+}
+
+/**
  * Get the user path prefix for Microsoft Graph API requests.
  *
- * - OAuth `authorization_code` flow (delegated): returns `/me` (ignores targetUser)
- * - OAuth `client_credentials` flow (application): returns `/users/${targetUser}` (requires targetUser)
+ * - App-permission flows (client_credentials, jwt_bearer, jwt): returns `/users/${targetUser}`
+ * - Delegated flow (authorization_code): returns `/me` (ignores targetUser)
  * - API key / other: returns `/me`
  */
 export function getUserPathPrefix(connector: Connector, targetUser?: string): string {
-  const auth = connector.config.auth;
-  if (auth.type === 'oauth' && auth.flow === 'client_credentials') {
+  if (isAppPermissionAuth(connector)) {
     if (!targetUser) {
       throw new Error(
-        'targetUser is required when using client_credentials (application) flow. ' +
+        'targetUser is required when using app-permission auth (client_credentials / jwt_bearer). ' +
         'Provide a user ID or UPN (e.g., "user@domain.com").'
       );
     }

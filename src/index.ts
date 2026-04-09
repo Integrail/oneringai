@@ -1167,6 +1167,7 @@ export {
   createMicrosoftReadFileTool,
   createMicrosoftListFilesTool,
   createMicrosoftSearchFilesTool,
+  isAppPermissionAuth,
   getUserPathPrefix,
   microsoftFetch,
   formatRecipients,
