@@ -144,6 +144,21 @@ export class OAuthManager {
     return [];
   }
 
+  /**
+   * Re-key a token from one accountId to another (Authorization Code only).
+   *
+   * @param userId - User identifier
+   * @param oldAccountId - Current account alias
+   * @param newAccountId - New account alias
+   * @returns true if re-keyed, false if no token found under oldAccountId
+   */
+  async rekeyAccount(userId: string, oldAccountId: string, newAccountId: string): Promise<boolean> {
+    if (!(this.flow instanceof AuthCodePKCEFlow)) {
+      throw new Error('rekeyAccount() is only available for authorization_code flow');
+    }
+    return this.flow.rekeyAccount(userId, oldAccountId, newAccountId);
+  }
+
   // ==================== Validation ====================
 
   private validateConfig(config: OAuthConfig): void {

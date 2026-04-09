@@ -160,6 +160,40 @@ export class TokenStore {
   }
 
   /**
+   * Re-key a token from one accountId to another.
+   * Used to stabilize account IDs — e.g., replacing a temporary random ID
+   * with the actual email address discovered after OAuth completes.
+   *
+   * If oldAccountId === newAccountId, this is a no-op.
+   * If a token already exists under newAccountId, it is replaced.
+   *
+   * @param userId - User identifier
+   * @param oldAccountId - Current account alias (e.g., temporary random ID)
+   * @param newAccountId - New account alias (e.g., discovered email address)
+   * @returns true if the token was re-keyed, false if no token found under oldAccountId
+   */
+  async rekeyAccount(userId: string, oldAccountId: string, newAccountId: string): Promise<boolean> {
+    if (oldAccountId === newAccountId) return true;
+
+    // Read token under old key
+    const oldKey = this.getScopedKey(userId, oldAccountId);
+    const token = await this.storage.getToken(oldKey);
+    if (!token) return false;
+
+    // Remove any stale token under the new key (from a prior auth of the same account)
+    const newKey = this.getScopedKey(userId, newAccountId);
+    await this.storage.deleteToken(newKey);
+
+    // Store under the new key
+    await this.storage.storeToken(newKey, token);
+
+    // Remove the old key
+    await this.storage.deleteToken(oldKey);
+
+    return true;
+  }
+
+  /**
    * List account aliases for a user on this connector.
    * Returns account IDs that have stored tokens.
    *

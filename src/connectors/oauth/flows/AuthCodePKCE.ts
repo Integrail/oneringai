@@ -358,6 +358,14 @@ export class AuthCodePKCEFlow {
   }
 
   /**
+   * Re-key a token from one accountId to another.
+   * @see TokenStore.rekeyAccount
+   */
+  async rekeyAccount(userId: string, oldAccountId: string, newAccountId: string): Promise<boolean> {
+    return this.tokenStore.rekeyAccount(userId, oldAccountId, newAccountId);
+  }
+
+  /**
    * Clean up expired PKCE data to prevent memory leaks
    * Removes verifiers and states older than PKCE_TTL (15 minutes)
    */

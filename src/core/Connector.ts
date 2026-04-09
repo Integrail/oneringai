@@ -406,6 +406,23 @@ export class Connector {
   }
 
   /**
+   * Re-key a token from one accountId to another.
+   * Used to stabilize account IDs after OAuth — e.g., replacing a temporary
+   * random ID with the actual email address discovered post-authorization.
+   *
+   * @param userId - User identifier
+   * @param oldAccountId - Current account alias (temporary)
+   * @param newAccountId - Stable account alias (e.g., email)
+   * @returns true if re-keyed, false if no token found under oldAccountId
+   */
+  async rekeyAccount(userId: string, oldAccountId: string, newAccountId: string): Promise<boolean> {
+    if (!this.oauthManager) {
+      throw new Error(`Connector '${this.name}' is not an OAuth connector`);
+    }
+    return this.oauthManager.rekeyAccount(userId, oldAccountId, newAccountId);
+  }
+
+  /**
    * Get vendor-specific options from config
    */
   getOptions(): Record<string, unknown> {
