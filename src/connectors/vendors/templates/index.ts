@@ -14,6 +14,7 @@ export { slackTemplate } from './slack.js';
 export { discordTemplate } from './discord.js';
 export { telegramTemplate } from './telegram.js';
 export { twitterTemplate } from './twitter.js';
+export { zoomTemplate } from './zoom.js';
 
 // Development
 export { githubTemplate } from './github.js';
@@ -84,6 +85,7 @@ import { slackTemplate } from './slack.js';
 import { discordTemplate } from './discord.js';
 import { telegramTemplate } from './telegram.js';
 import { twitterTemplate } from './twitter.js';
+import { zoomTemplate } from './zoom.js';
 import { githubTemplate } from './github.js';
 import { gitlabTemplate } from './gitlab.js';
 import { jiraTemplate, confluenceTemplate, bitbucketTemplate, trelloTemplate } from './atlassian.js';
@@ -124,6 +126,7 @@ export const allVendorTemplates: VendorTemplate[] = [
   discordTemplate,
   telegramTemplate,
   twitterTemplate,
+  zoomTemplate,
 
   // Development
   githubTemplate,

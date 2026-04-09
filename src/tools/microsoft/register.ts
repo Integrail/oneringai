@@ -13,6 +13,8 @@ import { createSendEmailTool } from './sendEmail.js';
 import { createMeetingTool } from './createMeeting.js';
 import { createEditMeetingTool } from './editMeeting.js';
 import { createGetMeetingTranscriptTool } from './getMeetingTranscript.js';
+import { createListMeetingsTool } from './listMeetings.js';
+import { createGetMeetingTool } from './getMeeting.js';
 import { createFindMeetingSlotsTool } from './findMeetingSlots.js';
 import { createMicrosoftReadFileTool } from './readFile.js';
 import { createMicrosoftListFilesTool } from './listFiles.js';
@@ -22,7 +24,7 @@ import { createMicrosoftSearchFilesTool } from './searchFiles.js';
  * Register Microsoft Graph tools with the ConnectorTools framework.
  *
  * After calling this, `ConnectorTools.for('my-microsoft-connector')` will
- * return all 9 Microsoft tools plus the generic API tool.
+ * return all 11 Microsoft tools plus the generic API tool.
  */
 export function registerMicrosoftTools(): void {
   ConnectorTools.registerService('microsoft', (connector: Connector, userId?: string) => {
@@ -34,6 +36,8 @@ export function registerMicrosoftTools(): void {
       createMeetingTool(connector, userId),
       createEditMeetingTool(connector, userId),
       createGetMeetingTranscriptTool(connector, userId),
+      createListMeetingsTool(connector, userId),
+      createGetMeetingTool(connector, userId),
       createFindMeetingSlotsTool(connector, userId),
       // Files (OneDrive / SharePoint)
       createMicrosoftReadFileTool(connector, userId),

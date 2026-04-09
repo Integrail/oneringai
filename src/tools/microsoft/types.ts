@@ -59,6 +59,8 @@ export interface MicrosoftFetchOptions {
   accountId?: string;
   queryParams?: Record<string, string | number | boolean>;
   accept?: string;
+  /** Additional HTTP headers merged into the request (e.g. Prefer) */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -103,6 +105,7 @@ export async function microsoftFetch<T = unknown>(
 
   const headers: Record<string, string> = {
     'Accept': options?.accept ?? 'application/json',
+    ...options?.headers,
   };
 
   if (options?.body) {
@@ -314,6 +317,47 @@ export interface MicrosoftGetTranscriptResult {
   error?: string;
 }
 
+/** Summary of a calendar event returned by list_meetings */
+export interface MeetingListEntry {
+  eventId: string;
+  subject: string;
+  start: string;
+  end: string;
+  timeZone: string;
+  organizer?: string;
+  attendees?: string[];
+  location?: string;
+  /** Online meeting join URL — may be Teams, Zoom, or any other provider */
+  joinUrl?: string;
+  isOnlineMeeting: boolean;
+  bodyPreview?: string;
+}
+
+export interface MicrosoftListMeetingsResult {
+  success: boolean;
+  meetings?: MeetingListEntry[];
+  totalCount?: number;
+  error?: string;
+}
+
+export interface MicrosoftGetMeetingResult {
+  success: boolean;
+  eventId?: string;
+  subject?: string;
+  start?: string;
+  end?: string;
+  timeZone?: string;
+  organizer?: string;
+  attendees?: string[];
+  location?: string;
+  /** Online meeting join URL — may be Teams, Zoom, or any other provider */
+  joinUrl?: string;
+  webLink?: string;
+  body?: string;
+  isOnlineMeeting: boolean;
+  error?: string;
+}
+
 export interface MicrosoftFindSlotsResult {
   success: boolean;
   slots?: MeetingSlotSuggestion[];
@@ -347,6 +391,30 @@ export interface GraphEventResponse {
   subject?: string;
   onlineMeeting?: { joinUrl?: string } | null;
   [key: string]: unknown;
+}
+
+/** @internal */
+export interface GraphCalendarViewEvent {
+  id: string;
+  subject?: string;
+  bodyPreview?: string;
+  body?: { contentType?: string; content?: string };
+  start?: { dateTime: string; timeZone: string };
+  end?: { dateTime: string; timeZone: string };
+  organizer?: { emailAddress: { name?: string; address: string } };
+  attendees?: { emailAddress: { name?: string; address: string }; type?: string }[];
+  location?: { displayName?: string };
+  isOnlineMeeting?: boolean;
+  onlineMeeting?: { joinUrl?: string } | null;
+  onlineMeetingUrl?: string;
+  webLink?: string;
+}
+
+/** @internal */
+export interface GraphCalendarViewResponse {
+  value: GraphCalendarViewEvent[];
+  '@odata.nextLink'?: string;
+  '@odata.count'?: number;
 }
 
 /** @internal */

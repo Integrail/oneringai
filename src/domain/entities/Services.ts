@@ -108,6 +108,15 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     docsURL: 'https://developer.x.com/en/docs/x-api',
     commonScopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
   },
+  {
+    id: 'zoom',
+    name: 'Zoom',
+    category: 'communication',
+    urlPattern: /api\.zoom\.us|zoom\.us/i,
+    baseURL: 'https://api.zoom.us/v2',
+    docsURL: 'https://developers.zoom.us/docs/api/',
+    commonScopes: ['meeting:read', 'meeting:write', 'recording:read', 'user:read'],
+  },
 
   // ============ Development & Project Management ============
   {

@@ -195,6 +195,8 @@ export {
   createMicrosoftReadFileTool,
   createMicrosoftListFilesTool,
   createMicrosoftSearchFilesTool,
+  createListMeetingsTool,
+  createGetMeetingTool,
   // Utilities
   isAppPermissionAuth,
   getUserPathPrefix,
@@ -218,6 +220,9 @@ export type {
   MicrosoftCreateMeetingResult,
   MicrosoftEditMeetingResult,
   MicrosoftGetTranscriptResult,
+  MicrosoftListMeetingsResult,
+  MicrosoftGetMeetingResult,
+  MeetingListEntry,
   MicrosoftFindSlotsResult,
   MeetingSlotSuggestion,
   MicrosoftReadFileResult,
@@ -267,6 +272,30 @@ export type {
   SlackGetChannelInfoResult,
   SlackSetChannelTopicResult,
 } from './slack/index.js';
+
+// ============================================================================
+// Zoom Tools (Auto-registered with ConnectorTools for Zoom service)
+// ============================================================================
+
+export {
+  // Tool factories
+  createCreateMeetingTool as createZoomCreateMeetingTool,
+  createUpdateMeetingTool as createZoomUpdateMeetingTool,
+  createGetTranscriptTool as createZoomGetTranscriptTool,
+  // Utilities
+  zoomFetch,
+  parseMeetingId,
+  parseVTT,
+} from './zoom/index.js';
+
+export type {
+  ZoomCreateMeetingResult,
+  ZoomUpdateMeetingResult,
+  ZoomGetTranscriptResult,
+  TranscriptEntry,
+} from './zoom/index.js';
+
+export { ZoomAPIError } from './zoom/index.js';
 
 // ============================================================================
 // Twilio Connector Tools (auto-registered with ConnectorTools for Twilio service)
