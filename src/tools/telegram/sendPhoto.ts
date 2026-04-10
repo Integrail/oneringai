@@ -8,6 +8,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import { type TelegramSendResult, type TelegramMessage, telegramFetch, formatTelegramToolError } from './types.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 
 export interface SendPhotoArgs {
   /** Target chat ID (number) or @username (string) */
@@ -25,7 +26,8 @@ export interface SendPhotoArgs {
 }
 
 export function createSendPhotoTool(
-  connector: Connector
+  connector: Connector,
+  userId?: string
 ): ToolFunction<SendPhotoArgs, TelegramSendResult> {
   return {
     definition: {
@@ -90,8 +92,9 @@ EXAMPLES:
       approvalMessage: `Send a Telegram photo via ${connector.displayName}`,
     },
 
-    execute: async (args: SendPhotoArgs, _context?: ToolContext): Promise<TelegramSendResult> => {
+    execute: async (args: SendPhotoArgs, context?: ToolContext): Promise<TelegramSendResult> => {
       try {
+        const { userId: effectiveUserId, accountId } = resolveConnectorContext(context, userId);
         const body: Record<string, unknown> = {
           chat_id: args.chat_id,
           photo: args.photo,
@@ -102,7 +105,7 @@ EXAMPLES:
         if (args.reply_to_message_id) body.reply_to_message_id = args.reply_to_message_id;
         if (args.disable_notification) body.disable_notification = true;
 
-        const message = await telegramFetch<TelegramMessage>(connector, 'sendPhoto', { body });
+        const message = await telegramFetch<TelegramMessage>(connector, 'sendPhoto', { body, userId: effectiveUserId, accountId });
         return { success: true, message };
       } catch (error) {
         return {

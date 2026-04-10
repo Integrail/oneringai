@@ -10,6 +10,7 @@ import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
 import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 import { getMediaStorage } from './config.js';
 import { VideoGeneration } from '../../capabilities/video/VideoGeneration.js';
 import { getVideoModelsByVendor } from '../../domain/entities/VideoModel.js';
@@ -133,6 +134,7 @@ export function createVideoTools(
       },
     },
 
+    // context accepted for ToolContext pipeline compatibility (account binding wrapper uses it)
     execute: async (args: GenerateVideoArgs, _context?: ToolContext): Promise<GenerateVideoResult> => {
       try {
         const videoGen = VideoGeneration.create({ connector });
@@ -194,7 +196,7 @@ export function createVideoTools(
 
     execute: async (args: VideoStatusArgs, context?: ToolContext): Promise<VideoStatusResult> => {
       try {
-        const effectiveUserId = userId ?? context?.userId;
+        const { userId: effectiveUserId } = resolveConnectorContext(context, userId);
         let videoGen = videoGenInstances.get(args.jobId);
         if (!videoGen) {
           // Recreate if not in cache (e.g., after restart)

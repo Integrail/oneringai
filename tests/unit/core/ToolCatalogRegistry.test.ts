@@ -291,7 +291,7 @@ describe('ToolCatalogRegistry', () => {
 
   describe('parseConnectorCategory', () => {
     it('should parse valid connector category', () => {
-      expect(ToolCatalogRegistry.parseConnectorCategory('connector:github')).toBe('github');
+      expect(ToolCatalogRegistry.parseConnectorCategory('connector:github')).toEqual({ connectorName: 'github' });
     });
 
     it('should return null for non-connector category', () => {
@@ -299,11 +299,31 @@ describe('ToolCatalogRegistry', () => {
     });
 
     it('should handle empty connector name', () => {
-      expect(ToolCatalogRegistry.parseConnectorCategory('connector:')).toBe('');
+      expect(ToolCatalogRegistry.parseConnectorCategory('connector:')).toEqual({ connectorName: '' });
     });
 
     it('should not match partial prefix', () => {
       expect(ToolCatalogRegistry.parseConnectorCategory('connectorish')).toBeNull();
+    });
+
+    it('should parse multi-account connector category', () => {
+      expect(ToolCatalogRegistry.parseConnectorCategory('connector:microsoft:work')).toEqual({
+        connectorName: 'microsoft',
+        accountId: 'work',
+      });
+    });
+
+    it('should parse multi-account with complex accountId', () => {
+      expect(ToolCatalogRegistry.parseConnectorCategory('connector:google:user@example.com')).toEqual({
+        connectorName: 'google',
+        accountId: 'user@example.com',
+      });
+    });
+
+    it('should treat trailing colon as no accountId', () => {
+      expect(ToolCatalogRegistry.parseConnectorCategory('connector:microsoft:')).toEqual({
+        connectorName: 'microsoft',
+      });
     });
   });
 

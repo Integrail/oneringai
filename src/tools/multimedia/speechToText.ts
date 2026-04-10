@@ -82,6 +82,7 @@ export function createSpeechToTextTool(
       },
     },
 
+    // context accepted for ToolContext pipeline compatibility (account binding wrapper uses it)
     execute: async (args: SpeechToTextArgs, _context?: ToolContext): Promise<SpeechToTextResult> => {
       try {
         const audioBuffer = await handler.read(args.audioSource);

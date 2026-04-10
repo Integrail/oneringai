@@ -749,7 +749,7 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       return { error: `Category '${category}' is not available for this agent.` };
     }
 
-    const connectorName = ToolCatalogRegistry.parseConnectorCategory(category);
+    const parsed = ToolCatalogRegistry.parseConnectorCategory(category);
     const tools = ToolCatalogRegistry.resolveConnectorCategoryTools(category);
     const loaded = this._loadedCategories.has(category);
 
@@ -757,7 +757,8 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
       category,
       loaded,
       pinned: this._pinnedCategories.has(category),
-      connectorName,
+      connectorName: parsed?.connectorName,
+      accountId: parsed?.accountId,
       tools: tools.map(t => ({
         name: t.name,
         description: t.tool.definition.function.description || '',

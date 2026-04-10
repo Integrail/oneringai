@@ -20,6 +20,10 @@ import type { APIKeyConnectorAuth } from '../../domain/entities/Connector.js';
 
 /**
  * Get the Bot API token from the connector's auth config.
+ *
+ * @deprecated Use `await connector.getToken(userId, accountId)` instead.
+ * This function only works with api_key auth and does not support multi-account OAuth.
+ * Kept for backward compatibility with external consumers.
  */
 export function getBotToken(connector: Connector): string {
   const auth = connector.config.auth;
@@ -43,6 +47,10 @@ export function getBotToken(connector: Connector): string {
 export interface TelegramFetchOptions {
   /** JSON body params for POST requests */
   body?: Record<string, unknown>;
+  /** User ID for multi-user OAuth (optional) */
+  userId?: string;
+  /** Account alias for multi-account OAuth (optional) */
+  accountId?: string;
 }
 
 /**
@@ -97,16 +105,21 @@ interface TelegramResponse<T> {
  * All calls are POST with JSON body (Telegram supports both GET and POST,
  * but POST with JSON is the most flexible and consistent).
  *
+ * Token resolution: Uses connector.getToken(userId, accountId) which supports
+ * both api_key connectors (returns static bot token) and OAuth connectors
+ * (returns account-specific token). Backward compatible — api_key connectors
+ * ignore userId/accountId.
+ *
  * @param connector - Telegram connector
  * @param method - Bot API method name (e.g., 'sendMessage', 'getUpdates')
- * @param options - Request options with JSON body
+ * @param options - Request options with JSON body and optional account context
  */
 export async function telegramFetch<T = unknown>(
   connector: Connector,
   method: string,
   options?: TelegramFetchOptions
 ): Promise<T> {
-  const token = getBotToken(connector);
+  const token = await connector.getToken(options?.userId, options?.accountId);
   const url = `/bot${token}/${method}`;
 
   const headers: Record<string, string> = {

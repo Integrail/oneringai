@@ -8,6 +8,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import { type TelegramSetWebhookResult, telegramFetch, formatTelegramToolError } from './types.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 
 export interface SetWebhookArgs {
   /** HTTPS URL for receiving updates. Empty string removes the webhook. */
@@ -21,7 +22,8 @@ export interface SetWebhookArgs {
 }
 
 export function createSetWebhookTool(
-  connector: Connector
+  connector: Connector,
+  userId?: string
 ): ToolFunction<SetWebhookArgs, TelegramSetWebhookResult> {
   return {
     definition: {
@@ -77,20 +79,21 @@ EXAMPLES:
       approvalMessage: `Set or remove Telegram webhook via ${connector.displayName}`,
     },
 
-    execute: async (args: SetWebhookArgs, _context?: ToolContext): Promise<TelegramSetWebhookResult> => {
+    execute: async (args: SetWebhookArgs, context?: ToolContext): Promise<TelegramSetWebhookResult> => {
       try {
+        const { userId: effectiveUserId, accountId } = resolveConnectorContext(context, userId);
         if (args.url) {
           // Set webhook
           const body: Record<string, unknown> = { url: args.url };
           if (args.max_connections !== undefined) body.max_connections = args.max_connections;
           if (args.allowed_updates) body.allowed_updates = args.allowed_updates;
           if (args.drop_pending_updates) body.drop_pending_updates = true;
-          await telegramFetch<boolean>(connector, 'setWebhook', { body });
+          await telegramFetch<boolean>(connector, 'setWebhook', { body, userId: effectiveUserId, accountId });
         } else {
           // Remove webhook — deleteWebhook only accepts drop_pending_updates
           const body: Record<string, unknown> = {};
           if (args.drop_pending_updates) body.drop_pending_updates = true;
-          await telegramFetch<boolean>(connector, 'deleteWebhook', { body });
+          await telegramFetch<boolean>(connector, 'deleteWebhook', { body, userId: effectiveUserId, accountId });
         }
         return { success: true };
       } catch (error) {

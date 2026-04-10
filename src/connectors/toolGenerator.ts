@@ -1,10 +1,27 @@
 /**
  * Tool Generator - Auto-generate tools for registered connectors
+ *
+ * @deprecated Use ConnectorTools.for() or ConnectorTools.genericAPI() instead.
+ * This module predates the ConnectorTools pattern and lacks support for
+ * multi-account OAuth, ToolContext propagation, and security features
+ * (protected headers, safe JSON serialization).
+ *
+ * Migration:
+ * ```typescript
+ * // Before (deprecated):
+ * const tool = generateWebAPITool();
+ *
+ * // After:
+ * const tools = ConnectorTools.for('my-connector');
+ * // Or for all connectors:
+ * const allTools = ConnectorTools.discoverAll();
+ * ```
  */
 
 import { ToolFunction } from '../domain/entities/Tool.js';
 import { Connector } from '../core/Connector.js';
 import { authenticatedFetch } from './authenticatedFetch.js';
+import { logger } from '../infrastructure/observability/Logger.js';
 
 interface APIRequestArgs {
   authProvider: string;
@@ -28,9 +45,13 @@ interface APIRequestResult {
  * This tool allows the AI agent to make authenticated requests to any registered API.
  * The tool description is dynamically generated based on registered providers.
  *
+ * @deprecated Use ConnectorTools.for() or ConnectorTools.genericAPI() instead.
+ * This function does not support multi-account OAuth or ToolContext propagation.
+ *
  * @returns ToolFunction that can call any registered OAuth API
  */
 export function generateWebAPITool(): ToolFunction<APIRequestArgs, APIRequestResult> {
+  logger.warn('[toolGenerator] generateWebAPITool() is deprecated. Use ConnectorTools.for() or ConnectorTools.genericAPI() instead.');
   return {
     definition: {
       type: 'function',

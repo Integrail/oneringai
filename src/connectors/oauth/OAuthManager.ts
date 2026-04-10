@@ -159,6 +159,21 @@ export class OAuthManager {
     return this.flow.rekeyAccount(userId, oldAccountId, newAccountId);
   }
 
+  /**
+   * Remove a specific account's stored token (Authorization Code only).
+   * Used when a user unlinks/disconnects one of their accounts.
+   *
+   * @param userId - User identifier
+   * @param accountId - Account alias to remove
+   * @returns true if a token was deleted, false if no token existed
+   */
+  async removeAccount(userId: string, accountId: string): Promise<boolean> {
+    if (!(this.flow instanceof AuthCodePKCEFlow)) {
+      throw new Error('removeAccount() is only available for authorization_code flow');
+    }
+    return this.flow.removeAccount(userId, accountId);
+  }
+
   // ==================== Validation ====================
 
   private validateConfig(config: OAuthConfig): void {

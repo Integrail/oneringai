@@ -194,6 +194,25 @@ export class TokenStore {
   }
 
   /**
+   * Remove a specific account's stored token.
+   * Used when a user unlinks/disconnects one of their accounts.
+   *
+   * @param userId - User identifier
+   * @param accountId - Account alias to remove
+   * @returns true if a token was deleted, false if no token existed
+   */
+  async removeAccount(userId: string, accountId: string): Promise<boolean> {
+    if (!userId || !accountId) {
+      throw new Error('removeAccount requires non-empty userId and accountId');
+    }
+    const key = this.getScopedKey(userId, accountId);
+    const existing = await this.storage.getToken(key);
+    if (!existing) return false;
+    await this.storage.deleteToken(key);
+    return true;
+  }
+
+  /**
    * List account aliases for a user on this connector.
    * Returns account IDs that have stored tokens.
    *

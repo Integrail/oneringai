@@ -8,6 +8,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import { type TelegramSendResult, type TelegramMessage, telegramFetch, formatTelegramToolError } from './types.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 
 export interface SendMessageArgs {
   /** Target chat ID (number) or @username (string) */
@@ -25,7 +26,8 @@ export interface SendMessageArgs {
 }
 
 export function createSendMessageTool(
-  connector: Connector
+  connector: Connector,
+  userId?: string
 ): ToolFunction<SendMessageArgs, TelegramSendResult> {
   return {
     definition: {
@@ -89,8 +91,9 @@ EXAMPLES:
       approvalMessage: `Send a Telegram message via ${connector.displayName}`,
     },
 
-    execute: async (args: SendMessageArgs, _context?: ToolContext): Promise<TelegramSendResult> => {
+    execute: async (args: SendMessageArgs, context?: ToolContext): Promise<TelegramSendResult> => {
       try {
+        const { userId: effectiveUserId, accountId } = resolveConnectorContext(context, userId);
         const body: Record<string, unknown> = {
           chat_id: args.chat_id,
           text: args.text,
@@ -101,7 +104,7 @@ EXAMPLES:
         if (args.disable_web_page_preview) body.disable_web_page_preview = true;
         if (args.disable_notification) body.disable_notification = true;
 
-        const message = await telegramFetch<TelegramMessage>(connector, 'sendMessage', { body });
+        const message = await telegramFetch<TelegramMessage>(connector, 'sendMessage', { body, userId: effectiveUserId, accountId });
         return { success: true, message };
       } catch (error) {
         return {

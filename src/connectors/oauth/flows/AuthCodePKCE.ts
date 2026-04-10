@@ -374,6 +374,14 @@ export class AuthCodePKCEFlow {
   }
 
   /**
+   * Remove a specific account's stored token.
+   * @see TokenStore.removeAccount
+   */
+  async removeAccount(userId: string, accountId: string): Promise<boolean> {
+    return this.tokenStore.removeAccount(userId, accountId);
+  }
+
+  /**
    * Clean up expired PKCE data to prevent memory leaks
    * Removes verifiers and states older than PKCE_TTL (15 minutes)
    */

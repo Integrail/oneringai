@@ -9,6 +9,7 @@ import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
 import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 import { getMediaStorage } from './config.js';
 import { ImageGeneration } from '../../capabilities/images/ImageGeneration.js';
 import { getImageModelsByVendor, IMAGE_MODEL_REGISTRY } from '../../domain/entities/ImageModel.js';
@@ -133,7 +134,7 @@ export function createImageGenerationTool(
 
     execute: async (args: GenerateImageArgs, context?: ToolContext): Promise<GenerateImageResult> => {
       try {
-        const effectiveUserId = userId ?? context?.userId;
+        const { userId: effectiveUserId } = resolveConnectorContext(context, userId);
         const imageGen = ImageGeneration.create({ connector });
         const response = await imageGen.generate({
           prompt: args.prompt,

@@ -88,7 +88,7 @@ export interface ToolContext {
    *
    * Set by the host app during tool resolution for single-account connectors.
    * Connector tools resolve their accountId from this map when `accountId` is not
-   * explicitly set (i.e., the tool is not wrapped with `bindAccountId`).
+   * explicitly set (i.e., the tool is not wrapped with `withAccountBinding`).
    *
    * Resolution order in connector tools:
    * 1. `context.accountId` — explicit per-tool binding (multi-account wrapper)

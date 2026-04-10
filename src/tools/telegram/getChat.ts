@@ -7,6 +7,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import { type TelegramGetChatResult, type TelegramChat, telegramFetch, formatTelegramToolError } from './types.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 
 export interface GetChatArgs {
   /** Chat ID (number) or @username (string) */
@@ -14,7 +15,8 @@ export interface GetChatArgs {
 }
 
 export function createGetChatTool(
-  connector: Connector
+  connector: Connector,
+  userId?: string
 ): ToolFunction<GetChatArgs, TelegramGetChatResult> {
   return {
     definition: {
@@ -52,10 +54,13 @@ EXAMPLES:
       approvalMessage: `Get Telegram chat info via ${connector.displayName}`,
     },
 
-    execute: async (args: GetChatArgs, _context?: ToolContext): Promise<TelegramGetChatResult> => {
+    execute: async (args: GetChatArgs, context?: ToolContext): Promise<TelegramGetChatResult> => {
       try {
+        const { userId: effectiveUserId, accountId } = resolveConnectorContext(context, userId);
         const chat = await telegramFetch<TelegramChat>(connector, 'getChat', {
           body: { chat_id: args.chat_id },
+          userId: effectiveUserId,
+          accountId,
         });
         return { success: true, chat };
       } catch (error) {

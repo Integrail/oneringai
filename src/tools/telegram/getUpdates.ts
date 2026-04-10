@@ -10,6 +10,7 @@
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import { type TelegramGetUpdatesResult, type TelegramUpdate, telegramFetch, formatTelegramToolError } from './types.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 
 export interface GetUpdatesArgs {
   /** Offset: ID of the first update to return. Use last update_id + 1 to acknowledge previous updates. */
@@ -23,7 +24,8 @@ export interface GetUpdatesArgs {
 }
 
 export function createGetUpdatesTool(
-  connector: Connector
+  connector: Connector,
+  userId?: string
 ): ToolFunction<GetUpdatesArgs, TelegramGetUpdatesResult> {
   return {
     definition: {
@@ -83,8 +85,9 @@ EXAMPLES:
       approvalMessage: `Read Telegram updates via ${connector.displayName}`,
     },
 
-    execute: async (args: GetUpdatesArgs, _context?: ToolContext): Promise<TelegramGetUpdatesResult> => {
+    execute: async (args: GetUpdatesArgs, context?: ToolContext): Promise<TelegramGetUpdatesResult> => {
       try {
+        const { userId: effectiveUserId, accountId } = resolveConnectorContext(context, userId);
         const body: Record<string, unknown> = {};
 
         if (args.offset !== undefined) body.offset = args.offset;
@@ -92,7 +95,7 @@ EXAMPLES:
         if (args.timeout !== undefined) body.timeout = Math.min(Math.max(args.timeout, 0), 50);
         if (args.allowed_updates) body.allowed_updates = args.allowed_updates;
 
-        const updates = await telegramFetch<TelegramUpdate[]>(connector, 'getUpdates', { body });
+        const updates = await telegramFetch<TelegramUpdate[]>(connector, 'getUpdates', { body, userId: effectiveUserId, accountId });
         return {
           success: true,
           updates,

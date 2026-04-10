@@ -5,11 +5,13 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
-import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import { type TelegramGetMeResult, type TelegramUser, telegramFetch, formatTelegramToolError } from './types.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 
 export function createGetMeTool(
-  connector: Connector
+  connector: Connector,
+  userId?: string
 ): ToolFunction<Record<string, never>, TelegramGetMeResult> {
   return {
     definition: {
@@ -33,9 +35,10 @@ export function createGetMeTool(
       approvalMessage: `Get Telegram bot info via ${connector.displayName}`,
     },
 
-    execute: async (): Promise<TelegramGetMeResult> => {
+    execute: async (_args: Record<string, never>, context?: ToolContext): Promise<TelegramGetMeResult> => {
       try {
-        const bot = await telegramFetch<TelegramUser>(connector, 'getMe');
+        const { userId: effectiveUserId, accountId } = resolveConnectorContext(context, userId);
+        const bot = await telegramFetch<TelegramUser>(connector, 'getMe', { userId: effectiveUserId, accountId });
         return { success: true, bot };
       } catch (error) {
         return {

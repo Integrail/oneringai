@@ -23,6 +23,7 @@
 
 export {
   ConnectorTools,
+  resolveConnectorContext,
   type ServiceToolFactory,
   type GenericAPIToolOptions,
   type GenericAPICallArgs,

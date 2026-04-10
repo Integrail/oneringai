@@ -423,6 +423,22 @@ export class Connector {
   }
 
   /**
+   * Remove a specific account's stored token.
+   * Used when a user unlinks/disconnects one of their accounts.
+   * Only applicable for OAuth connectors with multi-account support.
+   *
+   * @param userId - User identifier
+   * @param accountId - Account alias to remove (e.g., 'work', 'personal')
+   * @returns true if a token was deleted, false if no token existed
+   */
+  async removeAccount(userId: string, accountId: string): Promise<boolean> {
+    if (!this.oauthManager) {
+      throw new Error(`Connector '${this.name}' is not an OAuth connector`);
+    }
+    return this.oauthManager.removeAccount(userId, accountId);
+  }
+
+  /**
    * Get vendor-specific options from config
    */
   getOptions(): Record<string, unknown> {

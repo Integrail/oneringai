@@ -22,18 +22,18 @@ import { createSetWebhookTool } from './setWebhook.js';
  * return all 6 Telegram tools plus the generic API tool.
  */
 export function registerTelegramTools(): void {
-  ConnectorTools.registerService('telegram', (connector: Connector) => {
+  ConnectorTools.registerService('telegram', (connector: Connector, userId?: string) => {
     return [
       // Info
-      createGetMeTool(connector),
-      createGetChatTool(connector),
+      createGetMeTool(connector, userId),
+      createGetChatTool(connector, userId),
       // Send
-      createSendMessageTool(connector),
-      createSendPhotoTool(connector),
+      createSendMessageTool(connector, userId),
+      createSendPhotoTool(connector, userId),
       // Receive
-      createGetUpdatesTool(connector),
+      createGetUpdatesTool(connector, userId),
       // Config
-      createSetWebhookTool(connector),
+      createSetWebhookTool(connector, userId),
     ];
   });
 }

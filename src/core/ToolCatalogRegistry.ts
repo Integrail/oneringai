@@ -103,10 +103,20 @@ export type ToolCategoryScope =
   // undefined = all allowed
 
 /**
+ * Parsed connector category: connector name + optional account alias.
+ */
+export interface ParsedConnectorCategory {
+  /** Connector name (e.g., 'microsoft') */
+  connectorName: string;
+  /** Account alias (e.g., 'work') — undefined for single-account connectors */
+  accountId?: string;
+}
+
+/**
  * Connector category metadata returned by discoverConnectorCategories().
  */
 export interface ConnectorCategoryInfo {
-  /** Category name in 'connector:<name>' format */
+  /** Category name in 'connector:<name>' or 'connector:<name>:<accountId>' format */
   name: string;
   /** Human-readable display name */
   displayName: string;
@@ -116,6 +126,8 @@ export interface ConnectorCategoryInfo {
   toolCount: number;
   /** Resolved tools */
   tools: ToolFunction[];
+  /** Account alias for multi-account connectors */
+  accountId?: string;
 }
 
 // ============================================================================
@@ -171,11 +183,24 @@ export class ToolCatalogRegistry {
   }
 
   /**
-   * Parse a connector category name, returning the connector name or null.
-   * E.g., 'connector:github' → 'github', 'filesystem' → null
+   * Parse a connector category name into connector name + optional accountId.
+   *
+   * Formats:
+   * - 'connector:github' → { connectorName: 'github' }
+   * - 'connector:microsoft:work' → { connectorName: 'microsoft', accountId: 'work' }
+   * - 'filesystem' → null (not a connector category)
    */
-  static parseConnectorCategory(category: string): string | null {
-    return category.startsWith('connector:') ? category.slice('connector:'.length) : null;
+  static parseConnectorCategory(category: string): ParsedConnectorCategory | null {
+    if (!category.startsWith('connector:')) return null;
+    const rest = category.slice('connector:'.length);
+    const colonIdx = rest.indexOf(':');
+    if (colonIdx === -1) {
+      return { connectorName: rest };
+    }
+    return {
+      connectorName: rest.slice(0, colonIdx),
+      accountId: rest.slice(colonIdx + 1) || undefined,
+    };
   }
 
   /**
@@ -388,45 +413,79 @@ export class ToolCatalogRegistry {
 
   /**
    * Discover all connector categories with their tools.
-   * Calls ConnectorTools.discoverAll() and filters by scope/identities.
+   *
+   * When identities include accountId, uses ConnectorTools.forIdentities() to generate
+   * per-account categories (e.g., 'connector:microsoft:work', 'connector:microsoft:personal').
+   * Without accountIds, falls back to ConnectorTools.discoverAll() for backward compatibility.
    *
    * @param options - Optional filtering
    * @returns Array of connector category info
    */
   static discoverConnectorCategories(options?: {
     scope?: ToolCategoryScope;
-    identities?: Array<{ connector: string }>;
+    identities?: Array<{ connector: string; accountId?: string }>;
   }): ConnectorCategoryInfo[] {
     const mod = this.getConnectorToolsModule();
     if (!mod) return [];
 
     try {
-      const discovered: Map<string, ToolFunction[]> = mod.ConnectorTools.discoverAll();
       const results: ConnectorCategoryInfo[] = [];
+      const hasAccountIds = options?.identities?.some(id => !!id.accountId);
 
-      for (const [connectorName, tools] of discovered) {
-        const catName = `connector:${connectorName}`;
+      if (options?.identities?.length && hasAccountIds) {
+        // Multi-account path: use forIdentities for account-aware tool generation.
+        // This produces per-account tool sets with prefixed names (e.g., microsoft_work_api).
+        const discovered: Map<string, ToolFunction[]> = mod.ConnectorTools.forIdentities(options.identities);
 
-        // Check scope
-        if (options?.scope && !this.isCategoryAllowed(catName, options.scope)) {
-          continue;
+        for (const [identityKey, tools] of discovered) {
+          // identityKey format: 'microsoft:work' or 'github' (from forIdentities)
+          const colonIdx = identityKey.indexOf(':');
+          const connectorName = colonIdx === -1 ? identityKey : identityKey.slice(0, colonIdx);
+          const accountId = colonIdx === -1 ? undefined : identityKey.slice(colonIdx + 1);
+          const catName = `connector:${identityKey}`;
+
+          if (options?.scope && !this.isCategoryAllowed(catName, options.scope)) {
+            continue;
+          }
+
+          const preRegistered = this.getCategory(catName);
+          const accountLabel = accountId ? ` (${accountId})` : '';
+          results.push({
+            name: catName,
+            displayName: preRegistered?.displayName ?? `${this.toDisplayName(connectorName)}${accountLabel}`,
+            description: preRegistered?.description ?? `API tools for ${connectorName}${accountLabel}`,
+            toolCount: tools.length,
+            tools,
+            accountId,
+          });
         }
+      } else {
+        // Legacy path: discover all connectors, optionally filter by identity connector names.
+        // No accountId dimension — single tool set per connector.
+        const discovered: Map<string, ToolFunction[]> = mod.ConnectorTools.discoverAll();
 
-        // Check identities filter
-        if (options?.identities?.length) {
-          const hasIdentity = options.identities.some(id => id.connector === connectorName);
-          if (!hasIdentity) continue;
+        for (const [connectorName, tools] of discovered) {
+          const catName = `connector:${connectorName}`;
+
+          if (options?.scope && !this.isCategoryAllowed(catName, options.scope)) {
+            continue;
+          }
+
+          // Filter by identity connector names (without accountId)
+          if (options?.identities?.length) {
+            const hasIdentity = options.identities.some(id => id.connector === connectorName);
+            if (!hasIdentity) continue;
+          }
+
+          const preRegistered = this.getCategory(catName);
+          results.push({
+            name: catName,
+            displayName: preRegistered?.displayName ?? this.toDisplayName(connectorName),
+            description: preRegistered?.description ?? `API tools for ${connectorName}`,
+            toolCount: tools.length,
+            tools,
+          });
         }
-
-        // Check if there's a pre-registered category with better metadata
-        const preRegistered = this.getCategory(catName);
-        results.push({
-          name: catName,
-          displayName: preRegistered?.displayName ?? this.toDisplayName(connectorName),
-          description: preRegistered?.description ?? `API tools for ${connectorName}`,
-          toolCount: tools.length,
-          tools,
-        });
       }
 
       return results;
@@ -438,18 +497,26 @@ export class ToolCatalogRegistry {
   /**
    * Resolve tools for a specific connector category.
    *
-   * @param category - Category name in 'connector:<name>' format
+   * Supports both legacy format ('connector:github') and multi-account format
+   * ('connector:microsoft:work'). When accountId is present, generates
+   * account-prefixed tools via ConnectorTools.for(connectorName, { accountId }).
+   *
+   * @param category - Category name in 'connector:<name>' or 'connector:<name>:<accountId>' format
    * @returns Array of resolved tools with names
    */
   static resolveConnectorCategoryTools(category: string): Array<{ tool: ToolFunction; name: string }> {
-    const connectorName = this.parseConnectorCategory(category);
-    if (!connectorName) return [];
+    const parsed = this.parseConnectorCategory(category);
+    if (!parsed) return [];
 
     const mod = this.getConnectorToolsModule();
     if (!mod) return [];
 
     try {
-      const tools: ToolFunction[] = mod.ConnectorTools.for(connectorName);
+      const tools: ToolFunction[] = mod.ConnectorTools.for(
+        parsed.connectorName,
+        undefined,
+        parsed.accountId ? { accountId: parsed.accountId } : undefined,
+      );
       return tools.map(t => ({ tool: t, name: t.definition.function.name }));
     } catch {
       return [];

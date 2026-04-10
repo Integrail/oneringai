@@ -9,6 +9,7 @@ import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { IMediaStorage } from '../../domain/interfaces/IMediaStorage.js';
 import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
+import { resolveConnectorContext } from '../connector/ConnectorTools.js';
 import { getMediaStorage } from './config.js';
 import { TextToSpeech } from '../../core/TextToSpeech.js';
 import { getTTSModelsByVendor } from '../../domain/entities/TTSModel.js';
@@ -119,7 +120,7 @@ export function createTextToSpeechTool(
 
     execute: async (args: TextToSpeechArgs, context?: ToolContext): Promise<TextToSpeechResult> => {
       try {
-        const effectiveUserId = userId ?? context?.userId;
+        const { userId: effectiveUserId } = resolveConnectorContext(context, userId);
         const tts = TextToSpeech.create({
           connector,
           model: args.model,
