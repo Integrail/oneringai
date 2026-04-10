@@ -306,12 +306,13 @@ export class ConnectorTools {
       tools.push(...serviceTools);
     }
 
-    // 3. All connector tools get account binding which handles:
-    //    - Explicit accountId from forIdentities() (highest priority)
-    //    - context.accountId already set by host app
-    //    - Resolution from context.connectorAccounts map
-    //    - Legacy path (no account binding)
-    return tools.map(tool => this.withAccountBinding(tool, connector.name, accountId));
+    // 3. All connector tools get account binding + connector metadata
+    return tools.map(tool => {
+      const bound = this.withAccountBinding(tool, connector.name, accountId);
+      bound.connectorName = connector.name;
+      if (accountId) bound.connectorAccountId = accountId;
+      return bound;
+    });
   }
 
   /**

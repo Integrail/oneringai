@@ -517,7 +517,10 @@ export class ToolCatalogPluginNextGen extends BasePluginNextGen {
         // Already registered (maybe from a previous load) — just enable
         this._toolManager.setEnabled([name], true);
       } else {
-        this._toolManager.register(tool, { category, source: `catalog:${category}` });
+        // Connector categories use category name directly as source (e.g., 'connector:microsoft:work')
+        // to match the identity filter format in getEnabledToolDefinitions().
+        // Non-connector categories keep 'catalog:' prefix (not subject to identity filtering).
+        this._toolManager.register(tool, { category, source: isConnector ? category : `catalog:${category}` });
       }
       toolNames.push(name);
     }

@@ -250,6 +250,12 @@ export interface ToolFunction<TArgs = any, TResult = any> {
    *   : args.command
    */
   describeCall?: (args: TArgs) => string;
+
+  /** Connector this tool was generated from (set by ConnectorTools.for()). */
+  connectorName?: string;
+
+  /** Account alias this tool is bound to (set by ConnectorTools.for() with accountId). */
+  connectorAccountId?: string;
 }
 
 /**

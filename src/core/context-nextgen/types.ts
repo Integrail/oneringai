@@ -27,6 +27,16 @@ export interface AuthIdentity {
 
   /** Optional account alias for multi-account OAuth (e.g., 'work', 'personal') */
   accountId?: string;
+
+  /**
+   * Optional: restrict which tools are generated for this identity.
+   * Each entry is matched against the tool's base name (the part after the
+   * connector prefix, e.g., 'send_email' from 'microsoft_work_send_email').
+   *
+   * When set, only tools whose name ends with `_<suffix>` or equals `<suffix>` are generated.
+   * When absent, ALL tools for this connector are generated.
+   */
+  toolFilter?: string[];
 }
 
 // ============================================================================

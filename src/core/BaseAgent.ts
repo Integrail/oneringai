@@ -32,6 +32,7 @@ import type { StreamEvent } from '../domain/entities/StreamEvent.js';
 import type { IContextStorage, ContextSessionMetadata } from '../domain/interfaces/IContextStorage.js';
 import type { IConnectorRegistry } from '../domain/interfaces/IConnectorRegistry.js';
 import { StorageRegistry } from './StorageRegistry.js';
+import { ConnectorTools } from '../tools/connector/ConnectorTools.js';
 
 /**
  * Options for tool registration
@@ -370,6 +371,13 @@ export abstract class BaseAgent<
       }
     }
 
+    // Auto-generate and register connector tools from identities.
+    // Each identity produces account-prefixed tools with 'connector:name[:accountId]' source
+    // metadata, enabling identity filtering in getEnabledToolDefinitions().
+    if (config.identities?.length) {
+      this.registerIdentityTools(config.identities, config.userId, config.registry);
+    }
+
     // Initialize permission managers (legacy + policy-based)
     this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
     this._policyManager = this.initializePolicyManager(config);
@@ -486,6 +494,58 @@ export abstract class BaseAgent<
     };
 
     return PermissionPolicyManager.fromConfig(policyConfig);
+  }
+
+  /**
+   * Auto-generate connector tools from identities and register them
+   * with proper 'connector:name[:accountId]' source metadata.
+   *
+   * For each identity:
+   * 1. Calls ConnectorTools.for(connector, userId, { accountId }) to generate tools
+   * 2. Applies toolFilter if set (keeps only matching tools)
+   * 3. Registers via registerConnectorTools() which sets the source tag
+   *
+   * This makes Agent.create({ identities }) produce connector tools without
+   * requiring features: { toolCatalog: true }.
+   */
+  protected registerIdentityTools(
+    identities: AuthIdentity[],
+    userId?: string,
+    registry?: IConnectorRegistry,
+  ): void {
+    for (const identity of identities) {
+      try {
+        let tools = ConnectorTools.for(
+          identity.connector,
+          userId,
+          { registry, accountId: identity.accountId },
+        );
+
+        // Apply toolFilter: only keep tools whose base name matches
+        if (identity.toolFilter?.length) {
+          tools = tools.filter(t => {
+            const name = t.definition.function.name;
+            return identity.toolFilter!.some(suffix =>
+              name.endsWith(`_${suffix}`) || name === suffix
+            );
+          });
+        }
+
+        if (tools.length > 0) {
+          this._agentContext.tools.registerConnectorTools(
+            identity.connector,
+            tools,
+            { accountId: identity.accountId },
+          );
+        }
+      } catch (err) {
+        // Non-fatal: connector may not be registered or have no service tools
+        this._logger.warn(
+          { connector: identity.connector, error: (err as Error).message },
+          'Failed to generate identity connector tools',
+        );
+      }
+    }
   }
 
   /**

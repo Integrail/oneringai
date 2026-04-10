@@ -427,11 +427,38 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    */
   private syncToolContext(): void {
     const existing = this._tools.getToolContext();
+
+    // Auto-build connectorAccounts from single-account identities.
+    // For connectors with exactly one accountId in identities, set the binding
+    // so withAccountBinding() resolves it from context.connectorAccounts[connectorName]
+    // without the host app needing to call mergeToolContext() manually.
+    // Multi-account connectors (2+ accountIds for same connector) use explicit
+    // per-tool binding — do NOT set connectorAccounts for those.
+    let connectorAccounts = existing?.connectorAccounts;
+    if (this._identities?.length) {
+      const byConnector = new Map<string, string[]>();
+      for (const id of this._identities) {
+        if (id.accountId) {
+          const list = byConnector.get(id.connector) ?? [];
+          list.push(id.accountId);
+          byConnector.set(id.connector, list);
+        }
+      }
+      connectorAccounts = { ...connectorAccounts };
+      for (const [connector, accounts] of byConnector) {
+        // Only auto-set for single-account connectors; preserve host-app overrides
+        if (accounts.length === 1 && !connectorAccounts[connector]) {
+          connectorAccounts[connector] = accounts[0]!;
+        }
+      }
+    }
+
     this._tools.setToolContext({
       ...existing,
       agentId: this._agentId,
       userId: this._userId,
       identities: this._identities,
+      connectorAccounts,
       connectorRegistry: this.buildConnectorRegistry(),
     });
   }
