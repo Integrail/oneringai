@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-04-08
+**Generated:** 2026-04-10
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -19,16 +19,16 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Task Agents](#task-agents) (87 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (42 items)
-- [Tools & Function Calling](#tools-function-calling) (158 items)
+- [Tools & Function Calling](#tools-function-calling) (159 items)
 - [Streaming](#streaming) (29 items)
 - [Model Registry](#model-registry) (16 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (24 items)
 - [Utilities](#utilities) (8 items)
-- [Interfaces](#interfaces) (60 items)
+- [Interfaces](#interfaces) (63 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (424 items)
+- [Other](#other) (438 items)
 
 ## Core
 
@@ -1322,6 +1322,39 @@ async listAccounts(userId?: string): Promise&lt;string[]&gt;
 - `userId`: `string | undefined` *(optional)*
 
 **Returns:** `Promise&lt;string[]&gt;`
+
+#### `rekeyAccount()`
+
+Re-key a token from one accountId to another.
+Used to stabilize account IDs after OAuth — e.g., replacing a temporary
+random ID with the actual email address discovered post-authorization.
+
+```typescript
+async rekeyAccount(userId: string, oldAccountId: string, newAccountId: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string`
+- `oldAccountId`: `string`
+- `newAccountId`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `removeAccount()`
+
+Remove a specific account's stored token.
+Used when a user unlinks/disconnects one of their accounts.
+Only applicable for OAuth connectors with multi-account support.
+
+```typescript
+async removeAccount(userId: string, accountId: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string`
+- `accountId`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
 
 #### `getOptions()`
 
@@ -3567,7 +3600,7 @@ export function calculateImageCost(
 
 ### createImageGenerationTool `function`
 
-📍 [`src/tools/multimedia/imageGeneration.ts:36`](src/tools/multimedia/imageGeneration.ts)
+📍 [`src/tools/multimedia/imageGeneration.ts:37`](src/tools/multimedia/imageGeneration.ts)
 
 ```typescript
 export function createImageGenerationTool(
@@ -5155,7 +5188,7 @@ export function createVideoProvider(connector: Connector): IVideoProvider
 
 ### createVideoTools `function`
 
-📍 [`src/tools/multimedia/videoGeneration.ts:49`](src/tools/multimedia/videoGeneration.ts)
+📍 [`src/tools/multimedia/videoGeneration.ts:50`](src/tools/multimedia/videoGeneration.ts)
 
 ```typescript
 export function createVideoTools(
@@ -11216,7 +11249,7 @@ getAgentId(): string
 
 ### FileRoutineDefinitionStorage `class`
 
-📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:86`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:87`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
 
 File-based storage for routine definitions.
 
@@ -11242,11 +11275,11 @@ constructor(config: FileRoutineDefinitionStorageConfig =
 #### `save()`
 
 ```typescript
-async save(userId: string | undefined, definition: RoutineDefinition): Promise&lt;void&gt;
+async save(context: StorageUserContextInput, definition: RoutineDefinition): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `definition`: `RoutineDefinition`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -11254,11 +11287,11 @@ async save(userId: string | undefined, definition: RoutineDefinition): Promise&l
 #### `load()`
 
 ```typescript
-async load(userId: string | undefined, id: string): Promise&lt;RoutineDefinition | null&gt;
+async load(context: StorageUserContextInput, id: string): Promise&lt;RoutineDefinition | null&gt;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `id`: `string`
 
 **Returns:** `Promise&lt;RoutineDefinition | null&gt;`
@@ -11266,11 +11299,11 @@ async load(userId: string | undefined, id: string): Promise&lt;RoutineDefinition
 #### `delete()`
 
 ```typescript
-async delete(userId: string | undefined, id: string): Promise&lt;void&gt;
+async delete(context: StorageUserContextInput, id: string): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `id`: `string`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -11278,11 +11311,11 @@ async delete(userId: string | undefined, id: string): Promise&lt;void&gt;
 #### `exists()`
 
 ```typescript
-async exists(userId: string | undefined, id: string): Promise&lt;boolean&gt;
+async exists(context: StorageUserContextInput, id: string): Promise&lt;boolean&gt;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `id`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
@@ -11290,11 +11323,11 @@ async exists(userId: string | undefined, id: string): Promise&lt;boolean&gt;
 #### `list()`
 
 ```typescript
-async list(userId: string | undefined, options?:
+async list(context: StorageUserContextInput, options?:
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `options`: `{ tags?: string[] | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;RoutineDefinition[]&gt;`
@@ -11302,11 +11335,11 @@ async list(userId: string | undefined, options?:
 #### `getPath()`
 
 ```typescript
-getPath(userId: string | undefined): string
+getPath(context: StorageUserContextInput): string
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 
 **Returns:** `string`
 
@@ -11326,7 +11359,7 @@ getPath(userId: string | undefined): string
 
 ### FileRoutineExecutionStorage `class`
 
-📍 [`src/infrastructure/storage/FileRoutineExecutionStorage.ts:95`](src/infrastructure/storage/FileRoutineExecutionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineExecutionStorage.ts:97`](src/infrastructure/storage/FileRoutineExecutionStorage.ts)
 
 File-based storage for routine execution records.
 
@@ -11352,11 +11385,11 @@ constructor(config: FileRoutineExecutionStorageConfig =
 #### `insert()`
 
 ```typescript
-async insert(userId: string | undefined, record: RoutineExecutionRecord): Promise&lt;string&gt;
+async insert(context: StorageUserContextInput, record: RoutineExecutionRecord): Promise&lt;string&gt;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `record`: `RoutineExecutionRecord`
 
 **Returns:** `Promise&lt;string&gt;`
@@ -11418,12 +11451,12 @@ async load(id: string): Promise&lt;RoutineExecutionRecord | null&gt;
 
 ```typescript
 async list(
-    userId: string | undefined,
+    context: StorageUserContextInput,
     options?:
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `options`: `{ routineId?: string | undefined; status?: RoutineExecutionStatus | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;RoutineExecutionRecord[]&gt;`
@@ -11431,11 +11464,11 @@ async list(
 #### `hasRunning()`
 
 ```typescript
-async hasRunning(userId: string | undefined, routineId: string): Promise&lt;boolean&gt;
+async hasRunning(context: StorageUserContextInput, routineId: string): Promise&lt;boolean&gt;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `routineId`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
@@ -11443,11 +11476,11 @@ async hasRunning(userId: string | undefined, routineId: string): Promise&lt;bool
 #### `getPath()`
 
 ```typescript
-getPath(userId: string | undefined): string
+getPath(context: StorageUserContextInput): string
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 
 **Returns:** `string`
 
@@ -12124,7 +12157,7 @@ Configuration for FilePersistentInstructionsStorage
 
 ### FileRoutineDefinitionStorageConfig `interface`
 
-📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:26`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:27`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
 
 Configuration for FileRoutineDefinitionStorage
 
@@ -12142,7 +12175,7 @@ Configuration for FileRoutineDefinitionStorage
 
 ### FileRoutineExecutionStorageConfig `interface`
 
-📍 [`src/infrastructure/storage/FileRoutineExecutionStorage.ts:32`](src/infrastructure/storage/FileRoutineExecutionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineExecutionStorage.ts:33`](src/infrastructure/storage/FileRoutineExecutionStorage.ts)
 
 Configuration for FileRoutineExecutionStorage
 
@@ -12443,7 +12476,7 @@ export function createFileMediaStorage(config?: FileMediaStorageConfig): FileMed
 
 ### createFileRoutineDefinitionStorage `function`
 
-📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:355`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:362`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
 
 Create a FileRoutineDefinitionStorage with default configuration
 
@@ -12457,7 +12490,7 @@ export function createFileRoutineDefinitionStorage(
 
 ### createFileRoutineExecutionStorage `function`
 
-📍 [`src/infrastructure/storage/FileRoutineExecutionStorage.ts:486`](src/infrastructure/storage/FileRoutineExecutionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineExecutionStorage.ts:506`](src/infrastructure/storage/FileRoutineExecutionStorage.ts)
 
 Create a FileRoutineExecutionStorage with default configuration
 
@@ -12475,7 +12508,7 @@ Define and execute tools for agents
 
 ### ConnectorTools `class`
 
-📍 [`src/tools/connector/ConnectorTools.ts:179`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:200`](src/tools/connector/ConnectorTools.ts)
 
 ConnectorTools - Main API for vendor-dependent tools
 
@@ -12561,37 +12594,6 @@ static for(connectorOrName: Connector | string, userId?: string, options?: Conne
 - `connectorOrName`: `string | Connector`
 - `userId`: `string | undefined` *(optional)*
 - `options`: `ConnectorToolsOptions | undefined` *(optional)*
-
-**Returns:** `ToolFunction&lt;any, any&gt;[]`
-
-#### `static genericAPI()`
-
-Get just the generic API tool for a connector
-
-```typescript
-static genericAPI(
-    connectorOrName: Connector | string,
-    options?: GenericAPIToolOptions
-  ): ToolFunction&lt;GenericAPICallArgs, GenericAPICallResult&gt;
-```
-
-**Parameters:**
-- `connectorOrName`: `string | Connector`
-- `options`: `GenericAPIToolOptions | undefined` *(optional)*
-
-**Returns:** `ToolFunction&lt;GenericAPICallArgs, GenericAPICallResult&gt;`
-
-#### `static serviceTools()`
-
-Get only service-specific tools (no generic API tool)
-
-```typescript
-static serviceTools(connectorOrName: Connector | string, userId?: string): ToolFunction[]
-```
-
-**Parameters:**
-- `connectorOrName`: `string | Connector`
-- `userId`: `string | undefined` *(optional)*
 
 **Returns:** `ToolFunction&lt;any, any&gt;[]`
 
@@ -13019,7 +13021,7 @@ executeLoad(category: string): Record&lt;string, unknown&gt;
 
 ### ToolCatalogRegistry `class`
 
-📍 [`src/core/ToolCatalogRegistry.ts:132`](src/core/ToolCatalogRegistry.ts)
+📍 [`src/core/ToolCatalogRegistry.ts:144`](src/core/ToolCatalogRegistry.ts)
 
 Static global registry for tool categories and their tools.
 
@@ -13046,17 +13048,21 @@ static toDisplayName(name: string): string
 
 #### `static parseConnectorCategory()`
 
-Parse a connector category name, returning the connector name or null.
-E.g., 'connector:github' → 'github', 'filesystem' → null
+Parse a connector category name into connector name + optional accountId.
+
+Formats:
+- 'connector:github' → { connectorName: 'github' }
+- 'connector:microsoft:work' → { connectorName: 'microsoft', accountId: 'work' }
+- 'filesystem' → null (not a connector category)
 
 ```typescript
-static parseConnectorCategory(category: string): string | null
+static parseConnectorCategory(category: string): ParsedConnectorCategory | null
 ```
 
 **Parameters:**
 - `category`: `string`
 
-**Returns:** `string | null`
+**Returns:** `ParsedConnectorCategory | null`
 
 #### `static getConnectorToolsModule()`
 
@@ -13261,20 +13267,27 @@ static isCategoryAllowed(name: string, scope?: ToolCategoryScope): boolean
 #### `static discoverConnectorCategories()`
 
 Discover all connector categories with their tools.
-Calls ConnectorTools.discoverAll() and filters by scope/identities.
+
+When identities include accountId, uses ConnectorTools.forIdentities() to generate
+per-account categories (e.g., 'connector:microsoft:work', 'connector:microsoft:personal').
+Without accountIds, falls back to ConnectorTools.discoverAll() for backward compatibility.
 
 ```typescript
 static discoverConnectorCategories(options?:
 ```
 
 **Parameters:**
-- `options`: `{ scope?: ToolCategoryScope | undefined; identities?: { connector: string; }[] | undefined; } | undefined` *(optional)*
+- `options`: `{ scope?: ToolCategoryScope | undefined; identities?: { connector: string; accountId?: string | undefined; }[] | undefined; } | undefined` *(optional)*
 
 **Returns:** `ConnectorCategoryInfo[]`
 
 #### `static resolveConnectorCategoryTools()`
 
 Resolve tools for a specific connector category.
+
+Supports both legacy format ('connector:github') and multi-account format
+('connector:microsoft:work'). When accountId is present, generates
+account-prefixed tools via ConnectorTools.for(connectorName, { accountId }).
 
 ```typescript
 static resolveConnectorCategoryTools(category: string): Array&lt;
@@ -13575,7 +13588,8 @@ destroy(): void
 
 #### `setToolContext()`
 
-Set tool context for execution (called by agent before runs)
+Set tool context for execution (called by agent before runs).
+WARNING: This REPLACES the entire context. Prefer mergeToolContext() for partial updates.
 
 ```typescript
 setToolContext(context: ToolContext | undefined): void
@@ -13583,6 +13597,21 @@ setToolContext(context: ToolContext | undefined): void
 
 **Parameters:**
 - `context`: `ToolContext | undefined`
+
+**Returns:** `void`
+
+#### `mergeToolContext()`
+
+Merge partial updates into the existing tool context.
+Unlike setToolContext(), this preserves fields not present in the partial update.
+Use this when updating userId or connectorAccounts without wiping agentId, identities, etc.
+
+```typescript
+mergeToolContext(partial: Partial&lt;ToolContext&gt;): void
+```
+
+**Parameters:**
+- `partial`: `Partial&lt;ToolContext&gt;`
 
 **Returns:** `void`
 
@@ -14953,7 +14982,7 @@ A single tool entry in the catalog.
 
 ### ConnectorCategoryInfo `interface`
 
-📍 [`src/core/ToolCatalogRegistry.ts:108`](src/core/ToolCatalogRegistry.ts)
+📍 [`src/core/ToolCatalogRegistry.ts:118`](src/core/ToolCatalogRegistry.ts)
 
 Connector category metadata returned by discoverConnectorCategories().
 
@@ -14962,11 +14991,12 @@ Connector category metadata returned by discoverConnectorCategories().
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `name` | `name: string;` | Category name in 'connector:<name>' format |
+| `name` | `name: string;` | Category name in 'connector:<name>' or 'connector:<name>:<accountId>' format |
 | `displayName` | `displayName: string;` | Human-readable display name |
 | `description` | `description: string;` | Description |
 | `toolCount` | `toolCount: number;` | Number of tools |
 | `tools` | `tools: ToolFunction[];` | Resolved tools |
+| `accountId?` | `accountId?: string;` | Account alias for multi-account connectors |
 
 </details>
 
@@ -15249,27 +15279,6 @@ Result from the generic API call tool
 | `status?` | `status?: number;` | - |
 | `data?` | `data?: unknown;` | - |
 | `error?` | `error?: string;` | - |
-
-</details>
-
----
-
-### GenericAPIToolOptions `interface`
-
-📍 [`src/tools/connector/ConnectorTools.ts:116`](src/tools/connector/ConnectorTools.ts)
-
-Options for generating the generic API tool
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `toolName?` | `toolName?: string;` | Override the tool name (default: `${connectorName}_api`) |
-| `description?` | `description?: string;` | Override the description |
-| `userId?` | `userId?: string;` | User ID for multi-user OAuth |
-| `accountId?` | `accountId?: string;` | Account alias for multi-account OAuth (baked into tool name and context) |
-| `permission?` | `permission?: ToolPermissionConfig;` | Permission config for the tool |
 
 </details>
 
@@ -15808,6 +15817,24 @@ MCP Tool call result
 
 ---
 
+### ParsedConnectorCategory `interface`
+
+📍 [`src/core/ToolCatalogRegistry.ts:108`](src/core/ToolCatalogRegistry.ts)
+
+Parsed connector category: connector name + optional account alias.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connectorName` | `connectorName: string;` | Connector name (e.g., 'microsoft') |
+| `accountId?` | `accountId?: string;` | Account alias (e.g., 'work') — undefined for single-account connectors |
+
+</details>
+
+---
+
 ### PendingAsyncTool `interface`
 
 📍 [`src/domain/entities/Tool.ts:115`](src/domain/entities/Tool.ts)
@@ -16047,6 +16074,16 @@ Simple and clean - only what tools actually need.
 | `taskId?` | `taskId?: string;` | Task ID (if running in TaskAgent) |
 | `userId?` | `userId?: string;` | User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). |
 | `accountId?` | `accountId?: string;` | Account alias for multi-account OAuth — auto-populated from Agent config (accountId). Allows one user to auth multiple external accounts on the same connector (e.g., 'work', 'personal'). |
+| `connectorAccounts?` | `connectorAccounts?: Record&lt;string, string&gt;;` | Per-connector account bindings (connector name → accountId).
+
+Set by the host app during tool resolution for single-account connectors.
+Connector tools resolve their accountId from this map when `accountId` is not
+explicitly set (i.e., the tool is not wrapped with `withAccountBinding`).
+
+Resolution order in connector tools:
+1. `context.accountId` — explicit per-tool binding (multi-account wrapper)
+2. `context.connectorAccounts[connectorName]` — per-connector binding (this field)
+3. `undefined` — no binding (legacy tokens without accountId) |
 | `identities?` | `identities?: AuthIdentity[];` | Auth identities this agent is scoped to (for identity-aware tool descriptions) |
 | `connectorRegistry?` | `connectorRegistry?: IConnectorRegistry;` | Connector registry scoped to this agent's allowed connectors and userId |
 | `roles?` | `roles?: string[];` | User roles for permission policy evaluation |
@@ -16163,6 +16200,8 @@ The returned string replaces definition.function.description when sending to LLM
 The static description in definition.function.description serves as a fallback. |
 | `describeCall?` | `describeCall?: (args: TArgs) =&gt; string;` | Returns a human-readable description of a tool call.
 Used for logging, UI display, and debugging. |
+| `connectorName?` | `connectorName?: string;` | Connector this tool was generated from (set by ConnectorTools.for()). |
+| `connectorAccountId?` | `connectorAccountId?: string;` | Account alias this tool is bound to (set by ConnectorTools.for() with accountId). |
 
 </details>
 
@@ -16500,7 +16539,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### DefaultAllowlistedTool `type`
 
-📍 [`src/core/permissions/types.ts:366`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:374`](src/core/permissions/types.ts)
 
 Type for default allowlisted tools
 
@@ -16630,7 +16669,7 @@ export function buildOrchestrationTools(ctx: OrchestrationToolsContext): ToolFun
 
 ### createAddReactionTool `function`
 
-📍 [`src/tools/slack/addReaction.ts:25`](src/tools/slack/addReaction.ts)
+📍 [`src/tools/slack/addReaction.ts:26`](src/tools/slack/addReaction.ts)
 
 ```typescript
 export function createAddReactionTool(
@@ -16655,7 +16694,7 @@ export function createBashTool(config: ShellToolConfig =
 
 ### createCreatePRTool `function`
 
-📍 [`src/tools/github/createPR.ts:44`](src/tools/github/createPR.ts)
+📍 [`src/tools/github/createPR.ts:45`](src/tools/github/createPR.ts)
 
 Create a GitHub create_pr tool
 
@@ -16865,7 +16904,7 @@ export function createDesktopWindowListTool(config?: DesktopToolConfig): ToolFun
 
 ### createDraftEmailTool `function`
 
-📍 [`src/tools/microsoft/createDraftEmail.ts:29`](src/tools/microsoft/createDraftEmail.ts)
+📍 [`src/tools/microsoft/createDraftEmail.ts:30`](src/tools/microsoft/createDraftEmail.ts)
 
 Create a Microsoft Graph create_draft_email tool
 
@@ -16892,7 +16931,7 @@ export function createEditFileTool(config: FilesystemToolConfig =
 
 ### createEditMeetingTool `function`
 
-📍 [`src/tools/microsoft/editMeeting.ts:33`](src/tools/microsoft/editMeeting.ts)
+📍 [`src/tools/microsoft/editMeeting.ts:34`](src/tools/microsoft/editMeeting.ts)
 
 Create a Microsoft Graph edit_meeting tool
 
@@ -16926,7 +16965,7 @@ export function createExecuteJavaScriptTool(
 
 ### createFindMeetingSlotsTool `function`
 
-📍 [`src/tools/microsoft/findMeetingSlots.ts:30`](src/tools/microsoft/findMeetingSlots.ts)
+📍 [`src/tools/microsoft/findMeetingSlots.ts:31`](src/tools/microsoft/findMeetingSlots.ts)
 
 Create a Microsoft Graph find_meeting_slots tool
 
@@ -16941,7 +16980,7 @@ export function createFindMeetingSlotsTool(
 
 ### createGetChannelInfoTool `function`
 
-📍 [`src/tools/slack/getChannelInfo.ts:22`](src/tools/slack/getChannelInfo.ts)
+📍 [`src/tools/slack/getChannelInfo.ts:23`](src/tools/slack/getChannelInfo.ts)
 
 ```typescript
 export function createGetChannelInfoTool(
@@ -16954,7 +16993,7 @@ export function createGetChannelInfoTool(
 
 ### createGetMeetingTranscriptTool `function`
 
-📍 [`src/tools/microsoft/getMeetingTranscript.ts:51`](src/tools/microsoft/getMeetingTranscript.ts)
+📍 [`src/tools/microsoft/getMeetingTranscript.ts:52`](src/tools/microsoft/getMeetingTranscript.ts)
 
 Create a Microsoft Graph get_meeting_transcript tool
 
@@ -16969,7 +17008,7 @@ export function createGetMeetingTranscriptTool(
 
 ### createGetMentionsTool `function`
 
-📍 [`src/tools/slack/getMentions.ts:28`](src/tools/slack/getMentions.ts)
+📍 [`src/tools/slack/getMentions.ts:29`](src/tools/slack/getMentions.ts)
 
 ```typescript
 export function createGetMentionsTool(
@@ -16982,7 +17021,7 @@ export function createGetMentionsTool(
 
 ### createGetMessagesTool `function`
 
-📍 [`src/tools/slack/getMessages.ts:29`](src/tools/slack/getMessages.ts)
+📍 [`src/tools/slack/getMessages.ts:30`](src/tools/slack/getMessages.ts)
 
 ```typescript
 export function createGetMessagesTool(
@@ -16995,7 +17034,7 @@ export function createGetMessagesTool(
 
 ### createGetMessageTool `function`
 
-📍 [`src/tools/twilio/getMessage.ts:22`](src/tools/twilio/getMessage.ts)
+📍 [`src/tools/twilio/getMessage.ts:23`](src/tools/twilio/getMessage.ts)
 
 ```typescript
 export function createGetMessageTool(
@@ -17008,7 +17047,7 @@ export function createGetMessageTool(
 
 ### createGetPRTool `function`
 
-📍 [`src/tools/github/getPR.ts:29`](src/tools/github/getPR.ts)
+📍 [`src/tools/github/getPR.ts:30`](src/tools/github/getPR.ts)
 
 Create a GitHub get_pr tool
 
@@ -17023,7 +17062,7 @@ export function createGetPRTool(
 
 ### createGetThreadTool `function`
 
-📍 [`src/tools/slack/getThread.ts:26`](src/tools/slack/getThread.ts)
+📍 [`src/tools/slack/getThread.ts:27`](src/tools/slack/getThread.ts)
 
 ```typescript
 export function createGetThreadTool(
@@ -17036,7 +17075,7 @@ export function createGetThreadTool(
 
 ### createGetUsersTool `function`
 
-📍 [`src/tools/slack/getUsers.ts:41`](src/tools/slack/getUsers.ts)
+📍 [`src/tools/slack/getUsers.ts:42`](src/tools/slack/getUsers.ts)
 
 ```typescript
 export function createGetUsersTool(
@@ -17049,7 +17088,7 @@ export function createGetUsersTool(
 
 ### createGitHubReadFileTool `function`
 
-📍 [`src/tools/github/readFile.ts:40`](src/tools/github/readFile.ts)
+📍 [`src/tools/github/readFile.ts:41`](src/tools/github/readFile.ts)
 
 Create a GitHub read_file tool
 
@@ -17088,7 +17127,7 @@ export function createGrepTool(config: FilesystemToolConfig =
 
 ### createListBranchesTool `function`
 
-📍 [`src/tools/github/listBranches.ts:41`](src/tools/github/listBranches.ts)
+📍 [`src/tools/github/listBranches.ts:42`](src/tools/github/listBranches.ts)
 
 Create a GitHub list_branches tool
 
@@ -17103,7 +17142,7 @@ export function createListBranchesTool(
 
 ### createListChannelsTool `function`
 
-📍 [`src/tools/slack/listChannels.ts:25`](src/tools/slack/listChannels.ts)
+📍 [`src/tools/slack/listChannels.ts:26`](src/tools/slack/listChannels.ts)
 
 ```typescript
 export function createListChannelsTool(
@@ -17128,7 +17167,7 @@ export function createListDirectoryTool(config: FilesystemToolConfig =
 
 ### createListMessagesTool `function`
 
-📍 [`src/tools/twilio/listMessages.ts:34`](src/tools/twilio/listMessages.ts)
+📍 [`src/tools/twilio/listMessages.ts:35`](src/tools/twilio/listMessages.ts)
 
 ```typescript
 export function createListMessagesTool(
@@ -17141,7 +17180,7 @@ export function createListMessagesTool(
 
 ### createMeetingTool `function`
 
-📍 [`src/tools/microsoft/createMeeting.ts:32`](src/tools/microsoft/createMeeting.ts)
+📍 [`src/tools/microsoft/createMeeting.ts:33`](src/tools/microsoft/createMeeting.ts)
 
 Create a Microsoft Graph create_meeting tool
 
@@ -17156,7 +17195,7 @@ export function createMeetingTool(
 
 ### createMicrosoftListFilesTool `function`
 
-📍 [`src/tools/microsoft/listFiles.ts:41`](src/tools/microsoft/listFiles.ts)
+📍 [`src/tools/microsoft/listFiles.ts:42`](src/tools/microsoft/listFiles.ts)
 
 ```typescript
 export function createMicrosoftListFilesTool(
@@ -17169,7 +17208,7 @@ export function createMicrosoftListFilesTool(
 
 ### createMicrosoftReadFileTool `function`
 
-📍 [`src/tools/microsoft/readFile.ts:48`](src/tools/microsoft/readFile.ts)
+📍 [`src/tools/microsoft/readFile.ts:49`](src/tools/microsoft/readFile.ts)
 
 ```typescript
 export function createMicrosoftReadFileTool(
@@ -17183,7 +17222,7 @@ export function createMicrosoftReadFileTool(
 
 ### createMicrosoftSearchFilesTool `function`
 
-📍 [`src/tools/microsoft/searchFiles.ts:36`](src/tools/microsoft/searchFiles.ts)
+📍 [`src/tools/microsoft/searchFiles.ts:37`](src/tools/microsoft/searchFiles.ts)
 
 ```typescript
 export function createMicrosoftSearchFilesTool(
@@ -17196,7 +17235,7 @@ export function createMicrosoftSearchFilesTool(
 
 ### createPostMessageTool `function`
 
-📍 [`src/tools/slack/postMessage.ts:29`](src/tools/slack/postMessage.ts)
+📍 [`src/tools/slack/postMessage.ts:30`](src/tools/slack/postMessage.ts)
 
 ```typescript
 export function createPostMessageTool(
@@ -17209,7 +17248,7 @@ export function createPostMessageTool(
 
 ### createPRCommentsTool `function`
 
-📍 [`src/tools/github/prComments.ts:33`](src/tools/github/prComments.ts)
+📍 [`src/tools/github/prComments.ts:34`](src/tools/github/prComments.ts)
 
 Create a GitHub pr_comments tool
 
@@ -17224,7 +17263,7 @@ export function createPRCommentsTool(
 
 ### createPRFilesTool `function`
 
-📍 [`src/tools/github/prFiles.ts:29`](src/tools/github/prFiles.ts)
+📍 [`src/tools/github/prFiles.ts:30`](src/tools/github/prFiles.ts)
 
 Create a GitHub pr_files tool
 
@@ -17251,7 +17290,7 @@ export function createReadFileTool(config: FilesystemToolConfig =
 
 ### createSearchCodeTool `function`
 
-📍 [`src/tools/github/searchCode.ts:102`](src/tools/github/searchCode.ts)
+📍 [`src/tools/github/searchCode.ts:103`](src/tools/github/searchCode.ts)
 
 Create a GitHub search_code tool
 
@@ -17266,7 +17305,7 @@ export function createSearchCodeTool(
 
 ### createSearchFilesTool `function`
 
-📍 [`src/tools/github/searchFiles.ts:56`](src/tools/github/searchFiles.ts)
+📍 [`src/tools/github/searchFiles.ts:57`](src/tools/github/searchFiles.ts)
 
 Create a GitHub search_files tool
 
@@ -17281,7 +17320,7 @@ export function createSearchFilesTool(
 
 ### createSearchMessagesTool `function`
 
-📍 [`src/tools/slack/searchMessages.ts:27`](src/tools/slack/searchMessages.ts)
+📍 [`src/tools/slack/searchMessages.ts:28`](src/tools/slack/searchMessages.ts)
 
 ```typescript
 export function createSearchMessagesTool(
@@ -17294,7 +17333,7 @@ export function createSearchMessagesTool(
 
 ### createSendEmailTool `function`
 
-📍 [`src/tools/microsoft/sendEmail.ts:28`](src/tools/microsoft/sendEmail.ts)
+📍 [`src/tools/microsoft/sendEmail.ts:30`](src/tools/microsoft/sendEmail.ts)
 
 Create a Microsoft Graph send_email tool
 
@@ -17309,7 +17348,7 @@ export function createSendEmailTool(
 
 ### createSendSMSTool `function`
 
-📍 [`src/tools/twilio/sendSMS.ts:29`](src/tools/twilio/sendSMS.ts)
+📍 [`src/tools/twilio/sendSMS.ts:30`](src/tools/twilio/sendSMS.ts)
 
 ```typescript
 export function createSendSMSTool(
@@ -17322,7 +17361,7 @@ export function createSendSMSTool(
 
 ### createSendWhatsAppTool `function`
 
-📍 [`src/tools/twilio/sendWhatsApp.ts:36`](src/tools/twilio/sendWhatsApp.ts)
+📍 [`src/tools/twilio/sendWhatsApp.ts:37`](src/tools/twilio/sendWhatsApp.ts)
 
 ```typescript
 export function createSendWhatsAppTool(
@@ -17335,7 +17374,7 @@ export function createSendWhatsAppTool(
 
 ### createSetChannelTopicTool `function`
 
-📍 [`src/tools/slack/setChannelTopic.ts:23`](src/tools/slack/setChannelTopic.ts)
+📍 [`src/tools/slack/setChannelTopic.ts:24`](src/tools/slack/setChannelTopic.ts)
 
 ```typescript
 export function createSetChannelTopicTool(
@@ -17361,7 +17400,7 @@ export function createSpeechToTextTool(
 
 ### createTextToSpeechTool `function`
 
-📍 [`src/tools/multimedia/textToSpeech.ts:32`](src/tools/multimedia/textToSpeech.ts)
+📍 [`src/tools/multimedia/textToSpeech.ts:33`](src/tools/multimedia/textToSpeech.ts)
 
 ```typescript
 export function createTextToSpeechTool(
@@ -17387,7 +17426,7 @@ export function createWriteFileTool(config: FilesystemToolConfig =
 
 ### defaultDescribeCall `function`
 
-📍 [`src/domain/entities/Tool.ts:271`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:277`](src/domain/entities/Tool.ts)
 
 Default implementation for describeCall.
 Shows the first meaningful argument value.
@@ -17414,7 +17453,7 @@ defaultDescribeCall({ query: 'search term', limit: 10 })
 
 ### generateWebAPITool `function`
 
-📍 [`src/connectors/toolGenerator.ts:33`](src/connectors/toolGenerator.ts)
+📍 [`src/connectors/toolGenerator.ts:53`](src/connectors/toolGenerator.ts)
 
 Generate a universal API request tool for all registered OAuth providers
 
@@ -17441,7 +17480,7 @@ export function getAllBuiltInTools(): ToolFunction[]
 
 ### getConnectorTools `function`
 
-📍 [`src/connectors/vendors/helpers.ts:330`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:331`](src/connectors/vendors/helpers.ts)
 
 Get all tools for a connector (delegates to ConnectorTools)
 
@@ -17465,7 +17504,7 @@ export function getToolByName(name: string): ToolRegistryEntry | undefined
 
 ### getToolCallDescription `function`
 
-📍 [`src/domain/entities/Tool.ts:323`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:329`](src/domain/entities/Tool.ts)
 
 Get a human-readable description of a tool call.
 Uses the tool's describeCall method if available, otherwise falls back to default.
@@ -17578,6 +17617,25 @@ export function isToolCallArgumentsDone(
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
+```
+
+---
+
+### resolveConnectorContext `function`
+
+📍 [`src/tools/connector/ConnectorTools.ts:171`](src/tools/connector/ConnectorTools.ts)
+
+Resolve effective userId and accountId from ToolContext.
+
+Use this in every connector tool's execute() function to consistently
+extract account identity. Prevents the common mistake of reading userId
+but forgetting accountId.
+
+```typescript
+export function resolveConnectorContext(
+  context: ToolContext | undefined,
+  fallbackUserId?: string,
+):
 ```
 
 ---
@@ -21856,6 +21914,36 @@ async listAccounts(userId?: string): Promise&lt;string[]&gt;
 
 **Returns:** `Promise&lt;string[]&gt;`
 
+#### `rekeyAccount()`
+
+Re-key a token from one accountId to another (Authorization Code only).
+
+```typescript
+async rekeyAccount(userId: string, oldAccountId: string, newAccountId: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string`
+- `oldAccountId`: `string`
+- `newAccountId`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `removeAccount()`
+
+Remove a specific account's stored token (Authorization Code only).
+Used when a user unlinks/disconnects one of their accounts.
+
+```typescript
+async removeAccount(userId: string, accountId: string): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `userId`: `string`
+- `accountId`: `string`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
 </details>
 
 <details>
@@ -22018,6 +22106,9 @@ listKeys?(): Promise&lt;string[]&gt;;
 | `tokenSigningAlg?` | `tokenSigningAlg?: string;` | - |
 | `audience?` | `audience?: string;` | - |
 | `staticToken?` | `staticToken?: string;` | - |
+| `authorizationParams?` | `authorizationParams?: Record&lt;string, string&gt;;` | Extra query parameters appended to the authorization URL.
+ Used for vendor-specific requirements, e.g. Google's `access_type: 'offline'`
+ to obtain a refresh token. |
 | `autoRefresh?` | `autoRefresh?: boolean;` | - |
 | `refreshBeforeExpiry?` | `refreshBeforeExpiry?: number;` | - |
 | `storage?` | `storage?: ITokenStorage;` | - |
@@ -22055,6 +22146,8 @@ Supports multiple OAuth flows
 | `audience?` | `audience?: string;` | - |
 | `refreshBeforeExpiry?` | `refreshBeforeExpiry?: number;` | - |
 | `storageKey?` | `storageKey?: string;` | - |
+| `authorizationParams?` | `authorizationParams?: Record&lt;string, string&gt;;` | Extra query parameters appended to the authorization URL.
+ Used for vendor-specific requirements, e.g. Google's `access_type: 'offline'`. |
 | `extra?` | `extra?: Record&lt;string, string&gt;;` | Vendor-specific extra credentials |
 
 </details>
@@ -22115,7 +22208,7 @@ Simple Icons icon data structure
 
 ### StoredToken `interface`
 
-📍 [`src/connectors/oauth/types.ts:50`](src/connectors/oauth/types.ts)
+📍 [`src/connectors/oauth/types.ts:56`](src/connectors/oauth/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -22158,7 +22251,7 @@ All implementations must encrypt tokens at rest
 
 ### VendorInfo `interface`
 
-📍 [`src/connectors/vendors/helpers.ts:337`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:338`](src/connectors/vendors/helpers.ts)
 
 Get vendor template information for display
 
@@ -22188,7 +22281,7 @@ Get vendor template information for display
 
 ### VendorLogo `interface`
 
-📍 [`src/connectors/vendors/logos.ts:169`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:170`](src/connectors/vendors/logos.ts)
 
 Vendor logo information
 
@@ -22418,7 +22511,7 @@ const personalEmails = await personalFetch('/me/messages');
 
 ### createConnectorFromTemplate `function`
 
-📍 [`src/connectors/vendors/helpers.ts:269`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:270`](src/connectors/vendors/helpers.ts)
 
 Create a Connector from a vendor template
 
@@ -22447,7 +22540,7 @@ const connector = createConnectorFromTemplate(
 
 ### extractNonSecretCredentials `function`
 
-📍 [`src/connectors/vendors/helpers.ts:210`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:211`](src/connectors/vendors/helpers.ts)
 
 Extract non-secret credentials from a raw credentials dict.
 Used by ConnectorConfigStore.saveFromTemplate() to preserve
@@ -22477,7 +22570,7 @@ export function generateEncryptionKey(): string
 
 ### getAllVendorLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:283`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:284`](src/connectors/vendors/logos.ts)
 
 Get all available vendor logos
 
@@ -22501,7 +22594,7 @@ export function getAllVendorTemplates(): VendorTemplate[]
 
 ### getCredentialsSetupURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:420`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:421`](src/connectors/vendors/helpers.ts)
 
 Get credentials setup URL for a vendor
 
@@ -22513,7 +22606,7 @@ export function getCredentialsSetupURL(vendorId: string): string | undefined
 
 ### getDocsURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:428`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:429`](src/connectors/vendors/helpers.ts)
 
 Get docs URL for a vendor
 
@@ -22540,7 +22633,7 @@ export function getVendorAuthTemplate(
 
 ### getVendorColor `function`
 
-📍 [`src/connectors/vendors/logos.ts:273`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:274`](src/connectors/vendors/logos.ts)
 
 Get the brand color for a vendor
 
@@ -22552,7 +22645,7 @@ export function getVendorColor(vendorId: string): string | undefined
 
 ### getVendorInfo `function`
 
-📍 [`src/connectors/vendors/helpers.ts:357`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:358`](src/connectors/vendors/helpers.ts)
 
 Get vendor information suitable for display
 
@@ -22564,7 +22657,7 @@ export function getVendorInfo(vendorId: string): VendorInfo | undefined
 
 ### getVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:212`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:213`](src/connectors/vendors/logos.ts)
 
 Get logo for a vendor
 
@@ -22586,7 +22679,7 @@ if (logo) {
 
 ### getVendorLogoCdnUrl `function`
 
-📍 [`src/connectors/vendors/logos.ts:315`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:316`](src/connectors/vendors/logos.ts)
 
 Get CDN URL for a vendor's logo
 
@@ -22598,7 +22691,7 @@ export function getVendorLogoCdnUrl(vendorId: string, color?: string): string | 
 
 ### getVendorLogoSvg `function`
 
-📍 [`src/connectors/vendors/logos.ts:255`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:256`](src/connectors/vendors/logos.ts)
 
 Get SVG content for a vendor logo
 
@@ -22622,7 +22715,7 @@ export function getVendorTemplate(vendorId: string): VendorTemplate | undefined
 
 ### hasVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:185`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:186`](src/connectors/vendors/logos.ts)
 
 Check if a vendor has a logo available
 
@@ -22646,7 +22739,7 @@ export function listVendorIds(): string[]
 
 ### listVendors `function`
 
-📍 [`src/connectors/vendors/helpers.ts:382`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:383`](src/connectors/vendors/helpers.ts)
 
 List all vendors with basic info
 
@@ -22658,7 +22751,7 @@ export function listVendors(): VendorInfo[]
 
 ### listVendorsByAuthType `function`
 
-📍 [`src/connectors/vendors/helpers.ts:411`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:412`](src/connectors/vendors/helpers.ts)
 
 List vendors that support a specific auth type
 
@@ -22670,7 +22763,7 @@ export function listVendorsByAuthType(authType: 'api_key' | 'oauth'): VendorInfo
 
 ### listVendorsByCategory `function`
 
-📍 [`src/connectors/vendors/helpers.ts:404`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:405`](src/connectors/vendors/helpers.ts)
 
 List vendors by category
 
@@ -22682,7 +22775,7 @@ export function listVendorsByCategory(category: string): VendorInfo[]
 
 ### listVendorsWithLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:299`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:300`](src/connectors/vendors/logos.ts)
 
 List vendor IDs that have logos available
 
@@ -22705,6 +22798,7 @@ Mapping from our vendor IDs to Simple Icons slugs
 |----------|------|-------------|
 | `microsoft` | `'microsoft'` | - |
 | `google` | `'google'` | - |
+| `'google-api'` | `'google'` | - |
 | `aws` | `'amazonwebservices'` | - |
 | `azure` | `'microsoftazure'` | - |
 | `gcp` | `'googlecloud'` | - |
@@ -24483,7 +24577,7 @@ constructor(
 
 ### TelegramAPIError `class`
 
-📍 [`src/tools/telegram/types.ts:51`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:59`](src/tools/telegram/types.ts)
 
 Error from Telegram Bot API
 
@@ -24511,7 +24605,7 @@ constructor(
 
 ### TelegramConfigError `class`
 
-📍 [`src/tools/telegram/types.ts:65`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:86`](src/tools/telegram/types.ts)
 
 Error for missing Telegram configuration
 
@@ -24561,7 +24655,7 @@ constructor(
 
 ### TwilioConfigError `class`
 
-📍 [`src/tools/twilio/types.ts:78`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:91`](src/tools/twilio/types.ts)
 
 Error for missing Twilio configuration
 
@@ -26799,7 +26893,7 @@ validateConfig(): Promise&lt;boolean&gt;;
 
 ### IRoutineDefinitionStorage `interface`
 
-📍 [`src/domain/interfaces/IRoutineDefinitionStorage.ts:10`](src/domain/interfaces/IRoutineDefinitionStorage.ts)
+📍 [`src/domain/interfaces/IRoutineDefinitionStorage.ts:15`](src/domain/interfaces/IRoutineDefinitionStorage.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -26807,11 +26901,11 @@ validateConfig(): Promise&lt;boolean&gt;;
 #### `save()`
 
 ```typescript
-save(userId: string | undefined, definition: RoutineDefinition): Promise&lt;void&gt;;
+save(context: StorageUserContextInput, definition: RoutineDefinition): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `definition`: `RoutineDefinition`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -26819,11 +26913,11 @@ save(userId: string | undefined, definition: RoutineDefinition): Promise&lt;void
 #### `load()`
 
 ```typescript
-load(userId: string | undefined, id: string): Promise&lt;RoutineDefinition | null&gt;;
+load(context: StorageUserContextInput, id: string): Promise&lt;RoutineDefinition | null&gt;;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `id`: `string`
 
 **Returns:** `Promise&lt;RoutineDefinition | null&gt;`
@@ -26831,11 +26925,11 @@ load(userId: string | undefined, id: string): Promise&lt;RoutineDefinition | nul
 #### `delete()`
 
 ```typescript
-delete(userId: string | undefined, id: string): Promise&lt;void&gt;;
+delete(context: StorageUserContextInput, id: string): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `id`: `string`
 
 **Returns:** `Promise&lt;void&gt;`
@@ -26843,11 +26937,11 @@ delete(userId: string | undefined, id: string): Promise&lt;void&gt;;
 #### `exists()`
 
 ```typescript
-exists(userId: string | undefined, id: string): Promise&lt;boolean&gt;;
+exists(context: StorageUserContextInput, id: string): Promise&lt;boolean&gt;;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `id`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
@@ -26855,7 +26949,7 @@ exists(userId: string | undefined, id: string): Promise&lt;boolean&gt;;
 #### `list()`
 
 ```typescript
-list(userId: string | undefined, options?: {
+list(context: StorageUserContextInput, options?: {
     tags?: string[];
     search?: string;
     limit?: number;
@@ -26864,7 +26958,7 @@ list(userId: string | undefined, options?: {
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `options`: `{ tags?: string[] | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;RoutineDefinition[]&gt;`
@@ -26872,11 +26966,11 @@ list(userId: string | undefined, options?: {
 #### `getPath()`
 
 ```typescript
-getPath(userId: string | undefined): string;
+getPath(context: StorageUserContextInput): string;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 
 **Returns:** `string`
 
@@ -26886,7 +26980,7 @@ getPath(userId: string | undefined): string;
 
 ### IRoutineExecutionStorage `interface`
 
-📍 [`src/domain/interfaces/IRoutineExecutionStorage.ts:15`](src/domain/interfaces/IRoutineExecutionStorage.ts)
+📍 [`src/domain/interfaces/IRoutineExecutionStorage.ts:20`](src/domain/interfaces/IRoutineExecutionStorage.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -26896,11 +26990,11 @@ getPath(userId: string | undefined): string;
 Insert a new execution record. Returns the record ID.
 
 ```typescript
-insert(userId: string | undefined, record: RoutineExecutionRecord): Promise&lt;string&gt;;
+insert(context: StorageUserContextInput, record: RoutineExecutionRecord): Promise&lt;string&gt;;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `record`: `RoutineExecutionRecord`
 
 **Returns:** `Promise&lt;string&gt;`
@@ -26972,7 +27066,7 @@ List execution records with optional filters.
 
 ```typescript
 list(
-    userId: string | undefined,
+    context: StorageUserContextInput,
     options?: {
       routineId?: string;
       status?: RoutineExecutionStatus;
@@ -26983,7 +27077,7 @@ list(
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `options`: `{ routineId?: string | undefined; status?: RoutineExecutionStatus | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;RoutineExecutionRecord[]&gt;`
@@ -26993,11 +27087,11 @@ list(
 Check if a routine has a currently running execution.
 
 ```typescript
-hasRunning(userId: string | undefined, routineId: string): Promise&lt;boolean&gt;;
+hasRunning(context: StorageUserContextInput, routineId: string): Promise&lt;boolean&gt;;
 ```
 
 **Parameters:**
-- `userId`: `string | undefined`
+- `context`: `StorageUserContextInput`
 - `routineId`: `string`
 
 **Returns:** `Promise&lt;boolean&gt;`
@@ -27591,6 +27685,38 @@ Serialized history state for persistence
 
 ---
 
+### StorageUserContext `interface`
+
+📍 [`src/domain/interfaces/StorageContext.ts:18`](src/domain/interfaces/StorageContext.ts)
+
+StorageUserContext — Shared context type for all storage interfaces.
+
+Replaces the bare `userId: string | undefined` first parameter pattern.
+Backward compatible: callers can still pass a plain string or undefined.
+
+Multi-tenant support:
+- `bypassOwnerScope: true` allows admin operations on documents owned
+  by other users (e.g., system routines, shared resources).
+- The calling application (V25, Hosea) decides when to set this flag
+  after its own authorization checks — the library never makes policy
+  decisions about who is an admin.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `userId` | `userId: string;` | The acting user's ID |
+| `bypassOwnerScope?` | `bypassOwnerScope?: boolean;` | When true, storage operations match documents by ID only — not scoped
+by ownerId. Use for admin/superadmin operations where the caller has
+already verified authorization.
+
+Default: false (normal user-scoped behavior) |
+
+</details>
+
+---
+
 ### StoredAgentDefinition `interface`
 
 📍 [`src/domain/interfaces/IAgentDefinitionStorage.ts:21`](src/domain/interfaces/IAgentDefinitionStorage.ts)
@@ -27776,6 +27902,19 @@ type MCPClientConnectionState = | 'disconnected'
 
 ---
 
+### StorageUserContextInput `type`
+
+📍 [`src/domain/interfaces/StorageContext.ts:36`](src/domain/interfaces/StorageContext.ts)
+
+Accepted input type for storage methods.
+Maintains backward compatibility: bare string, undefined, or full context.
+
+```typescript
+type StorageUserContextInput = string | undefined | StorageUserContext
+```
+
+---
+
 ### StoredAgentType `type`
 
 📍 [`src/domain/interfaces/IAgentDefinitionStorage.ts:16`](src/domain/interfaces/IAgentDefinitionStorage.ts)
@@ -27796,6 +27935,22 @@ Helper to check if an object is destroyed and throw if so.
 
 ```typescript
 export function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void
+```
+
+---
+
+### resolveStorageUserContext `function`
+
+📍 [`src/domain/interfaces/StorageContext.ts:45`](src/domain/interfaces/StorageContext.ts)
+
+Resolve any accepted input to a normalized StorageUserContext.
+
+- `undefined` → `{ userId: 'default' }`
+- `'user-123'` → `{ userId: 'user-123' }`
+- `{ userId: 'user-123', bypassOwnerScope: true }` → passed through
+
+```typescript
+export function resolveStorageUserContext(ctx: StorageUserContextInput): StorageUserContext
 ```
 
 ---
@@ -29946,6 +30101,78 @@ getDisabledHooks(): string[]
 
 ---
 
+### IntegrationTestRunner `class`
+
+📍 [`src/testing/integration/runner.ts:74`](src/testing/integration/runner.ts)
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static runSuite()`
+
+Run a single test suite with real tools.
+
+```typescript
+static async runSuite(
+    suite: IntegrationTestSuite,
+    tools: ToolFunction[],
+    params: Record&lt;string, string&gt;,
+    options?: RunSuiteOptions
+  ): Promise&lt;TestSuiteResult&gt;
+```
+
+**Parameters:**
+- `suite`: `IntegrationTestSuite`
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
+- `params`: `Record&lt;string, string&gt;`
+- `options`: `RunSuiteOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;TestSuiteResult&gt;`
+
+#### `static validateParams()`
+
+Validate that required params are present.
+
+```typescript
+static validateParams(
+    suite: IntegrationTestSuite,
+    params: Record&lt;string, string&gt;
+  ): string[]
+```
+
+**Parameters:**
+- `suite`: `IntegrationTestSuite`
+- `params`: `Record&lt;string, string&gt;`
+
+**Returns:** `string[]`
+
+#### `static getAllSuites()`
+
+Get all registered test suites.
+
+```typescript
+static getAllSuites(): IntegrationTestSuite[]
+```
+
+**Returns:** `IntegrationTestSuite[]`
+
+#### `static getSuitesForService()`
+
+Get test suites matching a service type.
+
+```typescript
+static getSuitesForService(serviceType: string): IntegrationTestSuite[]
+```
+
+**Parameters:**
+- `serviceType`: `string`
+
+**Returns:** `IntegrationTestSuite[]`
+
+</details>
+
+---
+
 ### LoggingPlugin `class`
 
 📍 [`src/core/tool-execution/plugins/LoggingPlugin.ts:78`](src/core/tool-execution/plugins/LoggingPlugin.ts)
@@ -30584,7 +30811,7 @@ async focusWindow(windowId: number): Promise&lt;void&gt;
 
 ### PermissionPolicyManager `class`
 
-📍 [`src/core/permissions/PermissionPolicyManager.ts:90`](src/core/permissions/PermissionPolicyManager.ts)
+📍 [`src/core/permissions/PermissionPolicyManager.ts:96`](src/core/permissions/PermissionPolicyManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -33477,7 +33704,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:742`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:752`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -33578,6 +33805,9 @@ Used in:
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `autoApproveAll?` | `autoApproveAll?: boolean;` | When true, ALL tools are auto-approved without any permission checks.
+Use for autonomous/scheduled execution where no interactive approval UI exists.
+Blocklist is still respected for safety. |
 | `defaultScope?` | `defaultScope?: PermissionScope;` | Default permission scope for tools without explicit config. |
 | `defaultRiskLevel?` | `defaultRiskLevel?: RiskLevel;` | Default risk level for tools without explicit config. |
 | `allowlist?` | `allowlist?: string[];` | Tools that are always allowed (never prompt).
@@ -33598,7 +33828,7 @@ Only applies when resuming from a session. |
 
 ### AgentPolicyConfig `interface`
 
-📍 [`src/core/permissions/types.ts:561`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:569`](src/core/permissions/types.ts)
 
 Extended agent permissions config with policy support.
 
@@ -33673,7 +33903,7 @@ Configuration for an agent type that the orchestrator can spawn.
 
 ### APIKeyConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:69`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:73`](src/domain/entities/Connector.ts)
 
 Static API key authentication
 For services like OpenAI, Anthropic, many SaaS APIs
@@ -33750,7 +33980,7 @@ The approval UI can pre-populate this based on the tool call context. |
 
 ### ApprovalRequestContext `interface`
 
-📍 [`src/core/permissions/types.ts:538`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:546`](src/core/permissions/types.ts)
 
 Context passed to the onApprovalRequired callback.
 Extends PolicyContext with the deny decision and UI-relevant info.
@@ -33855,6 +34085,12 @@ or 'personal' Microsoft account). When omitted, uses the connector's default acc
 |----------|------|-------------|
 | `connector` | `connector: string;` | Name of the registered connector |
 | `accountId?` | `accountId?: string;` | Optional account alias for multi-account OAuth (e.g., 'work', 'personal') |
+| `toolFilter?` | `toolFilter?: string[];` | Optional: restrict which tools are generated for this identity.
+Each entry is matched against the tool's base name (the part after the
+connector prefix, e.g., 'send_email' from 'microsoft_work_send_email').
+
+When set, only tools whose name ends with `_<suffix>` or equals `<suffix>` are generated.
+When absent, ALL tools for this connector are generated. |
 
 </details>
 
@@ -33983,7 +34219,7 @@ Options for the default SentenceChunkingStrategy
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:926`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:936`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -34085,7 +34321,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:893`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:903`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -34105,7 +34341,7 @@ Result of compact() operation.
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:105`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:109`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -34174,7 +34410,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:202`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:206`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -34196,7 +34432,7 @@ Includes setup instructions and environment variables
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:910`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:920`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -34215,7 +34451,7 @@ Result of consolidate() operation.
 
 ### ContextBudget `interface`
 
-📍 [`src/core/context-nextgen/types.ts:561`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:571`](src/core/context-nextgen/types.ts)
 
 Token budget breakdown - clear and simple
 
@@ -34249,7 +34485,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:843`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:853`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -34789,7 +35025,7 @@ the user-facing session to a sub-agent.
 
 ### DirectCallOptions `interface`
 
-📍 [`src/core/BaseAgent.ts:259`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:260`](src/core/BaseAgent.ts)
 
 Options for direct LLM calls (bypassing AgentContext).
 
@@ -35207,7 +35443,7 @@ Options for fetch operations
 
 ### GitHubBranchEntry `interface`
 
-📍 [`src/tools/github/types.ts:293`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:316`](src/tools/github/types.ts)
 
 A branch entry
 
@@ -35226,7 +35462,7 @@ A branch entry
 
 ### GitHubCreatePRResult `interface`
 
-📍 [`src/tools/github/types.ts:312`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:335`](src/tools/github/types.ts)
 
 Result from create_pr tool
 
@@ -35250,7 +35486,7 @@ Result from create_pr tool
 
 ### GitHubGetPRResult `interface`
 
-📍 [`src/tools/github/types.ts:225`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:248`](src/tools/github/types.ts)
 
 Result from get_pr tool
 
@@ -35287,7 +35523,7 @@ Result from get_pr tool
 
 ### GitHubListBranchesResult `interface`
 
-📍 [`src/tools/github/types.ts:302`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:325`](src/tools/github/types.ts)
 
 Result from list_branches tool
 
@@ -35307,7 +35543,7 @@ Result from list_branches tool
 
 ### GitHubPRCommentEntry `interface`
 
-📍 [`src/tools/github/types.ts:269`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:292`](src/tools/github/types.ts)
 
 A unified comment/review entry
 
@@ -35331,7 +35567,7 @@ A unified comment/review entry
 
 ### GitHubPRCommentsResult `interface`
 
-📍 [`src/tools/github/types.ts:283`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:306`](src/tools/github/types.ts)
 
 Result from pr_comments tool
 
@@ -35351,7 +35587,7 @@ Result from pr_comments tool
 
 ### GitHubPRFilesResult `interface`
 
-📍 [`src/tools/github/types.ts:252`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:275`](src/tools/github/types.ts)
 
 Result from pr_files tool
 
@@ -35378,7 +35614,7 @@ Result from pr_files tool
 
 ### GitHubReadFileResult `interface`
 
-📍 [`src/tools/github/types.ts:211`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:234`](src/tools/github/types.ts)
 
 Result from read_file tool (GitHub variant)
 
@@ -35420,7 +35656,7 @@ Parsed GitHub repository reference
 
 ### GitHubSearchCodeResult `interface`
 
-📍 [`src/tools/github/types.ts:200`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:223`](src/tools/github/types.ts)
 
 Result from search_code tool
 
@@ -35441,7 +35677,7 @@ Result from search_code tool
 
 ### GitHubSearchFilesResult `interface`
 
-📍 [`src/tools/github/types.ts:189`](src/tools/github/types.ts)
+📍 [`src/tools/github/types.ts:212`](src/tools/github/types.ts)
 
 Result from search_files tool
 
@@ -35670,7 +35906,7 @@ reset(): void;
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:988`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:998`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -35741,7 +35977,7 @@ If any required plugin is missing, an error is thrown. |
 
 ### IContextPluginNextGen `interface`
 
-📍 [`src/core/context-nextgen/types.ts:164`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:174`](src/core/context-nextgen/types.ts)
 
 Context plugin interface for NextGen context management.
 
@@ -36356,9 +36592,65 @@ The adapter maps provider-specific data to this structure.
 
 ---
 
+### IntegrationTestCase `interface`
+
+📍 [`src/testing/integration/types.ts:97`](src/testing/integration/types.ts)
+
+A single test case within a suite.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Descriptive test name (e.g., 'Create a calendar meeting') |
+| `toolName` | `toolName: string;` | Tool name this exercises (without connector prefix, e.g., 'create_meeting') |
+| `description` | `description: string;` | Short description of what this test verifies |
+| `critical?` | `critical?: boolean;` | If true, failure here skips all remaining tests in the suite.
+Use for setup tests whose output is needed by later tests
+(e.g., create_meeting must succeed for get_meeting to run). |
+| `requiredParams?` | `requiredParams?: string[];` | Param keys this test requires. If any are missing from TestContext.params,
+the test is automatically skipped. |
+| `execute` | `execute: (
+    tools: Map&lt;string, ToolFunction&gt;,
+    context: TestContext
+  ) =&gt; Promise&lt;{ success: boolean; message?: string; data?: unknown }&gt;;` | Execute the test. |
+| `cleanup?` | `cleanup?: (
+    tools: Map&lt;string, ToolFunction&gt;,
+    context: TestContext
+  ) =&gt; Promise&lt;void&gt;;` | Optional cleanup that runs even if the test failed.
+Use to delete resources created during the test. |
+
+</details>
+
+---
+
+### IntegrationTestSuite `interface`
+
+📍 [`src/testing/integration/types.ts:138`](src/testing/integration/types.ts)
+
+Definition of a complete integration test suite for a service type.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | Unique suite ID (e.g., 'google-workspace') |
+| `serviceType` | `serviceType: string;` | Service type this suite tests (must match ConnectorTools.detectService output) |
+| `name` | `name: string;` | Human-readable name (e.g., 'Google Workspace') |
+| `description` | `description: string;` | Description of what this suite covers |
+| `requiredParams` | `requiredParams: TestParam[];` | Params that must be provided for any tests to run |
+| `optionalParams` | `optionalParams: TestParam[];` | Params that enable additional tests if provided |
+| `tests` | `tests: IntegrationTestCase[];` | Ordered list of test cases (execution order matters) |
+
+</details>
+
+---
+
 ### IPermissionPolicy `interface`
 
-📍 [`src/core/permissions/types.ts:474`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:482`](src/core/permissions/types.ts)
 
 A composable permission policy that evaluates tool execution requests.
 
@@ -36619,7 +36911,7 @@ Used to track where information came from and when it was last verified
 
 ### IStoreHandler `interface`
 
-📍 [`src/core/context-nextgen/types.ts:516`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:526`](src/core/context-nextgen/types.ts)
 
 Interface for plugins that provide CRUD storage.
 
@@ -36893,7 +37185,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### ITokenEstimator `interface`
 
-📍 [`src/core/context-nextgen/types.ts:40`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:50`](src/core/context-nextgen/types.ts)
 
 Token estimator interface - used for conversation and input estimation
 Plugins handle their own token estimation internally.
@@ -37185,7 +37477,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:86`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:90`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -37212,7 +37504,7 @@ For service accounts (Google, Salesforce)
 
 ### KnownContextFeatures `interface`
 
-📍 [`src/core/context-nextgen/types.ts:660`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:670`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins
 
@@ -37234,7 +37526,7 @@ Feature flags for enabling/disabling plugins
 
 ### KnownPluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:717`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:727`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -37559,7 +37851,46 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MeetingSlotSuggestion `interface`
 
-📍 [`src/tools/microsoft/types.ts:311`](src/tools/microsoft/types.ts)
+📍 [`src/tools/calendar/types.ts:91`](src/tools/calendar/types.ts)
+
+A single slot suggestion with per-attendee availability.
+Identical to MeetingSlotSuggestion in both google and microsoft types.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `start` | `start: string;` | - |
+| `end` | `end: string;` | - |
+| `confidence` | `confidence: string;` | - |
+| `attendeeAvailability` | `attendeeAvailability: { attendee: string; availability: string }[];` | - |
+
+</details>
+
+---
+
+### MeetingSlotSuggestion `interface`
+
+📍 [`src/tools/google/types.ts:427`](src/tools/google/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `start` | `start: string;` | - |
+| `end` | `end: string;` | - |
+| `confidence` | `confidence: string;` | - |
+| `attendeeAvailability` | `attendeeAvailability: { attendee: string; availability: string }[];` | - |
+
+</details>
+
+---
+
+### MeetingSlotSuggestion `interface`
+
+📍 [`src/tools/microsoft/types.ts:427`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37595,7 +37926,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftCreateMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:282`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:357`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37614,7 +37945,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftDraftEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:270`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:345`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37632,7 +37963,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftEditMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:290`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:365`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37650,7 +37981,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftFindSlotsResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:304`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:420`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37668,7 +37999,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftGetTranscriptResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:297`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:372`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37686,7 +38017,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftListFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:421`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:561`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37715,7 +38046,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftReadFileResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:411`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:551`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37736,7 +38067,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftSearchFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:439`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:579`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37765,7 +38096,7 @@ Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' } |
 
 ### MicrosoftSendEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:277`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:352`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -37851,7 +38182,7 @@ Configuration for initiating an outbound call.
 
 ### OversizedInputResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:629`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:639`](src/core/context-nextgen/types.ts)
 
 Result of handling oversized current input
 
@@ -37873,7 +38204,7 @@ Result of handling oversized current input
 
 ### PermissionAuditEntry `interface`
 
-📍 [`src/core/permissions/types.ts:602`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:610`](src/core/permissions/types.ts)
 
 Audit entry for permission decisions.
 
@@ -37958,6 +38289,8 @@ Result of checking if a tool needs approval
 | `chain?` | `chain?: PolicyChainConfig;` | Policy chain configuration |
 | `onApprovalRequired?` | `onApprovalRequired?: (context: ApprovalRequestContext) =&gt; Promise&lt;ApprovalDecision&gt;;` | Callback invoked when a tool needs user approval |
 | `userRulesStorage?` | `userRulesStorage?: IUserPermissionRulesStorage;` | Per-user permission rules storage (optional) |
+| `autoApproveAll?` | `autoApproveAll?: boolean;` | When true, ALL tools are auto-approved without any permission checks.
+Blocklist is still respected for safety. |
 
 </details>
 
@@ -38108,7 +38441,7 @@ Serializable plugin info (no factory reference)
 
 ### PolicyChainConfig `interface`
 
-📍 [`src/core/permissions/types.ts:494`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:502`](src/core/permissions/types.ts)
 
 Configuration for the PolicyChain evaluator.
 
@@ -38125,7 +38458,7 @@ Configuration for the PolicyChain evaluator.
 
 ### PolicyCheckResult `interface`
 
-📍 [`src/core/permissions/types.ts:505`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:513`](src/core/permissions/types.ts)
 
 Rich result from PermissionPolicyManager.check()
 
@@ -38150,7 +38483,7 @@ Rich result from PermissionPolicyManager.check()
 
 ### PolicyContext `interface`
 
-📍 [`src/core/permissions/types.ts:412`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:420`](src/core/permissions/types.ts)
 
 Rich context passed to policies for evaluation.
 
@@ -38184,7 +38517,7 @@ by the application developer at registration time. |
 
 ### PolicyDecision `interface`
 
-📍 [`src/core/permissions/types.ts:384`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:392`](src/core/permissions/types.ts)
 
 Decision returned by a permission policy.
 
@@ -38235,7 +38568,7 @@ Decision returned by a permission policy.
 
 ### PreparedContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:608`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:618`](src/core/context-nextgen/types.ts)
 
 Result of prepare() - ready for LLM call
 
@@ -38580,6 +38913,26 @@ Enables parameterized, reusable routines.
 | `description` | `description: string;` | Human-readable description |
 | `required?` | `required?: boolean;` | Whether this parameter must be provided (default: false) |
 | `default?` | `default?: unknown;` | Default value when not provided |
+
+</details>
+
+---
+
+### RunSuiteOptions `interface`
+
+📍 [`src/testing/integration/types.ts:158`](src/testing/integration/types.ts)
+
+Options for running a test suite.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `userId?` | `userId?: string;` | User ID passed to ToolContext |
+| `connectorName?` | `connectorName?: string;` | Connector name (for result tracking) |
+| `onProgress?` | `onProgress?: (result: TestCaseResult) =&gt; void;` | Called after each test case completes (for real-time UI updates) |
+| `signal?` | `signal?: AbortSignal;` | Abort signal for cancellation |
 
 </details>
 
@@ -38938,7 +39291,7 @@ Complete service definition - single source of truth
 
 ### ServiceInfo `interface`
 
-📍 [`src/domain/entities/Services.ts:479`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:488`](src/domain/entities/Services.ts)
 
 Service info lookup (derived from SERVICE_DEFINITIONS)
 
@@ -39002,7 +39355,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackAddReactionResult `interface`
 
-📍 [`src/tools/slack/types.ts:295`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:312`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39018,7 +39371,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackChannel `interface`
 
-📍 [`src/tools/slack/types.ts:215`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:232`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39040,7 +39393,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackGetChannelInfoResult `interface`
 
-📍 [`src/tools/slack/types.ts:319`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:336`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39061,7 +39414,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackGetMentionsResult `interface`
 
-📍 [`src/tools/slack/types.ts:268`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:285`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39080,7 +39433,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackGetMessagesResult `interface`
 
-📍 [`src/tools/slack/types.ts:244`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:261`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39100,7 +39453,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackGetThreadResult `interface`
 
-📍 [`src/tools/slack/types.ts:260`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:277`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39119,7 +39472,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackGetUsersResult `interface`
 
-📍 [`src/tools/slack/types.ts:311`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:328`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39138,7 +39491,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackListChannelsResult `interface`
 
-📍 [`src/tools/slack/types.ts:226`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:243`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39157,7 +39510,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackMentionMessage `interface`
 
-📍 [`src/tools/slack/types.ts:276`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:293`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39178,7 +39531,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackMessage `interface`
 
-📍 [`src/tools/slack/types.ts:234`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:251`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39199,7 +39552,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackPostMessageResult `interface`
 
-📍 [`src/tools/slack/types.ts:253`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:270`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39217,7 +39570,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackSearchMessagesResult `interface`
 
-📍 [`src/tools/slack/types.ts:286`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:303`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39237,7 +39590,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackSetChannelTopicResult `interface`
 
-📍 [`src/tools/slack/types.ts:329`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:346`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39254,7 +39607,7 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ### SlackUser `interface`
 
-📍 [`src/tools/slack/types.ts:300`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:317`](src/tools/slack/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39379,7 +39732,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreActionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:462`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:472`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39395,7 +39748,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreDeleteResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:452`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:462`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39411,7 +39764,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreEntrySchema `interface`
 
-📍 [`src/core/context-nextgen/types.ts:394`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:404`](src/core/context-nextgen/types.ts)
 
 Describes a store's schema for dynamic tool description generation.
 The `descriptionFactory` on each store tool uses this to build
@@ -39446,7 +39799,7 @@ If undefined or empty, this store has no actions. |
 
 ### StoreGetResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:436`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:446`](src/core/context-nextgen/types.ts)
 
 Result types for store operations.
 These are intentionally loose (Record-based) to accommodate
@@ -39468,7 +39821,7 @@ store-specific fields in responses.
 
 ### StoreListResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:457`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:467`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39484,7 +39837,7 @@ store-specific fields in responses.
 
 ### StoreSetResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:445`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:455`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39563,7 +39916,7 @@ Typically prefixed by channel (e.g., "email:msg_123", "ticket:T-456") |
 
 ### TelegramChat `interface`
 
-📍 [`src/tools/telegram/types.ts:161`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:187`](src/tools/telegram/types.ts)
 
 Telegram Chat object
 
@@ -39587,7 +39940,7 @@ Telegram Chat object
 
 ### TelegramGetChatResult `interface`
 
-📍 [`src/tools/telegram/types.ts:218`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:244`](src/tools/telegram/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39604,7 +39957,7 @@ Telegram Chat object
 
 ### TelegramGetMeResult `interface`
 
-📍 [`src/tools/telegram/types.ts:212`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:238`](src/tools/telegram/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39621,7 +39974,7 @@ Telegram Chat object
 
 ### TelegramGetUpdatesResult `interface`
 
-📍 [`src/tools/telegram/types.ts:224`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:250`](src/tools/telegram/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39639,7 +39992,7 @@ Telegram Chat object
 
 ### TelegramMessage `interface`
 
-📍 [`src/tools/telegram/types.ts:173`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:199`](src/tools/telegram/types.ts)
 
 Telegram Message object
 
@@ -39663,7 +40016,7 @@ Telegram Message object
 
 ### TelegramPhotoSize `interface`
 
-📍 [`src/tools/telegram/types.ts:185`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:211`](src/tools/telegram/types.ts)
 
 Telegram PhotoSize object
 
@@ -39684,7 +40037,7 @@ Telegram PhotoSize object
 
 ### TelegramSendResult `interface`
 
-📍 [`src/tools/telegram/types.ts:206`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:232`](src/tools/telegram/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39701,7 +40054,7 @@ Telegram PhotoSize object
 
 ### TelegramSetWebhookResult `interface`
 
-📍 [`src/tools/telegram/types.ts:231`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:257`](src/tools/telegram/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39717,7 +40070,7 @@ Telegram PhotoSize object
 
 ### TelegramUpdate `interface`
 
-📍 [`src/tools/telegram/types.ts:194`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:220`](src/tools/telegram/types.ts)
 
 Telegram Update object (from getUpdates)
 
@@ -39738,7 +40091,7 @@ Telegram Update object (from getUpdates)
 
 ### TelegramUser `interface`
 
-📍 [`src/tools/telegram/types.ts:151`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:177`](src/tools/telegram/types.ts)
 
 Telegram User object
 
@@ -39772,6 +40125,103 @@ Telegram User object
 | `'call:media_timestamp'` | `'call:media_timestamp': (callId: string, info: TelephonyMediaTimestamp) =&gt; void;` | Latest inbound media timestamp from telephony |
 | `'call:ended'` | `'call:ended': (callId: string, reason: string) =&gt; void;` | Call has ended |
 | `'error'` | `'error': (error: Error, callId?: string) =&gt; void;` | Adapter-level error |
+
+</details>
+
+---
+
+### TestCaseResult `interface`
+
+📍 [`src/testing/integration/types.ts:33`](src/testing/integration/types.ts)
+
+Result of a single test case execution.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `testName` | `testName: string;` | Test case name |
+| `toolName` | `toolName: string;` | Tool name this test exercises (without connector prefix) |
+| `status` | `status: 'passed' | 'failed' | 'skipped' | 'error';` | Outcome |
+| `duration` | `duration: number;` | Execution time in ms |
+| `message?` | `message?: string;` | Human-readable summary |
+| `error?` | `error?: string;` | Error details (stack trace, API error, etc.) |
+| `request?` | `request?: unknown;` | Arguments sent to the tool (for debugging) |
+| `response?` | `response?: unknown;` | Tool response (for debugging) |
+
+</details>
+
+---
+
+### TestContext `interface`
+
+📍 [`src/testing/integration/types.ts:81`](src/testing/integration/types.ts)
+
+Shared context passed to all test cases in a suite run.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `params` | `params: Record&lt;string, string&gt;;` | User-provided params (emails, channels, repos, etc.) |
+| `state` | `state: Record&lt;string, unknown&gt;;` | Shared mutable state between test cases (e.g., created event ID for later get/delete) |
+| `userId?` | `userId?: string;` | User ID for ToolContext (from the authenticated user running the tests) |
+| `connectorName?` | `connectorName?: string;` | Connector name being tested |
+| `log` | `log: (message: string) =&gt; void;` | Real-time log callback |
+
+</details>
+
+---
+
+### TestParam `interface`
+
+📍 [`src/testing/integration/types.ts:15`](src/testing/integration/types.ts)
+
+Parameter definition for a test suite.
+Host app presents these as input fields to the user before running tests.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `key: string;` | Unique key used to look up this param in TestContext.params |
+| `label` | `label: string;` | Human-readable label for UI |
+| `description` | `description: string;` | Description / help text |
+| `type` | `type: 'string' | 'email' | 'url' | 'boolean';` | Input type hint for UI |
+| `required` | `required: boolean;` | Whether the param must be provided (tests using it are skipped if missing) |
+| `default?` | `default?: string;` | Default value (pre-filled in UI) |
+
+</details>
+
+---
+
+### TestSuiteResult `interface`
+
+📍 [`src/testing/integration/types.ts:55`](src/testing/integration/types.ts)
+
+Result of running a full test suite against a connector.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `suiteId` | `suiteId: string;` | Suite ID (e.g., 'google-workspace') |
+| `connectorName` | `connectorName: string;` | Connector name that was tested |
+| `serviceType` | `serviceType: string;` | Detected service type |
+| `startedAt` | `startedAt: string;` | ISO timestamp when suite started |
+| `completedAt` | `completedAt: string;` | ISO timestamp when suite completed |
+| `results` | `results: TestCaseResult[];` | Per-test results in execution order |
+| `summary` | `summary: {
+    passed: number;
+    failed: number;
+    skipped: number;
+    error: number;
+    total: number;
+  };` | Aggregated counts |
 
 </details>
 
@@ -39881,7 +40331,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### TwilioGetMessageResult `interface`
 
-📍 [`src/tools/twilio/types.ts:215`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:228`](src/tools/twilio/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39898,7 +40348,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### TwilioListMessagesResult `interface`
 
-📍 [`src/tools/twilio/types.ts:207`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:220`](src/tools/twilio/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39917,7 +40367,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### TwilioMessage `interface`
 
-📍 [`src/tools/twilio/types.ts:184`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:197`](src/tools/twilio/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39945,7 +40395,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### TwilioSendResult `interface`
 
-📍 [`src/tools/twilio/types.ts:201`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:214`](src/tools/twilio/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39980,7 +40430,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### UserPermissionRule `interface`
 
-📍 [`src/core/permissions/types.ts:728`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:736`](src/core/permissions/types.ts)
 
 A persistent, per-user permission rule.
 
@@ -40387,7 +40837,7 @@ type Content = | InputTextContent
 
 ### ContextFeatures `type`
 
-📍 [`src/core/context-nextgen/types.ts:685`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:695`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins.
 Known keys provide autocomplete; arbitrary string keys are also accepted
@@ -40595,7 +41045,7 @@ type OutputItem = Message | CompactionItem | ReasoningItem
 
 ### PermissionManagerEvent `type`
 
-📍 [`src/core/permissions/types.ts:287`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:295`](src/core/permissions/types.ts)
 
 Events emitted by ToolPermissionManager
 
@@ -40642,7 +41092,7 @@ type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig
 
 ### PluginConfigs `type`
 
-📍 [`src/core/context-nextgen/types.ts:737`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:747`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 Known keys provide autocomplete; arbitrary string keys accepted
@@ -40684,7 +41134,7 @@ type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra'
 
 ### ResolvedContextFeatures `type`
 
-📍 [`src/core/context-nextgen/types.ts:691`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:701`](src/core/context-nextgen/types.ts)
 
 Resolved features — all known keys guaranteed present, plus any extras.
 Used internally after merging with DEFAULT_FEATURES.
@@ -40797,7 +41247,7 @@ type ServiceCategory = | 'major-vendors'
 
 ### ServiceType `type`
 
-📍 [`src/domain/entities/Services.ts:450`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:459`](src/domain/entities/Services.ts)
 
 Service type - union of all service IDs
 
@@ -41038,7 +41488,7 @@ export function createRoutineExecutionRecord(
 
 ### detectServiceFromURL `function`
 
-📍 [`src/domain/entities/Services.ts:528`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:537`](src/domain/entities/Services.ts)
 
 Detect service type from a URL
 
@@ -41050,7 +41500,7 @@ export function detectServiceFromURL(url: string): string | undefined
 
 ### encodeSharingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:503`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:643`](src/tools/microsoft/types.ts)
 
 Encode a sharing URL into the Graph API sharing token format.
 
@@ -41148,7 +41598,7 @@ const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
 
 ### formatAttendees `function`
 
-📍 [`src/tools/microsoft/types.ts:181`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:256`](src/tools/microsoft/types.ts)
 
 Convert an array of email addresses (any format) to Microsoft Graph attendee format.
 Normalizes input first, so it's safe to pass LLM output directly.
@@ -41161,7 +41611,19 @@ export function formatAttendees(emails: unknown[]):
 
 ### formatFileSize `function`
 
-📍 [`src/tools/microsoft/types.ts:607`](src/tools/microsoft/types.ts)
+📍 [`src/tools/google/types.ts:290`](src/tools/google/types.ts)
+
+Format a file size in bytes to a human-readable string.
+
+```typescript
+export function formatFileSize(bytes: number): string
+```
+
+---
+
+### formatFileSize `function`
+
+📍 [`src/tools/microsoft/types.ts:747`](src/tools/microsoft/types.ts)
 
 Format a file size in bytes to a human-readable string.
 
@@ -41186,7 +41648,7 @@ export function formatPluginDisplayName(name: string): string
 
 ### formatRecipients `function`
 
-📍 [`src/tools/microsoft/types.ts:173`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:248`](src/tools/microsoft/types.ts)
 
 Convert an array of email addresses (any format) to Microsoft Graph recipient format.
 Normalizes input first, so it's safe to pass LLM output directly.
@@ -41199,7 +41661,7 @@ export function formatRecipients(emails: unknown[]):
 
 ### fromSlackTimestamp `function`
 
-📍 [`src/tools/slack/types.ts:147`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:164`](src/tools/slack/types.ts)
 
 Convert a Slack timestamp to an ISO 8601 string.
 
@@ -41226,7 +41688,7 @@ export function getAccountSid(connector: Connector): string
 
 ### getAllServiceIds `function`
 
-📍 [`src/domain/entities/Services.ts:564`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:573`](src/domain/entities/Services.ts)
 
 Get all service IDs
 
@@ -41238,7 +41700,7 @@ export function getAllServiceIds(): string[]
 
 ### getAuthenticatedUserId `function`
 
-📍 [`src/tools/slack/types.ts:527`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:544`](src/tools/slack/types.ts)
 
 Get the authenticated bot/user's Slack user ID.
 Uses `auth.test` — works for both bot and user tokens.
@@ -41267,7 +41729,7 @@ export function getBackgroundOutput(bgId: string):
 
 ### getBotToken `function`
 
-📍 [`src/tools/telegram/types.ts:24`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:28`](src/tools/telegram/types.ts)
 
 Get the Bot API token from the connector's auth config.
 
@@ -41292,7 +41754,7 @@ export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;I
 
 ### getDrivePrefix `function`
 
-📍 [`src/tools/microsoft/types.ts:551`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:691`](src/tools/microsoft/types.ts)
 
 Determine the drive prefix for Graph API calls.
 
@@ -41347,7 +41809,7 @@ export function getRoutineProgress(execution: RoutineExecution): number
 
 ### getServiceDefinition `function`
 
-📍 [`src/domain/entities/Services.ts:550`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:559`](src/domain/entities/Services.ts)
 
 Get service definition by service type
 
@@ -41359,7 +41821,7 @@ export function getServiceDefinition(serviceType: string): ServiceDefinition | u
 
 ### getServiceInfo `function`
 
-📍 [`src/domain/entities/Services.ts:543`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:552`](src/domain/entities/Services.ts)
 
 Get service info by service type
 
@@ -41371,7 +41833,7 @@ export function getServiceInfo(serviceType: string): ServiceInfo | undefined
 
 ### getServicesByCategory `function`
 
-📍 [`src/domain/entities/Services.ts:557`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:566`](src/domain/entities/Services.ts)
 
 Get all services in a category
 
@@ -41383,16 +41845,37 @@ export function getServicesByCategory(category: ServiceCategory): ServiceDefinit
 
 ### getUserPathPrefix `function`
 
-📍 [`src/tools/microsoft/types.ts:21`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:54`](src/tools/microsoft/types.ts)
 
 Get the user path prefix for Microsoft Graph API requests.
 
-- OAuth `authorization_code` flow (delegated): returns `/me` (ignores targetUser)
-- OAuth `client_credentials` flow (application): returns `/users/${targetUser}` (requires targetUser)
+- App-permission flows (client_credentials, jwt_bearer, jwt): returns `/users/${targetUser}`
+- Delegated flow (authorization_code): returns `/me` (ignores targetUser)
 - API key / other: returns `/me`
 
 ```typescript
 export function getUserPathPrefix(connector: Connector, targetUser?: string): string
+```
+
+---
+
+### isAppPermissionAuth `function`
+
+📍 [`src/tools/microsoft/types.ts:26`](src/tools/microsoft/types.ts)
+
+Check whether a connector uses app-level (non-delegated) authentication.
+App-level connectors access resources on behalf of the application, not a
+specific signed-in user, so Microsoft Graph calls must use `/users/{id}`
+instead of `/me`.
+
+Detection logic:
+- `authorization_code` → delegated (user signed in)
+- `client_credentials` / `jwt_bearer` → app-only
+- `jwt` auth type → app-only
+- Missing flow or `api_key` → assume delegated (safest default)
+
+```typescript
+export function isAppPermissionAuth(connector: Connector): boolean
 ```
 
 ---
@@ -41428,7 +41911,7 @@ export function isExcludedExtension(
 
 ### isKnownService `function`
 
-📍 [`src/domain/entities/Services.ts:571`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:580`](src/domain/entities/Services.ts)
 
 Check if a service ID is known
 
@@ -41440,7 +41923,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### isMicrosoftFileUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:528`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:668`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a OneDrive/SharePoint web URL.
 
@@ -41458,7 +41941,7 @@ export function isMicrosoftFileUrl(source: string): boolean
 
 ### isStoreHandler `function`
 
-📍 [`src/core/context-nextgen/types.ts:539`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:549`](src/core/context-nextgen/types.ts)
 
 Type guard to check if a plugin implements IStoreHandler.
 
@@ -41470,7 +41953,7 @@ export function isStoreHandler(plugin: IContextPluginNextGen): plugin is IContex
 
 ### isTeamsMeetingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:199`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:274`](src/tools/microsoft/types.ts)
 
 Check if a meeting ID input is a Teams join URL.
 
@@ -41490,7 +41973,7 @@ export function isTeamsMeetingUrl(input: string): boolean
 
 ### isWebUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:515`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:655`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a web URL (http/https).
 
@@ -41539,7 +42022,7 @@ export function mergeTextPieces(pieces: DocumentPiece[]): string
 
 ### microsoftFetch `function`
 
-📍 [`src/tools/microsoft/types.ts:75`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:149`](src/tools/microsoft/types.ts)
 
 Make an authenticated Microsoft Graph API request through the connector.
 
@@ -41571,7 +42054,20 @@ export function mulawToPcm(mulaw: Buffer): Buffer
 
 ### normalizeEmails `function`
 
-📍 [`src/tools/microsoft/types.ts:149`](src/tools/microsoft/types.ts)
+📍 [`src/tools/google/types.ts:197`](src/tools/google/types.ts)
+
+Normalize an email array from any format the LLM might send into plain strings.
+Same logic as Microsoft tools for consistency.
+
+```typescript
+export function normalizeEmails(input: unknown[]): string[]
+```
+
+---
+
+### normalizeEmails `function`
+
+📍 [`src/tools/microsoft/types.ts:224`](src/tools/microsoft/types.ts)
 
 Normalize an email array from any format the LLM might send into plain strings.
 
@@ -41591,7 +42087,7 @@ export function normalizeEmails(input: unknown[]): string[]
 
 ### normalizePhoneNumber `function`
 
-📍 [`src/tools/twilio/types.ts:163`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:176`](src/tools/twilio/types.ts)
 
 Normalize a phone number to E.164 format.
 Ensures the number starts with '+'.
@@ -41659,6 +42155,18 @@ export function registerScrapeProvider(
 
 ---
 
+### registerSuite `function`
+
+📍 [`src/testing/integration/runner.ts:25`](src/testing/integration/runner.ts)
+
+Register a test suite. Called by each suite module.
+
+```typescript
+export function registerSuite(suite: IntegrationTestSuite): void
+```
+
+---
+
 ### resamplePcm `function`
 
 📍 [`src/capabilities/voice/adapters/twilio/codecs.ts:128`](src/capabilities/voice/adapters/twilio/codecs.ts)
@@ -41700,7 +42208,7 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ### resolveFileEndpoints `function`
 
-📍 [`src/tools/microsoft/types.ts:570`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:710`](src/tools/microsoft/types.ts)
 
 Build the Graph API endpoint and metadata endpoint for a file source.
 
@@ -41754,7 +42262,7 @@ export function resolveMaxContextTokens(
 
 ### resolveMeetingId `function`
 
-📍 [`src/tools/microsoft/types.ts:225`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:300`](src/tools/microsoft/types.ts)
 
 Resolve a meeting input (ID or Teams URL) to a Graph API online meeting ID.
 
@@ -41831,7 +42339,7 @@ export function setMediaStorage(storage: IMediaStorage): void
 
 ### slackFetch `function`
 
-📍 [`src/tools/slack/types.ts:65`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:82`](src/tools/slack/types.ts)
 
 Make an authenticated Slack Web API request through the connector.
 
@@ -41850,7 +42358,7 @@ export async function slackFetch&lt;T extends SlackBaseResponse = SlackBaseRespo
 
 ### slackPaginate `function`
 
-📍 [`src/tools/slack/types.ts:162`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:179`](src/tools/slack/types.ts)
 
 Collect paginated results from a Slack API method.
 
@@ -41882,13 +42390,18 @@ export function sttToTwilio(pcm: Buffer, sourceRate: number = 24000): Buffer
 
 ### telegramFetch `function`
 
-📍 [`src/tools/telegram/types.ts:91`](src/tools/telegram/types.ts)
+📍 [`src/tools/telegram/types.ts:117`](src/tools/telegram/types.ts)
 
 Make an authenticated Telegram Bot API request.
 
 Builds the URL as: /bot<TOKEN>/<method>
 All calls are POST with JSON body (Telegram supports both GET and POST,
 but POST with JSON is the most flexible and consistent).
+
+Token resolution: Uses connector.getToken(userId, accountId) which supports
+both api_key connectors (returns static bot token) and OAuth connectors
+(returns account-specific token). Backward compatible — api_key connectors
+ignore userId/accountId.
 
 ```typescript
 export async function telegramFetch&lt;T = unknown&gt;(
@@ -41915,7 +42428,7 @@ export function toConnectorOptions(options: ExtendedFetchOptions): ConnectorFetc
 
 ### toSlackTimestamp `function`
 
-📍 [`src/tools/slack/types.ts:130`](src/tools/slack/types.ts)
+📍 [`src/tools/slack/types.ts:147`](src/tools/slack/types.ts)
 
 Convert an ISO 8601 date string to a Slack timestamp (Unix epoch string).
 
@@ -41930,7 +42443,7 @@ export function toSlackTimestamp(input: string): string
 
 ### toWhatsAppNumber `function`
 
-📍 [`src/tools/twilio/types.ts:174`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:187`](src/tools/twilio/types.ts)
 
 Add the WhatsApp prefix to a phone number.
 If already prefixed, returns as-is.
@@ -41943,7 +42456,7 @@ export function toWhatsAppNumber(phone: string): string
 
 ### twilioFetch `function`
 
-📍 [`src/tools/twilio/types.ts:95`](src/tools/twilio/types.ts)
+📍 [`src/tools/twilio/types.ts:108`](src/tools/twilio/types.ts)
 
 Make an authenticated Twilio API request through the connector.
 
@@ -42000,7 +42513,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:816`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:826`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -42070,7 +42583,7 @@ Default configuration values
 
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:696`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:706`](src/core/context-nextgen/types.ts)
 
 Default feature configuration for built-in plugins.
 
@@ -42121,7 +42634,7 @@ Default feature configuration for built-in plugins.
 
 ### DEFAULT_PERMISSION_CONFIG `const`
 
-📍 [`src/core/permissions/types.ts:310`](src/core/permissions/types.ts)
+📍 [`src/core/permissions/types.ts:318`](src/core/permissions/types.ts)
 
 Default permission config applied when no config is specified
 
