@@ -41,6 +41,9 @@ export const googleTemplate: VendorTemplate = {
         },
       },
       scopes: [
+        'openid',
+        'email',
+        'profile',
         'https://www.googleapis.com/auth/drive',
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/gmail.readonly',
@@ -52,6 +55,9 @@ export const googleTemplate: VendorTemplate = {
         'https://www.googleapis.com/auth/admin.directory.user.readonly',
       ],
       scopeDescriptions: {
+        'openid': 'OpenID Connect (required for account identification)',
+        'email': 'View email address',
+        'profile': 'View basic profile info',
         'https://www.googleapis.com/auth/drive': 'Read and write Google Drive files',
         'https://www.googleapis.com/auth/calendar': 'Read and write Google Calendar',
         'https://www.googleapis.com/auth/gmail.readonly': 'Read Gmail messages',

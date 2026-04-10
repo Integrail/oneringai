@@ -16,12 +16,31 @@ import type { Connector } from '../../core/Connector.js';
  * App-level connectors access resources on behalf of the application, not a
  * specific signed-in user, so Microsoft Graph calls must use `/users/{id}`
  * instead of `/me`.
+ *
+ * Detection logic:
+ * - `authorization_code` → delegated (user signed in)
+ * - `client_credentials` / `jwt_bearer` → app-only
+ * - `jwt` auth type → app-only
+ * - Missing flow or `api_key` → assume delegated (safest default)
  */
 export function isAppPermissionAuth(connector: Connector): boolean {
   const auth = connector.config.auth;
-  if (auth.type === 'oauth' && auth.flow === 'client_credentials') return true;
-  if (auth.type === 'oauth' && auth.flow === 'jwt_bearer') return true;
+
+  // OAuth connectors: check the flow field
+  if (auth.type === 'oauth') {
+    // Explicit delegated flow — definitely not app-only
+    if (auth.flow === 'authorization_code') return false;
+    // Explicit app-only flows
+    if (auth.flow === 'client_credentials') return true;
+    if (auth.flow === 'jwt_bearer') return true;
+    // Missing or unknown flow — default to delegated (safest)
+    return false;
+  }
+
+  // JWT auth type is always app-only
   if (auth.type === 'jwt') return true;
+
+  // api_key, none, or other — assume delegated
   return false;
 }
 
@@ -35,9 +54,12 @@ export function isAppPermissionAuth(connector: Connector): boolean {
 export function getUserPathPrefix(connector: Connector, targetUser?: string): string {
   if (isAppPermissionAuth(connector)) {
     if (!targetUser) {
+      const auth = connector.config.auth;
+      const flowInfo = auth.type === 'oauth' ? ` (flow: ${auth.flow})` : ` (type: ${auth.type})`;
       throw new Error(
-        'targetUser is required when using app-permission auth (client_credentials / jwt_bearer). ' +
-        'Provide a user ID or UPN (e.g., "user@domain.com").'
+        `targetUser is required when using app-permission auth${flowInfo}. ` +
+        'Provide a user ID or UPN (e.g., "user@domain.com"). ' +
+        'If this connector uses delegated (user) auth, check that the auth config has flow: "authorization_code".'
       );
     }
     return `/users/${targetUser}`;

@@ -302,6 +302,14 @@ export class AuthCodePKCEFlow {
 
     const data: any = await response.json();
 
+    // Preserve existing refresh_token if the provider didn't return a new one.
+    // Google (and some other providers) only issue refresh_token on the initial
+    // authorization — refresh responses omit it. Without this, the stored
+    // refresh_token gets overwritten with undefined and subsequent refreshes fail.
+    if (!data.refresh_token) {
+      data.refresh_token = refreshToken;
+    }
+
     // Store new token with user and account scoping
     await this.tokenStore.storeToken(data, userId, accountId);
 
