@@ -207,6 +207,10 @@ export class IntegrationTestRunner {
         duration,
         message: result.message,
         response: result.data,
+        // For failed tests, serialize the full response as the error for visibility
+        error: !result.success
+          ? JSON.stringify(result.data ?? result.message, null, 2)
+          : undefined,
       };
     } catch (err: unknown) {
       const duration = Date.now() - start;
