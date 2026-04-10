@@ -957,15 +957,6 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
       throw new ToolExecutionError(toolName, 'Tool is disabled');
     }
 
-    // Connector-scoped safety net: block execution if the connector is not in the agent's allowlist
-    if (registration.source?.startsWith('connector:')) {
-      const connName = registration.source.slice('connector:'.length);
-      const registry = this._toolContext?.connectorRegistry;
-      if (registry && !registry.has(connName)) {
-        throw new ToolExecutionError(toolName, `Connector '${connName}' is not available to this agent`);
-      }
-    }
-
     // Get or create circuit breaker for this tool
     const breaker = this.getOrCreateCircuitBreaker(toolName, registration);
 
@@ -975,6 +966,22 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     metrics.increment('tool.executed', 1, { tool: toolName });
 
     try {
+      // Connector-scoped safety net: block execution if the connector is not in the agent's allowlist.
+      // Inside the try block so the circuit breaker tracks repeated failures and opens.
+      // Uses tool.connectorName metadata (set by ConnectorTools.for()) rather than parsing
+      // the source string, which includes accountId suffix for multi-account tools.
+      if (registration.source?.startsWith('connector:')) {
+        const connName = registration.tool.connectorName
+          ?? registration.source.slice('connector:'.length);
+        const registry = this._toolContext?.connectorRegistry;
+        if (registry && !registry.has(connName)) {
+          throw new ToolExecutionError(
+            toolName,
+            `Connector '${connName}' is not available to this agent. This is a configuration error — do NOT retry this tool.`,
+          );
+        }
+      }
+
       // Build the core execution promise (circuit breaker + pipeline)
       const executionPromise = breaker.execute(async () => {
         // Create a wrapper tool that includes the tool context
