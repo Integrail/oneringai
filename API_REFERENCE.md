@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-04-12
+**Generated:** 2026-04-14
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (8 items)
 - [Interfaces](#interfaces) (63 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (441 items)
+- [Other](#other) (446 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:181`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:183`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -1481,7 +1481,7 @@ isDisposed(): boolean
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:54`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:56`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -1678,7 +1678,7 @@ Fetch options with additional connector-specific settings
 
 ### RunOptions `interface`
 
-📍 [`src/core/Agent.ts:136`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:138`](src/core/Agent.ts)
 
 Per-call options for run() and stream().
 These override the agent-level config for this single invocation.
@@ -1716,7 +1716,7 @@ type AgentEventListener = (agentId: string, agentName: string, event: string, da
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:49`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:51`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -28462,7 +28462,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:129`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:130`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -32901,6 +32901,116 @@ async search(query: string, options: SearchOptions =
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "tavily"` | - |
+
+</details>
+
+---
+
+### TemplateEngine `class`
+
+📍 [`src/core/TemplateEngine.ts:150`](src/core/TemplateEngine.ts)
+
+Static, extensible template engine for agent instruction strings.
+
+Follows the project's registry pattern (like Connector, StorageRegistry).
+Built-in handlers are lazily initialized on first use.
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static register()`
+
+Register a template handler. Overrides any existing handler with the same name,
+including built-ins — so client apps can replace DATE, TIME, etc. with custom logic.
+
+```typescript
+static register(name: string, handler: TemplateHandler, options?: TemplateHandlerOptions): void
+```
+
+**Parameters:**
+- `name`: `string`
+- `handler`: `TemplateHandler`
+- `options`: `TemplateHandlerOptions | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `static unregister()`
+
+Unregister a template handler (including built-ins).
+
+```typescript
+static unregister(name: string): void
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `void`
+
+#### `static has()`
+
+Check if a handler is registered.
+
+```typescript
+static has(name: string): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `boolean`
+
+#### `static getRegisteredHandlers()`
+
+Get all registered handler names (uppercase).
+
+```typescript
+static getRegisteredHandlers(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `static process()`
+
+Process a template string asynchronously.
+Resolves `{{COMMAND}}` and `{{COMMAND:arg}}` patterns.
+
+```typescript
+static async process(text: string, context?: TemplateContext, options?: ProcessOptions): Promise&lt;string&gt;
+```
+
+**Parameters:**
+- `text`: `string`
+- `context`: `TemplateContext | undefined` *(optional)*
+- `options`: `ProcessOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `static processSync()`
+
+Process a template string synchronously.
+Throws if any matched handler returns a Promise.
+
+```typescript
+static processSync(text: string, context?: TemplateContext, options?: ProcessOptions): string
+```
+
+**Parameters:**
+- `text`: `string`
+- `context`: `TemplateContext | undefined` *(optional)*
+- `options`: `ProcessOptions | undefined` *(optional)*
+
+**Returns:** `string`
+
+#### `static reset()`
+
+Reset all handlers (including built-ins). Primarily for testing.
+
+```typescript
+static reset(): void
+```
+
+**Returns:** `void`
 
 </details>
 
@@ -38013,6 +38123,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 |----------|------|-------------|
 | `start` | `start: string;` | - |
 | `end` | `end: string;` | - |
+| `timeZone?` | `timeZone?: string;` | - |
 | `confidence` | `confidence: string;` | - |
 | `attendeeAvailability` | `attendeeAvailability: { attendee: string; availability: string }[];` | - |
 
@@ -38049,6 +38160,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 |----------|------|-------------|
 | `start` | `start: string;` | - |
 | `end` | `end: string;` | - |
+| `timeZone?` | `timeZone?: string;` | - |
 | `confidence` | `confidence: string;` | - |
 | `attendeeAvailability` | `attendeeAvailability: { attendee: string; availability: string }[];` | - |
 
@@ -38167,7 +38279,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MicrosoftListFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:561`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:562`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -38196,7 +38308,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MicrosoftReadFileResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:551`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:552`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -38217,7 +38329,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MicrosoftSearchFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:579`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:580`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -38731,6 +38843,23 @@ Result of prepare() - ready for LLM call
 | `budget` | `budget: ContextBudget;` | Token budget breakdown |
 | `compacted` | `compacted: boolean;` | Whether compaction was performed |
 | `compactionLog` | `compactionLog: string[];` | Log of compaction actions taken |
+
+</details>
+
+---
+
+### ProcessOptions `interface`
+
+📍 [`src/core/TemplateEngine.ts:57`](src/core/TemplateEngine.ts)
+
+Options for process/processSync.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `phase?` | `phase?: 'static' | 'dynamic' | 'all';` | Which handlers to invoke. 'static' = creation-time only, 'dynamic' = prepare-time only, 'all' = both. Default: 'all' |
 
 </details>
 
@@ -40311,6 +40440,45 @@ Telegram User object
 
 ---
 
+### TemplateContext `interface`
+
+📍 [`src/core/TemplateEngine.ts:41`](src/core/TemplateEngine.ts)
+
+Context passed to template handlers.
+Built-in fields are optional; custom handlers can read any extra properties.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agentId?` | `agentId?: string;` | - |
+| `agentName?` | `agentName?: string;` | - |
+| `model?` | `model?: string;` | - |
+| `vendor?` | `vendor?: string;` | - |
+| `userId?` | `userId?: string;` | - |
+
+</details>
+
+---
+
+### TemplateHandlerOptions `interface`
+
+📍 [`src/core/TemplateEngine.ts:51`](src/core/TemplateEngine.ts)
+
+Options for handler registration.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `dynamic?` | `dynamic?: boolean;` | If true, handler runs at prepare() time (every LLM call). Default: false (static, runs once at creation). |
+
+</details>
+
+---
+
 ### TestCaseResult `interface`
 
 📍 [`src/testing/integration/types.ts:33`](src/testing/integration/types.ts)
@@ -41461,6 +41629,18 @@ type StorageContext = Record&lt;string, unknown&gt;
 
 ---
 
+### TemplateHandler `type`
+
+📍 [`src/core/TemplateEngine.ts:35`](src/core/TemplateEngine.ts)
+
+A template handler function.
+
+```typescript
+type TemplateHandler = (arg: string | undefined, context: TemplateContext) =&gt; string | Promise&lt;string&gt;
+```
+
+---
+
 ### TransportConfig `type`
 
 📍 [`src/domain/entities/MCPConfig.ts:56`](src/domain/entities/MCPConfig.ts)
@@ -41687,7 +41867,7 @@ export function detectServiceFromURL(url: string): string | undefined
 
 ### encodeSharingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:643`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:644`](src/tools/microsoft/types.ts)
 
 Encode a sharing URL into the Graph API sharing token format.
 
@@ -41726,7 +41906,7 @@ export async function excelToMarkdownKV(
 
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:803`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:800`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 
@@ -41810,7 +41990,7 @@ export function formatFileSize(bytes: number): string
 
 ### formatFileSize `function`
 
-📍 [`src/tools/microsoft/types.ts:747`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:748`](src/tools/microsoft/types.ts)
 
 Format a file size in bytes to a human-readable string.
 
@@ -41941,7 +42121,7 @@ export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;I
 
 ### getDrivePrefix `function`
 
-📍 [`src/tools/microsoft/types.ts:691`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:692`](src/tools/microsoft/types.ts)
 
 Determine the drive prefix for Graph API calls.
 
@@ -42110,7 +42290,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### isMicrosoftFileUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:668`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:669`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a OneDrive/SharePoint web URL.
 
@@ -42160,7 +42340,7 @@ export function isTeamsMeetingUrl(input: string): boolean
 
 ### isWebUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:655`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:656`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a web URL (http/https).
 
@@ -42395,7 +42575,7 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ### resolveFileEndpoints `function`
 
-📍 [`src/tools/microsoft/types.ts:710`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:711`](src/tools/microsoft/types.ts)
 
 Build the Graph API endpoint and metadata endpoint for a file source.
 
