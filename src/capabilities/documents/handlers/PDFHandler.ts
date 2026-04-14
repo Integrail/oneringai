@@ -47,24 +47,23 @@ export class PDFHandler implements IFormatHandler {
     let pieceIndex = 0;
 
     // pdf.js (via unpdf) transfers the underlying ArrayBuffer to a worker, which
-    // detaches it from the original view. We must copy into a dedicated ArrayBuffer
-    // so the caller's Buffer is not invalidated, and to avoid issues with pooled
-    // or shared ArrayBuffers that can't be transferred.
-    const data = new Uint8Array(buffer);
+    // detaches it from the original view. Each unpdf call needs its own copy
+    // because the ArrayBuffer is neutered after transfer.
+    const copyBuffer = () => new Uint8Array(buffer);
 
     // Extract metadata
     let metadata: any = {};
     const includeMetadata = options.formatOptions?.pdf?.includeMetadata !== false;
     if (includeMetadata) {
       try {
-        metadata = await unpdf.getMeta(data);
-      } catch {
-        // Metadata extraction failed, continue without
+        metadata = await unpdf.getMeta(copyBuffer());
+      } catch (metaError) {
+        console.warn(`[PDFHandler] Metadata extraction failed for ${filename}: ${metaError instanceof Error ? metaError.message : String(metaError)}`);
       }
     }
 
     // Extract text (per page)
-    const textResult = await unpdf.extractText(data, { mergePages: false });
+    const textResult = await unpdf.extractText(copyBuffer(), { mergePages: false });
     const pages: string[] = textResult?.pages || textResult?.text
       ? (Array.isArray(textResult.text) ? textResult.text : [textResult.text])
       : [];
@@ -132,7 +131,7 @@ export class PDFHandler implements IFormatHandler {
     // Extract images if requested
     if (options.extractImages !== false) {
       try {
-        const imagesResult = await unpdf.extractImages(data, {});
+        const imagesResult = await unpdf.extractImages(copyBuffer(), {});
         const images: any[] = imagesResult?.images || [];
 
         for (const img of images) {
@@ -159,8 +158,8 @@ export class PDFHandler implements IFormatHandler {
             },
           });
         }
-      } catch {
-        // Image extraction failed, continue without images
+      } catch (imgError) {
+        console.warn(`[PDFHandler] Image extraction failed for ${filename}: ${imgError instanceof Error ? imgError.message : String(imgError)}`);
       }
     }
 

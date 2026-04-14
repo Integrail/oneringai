@@ -191,9 +191,23 @@ EXAMPLES:
                 path: file_path,
               };
             }
-            // Fall through to UTF-8 attempt if document reader fails
-          } catch {
-            // Fall through to UTF-8 attempt
+            // DocumentReader returned success: false — do NOT fall through to UTF-8 for binary formats
+            return {
+              success: false,
+              error: `Failed to read ${ext} document: ${result.error || 'unknown error'}. The document may be corrupted or password-protected.`,
+              path: file_path,
+              size: stats.size,
+            };
+          } catch (docError) {
+            // DocumentReader threw — do NOT fall through to UTF-8 for binary formats
+            const errMsg = docError instanceof Error ? docError.message : String(docError);
+            console.error(`[read_file] DocumentReader failed for ${file_path}: ${errMsg}`);
+            return {
+              success: false,
+              error: `Failed to read ${ext} document: ${errMsg}. Make sure the required parser package is installed (e.g., 'unpdf' for PDFs, 'mammoth' for DOCX).`,
+              path: file_path,
+              size: stats.size,
+            };
           }
         }
 

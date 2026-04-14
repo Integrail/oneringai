@@ -267,8 +267,8 @@ export class DocumentReader {
         this.handlers.set(family, handler);
         return handler;
       }
-    } catch {
-      // Handler module not available
+    } catch (loadError) {
+      console.error(`[DocumentReader] Failed to load handler for '${family}': ${loadError instanceof Error ? loadError.message : String(loadError)}`);
     }
 
     return null;
