@@ -32,4 +32,14 @@ export interface IConnectorRegistry {
 
   /** Get a connector by ID. Optional — not all registries support ID-based lookup. */
   getById?(id: string): Connector;
+
+  /**
+   * Optional async warmup — called before sync reads to ensure connectors are loaded.
+   *
+   * Multi-tenant registries can implement this to lazily load connectors for the
+   * current request context (e.g., tenant/group). Entry points call Connector.warmup()
+   * which delegates here. After warmup completes, all sync read methods (get, has,
+   * list, listAll) must return correct results without further async work.
+   */
+  warmup?(): Promise<void>;
 }

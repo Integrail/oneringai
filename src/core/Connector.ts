@@ -153,6 +153,47 @@ export class Connector {
     Connector.registry.clear();
   }
 
+  // ============ Internal Map Bypass ============
+  // These methods read directly from the internal Map, bypassing any custom registry.
+  // Used by custom IConnectorRegistry implementations that need to read instances
+  // they've loaded via Connector.create() without infinite recursion.
+
+  /**
+   * Get a connector from the internal Map, bypassing the custom registry.
+   * Returns undefined if not found (does not throw).
+   */
+  static getFromMap(name: string): Connector | undefined {
+    return Connector.registry.get(name);
+  }
+
+  /**
+   * Check if a connector exists in the internal Map, bypassing the custom registry.
+   */
+  static hasInMap(name: string): boolean {
+    return Connector.registry.has(name);
+  }
+
+  /**
+   * List all connector instances from the internal Map, bypassing the custom registry.
+   */
+  static listAllFromMap(): Connector[] {
+    return Array.from(Connector.registry.values());
+  }
+
+  /**
+   * Call the custom registry's warmup() if available.
+   * Entry points (middleware, request handlers) should call this before
+   * using sync read methods to ensure connectors are loaded for the
+   * current context (e.g., tenant/group).
+   *
+   * No-op if no custom registry or no warmup method.
+   */
+  static async warmup(): Promise<void> {
+    if (Connector._customRegistry?.warmup) {
+      await Connector._customRegistry.warmup();
+    }
+  }
+
   /**
    * Get the default token storage for OAuth connectors.
    * Resolves from StorageRegistry, falling back to MemoryStorage.
