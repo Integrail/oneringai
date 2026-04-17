@@ -182,10 +182,14 @@
     "vitest": "^1.2.0"
   },
   "peerDependencies": {
-    "@nut-tree-fork/nut-js": ">=4.0.0"
+    "@nut-tree-fork/nut-js": ">=4.0.0",
+    "mongodb": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "@nut-tree-fork/nut-js": {
+      "optional": true
+    },
+    "mongodb": {
       "optional": true
     }
   },
