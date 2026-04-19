@@ -454,12 +454,45 @@ export interface IEmbedder {
   dimensions: number;
 }
 
+/**
+ * Input passed to `IProfileGenerator.generate`. Regeneration is **incremental**:
+ * the generator receives the prior profile (if any) as its starting point and
+ * only the deltas since then — new facts plus IDs of facts whose claims should
+ * be dropped because they've been archived or superseded.
+ *
+ * **First regen (no prior):** `priorProfile` is undefined, `newFacts` is the
+ * full set of atomic facts visible to the target scope, and `invalidatedFactIds`
+ * is empty. Generator should synthesize from scratch.
+ *
+ * **Subsequent regens:** `priorProfile.details` is the authoritative starting
+ * text; the generator should *evolve* it by folding in `newFacts` and removing
+ * any claims backed only by facts whose IDs appear in `invalidatedFactIds`.
+ */
+export interface ProfileGeneratorInput {
+  entity: IEntity;
+  /**
+   * Atomic facts added since the prior profile was generated (observedAt >
+   * prior.createdAt, archived=false). On first regen: all atomic facts.
+   * Capped at 500 by MemorySystem.
+   */
+  newFacts: IFact[];
+  /** The prior profile document, if one exists at this scope. */
+  priorProfile: IFact | undefined;
+  /**
+   * IDs of facts the generator should *drop* from the profile:
+   *   - Facts superseded by new ones (`supersedes` → predecessor id).
+   *   - Facts archived directly (via `archiveFact`) that were visible at prior
+   *     regen time.
+   * The generator never sees these facts' contents — only their IDs — so it
+   * cannot reference them in the updated profile, only remove existing mentions.
+   */
+  invalidatedFactIds: FactId[];
+  targetScope: ScopeFields;
+}
+
 export interface IProfileGenerator {
   generate(
-    entity: IEntity,
-    atomicFacts: IFact[],
-    priorProfile: IFact | undefined,
-    targetScope: ScopeFields,
+    input: ProfileGeneratorInput,
   ): Promise<{ details: string; summaryForEmbedding: string }>;
 }
 

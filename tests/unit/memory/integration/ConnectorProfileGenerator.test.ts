@@ -12,7 +12,7 @@ import {
   parseProfileResponse,
 } from '@/memory/integration/ConnectorProfileGenerator.js';
 import { defaultProfilePrompt } from '@/memory/integration/defaultPrompt.js';
-import type { IEntity, IFact } from '@/memory/types.js';
+import type { IEntity, IFact, ProfileGeneratorInput } from '@/memory/types.js';
 
 function entity(overrides: Partial<IEntity> = {}): IEntity {
   const now = new Date();
@@ -60,8 +60,21 @@ function makeMockAgent(outputText: string): {
   };
 }
 
+function makeInputShape(overrides: Partial<ProfileGeneratorInput> = {}): ProfileGeneratorInput {
+  return {
+    entity: overrides.entity ?? entity(),
+    newFacts: overrides.newFacts ?? [fact()],
+    priorProfile: overrides.priorProfile,
+    invalidatedFactIds: overrides.invalidatedFactIds ?? [],
+    targetScope: overrides.targetScope ?? {},
+  };
+}
+
 describe('ConnectorProfileGenerator', () => {
   describe('generate()', () => {
+    const makeInput = (overrides: Partial<Parameters<typeof makeInputShape>[0]> = {}) =>
+      makeInputShape(overrides);
+
     it('returns parsed details + summary from JSON response', async () => {
       const mock = makeMockAgent(
         JSON.stringify({
@@ -70,7 +83,7 @@ describe('ConnectorProfileGenerator', () => {
         }),
       );
       const gen = ConnectorProfileGenerator.withAgent({ agent: mock as never });
-      const result = await gen.generate(entity(), [fact()], undefined, {});
+      const result = await gen.generate(makeInput());
       expect(result.details).toContain('Jane Doe');
       expect(result.summaryForEmbedding).toContain('Jane Doe');
     });
@@ -80,14 +93,14 @@ describe('ConnectorProfileGenerator', () => {
         JSON.stringify({ details: 'd', summaryForEmbedding: 's' }),
       );
       const gen = ConnectorProfileGenerator.withAgent({ agent: mock as never });
-      await gen.generate(entity(), [fact()], undefined, {});
+      await gen.generate(makeInput());
       const call = mock.runDirect.mock.calls[0];
       expect(call![1]).toMatchObject({
         responseFormat: { type: 'json_object' },
       });
     });
 
-    it('passes entity + facts + priorProfile + targetScope to the prompt fn', async () => {
+    it('passes entity + newFacts + priorProfile + invalidatedFactIds + targetScope to the prompt fn', async () => {
       const promptFn = vi.fn(() => 'CUSTOM PROMPT');
       const mock = makeMockAgent(
         JSON.stringify({ details: 'd', summaryForEmbedding: 's' }),
@@ -100,11 +113,18 @@ describe('ConnectorProfileGenerator', () => {
       const facts = [fact({ id: 'f1' })];
       const prior = fact({ id: 'prior', kind: 'document' });
       const scope = { groupId: 'g1' };
-      await gen.generate(ent, facts, prior, scope);
+      await gen.generate({
+        entity: ent,
+        newFacts: facts,
+        priorProfile: prior,
+        invalidatedFactIds: ['old1', 'old2'],
+        targetScope: scope,
+      });
       expect(promptFn).toHaveBeenCalledWith({
         entity: ent,
-        atomicFacts: facts,
+        newFacts: facts,
         priorProfile: prior,
+        invalidatedFactIds: ['old1', 'old2'],
         targetScope: scope,
       });
     });
@@ -112,7 +132,7 @@ describe('ConnectorProfileGenerator', () => {
     it('uses default temperature 0.3 and maxOutputTokens 1200', async () => {
       const mock = makeMockAgent(JSON.stringify({ details: 'd', summaryForEmbedding: 's' }));
       const gen = ConnectorProfileGenerator.withAgent({ agent: mock as never });
-      await gen.generate(entity(), [fact()], undefined, {});
+      await gen.generate(makeInput());
       expect(mock.runDirect).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ temperature: 0.3, maxOutputTokens: 1200 }),
@@ -176,64 +196,66 @@ describe('parseProfileResponse', () => {
 });
 
 describe('defaultProfilePrompt', () => {
-  it('includes entity identity, identifiers, and facts', () => {
-    const prompt = defaultProfilePrompt({
-      entity: entity({ displayName: 'Alice', aliases: ['Ali'] }),
-      atomicFacts: [fact({ predicate: 'works_at', objectId: 'acme' })],
-      priorProfile: undefined,
-      targetScope: {},
-    });
+  const base = (overrides: Partial<ProfileGeneratorInput> = {}): ProfileGeneratorInput => ({
+    entity: overrides.entity ?? entity(),
+    newFacts: overrides.newFacts ?? [],
+    priorProfile: overrides.priorProfile,
+    invalidatedFactIds: overrides.invalidatedFactIds ?? [],
+    targetScope: overrides.targetScope ?? {},
+  });
+
+  it('includes entity identity, identifiers, and new facts', () => {
+    const prompt = defaultProfilePrompt(
+      base({
+        entity: entity({ displayName: 'Alice', aliases: ['Ali'] }),
+        newFacts: [fact({ predicate: 'works_at', objectId: 'acme' })],
+      }),
+    );
     expect(prompt).toContain('Alice');
     expect(prompt).toContain('Ali');
     expect(prompt).toContain('jane@acme.com');
     expect(prompt).toContain('works_at');
   });
 
-  it('includes prior profile when present', () => {
-    const prompt = defaultProfilePrompt({
-      entity: entity(),
-      atomicFacts: [],
-      priorProfile: fact({ kind: 'document', details: 'EARLIER PROFILE CONTENT' }),
-      targetScope: {},
-    });
+  it('includes prior profile when present and instructs to evolve', () => {
+    const prompt = defaultProfilePrompt(
+      base({
+        priorProfile: fact({ kind: 'document', details: 'EARLIER PROFILE CONTENT' }),
+      }),
+    );
     expect(prompt).toContain('EARLIER PROFILE CONTENT');
     expect(prompt).toContain('Evolve');
   });
 
+  it('renders the invalidation list when non-empty', () => {
+    const prompt = defaultProfilePrompt(
+      base({ invalidatedFactIds: ['fact_old_1', 'fact_old_2'] }),
+    );
+    // Header + IDs must appear together so the generator can act on them.
+    expect(prompt).toContain('## Invalidated Claims');
+    expect(prompt).toContain('fact_old_1');
+    expect(prompt).toContain('fact_old_2');
+  });
+
+  it('omits the invalidation section header when list is empty', () => {
+    const prompt = defaultProfilePrompt(base({ invalidatedFactIds: [] }));
+    // The `## Invalidated Claims` *section header* must not appear, even though
+    // the Task instructions reference the concept by name.
+    expect(prompt).not.toContain('## Invalidated Claims');
+  });
+
   it('describes scope correctly', () => {
-    const global = defaultProfilePrompt({
-      entity: entity(),
-      atomicFacts: [],
-      priorProfile: undefined,
-      targetScope: {},
-    });
-    expect(global).toContain('global');
-
-    const group = defaultProfilePrompt({
-      entity: entity(),
-      atomicFacts: [],
-      priorProfile: undefined,
-      targetScope: { groupId: 'g1' },
-    });
-    expect(group).toContain('group-wide');
-    expect(group).toContain('g1');
-
-    const user = defaultProfilePrompt({
-      entity: entity(),
-      atomicFacts: [],
-      priorProfile: undefined,
-      targetScope: { ownerId: 'u1' },
-    });
-    expect(user).toContain('user-private');
+    expect(defaultProfilePrompt(base({ targetScope: {} }))).toContain('global');
+    expect(defaultProfilePrompt(base({ targetScope: { groupId: 'g1' } }))).toContain(
+      'group-wide',
+    );
+    expect(defaultProfilePrompt(base({ targetScope: { ownerId: 'u1' } }))).toContain(
+      'user-private',
+    );
   });
 
   it('instructs JSON-only output', () => {
-    const prompt = defaultProfilePrompt({
-      entity: entity(),
-      atomicFacts: [],
-      priorProfile: undefined,
-      targetScope: {},
-    });
+    const prompt = defaultProfilePrompt(base());
     expect(prompt).toContain('JSON');
     expect(prompt).toContain('details');
     expect(prompt).toContain('summaryForEmbedding');

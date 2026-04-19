@@ -1160,14 +1160,6 @@ export class MemorySystem implements IDisposable {
     const entity = await this.store.getEntity(entityId, readScope);
     if (!entity) throw new Error(`regenerateProfile: entity ${entityId} not found`);
 
-    // Pull atomic facts visible at target scope for generator input.
-    // Cap to a sensible window; callers wanting everything can replace the generator.
-    const factsPage = await this.store.findFacts(
-      { subjectId: entityId, kind: 'atomic' },
-      { limit: 500, orderBy: { field: 'observedAt', direction: 'desc' } },
-      readScope,
-    );
-
     // Prior profile at this exact target scope (not merely visible — same groupId/ownerId).
     const priorPage = await this.store.findFacts(
       { subjectId: entityId, predicate: 'profile', kind: 'document' },
@@ -1178,12 +1170,67 @@ export class MemorySystem implements IDisposable {
       (f) => sameScope(f, targetScope) && !f.archived,
     );
 
-    const { details, summaryForEmbedding } = await this.profileGenerator.generate(
-      entity,
-      factsPage.items,
-      priorProfile,
-      targetScope,
+    // Incremental input: pass the prior profile as the authoritative starting
+    // point and only the deltas since it was generated. Two tranches:
+    //   1. NEW atomic facts (observedAt > prior.createdAt, not archived).
+    //   2. INVALIDATED fact IDs — claims the generator should drop from the
+    //      evolved profile. Sources:
+    //      (a) Supersession: any new fact with `supersedes` invalidates its
+    //          predecessor.
+    //      (b) Direct archival: facts visible at scope that are now archived
+    //          AND would have been eligible input at prior regen time
+    //          (observedBefore prior.createdAt). Slightly overbroad if prior
+    //          itself predated some archivals, but the signal is "don't
+    //          mention these," which is safe.
+    //
+    // On first regen (no prior), `newFacts` = all atomic facts (capped),
+    // `invalidatedFactIds` = [].
+    const since = priorProfile?.createdAt;
+
+    const newFactsPage = await this.store.findFacts(
+      {
+        subjectId: entityId,
+        kind: 'atomic',
+        archived: false,
+        observedAfter: since,
+      },
+      { limit: 500, orderBy: { field: 'observedAt', direction: 'desc' } },
+      readScope,
     );
+    const newFacts = newFactsPage.items;
+
+    let invalidatedFactIds: FactId[] = [];
+    if (since) {
+      // (a) Supersession chain: predecessors that the new facts replaced.
+      const supersededIds = newFacts
+        .map((f) => f.supersedes)
+        .filter((id): id is FactId => typeof id === 'string');
+
+      // (b) Direct archivals. Query archived atomic facts observed before prior
+      // regen; these are the ones that could have been in prior's input and are
+      // now gone. Exclude supersession-archived (already covered in (a)).
+      const archivedPage = await this.store.findFacts(
+        {
+          subjectId: entityId,
+          kind: 'atomic',
+          archived: true,
+          observedBefore: since,
+        },
+        { limit: 200, orderBy: { field: 'observedAt', direction: 'desc' } },
+        readScope,
+      );
+      const directlyArchived = archivedPage.items.map((f) => f.id);
+
+      invalidatedFactIds = Array.from(new Set([...supersededIds, ...directlyArchived]));
+    }
+
+    const { details, summaryForEmbedding } = await this.profileGenerator.generate({
+      entity,
+      newFacts,
+      priorProfile,
+      invalidatedFactIds,
+      targetScope,
+    });
 
     const newProfile = await this.addFact(
       {

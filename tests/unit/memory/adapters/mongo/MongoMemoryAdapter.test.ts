@@ -613,12 +613,132 @@ describe('MongoMemoryAdapter', () => {
       expect(factIdx).not.toContain('memory_fact_pk');
     });
 
+    it('creates owner-leading indexes for the permission-model owner shortcut', async () => {
+      await ensureIndexes({ entities: entColl, facts: factColl });
+      const entIdx = entColl.createdIndexes.map((i) => i.name);
+      const factIdx = factColl.createdIndexes.map((i) => i.name);
+
+      // Entities: owner-leading compounds.
+      expect(entIdx).toContain('memory_ent_owner');
+      expect(entIdx).toContain('memory_ent_owner_ident');
+
+      // Facts: owner-leading compounds for subject + object lookups.
+      expect(factIdx).toContain('memory_fact_owner_subject');
+      expect(factIdx).toContain('memory_fact_owner_object');
+
+      // Confirm the key specs — these indexes must start with ownerId so the
+      // owner branch of scopeToFilter is sargable without a groupId constraint.
+      const entOwner = entColl.createdIndexes.find((i) => i.name === 'memory_ent_owner');
+      expect(entOwner).toBeDefined();
+      expect(Object.keys(entOwner!.spec)[0]).toBe('ownerId');
+
+      const factOwnerSubj = factColl.createdIndexes.find(
+        (i) => i.name === 'memory_fact_owner_subject',
+      );
+      expect(factOwnerSubj).toBeDefined();
+      expect(Object.keys(factOwnerSubj!.spec)[0]).toBe('ownerId');
+
+      const factOwnerObj = factColl.createdIndexes.find(
+        (i) => i.name === 'memory_fact_owner_object',
+      );
+      expect(factOwnerObj).toBeDefined();
+      expect(Object.keys(factOwnerObj!.spec)[0]).toBe('ownerId');
+    });
+
     it('is a no-op on collections without createIndex', async () => {
       const minimal = new MinimalFakeMongoCollection<IEntity>();
       const minimalF = new MinimalFakeMongoCollection<IFact>();
       await expect(
         ensureIndexes({ entities: minimal, facts: minimalF }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Permissions — round-trip + patch
+  // ==========================================================================
+
+  describe('permissions round-trip', () => {
+    it('persists entity permissions verbatim on create + read', async () => {
+      const e = await adapter.createEntity(
+        entityInput({
+          displayName: 'Private',
+          groupId: 'g1',
+          ownerId: 'u1',
+          permissions: { world: 'none' },
+        }),
+      );
+      const back = await adapter.getEntity(e.id, { userId: 'u1' });
+      expect(back).not.toBeNull();
+      expect(back!.permissions).toEqual({ world: 'none' });
+    });
+
+    it('persists complex entity permissions (group:write, world:read)', async () => {
+      const e = await adapter.createEntity(
+        entityInput({
+          displayName: 'Wiki',
+          groupId: 'g1',
+          ownerId: 'u1',
+          permissions: { group: 'write', world: 'read' },
+        }),
+      );
+      const back = await adapter.getEntity(e.id, { userId: 'u1' });
+      expect(back!.permissions).toEqual({ group: 'write', world: 'read' });
+    });
+
+    it('persists fact permissions verbatim on create + read', async () => {
+      const subj = await adapter.createEntity(entityInput({ ownerId: 'u1' }));
+      const f = await adapter.createFact(
+        factInput(subj.id, {
+          predicate: 'secret_note',
+          kind: 'atomic',
+          value: 'x',
+          ownerId: 'u1',
+          permissions: { world: 'none', group: 'none' },
+        }),
+      );
+      const back = await adapter.getFact(f.id, { userId: 'u1' });
+      expect(back!.permissions).toEqual({ world: 'none', group: 'none' });
+    });
+
+    it('entity with undefined permissions round-trips as undefined (library defaults apply)', async () => {
+      const e = await adapter.createEntity(entityInput({ ownerId: 'u1' }));
+      const back = await adapter.getEntity(e.id, { userId: 'u1' });
+      expect(back!.permissions).toBeUndefined();
+    });
+
+    it('updateFact can set permissions via patch', async () => {
+      const subj = await adapter.createEntity(entityInput({ ownerId: 'u1' }));
+      const f = await adapter.createFact(factInput(subj.id, { ownerId: 'u1' }));
+      // Patch to set explicit permissions.
+      await adapter.updateFact(
+        f.id,
+        { permissions: { world: 'none' } },
+        { userId: 'u1' },
+      );
+      const back = await adapter.getFact(f.id, { userId: 'u1' });
+      expect(back!.permissions).toEqual({ world: 'none' });
+    });
+
+    it('updateEntity preserves permissions on unrelated field updates', async () => {
+      const e = await adapter.createEntity(
+        entityInput({
+          displayName: 'Original',
+          ownerId: 'u1',
+          permissions: { world: 'none' },
+        }),
+      );
+      // Simulate a version-bump update that touches displayName but not perms.
+      const next: IEntity = {
+        ...e,
+        displayName: 'Updated',
+        version: e.version + 1,
+        updatedAt: new Date(),
+      };
+      await adapter.updateEntity(next);
+      const back = await adapter.getEntity(e.id, { userId: 'u1' });
+      expect(back!.displayName).toBe('Updated');
+      expect(back!.permissions).toEqual({ world: 'none' });
     });
   });
 });

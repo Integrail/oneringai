@@ -143,4 +143,83 @@ describe('MeteorMongoCollection — id ↔ _id translation (string-based)', () =
       expect(got[1]!.id).toBe('meteor_2');
     });
   });
+
+  // Regression guard for the permission-aware scopeToFilter output. The filter
+  // walker must preserve $or + nested $and + $ne operators while translating
+  // any embedded `id` keys. If walkFilter ever treats $ne as a logical op or
+  // skips recursion into $and inside $or branches, permission enforcement at
+  // the Meteor adapter layer silently breaks.
+  describe('permission-aware scope filter translation', () => {
+    it('preserves $or with nested $and + $ne (shape produced by scopeToFilter)', async () => {
+      // Shape mirrors scopeToFilter({ userId: 'u1', groupId: 'g1' }):
+      //   $or: [
+      //     { ownerId: 'u1' },
+      //     { $and: [{ groupId: 'g1' }, { $or: [...] }] },     // group branch
+      //     { $and: [{ groupId: { $ne: 'g1' } }, { $or: [...] }] },  // world branch
+      //   ]
+      const permissionFilter = {
+        $or: [
+          { ownerId: 'u1' },
+          {
+            $and: [
+              { groupId: 'g1' },
+              {
+                $or: [
+                  { 'permissions.group': { $exists: false } },
+                  { 'permissions.group': { $ne: 'none' } },
+                ],
+              },
+            ],
+          },
+          {
+            $and: [
+              { groupId: { $ne: 'g1' } },
+              {
+                $or: [
+                  { 'permissions.world': { $exists: false } },
+                  { 'permissions.world': { $ne: 'none' } },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      await wrapper.findOne(permissionFilter);
+      // The Meteor wrapper should hand this filter to Meteor unchanged (no id
+      // fields to translate). Deep equality confirms structure is preserved.
+      expect(col.lastSelector).toEqual(permissionFilter);
+    });
+
+    it('translates id fields inside deeply-nested $and branches of a permission $or', async () => {
+      // Caller-side: memory combines a permission-aware scope filter with an
+      // id constraint via $and (the real mergeFilters path).
+      const merged = {
+        $and: [
+          {
+            $or: [{ ownerId: 'u1' }, { $and: [{ groupId: 'g1' }, { something: 1 }] }],
+          },
+          { id: 'the-id' },
+        ],
+      };
+      await wrapper.findOne(merged);
+      const sel = col.lastSelector as {
+        $and: [
+          { $or: Array<Record<string, unknown>> },
+          { _id?: string; id?: string },
+        ];
+      };
+      // Top-level id → _id.
+      expect(sel.$and[1]!._id).toBe('the-id');
+      expect(sel.$and[1]!.id).toBeUndefined();
+      // Nested permission-shaped branches untouched (no id inside them).
+      expect(sel.$and[0]!.$or[0]!.ownerId).toBe('u1');
+    });
+
+    it('$ne operator is a value operator, not a logical one (no accidental recursion)', async () => {
+      // The filter walker must NOT descend into $ne's value and transform
+      // keys; $ne carries a scalar, not another filter.
+      await wrapper.findOne({ groupId: { $ne: 'g1' } });
+      expect(col.lastSelector).toEqual({ groupId: { $ne: 'g1' } });
+    });
+  });
 });

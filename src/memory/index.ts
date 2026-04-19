@@ -170,6 +170,7 @@ export type {
   // Extension points
   IEmbedder,
   IProfileGenerator,
+  ProfileGeneratorInput,
   IRuleEngine,
   IScopedMemoryView,
 

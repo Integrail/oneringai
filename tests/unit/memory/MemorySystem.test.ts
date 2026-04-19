@@ -958,7 +958,7 @@ describe('MemorySystem', () => {
       );
     });
 
-    it('calls generator with entity, atomic facts, and prior profile', async () => {
+    it('calls generator with entity, new atomic facts, no prior, no invalidations', async () => {
       const generate = vi.fn(async () => ({
         details: '# Profile\nSenior engineer',
         summaryForEmbedding: 'Senior engineer',
@@ -974,9 +974,67 @@ describe('MemorySystem', () => {
       );
       const profile = await m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
       expect(generate).toHaveBeenCalledTimes(1);
+      const arg = generate.mock.calls[0]![0] as {
+        entity: { id: string };
+        newFacts: Array<{ id: string; predicate: string }>;
+        priorProfile: unknown;
+        invalidatedFactIds: string[];
+      };
+      expect(arg.entity.id).toBe(subj);
+      expect(arg.newFacts.some((f) => f.predicate === 'works_at')).toBe(true);
+      expect(arg.priorProfile).toBeUndefined();
+      expect(arg.invalidatedFactIds).toEqual([]);
       expect(profile.predicate).toBe('profile');
       expect(profile.kind).toBe('document');
       expect(profile.details).toContain('Senior');
+      await m.shutdown();
+    });
+
+    it('incremental regen: only new facts + invalidated predecessors are passed', async () => {
+      const generate = vi.fn(async () => ({
+        details: 'v1',
+        summaryForEmbedding: 'v1',
+      }));
+      const m = new MemorySystem({ store, profileGenerator: { generate } });
+      const subj = await seedEntity(m, {
+        identifiers: [{ kind: 'email', value: 'rpinc@x.com' }],
+      });
+      // Fact added BEFORE first regen.
+      const before = await m.addFact(
+        { subjectId: subj, predicate: 'role', kind: 'atomic', value: 'engineer' },
+        TEST_SCOPE,
+      );
+      await m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
+      generate.mockClear();
+      // Delay so the second regen's "observedAfter" window is strict (>).
+      await new Promise((r) => setTimeout(r, 5));
+      // Fact added AFTER first regen; also supersedes the older role fact.
+      const after = await m.addFact(
+        {
+          subjectId: subj,
+          predicate: 'role',
+          kind: 'atomic',
+          value: 'senior engineer',
+          supersedes: before.id,
+        },
+        TEST_SCOPE,
+      );
+      await m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
+
+      expect(generate).toHaveBeenCalledTimes(1);
+      const arg = generate.mock.calls[0]![0] as {
+        newFacts: Array<{ id: string }>;
+        priorProfile: { predicate: string } | undefined;
+        invalidatedFactIds: string[];
+      };
+      // newFacts includes the newly-added fact but not the original.
+      const newIds = arg.newFacts.map((f) => f.id);
+      expect(newIds).toContain(after.id);
+      expect(newIds).not.toContain(before.id);
+      // priorProfile is the one regen wrote.
+      expect(arg.priorProfile?.predicate).toBe('profile');
+      // Invalidations include the predecessor via `supersedes`.
+      expect(arg.invalidatedFactIds).toContain(before.id);
       await m.shutdown();
     });
 

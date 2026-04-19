@@ -10,7 +10,7 @@
  */
 
 import { Agent } from '../../core/Agent.js';
-import type { IEntity, IFact, IProfileGenerator, ScopeFields } from '../types.js';
+import type { IEntity, IFact, IProfileGenerator, ProfileGeneratorInput } from '../types.js';
 import { defaultProfilePrompt, type PromptContext } from './defaultPrompt.js';
 
 export interface ConnectorProfileGeneratorConfig {
@@ -70,12 +70,9 @@ export class ConnectorProfileGenerator implements IProfileGenerator {
   }
 
   async generate(
-    entity: IEntity,
-    atomicFacts: IFact[],
-    priorProfile: IFact | undefined,
-    targetScope: ScopeFields,
+    input: ProfileGeneratorInput,
   ): Promise<{ details: string; summaryForEmbedding: string }> {
-    const prompt = this.promptFn({ entity, atomicFacts, priorProfile, targetScope });
+    const prompt = this.promptFn(input);
 
     const response = await this.agent.runDirect(prompt, {
       temperature: this.temperature,
@@ -84,7 +81,7 @@ export class ConnectorProfileGenerator implements IProfileGenerator {
     });
 
     const raw = response.output_text ?? '';
-    return parseProfileResponse(raw, entity, priorProfile);
+    return parseProfileResponse(raw, input.entity, input.priorProfile);
   }
 
   /** Release the internal agent. */
