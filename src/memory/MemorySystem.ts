@@ -51,6 +51,7 @@ import type {
   ResolveEntityQuery,
   ScopeFields,
   ScopeFilter,
+  TaskStatesConfig,
   TraversalOptions,
   UpsertBySurfaceInput,
   UpsertBySurfaceOptions,
@@ -68,8 +69,11 @@ const DEFAULT_EMBED_CONCURRENCY = 4;
 const DEFAULT_EMBED_RETRIES = 3;
 const SEMANTIC_MIN_DETAILS_LENGTH = 80;
 
-/** Non-terminal task states — surfaced in `relatedTasks` by default. */
-const TASK_ACTIVE_STATES = ['pending', 'in_progress', 'blocked', 'deferred'];
+/** Legacy task-state vocabulary — used when caller doesn't override via config. */
+const DEFAULT_TASK_STATES = {
+  active: ['pending', 'in_progress', 'blocked', 'deferred'],
+  terminal: ['done', 'cancelled'],
+} as const;
 
 /** Conventional metadata fields on task entities that reference other entities. */
 const RELATIONAL_TASK_FIELDS = ['assigneeId', 'reporterId', 'projectId'] as const;
@@ -103,6 +107,86 @@ export class SemanticSearchUnavailableError extends Error {
   }
 }
 
+/**
+ * Thrown when `transitionTaskState` is called with `validate: 'strict'` and
+ * the (from, to) pair is not allowed by the caller-supplied transition matrix.
+ */
+export class InvalidTaskTransitionError extends Error {
+  readonly from: string | undefined;
+  readonly to: string;
+  readonly taskId: EntityId;
+  constructor(taskId: EntityId, from: string | undefined, to: string) {
+    super(
+      `InvalidTaskTransitionError: task ${taskId} cannot transition ` +
+        `from '${from ?? '(unset)'}' to '${to}' under the supplied transitions matrix`,
+    );
+    this.name = 'InvalidTaskTransitionError';
+    this.from = from;
+    this.to = to;
+    this.taskId = taskId;
+  }
+}
+
+/**
+ * Single entry appended to `task.metadata.stateHistory` on every transition.
+ * No cap — retention is the caller's problem (audit systems, GDPR, archival).
+ */
+export interface TaskStateHistoryEntry {
+  from: string | undefined;
+  to: string;
+  at: Date;
+  signalId?: string;
+  reason?: string;
+}
+
+export interface TransitionTaskStateOptions {
+  /** Stable audit pointer — typically the ingest signal id. Flows into the history entry AND the written fact. */
+  signalId?: string;
+  /** When the transition happened. Defaults to now. */
+  at?: Date;
+  /** Free-form audit note. Stored in the history entry. */
+  reason?: string;
+  /**
+   * Validation mode.
+   * - `'warn'` (default): any transition allowed; out-of-matrix transitions route through `onError` and proceed.
+   * - `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError` — metadata + fact writes are skipped.
+   * - `'none'`: no validation, no warnings.
+   */
+  validate?: 'strict' | 'warn' | 'none';
+  /**
+   * Explicit allowed transitions: `{ from: [allowed, to, states] }`. When omitted,
+   * every transition is allowed (with a warning for duplicates in `'warn'`).
+   * Keys include `'__initial'` for transitions into a first-time state.
+   */
+  transitions?: Record<string, string[]>;
+  /**
+   * Optional overrides applied to the written `state_changed` audit fact.
+   * Unset fields fall back to the method's defaults (`importance: 0.7`,
+   * `confidence: undefined`, no `contextIds`, etc.).
+   *
+   * The LLM extraction pipeline populates this when it routes a
+   * `state_changed` fact through `transitionTaskState` — without it, the
+   * caller's `importance` / `confidence` / `contextIds` would be silently
+   * dropped and the audit fact would not surface on retrieval queries that
+   * pivot on `contextIds` (e.g. "everything about the Acme deal").
+   */
+  factOverrides?: {
+    importance?: number;
+    confidence?: number;
+    contextIds?: EntityId[];
+    validFrom?: Date;
+    validUntil?: Date;
+    summaryForEmbedding?: string;
+  };
+}
+
+export interface TransitionTaskStateResult {
+  task: IEntity;
+  fact: IFact | null;
+  /** Set when `validate='strict'` rejected the transition. */
+  rejected?: string;
+}
+
 // =============================================================================
 // MemorySystem
 // =============================================================================
@@ -122,6 +206,8 @@ export class MemorySystem implements IDisposable {
   private readonly predicates?: PredicateRegistry;
   private readonly predicateMode: 'permissive' | 'strict';
   private readonly predicateAutoSupersede: boolean;
+  private readonly _taskStates: TaskStatesConfig;
+  private readonly _autoApplyTaskTransitions: boolean;
 
   /** Tracks pending profile regenerations per (entityId + scopeKey) to prevent overlap. */
   private readonly regenInFlight = new Set<string>();
@@ -142,6 +228,8 @@ export class MemorySystem implements IDisposable {
         "MemorySystem: predicateMode='strict' requires a `predicates` registry",
       );
     }
+    this._taskStates = validateTaskStates(config.taskStates);
+    this._autoApplyTaskTransitions = config.autoApplyTaskTransitions ?? true;
     // Fold registry ranking weights into the base ranking config. Caller-supplied
     // weights win on collision — user config always trumps registry defaults.
     const userWeights = config.topFactsRanking?.predicateWeights ?? {};
@@ -180,8 +268,8 @@ export class MemorySystem implements IDisposable {
           const res = await this.upsertEntity(input, scope);
           return { entity: res.entity, created: res.created };
         },
-        appendAliasesAndIdentifiers: async (id, aliases, identifiers, scope) => {
-          return this.appendAliasesAndIdentifiers(id, aliases, identifiers, scope);
+        appendAliasesAndIdentifiers: async (id, aliases, identifiers, scope, opts) => {
+          return this.appendAliasesAndIdentifiers(id, aliases, identifiers, scope, opts);
         },
       },
       this.resolutionConfig,
@@ -312,6 +400,10 @@ export class MemorySystem implements IDisposable {
     newAliases: string[],
     newIdentifiers: Identifier[],
     scope: ScopeFilter,
+    opts?: {
+      metadata?: Record<string, unknown>;
+      metadataMerge?: 'fillMissing' | 'overwrite';
+    },
   ): Promise<IEntity> {
     const current = await this.store.getEntity(id, scope);
     if (!current) throw new Error(`appendAliasesAndIdentifiers: entity ${id} not found`);
@@ -341,12 +433,31 @@ export class MemorySystem implements IDisposable {
       }
     }
 
+    // Metadata merge — fillMissing (default) never overwrites existing keys;
+    // overwrite is a shallow merge where incoming wins. No-op if no incoming.
+    let nextMetadata: Record<string, unknown> | undefined = current.metadata;
+    if (opts?.metadata && Object.keys(opts.metadata).length > 0) {
+      const existing = (current.metadata ?? {}) as Record<string, unknown>;
+      const mode = opts.metadataMerge ?? 'fillMissing';
+      const merged: Record<string, unknown> = { ...existing };
+      for (const [k, v] of Object.entries(opts.metadata)) {
+        if (v === undefined) continue;
+        if (mode === 'fillMissing' && k in existing) continue;
+        if (merged[k] !== v) {
+          merged[k] = v;
+          dirty = true;
+        }
+      }
+      nextMetadata = merged;
+    }
+
     if (!dirty) return current;
 
     const next: IEntity = {
       ...current,
       aliases: aliases.length > 0 ? aliases : current.aliases,
       identifiers,
+      metadata: nextMetadata,
       version: current.version + 1,
       updatedAt: new Date(),
     };
@@ -392,6 +503,19 @@ export class MemorySystem implements IDisposable {
   getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
     assertNotDestroyed(this, 'getEntity');
     return this.store.getEntity(id, scope);
+  }
+
+  /**
+   * Configured task-state vocabulary. Read-only snapshot — arrays are copied
+   * at construction so mutating the returned object does not affect behavior.
+   */
+  get taskStates(): TaskStatesConfig {
+    return { active: [...this._taskStates.active], terminal: [...this._taskStates.terminal] };
+  }
+
+  /** True when the extraction pipeline should route `state_changed` facts through `transitionTaskState`. */
+  get autoApplyTaskTransitions(): boolean {
+    return this._autoApplyTaskTransitions;
   }
 
   searchEntities(
@@ -671,6 +795,16 @@ export class MemorySystem implements IDisposable {
       subjectId: EntityId;
       predicate: string;
       kind: IFact['kind'];
+      /**
+       * When true: before inserting, look for a non-archived fact with the same
+       * (subjectId, canonicalized predicate, kind) and matching (value, objectId).
+       * On match → bump `observedAt` on the existing fact and return it — NO new
+       * row is inserted. Used by the session ingestor to prevent bloat across
+       * repeated observations ("anton works_at everworker" re-extracted).
+       * Details merging is the caller's responsibility (see updateFactDetails).
+       * Defaults to false for backward-compatibility.
+       */
+      dedup?: boolean;
     },
     scope: ScopeFilter,
   ): Promise<IFact> {
@@ -691,6 +825,26 @@ export class MemorySystem implements IDisposable {
       );
     }
 
+    // Kind validation — the storage type is `'atomic' | 'document'` but TS
+    // unions aren't enforced at runtime. LLM-driven callers (extractors) can
+    // emit any string; unknown kinds silently break computeIsSemantic,
+    // findFacts({kind}), graph traversal, and profile-regen gating. Reject
+    // at the boundary.
+    if (input.kind !== 'atomic' && input.kind !== 'document') {
+      throw new Error(
+        `addFact: kind must be 'atomic' or 'document', got '${String(input.kind)}'`,
+      );
+    }
+
+    // Mutual exclusion — a fact is either relational (objectId) or attribute
+    // (value). Storing both creates ambiguous records (findFacts by
+    // predicate+objectId and by predicate+value both match).
+    if (input.value !== undefined && input.objectId !== undefined) {
+      throw new Error(
+        'addFact: must set either value or objectId, not both',
+      );
+    }
+
     // Predicate canonicalization + registry-driven defaults.
     // When no registry is configured, `predicate` is left as-is and `def` is
     // undefined — addFact behaves exactly as before.
@@ -708,6 +862,24 @@ export class MemorySystem implements IDisposable {
       );
     }
     const def = this.predicates?.get(predicate);
+
+    // Dedup fast path — opt-in, used by the session ingestor. Skips the full
+    // validation/insert path when an equivalent non-archived fact already
+    // exists, bumping its observedAt so ranking stays fresh. Runs BEFORE
+    // subject loading because on match we don't need the subject at all.
+    if (input.dedup === true) {
+      const existing = await this.findDedupMatch(input, predicate, scope);
+      // Writing to an existing fact (bumping observedAt) requires write
+      // access — matching via `findDedupMatch` only proves READ (group/world
+      // read-visible facts can also match). On write-denied, fall through
+      // to the insert path so a new fact is created under the caller's
+      // own scope rather than mutating someone else's.
+      if (existing && canAccess(existing, scope, 'write')) {
+        const now = input.observedAt ?? new Date();
+        await this.store.updateFact(existing.id, { observedAt: now }, scope);
+        return { ...existing, observedAt: now };
+      }
+    }
 
     const subject = await this.store.getEntity(input.subjectId, scope);
     if (!subject) throw new Error(`addFact: subject entity ${input.subjectId} not found`);
@@ -776,10 +948,13 @@ export class MemorySystem implements IDisposable {
       summaryForEmbedding: input.summaryForEmbedding,
       embedding: input.embedding,
       isSemantic: input.isSemantic ?? computeIsSemantic(input),
-      confidence: input.confidence,
+      // Clamp to [0,1] at the boundary — LLM callers may emit out-of-range
+      // values that would corrupt ranking. Applies to caller-supplied
+      // values only; registry defaults (def?.defaultImportance) are trusted.
+      confidence: clampUnit01(input.confidence),
       sourceSignalId: input.sourceSignalId,
       derivedBy: input.derivedBy,
-      importance: input.importance ?? def?.defaultImportance,
+      importance: clampUnit01(input.importance) ?? def?.defaultImportance,
       contextIds: input.contextIds && input.contextIds.length > 0 ? input.contextIds : undefined,
       supersedes,
       archived: input.archived,
@@ -878,6 +1053,111 @@ export class MemorySystem implements IDisposable {
     assertCanAccess(fact, scope, 'write', 'fact');
     await this.store.updateFact(id, { archived: true }, scope);
     this.emit({ type: 'fact.archive', factId: id });
+  }
+
+  /**
+   * Update an existing fact's `details` field in place. Intended for merging
+   * narrative context when the session ingestor finds a duplicate fact and
+   * produces an LLM-merged details string. Recomputes `isSemantic` (the merged
+   * text may cross the length threshold), clears the stale embedding, and
+   * re-embeds if an embedder is configured.
+   *
+   * This mutates the fact — the prior `details` is lost. Use supersession if
+   * you need the full audit chain.
+   */
+  async updateFactDetails(
+    id: FactId,
+    details: string,
+    scope: ScopeFilter,
+  ): Promise<IFact> {
+    assertNotDestroyed(this, 'updateFactDetails');
+    const fact = await this.store.getFact(id, scope);
+    if (!fact) {
+      throw new Error(`updateFactDetails: fact ${id} not found or not visible in caller scope`);
+    }
+    assertCanAccess(fact, scope, 'write', 'fact');
+
+    const isSemantic = computeIsSemantic({ ...fact, details });
+    const patch: Partial<IFact> = {
+      details,
+      isSemantic,
+      embedding: undefined,
+      summaryForEmbedding: undefined,
+    };
+    await this.store.updateFact(id, patch, scope);
+
+    if (isSemantic && this.embedder && details.length > 0) {
+      try {
+        const vec = await this.embedder.embed(details);
+        await this.store.updateFact(id, { embedding: vec }, scope);
+      } catch (err) {
+        // Embedding failure is non-fatal — the fact is still retrievable by
+        // id/filter, just not via semanticSearch until re-embedding succeeds.
+        this.emit({
+          type: 'fact.embedding.failed',
+          factId: id,
+          entityId: null,
+          attempts: 1,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const updated = await this.store.getFact(id, scope);
+    return updated ?? { ...fact, ...patch };
+  }
+
+  private async findDedupMatch(
+    input: Partial<IFact>,
+    canonicalPredicate: string,
+    scope: ScopeFilter,
+  ): Promise<IFact | null> {
+    if (!input.subjectId || !input.kind) return null;
+    // Scan same-subject same-predicate same-kind non-archived facts. We cap at
+    // a small page — duplicates realistically cluster, not sprawl — and match
+    // exactly on (value, objectId).
+    const page = await this.store.findFacts(
+      {
+        subjectId: input.subjectId,
+        predicate: canonicalPredicate,
+        kind: input.kind,
+        archived: false,
+      },
+      { limit: 50, orderBy: { field: 'createdAt', direction: 'desc' } },
+      scope,
+    );
+    for (const f of page.items) {
+      const sameValue = stableEqual(f.value, input.value);
+      const sameObject = (f.objectId ?? null) === (input.objectId ?? null);
+      if (sameValue && sameObject) return f;
+    }
+    return null;
+  }
+
+  /**
+   * Find an existing non-archived fact matching the `(subjectId, predicate,
+   * kind, value, objectId)` signature of `input`. Returns null on no match.
+   *
+   * Exposed for callers (the session ingestor) that need to split insert vs
+   * merge paths themselves — e.g. to batch LLM-based details merging across
+   * several duplicates rather than merging one at a time.
+   *
+   * Predicate is canonicalized via the registry (if one is configured) so
+   * aliases match the same way `addFact` would treat them.
+   */
+  async findDuplicateFact(
+    input: Partial<IFact> & {
+      subjectId: EntityId;
+      predicate: string;
+      kind: IFact['kind'];
+    },
+    scope: ScopeFilter,
+  ): Promise<IFact | null> {
+    assertNotDestroyed(this, 'findDuplicateFact');
+    const canonical = this.predicates
+      ? this.predicates.canonicalize(input.predicate)
+      : input.predicate;
+    return this.findDedupMatch(input, canonical, scope);
   }
 
   // ==========================================================================
@@ -991,6 +1271,7 @@ export class MemorySystem implements IDisposable {
     const limit = opts.relatedTasksLimit ?? 15;
     const acc = new Map<EntityId, RelatedTask>();
 
+    const activeStates = this._taskStates.active;
     for (const role of RELATIONAL_TASK_FIELDS) {
       if (acc.size >= limit) break;
       const page = await this.store.listEntities(
@@ -998,7 +1279,7 @@ export class MemorySystem implements IDisposable {
           type: 'task',
           metadataFilter: {
             [role]: entityId,
-            state: { $in: TASK_ACTIVE_STATES },
+            state: { $in: activeStates },
           },
         },
         { limit: limit - acc.size },
@@ -1027,7 +1308,7 @@ export class MemorySystem implements IDisposable {
         const t = await this.store.getEntity(tid, scope);
         if (!t || t.type !== 'task') continue;
         const state = (t.metadata as Record<string, unknown> | undefined)?.state;
-        if (!TASK_ACTIVE_STATES.includes(state as string)) continue;
+        if (!activeStates.includes(state as string)) continue;
         acc.set(t.id, { task: t, role: 'context_of' });
       }
     }
@@ -1064,11 +1345,7 @@ export class MemorySystem implements IDisposable {
     for (const ev of eventsPage.items) {
       if (acc.size >= limit) break;
       const md = (ev.metadata ?? {}) as Record<string, unknown>;
-      const startTime = md.startTime instanceof Date
-        ? md.startTime
-        : typeof md.startTime === 'string'
-          ? new Date(md.startTime)
-          : undefined;
+      const startTime = toDateMaybe(md.startTime);
       if (startTime && startTime < windowStart) continue;
       const attendeeIds = Array.isArray(md.attendeeIds) ? (md.attendeeIds as string[]) : [];
       const hostId = typeof md.hostId === 'string' ? md.hostId : undefined;
@@ -1097,12 +1374,32 @@ export class MemorySystem implements IDisposable {
         const ev = await this.store.getEntity(cid, scope);
         if (!ev || ev.type !== 'event') continue;
         const md = (ev.metadata ?? {}) as Record<string, unknown>;
-        const startTime = md.startTime instanceof Date
-          ? md.startTime
-          : typeof md.startTime === 'string'
-            ? new Date(md.startTime)
-            : undefined;
+        const startTime = toDateMaybe(md.startTime);
         acc.set(ev.id, { event: ev, role: 'context_of', when: startTime });
+      }
+    }
+
+    // Third tier: walk `attended` / `hosted` facts where subject=entity and
+    // object is an event. Covers the case where attendance was recorded as a
+    // relational fact (e.g. seeded by CalendarSignalAdapter.seedFacts or
+    // emitted by an LLM) rather than as attendeeIds metadata.
+    if (acc.size < limit) {
+      for (const predicate of ['attended', 'hosted'] as const) {
+        if (acc.size >= limit) break;
+        const facts = await this.store.findFacts(
+          { subjectId: entityId, predicate, kind: 'atomic', asOf: opts.asOf },
+          { limit: 100 },
+          scope,
+        );
+        for (const f of facts.items) {
+          if (!f.objectId || acc.has(f.objectId) || acc.size >= limit) continue;
+          const ev = await this.store.getEntity(f.objectId, scope);
+          if (!ev || ev.type !== 'event') continue;
+          const md = (ev.metadata ?? {}) as Record<string, unknown>;
+          const startTime = toDateMaybe(md.startTime);
+          if (startTime && startTime < windowStart) continue;
+          acc.set(ev.id, { event: ev, role: predicate, when: startTime });
+        }
       }
     }
 
@@ -1131,6 +1428,224 @@ export class MemorySystem implements IDisposable {
     await this.store.updateEntity(next);
     this.emit({ type: 'entity.upsert', entity: next, created: false });
     return next;
+  }
+
+  /**
+   * Transition a task entity to a new state — the canonical way to mutate
+   * `task.metadata.state` after creation.
+   *
+   * Side effects (atomic from the caller's perspective, but read-modify-write
+   * at the MemorySystem layer — adapters with native transactions may promote):
+   *   - Sets `metadata.state = newState`.
+   *   - Appends `metadata.stateHistory: TaskStateHistoryEntry[]` (no library cap).
+   *   - When `newState` is in `taskStates.terminal` AND `metadata.completedAt`
+   *     is unset, sets `metadata.completedAt = at`.
+   *   - Writes a `state_changed` fact with `value: { from, to }`, the provided
+   *     `signalId` as `sourceSignalId`, and `importance: 0.7` (override via
+   *     `opts.factOverrides`).
+   *
+   * **Validate modes:**
+   *  - `'warn'` (default): any transition allowed; out-of-matrix transitions
+   *    log to `console.warn` and still proceed.
+   *  - `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError`
+   *    and NO writes happen.
+   *  - `'none'`: silent.
+   *
+   * **Crash-safety:** the metadata update and the audit fact write are NOT
+   * atomic — this method commits the metadata mutation first, then calls
+   * `addFact`. If the process dies between the two writes (or `addFact`
+   * throws after validation), the task's `state` + `stateHistory` are
+   * persisted but the audit fact is missing. The metadata is authoritative
+   * and `stateHistory` preserves the transition record, so queries keep
+   * working; only the fact-level provenance (ranking, retrieval via
+   * `state_changed` predicate) is lost for that specific transition.
+   * Callers that need transactional audit should wrap the call at their
+   * adapter layer.
+   *
+   * Subject must be a `type: 'task'` entity. For non-task subjects, call
+   * `addFact` + `updateEntityMetadata` directly.
+   */
+  async transitionTaskState(
+    taskId: EntityId,
+    newState: string,
+    opts: TransitionTaskStateOptions,
+    scope: ScopeFilter,
+  ): Promise<TransitionTaskStateResult> {
+    assertNotDestroyed(this, 'transitionTaskState');
+    const task = await this.store.getEntity(taskId, scope);
+    if (!task) {
+      throw new Error(`transitionTaskState: task ${taskId} not found or not visible`);
+    }
+    if (task.type !== 'task') {
+      throw new Error(
+        `transitionTaskState: entity ${taskId} has type '${task.type}', expected 'task'`,
+      );
+    }
+    if (typeof newState !== 'string' || newState.trim().length === 0) {
+      throw new Error('transitionTaskState: newState must be a non-empty string');
+    }
+    assertCanAccess(task, scope, 'write', 'entity');
+
+    const md = (task.metadata ?? {}) as Record<string, unknown>;
+    const from = typeof md.state === 'string' ? (md.state as string) : undefined;
+    const at = opts.at ?? new Date();
+    const validate = opts.validate ?? 'warn';
+
+    // Short-circuit no-op — same state, no side effects.
+    if (from === newState) {
+      return { task, fact: null };
+    }
+
+    // Transition-matrix validation.
+    if (opts.transitions) {
+      const allowed = opts.transitions[from ?? '__initial'];
+      const ok = Array.isArray(allowed) && allowed.includes(newState);
+      if (!ok) {
+        if (validate === 'strict') {
+          throw new InvalidTaskTransitionError(taskId, from, newState);
+        }
+        if (validate === 'warn') {
+          const err = new InvalidTaskTransitionError(taskId, from, newState);
+          this.reportWarning(err);
+        }
+      }
+    }
+
+    // Assemble new metadata: state + appended history + completedAt (if terminal).
+    const historyEntry: TaskStateHistoryEntry = {
+      from,
+      to: newState,
+      at,
+      signalId: opts.signalId,
+      reason: opts.reason,
+    };
+    const priorHistory = Array.isArray(md.stateHistory)
+      ? (md.stateHistory as TaskStateHistoryEntry[])
+      : [];
+    const stateHistory = [...priorHistory, historyEntry];
+
+    const nextMetadata: Record<string, unknown> = {
+      ...md,
+      state: newState,
+      stateHistory,
+    };
+    if (this._taskStates.terminal.includes(newState) && !md.completedAt) {
+      nextMetadata.completedAt = at;
+    }
+
+    const nextTask: IEntity = {
+      ...task,
+      metadata: nextMetadata,
+      version: task.version + 1,
+      updatedAt: at,
+    };
+    await this.store.updateEntity(nextTask);
+    this.emit({ type: 'entity.upsert', entity: nextTask, created: false });
+
+    // Audit fact — separate from metadata history so ranking + provenance work.
+    // factOverrides lets callers (notably ExtractionResolver auto-routing)
+    // preserve the LLM-supplied importance / confidence / contextIds / validity
+    // that would otherwise be dropped.
+    const o = opts.factOverrides ?? {};
+    let fact: IFact | null = null;
+    try {
+      fact = await this.addFact(
+        {
+          subjectId: taskId,
+          predicate: 'state_changed',
+          kind: 'atomic',
+          value: { from, to: newState },
+          details: opts.reason,
+          sourceSignalId: opts.signalId,
+          observedAt: at,
+          importance: o.importance ?? 0.7,
+          confidence: o.confidence,
+          contextIds: o.contextIds,
+          validFrom: o.validFrom,
+          validUntil: o.validUntil,
+          summaryForEmbedding: o.summaryForEmbedding,
+        },
+        scope,
+      );
+    } catch (err) {
+      // Don't fail the transition if the fact write fails — metadata is the
+      // authoritative state. Surface to onError for observability.
+      this.reportWarning(err);
+    }
+
+    return { task: nextTask, fact };
+  }
+
+  /**
+   * Report a non-fatal warning. Uses `console.warn` directly — `onError` is
+   * typed for `ChangeEvent` (a closed discriminated union) and forcing a
+   * synthetic "warning" event through it would break exhaustive `switch`
+   * handlers that callers write against the union. Library-internal warnings
+   * stay on the console until we add a dedicated `onWarning` channel.
+   */
+  private reportWarning(error: unknown): void {
+    // eslint-disable-next-line no-console
+    console.warn('[MemorySystem.transitionTaskState]', error);
+  }
+
+  /**
+   * List open (non-terminal) tasks for a scope, optionally filtered by
+   * assignee or project. Thin wrapper around `listEntities` — uses the
+   * configured `taskStates.active` as the `$in` filter on `metadata.state`.
+   *
+   * Client-side sort: `metadata.dueAt` ascending (undefined last), then
+   * `updatedAt` descending. TODO: push down once `EntityListFilter.orderBy`
+   * lands on adapters.
+   *
+   * Hard cap 200; default limit 50. Pass a smaller limit explicitly to
+   * constrain prompt-token budget when injecting into an extraction prompt.
+   */
+  async listOpenTasks(
+    scope: ScopeFilter,
+    opts: { assigneeId?: EntityId; projectId?: EntityId; limit?: number } = {},
+  ): Promise<IEntity[]> {
+    assertNotDestroyed(this, 'listOpenTasks');
+    const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
+    const metadataFilter: Record<string, unknown> = {
+      state: { $in: this._taskStates.active },
+    };
+    if (opts.assigneeId) metadataFilter.assigneeId = opts.assigneeId;
+    if (opts.projectId) metadataFilter.projectId = opts.projectId;
+    const page = await this.store.listEntities(
+      { type: 'task', metadataFilter },
+      { limit },
+      scope,
+    );
+    // Client-side sort — adapters don't support orderBy on listEntities yet.
+    return [...page.items].sort(compareTasksForListing);
+  }
+
+  /**
+   * List recent topic entities for a scope. Fetches up to `limit * 4` (capped
+   * at 200) topics and filters client-side by `updatedAt >= cutoff` where
+   * cutoff defaults to now - `days` days. Sorted by `updatedAt` descending.
+   *
+   * TODO: push down once `EntityListFilter.updatedAfter` + `orderBy` land on
+   * adapters.
+   */
+  async listRecentTopics(
+    scope: ScopeFilter,
+    opts: { days?: number; limit?: number } = {},
+  ): Promise<IEntity[]> {
+    assertNotDestroyed(this, 'listRecentTopics');
+    const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
+    const days = Math.max(1, opts.days ?? 30);
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    const fetchLimit = Math.min(limit * 4, 200);
+    const page = await this.store.listEntities(
+      { type: 'topic' },
+      { limit: fetchLimit },
+      scope,
+    );
+    return page.items
+      .filter((e) => e.updatedAt.getTime() >= cutoff.getTime())
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, limit);
   }
 
   /**
@@ -1452,6 +1967,57 @@ function computeIsSemantic(input: Partial<IFact>): boolean {
   return text.length >= SEMANTIC_MIN_DETAILS_LENGTH;
 }
 
+/** Clamp to [0, 1]; preserve undefined (so registry defaults still apply). */
+function clampUnit01(v: number | undefined): number | undefined {
+  if (typeof v !== 'number' || Number.isNaN(v)) return undefined;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Order-independent deep equality for LLM-extracted fact `value` payloads.
+ *
+ * `JSON.stringify` is not sufficient because:
+ *   - `{a:1, b:2}` vs `{b:2, a:1}` stringify differently (key order).
+ *   - `NaN`, `Infinity`, `-Infinity` all stringify to `"null"` → false positives.
+ *   - Arrays of different ordering stringify differently (correctly — order matters).
+ *
+ * Handles: primitives (incl. `NaN === NaN` special case), arrays (positional),
+ * plain objects (key-sorted). Does NOT attempt Map/Set/Date — LLM output is
+ * JSON, so these won't appear.
+ */
+function stableEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a === 'number' && typeof b === 'number') {
+    return Number.isNaN(a) && Number.isNaN(b);
+  }
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return a === b;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!stableEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const aKeys = Object.keys(a as Record<string, unknown>).sort();
+  const bKeys = Object.keys(b as Record<string, unknown>).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    if (
+      !stableEqual(
+        (a as Record<string, unknown>)[aKeys[i]!],
+        (b as Record<string, unknown>)[bKeys[i]!],
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function deriveFactScope(
   input: Partial<IFact>,
   subject: IEntity,
@@ -1700,4 +2266,83 @@ class EmbeddingQueue {
       if (resolve) resolve();
     }
   }
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Sort open tasks by `metadata.dueAt` ascending (undefined last), then
+ * `updatedAt` descending. Stable across equal keys.
+ */
+function compareTasksForListing(a: IEntity, b: IEntity): number {
+  const dueA = toTimestamp((a.metadata ?? {}).dueAt);
+  const dueB = toTimestamp((b.metadata ?? {}).dueAt);
+  if (dueA !== null && dueB !== null) {
+    if (dueA !== dueB) return dueA - dueB;
+  } else if (dueA !== null) {
+    return -1;
+  } else if (dueB !== null) {
+    return 1;
+  }
+  return b.updatedAt.getTime() - a.updatedAt.getTime();
+}
+
+function toDateMaybe(v: unknown): Date | undefined {
+  if (v instanceof Date) return v;
+  if (typeof v === 'string') {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  return undefined;
+}
+
+function toTimestamp(v: unknown): number | null {
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'string') {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d.getTime();
+  }
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  return null;
+}
+
+function validateTaskStates(cfg: TaskStatesConfig | undefined): TaskStatesConfig {
+  if (!cfg) {
+    return {
+      active: [...DEFAULT_TASK_STATES.active],
+      terminal: [...DEFAULT_TASK_STATES.terminal],
+    };
+  }
+  if (!Array.isArray(cfg.active) || cfg.active.length === 0) {
+    throw new Error("MemorySystem: taskStates.active must be a non-empty string[]");
+  }
+  if (!Array.isArray(cfg.terminal) || cfg.terminal.length === 0) {
+    throw new Error("MemorySystem: taskStates.terminal must be a non-empty string[]");
+  }
+  const activeSet = new Set(cfg.active);
+  if (activeSet.size !== cfg.active.length) {
+    throw new Error("MemorySystem: taskStates.active contains duplicates");
+  }
+  const terminalSet = new Set(cfg.terminal);
+  if (terminalSet.size !== cfg.terminal.length) {
+    throw new Error("MemorySystem: taskStates.terminal contains duplicates");
+  }
+  for (const s of cfg.active) {
+    if (typeof s !== 'string' || s.trim().length === 0) {
+      throw new Error("MemorySystem: taskStates.active entries must be non-empty strings");
+    }
+    if (terminalSet.has(s)) {
+      throw new Error(
+        `MemorySystem: taskStates '${s}' appears in both active and terminal — must be disjoint`,
+      );
+    }
+  }
+  for (const s of cfg.terminal) {
+    if (typeof s !== 'string' || s.trim().length === 0) {
+      throw new Error("MemorySystem: taskStates.terminal entries must be non-empty strings");
+    }
+  }
+  return { active: [...cfg.active], terminal: [...cfg.terminal] };
 }

@@ -144,7 +144,7 @@ describe('genericTraverse', () => {
     expect(r3.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id, c.id, d.id].sort());
   });
 
-  it('respects limit on nodes returned', async () => {
+  it('respects limit on edges returned; nodes still include all endpoints', async () => {
     const a = await store.createEntity(entityInput('A'));
     const b = await store.createEntity(entityInput('B'));
     const c = await store.createEntity(entityInput('C'));
@@ -159,7 +159,14 @@ describe('genericTraverse', () => {
       { direction: 'out', maxDepth: 1, limit: 2 },
       global,
     );
-    expect(result.nodes.length).toBeLessThanOrEqual(2);
+    // Edge-based limit (matches memory_graph tool contract).
+    expect(result.edges.length).toBeLessThanOrEqual(2);
+    // Every surviving edge's endpoints must appear in nodes.
+    const nodeIds = new Set(result.nodes.map((n) => n.entity.id));
+    for (const edge of result.edges) {
+      expect(nodeIds.has(edge.from)).toBe(true);
+      expect(nodeIds.has(edge.to)).toBe(true);
+    }
   });
 
   it('filters edges by predicate', async () => {

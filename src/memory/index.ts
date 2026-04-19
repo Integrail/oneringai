@@ -10,7 +10,18 @@
  */
 
 // ---- Runtime values ----
-export { MemorySystem, ScopeInvariantError, ProfileGeneratorMissingError, SemanticSearchUnavailableError } from './MemorySystem.js';
+export {
+  MemorySystem,
+  ScopeInvariantError,
+  ProfileGeneratorMissingError,
+  SemanticSearchUnavailableError,
+  InvalidTaskTransitionError,
+} from './MemorySystem.js';
+export type {
+  TaskStateHistoryEntry,
+  TransitionTaskStateOptions,
+  TransitionTaskStateResult,
+} from './MemorySystem.js';
 export { InMemoryAdapter, OptimisticConcurrencyError, ScopeViolationError } from './adapters/inmemory/index.js';
 export type { InMemoryAdapterOptions } from './adapters/inmemory/index.js';
 
@@ -32,12 +43,14 @@ export {
   defaultProfilePrompt,
   createMemorySystemWithConnectors,
   defaultExtractionPrompt,
+  DEFAULT_EXTRACTION_PROMPT_VERSION,
   ExtractionResolver,
   SignalIngestor,
   ConnectorExtractor,
   parseExtractionResponse,
   PlainTextAdapter,
   EmailSignalAdapter,
+  CalendarSignalAdapter,
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
@@ -55,11 +68,13 @@ export type {
   IngestionResult,
   ExtractionResolverOptions,
   SignalIngestorConfig,
+  ContextHintsConfig,
   IngestSignalInput,
   IngestTextInput,
   IngestExtractedInput,
   ConnectorExtractorConfig,
   ParticipantSeed,
+  SeedFact,
   ExtractedSignal,
   SignalSourceAdapter,
   IExtractor,
@@ -67,6 +82,9 @@ export type {
   EmailAddress,
   EmailSignal,
   EmailSignalAdapterOptions,
+  CalendarAttendee,
+  CalendarSignal,
+  CalendarSignalAdapterOptions,
 } from './integration/index.js';
 
 // Mongo adapter — optional peer dep on `mongodb`; import path is always safe
@@ -100,6 +118,11 @@ export type {
 } from './adapters/mongo/index.js';
 export { genericTraverse } from './GenericTraversal.js';
 export { scoreFact, rankFacts } from './Ranking.js';
+
+// Identifier helpers — deterministic canonical ids for entities lacking a
+// natural external strong key (tasks, events, topics, calendar entries).
+export { canonicalIdentifier, slugify } from './identifiers.js';
+export type { CanonicalIdentifierOptions, SlugifyOptions } from './identifiers.js';
 
 // Predicate library — pluggable vocabulary with a 51-predicate standard set.
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
@@ -179,4 +202,5 @@ export type {
   MemorySystemConfig,
   EmbeddingQueueConfig,
   RankingConfig,
+  TaskStatesConfig,
 } from './types.js';

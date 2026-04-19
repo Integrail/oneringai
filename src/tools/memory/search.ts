@@ -6,7 +6,7 @@
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { FactFilter } from '../../memory/index.js';
-import type { MemoryToolDeps } from './types.js';
+import type { MemoryToolDeps, SubjectRef } from './types.js';
 import { clamp, resolveScope, toErrorMessage } from './types.js';
 
 export interface SearchArgs {
@@ -14,9 +14,15 @@ export interface SearchArgs {
   query: string;
   /** Number of results. Default 10, max 100. */
   topK?: number;
-  /** Optional fact filter — predicate, subjectId, observedAfter, etc. */
+  /** Optional fact filter — predicate, subject, observedAfter, etc. */
   filter?: {
+    /** SubjectRef — accepts "me", "this_agent", entity id, {identifier}, {surface}. Preferred over subjectId. */
+    subject?: SubjectRef;
+    /** SubjectRef — same as subject but constrains the object side of relational facts. */
+    object?: SubjectRef;
+    /** Escape hatch when you already have the raw entity id — otherwise prefer `subject`. */
     subjectId?: string;
+    /** Escape hatch when you already have the raw entity id — otherwise prefer `object`. */
     objectId?: string;
     predicate?: string;
     predicates?: string[];
@@ -29,9 +35,12 @@ export interface SearchArgs {
 
 const DESCRIPTION = `Semantic text search across facts visible to you. Best when the user asks "find anything about X" and you don't know the entity or predicate upfront. Requires an embedder; will report "not available" otherwise.
 
+filter.subject / filter.object accept any SubjectRef form (SubjectRef: "me", "this_agent", entity id, {id}, {identifier:{kind,value}}, {surface:"..."}) — you don't have to resolve the entity first. Use subjectId/objectId only when you already have the raw id.
+
 Examples:
 - {"query":"deployment incidents last quarter","topK":10}
-- {"query":"Alice's preferences","filter":{"subjectId":"<alice-id>"}}
+- {"query":"Alice's preferences","filter":{"subject":{"surface":"Alice"}}}
+- {"query":"my preferences","filter":{"subject":"me"}}
 - {"query":"budget approvals","filter":{"predicate":"approved","observedAfter":"2025-01-01"}}
 
 Returns ranked {fact, score} pairs; score is cosine similarity (0..1).`;
@@ -65,8 +74,25 @@ export function createSearchTool(deps: MemoryToolDeps): ToolFunction<SearchArgs>
 
       const filter: FactFilter = {};
       if (args.filter) {
-        if (args.filter.subjectId) filter.subjectId = args.filter.subjectId;
-        if (args.filter.objectId) filter.objectId = args.filter.objectId;
+        // SubjectRef preferred over raw id; subjectId stays as an escape hatch.
+        if (args.filter.subject) {
+          const res = await deps.resolve(args.filter.subject, scope);
+          if (!res.ok) {
+            return { error: `filter.subject: ${res.message}`, candidates: res.candidates };
+          }
+          filter.subjectId = res.entity.id;
+        } else if (args.filter.subjectId) {
+          filter.subjectId = args.filter.subjectId;
+        }
+        if (args.filter.object) {
+          const res = await deps.resolve(args.filter.object, scope);
+          if (!res.ok) {
+            return { error: `filter.object: ${res.message}`, candidates: res.candidates };
+          }
+          filter.objectId = res.entity.id;
+        } else if (args.filter.objectId) {
+          filter.objectId = args.filter.objectId;
+        }
         if (args.filter.predicate) filter.predicate = args.filter.predicate;
         if (args.filter.predicates?.length) filter.predicates = args.filter.predicates;
         if (typeof args.filter.minConfidence === 'number') {

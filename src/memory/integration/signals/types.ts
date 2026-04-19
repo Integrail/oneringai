@@ -32,9 +32,13 @@ import type { ExtractionOutput } from '../ExtractionResolver.js';
  * bind ambiguously — `SignalIngestor` rejects seeds with empty `identifiers`
  * rather than silently skip them. If you only have a display name, don't seed:
  * let the LLM surface the mention and resolve via surface form.
+ *
+ * Despite the historical name "participant", seeds can be ANY entity type —
+ * events, tasks, projects. The role field is a free-form hint used by
+ * `seedFacts` (below) for deterministic relational-fact writes.
  */
 export interface ParticipantSeed {
-  /** Free-form role hint, e.g. `from`, `to`, `cc`, `author`, `attendee`, `organizer`. */
+  /** Free-form role hint, e.g. `from`, `to`, `cc`, `author`, `attendee`, `organizer`, `event`. */
   role: string;
   /** Strong identifiers. MUST be non-empty. */
   identifiers: Identifier[];
@@ -44,6 +48,34 @@ export interface ParticipantSeed {
   aliases?: string[];
   /** Entity type. Default `'person'`. */
   type?: string;
+  /**
+   * Type-specific fields to set on the entity (e.g. event `startTime`/`endTime`,
+   * task `state`/`dueAt`). Merge semantics follow `upsertEntityBySurface.metadata`:
+   * verbatim on create, `fillMissing` on resolve.
+   */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Deterministic relational fact the adapter wants written after seed entities
+ * are resolved. Roles refer to `ParticipantSeed.role` values; `SignalIngestor`
+ * resolves them to entity ids and calls `memory.addFact`.
+ *
+ * When the referenced role appears multiple times among seeds (e.g. many
+ * attendees), one fact is written per matching seed. Unresolved roles produce
+ * an `IngestionError` entry rather than silently failing.
+ */
+export interface SeedFact {
+  /** Role of the subject entity among `participants`. */
+  subjectRole: string;
+  /** Canonical predicate (snake_case). */
+  predicate: string;
+  /** Role of the object entity among `participants`. */
+  objectRole: string;
+  /** Optional salience. Defaults to predicate registry / addFact defaults. */
+  importance?: number;
+  /** Optional per-fact confidence override. */
+  confidence?: number;
 }
 
 /**
@@ -56,6 +88,14 @@ export interface ExtractedSignal {
   signalSourceDescription?: string;
   /** Deterministic entity seeds derived from metadata. May be empty. */
   participants: ParticipantSeed[];
+  /**
+   * Deterministic facts derived from signal metadata, written after seed
+   * entities are resolved. Useful when the relationship is guaranteed by the
+   * source (e.g. calendar organizer/attendee) and shouldn't depend on the
+   * LLM extracting it. Unresolved role references produce `IngestionError`
+   * entries; the rest still write. Optional.
+   */
+  seedFacts?: SeedFact[];
 }
 
 /**

@@ -21,7 +21,11 @@ export async function genericTraverse(
   const direction = opts.direction;
   const predicates = opts.predicates && opts.predicates.length > 0 ? new Set(opts.predicates) : null;
   const maxDepth = Math.max(0, opts.maxDepth);
-  const nodeLimit = opts.limit ?? Infinity;
+  // `limit` is edges, not nodes — matches the `memory_graph` tool contract.
+  // Nodes get resolved for every endpoint of the surviving edges, so node
+  // count is naturally bounded at 2*edgeLimit + 1 and stays consistent with
+  // the returned edges (every edge's from/to is guaranteed in `nodes`).
+  const edgeLimit = opts.limit ?? Infinity;
 
   const visited = new Set<EntityId>();
   const nodes: Neighborhood['nodes'] = [];
@@ -34,12 +38,10 @@ export async function genericTraverse(
 
   let frontier: EntityId[] = [startId];
 
-  for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
+  outer: for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
     const nextFrontier: EntityId[] = [];
 
     for (const currentId of frontier) {
-      if (nodes.length >= nodeLimit) break;
-
       const neighborFacts: IFact[] = [];
 
       if (direction === 'out' || direction === 'both') {
@@ -69,18 +71,17 @@ export async function genericTraverse(
           depth,
         });
 
-        if (visited.has(otherId)) continue;
-        visited.add(otherId);
+        if (!visited.has(otherId)) {
+          visited.add(otherId);
+          const otherEntity = await store.getEntity(otherId, scope);
+          if (otherEntity) {
+            nodes.push({ entity: otherEntity, depth });
+            nextFrontier.push(otherId);
+          }
+        }
 
-        const otherEntity = await store.getEntity(otherId, scope);
-        if (!otherEntity) continue;
-        nodes.push({ entity: otherEntity, depth });
-        if (nodes.length >= nodeLimit) break;
-
-        nextFrontier.push(otherId);
+        if (edges.length >= edgeLimit) break outer;
       }
-
-      if (nodes.length >= nodeLimit) break;
     }
 
     frontier = nextFrontier;

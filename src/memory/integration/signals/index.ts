@@ -1,6 +1,7 @@
 export { SignalIngestor } from './SignalIngestor.js';
 export type {
   SignalIngestorConfig,
+  ContextHintsConfig,
   IngestSignalInput,
   IngestTextInput,
   IngestExtractedInput,
@@ -11,6 +12,7 @@ export type { ConnectorExtractorConfig } from './ConnectorExtractor.js';
 
 export type {
   ParticipantSeed,
+  SeedFact,
   ExtractedSignal,
   SignalSourceAdapter,
   IExtractor,
@@ -25,3 +27,10 @@ export type {
   EmailSignal,
   EmailSignalAdapterOptions,
 } from './adapters/EmailSignalAdapter.js';
+
+export { CalendarSignalAdapter } from './adapters/CalendarSignalAdapter.js';
+export type {
+  CalendarAttendee,
+  CalendarSignal,
+  CalendarSignalAdapterOptions,
+} from './adapters/CalendarSignalAdapter.js';

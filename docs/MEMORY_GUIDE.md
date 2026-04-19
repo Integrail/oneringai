@@ -742,6 +742,151 @@ const { items: done } = await store.listEntities(
 const recent = done.filter(t => (t.metadata?.completedAt as Date) >= monthStart);
 ```
 
+#### Configuring the task-state vocabulary
+
+If your app uses a different lifecycle than the library default (`pending / in_progress / blocked / deferred / done / cancelled`), configure it at construction instead of hardcoding state strings in every query:
+
+```ts
+const memory = new MemorySystem({
+  store,
+  taskStates: {
+    active:   ['proposed', 'scheduled', 'in_progress', 'blocked'],
+    terminal: ['done', 'cancelled'],
+  },
+});
+```
+
+The two arrays must be non-empty and disjoint. `getContext.relatedTasks` and future task helpers use this config to decide which tasks are "still open". Read the resolved config via `memory.taskStates`.
+
+#### Canonical identifiers for convergence across signals
+
+Tasks have no natural external strong key — the same task re-surfaced across email, Slack, and calendar gets re-phrased every time. Without a deterministic identifier, re-extraction creates duplicates.
+
+Use `canonicalIdentifier()` to build a `{ kind: 'canonical', value: ... }` identifier from the task's structural invariants:
+
+```ts
+import { canonicalIdentifier } from '@everworker/oneringai/memory';
+
+const id = canonicalIdentifier('task', {
+  assignee: john.id,
+  context: acmeDeal.id,
+  title: 'Send budget by Friday',
+});
+// → { kind: 'canonical', value: 'task:<john-id>:<deal-id>:send-budget-by-friday', isPrimary: false }
+
+await memory.upsertEntity(
+  {
+    type: 'task',
+    displayName: 'Send Q3 budget by Friday',
+    identifiers: [id],
+    metadata: { state: 'proposed', assigneeId: john.id },
+  },
+  scope,
+);
+```
+
+A follow-up signal that re-extracts the same task (perhaps phrased as "send the budget proposal by end of week") builds the same canonical identifier → Tier-1 identifier match in the resolver → converges on the existing entity. The same helper works for events (`canonicalIdentifier('event', { source: 'gcal', id: externalId })`), topics, projects.
+
+`'canonical'` is a library-blessed identifier kind — use it uniformly so tooling can recognize the pattern.
+
+#### Setting type-specific metadata at upsert time
+
+`upsertEntityBySurface` accepts `metadata` directly. This matters for LLM-driven ingestion: the extractor can emit `state`, `dueAt`, `assigneeId` on the mention itself rather than chasing the create with a separate `updateEntityMetadata` call.
+
+**Conservative merge on resolve:** when the upsert matches an existing entity, `metadata` is merged using `'fillMissing'` semantics by default — **only keys absent from the stored metadata are set**. Existing values are never overwritten. This guards against a follow-up re-extraction silently flipping `state` from `in_progress` to `proposed` because the LLM misread a summary email.
+
+```ts
+// First extraction — create path, metadata set verbatim
+await memory.upsertEntityBySurface(
+  {
+    surface: 'Send budget by Friday',
+    type: 'task',
+    identifiers: [canonicalIdentifier('task', { assignee: 'alice', title: 'budget' })],
+    metadata: { state: 'proposed', dueAt: '2026-04-30' },
+  },
+  scope,
+);
+
+// Later extraction: resolver converges on the same entity via canonical id.
+// metadata merges with fillMissing — the incoming `state: 'done'` is IGNORED
+// because state already exists. `priority: 'high'` IS added (new key).
+await memory.upsertEntityBySurface(
+  {
+    surface: 'Budget review task',
+    type: 'task',
+    identifiers: [canonicalIdentifier('task', { assignee: 'alice', title: 'budget' })],
+    metadata: { state: 'done', priority: 'high' },  // state ignored, priority added
+  },
+  scope,
+);
+```
+
+To **deliberately** mutate existing metadata, use `updateEntityMetadata(id, patch, scope)` for raw patches, or `transitionTaskState()` for state-machine validated transitions (below). For sync jobs where the caller is the authoritative source of truth, opt into shallow-overwrite via `{ metadataMerge: 'overwrite' }` on `upsertEntityBySurface`.
+
+#### Transitioning task state — `transitionTaskState`
+
+The canonical way to mutate `task.metadata.state` after creation:
+
+```ts
+await memory.transitionTaskState(
+  task.id,
+  'done',
+  {
+    signalId: 'email-abc123',
+    reason: 'Completed ahead of schedule',
+    validate: 'strict',
+    transitions: {
+      pending: ['in_progress', 'cancelled'],
+      in_progress: ['done', 'blocked', 'cancelled'],
+      blocked: ['in_progress', 'cancelled'],
+      done: [],
+      cancelled: [],
+    },
+  },
+  scope,
+);
+```
+
+Side effects (atomic from the caller's perspective):
+- Sets `metadata.state = newState`.
+- Appends to `metadata.stateHistory: { from, to, at, signalId?, reason? }[]`. No library cap — retention is your problem.
+- When `newState` is in `taskStates.terminal` AND `metadata.completedAt` is unset, sets `metadata.completedAt`.
+- Writes a `state_changed` atomic fact with `value: { from, to }`, `sourceSignalId`, `importance: 0.7` for audit + retrieval.
+
+**Validate modes:**
+- `'warn'` (default): out-of-matrix transitions route through your `onError` hook and still apply.
+- `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError` — metadata + fact writes are skipped.
+- `'none'`: silent.
+
+**No-op short-circuit:** `from === to` returns without writing anything (no history entry, no fact, no version bump).
+
+#### LLM auto-routing of state changes
+
+When the LLM extractor emits a `state_changed` fact on a task entity, the `ExtractionResolver` routes it through `transitionTaskState` automatically — so the metadata update, history append, and `completedAt` for terminal states all fire as part of ingestion. The audit fact still lands.
+
+Tolerant value shapes the extractor can emit: `{ from, to }`, `{ to }`, or a plain string. Non-task subjects and malformed values fall through to plain `addFact` — nothing breaks. Opt out globally via `new MemorySystem({ ..., autoApplyTaskTransitions: false })`.
+
+#### Fetching open tasks + recent topics for prompt injection
+
+Two thin helpers for feeding prior context into extraction prompts (so re-mentions of existing tasks resolve to the same entity instead of creating duplicates):
+
+```ts
+const openTasks = await memory.listOpenTasks(scope, {
+  assigneeId: currentUser,
+  limit: 20,
+});
+const recentTopics = await memory.listRecentTopics(scope, {
+  days: 30,
+  limit: 30,
+});
+```
+
+`listOpenTasks` uses the configured `taskStates.active` as the `$in` filter. Sorted client-side by `dueAt` ascending (undefined last) then `updatedAt` descending.
+
+`listRecentTopics` filters topics updated within the last `days` (default 30). Sorted by `updatedAt` descending.
+
+Both clamp the limit to `[1, 200]`. (Future optimization: push sort + date filter to adapters via `EntityListFilter.orderBy` + `updatedAfter`.)
+
 ### Events
 
 Events (meetings, calls, incidents) are also entities.
@@ -782,6 +927,65 @@ await memory.addFact(
 ```
 
 Later, `getContext(meeting.id)` returns all observations bound to it — John's objection, any decisions made, attendance facts, etc.
+
+#### Ingesting calendar events — `CalendarSignalAdapter`
+
+The library ships a reference adapter for calendar events. It handles the boilerplate of translating a calendar API payload into seed entities + deterministic relational facts:
+
+```ts
+import {
+  SignalIngestor,
+  CalendarSignalAdapter,
+  ConnectorExtractor,
+} from '@everworker/oneringai/memory';
+
+const ingestor = new SignalIngestor({
+  memory,
+  extractor: new ConnectorExtractor({ connector, model: 'gpt-5-mini' }),
+  adapters: [new CalendarSignalAdapter()],
+});
+
+await ingestor.ingest({
+  kind: 'calendar',
+  raw: {
+    id: 'cal_evt_abc123',
+    source: 'gcal',
+    title: 'Q3 Planning Review',
+    description: 'Go through Q3 priorities and finalize budget.',
+    startTime: new Date('2026-05-01T10:00:00Z'),
+    endTime: new Date('2026-05-01T11:00:00Z'),
+    location: 'Conference Room A',
+    organizer: { email: 'alice@acme.com', name: 'Alice' },
+    attendees: [
+      { email: 'bob@acme.com', name: 'Bob' },
+      { email: 'carol@acme.com', rsvpStatus: 'accepted' },
+    ],
+    kind: 'meeting',
+  },
+  sourceSignalId: 'gcal:cal_evt_abc123',
+  scope,
+});
+```
+
+What happens:
+- Event entity created (or resolved) via canonical identifier `event:gcal:cal_evt_abc123`. Metadata carries `startTime`, `endTime`, `location`, `kind`.
+- Alice + Bob + Carol seeded as `person` entities keyed by email.
+- Three deterministic facts written: `Alice hosted Event`, `Bob attended Event`, `Carol attended Event`.
+- LLM runs against `signalText` (title + description + attendees) to extract any narrative facts from the description.
+- Declined attendees: still seeded as people, but no `attended` fact (opt out via `skipDeclinedAttendance: false`).
+
+**Convergence:** re-ingesting the same calendar event (periodic sync, updated invite) hits the same canonical identifier and converges on the existing event entity. Metadata updates use the conservative `fillMissing` merge — existing `startTime` won't be overwritten if the caller sends it again. Use `updateEntityMetadata` directly to deliberately reschedule.
+
+**Custom source formats:** for sources the library doesn't ship an adapter for, implement `SignalSourceAdapter<YourShape>` + emit your own `participants` + `seedFacts`. The `role` field on each seed is what `seedFacts` reference — design it to reflect the structural roles you'll need to wire up.
+
+#### Surfacing attended events
+
+`getContext(person.id).relatedEvents` returns events the person is linked to via three tiers:
+1. `event.metadata.attendeeIds` includes the person's id → role `'attended'`
+2. `event.metadata.hostId` matches → role `'hosted'`
+3. A fact `(person, attended|hosted, event)` exists → role matches the predicate
+
+Tier 3 is what makes the calendar adapter work without duplicating attendee ids into every event's metadata.
 
 ### Projects, topics, clusters
 
@@ -1783,15 +1987,28 @@ Args cap: `topFactsLimit ≤ 100`, `neighborDepth ≤ 5`.
 
 #### `memory_graph`
 
-N-hop traversal from a starting entity. Returns nodes + edges. Backends pick the best implementation automatically — Mongo uses native `$graphLookup` when `useNativeGraphLookup: true`; everything else falls back to iterative BFS.
+N-hop traversal from a starting entity. Returns nodes + edges. Backends dispatch automatically — Mongo uses native `$graphLookup` for `direction: 'out' | 'in'` when `useNativeGraphLookup: true`; `direction: 'both'` always falls back to the iterative BFS path because per-hop direction flipping (the co-subject pattern) isn't expressible as a single `$graphLookup` pipeline.
 
 ```json
-{"start": "me", "direction": "out", "maxDepth": 2}
-{"start": {"surface": "Q3 planning"}, "predicates": ["attended"]}
-{"start": {"identifier": {"kind": "jira_id", "value": "PROJ-42"}}, "direction": "both"}
+{"start": {"surface": "Anton"}, "direction": "out", "maxDepth": 1, "predicates": ["works_at"]}
+{"start": {"surface": "Q3 planning"}, "direction": "in", "maxDepth": 1, "predicates": ["attended"]}
+{"start": {"surface": "Anton"}, "direction": "both", "maxDepth": 2, "predicates": ["works_at"]}
 ```
 
-Args cap: `maxDepth ≤ 5`, `limit ≤ 500`.
+> Note: bare strings in `start` are interpreted as entity IDs — only `"me"` and `"this_agent"` are special tokens. For name-based lookups, always use the `{"surface":"..."}` form as shown above.
+
+**Query patterns the tool description teaches the LLM:**
+
+| Question shape | Tool args |
+|---|---|
+| "What does X relate to via P?" | `direction:'out', maxDepth:1, predicates:[P]` |
+| "Who/what relates to X via P?" | `direction:'in', maxDepth:1, predicates:[P]` |
+| **"Who shares a P-relation with X?"** (co-subject — most common) | `direction:'both', maxDepth:2, predicates:[P]` — co-subjects appear at `depth:2` |
+| "Follow P chain from X" (transitive) | `direction:'out', maxDepth:N, predicates:[P]` |
+| "Everything around X" (neighborhood) | `direction:'both', maxDepth:N` (omit predicates) |
+| "Point-in-time graph" | add `asOf:'<ISO>'` — filters facts with `createdAt ≤ asOf AND (validFrom ≤ asOf OR missing) AND (validUntil ≥ asOf OR missing)` |
+
+Args cap: `maxDepth ≤ 5`, `limit ≤ 500`. `asOf` must be valid ISO-8601 or returns a structured error. `limit` applies to edges as well as nodes.
 
 #### `memory_search`
 
@@ -1878,7 +2095,11 @@ The library's permission system trusts scope (`{userId, groupId}`) because the h
 
 **`contextIds` auto-downgrade.** If a write specifies `contextIds` that include entities you don't own, and the chosen visibility is `"group"` or `"public"`, the tool silently downgrades visibility to `"private"` and includes a `warnings` entry in the response. This prevents a compromised agent from planting cross-owner facts that would then surface in a victim's graph-walk results.
 
-**Numeric input validation.** All LLM-controllable numeric limits are clamped (see per-tool caps above) to prevent DoS via huge `maxDepth` / `topK` / `limit` values. `confidence` and `importance` are clamped to `[0, 1]` so a rogue `importance: 1e9` can't permanently dominate ranking.
+**Numeric input validation.** All LLM-controllable numeric limits are clamped (see per-tool caps above) to prevent DoS via huge `maxDepth` / `topK` / `limit` values. `confidence` and `importance` are clamped to `[0, 1]` at both the tool layer and the memory layer (`MemorySystem.addFact`) so a rogue `importance: 1e9` can't permanently dominate ranking.
+
+**`kind` is a strict enum.** Every fact is either `'atomic'` (scalar, relation, or brief observation) or `'document'` (long-form prose, indexed for semantic search). `MemorySystem.addFact` rejects anything else. The extraction prompt names both values explicitly with when-to-pick guidance, and `ExtractionResolver` coerces unknown LLM-emitted kinds to `'atomic'` while logging the drift in `IngestionResult.unresolved` for review. `memory_remember` exposes `kind` as an optional arg with a JSON-schema enum so the LLM is constrained at the tool boundary.
+
+**`value` and `objectId` are mutually exclusive.** A fact is either relational (objectId) or attribute (value). Setting both is rejected at both the tool and memory layer — storing both previously produced records that matched predicate-filtered queries ambiguously.
 
 ### Using the tools outside the plugin
 
@@ -1915,6 +2136,76 @@ Both are **deprecated** in favour of `MemoryPluginNextGen`. They keep working un
 - No semantic recall → `memory_search` + `memory_graph` just work.
 
 Where the legacy plugins still fit: small, fixed, agent-side string configuration that never needs to evolve.
+
+### Learning from agent runs — `SessionIngestorPluginNextGen`
+
+The `memory_*` tools let the LLM write deliberately. But you shouldn't rely on it alone — agents forget, skip, or race past moments worth remembering. `SessionIngestorPluginNextGen` is a side-effect plugin that observes the conversation **before every `prepare()`** (crucially, BEFORE any compaction that would evict messages) and extracts structured facts through a dedicated LLM call.
+
+```ts
+import { SessionIngestorPluginNextGen } from '@everworker/oneringai';
+
+ctx.registerPlugin(new SessionIngestorPluginNextGen({
+  memory,
+  agentId: 'sales-assistant',
+  userId: currentUserId,
+  groupId: currentGroupId,           // optional, trusted from host auth
+  connectorName: 'haiku-extractor',  // REQUIRED — no default
+  model: 'claude-haiku-4-5-20251001',
+  diligence: 'normal',               // 'minimal' | 'normal' | 'thorough'
+}));
+```
+
+**Required config:** `memory`, `agentId`, `userId`, `connectorName`, `model`. There are **no defaults** on the connector — the host explicitly wires its own extraction backend (usually cheaper than the main agent's model).
+
+**Where it fires.** At the top of `AgentContextNextGen.prepare()`, before system-message assembly and before compaction. Plugin synchronously snapshots the conversation slice since its watermark, kicks off async extraction, returns immediately. `prepare()` is NEVER awaited on this — if the ingestor is slow, the turn proceeds. The next turn sees whatever was persisted by then.
+
+**What it extracts.** The prompt partitions output into three buckets, with pre-bound labels so the LLM never re-resolves the user or agent identity:
+
+| Bucket | Subject | Use for |
+|---|---|---|
+| **USER facts** | `m_user` (pre-bound) | Preferences, identity claims, personal circumstances |
+| **AGENT learnings** | `m_agent` (pre-bound) | Procedures / patterns / rules the agent discovered — `learned_pattern`, `refined_procedure`, `avoided_pitfall`. Use `kind:"document"` for multi-sentence prose |
+| **OTHER entities** | new `m1..mN` mentions | People / orgs / projects / events / tasks mentioned in the turn |
+
+**Diligence knob** (default `normal`):
+- `minimal` — only facts stated EXPLICITLY. No inference.
+- `normal` — explicit + confident inferences. Skip greetings / tool plumbing.
+- `thorough` — tentative inferences included, flagged with `confidence < 0.7`.
+
+**Dedup + detail merging.** Every write uses the dedup path:
+1. The plugin calls `memory.findDuplicateFact({subjectId, predicate, kind, value, objectId})` before inserting.
+2. No match → `addFact` inserts as new.
+3. Match → `addFact({dedup:true})` bumps `observedAt` on the existing record (ranking stays fresh), no new row is created. If the new extraction carries non-empty `details`, the plugin makes a **one-off LLM call** passing `(existingDetails, newDetails)` and asks for a merged narrative, then applies it via `memory.updateFactDetails(factId, merged)`. Prior details are overwritten — use supersession if you need an audit chain.
+4. If the merge call fails (connector error, rate limit), the plugin keeps the existing details unchanged and moves on — next turn can retry.
+
+**Watermark.** Stable per-message-id, not an array index — this matters because `AgentContextNextGen._conversation` is mutated on every compaction, so indices shift. `lastIngestedMessageId` is persisted via `getState` / `restoreState` (state v2). On restore, `userId` mismatch resets the watermark; v1 (legacy index-based) state is treated as a reset. If the watermark message was itself compacted away between turns, the plugin falls back to "take all" — dedup protects from duplicate writes.
+
+**Truncation is watermark-aware.** The transcript builder walks forward from the oldest un-ingested message and stops once `maxTranscriptChars` is exhausted. The watermark advances to the LAST message that fit, not the end of the slice — messages past the budget stay "not yet ingested" and will be seen on a future turn. No data loss; the ingestor may fall behind on busy sessions, but won't drop observations.
+
+**Ghost-write protection.** The plugin calls `memory.addFact` directly and would otherwise bypass the tool-layer ghost-write guard. Two policies now enforce the invariant at the ingestor layer:
+- **Bootstrap**: if `upsertEntity` returns a user/agent entity not owned by the current user (e.g. a group-readable shared entity owned by someone else), the plugin disables itself for the session and logs an error.
+- **Mentions**: if a mention's upsert returns a foreign-owned entity, the mention is dropped from the label map — facts referencing it are silently skipped with a warning. Prevents planting facts under another user's ownership via shared / group-visible entities.
+
+**In-flight guard.** One ingest at a time per plugin. If a new turn fires while a previous ingest is still running, the hook bails (next turn will pick up whatever hasn't been ingested yet, since the watermark hasn't advanced).
+
+**Graceful degradation.** Extractor errors log via `logger.warn` and never propagate. A misbehaving plugin cannot break `prepare()`.
+
+**Relationship to `MemoryPluginNextGen`.** The two plugins compose:
+- `MemoryPluginNextGen` — injects profiles into the system message + exposes 8 LLM-callable `memory_*` tools for deliberate writes.
+- `SessionIngestorPluginNextGen` — passively captures observations from the conversation itself, fire-and-forget.
+- Both bootstrap `person:<userId>` + `agent:<agentId>` entities via identifier-keyed upsert — the operation is idempotent, so running both is safe.
+
+### Time-boxed facts
+
+Every fact supports `validFrom` / `validUntil`. Query-time `asOf` filtering (adapter-native on Mongo; in-memory on the default backend) returns only facts valid at that point. The ranking recency decay (`Ranking.ts`, `recencyHalfLifeDays`) applies regardless.
+
+Both extraction prompts (default + session ingestor) include a `## Validity period` section teaching the LLM to set `validUntil` per fact type:
+- Ephemeral (today only) → `validUntil = end of today`
+- Task / event-bound → `validUntil = due / event end`
+- Project / quarter-bound → `validUntil = project end`
+- Role / preference / identity → omit `validUntil` (valid until explicitly superseded)
+
+When uncertain, the prompt instructs the LLM to OMIT `validUntil` rather than guess — a too-early expiry would silently hide the fact.
 
 ---
 

@@ -19,6 +19,8 @@ export interface LinkArgs {
   from: SubjectRef;
   predicate: string;
   to: SubjectRef;
+  /** Optional narrative describing WHY the two entities are linked. Indexed semantically when long enough. */
+  details?: string;
   importance?: number;
   confidence?: number;
   observedAt?: string;
@@ -35,10 +37,10 @@ You can ONLY link FROM an entity you own. (The 'to' side can be any visible enti
 Examples:
 - Alice attended a meeting (only valid if your entity is the 'from' side):
   {"from":"me","predicate":"attended","to":{"surface":"Q3 planning"}}
-- User works at a company:
-  {"from":"me","predicate":"works_at","to":{"identifier":{"kind":"domain","value":"acme.com"}}}
+- User works at a company, with narrative context:
+  {"from":"me","predicate":"works_at","to":{"identifier":{"kind":"domain","value":"acme.com"}},"details":"Joined 2024-06 as platform eng lead"}
 - Agent learned that two concepts are related:
-  {"from":"this_agent","predicate":"related_to","to":"ent_concept_b"}`;
+  {"from":"this_agent","predicate":"related_to","to":"ent_concept_b","details":"Both arise in the Q3 rollout discussion"}`;
 
 export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
   return {
@@ -53,6 +55,7 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
             from: { description: 'Source entity — see SubjectRef forms.' },
             predicate: { type: 'string' },
             to: { description: 'Target entity — see SubjectRef forms.' },
+            details: { type: 'string' },
             importance: { type: 'number' },
             confidence: { type: 'number' },
             observedAt: { type: 'string' },
@@ -131,6 +134,7 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
             predicate: args.predicate,
             kind: 'atomic',
             objectId: toRes.entity.id,
+            details: args.details,
             confidence: clampUnit(args.confidence),
             importance: clampUnit(args.importance),
             contextIds: args.contextIds,
@@ -146,6 +150,7 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
             subjectId: fact.subjectId,
             predicate: fact.predicate,
             objectId: fact.objectId,
+            details: fact.details,
             observedAt: fact.observedAt,
             permissions: fact.permissions,
           },

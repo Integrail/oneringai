@@ -10,6 +10,7 @@
 
 import { Agent } from '../../../core/Agent.js';
 import type { ExtractionOutput } from '../ExtractionResolver.js';
+import { parseExtractionResponse as parseExtractionResponseInternal } from '../parseExtraction.js';
 import type { IExtractor } from './types.js';
 
 export interface ConnectorExtractorConfig {
@@ -74,44 +75,5 @@ export class ConnectorExtractor implements IExtractor {
   }
 }
 
-/**
- * Parse LLM output into `ExtractionOutput`. Resilient to code fences and
- * leading/trailing prose. Returns an empty shape rather than throwing so the
- * ingest pipeline can continue (the caller sees `entities: []`, `facts: []`,
- * `newPredicates: []` and can decide what to do).
- */
-export function parseExtractionResponse(raw: string): ExtractionOutput {
-  const cleaned = stripCodeFences(raw).trim();
-  const parsed = safeJsonParse(cleaned);
-  if (!parsed || typeof parsed !== 'object') {
-    return { mentions: {}, facts: [] };
-  }
-  const obj = parsed as Record<string, unknown>;
-  const mentions =
-    obj.mentions && typeof obj.mentions === 'object' && !Array.isArray(obj.mentions)
-      ? (obj.mentions as ExtractionOutput['mentions'])
-      : {};
-  const facts = Array.isArray(obj.facts) ? (obj.facts as ExtractionOutput['facts']) : [];
-  return { mentions, facts };
-}
-
-function safeJsonParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    const first = s.indexOf('{');
-    const last = s.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      try {
-        return JSON.parse(s.slice(first, last + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
-
-function stripCodeFences(s: string): string {
-  return s.replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '');
-}
+/** Re-exported for backward-compatibility — actual impl lives in parseExtraction.ts. */
+export const parseExtractionResponse = parseExtractionResponseInternal;

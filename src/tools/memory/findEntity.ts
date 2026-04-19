@@ -46,17 +46,17 @@ export interface FindEntityArgs {
 const DESCRIPTION = `Look up, list, or create an entity. An entity can have many different identifiers (email, slack_id, github_login, internal_id…); this tool is how you find the right one.
 
 Actions:
-- "find" (default): look up one entity by id, identifier, or surface. Surface lookups may return a candidates array on ambiguity.
-- "list": enumerate entities by type + optional metadataFilter.
-- "upsert": find-or-create; if any identifier matches an existing entity, adds the other identifiers to it (multi-ID enrichment).
+- "find" (default): look up ONE entity. Use by.id OR by.identifier OR by.surface. (by.type / by.metadataFilter are list-only and ignored here.)
+- "list": enumerate entities by by.type + optional by.metadataFilter.
+- "upsert": find-or-create. If any supplied identifier matches an existing entity, the remaining identifiers are merged onto it (multi-ID enrichment). Set {kind, value, exclusive:true} on canonical identifiers (email, phone) to mark them as one-to-one — prevents the same identifier being attached to two entities.
 
 Examples:
 - find by email: {"by":{"identifier":{"kind":"email","value":"alice@a.com"}}}
 - find same Alice by Slack: {"by":{"identifier":{"kind":"slack_user_id","value":"U07ABC"}}}
 - find by surface: {"by":{"surface":"Alice from accounting"}}
 - list active projects: {"action":"list","by":{"type":"project","metadataFilter":{"state":"active"}},"limit":20}
-- upsert a person with multiple IDs (merges if any identifier already exists):
-  {"action":"upsert","type":"person","displayName":"Alice Smith","identifiers":[{"kind":"email","value":"alice@a.com"},{"kind":"slack_user_id","value":"U07ABC"}]}
+- upsert a person with multiple IDs (merges if any identifier already exists; email flagged exclusive):
+  {"action":"upsert","type":"person","displayName":"Alice Smith","identifiers":[{"kind":"email","value":"alice@a.com","exclusive":true},{"kind":"slack_user_id","value":"U07ABC"}]}
 
 Visibility for upsert: "private" (default, owner-only), "group" (group can read), "public".`;
 

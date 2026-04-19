@@ -14,6 +14,12 @@
  *
  *   'person'        — identifiers: email / slack_id / phone / github
  *   'organization'  — identifiers: domain / legal_name / ticker / duns
+ *
+ *   'canonical'     — library-blessed identifier kind for deterministic
+ *                     convergence on entities that lack a natural external
+ *                     strong key (tasks, events, topics). See
+ *                     `canonicalIdentifier()` in `src/memory/identifiers.ts`.
+ *                     Example: `{ kind: 'canonical', value: 'task:alice:acme:send-budget' }`
  *   'project'       — metadata: { status, stakeholderIds }
  *   'task'          — metadata: { state, dueAt, priority, assigneeId,
  *                                  reporterId, projectId, completedAt }
@@ -598,6 +604,23 @@ export interface UpsertBySurfaceInput {
   /** Alternate forms spotted alongside the primary surface (e.g. "MSFT" next to "Microsoft"). */
   aliases?: string[];
   contextEntityIds?: EntityId[];
+  /**
+   * Type-specific fields (task.state, event.startTime, etc.). See the file
+   * header for conventional fields per entity type.
+   *
+   * **Merge semantics on resolve (existing entity):** governed by
+   * `UpsertBySurfaceOptions.metadataMerge`. Default `'fillMissing'` — only
+   * keys absent from the stored entity's metadata are set; existing values
+   * are never overwritten. This is the guardrail for LLM-driven ingestion:
+   * re-extracting a task should never silently flip `state` or `dueAt`.
+   *
+   * To deliberately change existing metadata, use `updateEntityMetadata` (raw
+   * patch) or `transitionTaskState` (state machine + audit). The upsert path
+   * is for *first observation* of fields, not updates.
+   *
+   * On create (no match), all keys are set verbatim.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface UpsertBySurfaceOptions {
@@ -607,6 +630,16 @@ export interface UpsertBySurfaceOptions {
    * cost of creating more duplicates that can be merged later.
    */
   autoResolveThreshold?: number;
+  /**
+   * How to merge `input.metadata` into an existing entity on resolve.
+   * - `'fillMissing'` (default): only set keys absent from stored metadata.
+   *   Never overwrites existing values. Safe default for LLM-driven ingestion.
+   * - `'overwrite'`: shallow-merge (incoming keys win). Use when the caller
+   *   is authoritative (e.g. sync job from a system of record).
+   *
+   * Irrelevant on create — all keys are set.
+   */
+  metadataMerge?: 'fillMissing' | 'overwrite';
 }
 
 export interface UpsertBySurfaceResult {
@@ -635,11 +668,43 @@ export interface EntityResolutionConfig {
   enableIdentityEmbedding?: boolean;
 }
 
+/**
+ * Task-state vocabulary configuration. Drives which states `getContext`
+ * surfaces as "open" in `relatedTasks`, and which are treated as "terminal"
+ * (done/cancelled) for side effects like auto-setting `completedAt`.
+ *
+ * Library default preserves the legacy vocabulary. Apps using different
+ * lifecycles (e.g. `'proposed' | 'scheduled' | 'in_progress' | 'done'`)
+ * override here rather than hardcoding state strings in metadata queries.
+ */
+export interface TaskStatesConfig {
+  /** States treated as "still open" — surfaced in getContext.relatedTasks. */
+  active: string[];
+  /** States treated as "finished" — transitions into these auto-set completedAt. */
+  terminal: string[];
+}
+
 export interface MemorySystemConfig {
   store: IMemoryStore;
   embedder?: IEmbedder;
   profileGenerator?: IProfileGenerator;
   ruleEngine?: IRuleEngine;
+  /**
+   * Task-state vocabulary. Defaults to:
+   *   { active: ['pending','in_progress','blocked','deferred'],
+   *     terminal: ['done','cancelled'] }
+   * The two arrays must be disjoint and non-empty.
+   */
+  taskStates?: TaskStatesConfig;
+  /**
+   * When true (default), the LLM extraction pipeline auto-routes `state_changed`
+   * facts on task-type subjects through `MemorySystem.transitionTaskState` so
+   * the side effects (metadata update, history append, `completedAt` for
+   * terminal states) happen as part of ingestion. Set false to skip the
+   * routing — facts still land but `transitionTaskState` must be called
+   * explicitly by the host.
+   */
+  autoApplyTaskTransitions?: boolean;
   /** Number of new atomic facts since last profile regen that triggers auto-regeneration. */
   profileRegenerationThreshold?: number;
   topFactsRanking?: RankingConfig;

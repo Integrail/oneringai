@@ -49,3 +49,12 @@ export type {
   MemoryPluginConfig,
   MemoryPluginInjectionConfig,
 } from './MemoryPluginNextGen.js';
+
+export {
+  SessionIngestorPluginNextGen,
+  buildSessionExtractionPrompt,
+} from './SessionIngestorPluginNextGen.js';
+export type {
+  SessionIngestorPluginConfig,
+  SessionIngestorDiligence,
+} from './SessionIngestorPluginNextGen.js';

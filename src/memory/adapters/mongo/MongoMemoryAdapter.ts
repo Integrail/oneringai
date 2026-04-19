@@ -366,6 +366,20 @@ export class MongoMemoryAdapter implements IMemoryStore {
   ): Promise<Neighborhood> {
     this.assertLive();
 
+    // `direction: 'both'` requires per-hop direction flipping — at each node,
+    // BOTH outbound and inbound edges are considered and may extend the
+    // frontier. A single `$graphLookup` pipeline fixes the direction for the
+    // whole chain (`connectFromField` / `connectToField` are static) — firing
+    // one out + one in pipeline walks two PURE chains, which misses the
+    // common "co-subject" pattern ("who works at the same company as X?"
+    // reaches X → Company via out, then Company → co-workers via in — the
+    // direction flip at Company is lost). Generic BFS handles the flip
+    // correctly, so for `both` we fall back to it. Pure `out` / `in` stay on
+    // the native fast path.
+    if (opts.direction === 'both') {
+      return genericTraverse(this, startId, opts, scope);
+    }
+
     if (this.useNativeGraphLookup && this.facts.aggregate && this.factsCollectionName) {
       return this.nativeGraphTraverse(startId, opts, scope);
     }
@@ -380,35 +394,57 @@ export class MongoMemoryAdapter implements IMemoryStore {
     const startEntity = await this.getEntity(startId, scope);
     if (!startEntity) return { nodes: [], edges: [] };
 
+    // asOf — push the same three clauses factFilterToMongo uses, so the
+    // native path behaves identically to the generic path for point-in-time
+    // queries. Previously these were silently dropped.
+    const asOfClauses = buildAsOfClauses(opts.asOf);
+    const predicateClause: MongoFilter =
+      opts.predicates && opts.predicates.length > 0
+        ? { predicate: { $in: opts.predicates } }
+        : {};
     const restrict: MongoFilter = mergeFilters(
       scopeToFilter(scope),
       ARCHIVED_HIDDEN,
-      opts.predicates && opts.predicates.length > 0
-        ? { predicate: { $in: opts.predicates } }
-        : {},
+      predicateClause,
+      ...asOfClauses,
     );
 
     type EdgeAccum = { from: EntityId; to: EntityId; fact: IFact; depth: number };
     const edgesOut: EdgeAccum[] = [];
     const edgesIn: EdgeAccum[] = [];
 
-    // Outbound — match subjectId=start, then recurse object->subject chains.
-    if (opts.direction === 'out' || opts.direction === 'both') {
-      const pipeline = [
-        { $match: mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, { subjectId: startId }) },
-        {
+    // Off-by-one: $graphLookup.maxDepth=N returns (N+1) levels of documents
+    // (0..N). The outer $match already emits depth-1 edges, so $graphLookup
+    // should produce at most (opts.maxDepth - 1) additional levels, i.e.
+    // maxDepth in mongo = opts.maxDepth - 2. When opts.maxDepth <= 1, we
+    // skip $graphLookup entirely — the outer $match is sufficient.
+    const useGraphLookup = opts.maxDepth >= 2;
+    const graphLookupMaxDepth = Math.max(0, opts.maxDepth - 2);
+
+    // Outbound — match subjectId=start, then (optionally) recurse object→subject chains.
+    if (opts.direction === 'out') {
+      const match: MongoFilter = mergeFilters(
+        scopeToFilter(scope),
+        ARCHIVED_HIDDEN,
+        { subjectId: startId },
+        predicateClause,
+        ...asOfClauses,
+      );
+      const pipeline: unknown[] = [{ $match: match }];
+      if (useGraphLookup) {
+        pipeline.push({
           $graphLookup: {
             from: this.factsCollectionName!,
             startWith: '$objectId',
             connectFromField: 'objectId',
             connectToField: 'subjectId',
             as: 'descendants',
-            maxDepth: Math.max(0, opts.maxDepth - 1),
+            maxDepth: graphLookupMaxDepth,
             depthField: 'depth',
             restrictSearchWithMatch: restrict,
           },
-        },
-      ];
+        });
+      }
       const rows = (await this.facts.aggregate!(pipeline)) as Array<
         IFact & { descendants?: Array<IFact & { depth: number }> }
       >;
@@ -428,22 +464,29 @@ export class MongoMemoryAdapter implements IMemoryStore {
     }
 
     // Inbound — mirror.
-    if (opts.direction === 'in' || opts.direction === 'both') {
-      const pipeline = [
-        { $match: mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, { objectId: startId }) },
-        {
+    if (opts.direction === 'in') {
+      const match: MongoFilter = mergeFilters(
+        scopeToFilter(scope),
+        ARCHIVED_HIDDEN,
+        { objectId: startId },
+        predicateClause,
+        ...asOfClauses,
+      );
+      const pipeline: unknown[] = [{ $match: match }];
+      if (useGraphLookup) {
+        pipeline.push({
           $graphLookup: {
             from: this.factsCollectionName!,
             startWith: '$subjectId',
             connectFromField: 'subjectId',
             connectToField: 'objectId',
             as: 'ancestors',
-            maxDepth: Math.max(0, opts.maxDepth - 1),
+            maxDepth: graphLookupMaxDepth,
             depthField: 'depth',
             restrictSearchWithMatch: restrict,
           },
-        },
-      ];
+        });
+      }
       const rows = (await this.facts.aggregate!(pipeline)) as Array<
         IFact & { ancestors?: Array<IFact & { depth: number }> }
       >;
@@ -462,8 +505,19 @@ export class MongoMemoryAdapter implements IMemoryStore {
       }
     }
 
-    // Resolve entities for every node we touched.
-    const allEdges = [...edgesOut, ...edgesIn];
+    // Apply edge limit BEFORE resolving nodes — the `opts.limit` contract
+    // caps edges. Sort by depth first so that under a tight limit we keep
+    // the nearest (shallowest) edges — matches BFS-ordering users expect and
+    // the behavior of `genericTraverse` for parity across backends.
+    const edgeLimit = opts.limit ?? Infinity;
+    const allEdges = [...edgesOut, ...edgesIn]
+      .sort((a, b) => a.depth - b.depth)
+      .slice(0, edgeLimit);
+
+    // Resolve entities for every node referenced by the (already-limited)
+    // edges — no separate node cap. Node count is naturally bounded at
+    // 2*edgeLimit + 1 via the edge cap above, so every returned edge is
+    // guaranteed to have both endpoints present in `nodes`.
     const visited = new Map<EntityId, number>();
     visited.set(startId, 0);
     for (const e of allEdges) {
@@ -474,10 +528,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     }
 
     const nodes: Neighborhood['nodes'] = [];
-    const limit = opts.limit ?? Infinity;
-    // Resolve in batches; respect limit.
     for (const [id, depth] of visited) {
-      if (nodes.length >= limit) break;
       const ent = await this.getEntity(id, scope);
       if (ent) nodes.push({ entity: ent, depth });
     }
@@ -653,6 +704,21 @@ function toDate(v: unknown): Date {
   if (v instanceof Date) return v;
   if (typeof v === 'string' || typeof v === 'number') return new Date(v);
   return new Date(0);
+}
+
+/**
+ * Clauses pushed into native traversal filters so point-in-time queries
+ * behave the same on Mongo as on the generic BFS path. Mirrors the asOf
+ * handling in `queries.ts:factFilterToMongo` — kept inline here to avoid
+ * pulling the full fact-filter machinery into the traversal path.
+ */
+function buildAsOfClauses(asOf: Date | undefined): MongoFilter[] {
+  if (!(asOf instanceof Date)) return [];
+  return [
+    { createdAt: { $lte: asOf } },
+    { $or: [{ validFrom: { $exists: false } }, { validFrom: { $lte: asOf } }] },
+    { $or: [{ validUntil: { $exists: false } }, { validUntil: { $gte: asOf } }] },
+  ];
 }
 
 // =============================================================================

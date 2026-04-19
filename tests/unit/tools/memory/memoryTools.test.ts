@@ -1008,6 +1008,227 @@ describe('memory_forget kind inheritance (M-2)', () => {
 // M-3 — memory_link default visibility follows subject class
 // ===========================================================================
 
+// ===========================================================================
+// N-1 — addFact rejects unknown kind at the memory layer
+// ===========================================================================
+
+describe('addFact kind validation (N-1)', () => {
+  it('throws on unknown kind', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    await expect(
+      mem.addFact(
+        {
+          subjectId: ids.userEntityId,
+          predicate: 'x',
+          // @ts-expect-error intentional bad kind
+          kind: 'note',
+          value: 'y',
+        },
+        { userId: USER_ID },
+      ),
+    ).rejects.toThrow(/kind must be 'atomic' or 'document'/);
+  });
+});
+
+// ===========================================================================
+// N-1b — ExtractionResolver coerces unknown kind + records drift
+// ===========================================================================
+
+describe('ExtractionResolver kind coercion (N-1)', () => {
+  it('coerces unknown kind to atomic and records warning in unresolved', async () => {
+    const { MemorySystem: MS } = await import('@/memory/MemorySystem.js');
+    const { InMemoryAdapter: Adapter } = await import('@/memory/adapters/inmemory/InMemoryAdapter.js');
+    const { ExtractionResolver } = await import('@/memory/integration/ExtractionResolver.js');
+    const mem = new MS({ store: new Adapter() });
+    const resolver = new ExtractionResolver(mem);
+    const result = await resolver.resolveAndIngest(
+      {
+        mentions: {
+          m1: { surface: 'Alice', type: 'person', identifiers: [{ kind: 'email', value: 'a@x' }] },
+        },
+        facts: [
+          { subject: 'm1', predicate: 'prefers', value: 'concise', kind: 'note' as any },
+        ],
+      },
+      'sig-test',
+      { userId: USER_ID },
+    );
+    expect(result.facts.length).toBe(1);
+    expect(result.facts[0]!.kind).toBe('atomic');
+    const drift = result.unresolved.find((u) => /unknown kind "note"/.test(u.reason));
+    expect(drift).toBeDefined();
+  });
+});
+
+// ===========================================================================
+// N-2 — memory_remember supports kind: 'document'
+// ===========================================================================
+
+describe('memory_remember kind=document (N-2)', () => {
+  it('writes a document fact and it surfaces under include=documents', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const remember = toolByName(tools(mem, ids), 'memory_remember');
+    const r: any = await remember.execute(
+      {
+        subject: 'me',
+        predicate: 'learned_pattern',
+        kind: 'document',
+        details:
+          'When the user asks about tax calculations, always confirm jurisdiction before quoting rates because the rules differ materially by state and changing them mid-answer breaks trust.',
+      },
+      { userId: USER_ID },
+    );
+    expect(r.fact.kind).toBe('document');
+    const recall = toolByName(tools(mem, ids), 'memory_recall');
+    const view: any = await recall.execute(
+      { subject: 'me', include: ['documents'] },
+      { userId: USER_ID },
+    );
+    const docIds = (view.documents ?? []).map((d: any) => d.id);
+    expect(docIds).toContain(r.fact.id);
+  });
+});
+
+// ===========================================================================
+// N-3 — memory_remember + addFact reject value + objectId both set
+// ===========================================================================
+
+describe('value/objectId mutual exclusion (N-3)', () => {
+  it('memory_remember rejects both', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const remember = toolByName(tools(mem, ids), 'memory_remember');
+    const r: any = await remember.execute(
+      {
+        subject: 'me',
+        predicate: 'x',
+        value: 'a',
+        objectId: ids.otherUserId,
+      },
+      { userId: USER_ID },
+    );
+    expect(r.error).toMatch(/either value or objectId, not both/);
+  });
+
+  it('addFact rejects both at memory layer', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    await expect(
+      mem.addFact(
+        {
+          subjectId: ids.userEntityId,
+          predicate: 'x',
+          kind: 'atomic',
+          value: 'a',
+          objectId: ids.otherUserId,
+        },
+        { userId: USER_ID },
+      ),
+    ).rejects.toThrow(/either value or objectId, not both/);
+  });
+});
+
+// ===========================================================================
+// N-4 — memory_link passes details through
+// ===========================================================================
+
+describe('memory_link details (N-4)', () => {
+  it('persists details on the relational fact', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const link = toolByName(tools(mem, ids), 'memory_link');
+    const r: any = await link.execute(
+      {
+        from: 'me',
+        predicate: 'works_with',
+        to: { identifier: { kind: 'email', value: 'bob@a.com' } },
+        details: 'Joined the partnership team in Q1 2025',
+      },
+      { userId: USER_ID },
+    );
+    expect(r.fact.details).toBe('Joined the partnership team in Q1 2025');
+  });
+});
+
+// ===========================================================================
+// N-5 — memory_search filter accepts SubjectRef
+// ===========================================================================
+
+describe('memory_search filter.subject SubjectRef (N-5)', () => {
+  it('resolves filter.subject via the resolver', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const spy = vi.spyOn(mem, 'semanticSearch').mockResolvedValue([]);
+    const search = toolByName(tools(mem, ids), 'memory_search');
+    await search.execute(
+      {
+        query: 'anything',
+        filter: { subject: { identifier: { kind: 'email', value: 'bob@a.com' } } },
+      },
+      { userId: USER_ID },
+    );
+    const filterArg = spy.mock.calls[0]![1];
+    expect(filterArg.subjectId).toBe(ids.otherUserId);
+  });
+
+  it('returns structured error when filter.subject cannot resolve', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const search = toolByName(tools(mem, ids), 'memory_search');
+    const r: any = await search.execute(
+      {
+        query: 'anything',
+        filter: { subject: { identifier: { kind: 'email', value: 'nobody@x' } } },
+      },
+      { userId: USER_ID },
+    );
+    expect(r.error).toMatch(/filter\.subject:/);
+  });
+});
+
+// ===========================================================================
+// N-6 — memory_graph strict asOf validation
+// ===========================================================================
+
+describe('memory_graph asOf strict (N-6)', () => {
+  it('rejects invalid ISO string', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const graph = toolByName(tools(mem, ids), 'memory_graph');
+    const r: any = await graph.execute(
+      { start: 'me', asOf: 'not-a-date' },
+      { userId: USER_ID },
+    );
+    expect(r.error).toMatch(/invalid asOf/);
+  });
+});
+
+// ===========================================================================
+// addFact clamps confidence / importance at memory-layer boundary
+// ===========================================================================
+
+describe('addFact confidence/importance clamp (defense-in-depth)', () => {
+  it('clamps out-of-range values to [0,1]', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const fact = await mem.addFact(
+      {
+        subjectId: ids.userEntityId,
+        predicate: 'x',
+        kind: 'atomic',
+        value: 'y',
+        confidence: 99,
+        importance: -5,
+      },
+      { userId: USER_ID },
+    );
+    expect(fact.confidence).toBe(1);
+    expect(fact.importance).toBe(0);
+  });
+});
+
 describe('memory_link default visibility (M-3)', () => {
   it('uses forAgent default when "from" is this_agent', async () => {
     const mem = makeMem();

@@ -7,6 +7,210 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Entity-type ergonomics — post-PR-4 bug fixes
+
+Self-review of the four PRs above turned up four real bugs + one crash-safety doc gap. All fixes are additive / bug-fix; no API breakage.
+
+- **`canonicalIdentifier` slugification was positional.** When the last object key had an `undefined` or empty-string value, NO part of the canonical id got slugified — producing values like `task:User X` (spaces, uppercase) that broke identity stability. Fix: slugify the last *non-empty* value instead of the last positional key.
+- **`SignalIngestor.writeSeedFacts` accumulated duplicates on repeated sync.** Calendar polling re-ingests the same event; each pass wrote fresh `hosted` / `attended` facts. Fix: pass `dedup: true` to `addFact` — re-observation now refreshes `observedAt` without inserting.
+- **LLM-routed `state_changed` facts silently dropped caller fields.** When `ExtractionResolver` routed a `state_changed` fact on a task through `transitionTaskState`, the audit fact was written with hard-coded defaults — `importance`, `confidence`, `contextIds`, `validFrom/Until`, and `summaryForEmbedding` from the extraction spec were all lost. Fix: added `TransitionTaskStateOptions.factOverrides`; the resolver populates it from the `ExtractionFactSpec`.
+- **`reportWarning` cast a fabricated event through `ChangeEvent`.** `'transition.warning'` is not in the `ChangeEvent` union, so callers with exhaustive `switch(event.type)` handlers would crash on transition warnings. Fix: use `console.warn` directly with a `[MemorySystem.transitionTaskState]` prefix.
+- **Documented `transitionTaskState` crash-safety.** Added a JSDoc paragraph explaining that the metadata write and audit fact are not atomic — on partial failure, metadata wins (authoritative) and the audit fact is lost.
+
+**Tests added (4):** trailing-undefined canonical slugification, repeated calendar ingestion idempotency, LLM-supplied importance/confidence/contextIds preservation through auto-routing, single-surviving-value slugification regression.
+
+### Entity-type ergonomics — PR-4 (calendar adapter + seed facts)
+
+**`CalendarSignalAdapter`** — reference adapter for calendar event signals (Google Calendar, Outlook, iCal, etc.). Normalizes `{ title, description, startTime, endTime, location, organizer, attendees, kind }` into:
+- One `event` entity seed with a deterministic canonical identifier (`event:<source>:<external-id-or-title+start>`) and structural metadata (`startTime`, `endTime`, `location`, `kind`).
+- Person seeds for organizer + each attendee, keyed by email. Organizer deduped against attendee list.
+- Seed facts for deterministic relationships: `organizer hosted event`, `attendee attended event`. Declined attendees seed as people but skip the `attended` seed fact (configurable via `skipDeclinedAttendance`).
+
+Re-ingesting the same calendar event converges on the same entity via canonical identifier — no duplicate events across repeated fetches.
+
+**`ParticipantSeed.metadata`** — new optional field (additive, non-breaking). Type-specific fields flow through `upsertEntityBySurface.metadata` from #1 (verbatim on create, `fillMissing` on resolve). Makes seed-phase entities carry structural data (event start/end, etc.) at first observation.
+
+**`SeedFact` + `ExtractedSignal.seedFacts`** — adapters can emit deterministic relational facts derived from signal metadata. `SignalIngestor` writes them after seed resolution. Roles refer to `ParticipantSeed.role` values; when a role has multiple matching seeds (many attendees), one fact per pair is written. Self-facts skipped silently. Unresolved roles produce `IngestionError` entries without blocking the rest.
+
+**`attended` + `hosted` predicates** — added to the standard predicate registry under a new `event` category (brings standard set from 9 categories to 10).
+
+**`resolveRelatedEvents` third tier** — extends `getContext.relatedEvents` to walk facts with predicate `attended`/`hosted` and subject = target entity. Covers the case where attendance was recorded as a relational fact (calendar-seeded or LLM-extracted) rather than duplicated into `event.metadata.attendeeIds`. Respects the same 90-day recency window.
+
+**Tests added (14):** `tests/unit/memory/integration/signals/adapters/CalendarSignalAdapter.test.ts` — pure adapter extraction + SignalIngestor end-to-end with event surfacing via `getContext.relatedEvents`.
+
+### Entity-type ergonomics — PR-3 (extraction prompt + auto-inject)
+
+**Prompt v2 — `defaultExtractionPrompt`.** Major tightening of extraction behavior to align with entity-first modeling:
+
+- **New "## Parsimony" section** — "AT MOST ONE fact per distinct piece of knowledge" rule, expected fact-count calibration by signal type (trivial=0, substantive=1, multi-topic=2, transcript=3–6), plus a negative example (the "5 bad facts" pattern) and a positive rewrite (1 task entity + 1 fact). Zero-fact output is explicitly endorsed as correct.
+- **Metadata on mentions in the JSON schema** — `task.state`/`dueAt`/`assigneeId`, `event.startTime`/`endTime`/`attendeeIds` go as `metadata` on the mention, NOT as separate attribute facts. Guideline #4 rewritten to enforce this.
+- **State-change routing guidance** — emit a single `state_changed` fact; the memory layer routes it through `transitionTaskState` automatically. No manual `has_state` attribute facts.
+- `DEFAULT_EXTRACTION_PROMPT_VERSION = 2` exported for callers who pin prompt snapshots.
+
+**Type-aware "Known entities" rendering.** `renderKnownEntities` now surfaces type-specific details inline:
+- Tasks: `state: in_progress, due: 2026-04-30`
+- Events: `start: 2026-05-01T10:00Z, end: 2026-05-01T11:00Z`
+- Other types: unchanged generic rendering.
+
+The block instructs the LLM that the resolver will converge on existing rows — the prior-context hint makes re-extraction converge rather than create duplicates.
+
+**`SignalIngestorConfig.contextHints`** — opt-in auto-injection of prior context into the prompt. Off by default (token-budget guardrail).
+
+```ts
+new SignalIngestor({
+  memory,
+  extractor,
+  contextHints: {
+    openTasks: { limit: 20 },      // or `true` for default limit
+    recentTopics: { days: 30, limit: 30 },
+  },
+});
+```
+
+When enabled, `SignalIngestor` calls `memory.listOpenTasks` / `listRecentTopics` at the ingest scope and merges results into `knownEntities` after any caller-supplied entities. Dedupes by entity id. Fetch failures warn but don't break ingestion.
+
+**Tests added (18):** `tests/unit/memory/integration/defaultExtractionPrompt.v2.test.ts`, `tests/unit/memory/integration/signals/SignalIngestor.contextHints.test.ts`.
+
+### Entity-type ergonomics — PR-2 (task lifecycle)
+
+**`MemorySystem.transitionTaskState(taskId, newState, opts, scope)`** — the canonical way to mutate `task.metadata.state` after creation. Side effects (atomic from the caller's perspective):
+- Sets `metadata.state = newState`.
+- Appends `metadata.stateHistory: TaskStateHistoryEntry[]` (no library cap — retention is the caller's problem).
+- When `newState` is in `taskStates.terminal` and `metadata.completedAt` is unset, sets `metadata.completedAt = at`.
+- Writes a `state_changed` fact with `value: { from, to }`, `sourceSignalId`, and `importance: 0.7` for audit + retrieval.
+
+Validate modes: `'warn'` (default — out-of-matrix transitions route through `onError` and proceed), `'strict'` (throws `InvalidTaskTransitionError`, no writes), `'none'`. Supply the transition matrix via `opts.transitions: { from: [allowedTo...] }`.
+
+**LLM auto-routing.** `ExtractionResolver` intercepts `state_changed` facts where the subject is a `type: 'task'` entity and routes them through `transitionTaskState` so the side effects fire as part of extraction. Tolerant value shapes: `{ from, to }`, `{ to }`, plain string. Non-task subjects + malformed values fall through to plain `addFact`. Opt out via `MemorySystemConfig.autoApplyTaskTransitions: false`.
+
+**`MemorySystem.listOpenTasks(scope, opts?)`** + **`listRecentTopics(scope, opts?)`** — convenience fetchers for prompt injection. `listOpenTasks` filters by configured `taskStates.active`, supports `assigneeId`/`projectId`, sorts client-side by `dueAt` asc (undefined last) then `updatedAt` desc. `listRecentTopics` filters by `updatedAt >= now - days` client-side. Both clamp limits to `[1, 200]`.
+
+**Tests added (25):** `tests/unit/memory/MemorySystem.transitionTaskState.test.ts`, `tests/unit/memory/MemorySystem.listHelpers.test.ts`.
+
+### Entity-type ergonomics — PR-1 (foundational primitives)
+
+Three additive changes to the memory layer that make task/event/topic entities first-class for LLM-driven ingestion. Zero breaking changes.
+
+**`UpsertBySurfaceInput.metadata`** — carries type-specific fields (task `state`/`dueAt`/`assigneeId`, event `startTime`/`endTime`, etc.) at upsert time. On create: set verbatim. On resolve (existing entity): conservative `fillMissing` merge by default — incoming keys only fill absent slots, existing values are never overwritten. Guardrail against LLM re-extraction silently flipping `state` or `dueAt`. Opt into shallow-overwrite via `UpsertBySurfaceOptions.metadataMerge: 'overwrite'` when the caller is authoritative (sync job from a system of record). `ExtractionMention.metadata` flows through from the extractor so the LLM can populate these fields directly.
+
+**`canonicalIdentifier(type, parts)`** + `slugify(text, opts)` — new helpers in `src/memory/identifiers.ts`. Build deterministic `{ kind: 'canonical', value: '<type>:<part>:...' }` identifiers for entities that lack a natural external strong key (tasks, events, topics, calendar entries). Using `'canonical'` uniformly means Tier-1 identifier match in `EntityResolver` converges re-extractions on the same entity across signals — follow-up emails, transcripts, and calendar updates all find the right task. `'canonical'` is documented as a blessed identifier kind in `types.ts`.
+
+**`MemorySystemConfig.taskStates`** — configurable task-state vocabulary. Default preserves legacy behavior (`active: ['pending','in_progress','blocked','deferred']`, `terminal: ['done','cancelled']`). Apps using different lifecycles (`'proposed' | 'scheduled' | ...`) override here instead of hardcoding state strings in metadata queries. Drives `getContext.relatedTasks` filtering. Validated at construction (both non-empty, disjoint, no duplicates). Read via `memory.taskStates`.
+
+**Tests added (30):** `tests/unit/memory/identifiers.test.ts`, `tests/unit/memory/resolution/upsertMetadata.test.ts`, `tests/unit/memory/MemorySystem.taskStates.test.ts`.
+
+### Mongo `$graphLookup` traversal — correctness pass
+
+Four issues found and fixed in `MongoMemoryAdapter.nativeGraphTraverse`. Three were silent divergences from the generic BFS path; one was a blocker for the most important real-world query pattern (co-subject / "who works with X?").
+
+**Fixed — off-by-one depth overshoot.** `$graphLookup.maxDepth = N` returns `N+1` levels of documents (0..N), but our outer `$match` already emits depth-1 edges. The code passed `opts.maxDepth - 1`, producing one extra level: `opts.maxDepth = 2` returned depths 1–3 instead of 1–2. Now `opts.maxDepth - 2`, with a short-circuit that skips `$graphLookup` entirely when `opts.maxDepth ≤ 1` (outer `$match` alone suffices).
+
+**Fixed — `asOf` silently dropped on the Mongo path.** The outer `$match` and `restrictSearchWithMatch` filter had no temporal clauses. Generic BFS honored `asOf` via `findFacts`; the native path ignored it. Point-in-time queries produced different results per backend. Fixed by inlining the same three-clause `asOf` filter (`createdAt ≤ asOf`, `validFrom ≤ asOf OR missing`, `validUntil ≥ asOf OR missing`) into both the outer `$match` and the `restrictSearchWithMatch`.
+
+**Fixed — `opts.limit` now caps edges, not just nodes.** The contract is "max total edges returned", but the prior code limited only node resolution. On dense graphs with the off-by-one bug, callers saw hundreds of edges with `limit: 100`. Now `allEdges` is truncated to `limit` before node resolution.
+
+**Fixed — CRITICAL: `direction: 'both'` now falls back to generic BFS.** Each `$graphLookup` pipeline fixes its direction for the whole chain (`connectFromField` / `connectToField` are static) — firing two separate pipelines (one out, one in) walked two pure chains but missed the per-hop direction flip needed for co-subject queries. From Anton, the Mongo native path reached Everworker (out) but never discovered John (needs Everworker ← works_at ← John, an inbound flip). Now `direction: 'both'` dispatches to `genericTraverse`, which correctly considers both directions at each hop. Pure `out` / `in` continue on the native fast path with the three bug fixes applied.
+
+### Tool `memory_graph` — expanded description with query patterns
+
+Rewrote the tool description from a short paragraph + 4 examples into a comprehensive pattern catalog that teaches the LLM to build the right query shape for each question type. Seven named patterns with concrete JSON examples:
+
+- **Pattern A — one-hop outbound** ("Where does Anton work?" → `direction:'out', maxDepth:1, predicates:['works_at']`)
+- **Pattern B — one-hop inbound** ("Who attended Q3 planning?" → `direction:'in', maxDepth:1, predicates:['attended']`)
+- **Pattern C — CO-SUBJECT (two-hop, both)** — the critical idiom: "Who works with Anton?" / "Who attended the same meetings as Alice?" / "Who reports to the same manager?". Requires `direction:'both', maxDepth:2, predicates:['...']`; co-subjects appear at `depth:2` in the returned nodes.
+- **Pattern D — transitive chain** (management hierarchy: `direction:'out', maxDepth:6, predicates:['reports_to']`)
+- **Pattern E — neighborhood** (everything connected within N hops, any predicate)
+- **Pattern F — multi-predicate filter** (professional graph: `predicates:['works_at','reports_to','collaborated_with']`)
+- **Pattern G — point-in-time** (`asOf` with strict ISO-8601)
+
+Also added a "How to read the result" section explaining the node/edge shape + depth semantics, plus "When NOT to use this tool" pointing LLMs to `memory_recall` / `memory_search` / `memory_list_facts` for wrong-shape queries.
+
+**Tests added (5):** native-path pipeline-shape assertions in `tests/unit/memory/adapters/mongo/MongoMemoryAdapter.test.ts` — direction-both fallback (no aggregate call, co-subject discovery works), maxDepth=1 skips $graphLookup, maxDepth=3 uses graphLookup.maxDepth=1, asOf clauses appear in pipeline, edge-limit respected.
+
+**Fixed (follow-up review):**
+- **Tool description examples used bare-string names (e.g. `"start":"Anton"`) which the resolver treats as entity IDs, not surface forms.** Every pattern example would have failed at runtime (resolver calls `getEntity("Anton")` → null → error). Converted every name-based start to `{"surface":"Anton"}` across Patterns A–G and the "How to read the result" example. Added an explicit preamble so future readers know bare strings are entity IDs, not names. `"me"` / `"this_agent"` still the two valid bare-string tokens.
+- **`opts.limit` now caps EDGES (not nodes) on BOTH backends** — previously, `genericTraverse` (which serves all `direction:'both'` queries including on Mongo) limited nodes, while the new native path limited edges. The tool description promises edge-based. `genericTraverse` refactored accordingly: during BFS, break the outer loop once `edges.length >= limit`, and resolve endpoints for every accumulated edge (no separate node cap). Node count is naturally bounded at `2*limit + 1`. Matches `memory_graph`'s advertised contract.
+- **Native path sorts edges by depth before slicing** — accumulation order previously interleaved `[row1:depth1, row1:depth2, row1:depth3, row2:depth1, …]`, so a tight `limit` could drop depth-1 sibling edges in favor of a deeper chain from the first outer row. Now `.sort((a,b) => a.depth - b.depth).slice(0, limit)` preserves BFS-style nearest-first ordering, matching the behavior of `genericTraverse`.
+- **Dropped the erroneous node cap in the native path's resolve loop** — after the edge cap, `visited` can hold up to `2*edgeLimit + 1` ids, but the loop was stopping at `edgeLimit` resolutions, so returned edges referenced endpoints missing from `nodes`. Now resolves every referenced entity for consistency.
+- Added a "Backend dispatch" subsection to the tool description noting that `direction:'out'|'in'` uses native `$graphLookup` while `direction:'both'` always uses iterative BFS.
+
+**Tests added (4 new, 1 rewritten):** L-1 depth-1 predicate-filter regression in `MongoMemoryAdapter.test.ts`; M-1 shallow-edges-preferred-under-limit; M-2 edges-nodes-consistent-under-limit; `GenericTraversal.test.ts` — "respects limit" rewritten from node-based to edge-based assertions.
+
+### Session learning ingestor — `SessionIngestorPluginNextGen` (NEW)
+
+Agent-run → memory learning pipeline. The plugin observes the accumulated conversation before every `AgentContextNextGen.prepare()` (specifically BEFORE compaction, so no messages are lost), extracts structured facts via a dedicated cheap-model LLM call, dedupes against existing memory, and LLM-merges details on duplicate matches. Fire-and-forget — the next turn sees whatever has been persisted by then. Optional; registers like any NextGen plugin.
+
+**Plugin surface** (`src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts`):
+- Required config: `memory`, `agentId`, `userId`, `connectorName`, `model` — NO defaults on the connector. Host must explicitly wire the extraction backend (typically Haiku / gpt-5-mini, separate from the main agent).
+- `diligence: 'minimal' | 'normal' | 'thorough'` (default `'normal'`) tunes prompt directives: explicit-only vs. standard vs. aggressive-inference.
+- Side-effect plugin — `getContent` returns null, `getTools` returns [], no system-message contribution. Writes directly into memory via `memory.addFact` + `memory.updateFactDetails`.
+- Watermark persisted via `getState`/`restoreState` — only the delta since last ingest is processed each run.
+- Self-bootstraps `person:<userId>` + `agent:<agentId>` entities (identifier-keyed upsert is idempotent with `MemoryPluginNextGen`'s bootstrap).
+- Graceful degradation — extractor/merger failures log but never block `prepare()`. Duplicate merge falls back to keeping existing details (option a — lossy but safe).
+- In-flight guard — if a previous ingest is still running when the next turn fires, the new hook is skipped (no pile-up).
+
+**Three-bucket extraction prompt** (`buildSessionExtractionPrompt`):
+- Pre-bound labels `m_user` / `m_agent` so user + agent facts route to the right subject entity without round-tripping through the LLM.
+- Explicit buckets: USER facts (on `m_user`), AGENT learnings (on `m_agent`, including `learned_pattern` / `refined_procedure` / `avoided_pitfall`), OTHER entities (new mentions for people/orgs/projects/events).
+- Diligence directives injected by level.
+- Validity period calibration section (teaches `validUntil` with ephemeral / task-bound / identity rules).
+
+**Context-framework hook** — new optional lifecycle method on `IContextPluginNextGen`:
+- `onBeforePrepare(snapshot: PluginPrepareSnapshot): void` — fires at the top of `AgentContextNextGen.prepare()` BEFORE system-message assembly and compaction, so side-effect plugins can observe the conversation before any eviction. Snapshot is read-only (messages + currentInput). Throws are caught + logged; this hook must never break `prepare()`. Default implementation: no-op (existing plugins stay unchanged).
+
+**Memory-layer additions:**
+- `MemorySystem.addFact({..., dedup: true})` — opt-in dedup path. On exact match (same subject, canonicalized predicate, kind, value, objectId) against a non-archived fact: returns the existing fact, bumps its `observedAt`, does NOT insert. Keeps the collection lean for re-observed facts ("anton works_at everworker" repeated every session → one row).
+- `MemorySystem.updateFactDetails(id, details, scope)` — in-place details update. Recomputes `isSemantic` (merged text may cross the 80-char threshold), clears stale embedding, re-embeds if an embedder is configured. Used by the ingestor to apply LLM-merged details on dup matches. Mutates the fact — prior details are lost; use supersession when audit history is needed.
+- `MemorySystem.findDuplicateFact(input, scope)` — public lookup helper. Predicate canonicalization via registry. Used by the ingestor to split insert vs. merge paths before writing.
+
+**Default extraction prompt update** (`defaultExtractionPrompt.ts`):
+- New `## Validity period` section teaching `validFrom` / `validUntil` with calibration examples (ephemeral / task-bound / project-bound / identity / superseded). Fields were already plumbed end-to-end (stored, filtered by adapter `asOf`, no behaviour change at runtime) but the prompt never asked for them — so every extracted fact ended up "valid forever". Now the LLM knows to emit them.
+
+**Tests added (21):**
+- `tests/unit/memory/MemorySystem.dedup.test.ts` — 8 tests covering dedup hit/miss, observedAt bump, archived re-insert, `findDuplicateFact`, and `updateFactDetails` recompute + re-embed.
+- `tests/unit/core/context-nextgen/plugins/SessionIngestorPluginNextGen.test.ts` — 13 tests covering constructor guards, side-effect contract, watermark round-trip + userId-mismatch drop, happy-path extract + write, dedup + merge flow, merge-failure fallback (option a), in-flight guard, and prompt-composition checks (three buckets, diligence levels, validity section).
+
+**Internal refactor:**
+- `parseExtractionResponse` moved from `signals/ConnectorExtractor.ts` into a standalone `src/memory/integration/parseExtraction.ts` so callers can parse LLM output without importing `Agent` (which would reintroduce an `Agent ↔ plugins` cycle at module-load time). `ConnectorExtractor` re-exports the same symbol for backward compatibility.
+
+**Fixed (post-ship review):**
+- **H-1 — id-based watermark (data loss).** Previously the watermark was an index into `AgentContextNextGen._conversation`. Compaction mutates that array (creates a filtered copy), so after the first compaction the index became stale and NEW messages were silently skipped. Watermark is now `lastIngestedMessageId: string | null` — it tracks a stable `Message.id`; if the id was compacted away, the plugin falls back to "take all" (dedup protects from duplicate writes). State version bumped v1 → v2; legacy v1 state resets to null.
+- **H-2 — ghost-write guards on bootstrap + mentions (security/integrity).** The session ingestor called `memory.addFact` directly, bypassing the tool-layer ghost-write guard that `memory_remember` enforces. (1) If bootstrap returns a user/agent entity not owned by the current user (e.g. a group-readable shared entity owned by someone else), the plugin now disables itself for the session and logs an error. (2) If a mention upsert returns a foreign-owned entity, the mention is dropped from `labelToId` — facts referencing it are silently skipped with a warning. Prevents planting facts under another user's ownership.
+- **H-3 — truncation-aware watermark (correctness).** `buildTranscript` previously truncated from the head while the watermark advanced to the end — meaning head messages past the char budget were silently lost. Now walks FORWARD including messages until budget exhausted, and advances the watermark to the LAST message that fit. Messages that didn't fit remain "not yet ingested" and will be processed on the next turn.
+- **M-1 — `addFact({dedup:true})` now requires write access before bumping `observedAt`.** On `canAccess(existing, scope, 'write') === false`, falls through to the normal insert path rather than silently mutating a foreign fact.
+- **M-2 — `findDedupMatch` value comparison uses `stableEqual`.** Key-sorted deep equality; `JSON.stringify`-based comparison previously produced false negatives on object values with different key orders and false positives on NaN/Infinity.
+- **M-3 — `AgentContextNextGen.prepare()` catches async rejections from `onBeforePrepare`.** Previously only sync throws were caught; an `async onBeforePrepare()` that rejected would produce an unhandled promise rejection. Now any thenable return is monitored via `.catch` + console.warn.
+- **M-4 — Destroy checkpoints in the ingest pipeline.** `ingest()` re-checks `this.destroyed` after every async await; if destroyed mid-flight, bails without calling `addFact` / `updateFactDetails` on a stale agent.
+- **L-1 — Prompt-injection-resistant delimiters.** Extraction + merge prompts now use per-call random-nonce XML tags (`<conversation_${nonce}>`, `<existing_${nonce}>`, etc.) instead of fixed names, so user content can't close the delimiter and inject instructions.
+
+**Tests added (11):**
+- `tests/unit/memory/MemorySystem.dedup.test.ts` — 3 new (M-1 write-check, M-2 key-order equality, M-2 array-order distinction).
+- `tests/unit/core/context-nextgen/plugins/SessionIngestorPluginNextGen.test.ts` — 5 new (H-1 compaction-survival, H-2 bootstrap disable, H-2 mention drop, H-3 truncation watermark, v1-state reset).
+- `tests/unit/core/context-nextgen/AgentContextNextGen.onBeforePrepare.test.ts` — NEW file, 3 tests (sync throw catch, async rejection catch, snapshot shape).
+
+### Memory tools + extraction — kind enforcement & logical consistency pass
+
+Ten new tests, all green at 4707 total. Focuses on three leaks that were all silent-data-corruption vectors for LLM-driven writes, plus four ergonomic fixes surfaced during the review.
+
+**`kind` validation — three layers (N-1).** An LLM-emitted `"kind": "note"` previously leaked through the extraction prompt, `ExtractionResolver`, and `MemorySystem.addFact` untouched — storage ends up with a string that orphans the fact from `computeIsSemantic`, `findFacts({kind: 'atomic'})`, graph traversal, and profile-regen gating. Now:
+- `defaultExtractionPrompt` renders an explicit `## Fact kinds` section with when-to-pick-which guidance; inline comment replaced with "MUST be exactly atomic OR document".
+- `ExtractionResolver` validates `spec.kind`; unknown values coerce to `'atomic'` and land in `result.unresolved` with a `unknown kind "X", coerced to "atomic"` warning (same channel as `newPredicates`).
+- `MemorySystem.addFact` rejects any non-`'atomic' | 'document'` kind at the boundary — defense in depth.
+
+**`memory_remember` now supports `kind: 'document'` (N-2).** Previously hardcoded to `'atomic'`; agents could read the documents tier via `memory_recall({include:['documents']})` but never populate it. Added a `kind?: 'atomic' | 'document'` arg with JSON-schema enum (LLM constrained at the schema layer) and description guidance on when to pick each. `memory_remember_document` is not a separate tool.
+
+**`value` / `objectId` mutual exclusion (N-3).** `memory_remember` and `MemorySystem.addFact` now reject writes that set both. Previously stored both, creating records that matched both predicate+value and predicate+objectId queries ambiguously.
+
+**`memory_link` now takes `details` (N-4).** Asymmetric with `memory_remember` before — LLMs had no way to annotate *why* two entities are linked without falling back to `memory_remember` with `objectId`. Passed through to `addFact` (relational facts with `details` are already valid in the memory layer).
+
+**`memory_search` filter accepts `SubjectRef` (N-5).** New `filter.subject` / `filter.object` fields accept the full `SubjectRef` shape (`"me"`, `"this_agent"`, entity id, `{identifier}`, `{surface}`). Previous `subjectId` / `objectId` raw-id fields retained as escape hatches. Eliminates the "resolve-then-search" two-call pattern.
+
+**`memory_graph.asOf` strict ISO validation (N-6).** Invalid date now returns a structured error — consistent with `memory_search.observedAfter`/`observedBefore`. Previously silently dropped the filter.
+
+**`MemorySystem.addFact` confidence/importance clamp at the boundary.** Defense-in-depth — mirrors the tool-layer clamp so direct callers (tests, custom ingestion) can't plant undislodgeable top-ranked facts.
+
+**`memory_find_entity` polish (N-7/N-8).** Description now clarifies `by.type` + `by.metadataFilter` are list-only (they were silently ignored for `find`). Documented that `identifiers[].exclusive: true` passes through to upsert for canonical identifiers (email, phone) — prevents the same identifier attaching to two entities.
+
 ### Memory plugin + tools — second security pass
 
 Deep review of how LLM-controllable inputs flow from the tool layer into `MemorySystem`. Two new high-severity integrity bugs fixed, plus medium correctness fixes. Eleven new tests (4699 total, green).

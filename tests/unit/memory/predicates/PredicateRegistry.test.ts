@@ -236,10 +236,10 @@ describe('PredicateRegistry — renderForPrompt', () => {
 
   it('respects maxPerCategory', () => {
     const r = PredicateRegistry.standard();
+    const categoryCount = r.categories().length;
     const rendered = r.renderForPrompt({ maxPerCategory: 2 });
-    // 9 categories × 2 max = 18 predicate lines (plus examples, headers).
     const predicateLines = rendered.split('\n').filter((l) => l.startsWith('- `'));
-    expect(predicateLines.length).toBeLessThanOrEqual(9 * 2);
+    expect(predicateLines.length).toBeLessThanOrEqual(categoryCount * 2);
   });
 
   it('honors categories filter (exclusive)', () => {
@@ -320,7 +320,7 @@ describe('PredicateRegistry — standard() factory', () => {
     expect(r.list().length).toBe(STANDARD_PREDICATES.length);
   });
 
-  it('covers all 9 categories', () => {
+  it('covers all standard categories', () => {
     const r = PredicateRegistry.standard();
     const cats = r.categories();
     expect(cats).toContain('identity');
@@ -330,9 +330,10 @@ describe('PredicateRegistry — standard() factory', () => {
     expect(cats).toContain('communication');
     expect(cats).toContain('observation');
     expect(cats).toContain('temporal');
+    expect(cats).toContain('event');
     expect(cats).toContain('document');
     expect(cats).toContain('social');
-    expect(cats).toHaveLength(9);
+    expect(cats).toHaveLength(10);
   });
 
   it('contains the canonical `profile` predicate (consumed by getContext)', () => {

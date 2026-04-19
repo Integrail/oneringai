@@ -1056,6 +1056,44 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     // Reset lastThinking at start of each turn to prevent stale data
     this._lastThinking = null;
 
+    // Fire onBeforePrepare hooks on plugins that implement it. Intended for
+    // side-effect plugins (e.g. session-learning ingestors) that need to
+    // observe the conversation before compaction potentially evicts messages.
+    // Hooks are fire-and-forget: we do NOT await them, so a slow ingestion
+    // job cannot block the turn. Throws are caught + logged so a buggy plugin
+    // cannot break context preparation.
+    const prepareSnapshot = {
+      messages: this._conversation as ReadonlyArray<unknown>,
+      currentInput: this._currentInput as ReadonlyArray<unknown>,
+    };
+    for (const plugin of this._plugins.values()) {
+      if (typeof plugin.onBeforePrepare === 'function') {
+        try {
+          // The hook signature is `void`, but TS allows `async` implementations
+          // whose rejections would otherwise be unhandled promise rejections.
+          // Capture a thenable return and attach a .catch so async throws get
+          // the same logging treatment as sync ones.
+          const ret: unknown = plugin.onBeforePrepare(prepareSnapshot);
+          if (ret && typeof (ret as { catch?: unknown }).catch === 'function') {
+            (ret as Promise<unknown>).catch((err) => {
+              // eslint-disable-next-line no-console
+              console.warn(
+                `AgentContextNextGen: plugin '${plugin.name}' onBeforePrepare rejected asynchronously:`,
+                err,
+              );
+            });
+          }
+        } catch (err) {
+          // Swallow — a side-effect plugin must never break prepare().
+          // eslint-disable-next-line no-console
+          console.warn(
+            `AgentContextNextGen: plugin '${plugin.name}' onBeforePrepare threw:`,
+            err,
+          );
+        }
+      }
+    }
+
     const compactionLog: string[] = [];
 
     // Step 1: Calculate tool tokens (NEVER compacted - must fit!)

@@ -569,6 +569,198 @@ describe('MongoMemoryAdapter', () => {
   });
 
   // ==========================================================================
+  // Native $graphLookup — pipeline-shape assertions for the four fixes
+  // ==========================================================================
+
+  describe('traverse (native $graphLookup)', () => {
+    let nativeAdapter: MongoMemoryAdapter;
+    let nativeFacts: FakeMongoCollection<IFact>;
+    let nativeEnts: FakeMongoCollection<IEntity>;
+
+    beforeEach(() => {
+      nativeEnts = new FakeMongoCollection<IEntity>('entities');
+      nativeFacts = new FakeMongoCollection<IFact>('facts');
+      nativeAdapter = new MongoMemoryAdapter({
+        entities: nativeEnts,
+        facts: nativeFacts,
+        factsCollectionName: 'facts',
+        useNativeGraphLookup: true,
+      });
+    });
+
+    afterEach(() => {
+      if (!nativeAdapter.isDestroyed) nativeAdapter.destroy();
+    });
+
+    it('direction="both" FALLS BACK to generic traversal (co-subject correctness) — no aggregate call', async () => {
+      const anton = await nativeAdapter.createEntity(entityInput({ displayName: 'Anton' }));
+      const john = await nativeAdapter.createEntity(entityInput({ displayName: 'John' }));
+      const ew = await nativeAdapter.createEntity(entityInput({ displayName: 'Everworker' }));
+      await nativeAdapter.createFact(factInput(anton.id, { predicate: 'works_at', objectId: ew.id }));
+      await nativeAdapter.createFact(factInput(john.id, { predicate: 'works_at', objectId: ew.id }));
+
+      const before = nativeFacts.aggregateCalls;
+      const res = await nativeAdapter.traverse(
+        anton.id,
+        { direction: 'both', maxDepth: 2, predicates: ['works_at'] },
+        {},
+      );
+      // aggregate NOT called for direction=both; generic path used findFacts.
+      expect(nativeFacts.aggregateCalls).toBe(before);
+      // "Who works with Anton?" — John must be discovered at depth 2.
+      const ids = new Set(res.nodes.map((n) => n.entity.id));
+      expect(ids.has(john.id)).toBe(true);
+      expect(ids.has(ew.id)).toBe(true);
+    });
+
+    it('maxDepth=1 on direction="out" skips $graphLookup entirely (off-by-one fix)', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      const b = await nativeAdapter.createEntity(entityInput({ displayName: 'B' }));
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: b.id }));
+
+      let captured: unknown[] | null = null;
+      const origAggregate = nativeFacts.aggregate.bind(nativeFacts);
+      nativeFacts.aggregate = async (pipeline: unknown[]) => {
+        captured = pipeline;
+        return origAggregate(pipeline);
+      };
+
+      await nativeAdapter.traverse(a.id, { direction: 'out', maxDepth: 1 }, {});
+      // Pipeline should be $match only — no $graphLookup stage.
+      expect(captured).not.toBeNull();
+      const hasGraphLookup = captured!.some(
+        (stage) => typeof stage === 'object' && stage !== null && '$graphLookup' in stage,
+      );
+      expect(hasGraphLookup).toBe(false);
+    });
+
+    it('maxDepth=3 on direction="out" uses $graphLookup with maxDepth=1 (not 2)', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: a.id + '_x' }));
+
+      let captured: unknown[] | null = null;
+      const origAggregate = nativeFacts.aggregate.bind(nativeFacts);
+      nativeFacts.aggregate = async (pipeline: unknown[]) => {
+        captured = pipeline;
+        return origAggregate(pipeline);
+      };
+
+      await nativeAdapter.traverse(a.id, { direction: 'out', maxDepth: 3 }, {});
+      expect(captured).not.toBeNull();
+      const graphStage = captured!.find(
+        (stage) => typeof stage === 'object' && stage !== null && '$graphLookup' in stage,
+      ) as { $graphLookup: { maxDepth: number } } | undefined;
+      expect(graphStage).toBeDefined();
+      // outer $match = depth 1. graphLookup should give depths 2..3 = 2 levels
+      // = graphLookup.maxDepth = 1 (gives levels 0..1 → overall 2..3).
+      expect(graphStage!.$graphLookup.maxDepth).toBe(1);
+    });
+
+    it('asOf is pushed into both $match and $graphLookup restrictSearchWithMatch', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: a.id + '_x' }));
+
+      let captured: unknown[] | null = null;
+      const origAggregate = nativeFacts.aggregate.bind(nativeFacts);
+      nativeFacts.aggregate = async (pipeline: unknown[]) => {
+        captured = pipeline;
+        return origAggregate(pipeline);
+      };
+
+      const asOf = new Date('2024-01-15T00:00:00Z');
+      await nativeAdapter.traverse(a.id, { direction: 'out', maxDepth: 3, asOf }, {});
+      expect(captured).not.toBeNull();
+      const stringified = JSON.stringify(captured);
+      // Outer $match contains a createdAt $lte clause with our asOf.
+      expect(stringified).toContain('createdAt');
+      expect(stringified).toContain(asOf.toISOString());
+      // Both validFrom and validUntil clauses should appear.
+      expect(stringified).toContain('validFrom');
+      expect(stringified).toContain('validUntil');
+    });
+
+    it('opts.limit caps the returned edges (not just nodes)', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      // Build 10 outbound edges.
+      for (let i = 0; i < 10; i++) {
+        const b = await nativeAdapter.createEntity(entityInput({ displayName: `B${i}` }));
+        await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: b.id }));
+      }
+      const res = await nativeAdapter.traverse(
+        a.id,
+        { direction: 'out', maxDepth: 1, limit: 3 },
+        {},
+      );
+      expect(res.edges.length).toBeLessThanOrEqual(3);
+    });
+
+    // L-1 — predicates filter applies at depth 1 too (regression test for the
+    // pre-existing bug where outer $match omitted the predicates clause).
+    it('filters depth-1 edges by predicates', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      const b = await nativeAdapter.createEntity(entityInput({ displayName: 'B' }));
+      const c = await nativeAdapter.createEntity(entityInput({ displayName: 'C' }));
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'works_at', objectId: b.id }));
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: c.id }));
+
+      const res = await nativeAdapter.traverse(
+        a.id,
+        { direction: 'out', maxDepth: 1, predicates: ['works_at'] },
+        {},
+      );
+      // Only the works_at edge survives the filter — 'knows' is excluded.
+      expect(res.edges.length).toBe(1);
+      expect(res.edges[0]!.fact.predicate).toBe('works_at');
+    });
+
+    // M-2 — edges and nodes must stay consistent under tight limits.
+    it('edges and nodes are consistent under a tight limit', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      for (let i = 0; i < 5; i++) {
+        const b = await nativeAdapter.createEntity(entityInput({ displayName: `B${i}` }));
+        await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: b.id }));
+      }
+      const res = await nativeAdapter.traverse(
+        a.id,
+        { direction: 'out', maxDepth: 1, limit: 3 },
+        {},
+      );
+      expect(res.edges.length).toBeLessThanOrEqual(3);
+      // Every surviving edge's from/to must appear in nodes.
+      const nodeIds = new Set(res.nodes.map((n) => n.entity.id));
+      for (const edge of res.edges) {
+        expect(nodeIds.has(edge.from)).toBe(true);
+        expect(nodeIds.has(edge.to)).toBe(true);
+      }
+    });
+
+    // M-1 — depth-ascending slice. With multiple outer-match rows and some
+    // having descendants, a tight limit must keep depth-1 edges (nearest)
+    // instead of sacrificing siblings to keep one row's deep chain.
+    it('prefers shallow edges when limit forces a cut', async () => {
+      const a = await nativeAdapter.createEntity(entityInput({ displayName: 'A' }));
+      const b = await nativeAdapter.createEntity(entityInput({ displayName: 'B' }));
+      const c = await nativeAdapter.createEntity(entityInput({ displayName: 'C' }));
+      const d = await nativeAdapter.createEntity(entityInput({ displayName: 'D' }));
+      // Two depth-1 edges from A, plus a depth-2 from B.
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: b.id }));
+      await nativeAdapter.createFact(factInput(a.id, { predicate: 'knows', objectId: c.id }));
+      await nativeAdapter.createFact(factInput(b.id, { predicate: 'knows', objectId: d.id }));
+
+      const res = await nativeAdapter.traverse(
+        a.id,
+        { direction: 'out', maxDepth: 2, limit: 2 },
+        {},
+      );
+      expect(res.edges.length).toBe(2);
+      // Both should be depth 1.
+      for (const edge of res.edges) {
+        expect(edge.depth).toBe(1);
+      }
+    });
+  });
+
+  // ==========================================================================
   // Lifecycle
   // ==========================================================================
 

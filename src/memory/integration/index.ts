@@ -17,7 +17,10 @@ export type {
 } from './createMemorySystemWithConnectors.js';
 
 // Extraction helpers — signal → memory pipeline.
-export { defaultExtractionPrompt } from './defaultExtractionPrompt.js';
+export {
+  defaultExtractionPrompt,
+  DEFAULT_EXTRACTION_PROMPT_VERSION,
+} from './defaultExtractionPrompt.js';
 export type { ExtractionPromptContext, PreResolvedBinding } from './defaultExtractionPrompt.js';
 
 export { ExtractionResolver } from './ExtractionResolver.js';
@@ -38,14 +41,17 @@ export {
   parseExtractionResponse,
   PlainTextAdapter,
   EmailSignalAdapter,
+  CalendarSignalAdapter,
 } from './signals/index.js';
 export type {
   SignalIngestorConfig,
+  ContextHintsConfig,
   IngestSignalInput,
   IngestTextInput,
   IngestExtractedInput,
   ConnectorExtractorConfig,
   ParticipantSeed,
+  SeedFact,
   ExtractedSignal,
   SignalSourceAdapter,
   IExtractor,
@@ -53,4 +59,7 @@ export type {
   EmailAddress,
   EmailSignal,
   EmailSignalAdapterOptions,
+  CalendarAttendee,
+  CalendarSignal,
+  CalendarSignalAdapterOptions,
 } from './signals/index.js';

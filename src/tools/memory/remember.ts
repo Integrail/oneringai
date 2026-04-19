@@ -19,11 +19,19 @@ export interface RememberArgs {
   subject: SubjectRef;
   /** Relationship type — 'prefers', 'works_at', 'learned_pattern', 'employee_count', etc. */
   predicate: string;
-  /** Scalar value when the fact is a datum (name, number, flag). */
+  /**
+   * Fact kind:
+   *   - "atomic" (default) — short, structured: scalar values, relations, or brief observations.
+   *   - "document" — long-form narrative: procedures, learned patterns, multi-paragraph recaps.
+   * Documents are always embedded for semantic search; atomic facts are embedded
+   * only when `details` is long enough. Pick "document" for prose, "atomic" for data.
+   */
+  kind?: 'atomic' | 'document';
+  /** Scalar value when the fact is a datum (name, number, flag). Mutually exclusive with objectId. */
   value?: unknown;
-  /** Entity id/reference when the fact links to another entity — or use memory_link instead. */
+  /** Entity id when the fact links to another entity — or use memory_link instead. Mutually exclusive with value. */
   objectId?: string;
-  /** Long-form markdown/text for narrative facts ('learned_pattern' etc.). */
+  /** Long-form markdown/text for narrative facts. Required when kind='document'. */
   details?: string;
   /** 0..1 confidence. Default 1.0 for direct user-provided facts; LLM-inferred → lower. Values outside [0,1] are clamped. */
   confidence?: number;
@@ -37,11 +45,17 @@ export interface RememberArgs {
   visibility?: Visibility;
 }
 
-const DESCRIPTION = `Record a new atomic fact (subject, predicate, value-or-object). Be proactive — whenever the user reveals something you should remember, store it. Facts accumulate and feed into profile regeneration automatically.
+const DESCRIPTION = `Record a new fact (subject, predicate, value-or-object). Be proactive — whenever the user reveals something you should remember, store it. Facts accumulate and feed into profile regeneration automatically.
 
 Subject can be: "me", "this_agent", entity id, {id}, {identifier:{kind,value}}, or {surface:"..."}.
 
 You can ONLY write facts on entities you own (the tool rejects writes to entities owned by other users — upsert your own entity first via memory_find_entity).
+
+kind (default "atomic"):
+- "atomic": short/structured — attributes (employee_count=500), relations (attended → meeting), brief observations. Use this for data.
+- "document": long-form prose — procedures, learned patterns, multi-paragraph recaps. Use this for narrative you want indexed semantically.
+
+value vs objectId: set EITHER value OR objectId, never both. (Mixing the two makes the fact ambiguous in later queries.)
 
 visibility (default varies by subject):
 - "private": only the owner (current user) can see — good for personal notes.
@@ -53,13 +67,13 @@ Defaults: user subject → "private"; this_agent → "group" (shared agents); ot
 If contextIds contains any entity you don't own, visibility is automatically downgraded to "private" to prevent leaking fabricated facts into another user's context graph — the response will include a "warnings" field in that case.
 
 Examples:
-- Remember a user preference:
+- User preference (atomic, scalar):
   {"subject":"me","predicate":"prefers","value":"concise responses"}
-- Company fact with confidence + importance (your own company entity):
+- Company attribute (atomic, your own company entity):
   {"subject":{"surface":"Acme"},"predicate":"employee_count","value":500,"confidence":0.8,"importance":0.3}
-- Agent-level learned rule (shared with group):
-  {"subject":"this_agent","predicate":"learned_pattern","details":"Always ask for dimensions before tax calculations","visibility":"group"}
-- Observation tied to a context entity:
+- Learned procedure (document — indexed for semantic recall):
+  {"subject":"this_agent","predicate":"learned_pattern","kind":"document","details":"When users ask for tax calculations, always clarify the jurisdiction before quoting rates because …","visibility":"group"}
+- Observation tied to a context entity (atomic with narrative details):
   {"subject":{"surface":"Alice"},"predicate":"raised_concern","details":"Timeline risk","contextIds":["<dealId>"]}`;
 
 export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberArgs> {
@@ -74,7 +88,8 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
           properties: {
             subject: { description: 'Subject — see SubjectRef forms.' },
             predicate: { type: 'string' },
-            value: { description: 'Scalar value (string, number, boolean, object).' },
+            kind: { type: 'string', enum: ['atomic', 'document'] },
+            value: { description: 'Scalar value (string, number, boolean, object). Mutually exclusive with objectId.' },
             objectId: { type: 'string' },
             details: { type: 'string' },
             confidence: { type: 'number' },
@@ -97,6 +112,9 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
       }
       if (args.value === undefined && args.objectId === undefined && !args.details) {
         return { error: 'provide at least one of value, objectId, or details' };
+      }
+      if (args.value !== undefined && args.objectId !== undefined) {
+        return { error: 'set either value or objectId, not both' };
       }
 
       const scope = resolveScope(context?.userId, deps.defaultUserId, deps.defaultGroupId);
@@ -153,7 +171,7 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
           {
             subjectId: resolved.entity.id,
             predicate: args.predicate,
-            kind: 'atomic',
+            kind: args.kind ?? 'atomic',
             value: args.value,
             objectId: args.objectId,
             details: args.details,

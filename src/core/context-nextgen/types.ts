@@ -390,6 +390,37 @@ export interface IContextPluginNextGen {
    * ```
    */
   restoreState(state: unknown): void;
+
+  /**
+   * Called at the top of `AgentContextNextGen.prepare()` — BEFORE system
+   * message assembly, token budgeting, and compaction. Purpose: give
+   * side-effect plugins (e.g. session-learning ingestors) a chance to
+   * observe the accumulated conversation before compaction potentially
+   * evicts messages.
+   *
+   * The plugin receives a SNAPSHOT of the conversation messages and current
+   * input at the time prepare() fires. Implementers should synchronously
+   * capture what they need from the snapshot and kick off any async work —
+   * this method is NOT awaited by `prepare()`, and the caller of `prepare()`
+   * will proceed regardless. Throwing from this method is swallowed (logged)
+   * so a failing side-effect plugin cannot break context preparation.
+   *
+   * Default: no-op (most plugins don't need this).
+   *
+   * @param snapshot - Read-only snapshot of conversation + current input.
+   */
+  onBeforePrepare?(snapshot: PluginPrepareSnapshot): void;
+}
+
+/**
+ * Snapshot handed to `onBeforePrepare` plugin hooks. Fields are read-only
+ * references — do not mutate.
+ */
+export interface PluginPrepareSnapshot {
+  /** The full conversation history at this point. */
+  readonly messages: ReadonlyArray<unknown>;
+  /** The current turn's user input (not yet merged into conversation). */
+  readonly currentInput: ReadonlyArray<unknown>;
 }
 
 // ============================================================================

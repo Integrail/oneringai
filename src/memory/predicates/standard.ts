@@ -475,6 +475,34 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
   },
 
   // ---------------------------------------------------------------------------
+  // event  (attendance relationships — seeded by CalendarSignalAdapter)
+  // ---------------------------------------------------------------------------
+  {
+    name: 'attended',
+    description: 'Person attended an event (meeting, call, conference).',
+    category: 'event',
+    payloadKind: 'relational',
+    subjectTypes: ['person'],
+    objectTypes: ['event'],
+    inverse: 'attended_by',
+    defaultImportance: 0.5,
+    rankingWeight: 0.9,
+    examples: ['(Alice, attended, Q3-planning-review)'],
+  },
+  {
+    name: 'hosted',
+    description: 'Person hosted or organized an event.',
+    category: 'event',
+    payloadKind: 'relational',
+    subjectTypes: ['person'],
+    objectTypes: ['event'],
+    inverse: 'hosted_by',
+    defaultImportance: 0.7,
+    rankingWeight: 1.0,
+    examples: ['(Alice, hosted, Q3-planning-review)'],
+  },
+
+  // ---------------------------------------------------------------------------
   // document  (narrative facts; details is long-form)
   // ---------------------------------------------------------------------------
   {

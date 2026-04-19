@@ -63,12 +63,21 @@ export interface ResolverMemoryHooks {
     },
     scope: ScopeFilter,
   ) => Promise<{ entity: IEntity; created: boolean }>;
-  /** Patches an existing entity with additional aliases/identifiers (no-op if already present). */
+  /**
+   * Patches an existing entity with additional aliases/identifiers (no-op if already present).
+   * When `opts.metadata` is supplied, merges per `opts.metadataMerge`:
+   *  - `'fillMissing'` (default): only keys absent from stored metadata are set.
+   *  - `'overwrite'`: shallow-merge (incoming keys win).
+   */
   appendAliasesAndIdentifiers: (
     id: EntityId,
     aliases: string[],
     identifiers: Identifier[],
     scope: ScopeFilter,
+    opts?: {
+      metadata?: Record<string, unknown>;
+      metadataMerge?: 'fillMissing' | 'overwrite';
+    },
   ) => Promise<IEntity>;
 }
 
@@ -222,25 +231,35 @@ export class EntityResolver {
 
     const top = candidates[0];
     if (top && top.confidence >= threshold) {
-      // Accumulate new aliases + identifiers on the matched entity.
+      // Accumulate new aliases + identifiers on the matched entity. Metadata
+      // defaults to fillMissing merge — re-upsert should never overwrite an
+      // existing task.state, event.startTime, etc. Callers who want to mutate
+      // deliberately should use updateEntityMetadata / transitionTaskState.
       const newAliases = [input.surface, ...(input.aliases ?? [])];
       const entity = await this.hooks.appendAliasesAndIdentifiers(
         top.entity.id,
         newAliases,
         input.identifiers ?? [],
         scope,
+        input.metadata
+          ? {
+              metadata: input.metadata,
+              metadataMerge: opts?.metadataMerge ?? 'fillMissing',
+            }
+          : undefined,
       );
       const mergeCandidates = candidates.slice(1);
       return { entity, resolved: true, mergeCandidates };
     }
 
-    // Create new entity.
+    // Create new entity — metadata set verbatim.
     const { entity } = await this.hooks.upsertEntity(
       {
         type: input.type,
         displayName: input.surface,
         aliases: input.aliases,
         identifiers: input.identifiers ?? [],
+        metadata: input.metadata,
       },
       scope,
     );
