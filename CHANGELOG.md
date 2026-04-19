@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory layer — signal ingestion pipeline
+
+**New high-level ingestion facade** (`src/memory/integration/signals/`) — turns raw source documents (email, plain text, custom sources) into entities + facts with deterministic participant seeding from metadata, so identity ambiguity for senders/recipients is eliminated upstream of the LLM.
+- `SignalIngestor` — orchestrates seed → prompt → extract → resolve. Methods: `ingest` (by adapter kind), `ingestText` (escape hatch), `ingestExtracted` (lowest level). `registerAdapter` / `hasAdapter` for runtime adapter management.
+- `SignalSourceAdapter<TRaw>` — pluggable per-source adapter contract (`kind` + pure `extract(raw) => ExtractedSignal`).
+- `ParticipantSeed` — metadata-derived entity seed (strong identifiers required; weak-name seeding rejected).
+- `IExtractor` — pluggable LLM call contract (`extract(prompt) => Promise<ExtractionOutput>`).
+- `ConnectorExtractor` — default `IExtractor` implementation wrapping a Connector + model via `runDirect` with `responseFormat: { type: 'json_object' }` and defensive parsing (`parseExtractionResponse`).
+- `PlainTextAdapter` — reference adapter for raw text signals.
+- `EmailSignalAdapter` — reference adapter for email signals: seeds `from/to/cc` as `person` participants with `email` identifiers; opt-in (default on) seeds non-free email domains as `organization` participants; BCC intentionally dropped for privacy; common free providers (`gmail.com`, `outlook.com`, …) filtered from org seeding.
+
+**ExtractionResolver preResolved support**
+- `ExtractionResolverOptions.preResolved: Record<label, EntityId>` — pre-bound label map that bypasses `upsertEntityBySurface` for participants already resolved upstream. LLM-emitted mentions that redeclare a pre-resolved label are silently skipped (pre-bound wins).
+- `defaultExtractionPrompt` accepts `preResolvedBindings` and renders a "Pre-resolved labels" block instructing the LLM to reference them directly and not redeclare them in `mentions`.
+
+**Docs**
+- New `docs/MEMORY_SIGNALS.md` — usage guide with architecture diagram, email/plain-text quickstarts, custom-adapter walkthrough, custom-extractor recipe, seed semantics, known-entities vs pre-resolved comparison, result handling, pitfalls.
+- Cross-linked from `MEMORY_API.md` (new Signal ingestion API subsection + exports table) and `MEMORY_GUIDE.md` (extraction pipeline section).
+
 ### Memory layer — hardening + predicate library
 
 **Predicate registry docs**

@@ -281,4 +281,112 @@ describe('ExtractionResolver', () => {
     expect(fact.validFrom!.getFullYear()).toBe(2026);
     expect(fact.observedAt).toBeInstanceOf(Date);
   });
+
+  describe('preResolved bindings', () => {
+    it('uses pre-resolved entity id without calling upsertEntityBySurface', async () => {
+      const antonSeed = await mem.upsertEntityBySurface(
+        {
+          surface: 'Anton Antich',
+          type: 'person',
+          identifiers: [{ kind: 'email', value: 'anton@everworker.ai' }],
+        },
+        scope,
+      );
+
+      const countBefore = (await store.listEntities(scope, { limit: 100 })).items.length;
+
+      const output: ExtractionOutput = {
+        mentions: {
+          m2: {
+            surface: 'Acme Corp',
+            type: 'organization',
+            identifiers: [{ kind: 'domain', value: 'acme.com' }],
+          },
+        },
+        facts: [{ subject: 'm1', predicate: 'works_at', object: 'm2', confidence: 0.95 }],
+      };
+
+      const result = await resolver.resolveAndIngest(output, 'signal_seed', scope, {
+        preResolved: { m1: antonSeed.entity.id },
+      });
+
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0]!.subjectId).toBe(antonSeed.entity.id);
+      expect(result.unresolved).toEqual([]);
+
+      const countAfter = (await store.listEntities(scope, { limit: 100 })).items.length;
+      expect(countAfter).toBe(countBefore + 1);
+    });
+
+    it('ignores a mention that redeclares a pre-resolved label', async () => {
+      const antonSeed = await mem.upsertEntityBySurface(
+        {
+          surface: 'Anton Antich',
+          type: 'person',
+          identifiers: [{ kind: 'email', value: 'anton@everworker.ai' }],
+        },
+        scope,
+      );
+
+      const output: ExtractionOutput = {
+        mentions: {
+          m1: {
+            surface: 'Anton',
+            type: 'person',
+            identifiers: [{ kind: 'email', value: 'anton@everworker.ai' }],
+          },
+          m2: {
+            surface: 'Acme',
+            type: 'organization',
+            identifiers: [{ kind: 'domain', value: 'acme.com' }],
+          },
+        },
+        facts: [{ subject: 'm1', predicate: 'works_at', object: 'm2' }],
+      };
+
+      const result = await resolver.resolveAndIngest(output, 'signal_redeclare', scope, {
+        preResolved: { m1: antonSeed.entity.id },
+      });
+
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0]!.subjectId).toBe(antonSeed.entity.id);
+
+      const m1Entries = result.entities.filter((e) => e.label === 'm1');
+      expect(m1Entries.length).toBeLessThanOrEqual(1);
+      const m2 = result.entities.find((e) => e.label === 'm2')!;
+      expect(m2).toBeDefined();
+    });
+
+    it('pre-resolved labels work as contextIds too', async () => {
+      const dealSeed = await mem.upsertEntityBySurface(
+        { surface: 'Acme Deal', type: 'topic', identifiers: [{ kind: 'domain', value: 'acme.com/deal-42' }] },
+        scope,
+      );
+
+      const output: ExtractionOutput = {
+        mentions: {
+          m1: {
+            surface: 'John',
+            type: 'person',
+            identifiers: [{ kind: 'email', value: 'john@acme.com' }],
+          },
+        },
+        facts: [
+          {
+            subject: 'm1',
+            predicate: 'mentioned_topic',
+            value: 'pricing',
+            contextIds: ['m_deal'],
+          },
+        ],
+      };
+
+      const result = await resolver.resolveAndIngest(output, 'signal_ctx', scope, {
+        preResolved: { m_deal: dealSeed.entity.id },
+      });
+
+      expect(result.unresolved).toEqual([]);
+      expect(result.facts[0]!.contextIds).toEqual([dealSeed.entity.id]);
+    });
+  });
 });

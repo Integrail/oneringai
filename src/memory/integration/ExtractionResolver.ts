@@ -89,6 +89,19 @@ export interface IngestionResult {
 export interface ExtractionResolverOptions {
   /** Override per-upsert threshold (default: memory system's config). */
   autoResolveThreshold?: number;
+  /**
+   * Pre-bound `label → entityId` map. When the LLM output references any of
+   * these labels (as subject/object/contextId/mention), the resolver skips
+   * upsert and uses the provided entity id directly. Intended for signal-level
+   * metadata (email headers, calendar attendees) where identities are already
+   * resolved upstream via strong identifiers — no need to round-trip through
+   * the LLM.
+   *
+   * If the LLM output also contains a mention with the same label (e.g. it
+   * ignored the prompt instruction not to redeclare), the pre-resolved binding
+   * wins and the mention is skipped silently.
+   */
+  preResolved?: Record<string, EntityId>;
 }
 
 // =============================================================================
@@ -114,12 +127,26 @@ export class ExtractionResolver {
     const unresolved: IngestionError[] = [];
     const labelToEntityId = new Map<string, EntityId>();
 
+    // ----- Pass 0: pre-resolved bindings (no LLM involvement) -----
+    // Seed the label→id map with caller-supplied bindings. If the LLM output
+    // later contains a mention for one of these labels, the pre-resolved id
+    // wins and the mention is skipped.
+    if (opts?.preResolved) {
+      for (const [label, entityId] of Object.entries(opts.preResolved)) {
+        labelToEntityId.set(label, entityId);
+      }
+    }
+
     // ----- Pass 1: mentions → entities -----
     // Resolve in two sub-phases so contextEntityIds can include already-
     // resolved sibling labels (improves disambiguation).
     const mentionEntries = Object.entries(output.mentions ?? {});
 
     for (const [label, mention] of mentionEntries) {
+      // Skip redeclared labels — pre-resolved binding wins defensively.
+      if (opts?.preResolved && label in opts.preResolved) {
+        continue;
+      }
       try {
         const contextEntityIds = [...labelToEntityId.values()];
         const result = await this.memory.upsertEntityBySurface(

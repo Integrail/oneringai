@@ -1122,12 +1122,73 @@ Auto-supersede only archives facts visible to the caller. A group-scoped `curren
 
 How you get knowledge INTO memory from raw signals (emails, transcripts, docs).
 
-### Why two phases?
+The library offers **two levels of abstraction** — pick the one that fits your call site.
+
+### Two levels
+
+1. **High-level: `SignalIngestor`** (recommended default for real signals with metadata). Handles participant seeding from source metadata (email headers, attendee lists, Slack user IDs), pre-binds them to local labels, renders the prompt with a locked vocabulary, calls the LLM, and writes facts. One call, raw → facts. Pluggable adapters for each source type, pluggable extractor for the LLM call.
+2. **Low-level: `ExtractionResolver` + `defaultExtractionPrompt`** (the primitives). You own the LLM call and hand raw output (`{mentions, facts}`) to the resolver. Use this when you have your own prompt construction, your own extractor pipeline, or want to run the extraction asynchronously from the write.
+
+Both write through the same `addFact` path — same scope semantics, same `sourceSignalId` flow, same `IngestionResult` shape. The high-level ingestor is built on the low-level primitives; it just adds the seed phase + locked-label prompt rendering.
+
+**Rule of thumb.**
+- Email, Slack, calendar, tickets, anything with deterministic sender/recipient metadata → `SignalIngestor`.
+- Plain text with no metadata → either works; `SignalIngestor` via `PlainTextAdapter` for uniformity.
+- Bespoke extraction flows (custom JSON schema, multi-step, retries at the model level) → keep the primitives.
+
+> Full walkthrough of the high-level pipeline with recipes, custom adapter / custom extractor examples, and pitfalls: [MEMORY_SIGNALS.md](./MEMORY_SIGNALS.md). This section focuses on the primitives.
+
+### High-level quickstart — email in one call
+
+```ts
+import {
+  createMemorySystemWithConnectors,
+  SignalIngestor,
+  ConnectorExtractor,
+  EmailSignalAdapter,
+} from '@everworker/oneringai/memory';
+
+const memory = createMemorySystemWithConnectors({ store, connectors: { /* ... */ } });
+
+const ingestor = new SignalIngestor({
+  memory,
+  extractor: new ConnectorExtractor({ connector: 'anthropic-prod', model: 'claude-sonnet-4-6' }),
+  adapters: [new EmailSignalAdapter()],
+});
+
+const result = await ingestor.ingest({
+  kind: 'email',
+  raw: {
+    from: { email: 'anton@everworker.ai', name: 'Anton Antich' },
+    to:   [{ email: 'sarah@acme.com',    name: 'Sarah Chen' }],
+    cc:   [{ email: 'bob@acme.com' }],
+    subject: 'Q3 planning',
+    body:    'Let us lock in priorities next week.',
+  },
+  sourceSignalId: 'gmail_msg_abc123',
+  scope: { groupId: 'workspace-1' },
+});
+// result.entities — participants (seeded via headers) + anything the LLM discovered in the body
+// result.facts    — written with sourceSignalId attached
+// result.mergeCandidates, result.unresolved, result.newPredicates — review signals
+```
+
+What the ingestor does that you don't:
+- Upserts `anton@everworker.ai`, `sarah@acme.com`, `bob@acme.com`, plus non-free domains `everworker.ai` and `acme.com` (organizations) — **before** the LLM runs.
+- Locks each to labels `m1…m5` and tells the LLM: "these are bound, reference them directly, do not redeclare them, start new labels at m6."
+- If the LLM emits a duplicate mention for a seeded label anyway, the pre-bound id wins (defence-in-depth).
+- BCC is dropped from both seeding and the prompt — privacy-safe by default.
+
+To swap the LLM (proxy, self-hosted model, etc.) implement the one-method `IExtractor` contract. To support a new source type (Slack, Jira, HubSpot, …) implement the one-method `SignalSourceAdapter<TRaw>`. Both are in [MEMORY_SIGNALS.md](./MEMORY_SIGNALS.md).
+
+### Low-level: why two phases?
 
 LLMs are great at reading text and identifying who/what/when. They're bad at remembering your entity IDs. So extraction has two phases:
 
 1. **LLM phase:** emit structured JSON with local mention labels + facts referencing those labels. LLM never sees real entity IDs.
 2. **Resolver phase:** deterministic code translates mention labels to entity IDs (resolving or creating entities via `upsertEntityBySurface`), then writes facts with `sourceSignalId` attached.
+
+If you already have pre-resolved entities for some participants (from upstream metadata), pass them via `ExtractionResolverOptions.preResolved: { label: entityId }` — the resolver seeds the label map and skips upsert for those labels. The `SignalIngestor` above uses this internally.
 
 ### End-to-end example
 

@@ -33,6 +33,11 @@ export {
   createMemorySystemWithConnectors,
   defaultExtractionPrompt,
   ExtractionResolver,
+  SignalIngestor,
+  ConnectorExtractor,
+  parseExtractionResponse,
+  PlainTextAdapter,
+  EmailSignalAdapter,
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
@@ -41,6 +46,7 @@ export type {
   MemoryConnectorsConfig,
   MemorySystemWithConnectorsConfig,
   ExtractionPromptContext,
+  PreResolvedBinding,
   ExtractionMention,
   ExtractionFactSpec,
   ExtractionOutput,
@@ -48,6 +54,19 @@ export type {
   IngestionError,
   IngestionResult,
   ExtractionResolverOptions,
+  SignalIngestorConfig,
+  IngestSignalInput,
+  IngestTextInput,
+  IngestExtractedInput,
+  ConnectorExtractorConfig,
+  ParticipantSeed,
+  ExtractedSignal,
+  SignalSourceAdapter,
+  IExtractor,
+  PlainTextRaw,
+  EmailAddress,
+  EmailSignal,
+  EmailSignalAdapterOptions,
 } from './integration/index.js';
 
 // Mongo adapter — optional peer dep on `mongodb`; import path is always safe

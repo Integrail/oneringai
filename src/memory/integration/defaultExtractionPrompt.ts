@@ -15,6 +15,22 @@
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, ScopeFields } from '../types.js';
 
+/**
+ * A label already bound to an entity before the LLM runs. Typically produced
+ * from signal metadata (email headers, calendar attendees, Slack user list) —
+ * strong identifiers let us resolve deterministically and hand the LLM a
+ * pre-bound vocabulary so it can reference `m1`, `m2` directly in its output
+ * without re-declaring them as mentions.
+ */
+export interface PreResolvedBinding {
+  /** Stable local label (e.g. `m1`). The LLM must use this verbatim in facts. */
+  label: string;
+  /** Resolved entity — surfaced in the prompt as a human-readable hint. */
+  entity: IEntity;
+  /** Source role (e.g. `from`, `to`, `cc`, `author`, `attendee`). Free-form. */
+  role?: string;
+}
+
 export interface ExtractionPromptContext {
   /** Raw text of the signal (email body, transcript, doc content, …). */
   signalText: string;
@@ -35,6 +51,12 @@ export interface ExtractionPromptContext {
   predicateRegistry?: PredicateRegistry;
   /** Cap on predicates shown per category (keeps prompt token budget bounded). Default 5. */
   maxPredicatesPerCategory?: number;
+  /**
+   * Labels already bound to entities upstream (typically by signal metadata
+   * extraction). The prompt renders them as a locked vocabulary and instructs
+   * the LLM to reference them directly in facts without redeclaring them.
+   */
+  preResolvedBindings?: PreResolvedBinding[];
 }
 
 export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
@@ -46,10 +68,12 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
     referenceDate = new Date(),
     predicateRegistry,
     maxPredicatesPerCategory = 5,
+    preResolvedBindings,
   } = ctx;
 
   const source = signalSourceDescription ? `Source: ${signalSourceDescription}\n` : '';
   const scopeDescription = describeScope(targetScope ?? {});
+  const preResolvedSection = renderPreResolvedBindings(preResolvedBindings);
   const knownSection = renderKnownEntities(knownEntities);
   const predicateSection = predicateRegistry
     ? '\n\n' + predicateRegistry.renderForPrompt({ maxPerCategory: maxPredicatesPerCategory })
@@ -65,7 +89,7 @@ Target scope: ${scopeDescription}
 <signal_content>
 ${signalText}
 </signal_content>
-${knownSection}
+${preResolvedSection}${knownSection}
 
 ## Output format
 Return JSON with exactly two top-level keys:
@@ -95,7 +119,7 @@ Return JSON with exactly two top-level keys:
 }
 
 ## Guidelines
-1. **Mentions, not IDs.** The LLM never sees entity IDs. Use local labels like "m1", "m2" to reference entities within this extraction. The system will resolve labels to existing entities or create new ones.
+1. **Mentions, not IDs.** The LLM never sees entity IDs. Use local labels like "m1", "m2" to reference entities within this extraction. The system will resolve labels to existing entities or create new ones. If the prompt contains a "Pre-resolved labels" block, those labels are already bound — reference them directly in \`facts\` and DO NOT redeclare them in \`mentions\`.
 2. **Strong identifiers.** Extract every strong identifier you can (email, domain, slack_id, github). These are the best signal for deduplication.
 3. **Capture surface variants.** If the text uses "Microsoft" and "MSFT" for the same org, include both under the mention's \`aliases\`.
 4. **Tasks and events are entities.** "John committed to sending the budget by Friday" is:
@@ -122,6 +146,35 @@ function describeScope(scope: ScopeFields): string {
   if (scope.ownerId && !scope.groupId) return `user-private (owner=${scope.ownerId})`;
   if (scope.groupId && !scope.ownerId) return `group-wide (group=${scope.groupId})`;
   return `user-private within group (group=${scope.groupId}, owner=${scope.ownerId})`;
+}
+
+function renderPreResolvedBindings(bindings?: PreResolvedBinding[]): string {
+  if (!bindings || bindings.length === 0) return '';
+  const lines = bindings.map((b) => {
+    const idStr = b.entity.identifiers
+      .slice(0, 2)
+      .map((i) => `${i.kind}=${i.value}`)
+      .join(', ');
+    const role = b.role ? `${b.role}: ` : '';
+    const identity = idStr ? ` (${idStr})` : '';
+    return `- \`${b.label}\` — ${role}${b.entity.type} "${b.entity.displayName}"${identity}`;
+  });
+  const maxIndex = bindings
+    .map((b) => {
+      const m = /^m(\d+)$/.exec(b.label);
+      return m ? Number(m[1]) : 0;
+    })
+    .reduce((a, b) => (b > a ? b : a), 0);
+  const nextHint =
+    maxIndex > 0
+      ? `When introducing NEW entities from the signal body, start labels at \`m${maxIndex + 1}\`.`
+      : 'When introducing NEW entities from the signal body, choose labels that do not collide with the ones above.';
+  return `\n## Pre-resolved labels
+The following local labels are ALREADY bound to entities in the knowledge graph. Reference them directly in \`facts\`. DO NOT redeclare them in \`mentions\`.
+
+${lines.join('\n')}
+
+${nextHint}\n`;
 }
 
 function renderKnownEntities(entities?: IEntity[]): string {

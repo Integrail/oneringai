@@ -18,7 +18,7 @@ export type {
 
 // Extraction helpers — signal → memory pipeline.
 export { defaultExtractionPrompt } from './defaultExtractionPrompt.js';
-export type { ExtractionPromptContext } from './defaultExtractionPrompt.js';
+export type { ExtractionPromptContext, PreResolvedBinding } from './defaultExtractionPrompt.js';
 
 export { ExtractionResolver } from './ExtractionResolver.js';
 export type {
@@ -30,3 +30,27 @@ export type {
   IngestionResult,
   ExtractionResolverOptions,
 } from './ExtractionResolver.js';
+
+// Signal ingestion — raw source (email, plain text, custom) → facts.
+export {
+  SignalIngestor,
+  ConnectorExtractor,
+  parseExtractionResponse,
+  PlainTextAdapter,
+  EmailSignalAdapter,
+} from './signals/index.js';
+export type {
+  SignalIngestorConfig,
+  IngestSignalInput,
+  IngestTextInput,
+  IngestExtractedInput,
+  ConnectorExtractorConfig,
+  ParticipantSeed,
+  ExtractedSignal,
+  SignalSourceAdapter,
+  IExtractor,
+  PlainTextRaw,
+  EmailAddress,
+  EmailSignal,
+  EmailSignalAdapterOptions,
+} from './signals/index.js';

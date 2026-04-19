@@ -979,11 +979,64 @@ interface IngestionResult {
 ```
 
 **Flow:**
-1. For each mention: `memory.upsertEntityBySurface(...)`. Passes already-resolved sibling labels as `contextEntityIds` for disambiguation.
-2. For each fact: translates `subject`/`object`/`contextIds` from mention labels to entity IDs; attaches `sourceSignalId`; calls `memory.addFact`.
-3. Returns per-item successes + errors.
+1. If `opts.preResolved` is supplied, its `label → EntityId` bindings are seeded into the label map up front — mentions that redeclare those labels are silently skipped (pre-resolved binding wins).
+2. For each mention: `memory.upsertEntityBySurface(...)`. Passes already-resolved sibling labels as `contextEntityIds` for disambiguation.
+3. For each fact: translates `subject`/`object`/`contextIds` from mention labels to entity IDs; attaches `sourceSignalId`; calls `memory.addFact`.
+4. Returns per-item successes + errors.
 
 One bad mention or fact does NOT abort the rest — errors collected in `unresolved`.
+
+```ts
+interface ExtractionResolverOptions {
+  autoResolveThreshold?: number;
+  preResolved?: Record<string, EntityId>;   // label → entity id
+}
+```
+
+### Signal ingestion pipeline
+
+Higher-level facade: turns raw emails / plain text (or any custom source) into facts, handling participant seeding and label pre-binding automatically. See [MEMORY_SIGNALS.md](./MEMORY_SIGNALS.md) for recipes.
+
+```ts
+class SignalIngestor {
+  constructor(config: SignalIngestorConfig);
+  registerAdapter(adapter: SignalSourceAdapter<unknown>): this;
+  hasAdapter(kind: string): boolean;
+  ingest<TRaw>(input: IngestSignalInput<TRaw>): Promise<IngestionResult>;
+  ingestText(input: IngestTextInput): Promise<IngestionResult>;
+  ingestExtracted(input: IngestExtractedInput): Promise<IngestionResult>;
+}
+
+interface SignalSourceAdapter<TRaw = unknown> {
+  readonly kind: string;
+  extract(raw: TRaw): ExtractedSignal;
+}
+
+interface ExtractedSignal {
+  signalText: string;
+  signalSourceDescription?: string;
+  participants: ParticipantSeed[];
+}
+
+interface ParticipantSeed {
+  role: string;                    // 'from' | 'to' | 'cc' | 'author' | …
+  identifiers: Identifier[];       // MUST be non-empty (strong only)
+  displayName?: string;
+  aliases?: string[];
+  type?: string;                   // default 'person'
+}
+
+interface IExtractor {
+  extract(prompt: string): Promise<ExtractionOutput>;
+}
+```
+
+Ships two reference adapters:
+- `PlainTextAdapter` — trivial passthrough for raw text signals.
+- `EmailSignalAdapter` — seeds `from/to/cc` as person participants and (opt-in, default on) `from/to/cc` non-free email domains as `organization` participants; BCC is dropped for privacy.
+
+Ships one reference extractor:
+- `ConnectorExtractor` — wraps a Connector + model; uses `runDirect` with `responseFormat: { type: 'json_object' }` and parses defensively.
 
 ---
 
@@ -1214,10 +1267,18 @@ Full list of exported types:
 **Integration**
 - `ConnectorEmbedderConfig`, `ConnectorProfileGeneratorConfig`
 - `MemoryConnectorsConfig`, `MemorySystemWithConnectorsConfig`
-- `PromptContext` (profile prompt), `ExtractionPromptContext`
+- `PromptContext` (profile prompt), `ExtractionPromptContext`, `PreResolvedBinding`
 - `ExtractionMention`, `ExtractionFactSpec`, `ExtractionOutput`
 - `IngestionResolvedEntity`, `IngestionError`, `IngestionResult`
 - `ExtractionResolverOptions`
+
+**Signal ingestion**
+- `SignalIngestor`, `SignalIngestorConfig`
+- `IngestSignalInput`, `IngestTextInput`, `IngestExtractedInput`
+- `SignalSourceAdapter`, `ExtractedSignal`, `ParticipantSeed`
+- `IExtractor`, `ConnectorExtractor`, `ConnectorExtractorConfig`
+- `PlainTextAdapter`, `PlainTextRaw`
+- `EmailSignalAdapter`, `EmailSignal`, `EmailAddress`, `EmailSignalAdapterOptions`
 
 **Mongo adapter**
 - `IMongoCollectionLike`, `MongoFilter`, `MongoFindOptions`, `MongoUpdate`, `MongoUpdateOptions`, `MongoUpdateResult`, `MongoSort`, `MongoBulkOp`
