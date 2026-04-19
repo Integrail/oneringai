@@ -832,3 +832,223 @@ describe('memory_search — strict date validation', () => {
     expect(r.error).toMatch(/invalid observedBefore/);
   });
 });
+
+// ===========================================================================
+// H-1 — ghost-write rejection (tool-layer ownership guard)
+// ===========================================================================
+
+describe('ghost-write guard (H-1)', () => {
+  async function seedForeignEntity(mem: MemorySystem): Promise<string> {
+    const r = await mem.upsertEntity(
+      {
+        type: 'person',
+        displayName: 'Foreign Carla',
+        identifiers: [{ kind: 'email', value: 'carla@foreign.com' }],
+      },
+      { userId: OTHER_USER },
+    );
+    return r.entity.id;
+  }
+
+  it('memory_remember rejects writes on entities owned by another user', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const foreignId = await seedForeignEntity(mem);
+    const spy = vi.spyOn(mem, 'addFact');
+
+    const remember = toolByName(tools(mem, ids), 'memory_remember');
+    const r: any = await remember.execute(
+      { subject: foreignId, predicate: 'prefers', value: 'pizza' },
+      { userId: USER_ID },
+    );
+
+    expect(r.error).toMatch(/cannot write facts on entities you don't own/);
+    expect(r.subjectOwnerId).toBe(OTHER_USER);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('memory_link rejects writes when "from" is owned by another user', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const foreignId = await seedForeignEntity(mem);
+    const spy = vi.spyOn(mem, 'addFact');
+
+    const link = toolByName(tools(mem, ids), 'memory_link');
+    const r: any = await link.execute(
+      { from: foreignId, predicate: 'works_with', to: 'me' },
+      { userId: USER_ID },
+    );
+
+    expect(r.error).toMatch(/cannot write links from entities you don't own/);
+    expect(r.fromOwnerId).toBe(OTHER_USER);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('memory_link allows "to" to be foreign (objectId, not subject)', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const foreignId = await seedForeignEntity(mem);
+    const link = toolByName(tools(mem, ids), 'memory_link');
+    const r: any = await link.execute(
+      { from: 'me', predicate: 'references', to: foreignId },
+      { userId: USER_ID },
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.fact.objectId).toBe(foreignId);
+  });
+});
+
+// ===========================================================================
+// H-2 — contextIds downgrade (tool-layer cross-owner injection guard)
+// ===========================================================================
+
+describe('contextIds downgrade (H-2)', () => {
+  async function seedForeignEntity(mem: MemorySystem): Promise<string> {
+    const r = await mem.upsertEntity(
+      {
+        type: 'organization',
+        displayName: 'ForeignCo',
+        identifiers: [{ kind: 'domain', value: 'foreign.com' }],
+      },
+      { userId: OTHER_USER },
+    );
+    return r.entity.id;
+  }
+
+  it('memory_remember downgrades visibility to "private" when contextIds include foreign entities', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const foreignId = await seedForeignEntity(mem);
+    const remember = toolByName(tools(mem, ids), 'memory_remember');
+    const r: any = await remember.execute(
+      {
+        subject: 'me',
+        predicate: 'observed',
+        details: 'some observation',
+        contextIds: [foreignId],
+        visibility: 'public',
+      },
+      { userId: USER_ID },
+    );
+    expect(r.fact.permissions).toEqual({ group: 'none', world: 'none' });
+    expect(r.visibility).toBe('private');
+    expect(r.warnings).toBeDefined();
+    expect(r.warnings[0]).toMatch(/downgraded to "private"/);
+  });
+
+  it('memory_remember preserves explicit "public" when contextIds are all owned by caller', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const remember = toolByName(tools(mem, ids), 'memory_remember');
+    const r: any = await remember.execute(
+      {
+        subject: 'me',
+        predicate: 'observed',
+        details: 'some observation',
+        contextIds: [ids.otherUserId], // owned by USER_ID (bootstrap creates all three)
+        visibility: 'public',
+      },
+      { userId: USER_ID },
+    );
+    // "public" → undefined permissions (library defaults).
+    expect(r.fact.permissions).toBeUndefined();
+    expect(r.visibility).toBe('public');
+    expect(r.warnings).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// M-1 — confidence / importance clamped to [0,1]
+// ===========================================================================
+
+describe('confidence / importance clamping (M-1)', () => {
+  it('memory_remember clamps out-of-range values', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const spy = vi.spyOn(mem, 'addFact');
+    const remember = toolByName(tools(mem, ids), 'memory_remember');
+    await remember.execute(
+      { subject: 'me', predicate: 'x', value: 'y', confidence: 99, importance: -5 },
+      { userId: USER_ID },
+    );
+    const call = spy.mock.calls[0]![0];
+    expect(call.confidence).toBe(1);
+    expect(call.importance).toBe(0);
+  });
+});
+
+// ===========================================================================
+// M-2 — memory_forget supersession inherits predecessor.kind
+// ===========================================================================
+
+describe('memory_forget kind inheritance (M-2)', () => {
+  it('supersessor inherits predecessor kind=document', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const doc = await mem.addFact(
+      {
+        subjectId: ids.userEntityId,
+        predicate: 'learned_pattern',
+        kind: 'document',
+        details: 'v1 notes',
+      },
+      { userId: USER_ID },
+    );
+    const forget = toolByName(tools(mem, ids), 'memory_forget');
+    const r: any = await forget.execute(
+      { factId: doc.id, replaceWith: { details: 'v2 notes' } },
+      { userId: USER_ID },
+    );
+    expect(r.superseded).toBe(true);
+    expect(r.newFact.kind).toBe('document');
+  });
+});
+
+// ===========================================================================
+// M-3 — memory_link default visibility follows subject class
+// ===========================================================================
+
+describe('memory_link default visibility (M-3)', () => {
+  it('uses forAgent default when "from" is this_agent', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const linkTools = createMemoryTools({
+      memory: mem,
+      agentId: AGENT_ID,
+      defaultUserId: USER_ID,
+      getOwnSubjectIds: () => ids,
+      defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
+    });
+    const link = toolByName(linkTools, 'memory_link');
+    const r: any = await link.execute(
+      { from: 'this_agent', predicate: 'linked_to', to: { identifier: { kind: 'email', value: 'bob@a.com' } } },
+      { userId: USER_ID },
+    );
+    // 'group' → { group: 'read', world: 'none' }
+    expect(r.fact.permissions).toEqual({ group: 'read', world: 'none' });
+    expect(r.visibility).toBe('group');
+  });
+
+  it('uses forOther default when "from" is a non-user, non-agent entity', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const linkTools = createMemoryTools({
+      memory: mem,
+      agentId: AGENT_ID,
+      defaultUserId: USER_ID,
+      getOwnSubjectIds: () => ids,
+      defaultVisibility: { forUser: 'group', forAgent: 'group', forOther: 'private' },
+    });
+    const link = toolByName(linkTools, 'memory_link');
+    const r: any = await link.execute(
+      {
+        from: { identifier: { kind: 'email', value: 'bob@a.com' } },
+        predicate: 'works_with',
+        to: 'me',
+      },
+      { userId: USER_ID },
+    );
+    expect(r.fact.permissions).toEqual({ group: 'none', world: 'none' });
+    expect(r.visibility).toBe('private');
+  });
+});

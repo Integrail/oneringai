@@ -3172,6 +3172,8 @@ inContextPlugin.set('search_status', 'Search status', { completed: 3, pending: 2
 
 ## Persistent Instructions (NextGen Plugin)
 
+> ⚠️ **Deprecated** in favour of [`MemoryPluginNextGen`](#self-learning-memory-nextgen-plugin). This plugin keeps working unchanged for existing integrations — no breaking change — but new code should prefer the memory plugin, which replaces dumb KV with append-only facts + LLM-synthesised profiles that evolve from observations.
+
 **PersistentInstructionsPluginNextGen** is a context plugin that stores agent-level custom instructions on disk as **individually keyed entries**. Unlike InContextMemory (volatile key-value pairs), persistent instructions survive process restarts and are automatically loaded when the agent starts.
 
 ### Key Difference from InContextMemory
@@ -3729,6 +3731,8 @@ await agent.run('Now tell me more about the first item');
 
 ## User Info (NextGen Plugin)
 
+> ⚠️ **Deprecated** in favour of [`MemoryPluginNextGen`](#self-learning-memory-nextgen-plugin). This plugin keeps working unchanged; the memory plugin supersedes it with facts-over-KV, supersession-preserved history, LLM-synthesised profiles, three-principal permissions, and semantic recall.
+
 Store user-specific preferences and context that persist across sessions and agents. Unlike other plugins, user info is **user-scoped** (not agent-scoped) — different agents share the same user's data.
 
 User info entries are **automatically injected into the LLM system message** as markdown, so the LLM always knows the user's preferences without needing to call `store_get("user_info")` each turn.
@@ -3849,6 +3853,199 @@ interface UserInfoPluginConfig {
 - Accumulated knowledge about the user
 - Profile information the LLM should always have access to
 - TODO tracking: tasks with deadlines, involved people, and tags — with proactive reminders and auto-cleanup
+
+> ⚠️ **Deprecated** in favour of the Self-Learning Memory plugin below. `UserInfoPluginNextGen` keeps working unchanged; the memory plugin supersedes it with append-only facts (history preserved via supersession), LLM-synthesised profiles that evolve with new observations, three-principal permissions, and semantic recall.
+
+---
+
+## Self-Learning Memory (NextGen Plugin)
+
+**`MemoryPluginNextGen`** is the modern replacement for both `PersistentInstructionsPluginNextGen` and `UserInfoPluginNextGen`. It sits on top of the [memory layer](./docs/MEMORY_GUIDE.md) and turns it into a first-class agent capability: the agent sees its own evolving profile and the user's profile on every turn, and it has 8 LLM-callable tools to read/write memory while it thinks.
+
+End-to-end, self-learning works like this:
+1. The user tells the agent something ("I prefer concise answers").
+2. The agent calls `memory_remember({subject: "me", predicate: "prefers", value: "concise answers"})`.
+3. The fact lands in the memory store. If enough new facts have accumulated (default threshold 10), **incremental profile regeneration** fires in the background — the configured LLM is handed the prior profile + only the new facts + a list of invalidated fact IDs, and returns an updated profile document.
+4. On the next turn, the user's profile in the system message reflects the preference — no manual prompt engineering required.
+
+### Quick Start
+
+```typescript
+import {
+  Agent,
+  createMemorySystemWithConnectors,
+  InMemoryAdapter,
+} from '@everworker/oneringai';
+
+// 1. Memory system (see docs/MEMORY_GUIDE.md for adapter choices).
+const memory = createMemorySystemWithConnectors({
+  store: new InMemoryAdapter(),
+  connectors: {
+    embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
+    profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
+  },
+});
+
+// 2. Agent with feature flag + plugin config.
+const agent = Agent.create({
+  connector: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  agentId: 'my-assistant',
+  userId: 'alice',                                 // REQUIRED — memory's owner invariant
+  contextFeatures: { memory: true },
+  pluginConfigs: {
+    memory: {
+      memory,                                      // the MemorySystem instance
+      // groupId: 'team-A',                        // optional, trusted — from your auth layer
+      // userProfileInjection: { topFacts: 20, relatedTasks: true },
+      // agentProfileInjection: { topFacts: 10 },
+    },
+  },
+});
+
+await agent.run('Remember that I prefer concise answers');
+await agent.run('What are my preferences?');
+// → The answer now references the stored preference because it's in the
+//   user profile that's injected into context on every turn.
+```
+
+### What gets injected into context
+
+```
+## Agent Profile (agent:my-assistant)
+(LLM-synthesized agent profile — empty on first run, evolves as facts accumulate)
+
+### Recent top facts (up to 20)
+- learned_pattern: Always ask for dimensions before tax calcs (conf=1.00)
+
+## Your User Profile (user:alice)
+Alice prefers concise replies, is interested in product strategy...
+
+### Recent top facts (up to 20)
+- prefers: "concise answers" (conf=1.00)
+- role: "product lead" (conf=0.9)
+```
+
+Everything else — other people, organisations, projects, graph queries, semantic search — happens through the 8 `memory_*` tools. The system message stays small; the tools give the agent full read/write access to the knowledge graph when it needs it.
+
+### Config
+
+```typescript
+interface MemoryPluginConfig {
+  memory: MemorySystem;                            // REQUIRED
+  agentId: string;                                 // REQUIRED — unique per agent definition
+  userId: string;                                  // REQUIRED — memory's owner invariant
+
+  // Trusted group id from your auth layer. Plumbed into every memory call
+  // the plugin + its tools make. LLM tool arguments CANNOT override this.
+  groupId?: string;
+
+  // Permissions stamped on the bootstrapped user/agent entities.
+  userEntityPermissions?:  { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
+  agentEntityPermissions?: { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
+
+  // What to inject for each profile. Both default to { profile: true, topFacts: 20 }.
+  userProfileInjection?:  ProfileInjection;
+  agentProfileInjection?: ProfileInjection;
+
+  // Default visibility for memory_remember / memory_link when the LLM omits it.
+  // Defaults: user → 'private', this_agent → 'group', other → 'private'.
+  defaultVisibility?: {
+    forUser?:  'private' | 'group' | 'public';
+    forAgent?: 'private' | 'group' | 'public';
+    forOther?: 'private' | 'group' | 'public';
+  };
+
+  contentCacheMs?: number;         // Rendered-content cache TTL (ms). Default 30_000.
+  autoResolveThreshold?: number;   // Fuzzy-match threshold for {surface}. Default 0.9.
+}
+
+interface ProfileInjection {
+  profile?: boolean;          // Include profile.details text. Default true.
+  topFacts?: number;          // Recent ranked facts. 0 disables. Default 20 (max 100).
+  factPredicates?: string[];  // Whitelist for topFacts. Default all.
+  relatedTasks?: boolean;     // Include active tasks. Default false.
+  relatedEvents?: boolean;    // Include recent events. Default false.
+  identifiers?: boolean;      // Render identifier list. Default false.
+  maxFactLineChars?: number;  // Truncate each rendered fact line. Default 200.
+}
+```
+
+### The 8 tools
+
+All tools accept a flexible **`SubjectRef`** (entities can have many identifiers — email, slack_id, github_login, internal_id…):
+
+```typescript
+type SubjectRef =
+  | string                                             // entity id, "me", or "this_agent"
+  | { id: string }
+  | { identifier: { kind: string; value: string } }    // exact identifier match
+  | { surface: string };                               // fuzzy resolution by name/alias
+```
+
+| Tool | What it does | Example |
+|------|--------------|---------|
+| `memory_recall` | Profile + top facts + optional tiers | `{"subject":"me"}` or `{"subject":{"surface":"Acme deal"},"include":["neighbors"]}` |
+| `memory_graph` | N-hop graph traversal (Mongo `$graphLookup` when available) | `{"start":"me","direction":"out","maxDepth":2}` |
+| `memory_search` | Semantic text search across facts | `{"query":"deployment incidents last quarter","topK":10}` |
+| `memory_find_entity` | Look up / list / upsert by any identifier, surface, or type | `{"by":{"identifier":{"kind":"email","value":"alice@a.com"}}}` |
+| `memory_list_facts` | Paginated raw fact enumeration | `{"subject":"me","predicate":"prefers"}` |
+| `memory_remember` | Write an atomic fact | `{"subject":"me","predicate":"prefers","value":"concise"}` |
+| `memory_link` | Write a relational fact | `{"from":{"surface":"Alice"},"predicate":"attended","to":{"surface":"Q3 planning"}}` |
+| `memory_forget` | Archive a fact (optionally supersede) | `{"factId":"fact_xyz","replaceWith":{"predicate":"role","value":"senior engineer"}}` |
+
+**Visibility mapping** on `memory_remember` / `memory_link`:
+- `"private"` → `{group: 'none', world: 'none'}` — owner-only
+- `"group"` → `{group: 'read', world: 'none'}` — group-readable
+- `"public"` → undefined — library defaults (group:read, world:read)
+
+**Multi-ID enrichment** — `memory_find_entity` with `action: "upsert"` auto-merges identifiers when any one matches an existing entity:
+
+```json
+{"action": "upsert", "type": "person", "displayName": "Alice Smith",
+ "identifiers": [{"kind": "email", "value": "alice@a.com"},
+                 {"kind": "slack_user_id", "value": "U07ABC"}]}
+```
+
+If any identifier already belongs to an entity, the other(s) get added to it — so `memory_find_entity({"by":{"identifier":{"kind":"slack_user_id","value":"U07ABC"}}})` later hits the same Alice.
+
+### Security model
+
+The library's permission system trusts scope (`{userId, groupId}`) because the host application is responsible for authenticating who the caller is. The memory plugin + tools preserve this trust boundary:
+
+- **`userId` and `groupId` come from plugin config, NEVER from tool arguments.** If a `groupId` tool argument were honoured, a user in group A could ask the agent to call `memory_remember({..., groupId: "B"})` and escalate into group B. Instead, `groupId` is fixed by the host app and silently ignored if the LLM tries to override it.
+- All LLM-controllable numeric limits are clamped to safe maxes (`maxDepth ≤ 5`, `topK ≤ 100`, `limit ≤ 200/500`, `topFactsLimit ≤ 100`, `neighborDepth ≤ 5`) to prevent DoS via absurd arguments.
+- `memory_search` date filters must be valid ISO-8601 — invalid strings return a structured error instead of silently dropping the filter.
+
+### Using the tools without the full plugin
+
+If you want the LLM tools but not the plugin's profile injection:
+
+```typescript
+import { createMemoryTools } from '@everworker/oneringai';
+
+const tools = createMemoryTools({
+  memory,                                     // MemorySystem instance
+  agentId: 'my-agent',
+  defaultUserId: 'alice',                     // fallback when ToolContext.userId is unset
+  defaultGroupId: 'team-A',                   // TRUSTED — from your auth layer
+  getOwnSubjectIds: () => ({ userEntityId, agentEntityId }),
+  defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
+});
+
+agent.registerTools(tools);
+```
+
+Without `getOwnSubjectIds`, the `"me"` / `"this_agent"` SubjectRef tokens return a structured error; callers must reference entities by id, identifier, or surface.
+
+### When to use which plugin
+
+- **`WorkingMemoryPluginNextGen`** (`workingMemory` feature) — ephemeral agent scratchpad, per-session, tiered eviction. Not a knowledge store.
+- **`InContextMemoryPluginNextGen`** (`inContextMemory` feature) — live KV values right in the system message, priority-based eviction. Use for small, high-signal state the LLM must see.
+- **`MemoryPluginNextGen`** (`memory` feature, **recommended**) — the knowledge store. Use for anything you want to learn about the user, the agent, other entities, or their relationships — that should persist + evolve + survive across sessions.
+- `PersistentInstructionsPluginNextGen` and `UserInfoPluginNextGen` — deprecated; use `MemoryPluginNextGen` instead.
+
+See [docs/MEMORY_GUIDE.md § 14](./docs/MEMORY_GUIDE.md#giving-agents-memory--the-memorypluginnextgen-plugin-and-memory_-tools) for deeper reference, and [docs/MEMORY_PERMISSIONS.md](./docs/MEMORY_PERMISSIONS.md) for the permission model.
 
 ---
 

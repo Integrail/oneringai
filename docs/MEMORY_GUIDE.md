@@ -21,9 +21,10 @@ This guide is task-oriented and assumes you've at least skimmed the API referenc
 11. [Entity resolution in practice](#entity-resolution-in-practice)
 12. [Profile generation](#profile-generation)
 13. [Scope and multi-tenancy](#scope-and-multi-tenancy)
-14. [Common patterns](#common-patterns)
-15. [Scaling](#scaling)
-16. [Troubleshooting](#troubleshooting)
+14. [Giving agents memory — the `MemoryPluginNextGen` plugin and `memory_*` tools](#giving-agents-memory--the-memorypluginnextgen-plugin-and-memory_-tools)
+15. [Common patterns](#common-patterns)
+16. [Scaling](#scaling)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1639,7 +1640,285 @@ This lets you have layered profiles: everyone sees the global "John is CEO of Ac
 
 ---
 
-## Common patterns
+## Giving agents memory — the `MemoryPluginNextGen` plugin and `memory_*` tools
+
+Up to this point the guide has been about the memory *library* — you call `memory.addFact`, `memory.getContext`, etc. from your application. But the whole point of memory is to make agents smarter, so we ship a **context plugin** and a set of **LLM-callable tools** that let the agent read and write memory during its own thinking loop.
+
+There are two moving parts:
+
+1. **`MemoryPluginNextGen`** — a [NextGen context plugin](./MEMORY_API.md) that bootstraps a user + agent entity in memory and injects their profiles into the system message. The agent sees its own evolving profile and the user's profile on every turn, without having to ask.
+2. **The `memory_*` tools** (8 of them) — high-signal LLM tools for everything the plugin *doesn't* inject: looking up other entities, walking the graph, semantic search, writing new facts, linking entities, forgetting/superseding facts.
+
+The plugin is how **self-learning** works end-to-end: observations flow in through `memory_remember` (or your own ingestion code), profiles regenerate incrementally as enough new facts accumulate, and the regenerated profiles appear in context on the next turn. No manual prompt engineering, no static "rules for the agent" file.
+
+### Quick start
+
+```ts
+import { Agent, AgentContextNextGen, MemoryPluginNextGen } from '@everworker/oneringai';
+import { createMemorySystemWithConnectors, InMemoryAdapter } from '@everworker/oneringai';
+
+// 1. Build a memory system (see "Choosing a storage backend" above).
+const memory = createMemorySystemWithConnectors({
+  store: new InMemoryAdapter(),
+  connectors: {
+    embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
+    profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
+  },
+});
+
+// 2. Create an agent with the memory feature enabled.
+const agent = Agent.create({
+  connector: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  agentId: 'my-assistant',
+  userId: 'alice',             // REQUIRED — memory enforces owner on every record
+  contextFeatures: { memory: true },
+  pluginConfigs: {
+    memory: {
+      memory,                  // the MemorySystem instance
+      // groupId: 'team-A',    // optional: trusted group from your auth layer
+      // userProfileInjection: { topFacts: 20, relatedTasks: true },
+      // agentProfileInjection: { topFacts: 10 },
+    },
+  },
+});
+
+// On every agent turn the system message now includes:
+//   ## Agent Profile (agent:my-assistant)
+//   ...profile.details (regenerates automatically)...
+//   ### Recent top facts (up to 20)
+//
+//   ## Your User Profile (user:alice)
+//   ...profile.details...
+//   ### Recent top facts (up to 20)
+
+await agent.run("Remember that I prefer concise responses");
+// Agent calls memory_remember({subject:"me", predicate:"prefers", value:"concise responses"})
+// Fact is stored, threshold check triggers profile regen in the background,
+// next turn the user profile reflects the new preference.
+```
+
+### Plugin configuration
+
+```ts
+interface MemoryPluginConfig {
+  memory: MemorySystem;                    // REQUIRED
+  agentId: string;                         // REQUIRED — unique per agent definition
+  userId: string;                          // REQUIRED — memory's owner invariant
+
+  // Trusted group from your auth layer. Plumbed into every memory call the
+  // plugin + its tools make. LLM tool arguments CANNOT override this —
+  // see "Security model" below.
+  groupId?: string;
+
+  // Permissions stamped on the bootstrapped user/agent entities.
+  // Defaults: library defaults (group:read, world:read).
+  userEntityPermissions?:  { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
+  agentEntityPermissions?: { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
+
+  // What to inject into the system message for each profile.
+  userProfileInjection?:  ProfileInjection;
+  agentProfileInjection?: ProfileInjection;
+
+  // Per-subject default visibility for `memory_remember` / `memory_link`.
+  // Defaults: user → 'private', this_agent → 'group', other → 'private'.
+  defaultVisibility?: {
+    forUser?:  'private' | 'group' | 'public';
+    forAgent?: 'private' | 'group' | 'public';
+    forOther?: 'private' | 'group' | 'public';
+  };
+
+  // Rendered-content cache TTL (ms). 30_000 default; 0 disables.
+  contentCacheMs?: number;
+  // Fuzzy-match threshold for {surface} lookups. Default 0.9 (conservative).
+  autoResolveThreshold?: number;
+}
+
+interface ProfileInjection {
+  profile?: boolean;          // Include profile.details text. Default true.
+  topFacts?: number;          // Recent ranked facts. 0 disables. Default 20 (max 100).
+  factPredicates?: string[];  // Whitelist for topFacts. Default all.
+  relatedTasks?: boolean;     // Include active tasks. Default false.
+  relatedEvents?: boolean;    // Include recent events. Default false.
+  identifiers?: boolean;      // Render identifier list. Default false.
+  maxFactLineChars?: number;  // Truncate each rendered fact line. Default 200.
+}
+```
+
+### Entity bootstrap
+
+On first `getContent()` the plugin calls `memory.upsertEntity` to ensure:
+
+- A `person` entity with identifier `{kind: 'system_user_id', value: userId}` for the user.
+- An `agent` entity with identifier `{kind: 'system_agent_id', value: agentId}` for the agent.
+
+`upsertEntity` is idempotent via identifier match, so repeated constructions of the plugin don't create duplicates. The plugin also uses an in-flight promise to serialise concurrent `getContent()` calls within the same process.
+
+**Note:** cross-process uniqueness is the storage adapter's responsibility. For Mongo you want a unique compound index on `{identifiers.kind, identifiers.value}`.
+
+### The 8 tools
+
+All tools accept a **`SubjectRef`** where an entity is needed — a flexible type that reflects the fact that an entity can have many identifiers (email, slack_id, github_login, internal_id…). Valid forms:
+
+```ts
+type SubjectRef =
+  | string                                             // entity id, "me", or "this_agent"
+  | { id: string }
+  | { identifier: { kind: string; value: string } }    // exact identifier match
+  | { surface: string };                               // fuzzy resolution (name/alias)
+```
+
+Two special tokens: `"me"` → the bootstrapped user entity, `"this_agent"` → the bootstrapped agent entity.
+
+#### `memory_recall`
+
+Pull profile + top-ranked facts + optional tiers for any entity.
+
+```json
+{"subject": "me"}
+{"subject": {"surface": "Acme deal"}, "include": ["neighbors"]}
+{"subject": {"identifier": {"kind": "github_login", "value": "alice99"}}}
+{"subject": "this_agent", "include": ["documents"]}
+```
+
+Args cap: `topFactsLimit ≤ 100`, `neighborDepth ≤ 5`.
+
+#### `memory_graph`
+
+N-hop traversal from a starting entity. Returns nodes + edges. Backends pick the best implementation automatically — Mongo uses native `$graphLookup` when `useNativeGraphLookup: true`; everything else falls back to iterative BFS.
+
+```json
+{"start": "me", "direction": "out", "maxDepth": 2}
+{"start": {"surface": "Q3 planning"}, "predicates": ["attended"]}
+{"start": {"identifier": {"kind": "jira_id", "value": "PROJ-42"}}, "direction": "both"}
+```
+
+Args cap: `maxDepth ≤ 5`, `limit ≤ 500`.
+
+#### `memory_search`
+
+Semantic text search across facts. Requires an embedder; returns a structured error otherwise.
+
+```json
+{"query": "deployment incidents last quarter", "topK": 10}
+{"query": "Alice's preferences", "filter": {"subjectId": "<alice-id>"}}
+```
+
+Args cap: `topK ≤ 100`. Date filters must be ISO-8601 strings — invalid strings are rejected with a structured error.
+
+#### `memory_find_entity`
+
+Look up, list, or upsert an entity by any of its identifiers, by surface, or by type + metadata. Multi-ID enrichment happens automatically on upsert — if any identifier matches an existing entity, the others get merged in.
+
+```json
+{"by": {"identifier": {"kind": "email", "value": "alice@a.com"}}}
+{"by": {"surface": "Alice from accounting"}}
+{"action": "list", "by": {"type": "project", "metadataFilter": {"state": "active"}}}
+{"action": "upsert", "type": "person", "displayName": "Alice Smith",
+ "identifiers": [{"kind": "email", "value": "alice@a.com"},
+                 {"kind": "slack_user_id", "value": "U07ABC"}]}
+```
+
+`list.limit ≤ 200`.
+
+#### `memory_list_facts`
+
+Paginated raw fact enumeration for a subject. Use when you want structured facts (to count, tabulate, export) rather than the synthesised profile.
+
+```json
+{"subject": "me", "predicate": "prefers"}
+{"subject": {"surface": "Acme deal"}, "limit": 50}
+{"subject": "me", "archivedOnly": true}
+```
+
+`archivedOnly: true` returns the audit view (archived only); default returns only live facts. `limit ≤ 200`.
+
+#### `memory_remember`
+
+Write a new atomic fact. The LLM should call this proactively whenever the user reveals something worth remembering.
+
+```json
+{"subject": "me", "predicate": "prefers", "value": "concise responses"}
+{"subject": {"surface": "Acme"}, "predicate": "employee_count",
+ "value": 500, "confidence": 0.8, "importance": 0.3}
+{"subject": "this_agent", "predicate": "learned_pattern",
+ "details": "Ask for dimensions before tax calcs", "visibility": "group"}
+```
+
+`visibility` maps to the permission block:
+- `"private"` → `{group: 'none', world: 'none'}` (owner-only)
+- `"group"`   → `{group: 'read', world: 'none'}` (group-readable)
+- `"public"`  → undefined (library defaults: group:read, world:read)
+
+#### `memory_link`
+
+Create a relational fact linking two entities. Both sides accept any `SubjectRef` form.
+
+```json
+{"from": {"surface": "Alice"}, "predicate": "attended", "to": {"surface": "Q3 planning"}}
+{"from": "me", "predicate": "works_at", "to": {"identifier": {"kind": "domain", "value": "acme.com"}}}
+```
+
+#### `memory_forget`
+
+Archive a fact (optionally superseding it with a correction). Supersession preserves the audit chain; archive just hides.
+
+```json
+{"factId": "fact_xyz"}
+{"factId": "fact_xyz", "replaceWith": {"predicate": "role", "value": "senior engineer"}}
+```
+
+### Security model
+
+The library's permission system trusts scope (`{userId, groupId}`) because the host application is responsible for authenticating who the caller is. The memory plugin + tools keep that trust boundary intact:
+
+- **`userId` and `groupId` come from plugin config, NOT from tool arguments.** An LLM in principle controls tool args; if a `groupId` arg were honoured, a user in group A could call `memory_remember({..., groupId: "B"})` and escalate into group B.
+- Consequently, tools do **not** accept a `groupId` arg. It's silently ignored if the model tries to pass one.
+- The host app is responsible for setting `plugins.memory.groupId` from its authenticated session, not from user input.
+
+**No ghost-writes.** `memory_remember` and `memory_link` reject writes whose subject (`subject` for remember, `from` for link) is owned by another user. Because the memory layer enforces `fact.ownerId == subject.ownerId`, a write against someone else's entity would silently attribute the fact to *them*. Tools return a structured error in that case. Use `memory_find_entity` with `action: "upsert"` to create your own entity for the fact you want to record.
+
+**`contextIds` auto-downgrade.** If a write specifies `contextIds` that include entities you don't own, and the chosen visibility is `"group"` or `"public"`, the tool silently downgrades visibility to `"private"` and includes a `warnings` entry in the response. This prevents a compromised agent from planting cross-owner facts that would then surface in a victim's graph-walk results.
+
+**Numeric input validation.** All LLM-controllable numeric limits are clamped (see per-tool caps above) to prevent DoS via huge `maxDepth` / `topK` / `limit` values. `confidence` and `importance` are clamped to `[0, 1]` so a rogue `importance: 1e9` can't permanently dominate ranking.
+
+### Using the tools outside the plugin
+
+If you're building a custom agent and don't want the full `MemoryPluginNextGen`, you can still use the `memory_*` tools directly:
+
+```ts
+import { createMemoryTools } from '@everworker/oneringai';
+
+const tools = createMemoryTools({
+  memory,                              // MemorySystem instance
+  agentId: 'my-agent',
+  defaultUserId: 'alice',              // fallback when ToolContext.userId is unset
+  defaultGroupId: 'team-A',            // TRUSTED — from your auth layer
+  // Optional: wire "me" / "this_agent" token resolution.
+  getOwnSubjectIds: () => ({ userEntityId: '<ent-id>', agentEntityId: '<ent-id>' }),
+  defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
+  autoResolveThreshold: 0.9,
+});
+
+// Register on any Agent.
+agent.registerTools(tools);
+```
+
+Without `getOwnSubjectIds`, the `"me"` / `"this_agent"` tokens return a structured error; callers must reference entities by id, identifier, or surface.
+
+### Relation to `UserInfoPluginNextGen` and `PersistentInstructionsPluginNextGen`
+
+Both are **deprecated** in favour of `MemoryPluginNextGen`. They keep working unchanged for existing integrations — no breaking change — but new code should prefer the memory plugin:
+
+- Dumb KV → append-only facts with supersession (history preserved).
+- Manual updates → incremental profile regeneration (LLM synthesises preferences from observations).
+- No confidence/importance → every fact carries them.
+- No permissions → three-principal model built in.
+- No semantic recall → `memory_search` + `memory_graph` just work.
+
+Where the legacy plugins still fit: small, fixed, agent-side string configuration that never needs to evolve.
+
+---
 
 ### My open tasks
 
@@ -2010,16 +2289,11 @@ async function upsertTask(mem: MemorySystem, input: { displayName: string; metad
 
 ## What's next
 
-The memory layer is solid. Future work happens elsewhere:
+The memory layer + agent-side plugin are both shipped. Remaining future work:
 
-- **Agent tools + plugin** — expose memory to oneringai agents via `entity_upsert`, `entity_view`, `fact_add`, `entity_search` tools + `MemoryPluginNextGen`. Not yet shipped.
 - **Rules engine (Path A)** — forward-chaining Datalog-lite for derived facts. Interface stub exists in `src/memory/rules/`.
 - **Additional adapters** — NeDB for file-based persistence, Neo4j for graph-heavy workloads.
-
-Until those ship, consumers integrate the memory layer by:
-1. Wiring it into their app (see Quickstart + backend sections).
-2. Calling the LLM with `defaultExtractionPrompt` and feeding output into `ExtractionResolver`.
-3. Calling `memory.getContext` when an agent needs to know about an entity.
+- **Complex graph patterns** — the current `memory_graph` tool does N-hop BFS with predicate filters; true pattern queries (A→X→B via different predicates) would need a step-by-step API.
 
 ---
 

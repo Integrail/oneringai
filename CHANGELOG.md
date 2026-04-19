@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory plugin + tools — second security pass
+
+Deep review of how LLM-controllable inputs flow from the tool layer into `MemorySystem`. Two new high-severity integrity bugs fixed, plus medium correctness fixes. Eleven new tests (4699 total, green).
+
+**Fixed — ghost-writes rejected (HIGH, integrity).** `memory_remember` and `memory_link` now refuse writes whose subject/`from` is owned by another user. The memory layer enforces `fact.ownerId == subject.ownerId`, so previously an LLM-controlled write against a foreign entity silently attributed the fact to the foreign owner — a victim's profile regeneration could pick up fabricated observations. Tools return a structured error naming the foreign owner; no fact is written.
+
+**Fixed — `contextIds` cross-owner injection (HIGH, cross-user leak).** If a fact's `contextIds` include entities the caller doesn't own and the chosen visibility is `"group"` or `"public"`, the tool now silently downgrades visibility to `"private"` and returns a `warnings` entry explaining why. Without this, a compromised agent could plant a world-readable fact with `contextIds: [victim]` that showed up in the victim's graph-walk (findFacts-by-touchesEntity). Applied in `memory_remember`, `memory_link`, and `memory_forget.replaceWith`.
+
+**Fixed — confidence/importance unbounded (MEDIUM, ranking corruption).** Both are now clamped to `[0, 1]` in the tool layer via a new `clampUnit()` helper. `importance: 1e9` could previously plant a fact that permanently dominated `topFacts` across every profile injection until archived.
+
+**Fixed — `memory_forget` supersession now inherits predecessor `kind` (MEDIUM, correctness).** Previously hardcoded `kind: 'atomic'`, which broke document-fact supersession (the updated doc wouldn't surface under `include: 'documents'`). Now `kind: predecessor.kind`.
+
+**Fixed — `memory_link` default visibility now follows the `from` subject class (MEDIUM, configuration correctness).** Previously always used `defaultVisibility.forOther`, ignoring host config like `defaultVisibility.forAgent='group'`. Now matches `memory_remember`: picks `forUser` / `forAgent` / `forOther` based on the subject.
+
+**Fixed — `memory_recall` `include` enum tightened (LOW, UX).** Dropped `'tasks'` and `'events'` from the schema + description — they were silently ignored. Related tasks + events are controlled via `minimal:true/false`.
+
+**Fixed — `MemoryPluginNextGen.restoreState` drops stale entity ids on `userId` mismatch (LOW, correctness).** If the host rebinds the plugin to a different user, persisted entity ids from the prior scope are now discarded and the plugin re-bootstraps on the next `getContent`. `getState` already carried `userId`; `restoreState` now honours it.
+
+**Fixed — error-message interpolation resilient to non-Error throws (LOW, UX).** New `toErrorMessage(err)` helper falls back to `String(err)` for strings/plain objects that adapters might throw. Was previously `"memory_<tool> failed: undefined"`.
+
+**New helpers in `src/tools/memory/types.ts`:** `clampUnit(v)` (clamp to `[0, 1]` or undefined) and `toErrorMessage(err)` (safe string).
+
+**Tests added (11):** ghost-write rejection on `memory_remember` + `memory_link.from`; foreign `to` still allowed; contextIds downgrade + pass-through; `confidence`/`importance` clamp; predecessor-`kind` inheritance; `memory_link` default-visibility per subject class; restoreState stale-id drop + match.
+
+### Memory plugin + tools — `MemoryPluginNextGen` and 8 `memory_*` LLM tools (NEW)
+
+Self-learning knowledge store for agents, end-to-end. The plugin bootstraps a `person` entity for the user and an `agent` entity for the agent in the memory layer; injects both profiles into the system message on every turn; and ships 8 LLM-callable tools so the agent can read and write memory during its own thinking loop. Observations flow in through the tools, profile regeneration synthesises them incrementally, and the next turn sees the updated profile — no manual prompt engineering.
+
+**New plugin** (`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts`):
+- Feature flag `memory: true` + `plugins.memory.memory: MemorySystem` opts in. Requires `userId` per the memory layer's owner invariant.
+- Injects ONLY two blocks: `## Agent Profile (...)` and `## Your User Profile (...)`. Each block configurable via `agentProfileInjection` / `userProfileInjection` (`topFacts` default 20, optional `factPredicates` whitelist, `relatedTasks`, `relatedEvents`, `identifiers`).
+- Entity bootstrap is idempotent via identifier-keyed upsert + an in-flight promise lock.
+- Rendered-content cache with TTL (default 30s) + write-invalidation when tools touch user/agent subjects.
+- Graceful degradation — memory-layer errors log via `logger.warn` and return a placeholder, never fail context prep.
+
+**New tools** (`src/tools/memory/`):
+- `memory_recall` — profile + top-ranked facts + optional tiers (documents, semantic, neighbors, tasks, events) for any subject.
+- `memory_graph` — N-hop traversal; dispatches to Mongo native `$graphLookup` when available, else iterative BFS.
+- `memory_search` — semantic text search across visible facts.
+- `memory_find_entity` — lookup/list/upsert by id, identifier, surface, or type+metadata. Upsert auto-merges identifiers on existing entities (multi-ID enrichment).
+- `memory_list_facts` — paginated raw fact enumeration; `archivedOnly: true` switches to the audit view.
+- `memory_remember` — write an atomic fact. Be proactive. Visibility mapping: `private` → `{group:'none', world:'none'}`, `group` → `{group:'read', world:'none'}`, `public` → library defaults.
+- `memory_link` — write a relational fact between two entities.
+- `memory_forget` — archive a fact, optionally superseding with `replaceWith` (preserves audit chain).
+- Factory `createMemoryTools({ memory, agentId, defaultUserId, defaultGroupId, ... })` for standalone use.
+
+**Flexible subject reference** — every tool that takes an entity accepts `SubjectRef`: entity id, `"me"`, `"this_agent"`, `{id}`, `{identifier: {kind, value}}` (any of the entity's many IDs), or `{surface: "..."}` (fuzzy resolution). Ambiguous surfaces return a `candidates` array the LLM can pick from rather than throwing.
+
+**Security model — trust boundary preserved:**
+- `userId` + `groupId` come from **plugin config** (authenticated host context), never from LLM tool arguments. Tools silently ignore `groupId` in args — an earlier iteration that honoured it was a group-scope escalation path.
+- All LLM-controllable numeric limits clamped: `maxDepth ≤ 5`, `topK ≤ 100`, `limit ≤ 200/500`, `topFactsLimit ≤ 100`, `neighborDepth ≤ 5`. Protects against DoS via absurd arguments.
+- `memory_search` date filters strictly ISO-8601; invalid strings return a structured error instead of silently dropping the filter.
+
+**Deprecations (non-breaking):**
+- `UserInfoPluginNextGen` and `PersistentInstructionsPluginNextGen` are marked `@deprecated`. They keep working unchanged; new code should prefer `MemoryPluginNextGen`. The memory plugin supersedes both with facts-over-KV, supersession-preserved history, LLM-synthesised profiles, three-principal permissions, and semantic recall.
+
+**Tests (+66):**
+- `tests/unit/core/context-nextgen/plugins/MemoryPluginNextGen.test.ts` — bootstrap, injection config, cache + invalidation, graceful degradation, tool wiring, state round-trip, trusted-groupId flow.
+- `tests/unit/tools/memory/memoryTools.test.ts` — one describe per tool covering SubjectRef variants, visibility → permissions, `archivedOnly` semantics, DoS clamping, security regression (groupId arg ignored), strict date validation.
+
+**Docs:**
+- `docs/MEMORY_GUIDE.md` — new section 14 "Giving agents memory" covers plugin config, bootstrap, all 8 tools with examples, security model, standalone tool usage, relation to deprecated plugins.
+- `CLAUDE.md` — Memory plugin added to NextGen plugin table; UserInfo + PersistentInstructions marked deprecated; Memory Layer section now references the agent-side integration.
+
+### Memory layer — incremental profile regeneration (BREAKING for custom `IProfileGenerator` implementations)
+
+`MemorySystem.regenerateProfile` now drives its generator with **deltas only** instead of the full fact window — faster, cheaper, and avoids the generator re-litigating claims the prior profile already captured.
+
+**Interface change:** `IProfileGenerator.generate` now takes a single `ProfileGeneratorInput` (new type in `src/memory/types.ts`):
+
+```ts
+interface ProfileGeneratorInput {
+  entity: IEntity;
+  newFacts: IFact[];            // observedAt > prior.createdAt, archived=false. First regen: all atomic facts.
+  priorProfile: IFact | undefined;
+  invalidatedFactIds: FactId[]; // supersession predecessors + direct-archived-since
+  targetScope: ScopeFields;
+}
+```
+
+Previous signature `generate(entity, atomicFacts, priorProfile, targetScope)` is gone. `ConnectorProfileGenerator` + `defaultProfilePrompt` updated in lockstep. The default prompt now treats the prior profile as authoritative and instructs the LLM to drop claims backed by invalidated fact IDs.
+
+**Migration:** custom `IProfileGenerator` implementations must switch to the options-object signature. Ignoring the new fields reproduces the old behavior (minus the input size saving).
+
+**Public API additions on `MemorySystem`:**
+- `listEntities(filter, opts, scope)` — pass-through to the store's `listEntities` for tool-layer consumers.
+- `findFacts(filter, opts, scope)` — pass-through for raw fact enumeration.
+- `getFact(id, scope)` — pass-through for supersede paths + diagnostics.
+
 ### Memory layer — access control (BREAKING)
 
 Three-principal permission model layered on top of the existing scope system. Every entity and fact now carries an optional `permissions: { group?, world? }` block with `AccessLevel = 'none' | 'read' | 'write'` (write implies read). Owner always has full access unconditionally.

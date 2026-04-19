@@ -6,17 +6,17 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ContextOptions } from '../../memory/index.js';
 import type { MemoryToolDeps, SubjectRef } from './types.js';
-import { clamp, resolveScope } from './types.js';
+import { clamp, resolveScope, toErrorMessage } from './types.js';
 
 export interface RecallArgs {
   /** SubjectRef — "me", "this_agent", an entity id, {id}, {identifier}, or {surface}. */
   subject: SubjectRef;
   /**
    * Optional tiers to include beyond the default profile + topFacts.
-   * Valid: 'documents' | 'semantic' | 'neighbors' | 'tasks' | 'events'.
-   * 'tasks' and 'events' are on by default — pass minimal=true to suppress.
+   * Valid: 'documents' | 'semantic' | 'neighbors'.
+   * Related tasks + events are on by default (unless `minimal:true`).
    */
-  include?: Array<'documents' | 'semantic' | 'neighbors' | 'tasks' | 'events'>;
+  include?: Array<'documents' | 'semantic' | 'neighbors'>;
   /** Cap on top-ranked facts. Default 15, max 100. */
   topFactsLimit?: number;
   /** When true, skip the default related-tasks + related-events tiers (faster). */
@@ -55,7 +55,7 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction<RecallArgs>
               type: 'array',
               items: {
                 type: 'string',
-                enum: ['documents', 'semantic', 'neighbors', 'tasks', 'events'],
+                enum: ['documents', 'semantic', 'neighbors'],
               },
             },
             topFactsLimit: { type: 'number' },
@@ -91,17 +91,7 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction<RecallArgs>
         topFactsLimit: clamp(args.topFactsLimit, 15, 100),
         tiers: args.minimal ? 'minimal' : 'full',
       };
-      // Filter caller-provided includes to the subset ContextOptions accepts.
-      const allowedIncludes: Array<'documents' | 'semantic' | 'neighbors'> = [];
-      if (args.include) {
-        for (const t of args.include) {
-          if (t === 'documents' || t === 'semantic' || t === 'neighbors') {
-            allowedIncludes.push(t);
-          }
-          // 'tasks' and 'events' are default tiers; not included via include[].
-        }
-      }
-      if (allowedIncludes.length > 0) opts.include = allowedIncludes;
+      if (args.include?.length) opts.include = args.include;
       if (args.semanticQuery) opts.semanticQuery = args.semanticQuery;
       if (args.neighborDepth !== undefined) opts.neighborDepth = clamp(args.neighborDepth, 1, 5);
 
@@ -153,7 +143,7 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction<RecallArgs>
             : undefined,
         };
       } catch (err) {
-        return { error: `memory_recall failed: ${(err as Error).message}` };
+        return { error: `memory_recall failed: ${toErrorMessage(err)}` };
       }
     },
   };

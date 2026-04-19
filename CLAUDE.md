@@ -100,11 +100,14 @@ All CRUD plugins share 5 generic tools routed by `StoreToolsManager`:
 |--------|----------|---------|
 | **WorkingMemoryPluginNextGen** | `"memory"` | Tiered storage (raw/summary/findings), auto-eviction. `ctx.memory` shortcut |
 | **InContextMemoryPluginNextGen** | `"context"` | KV storage **directly in context** (no retrieval needed). Priority-based eviction (low→high, critical never evicted) |
-| **PersistentInstructionsPluginNextGen** | `"instructions"` | Keyed instructions persisting to disk. Requires `agentId`. Storage: `~/.oneringai/agents/<agentId>/custom_instructions.json` |
-| **UserInfoPluginNextGen** | `"user_info"` | User-scoped data (not agent-scoped). Stateless — userId from `ToolContext.userId`. Also provides standalone `todo_add/update/remove` tools |
+| **PersistentInstructionsPluginNextGen** ⚠️ *deprecated* | `"instructions"` | Keyed instructions persisting to disk. Requires `agentId`. Storage: `~/.oneringai/agents/<agentId>/custom_instructions.json`. **Prefer `MemoryPluginNextGen`.** |
+| **UserInfoPluginNextGen** ⚠️ *deprecated* | `"user_info"` | User-scoped data (not agent-scoped). Stateless — userId from `ToolContext.userId`. Also provides standalone `todo_add/update/remove` tools. **Prefer `MemoryPluginNextGen`.** |
 | **SharedWorkspacePluginNextGen** | `"workspace"` | Multi-agent bulletin board. Versioning, author tracking, append-only log. Extra actions: `log`, `history`, `archive` |
+| **MemoryPluginNextGen** (feature flag `memory`) | — (no KV) | Self-learning knowledge store. Bootstraps `person:<userId>` + `agent:<agentId>` entities; injects their profiles into system message; ships 8 LLM-callable `memory_*` tools for facts, graph, search, linking, forget/supersede. Requires `plugins.memory.memory: MemorySystem` + `userId`. |
 
 **WorkingMemory vs InContextMemory:** WorkingMemory stores externally with index in context (needs retrieval). InContextMemory stores values directly in context.
+
+**MemoryPluginNextGen tools:** `memory_recall`, `memory_graph`, `memory_search`, `memory_find_entity`, `memory_list_facts`, `memory_remember`, `memory_link`, `memory_forget`. `SubjectRef` accepts id | `"me"` | `"this_agent"` | `{id}` | `{identifier:{kind,value}}` | `{surface}`. All caller-supplied limits are clamped (maxDepth≤5, topK≤100, limit≤200, etc.). `groupId` flows from plugin config (trusted), never from LLM tool args.
 
 ## StorageRegistry (`src/core/StorageRegistry.ts`)
 
@@ -224,6 +227,11 @@ Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** 
 - `createMemorySystemWithConnectors({ store, connectors: { embedding: {connector, model, dimensions}, profile: {connector, model} } })` — one-call setup.
 - `ExtractionResolver` + `defaultExtractionPrompt` — raw LLM output (`{mentions, facts}`) → resolved entities + facts with `sourceSignalId` attached. Supports `preResolved: {label → entityId}` to bypass upsert for labels bound upstream.
 - `signals/` — high-level facts-producing API: `SignalIngestor` orchestrates adapter → deterministic seed phase → prompt (with locked labels) → `IExtractor` LLM call → `ExtractionResolver`. Ships `PlainTextAdapter`, `EmailSignalAdapter` (seeds from/to/cc + non-free domains, drops BCC), `ConnectorExtractor` (default LLM via Connector). Custom `SignalSourceAdapter` + `IExtractor` are the extension points.
+
+**Agent integration** (`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts` + `src/tools/memory/`):
+- `MemoryPluginNextGen` — NextGen context plugin, injects user + agent profiles + top facts into system message; ships 8 `memory_*` LLM tools; self-learning via incremental profile regen. Feature flag: `memory` (default off). Requires `plugins.memory.memory: MemorySystem` + `userId`.
+- `createMemoryTools({ memory, agentId, defaultUserId, defaultGroupId, ... })` — factory for the 8 tools without the full plugin. `defaultGroupId` is trusted (from host auth layer); tools never accept a `groupId` arg from the LLM. All numeric limits are clamped (maxDepth≤5, topK≤100, limit≤200, etc.).
+- **Incremental profile regen:** `IProfileGenerator.generate` takes a single `ProfileGeneratorInput` with `newFacts` (observed since prior), `priorProfile`, `invalidatedFactIds` (supersession + archivals). Generator evolves the prior profile from deltas rather than rewriting from all facts.
 
 **Resolution** (`src/memory/resolution/`):
 - `EntityResolver` translates surface forms ("Microsoft", "Q3 Planning") to entity IDs. Tiers: identifier (1.0) → exact displayName (0.9) → exact alias (0.85) → fuzzy (0.6–0.84) → semantic (identityEmbedding). Conservative default auto-resolve threshold 0.9; configurable via `entityResolution.autoResolveThreshold`.

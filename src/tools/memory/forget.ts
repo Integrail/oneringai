@@ -5,15 +5,21 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { MemorySystem, ScopeFilter } from '../../memory/index.js';
 import type { MemoryToolDeps, Visibility } from './types.js';
-import { resolveScope, visibilityToPermissions } from './types.js';
+import {
+  clampUnit,
+  resolveScope,
+  toErrorMessage,
+  visibilityToPermissions,
+} from './types.js';
 
 export interface ForgetArgs {
   factId: string;
   /**
    * When provided, the archived fact is superseded by a new one with these
-   * fields. The new fact inherits the predecessor's subjectId; the predicate
-   * / value / details / etc. come from here.
+   * fields. The new fact inherits the predecessor's subjectId + kind; the
+   * predicate / value / details / etc. come from here.
    */
   replaceWith?: {
     predicate?: string;
@@ -89,8 +95,29 @@ export function createForgetTool(deps: MemoryToolDeps): ToolFunction<ForgetArgs>
           };
         }
 
-        const permissions = rw.visibility
-          ? visibilityToPermissions(rw.visibility)
+        // H-2: downgrade on foreign contextIds when visibility is non-private.
+        const warnings: string[] = [];
+        let vis = rw.visibility;
+        const effectiveVisBeforeCheck = vis; // may be undefined → inherit predecessor
+        if (
+          rw.contextIds?.length &&
+          (effectiveVisBeforeCheck === 'group' || effectiveVisBeforeCheck === 'public')
+        ) {
+          const foreign = await findForeignContextIds(
+            deps.memory,
+            rw.contextIds,
+            scope,
+          );
+          if (foreign.length > 0) {
+            vis = 'private';
+            warnings.push(
+              `visibility downgraded to "private": contextIds include entities you don't own (${foreign.join(', ')}).`,
+            );
+          }
+        }
+
+        const permissions = vis
+          ? visibilityToPermissions(vis)
           : predecessor.permissions;
         const observedAt = rw.observedAt ? new Date(rw.observedAt) : new Date();
 
@@ -98,12 +125,14 @@ export function createForgetTool(deps: MemoryToolDeps): ToolFunction<ForgetArgs>
           {
             subjectId: predecessor.subjectId,
             predicate: rw.predicate ?? predecessor.predicate,
-            kind: 'atomic',
+            // M-2: inherit the predecessor's kind so a `document` fact can be
+            // cleanly superseded with an updated document body.
+            kind: predecessor.kind,
             value: rw.value,
             objectId: rw.objectId,
             details: rw.details,
-            confidence: rw.confidence,
-            importance: rw.importance,
+            confidence: clampUnit(rw.confidence),
+            importance: clampUnit(rw.importance),
             contextIds: rw.contextIds,
             observedAt,
             permissions,
@@ -114,21 +143,41 @@ export function createForgetTool(deps: MemoryToolDeps): ToolFunction<ForgetArgs>
 
         deps.onWriteToOwnSubjects?.();
 
-        return {
+        const payload: Record<string, unknown> = {
           superseded: true,
           oldFactId: args.factId,
           newFact: {
             id: newFact.id,
             subjectId: newFact.subjectId,
             predicate: newFact.predicate,
+            kind: newFact.kind,
             value: newFact.value,
             objectId: newFact.objectId,
             details: newFact.details,
           },
         };
+        if (warnings.length > 0) payload.warnings = warnings;
+        return payload;
       } catch (err) {
-        return { error: `memory_forget failed: ${(err as Error).message}` };
+        return { error: `memory_forget failed: ${toErrorMessage(err)}` };
       }
     },
   };
+}
+
+async function findForeignContextIds(
+  memory: MemorySystem,
+  contextIds: string[],
+  scope: ScopeFilter,
+): Promise<string[]> {
+  const foreign: string[] = [];
+  await Promise.all(
+    contextIds.map(async (id) => {
+      const ent = await memory.getEntity(id, scope);
+      if (ent && ent.ownerId !== undefined && ent.ownerId !== scope.userId) {
+        foreign.push(id);
+      }
+    }),
+  );
+  return foreign;
 }

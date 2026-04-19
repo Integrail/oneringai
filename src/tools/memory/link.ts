@@ -4,8 +4,16 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { MemorySystem, ScopeFilter } from '../../memory/index.js';
 import type { MemoryToolDeps, SubjectRef, Visibility } from './types.js';
-import { resolveScope, visibilityToPermissions } from './types.js';
+import {
+  SUBJECT_TOKEN_ME,
+  SUBJECT_TOKEN_THIS_AGENT,
+  clampUnit,
+  resolveScope,
+  toErrorMessage,
+  visibilityToPermissions,
+} from './types.js';
 
 export interface LinkArgs {
   from: SubjectRef;
@@ -22,13 +30,15 @@ const DESCRIPTION = `Link two entities with a predicate. Both sides are entities
 
 Both 'from' and 'to' accept any SubjectRef form: entity id, "me", "this_agent", {id}, {identifier}, or {surface}.
 
+You can ONLY link FROM an entity you own. (The 'to' side can be any visible entity.) If foreign contextIds are supplied with non-private visibility, visibility is downgraded to "private" and a warning is included in the response.
+
 Examples:
-- Alice attended a meeting:
-  {"from":{"surface":"Alice"},"predicate":"attended","to":{"surface":"Q3 planning"}}
+- Alice attended a meeting (only valid if your entity is the 'from' side):
+  {"from":"me","predicate":"attended","to":{"surface":"Q3 planning"}}
 - User works at a company:
   {"from":"me","predicate":"works_at","to":{"identifier":{"kind":"domain","value":"acme.com"}}}
-- Doc references a deal (context-tagged):
-  {"from":"ent_doc1","predicate":"references","to":"ent_deal1","contextIds":["ent_proj42"]}`;
+- Agent learned that two concepts are related:
+  {"from":"this_agent","predicate":"related_to","to":"ent_concept_b"}`;
 
 export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
   return {
@@ -74,7 +84,43 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
         return { error: `to: ${toRes.message}`, candidates: toRes.candidates };
       }
 
-      const vis = args.visibility ?? deps.defaultVisibility.forOther;
+      // H-1: reject ghost-writes — the fact's subject is `from`, and the
+      // memory layer enforces fact.ownerId == subject.ownerId. Writing from a
+      // foreign-owned entity would silently attribute the link to that owner.
+      if (
+        fromRes.entity.ownerId !== undefined &&
+        fromRes.entity.ownerId !== scope.userId
+      ) {
+        return {
+          error:
+            `memory_link: cannot write links from entities you don't own ` +
+            `(from.ownerId=${fromRes.entity.ownerId}, caller=${scope.userId ?? 'none'}). ` +
+            `Upsert your own entity via memory_find_entity or link from "me" / "this_agent".`,
+          fromOwnerId: fromRes.entity.ownerId,
+        };
+      }
+
+      // M-3: pick default visibility based on the `from` subject class, not
+      // always `forOther`. This matches memory_remember and respects host
+      // config like `defaultVisibility.forAgent='group'`.
+      let vis = args.visibility ?? pickDefaultVisibility(deps, args.from, fromRes.entity.id);
+
+      // H-2: downgrade on foreign contextIds.
+      const warnings: string[] = [];
+      if (args.contextIds?.length && (vis === 'group' || vis === 'public')) {
+        const foreign = await findForeignContextIds(
+          deps.memory,
+          args.contextIds,
+          scope,
+        );
+        if (foreign.length > 0) {
+          vis = 'private';
+          warnings.push(
+            `visibility downgraded to "private": contextIds include entities you don't own (${foreign.join(', ')}).`,
+          );
+        }
+      }
+
       const permissions = visibilityToPermissions(vis);
       const observedAt = args.observedAt ? new Date(args.observedAt) : new Date();
 
@@ -85,8 +131,8 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
             predicate: args.predicate,
             kind: 'atomic',
             objectId: toRes.entity.id,
-            confidence: args.confidence,
-            importance: args.importance,
+            confidence: clampUnit(args.confidence),
+            importance: clampUnit(args.importance),
             contextIds: args.contextIds,
             observedAt,
             permissions,
@@ -105,7 +151,7 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
           deps.onWriteToOwnSubjects?.();
         }
 
-        return {
+        const payload: Record<string, unknown> = {
           fact: {
             id: fact.id,
             subjectId: fact.subjectId,
@@ -116,10 +162,45 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
           },
           from: { id: fromRes.entity.id, displayName: fromRes.entity.displayName },
           to: { id: toRes.entity.id, displayName: toRes.entity.displayName },
+          visibility: vis,
         };
+        if (warnings.length > 0) payload.warnings = warnings;
+        return payload;
       } catch (err) {
-        return { error: `memory_link failed: ${(err as Error).message}` };
+        return { error: `memory_link failed: ${toErrorMessage(err)}` };
       }
     },
   };
+}
+
+function pickDefaultVisibility(
+  deps: MemoryToolDeps,
+  subject: SubjectRef,
+  resolvedId: string,
+): Visibility {
+  const { userEntityId, agentEntityId } = deps.getOwnSubjectIds();
+  if (subject === SUBJECT_TOKEN_ME || resolvedId === userEntityId) {
+    return deps.defaultVisibility.forUser;
+  }
+  if (subject === SUBJECT_TOKEN_THIS_AGENT || resolvedId === agentEntityId) {
+    return deps.defaultVisibility.forAgent;
+  }
+  return deps.defaultVisibility.forOther;
+}
+
+async function findForeignContextIds(
+  memory: MemorySystem,
+  contextIds: string[],
+  scope: ScopeFilter,
+): Promise<string[]> {
+  const foreign: string[] = [];
+  await Promise.all(
+    contextIds.map(async (id) => {
+      const ent = await memory.getEntity(id, scope);
+      if (ent && ent.ownerId !== undefined && ent.ownerId !== scope.userId) {
+        foreign.push(id);
+      }
+    }),
+  );
+  return foreign;
 }

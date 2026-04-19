@@ -361,6 +361,16 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     if (!state || typeof state !== 'object') return;
     const s = state as Record<string, unknown>;
     if (s.version !== 1) return;
+    // If the persisted userId doesn't match the current one (host rebound
+    // the plugin to a different user), drop the stale entity ids — they
+    // belong to the prior user's scope and would 404 under the current one.
+    if (typeof s.userId === 'string' && s.userId !== this.userId) {
+      this.userEntityId = undefined;
+      this.agentEntityId = undefined;
+      this.dirty = true;
+      this.cachedContent = null;
+      return;
+    }
     if (typeof s.userEntityId === 'string') this.userEntityId = s.userEntityId;
     if (typeof s.agentEntityId === 'string') this.agentEntityId = s.agentEntityId;
     // Force a fresh render to verify the entities still exist at this scope.

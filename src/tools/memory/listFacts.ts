@@ -7,7 +7,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { FactFilter } from '../../memory/index.js';
 import type { MemoryToolDeps, SubjectRef } from './types.js';
-import { clamp, resolveScope } from './types.js';
+import { clamp, resolveScope, toErrorMessage } from './types.js';
 
 export interface ListFactsArgs {
   /** Subject. See SubjectRef forms. */
@@ -117,7 +117,7 @@ export function createListFactsTool(deps: MemoryToolDeps): ToolFunction<ListFact
           nextCursor: page.nextCursor,
         };
       } catch (err) {
-        return { error: `memory_list_facts failed: ${(err as Error).message}` };
+        return { error: `memory_list_facts failed: ${toErrorMessage(err)}` };
       }
     },
   };

@@ -376,3 +376,43 @@ describe('MemoryPluginNextGen — trusted groupId flows into scope', () => {
     expect(scopeArg.groupId).not.toBe('attacker-group');
   });
 });
+
+describe('MemoryPluginNextGen — restoreState (L-1)', () => {
+  it('drops stale userEntityId/agentEntityId when saved userId differs from current', () => {
+    const mem = makeMem();
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: 'alice',
+    });
+    plugin.restoreState({
+      version: 1,
+      agentId: AGENT_ID,
+      userId: 'bob',
+      userEntityId: 'ent-bob',
+      agentEntityId: 'ag-bob',
+    });
+    const ids = plugin.getBootstrappedIds();
+    expect(ids.userEntityId).toBeUndefined();
+    expect(ids.agentEntityId).toBeUndefined();
+  });
+
+  it('restores entity ids when saved userId matches current', () => {
+    const mem = makeMem();
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: 'alice',
+    });
+    plugin.restoreState({
+      version: 1,
+      agentId: AGENT_ID,
+      userId: 'alice',
+      userEntityId: 'ent-alice',
+      agentEntityId: 'ag-alice',
+    });
+    const ids = plugin.getBootstrappedIds();
+    expect(ids.userEntityId).toBe('ent-alice');
+    expect(ids.agentEntityId).toBe('ag-alice');
+  });
+});

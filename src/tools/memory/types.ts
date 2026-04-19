@@ -184,5 +184,28 @@ export function clamp(
   return Math.min(v, max);
 }
 
+/**
+ * Clamp to the unit interval [0, 1]. Used for confidence/importance inputs
+ * from the LLM — the memory layer stores values verbatim, so an unbounded
+ * `importance: 1e9` would permanently dominate ranking until archived.
+ *
+ * Returns `undefined` for non-numeric / NaN inputs so callers can preserve
+ * "not provided" semantics (memory layer falls back to defaults).
+ */
+export function clampUnit(v: number | undefined): number | undefined {
+  if (typeof v !== 'number' || Number.isNaN(v)) return undefined;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Safely extract a message from an unknown thrown value. Adapters can throw
+ * non-Error values (strings, plain objects) and `(err as Error).message` then
+ * stringifies to `"undefined"`.
+ */
+export function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 // Re-export for convenience at the tool layer.
 export type { EntityId, IEntity, IFact, MemorySystem, ScopeFilter };

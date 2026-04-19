@@ -8,7 +8,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { TraversalOptions } from '../../memory/index.js';
 import type { MemoryToolDeps, SubjectRef } from './types.js';
-import { clamp, resolveScope } from './types.js';
+import { clamp, resolveScope, toErrorMessage } from './types.js';
 
 export interface GraphArgs {
   /** Starting entity. See SubjectRef forms. */
@@ -100,7 +100,7 @@ export function createGraphTool(deps: MemoryToolDeps): ToolFunction<GraphArgs> {
           })),
         };
       } catch (err) {
-        return { error: `memory_graph failed: ${(err as Error).message}` };
+        return { error: `memory_graph failed: ${toErrorMessage(err)}` };
       }
     },
   };

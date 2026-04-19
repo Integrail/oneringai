@@ -42,6 +42,8 @@ export {
   visibilityToPermissions,
   resolveScope,
   clamp,
+  clampUnit,
+  toErrorMessage,
 } from './types.js';
 export { createSubjectResolver } from './resolveSubject.js';
 export { createRecallTool } from './recall.js';

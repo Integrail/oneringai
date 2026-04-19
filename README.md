@@ -23,6 +23,7 @@
   - [8. InContextMemory](#8-incontextmemory)
   - [9. Persistent Instructions](#9-persistent-instructions)
   - [10. User Info](#10-user-info)
+  - [10b. Self-Learning Memory — plugin + tools](#10b-self-learning-memory--plugin--tools) — `MemoryPluginNextGen` with 8 `memory_*` LLM tools (supersedes 9 & 10)
   - [11. Direct LLM Access](#11-direct-llm-access)
   - [12. Audio Capabilities](#12-audio-capabilities)
   - [Embeddings](#embeddings-new) — Multi-vendor text embeddings with MRL dimension control
@@ -112,8 +113,9 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔬 **Research Agent** - ⚠️ *Deprecated* - Use `Agent` with search tools
 - 🎯 **Context Management** - Algorithmic compaction with tool-result-to-memory offloading
 - 📌 **InContextMemory** - Live key-value storage directly in LLM context with optional UI display (`showInUI`)
-- 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
-- 👤 **User Info Plugin** - NEW: Per-user preferences/context automatically injected into LLM context, shared across agents
+- 📝 **Persistent Instructions** - ⚠️ *Deprecated* in favour of `MemoryPluginNextGen` (self-learning memory). Still works unchanged.
+- 👤 **User Info Plugin** - ⚠️ *Deprecated* in favour of `MemoryPluginNextGen`. Still works unchanged.
+- 🧠 **Self-Learning Memory** - NEW: `MemoryPluginNextGen` + 8 `memory_*` tools — brain-like entity/fact store with permissions, semantic search, graph queries, LLM-synthesised profiles that evolve from observations
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
 - 🧰 **Custom Tool Generation** - NEW: Let agents create, test, and persist their own reusable tools at runtime — complete meta-tool system with VM sandbox
@@ -1104,6 +1106,67 @@ const agent = Agent.create({
 TODOs are stored alongside user info and rendered in a separate **"Current TODOs"** checklist in context. The agent proactively suggests creating TODOs when conversation implies action items, reminds about due/overdue items once per day, and auto-cleans completed TODOs after 48 hours.
 
 **Use cases:** User preferences (theme, language, timezone), user context (role, location), accumulated knowledge about the user, task/TODO tracking with deadlines and people.
+
+> ⚠️ **Deprecated** in favour of the Self-Learning Memory plugin below. `UserInfoPluginNextGen` + `PersistentInstructionsPluginNextGen` keep working unchanged for existing integrations — no breaking change — but new code should prefer `MemoryPluginNextGen`.
+
+### 10b. Self-Learning Memory — plugin + tools
+
+A context plugin + 8 LLM-callable tools built on the [memory layer](./docs/MEMORY_GUIDE.md). Bootstraps a `person` entity for the user and an `agent` entity for the agent; injects both evolving profiles into the system message; lets the agent read and write memory mid-conversation. Observations flow in through `memory_remember`; profile regeneration synthesises them incrementally; the next turn sees the updated profile. No manual prompt engineering needed for user/agent preferences.
+
+```typescript
+import { Agent, createMemorySystemWithConnectors, InMemoryAdapter } from '@everworker/oneringai';
+
+const memory = createMemorySystemWithConnectors({
+  store: new InMemoryAdapter(),
+  connectors: {
+    embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
+    profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
+  },
+});
+
+const agent = Agent.create({
+  connector: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  agentId: 'my-assistant',
+  userId: 'alice',                              // REQUIRED — memory's owner invariant
+  contextFeatures: { memory: true },
+  pluginConfigs: {
+    memory: {
+      memory,
+      // groupId: 'team-A',                     // trusted, from your auth layer
+      // userProfileInjection: { topFacts: 20 },
+    },
+  },
+});
+
+await agent.run("Remember I prefer concise answers");
+// Agent calls memory_remember({subject:"me", predicate:"prefers", value:"concise answers"})
+// Fact stored → profile regen fires in background → next turn sees it in the user profile
+```
+
+**Key Features:**
+- 🧠 **Self-learning** — profiles synthesised from facts via incremental regeneration (prior profile + new facts + invalidated IDs → evolved profile)
+- 🔐 **Three-principal permissions** — owner / group / world, enforced at the adapter
+- 📊 **Ranked recall** — profile + top facts by `confidence × recency × predicateWeight × importance`
+- 🕸️ **Graph queries** — Mongo native `$graphLookup` when available, iterative BFS fallback
+- 🔍 **Semantic search** — over embedded facts
+- 🧬 **Multi-ID entities** — lookup by email / slack_id / github_login / any identifier; upsert auto-merges
+- 📜 **Supersession history** — corrections archive predecessors; audit chain preserved via `archivedOnly: true`
+- 🛡️ **LLM-safe** — `groupId` fixed by host app (never from tool args); numeric limits clamped
+
+**8 LLM tools** (`memory_*`):
+- `memory_recall(subject, include?)` — profile + top facts + optional tiers
+- `memory_graph(start, direction, maxDepth, predicates?)` — N-hop traversal
+- `memory_search(query, topK?, filter?)` — semantic text search
+- `memory_find_entity(by | action:"upsert", ...)` — lookup / list / create-or-merge
+- `memory_list_facts(subject, predicate?, archivedOnly?)` — structured enumeration
+- `memory_remember(subject, predicate, value?/objectId?/details?, visibility?)` — write a fact
+- `memory_link(from, predicate, to)` — write a relational fact
+- `memory_forget(factId, replaceWith?)` — archive or supersede
+
+**Flexible SubjectRef** — every tool accepts any of: entity id, `"me"`, `"this_agent"`, `{id}`, `{identifier: {kind, value}}`, `{surface: "..."}`.
+
+See [docs/MEMORY_GUIDE.md § 14](./docs/MEMORY_GUIDE.md#giving-agents-memory--the-memorypluginnextgen-plugin-and-memory_-tools) for full reference.
 
 ### 12. Direct LLM Access
 

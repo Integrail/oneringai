@@ -7,7 +7,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { FactFilter } from '../../memory/index.js';
 import type { MemoryToolDeps } from './types.js';
-import { clamp, resolveScope } from './types.js';
+import { clamp, resolveScope, toErrorMessage } from './types.js';
 
 export interface SearchArgs {
   /** Natural-language query. Embedded and matched against fact embeddings. */
@@ -113,7 +113,7 @@ export function createSearchTool(deps: MemoryToolDeps): ToolFunction<SearchArgs>
           })),
         };
       } catch (err) {
-        return { error: `memory_search unavailable: ${(err as Error).message}` };
+        return { error: `memory_search unavailable: ${toErrorMessage(err)}` };
       }
     },
   };

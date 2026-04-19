@@ -4,11 +4,14 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
+import type { MemorySystem, ScopeFilter } from '../../memory/index.js';
 import type { MemoryToolDeps, SubjectRef, Visibility } from './types.js';
 import {
   SUBJECT_TOKEN_ME,
   SUBJECT_TOKEN_THIS_AGENT,
+  clampUnit,
   resolveScope,
+  toErrorMessage,
   visibilityToPermissions,
 } from './types.js';
 
@@ -22,9 +25,9 @@ export interface RememberArgs {
   objectId?: string;
   /** Long-form markdown/text for narrative facts ('learned_pattern' etc.). */
   details?: string;
-  /** 0..1 confidence. Default 1.0 for direct user-provided facts; LLM-inferred → lower. */
+  /** 0..1 confidence. Default 1.0 for direct user-provided facts; LLM-inferred → lower. Values outside [0,1] are clamped. */
   confidence?: number;
-  /** 0..1 importance. Drives ranking. 1.0 for identity-level, 0.1 for trivia. Default 0.5. */
+  /** 0..1 importance. Drives ranking. 1.0 for identity-level, 0.1 for trivia. Default 0.5. Clamped to [0,1]. */
   importance?: number;
   /** When did this event happen? ISO string. Default: now. */
   observedAt?: string;
@@ -38,6 +41,8 @@ const DESCRIPTION = `Record a new atomic fact (subject, predicate, value-or-obje
 
 Subject can be: "me", "this_agent", entity id, {id}, {identifier:{kind,value}}, or {surface:"..."}.
 
+You can ONLY write facts on entities you own (the tool rejects writes to entities owned by other users — upsert your own entity first via memory_find_entity).
+
 visibility (default varies by subject):
 - "private": only the owner (current user) can see — good for personal notes.
 - "group": the user's group can read — for team-shared knowledge.
@@ -45,10 +50,12 @@ visibility (default varies by subject):
 
 Defaults: user subject → "private"; this_agent → "group" (shared agents); other → "private".
 
+If contextIds contains any entity you don't own, visibility is automatically downgraded to "private" to prevent leaking fabricated facts into another user's context graph — the response will include a "warnings" field in that case.
+
 Examples:
 - Remember a user preference:
   {"subject":"me","predicate":"prefers","value":"concise responses"}
-- Company fact with confidence + importance:
+- Company fact with confidence + importance (your own company entity):
   {"subject":{"surface":"Acme"},"predicate":"employee_count","value":500,"confidence":0.8,"importance":0.3}
 - Agent-level learned rule (shared with group):
   {"subject":"this_agent","predicate":"learned_pattern","details":"Always ask for dimensions before tax calculations","visibility":"group"}
@@ -98,10 +105,47 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
         return { error: resolved.message, candidates: resolved.candidates };
       }
 
-      // Pick visibility: explicit arg > per-subject default.
-      const vis = args.visibility ?? pickDefaultVisibility(deps, args.subject, resolved.entity.id);
-      const permissions = visibilityToPermissions(vis);
+      // H-1: reject ghost-writes. The memory layer enforces fact.ownerId ==
+      // subject.ownerId (ScopeInvariantError otherwise), so writing to a
+      // foreign-owned entity would silently land the fact under the foreign
+      // owner. Block it at the tool layer.
+      if (
+        resolved.entity.ownerId !== undefined &&
+        resolved.entity.ownerId !== scope.userId
+      ) {
+        return {
+          error:
+            `memory_remember: cannot write facts on entities you don't own ` +
+            `(subject.ownerId=${resolved.entity.ownerId}, caller=${scope.userId ?? 'none'}). ` +
+            `Upsert your own entity via memory_find_entity or ask the owner to write this fact.`,
+          subjectOwnerId: resolved.entity.ownerId,
+        };
+      }
 
+      // Pick visibility: explicit arg > per-subject default.
+      let vis = args.visibility ?? pickDefaultVisibility(deps, args.subject, resolved.entity.id);
+
+      // H-2: if any contextId points to a foreign-owned (but visible) entity
+      // and the chosen visibility would leak it via graph-touchesEntity
+      // queries, downgrade to 'private'. Invisible contextIds are left for
+      // the memory layer to reject.
+      const warnings: string[] = [];
+      if (args.contextIds?.length && (vis === 'group' || vis === 'public')) {
+        const foreign = await findForeignContextIds(
+          deps.memory,
+          args.contextIds,
+          scope,
+        );
+        if (foreign.length > 0) {
+          vis = 'private';
+          warnings.push(
+            `visibility downgraded to "private": contextIds include entities you don't own (${foreign.join(', ')}). ` +
+            `Non-private writes on foreign context would leak into their owners' graph queries.`,
+          );
+        }
+      }
+
+      const permissions = visibilityToPermissions(vis);
       const observedAt = args.observedAt ? new Date(args.observedAt) : new Date();
 
       try {
@@ -113,8 +157,8 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
             value: args.value,
             objectId: args.objectId,
             details: args.details,
-            confidence: args.confidence,
-            importance: args.importance,
+            confidence: clampUnit(args.confidence),
+            importance: clampUnit(args.importance),
             contextIds: args.contextIds,
             observedAt,
             permissions,
@@ -125,7 +169,7 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
         // Invalidate plugin cache if this touches user or agent subject.
         maybeInvalidate(deps, resolved.entity.id);
 
-        return {
+        const payload: Record<string, unknown> = {
           fact: {
             id: fact.id,
             subjectId: fact.subjectId,
@@ -141,8 +185,10 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
           },
           visibility: vis,
         };
+        if (warnings.length > 0) payload.warnings = warnings;
+        return payload;
       } catch (err) {
-        return { error: `memory_remember failed: ${(err as Error).message}` };
+        return { error: `memory_remember failed: ${toErrorMessage(err)}` };
       }
     },
   };
@@ -168,4 +214,26 @@ function maybeInvalidate(deps: MemoryToolDeps, entityId: string): void {
   if (entityId === userEntityId || entityId === agentEntityId) {
     deps.onWriteToOwnSubjects?.();
   }
+}
+
+/**
+ * Filter contextIds to those pointing to entities visible but NOT owned by the
+ * caller. Invisible entities are skipped (the memory layer will reject them
+ * at addFact time).
+ */
+async function findForeignContextIds(
+  memory: MemorySystem,
+  contextIds: string[],
+  scope: ScopeFilter,
+): Promise<string[]> {
+  const foreign: string[] = [];
+  await Promise.all(
+    contextIds.map(async (id) => {
+      const ent = await memory.getEntity(id, scope);
+      if (ent && ent.ownerId !== undefined && ent.ownerId !== scope.userId) {
+        foreign.push(id);
+      }
+    }),
+  );
+  return foreign;
 }

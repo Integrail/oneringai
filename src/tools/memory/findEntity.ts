@@ -11,7 +11,7 @@
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { Identifier, MemorySystem, ScopeFilter } from '../../memory/index.js';
 import type { MemoryToolDeps, Visibility } from './types.js';
-import { clamp, resolveScope, visibilityToPermissions } from './types.js';
+import { clamp, resolveScope, toErrorMessage, visibilityToPermissions } from './types.js';
 
 export interface FindEntityArgs {
   /**
@@ -104,7 +104,7 @@ export function createFindEntityTool(
         }
         return { error: `unknown action '${action}'` };
       } catch (err) {
-        return { error: `memory_find_entity failed: ${(err as Error).message}` };
+        return { error: `memory_find_entity failed: ${toErrorMessage(err)}` };
       }
     },
   };
