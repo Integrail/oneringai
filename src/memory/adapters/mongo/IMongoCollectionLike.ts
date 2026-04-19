@@ -36,15 +36,21 @@ export interface MongoUpdateResult {
   upsertedCount: number;
 }
 
-export type MongoBulkOp<T> =
-  | { insertOne: { document: T } }
-  | { updateOne: { filter: MongoFilter; update: MongoUpdate; upsert?: boolean } }
-  | { deleteOne: { filter: MongoFilter } };
-
 export interface IMongoCollectionLike<T extends { id: string }> {
   // ===== Writes (route through Meteor / reactivity layer when wrapped) =====
-  insertOne(doc: T): Promise<void>;
-  insertMany(docs: T[]): Promise<void>;
+  /**
+   * Insert a document. Any `id` field on the input is IGNORED — the collection
+   * assigns the primary key (Mongo: ObjectId → hex string; Meteor: Random.id()).
+   * Returns the assigned id as a string.
+   */
+  insertOne(doc: T): Promise<string>;
+  /** Batch insert. Returned ids are in the same order as input. */
+  insertMany(docs: T[]): Promise<string[]>;
+  /**
+   * Update. `filter` may contain `id: <string>` — wrappers translate to the
+   * native primary-key form (Mongo: `_id: ObjectId(...)`; Meteor: `_id: <string>`).
+   * Any `id` field in the update payload is stripped (ids are immutable).
+   */
   updateOne(
     filter: MongoFilter,
     update: MongoUpdate,
@@ -53,14 +59,12 @@ export interface IMongoCollectionLike<T extends { id: string }> {
   deleteOne(filter: MongoFilter): Promise<void>;
   deleteMany(filter: MongoFilter): Promise<void>;
 
-  /**
-   * Optional batched write primitive. When present, MongoMemoryAdapter uses it
-   * for batch methods (`putEntities`, `putFacts`); otherwise it falls back to
-   * N individual writes.
-   */
-  bulkWrite?(ops: Array<MongoBulkOp<T>>): Promise<void>;
-
   // ===== Reads =====
+  /**
+   * Returned documents always have `id` populated (mapped from the native
+   * primary key — `_id.toHexString()` for Mongo ObjectId, or the string form
+   * for Meteor). `_id` is not present on returned documents.
+   */
   findOne(filter: MongoFilter, opts?: MongoFindOptions): Promise<T | null>;
   find(filter: MongoFilter, opts?: MongoFindOptions): Promise<T[]>;
   countDocuments(filter: MongoFilter): Promise<number>;

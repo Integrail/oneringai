@@ -12,7 +12,8 @@
  *
  * The test spins up an in-process MongoDB, exercises the adapter end-to-end
  * via the real driver (RawMongoCollection), and verifies scope filter
- * pushdown, indexes, bulk writes, and semantic fallback.
+ * pushdown, indexes, id mapping (Mongo ObjectId ↔ hex string), and semantic
+ * search.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -24,12 +25,15 @@ import type { IEntity, IFact } from '@/memory/types.js';
 // Dynamic imports so Vitest can resolve this file even when the peer deps are absent.
 let MongoClient: unknown;
 let MongoMemoryServer: unknown;
+let ObjectId: unknown;
 let available = false;
 
 try {
-  ({ MongoClient } = await import('mongodb'));
+  const mongodb = await import('mongodb');
+  MongoClient = mongodb.MongoClient;
+  ObjectId = mongodb.ObjectId;
   ({ MongoMemoryServer } = await import('mongodb-memory-server'));
-  available = !!MongoClient && !!MongoMemoryServer;
+  available = !!MongoClient && !!MongoMemoryServer && !!ObjectId;
 } catch {
   available = false;
 }
@@ -49,10 +53,18 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     client = await new Client(uri).connect();
 
     const db = client.db('memory_test');
+    const ObjIdCtor = ((hex: string) => new (ObjectId as new (hex: string) => unknown)(hex)) as (
+      hex: string,
+    ) => { toHexString(): string };
+
     const entities = new RawMongoCollection<IEntity>(
       db.collection('memory_entities') as never,
+      ObjIdCtor as never,
     );
-    const facts = new RawMongoCollection<IFact>(db.collection('memory_facts') as never);
+    const facts = new RawMongoCollection<IFact>(
+      db.collection('memory_facts') as never,
+      ObjIdCtor as never,
+    );
     await ensureIndexes({ entities, facts });
 
     adapter = new MongoMemoryAdapter({
@@ -69,111 +81,93 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     if (server) await server.stop();
   });
 
-  it('upserts + reads an entity', async () => {
-    const now = new Date();
-    await adapter.putEntity({
-      id: 'ent_a',
+  it('createEntity assigns id from Mongo ObjectId + reads back', async () => {
+    const created = await adapter.createEntity({
       type: 'person',
       displayName: 'Integration Test',
       identifiers: [{ kind: 'email', value: 'it@example.com' }],
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
     });
-    const got = await adapter.getEntity('ent_a', {});
+    expect(created.id).toBeTruthy();
+    expect(created.id.length).toBeGreaterThan(20); // ObjectId hex is 24 chars
+    const got = await adapter.getEntity(created.id, {});
     expect(got?.displayName).toBe('Integration Test');
   });
 
   it('writes + reads a fact with scope filter pushdown', async () => {
-    const now = new Date();
-    await adapter.putEntity({
-      id: 'ent_s',
+    const ent = await adapter.createEntity({
       type: 'person',
       displayName: 'Scoped',
       identifiers: [],
       groupId: 'g1',
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
     });
-    await adapter.putFact({
-      id: 'f_s',
-      subjectId: 'ent_s',
+    await adapter.createFact({
+      subjectId: ent.id,
       predicate: 'note',
       kind: 'atomic',
       groupId: 'g1',
       value: 'hello',
-      observedAt: now,
-      createdAt: now,
     });
 
-    const visible = await adapter.findFacts({ subjectId: 'ent_s' }, {}, { groupId: 'g1' });
+    const visible = await adapter.findFacts({ subjectId: ent.id }, {}, { groupId: 'g1' });
     expect(visible.items).toHaveLength(1);
 
-    const hidden = await adapter.findFacts({ subjectId: 'ent_s' }, {}, { groupId: 'g2' });
+    const hidden = await adapter.findFacts({ subjectId: ent.id }, {}, { groupId: 'g2' });
     expect(hidden.items).toHaveLength(0);
   });
 
-  it('bulk writes go through bulkWrite path', async () => {
-    const now = new Date();
-    await adapter.putEntity({
-      id: 'ent_bulk',
+  it('batch createFacts preserves order and assigns unique ids', async () => {
+    const host = await adapter.createEntity({
       type: 'person',
       displayName: 'Bulk Host',
       identifiers: [],
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
     });
-    const facts: IFact[] = [];
-    for (let i = 0; i < 20; i++) {
-      facts.push({
-        id: `fb_${i}`,
-        subjectId: 'ent_bulk',
-        predicate: 'p',
-        kind: 'atomic',
-        value: i,
-        observedAt: now,
-        createdAt: now,
-      });
-    }
-    await adapter.putFacts(facts);
-    const n = await adapter.countFacts({ subjectId: 'ent_bulk' }, {});
+    const inputs = Array.from({ length: 20 }, (_, i) => ({
+      subjectId: host.id,
+      predicate: 'p',
+      kind: 'atomic' as const,
+      value: i,
+    }));
+    const out = await adapter.createFacts(inputs);
+    expect(out).toHaveLength(20);
+    const ids = new Set(out.map((f) => f.id));
+    expect(ids.size).toBe(20); // all unique
+    const n = await adapter.countFacts({ subjectId: host.id }, {});
     expect(n).toBe(20);
   });
 
   it('cosine semantic search fallback returns ranked hits', async () => {
-    const now = new Date();
-    await adapter.putEntity({
-      id: 'ent_v',
+    const ent = await adapter.createEntity({
       type: 'person',
       displayName: 'Vec',
       identifiers: [],
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
     });
-    await adapter.putFact({
-      id: 'fv1',
-      subjectId: 'ent_v',
+    const match = await adapter.createFact({
+      subjectId: ent.id,
       predicate: 'note',
       kind: 'atomic',
       embedding: [1, 0, 0],
-      observedAt: now,
-      createdAt: now,
     });
-    await adapter.putFact({
-      id: 'fv2',
-      subjectId: 'ent_v',
+    await adapter.createFact({
+      subjectId: ent.id,
       predicate: 'note',
       kind: 'atomic',
       embedding: [0, 1, 0],
-      observedAt: now,
-      createdAt: now,
     });
     const results = await adapter.semanticSearch([1, 0, 0], {}, { topK: 2 }, {});
-    expect(results[0]?.fact.id).toBe('fv1');
+    expect(results[0]?.fact.id).toBe(match.id);
     expect(results[0]?.score).toBeCloseTo(1, 5);
+  });
+
+  it('updateEntity enforces optimistic concurrency', async () => {
+    const ent = await adapter.createEntity({
+      type: 'person',
+      displayName: 'Version Test',
+      identifiers: [],
+    });
+    await adapter.updateEntity({ ...ent, displayName: 'Updated', version: 2 });
+    const got = await adapter.getEntity(ent.id, {});
+    expect(got?.displayName).toBe('Updated');
+    expect(got?.version).toBe(2);
   });
 });
 

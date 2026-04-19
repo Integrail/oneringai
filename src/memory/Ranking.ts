@@ -7,8 +7,17 @@ import type { IFact, RankingConfig } from './types.js';
 
 const DEFAULT_HALF_LIFE_DAYS = 90;
 const DEFAULT_MIN_CONFIDENCE = 0.2;
+const DEFAULT_IMPORTANCE = 0.5;
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Score formula: confidence × recency × predicateWeight × importanceMultiplier
+ *
+ * importanceMultiplier = 0.3 + importance × 1.4
+ *   → importance 0.5 (default) → 1.0 (no-op, back-compat with v1 data)
+ *   → importance 1.0           → 1.7× (identity-level facts)
+ *   → importance 0.0           → 0.3× (trivial observations)
+ */
 export function scoreFact(fact: IFact, config: RankingConfig, now: Date): number {
   const minConfidence = config.minConfidence ?? DEFAULT_MIN_CONFIDENCE;
   const confidence = fact.confidence ?? 1.0;
@@ -22,7 +31,10 @@ export function scoreFact(fact: IFact, config: RankingConfig, now: Date): number
 
   const predicateWeight = config.predicateWeights?.[fact.predicate] ?? 1.0;
 
-  return confidence * recency * predicateWeight;
+  const importance = fact.importance ?? DEFAULT_IMPORTANCE;
+  const importanceMultiplier = 0.3 + importance * 1.4;
+
+  return confidence * recency * predicateWeight * importanceMultiplier;
 }
 
 export function rankFacts(facts: IFact[], config: RankingConfig, now: Date): IFact[] {

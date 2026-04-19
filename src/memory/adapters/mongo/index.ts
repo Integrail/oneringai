@@ -10,7 +10,6 @@ export { scopeToFilter, mergeFilters } from './scopeFilter.js';
 export { factFilterToMongo, orderByToSort } from './queries.js';
 export type {
   IMongoCollectionLike,
-  MongoBulkOp,
   MongoFilter,
   MongoFindOptions,
   MongoSort,
@@ -18,3 +17,4 @@ export type {
   MongoUpdateOptions,
   MongoUpdateResult,
 } from './IMongoCollectionLike.js';
+export type { ObjectIdLike, ObjectIdCtor } from './RawMongoCollection.js';

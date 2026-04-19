@@ -210,10 +210,13 @@ describe('MemorySystem', () => {
       expect(result.created).toBe(false);
     });
 
-    it('throws when identifiers array is empty', async () => {
-      await expect(
-        mem.upsertEntity({ type: 'person', displayName: 'X', identifiers: [] }, {}),
-      ).rejects.toThrow(/at least one identifier/);
+    it('allows empty identifiers (relaxed in v2 — projects/topics may have no external key)', async () => {
+      const res = await mem.upsertEntity(
+        { type: 'project', displayName: 'Q3 Planning', identifiers: [] },
+        {},
+      );
+      expect(res.created).toBe(true);
+      expect(res.entity.displayName).toBe('Q3 Planning');
     });
   });
 
@@ -233,7 +236,7 @@ describe('MemorySystem', () => {
         { subjectId, predicate: 'note', kind: 'atomic', details: 'hi' },
         {},
       );
-      expect(fact.id).toMatch(/^fact_/);
+      expect(fact.id).toBeTruthy();
       expect(fact.createdAt).toBeInstanceOf(Date);
       expect(fact.observedAt).toBeInstanceOf(Date);
     });
@@ -842,16 +845,17 @@ describe('MemorySystem', () => {
       // Build a facade store that hides the traverse capability.
       const shadow = store;
       const limitedStore: IMemoryStore = {
-        putEntity: shadow.putEntity.bind(shadow),
-        putEntities: shadow.putEntities.bind(shadow),
+        createEntity: shadow.createEntity.bind(shadow),
+        createEntities: shadow.createEntities.bind(shadow),
+        updateEntity: shadow.updateEntity.bind(shadow),
         getEntity: shadow.getEntity.bind(shadow),
         findEntitiesByIdentifier: shadow.findEntitiesByIdentifier.bind(shadow),
         searchEntities: shadow.searchEntities.bind(shadow),
         listEntities: shadow.listEntities.bind(shadow),
         archiveEntity: shadow.archiveEntity.bind(shadow),
         deleteEntity: shadow.deleteEntity.bind(shadow),
-        putFact: shadow.putFact.bind(shadow),
-        putFacts: shadow.putFacts.bind(shadow),
+        createFact: shadow.createFact.bind(shadow),
+        createFacts: shadow.createFacts.bind(shadow),
         getFact: shadow.getFact.bind(shadow),
         findFacts: shadow.findFacts.bind(shadow),
         updateFact: shadow.updateFact.bind(shadow),
@@ -882,16 +886,17 @@ describe('MemorySystem', () => {
     it('throws when store lacks semanticSearch', async () => {
       const limitedStore: IMemoryStore = {
         ...store,
-        putEntity: store.putEntity.bind(store),
-        putEntities: store.putEntities.bind(store),
+        createEntity: store.createEntity.bind(store),
+        createEntities: store.createEntities.bind(store),
+        updateEntity: store.updateEntity.bind(store),
         getEntity: store.getEntity.bind(store),
         findEntitiesByIdentifier: store.findEntitiesByIdentifier.bind(store),
         searchEntities: store.searchEntities.bind(store),
         listEntities: store.listEntities.bind(store),
         archiveEntity: store.archiveEntity.bind(store),
         deleteEntity: store.deleteEntity.bind(store),
-        putFact: store.putFact.bind(store),
-        putFacts: store.putFacts.bind(store),
+        createFact: store.createFact.bind(store),
+        createFacts: store.createFacts.bind(store),
         getFact: store.getFact.bind(store),
         findFacts: store.findFacts.bind(store),
         updateFact: store.updateFact.bind(store),
@@ -1132,10 +1137,13 @@ describe('MemorySystem', () => {
           throw new Error('embed failed');
         }),
       };
+      // Disable identity embedding so we only test fact-embedding retry behavior
+      // in isolation (identity embedding would contribute its own retries).
       const m = new MemorySystem({
         store,
         embedder,
         embeddingQueue: { retries: 2, concurrency: 1 },
+        entityResolution: { enableIdentityEmbedding: false },
       });
       const subj = await seedEntity(m, {
         identifiers: [{ kind: 'email', value: 'rt@x.com' }],
@@ -1222,16 +1230,17 @@ describe('MemorySystem', () => {
         store: {
           ...store,
           shutdown,
-          putEntity: store.putEntity.bind(store),
-          putEntities: store.putEntities.bind(store),
+          createEntity: store.createEntity.bind(store),
+          createEntities: store.createEntities.bind(store),
+          updateEntity: store.updateEntity.bind(store),
           getEntity: store.getEntity.bind(store),
           findEntitiesByIdentifier: store.findEntitiesByIdentifier.bind(store),
           searchEntities: store.searchEntities.bind(store),
           listEntities: store.listEntities.bind(store),
           archiveEntity: store.archiveEntity.bind(store),
           deleteEntity: store.deleteEntity.bind(store),
-          putFact: store.putFact.bind(store),
-          putFacts: store.putFacts.bind(store),
+          createFact: store.createFact.bind(store),
+          createFacts: store.createFacts.bind(store),
           getFact: store.getFact.bind(store),
           findFacts: store.findFacts.bind(store),
           updateFact: store.updateFact.bind(store),

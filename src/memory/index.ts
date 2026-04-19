@@ -14,13 +14,26 @@ export { MemorySystem, ScopeInvariantError, ProfileGeneratorMissingError, Semant
 export { InMemoryAdapter, OptimisticConcurrencyError, ScopeViolationError } from './adapters/inmemory/index.js';
 export type { InMemoryAdapterOptions } from './adapters/inmemory/index.js';
 
-// Integration layer — wires oneringai Connectors into IEmbedder/IProfileGenerator.
+// Entity resolution — surface-form → entity-id translation.
+export {
+  EntityResolver,
+  buildIdentityString,
+  RESOLUTION_DEFAULTS,
+  normalizedLevenshteinRatio,
+  normalizeSurface,
+} from './resolution/index.js';
+export type { ResolverMemoryHooks } from './resolution/index.js';
+
+// Integration layer — wires oneringai Connectors into IEmbedder/IProfileGenerator
+// plus the extraction helpers that take raw LLM output → resolved entities + facts.
 export {
   ConnectorEmbedder,
   ConnectorProfileGenerator,
   parseProfileResponse,
   defaultProfilePrompt,
   createMemorySystemWithConnectors,
+  defaultExtractionPrompt,
+  ExtractionResolver,
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
@@ -28,6 +41,14 @@ export type {
   PromptContext,
   MemoryConnectorsConfig,
   MemorySystemWithConnectorsConfig,
+  ExtractionPromptContext,
+  ExtractionMention,
+  ExtractionFactSpec,
+  ExtractionOutput,
+  IngestionResolvedEntity,
+  IngestionError,
+  IngestionResult,
+  ExtractionResolverOptions,
 } from './integration/index.js';
 
 // Mongo adapter — optional peer dep on `mongodb`; import path is always safe
@@ -50,13 +71,14 @@ export type {
   MeteorCollectionLike,
   EnsureIndexesArgs,
   IMongoCollectionLike,
-  MongoBulkOp,
   MongoFilter,
   MongoFindOptions,
   MongoSort,
   MongoUpdate,
   MongoUpdateOptions,
   MongoUpdateResult,
+  ObjectIdLike,
+  ObjectIdCtor,
 } from './adapters/mongo/index.js';
 export { genericTraverse } from './GenericTraversal.js';
 export { scoreFact, rankFacts } from './Ranking.js';
@@ -74,11 +96,16 @@ export type {
   // Core shapes
   IEntity,
   IFact,
+  NewEntity,
+  NewFact,
   IMemoryStore,
 
   // Retrieval
   EntityView,
   ContextOptions,
+  ContextTier,
+  RelatedTask,
+  RelatedEvent,
   Neighborhood,
   TraversalOptions,
   FactFilter,
@@ -90,6 +117,15 @@ export type {
   EntitySearchOptions,
   ListOptions,
   SemanticSearchOptions,
+
+  // Entity resolution
+  EntityCandidate,
+  ResolveEntityQuery,
+  ResolveEntityOptions,
+  UpsertBySurfaceInput,
+  UpsertBySurfaceOptions,
+  UpsertBySurfaceResult,
+  EntityResolutionConfig,
 
   // Extension points
   IEmbedder,

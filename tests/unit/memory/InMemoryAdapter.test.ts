@@ -1,7 +1,10 @@
 /**
- * Unit tests for memory/adapters/InMemoryAdapter.ts — full contract coverage:
+ * Unit tests for memory/adapters/inmemory/InMemoryAdapter.ts — full contract coverage:
  * entity CRUD + optimistic concurrency, fact CRUD + filtering + pagination,
  * scope visibility, vector search, graph traversal delegation, lifecycle.
+ *
+ * With v2 id-delegation: adapter assigns ids on create. Tests capture returned
+ * ids and use them for subsequent operations.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -10,31 +13,25 @@ import {
   OptimisticConcurrencyError,
   ScopeViolationError,
 } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
-import type { IEntity, IFact, Identifier } from '@/memory/types.js';
+import type { IEntity, IFact, Identifier, NewEntity, NewFact } from '@/memory/types.js';
 
-function entity(overrides: Partial<IEntity> = {}): IEntity {
-  const now = new Date();
+function entityInput(overrides: Partial<NewEntity> = {}): NewEntity {
   return {
-    id: overrides.id ?? 'ent_1',
     type: overrides.type ?? 'person',
     displayName: overrides.displayName ?? 'Test Person',
     aliases: overrides.aliases,
     identifiers: overrides.identifiers ?? [],
     metadata: overrides.metadata,
     archived: overrides.archived,
-    version: overrides.version ?? 1,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
-    createdAt: overrides.createdAt ?? now,
-    updatedAt: overrides.updatedAt ?? now,
   };
 }
 
-function fact(overrides: Partial<IFact> = {}): IFact {
+function factInput(subjectId: string, overrides: Partial<NewFact> = {}): NewFact {
   const now = new Date();
   return {
-    id: overrides.id ?? 'fact_1',
-    subjectId: overrides.subjectId ?? 'ent_1',
+    subjectId,
     predicate: overrides.predicate ?? 'works_at',
     kind: overrides.kind ?? 'atomic',
     objectId: overrides.objectId,
@@ -53,7 +50,6 @@ function fact(overrides: Partial<IFact> = {}): IFact {
     metadata: overrides.metadata,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
-    createdAt: overrides.createdAt ?? now,
   };
 }
 
@@ -72,21 +68,27 @@ describe('InMemoryAdapter', () => {
   // Entities
   // ==========================================================================
 
-  describe('entities — put/get', () => {
-    it('round-trips a basic entity', async () => {
-      const e = entity({ id: 'a', displayName: 'Alice' });
-      await store.putEntity(e);
-      const got = await store.getEntity('a', {});
-      expect(got).not.toBeNull();
-      expect(got!.displayName).toBe('Alice');
+  describe('entities — create/get', () => {
+    it('creates an entity and assigns an id', async () => {
+      const e = await store.createEntity(entityInput({ displayName: 'Alice' }));
+      expect(e.id).toBeTruthy();
+      expect(e.version).toBe(1);
+      expect(e.displayName).toBe('Alice');
+      const got = await store.getEntity(e.id, {});
+      expect(got?.displayName).toBe('Alice');
+    });
+
+    it('assigned ids are unique across calls', async () => {
+      const a = await store.createEntity(entityInput({ displayName: 'A' }));
+      const b = await store.createEntity(entityInput({ displayName: 'B' }));
+      expect(a.id).not.toBe(b.id);
     });
 
     it('returns a cloned object, not a reference', async () => {
-      const e = entity({ id: 'a' });
-      await store.putEntity(e);
-      const got = await store.getEntity('a', {});
+      const e = await store.createEntity(entityInput());
+      const got = await store.getEntity(e.id, {});
       got!.displayName = 'Mutated';
-      const got2 = await store.getEntity('a', {});
+      const got2 = await store.getEntity(e.id, {});
       expect(got2!.displayName).not.toBe('Mutated');
     });
 
@@ -94,49 +96,58 @@ describe('InMemoryAdapter', () => {
       expect(await store.getEntity('missing', {})).toBeNull();
     });
 
-    it('putEntities batch stores all', async () => {
-      await store.putEntities([entity({ id: 'a' }), entity({ id: 'b' })]);
-      expect(await store.getEntity('a', {})).not.toBeNull();
-      expect(await store.getEntity('b', {})).not.toBeNull();
+    it('createEntities batch stores all, preserves order', async () => {
+      const out = await store.createEntities([
+        entityInput({ displayName: 'A' }),
+        entityInput({ displayName: 'B' }),
+      ]);
+      expect(out).toHaveLength(2);
+      expect(out[0]!.displayName).toBe('A');
+      expect(out[1]!.displayName).toBe('B');
+      expect(await store.getEntity(out[0]!.id, {})).not.toBeNull();
+      expect(await store.getEntity(out[1]!.id, {})).not.toBeNull();
     });
   });
 
-  describe('entities — optimistic concurrency', () => {
-    it('accepts version=1 for a new entity', async () => {
-      await expect(store.putEntity(entity({ id: 'a', version: 1 }))).resolves.toBeUndefined();
+  describe('entities — update + optimistic concurrency', () => {
+    it('updates an entity with version=N+1', async () => {
+      const a = await store.createEntity(entityInput({ displayName: 'A' }));
+      await store.updateEntity({ ...a, displayName: 'B', version: 2 });
+      const got = await store.getEntity(a.id, {});
+      expect(got!.displayName).toBe('B');
+      expect(got!.version).toBe(2);
     });
 
-    it('rejects version !== 1 for a new entity', async () => {
-      await expect(store.putEntity(entity({ id: 'a', version: 2 }))).rejects.toThrow(
+    it('rejects wrong version bumps', async () => {
+      const a = await store.createEntity(entityInput());
+      await expect(store.updateEntity({ ...a, version: 3 })).rejects.toThrow(
+        OptimisticConcurrencyError,
+      );
+      await expect(store.updateEntity({ ...a, version: 1 })).rejects.toThrow(
         OptimisticConcurrencyError,
       );
     });
 
-    it('accepts version=N+1 for an existing entity', async () => {
-      await store.putEntity(entity({ id: 'a', version: 1 }));
+    it('rejects updating a non-existent entity', async () => {
       await expect(
-        store.putEntity(entity({ id: 'a', version: 2, displayName: 'Bob' })),
-      ).resolves.toBeUndefined();
-      const got = await store.getEntity('a', {});
-      expect(got!.displayName).toBe('Bob');
-    });
-
-    it('rejects non-consecutive version bumps', async () => {
-      await store.putEntity(entity({ id: 'a', version: 1 }));
-      await expect(store.putEntity(entity({ id: 'a', version: 3 }))).rejects.toThrow(
-        OptimisticConcurrencyError,
-      );
-      await expect(store.putEntity(entity({ id: 'a', version: 1 }))).rejects.toThrow(
-        OptimisticConcurrencyError,
-      );
+        store.updateEntity({
+          id: 'does-not-exist',
+          type: 'person',
+          displayName: 'X',
+          identifiers: [],
+          version: 2,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      ).rejects.toThrow(OptimisticConcurrencyError);
     });
   });
 
   describe('entities — archive / delete', () => {
     it('archiveEntity hides from getEntity', async () => {
-      await store.putEntity(entity({ id: 'a' }));
-      await store.archiveEntity('a', {});
-      expect(await store.getEntity('a', {})).toBeNull();
+      const e = await store.createEntity(entityInput());
+      await store.archiveEntity(e.id, {});
+      expect(await store.getEntity(e.id, {})).toBeNull();
     });
 
     it('archiveEntity ignores missing ids silently', async () => {
@@ -144,18 +155,16 @@ describe('InMemoryAdapter', () => {
     });
 
     it('archiveEntity throws ScopeViolationError when not visible', async () => {
-      await store.putEntity(entity({ id: 'a', groupId: 'g1' }));
-      await expect(store.archiveEntity('a', { groupId: 'other' })).rejects.toThrow(
+      const e = await store.createEntity(entityInput({ groupId: 'g1' }));
+      await expect(store.archiveEntity(e.id, { groupId: 'other' })).rejects.toThrow(
         ScopeViolationError,
       );
     });
 
     it('deleteEntity removes completely', async () => {
-      await store.putEntity(entity({ id: 'a' }));
-      await store.deleteEntity('a', {});
-      expect(await store.getEntity('a', {})).toBeNull();
-      // Removing identifier index too — putting a new one with same id works with version 1.
-      await expect(store.putEntity(entity({ id: 'a', version: 1 }))).resolves.toBeUndefined();
+      const e = await store.createEntity(entityInput());
+      await store.deleteEntity(e.id, {});
+      expect(await store.getEntity(e.id, {})).toBeNull();
     });
   });
 
@@ -163,39 +172,31 @@ describe('InMemoryAdapter', () => {
     const ident = (kind: string, value: string): Identifier => ({ kind, value });
 
     it('finds by (kind, value)', async () => {
-      await store.putEntity(
-        entity({
-          id: 'a',
-          identifiers: [ident('email', 'a@example.com')],
-        }),
+      const e = await store.createEntity(
+        entityInput({ identifiers: [ident('email', 'a@example.com')] }),
       );
       const found = await store.findEntitiesByIdentifier('email', 'a@example.com', {});
       expect(found).toHaveLength(1);
-      expect(found[0]!.id).toBe('a');
+      expect(found[0]!.id).toBe(e.id);
     });
 
     it('is case-insensitive on value', async () => {
-      await store.putEntity(
-        entity({
-          id: 'a',
-          identifiers: [ident('email', 'A@Example.com')],
-        }),
+      await store.createEntity(
+        entityInput({ identifiers: [ident('email', 'A@Example.com')] }),
       );
       const found = await store.findEntitiesByIdentifier('email', 'a@example.com', {});
       expect(found).toHaveLength(1);
     });
 
     it('scope-filters results', async () => {
-      await store.putEntity(
-        entity({
-          id: 'a',
+      const a = await store.createEntity(
+        entityInput({
           groupId: 'g1',
           identifiers: [ident('email', 'x@example.com')],
         }),
       );
-      await store.putEntity(
-        entity({
-          id: 'b',
+      await store.createEntity(
+        entityInput({
           groupId: 'g2',
           identifiers: [ident('email', 'x@example.com')],
         }),
@@ -203,7 +204,7 @@ describe('InMemoryAdapter', () => {
       const found = await store.findEntitiesByIdentifier('email', 'x@example.com', {
         groupId: 'g1',
       });
-      expect(found.map((e) => e.id)).toEqual(['a']);
+      expect(found.map((e) => e.id)).toEqual([a.id]);
     });
 
     it('returns empty when no match', async () => {
@@ -213,58 +214,61 @@ describe('InMemoryAdapter', () => {
   });
 
   describe('entities — searchEntities', () => {
+    let aliceId: string;
+    let bobId: string;
+    let acmeId: string;
+
     beforeEach(async () => {
-      await store.putEntities([
-        entity({
-          id: 'a',
+      const alice = await store.createEntity(
+        entityInput({
           displayName: 'Alice Anderson',
           aliases: ['Ali'],
           identifiers: [{ kind: 'email', value: 'alice@acme.com' }],
-          type: 'person',
         }),
-        entity({
-          id: 'b',
-          displayName: 'Bob Builder',
-          type: 'person',
-        }),
-        entity({
-          id: 'c',
-          displayName: 'Acme Corp',
-          type: 'organization',
-        }),
-      ]);
+      );
+      const bob = await store.createEntity(entityInput({ displayName: 'Bob Builder' }));
+      const acme = await store.createEntity(
+        entityInput({ displayName: 'Acme Corp', type: 'organization' }),
+      );
+      aliceId = alice.id;
+      bobId = bob.id;
+      acmeId = acme.id;
     });
 
     it('matches by displayName substring', async () => {
       const result = await store.searchEntities('alice', {}, {});
-      expect(result.items.map((e) => e.id)).toEqual(['a']);
+      expect(result.items.map((e) => e.id)).toEqual([aliceId]);
     });
 
     it('matches by alias', async () => {
       const result = await store.searchEntities('ali', {}, {});
-      expect(result.items.map((e) => e.id).sort()).toContain('a');
+      expect(result.items.map((e) => e.id)).toContain(aliceId);
     });
 
     it('matches by identifier value', async () => {
       const result = await store.searchEntities('acme.com', {}, {});
-      expect(result.items.map((e) => e.id)).toContain('a');
+      expect(result.items.map((e) => e.id)).toContain(aliceId);
     });
 
     it('respects type filter', async () => {
       const result = await store.searchEntities('', { types: ['organization'] }, {});
-      expect(result.items.map((e) => e.id)).toEqual(['c']);
+      expect(result.items.map((e) => e.id)).toEqual([acmeId]);
     });
 
     it('empty query returns all visible entities', async () => {
       const result = await store.searchEntities('', {}, {});
-      expect(result.items.map((e) => e.id).sort()).toEqual(['a', 'b', 'c']);
+      expect(result.items.map((e) => e.id).sort()).toEqual([aliceId, bobId, acmeId].sort());
     });
   });
 
   describe('entities — listEntities pagination', () => {
+    let ids: string[];
+
     beforeEach(async () => {
+      ids = [];
       for (let i = 0; i < 5; i++) {
-        await store.putEntity(entity({ id: `e${i}`, displayName: `E${i}` }));
+        const e = await store.createEntity(entityInput({ displayName: `E${i}` }));
+        ids.push(e.id);
       }
     });
 
@@ -282,14 +286,14 @@ describe('InMemoryAdapter', () => {
     });
 
     it('filters by ids', async () => {
-      const result = await store.listEntities({ ids: ['e0', 'e2'] }, {}, {});
-      expect(result.items.map((e) => e.id).sort()).toEqual(['e0', 'e2']);
+      const result = await store.listEntities({ ids: [ids[0]!, ids[2]!] }, {}, {});
+      expect(result.items.map((e) => e.id).sort()).toEqual([ids[0]!, ids[2]!].sort());
     });
 
     it('archived: true returns only archived', async () => {
-      await store.archiveEntity('e0', {});
+      await store.archiveEntity(ids[0]!, {});
       const result = await store.listEntities({ archived: true }, {}, {});
-      expect(result.items.map((e) => e.id)).toEqual(['e0']);
+      expect(result.items.map((e) => e.id)).toEqual([ids[0]!]);
     });
   });
 
@@ -298,127 +302,145 @@ describe('InMemoryAdapter', () => {
   // ==========================================================================
 
   describe('facts — CRUD', () => {
+    let a: IEntity;
+    let b: IEntity;
+
     beforeEach(async () => {
-      await store.putEntities([entity({ id: 'a' }), entity({ id: 'b' })]);
+      a = await store.createEntity(entityInput({ displayName: 'A' }));
+      b = await store.createEntity(entityInput({ displayName: 'B' }));
     });
 
-    it('put/get round-trip', async () => {
-      const f = fact({ id: 'f1', subjectId: 'a' });
-      await store.putFact(f);
-      const got = await store.getFact('f1', {});
-      expect(got).not.toBeNull();
-      expect(got!.subjectId).toBe('a');
+    it('create/get round-trip', async () => {
+      const f = await store.createFact(factInput(a.id));
+      expect(f.id).toBeTruthy();
+      expect(f.createdAt).toBeInstanceOf(Date);
+      const got = await store.getFact(f.id, {});
+      expect(got?.subjectId).toBe(a.id);
     });
 
     it('returns a cloned object', async () => {
-      await store.putFact(fact({ id: 'f1', subjectId: 'a', details: 'original' }));
-      const got = await store.getFact('f1', {});
+      const f = await store.createFact(factInput(a.id, { details: 'original' }));
+      const got = await store.getFact(f.id, {});
       got!.details = 'mutated';
-      const got2 = await store.getFact('f1', {});
+      const got2 = await store.getFact(f.id, {});
       expect(got2!.details).toBe('original');
     });
 
-    it('putFacts batch', async () => {
-      await store.putFacts([
-        fact({ id: 'f1', subjectId: 'a' }),
-        fact({ id: 'f2', subjectId: 'a' }),
-      ]);
-      expect((await store.findFacts({ subjectId: 'a' }, {}, {})).items).toHaveLength(2);
+    it('createFacts batch', async () => {
+      const out = await store.createFacts([factInput(a.id), factInput(a.id)]);
+      expect(out).toHaveLength(2);
+      expect((await store.findFacts({ subjectId: a.id }, {}, {})).items).toHaveLength(2);
     });
 
     it('updateFact applies patch', async () => {
-      await store.putFact(fact({ id: 'f1', subjectId: 'a', confidence: 0.5 }));
-      await store.updateFact('f1', { confidence: 0.9 }, {});
-      const got = await store.getFact('f1', {});
+      const f = await store.createFact(factInput(a.id, { confidence: 0.5 }));
+      await store.updateFact(f.id, { confidence: 0.9 }, {});
+      const got = await store.getFact(f.id, {});
       expect(got!.confidence).toBe(0.9);
     });
 
     it('updateFact on missing id is silent', async () => {
       await expect(store.updateFact('missing', { confidence: 1 }, {})).resolves.toBeUndefined();
     });
+
+    // Suppress unused-var warning for b
+    it('b entity exists', () => {
+      expect(b.id).toBeTruthy();
+    });
   });
 
   describe('facts — findFacts filters', () => {
+    let a: IEntity;
+    let b: IEntity;
+    let c: IEntity;
+    let f1: IFact;
+    let f2: IFact;
+    let f3: IFact;
+    let f4: IFact;
+
     beforeEach(async () => {
-      await store.putEntities([entity({ id: 'a' }), entity({ id: 'b' }), entity({ id: 'c' })]);
-      await store.putFacts([
-        fact({ id: 'f1', subjectId: 'a', predicate: 'works_at', objectId: 'b', confidence: 0.9 }),
-        fact({ id: 'f2', subjectId: 'a', predicate: 'knows', objectId: 'c', confidence: 0.3 }),
-        fact({
-          id: 'f3',
-          subjectId: 'b',
-          predicate: 'works_at',
-          objectId: 'c',
-          confidence: 0.7,
-          kind: 'atomic',
-        }),
-        fact({ id: 'f4', subjectId: 'a', predicate: 'bio', kind: 'document', details: 'long' }),
-      ]);
+      a = await store.createEntity(entityInput({ displayName: 'A' }));
+      b = await store.createEntity(entityInput({ displayName: 'B' }));
+      c = await store.createEntity(entityInput({ displayName: 'C' }));
+      f1 = await store.createFact(
+        factInput(a.id, { predicate: 'works_at', objectId: b.id, confidence: 0.9 }),
+      );
+      f2 = await store.createFact(
+        factInput(a.id, { predicate: 'knows', objectId: c.id, confidence: 0.3 }),
+      );
+      f3 = await store.createFact(
+        factInput(b.id, { predicate: 'works_at', objectId: c.id, confidence: 0.7 }),
+      );
+      f4 = await store.createFact(
+        factInput(a.id, { predicate: 'bio', kind: 'document', details: 'long' }),
+      );
     });
 
     it('by subjectId', async () => {
-      const page = await store.findFacts({ subjectId: 'a' }, {}, {});
-      expect(page.items.map((f) => f.id).sort()).toEqual(['f1', 'f2', 'f4']);
+      const page = await store.findFacts({ subjectId: a.id }, {}, {});
+      expect(page.items.map((f) => f.id).sort()).toEqual([f1.id, f2.id, f4.id].sort());
     });
 
     it('by objectId', async () => {
-      const page = await store.findFacts({ objectId: 'c' }, {}, {});
-      expect(page.items.map((f) => f.id).sort()).toEqual(['f2', 'f3']);
+      const page = await store.findFacts({ objectId: c.id }, {}, {});
+      expect(page.items.map((f) => f.id).sort()).toEqual([f2.id, f3.id].sort());
     });
 
     it('by predicate', async () => {
       const page = await store.findFacts({ predicate: 'works_at' }, {}, {});
-      expect(page.items.map((f) => f.id).sort()).toEqual(['f1', 'f3']);
+      expect(page.items.map((f) => f.id).sort()).toEqual([f1.id, f3.id].sort());
     });
 
     it('by predicates[]', async () => {
       const page = await store.findFacts({ predicates: ['knows', 'bio'] }, {}, {});
-      expect(page.items.map((f) => f.id).sort()).toEqual(['f2', 'f4']);
+      expect(page.items.map((f) => f.id).sort()).toEqual([f2.id, f4.id].sort());
     });
 
     it('by kind', async () => {
       const page = await store.findFacts({ kind: 'document' }, {}, {});
-      expect(page.items.map((f) => f.id)).toEqual(['f4']);
+      expect(page.items.map((f) => f.id)).toEqual([f4.id]);
     });
 
     it('by minConfidence (facts without confidence default to 1.0)', async () => {
       const page = await store.findFacts({ minConfidence: 0.5 }, {}, {});
       // f4 has no confidence set → treated as 1.0 → passes min 0.5.
-      expect(page.items.map((f) => f.id).sort()).toEqual(['f1', 'f3', 'f4']);
+      expect(page.items.map((f) => f.id).sort()).toEqual([f1.id, f3.id, f4.id].sort());
     });
 
     it('combined filters (AND semantics)', async () => {
       const page = await store.findFacts(
-        { subjectId: 'a', predicate: 'works_at' },
+        { subjectId: a.id, predicate: 'works_at' },
         {},
         {},
       );
-      expect(page.items.map((f) => f.id)).toEqual(['f1']);
+      expect(page.items.map((f) => f.id)).toEqual([f1.id]);
     });
   });
 
   describe('facts — archived handling', () => {
+    let a: IEntity;
+    let live: IFact;
+    let archived: IFact;
+
     beforeEach(async () => {
-      await store.putEntity(entity({ id: 'a' }));
-      await store.putFacts([
-        fact({ id: 'live', subjectId: 'a' }),
-        fact({ id: 'archived', subjectId: 'a', archived: true }),
-      ]);
+      a = await store.createEntity(entityInput());
+      live = await store.createFact(factInput(a.id));
+      archived = await store.createFact(factInput(a.id, { archived: true }));
     });
 
     it('default (undefined) hides archived', async () => {
-      const page = await store.findFacts({ subjectId: 'a' }, {}, {});
-      expect(page.items.map((f) => f.id)).toEqual(['live']);
+      const page = await store.findFacts({ subjectId: a.id }, {}, {});
+      expect(page.items.map((f) => f.id)).toEqual([live.id]);
     });
 
     it('archived:true shows only archived', async () => {
-      const page = await store.findFacts({ subjectId: 'a', archived: true }, {}, {});
-      expect(page.items.map((f) => f.id)).toEqual(['archived']);
+      const page = await store.findFacts({ subjectId: a.id, archived: true }, {}, {});
+      expect(page.items.map((f) => f.id)).toEqual([archived.id]);
     });
 
     it('archived:false shows only non-archived', async () => {
-      const page = await store.findFacts({ subjectId: 'a', archived: false }, {}, {});
-      expect(page.items.map((f) => f.id)).toEqual(['live']);
+      const page = await store.findFacts({ subjectId: a.id, archived: false }, {}, {});
+      expect(page.items.map((f) => f.id)).toEqual([live.id]);
     });
   });
 
@@ -426,119 +448,120 @@ describe('InMemoryAdapter', () => {
     const yesterday = new Date('2026-04-16');
     const today = new Date('2026-04-17');
     const tomorrow = new Date('2026-04-18');
+    let a: IEntity;
 
     beforeEach(async () => {
-      await store.putEntity(entity({ id: 'a' }));
+      a = await store.createEntity(entityInput());
     });
 
     it('observedAfter / observedBefore filter', async () => {
-      await store.putFacts([
-        fact({ id: 'old', subjectId: 'a', observedAt: yesterday, createdAt: yesterday }),
-        fact({ id: 'new', subjectId: 'a', observedAt: tomorrow, createdAt: tomorrow }),
-      ]);
+      const old = await store.createFact(factInput(a.id, { observedAt: yesterday }));
+      const recent = await store.createFact(factInput(a.id, { observedAt: tomorrow }));
       const beforePage = await store.findFacts(
-        { subjectId: 'a', observedBefore: today },
+        { subjectId: a.id, observedBefore: today },
         {},
         {},
       );
-      expect(beforePage.items.map((f) => f.id)).toEqual(['old']);
+      expect(beforePage.items.map((f) => f.id)).toEqual([old.id]);
       const afterPage = await store.findFacts(
-        { subjectId: 'a', observedAfter: today },
+        { subjectId: a.id, observedAfter: today },
         {},
         {},
       );
-      expect(afterPage.items.map((f) => f.id)).toEqual(['new']);
+      expect(afterPage.items.map((f) => f.id)).toEqual([recent.id]);
     });
 
     it('asOf respects validFrom/validUntil + createdAt', async () => {
-      await store.putFact(
-        fact({ id: 'future', subjectId: 'a', createdAt: today, validFrom: tomorrow }),
+      const future = await store.createFact(
+        factInput(a.id, { validFrom: tomorrow }),
       );
+      // Override createdAt via internal archiving path isn't possible; for test we
+      // rely on createdAt being "now" which is after today. Use a very-future date.
+      const veryFuture = new Date(Date.now() + 100 * 86_400_000);
       expect(
-        (await store.findFacts({ subjectId: 'a', asOf: today }, {}, {})).items,
+        (await store.findFacts({ subjectId: a.id, asOf: today }, {}, {})).items,
       ).toEqual([]);
       expect(
-        (await store.findFacts({ subjectId: 'a', asOf: tomorrow }, {}, {})).items.map(
+        (await store.findFacts({ subjectId: a.id, asOf: veryFuture }, {}, {})).items.map(
           (f) => f.id,
         ),
-      ).toEqual(['future']);
+      ).toEqual([future.id]);
     });
 
     it('asOf filters expired facts (past validUntil)', async () => {
-      await store.putFact(
-        fact({
-          id: 'expired',
-          subjectId: 'a',
-          createdAt: yesterday,
-          validFrom: yesterday,
-          validUntil: yesterday,
-        }),
+      await store.createFact(
+        factInput(a.id, { validFrom: yesterday, validUntil: yesterday }),
       );
-      const page = await store.findFacts({ subjectId: 'a', asOf: today }, {}, {});
+      const page = await store.findFacts({ subjectId: a.id, asOf: today }, {}, {});
       expect(page.items).toEqual([]);
     });
   });
 
   describe('facts — pagination + ordering', () => {
+    let a: IEntity;
+    let ids: string[];
+
     beforeEach(async () => {
-      await store.putEntity(entity({ id: 'a' }));
+      a = await store.createEntity(entityInput());
+      ids = [];
       for (let i = 0; i < 5; i++) {
-        await store.putFact(
-          fact({
-            id: `f${i}`,
-            subjectId: 'a',
+        const f = await store.createFact(
+          factInput(a.id, {
             confidence: i / 10,
             observedAt: new Date(2026, 0, i + 1),
           }),
         );
+        ids.push(f.id);
       }
     });
 
     it('orderBy observedAt desc', async () => {
       const page = await store.findFacts(
-        { subjectId: 'a' },
+        { subjectId: a.id },
         { orderBy: { field: 'observedAt', direction: 'desc' } },
         {},
       );
-      expect(page.items.map((f) => f.id)).toEqual(['f4', 'f3', 'f2', 'f1', 'f0']);
+      expect(page.items.map((f) => f.id)).toEqual(
+        [ids[4]!, ids[3]!, ids[2]!, ids[1]!, ids[0]!],
+      );
     });
 
     it('orderBy confidence asc', async () => {
       const page = await store.findFacts(
-        { subjectId: 'a' },
+        { subjectId: a.id },
         { orderBy: { field: 'confidence', direction: 'asc' } },
         {},
       );
-      expect(page.items.map((f) => f.id)).toEqual(['f0', 'f1', 'f2', 'f3', 'f4']);
+      expect(page.items.map((f) => f.id)).toEqual(ids);
     });
 
     it('paginates with cursor', async () => {
-      const p1 = await store.findFacts({ subjectId: 'a' }, { limit: 2 }, {});
+      const p1 = await store.findFacts({ subjectId: a.id }, { limit: 2 }, {});
       expect(p1.items).toHaveLength(2);
-      const p2 = await store.findFacts({ subjectId: 'a' }, { limit: 2, cursor: p1.nextCursor }, {});
+      const p2 = await store.findFacts({ subjectId: a.id }, { limit: 2, cursor: p1.nextCursor }, {});
       expect(p2.items).toHaveLength(2);
-      const p3 = await store.findFacts({ subjectId: 'a' }, { limit: 2, cursor: p2.nextCursor }, {});
+      const p3 = await store.findFacts({ subjectId: a.id }, { limit: 2, cursor: p2.nextCursor }, {});
       expect(p3.items).toHaveLength(1);
       expect(p3.nextCursor).toBeUndefined();
     });
   });
 
   describe('facts — countFacts', () => {
+    let a: IEntity;
+
     beforeEach(async () => {
-      await store.putEntity(entity({ id: 'a' }));
-      await store.putFacts([
-        fact({ id: 'f1', subjectId: 'a' }),
-        fact({ id: 'f2', subjectId: 'a', archived: true }),
-        fact({ id: 'f3', subjectId: 'a' }),
-      ]);
+      a = await store.createEntity(entityInput());
+      await store.createFact(factInput(a.id));
+      await store.createFact(factInput(a.id, { archived: true }));
+      await store.createFact(factInput(a.id));
     });
 
     it('matches findFacts default (excludes archived)', async () => {
-      expect(await store.countFacts({ subjectId: 'a' }, {})).toBe(2);
+      expect(await store.countFacts({ subjectId: a.id }, {})).toBe(2);
     });
 
     it('counts only archived when archived:true', async () => {
-      expect(await store.countFacts({ subjectId: 'a', archived: true }, {})).toBe(1);
+      expect(await store.countFacts({ subjectId: a.id, archived: true }, {})).toBe(1);
     });
   });
 
@@ -548,37 +571,37 @@ describe('InMemoryAdapter', () => {
 
   describe('scope — visibility matrix', () => {
     it('global entity visible to every scope', async () => {
-      await store.putEntity(entity({ id: 'g' }));
-      expect(await store.getEntity('g', {})).not.toBeNull();
-      expect(await store.getEntity('g', { groupId: 'anything' })).not.toBeNull();
-      expect(await store.getEntity('g', { userId: 'u1' })).not.toBeNull();
+      const g = await store.createEntity(entityInput());
+      expect(await store.getEntity(g.id, {})).not.toBeNull();
+      expect(await store.getEntity(g.id, { groupId: 'anything' })).not.toBeNull();
+      expect(await store.getEntity(g.id, { userId: 'u1' })).not.toBeNull();
     });
 
     it('group-scoped entity only visible to matching groupId', async () => {
-      await store.putEntity(entity({ id: 'a', groupId: 'g1' }));
-      expect(await store.getEntity('a', { groupId: 'g1' })).not.toBeNull();
-      expect(await store.getEntity('a', { groupId: 'g2' })).toBeNull();
-      expect(await store.getEntity('a', {})).toBeNull();
+      const e = await store.createEntity(entityInput({ groupId: 'g1' }));
+      expect(await store.getEntity(e.id, { groupId: 'g1' })).not.toBeNull();
+      expect(await store.getEntity(e.id, { groupId: 'g2' })).toBeNull();
+      expect(await store.getEntity(e.id, {})).toBeNull();
     });
 
     it('user-scoped entity only visible to matching userId', async () => {
-      await store.putEntity(entity({ id: 'a', ownerId: 'u1' }));
-      expect(await store.getEntity('a', { userId: 'u1' })).not.toBeNull();
-      expect(await store.getEntity('a', { userId: 'u2' })).toBeNull();
+      const e = await store.createEntity(entityInput({ ownerId: 'u1' }));
+      expect(await store.getEntity(e.id, { userId: 'u1' })).not.toBeNull();
+      expect(await store.getEntity(e.id, { userId: 'u2' })).toBeNull();
     });
 
     it('group+user scoped entity requires BOTH to match', async () => {
-      await store.putEntity(entity({ id: 'a', groupId: 'g1', ownerId: 'u1' }));
-      expect(await store.getEntity('a', { groupId: 'g1', userId: 'u1' })).not.toBeNull();
-      expect(await store.getEntity('a', { groupId: 'g1', userId: 'u2' })).toBeNull();
-      expect(await store.getEntity('a', { groupId: 'g2', userId: 'u1' })).toBeNull();
+      const e = await store.createEntity(entityInput({ groupId: 'g1', ownerId: 'u1' }));
+      expect(await store.getEntity(e.id, { groupId: 'g1', userId: 'u1' })).not.toBeNull();
+      expect(await store.getEntity(e.id, { groupId: 'g1', userId: 'u2' })).toBeNull();
+      expect(await store.getEntity(e.id, { groupId: 'g2', userId: 'u1' })).toBeNull();
     });
 
     it('fact scope is independent of entity scope for visibility checks', async () => {
-      await store.putEntity(entity({ id: 'a' })); // global entity
-      await store.putFact(fact({ id: 'f', subjectId: 'a', groupId: 'g1' }));
-      expect(await store.getFact('f', { groupId: 'g1' })).not.toBeNull();
-      expect(await store.getFact('f', { groupId: 'g2' })).toBeNull();
+      const e = await store.createEntity(entityInput()); // global entity
+      const f = await store.createFact(factInput(e.id, { groupId: 'g1' }));
+      expect(await store.getFact(f.id, { groupId: 'g1' })).not.toBeNull();
+      expect(await store.getFact(f.id, { groupId: 'g2' })).toBeNull();
     });
   });
 
@@ -588,51 +611,57 @@ describe('InMemoryAdapter', () => {
 
   describe('traverse', () => {
     it('delegates to genericTraverse and returns neighborhood', async () => {
-      await store.putEntities([entity({ id: 'a' }), entity({ id: 'b' })]);
-      await store.putFact(fact({ id: 'f1', subjectId: 'a', predicate: 'works_at', objectId: 'b' }));
-      const result = await store.traverse('a', { direction: 'out', maxDepth: 1 }, {});
-      expect(result.nodes.map((n) => n.entity.id).sort()).toEqual(['a', 'b']);
+      const a = await store.createEntity(entityInput({ displayName: 'A' }));
+      const b = await store.createEntity(entityInput({ displayName: 'B' }));
+      await store.createFact(factInput(a.id, { predicate: 'works_at', objectId: b.id }));
+      const result = await store.traverse(a.id, { direction: 'out', maxDepth: 1 }, {});
+      expect(result.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id].sort());
     });
   });
 
   describe('semanticSearch', () => {
+    let a: IEntity;
+    let match: IFact;
+    let opp: IFact;
+    let unembedded: IFact;
+
     beforeEach(async () => {
-      await store.putEntity(entity({ id: 'a' }));
-      await store.putFact(
-        fact({ id: 'f1', subjectId: 'a', details: 'matches', embedding: [1, 0, 0] }),
+      a = await store.createEntity(entityInput());
+      match = await store.createFact(
+        factInput(a.id, { details: 'matches', embedding: [1, 0, 0] }),
       );
-      await store.putFact(
-        fact({ id: 'f2', subjectId: 'a', details: 'opposite', embedding: [0, 0, 1] }),
+      opp = await store.createFact(
+        factInput(a.id, { details: 'opposite', embedding: [0, 0, 1] }),
       );
-      await store.putFact(fact({ id: 'f3', subjectId: 'a', details: 'unembedded' }));
+      unembedded = await store.createFact(factInput(a.id, { details: 'unembedded' }));
     });
 
     it('ranks by cosine similarity', async () => {
       const results = await store.semanticSearch([1, 0, 0], {}, { topK: 2 }, {});
-      expect(results[0]!.fact.id).toBe('f1');
+      expect(results[0]!.fact.id).toBe(match.id);
       expect(results[0]!.score).toBeCloseTo(1, 5);
     });
 
     it('skips facts without embedding', async () => {
       const results = await store.semanticSearch([1, 0, 0], {}, { topK: 10 }, {});
-      expect(results.map((r) => r.fact.id)).not.toContain('f3');
+      expect(results.map((r) => r.fact.id)).not.toContain(unembedded.id);
     });
 
     it('skips facts with wrong embedding dimension', async () => {
-      await store.putFact(
-        fact({ id: 'f4', subjectId: 'a', embedding: [1, 0] }), // wrong dim
-      );
+      await store.createFact(factInput(a.id, { embedding: [1, 0] })); // wrong dim
       const results = await store.semanticSearch([1, 0, 0], {}, { topK: 10 }, {});
-      expect(results.map((r) => r.fact.id)).not.toContain('f4');
+      expect(results.every((r) => r.fact.embedding?.length === 3)).toBe(true);
+      // suppress unused
+      expect(opp.id).toBeTruthy();
     });
 
     it('respects filter + scope', async () => {
-      await store.putEntity(entity({ id: 'b', groupId: 'g2' }));
-      await store.putFact(
-        fact({ id: 'fb', subjectId: 'b', groupId: 'g2', embedding: [1, 0, 0] }),
+      const b = await store.createEntity(entityInput({ groupId: 'g2' }));
+      const fb = await store.createFact(
+        factInput(b.id, { groupId: 'g2', embedding: [1, 0, 0] }),
       );
       const results = await store.semanticSearch([1, 0, 0], {}, { topK: 10 }, { groupId: 'g1' });
-      expect(results.map((r) => r.fact.id)).not.toContain('fb');
+      expect(results.map((r) => r.fact.id)).not.toContain(fb.id);
     });
   });
 
@@ -642,10 +671,10 @@ describe('InMemoryAdapter', () => {
 
   describe('lifecycle', () => {
     it('destroy flips isDestroyed and clears data', async () => {
-      await store.putEntity(entity({ id: 'a' }));
+      const e = await store.createEntity(entityInput());
       store.destroy();
       expect(store.isDestroyed).toBe(true);
-      await expect(store.getEntity('a', {})).rejects.toThrow();
+      await expect(store.getEntity(e.id, {})).rejects.toThrow();
     });
 
     it('destroy is idempotent', () => {
@@ -656,12 +685,31 @@ describe('InMemoryAdapter', () => {
 
   describe('seed data', () => {
     it('accepts entities + facts in constructor', async () => {
+      const now = new Date();
       const seeded = new InMemoryAdapter({
-        entities: [entity({ id: 'a' })],
-        facts: [fact({ id: 'f1', subjectId: 'a' })],
+        entities: [
+          {
+            id: 'seed_a',
+            type: 'person',
+            displayName: 'Seed',
+            identifiers: [],
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        facts: [
+          {
+            id: 'seed_f1',
+            subjectId: 'seed_a',
+            predicate: 'p',
+            kind: 'atomic',
+            createdAt: now,
+          },
+        ],
       });
-      expect(await seeded.getEntity('a', {})).not.toBeNull();
-      expect(await seeded.getFact('f1', {})).not.toBeNull();
+      expect(await seeded.getEntity('seed_a', {})).not.toBeNull();
+      expect(await seeded.getFact('seed_f1', {})).not.toBeNull();
       seeded.destroy();
     });
   });

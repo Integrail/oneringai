@@ -14,11 +14,14 @@ import { assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import type { IDisposable } from '../domain/interfaces/IDisposable.js';
 import { genericTraverse } from './GenericTraversal.js';
 import { rankFacts } from './Ranking.js';
+import { EntityResolver, buildIdentityString } from './resolution/EntityResolver.js';
 import type {
   ChangeEvent,
   ContextOptions,
   EmbeddingQueueConfig,
+  EntityCandidate,
   EntityId,
+  EntityResolutionConfig,
   EntityView,
   FactFilter,
   FactId,
@@ -32,10 +35,19 @@ import type {
   Identifier,
   MemorySystemConfig,
   Neighborhood,
+  NewEntity,
+  NewFact,
   RankingConfig,
+  RelatedEvent,
+  RelatedTask,
+  ResolveEntityOptions,
+  ResolveEntityQuery,
   ScopeFields,
   ScopeFilter,
   TraversalOptions,
+  UpsertBySurfaceInput,
+  UpsertBySurfaceOptions,
+  UpsertBySurfaceResult,
   UpsertEntityResult,
 } from './types.js';
 
@@ -48,6 +60,18 @@ const DEFAULT_PROFILE_THRESHOLD = 10;
 const DEFAULT_EMBED_CONCURRENCY = 4;
 const DEFAULT_EMBED_RETRIES = 3;
 const SEMANTIC_MIN_DETAILS_LENGTH = 80;
+
+/** Non-terminal task states — surfaced in `relatedTasks` by default. */
+const TASK_ACTIVE_STATES = ['pending', 'in_progress', 'blocked', 'deferred'];
+
+/** Conventional metadata fields on task entities that reference other entities. */
+const RELATIONAL_TASK_FIELDS = ['assigneeId', 'reporterId', 'projectId'] as const;
+
+const ROLE_BY_FIELD: Record<string, string> = {
+  assigneeId: 'assigned_to',
+  reporterId: 'reporter_of',
+  projectId: 'project_of',
+};
 
 // Error types -----------------------------------------------------------------
 
@@ -85,6 +109,8 @@ export class MemorySystem implements IDisposable {
   private readonly ranking: RankingConfig;
   private readonly onChange?: (event: ChangeEvent) => void;
   private readonly queue: EmbeddingQueue;
+  private readonly resolver: EntityResolver;
+  private readonly resolutionConfig: EntityResolutionConfig;
 
   /** Tracks pending profile regenerations per (entityId + scopeKey) to prevent overlap. */
   private readonly regenInFlight = new Set<string>();
@@ -100,6 +126,23 @@ export class MemorySystem implements IDisposable {
     this.ranking = config.topFactsRanking ?? {};
     this.onChange = config.onChange;
     this.queue = new EmbeddingQueue(this.store, this.embedder, config.embeddingQueue);
+    this.resolutionConfig = config.entityResolution ?? {};
+    this.resolver = new EntityResolver(
+      {
+        store: this.store,
+        embedQuery: this.embedder
+          ? (text: string) => this.embedder!.embed(text)
+          : undefined,
+        upsertEntity: async (input, scope) => {
+          const res = await this.upsertEntity(input, scope);
+          return { entity: res.entity, created: res.created };
+        },
+        appendAliasesAndIdentifiers: async (id, aliases, identifiers, scope) => {
+          return this.appendAliasesAndIdentifiers(id, aliases, identifiers, scope);
+        },
+      },
+      this.resolutionConfig,
+    );
   }
 
   // ==========================================================================
@@ -115,9 +158,9 @@ export class MemorySystem implements IDisposable {
     scope: ScopeFilter,
   ): Promise<UpsertEntityResult> {
     assertNotDestroyed(this, 'upsertEntity');
-    if (input.identifiers.length === 0) {
-      throw new Error('upsertEntity: at least one identifier is required');
-    }
+    // Empty identifiers is allowed — entities like projects, topics, clusters
+    // may genuinely have no external strong key. They can still be found via
+    // displayName/alias search + fuzzy + identity embedding.
 
     // Lookup every identifier; collect (entityId → match count)
     const matchCounts = new Map<EntityId, number>();
@@ -154,7 +197,8 @@ export class MemorySystem implements IDisposable {
         version: best.version + 1,
         updatedAt: new Date(),
       };
-      await this.store.putEntity(next);
+      await this.store.updateEntity(next);
+      this.queueIdentityEmbedding(next, scope);
       this.emit({ type: 'entity.upsert', entity: next, created: false });
       return {
         entity: next,
@@ -181,8 +225,8 @@ export class MemorySystem implements IDisposable {
     scope: ScopeFilter,
   ): Promise<UpsertEntityResult> {
     const now = new Date();
-    const entity: IEntity = {
-      id: input.id ?? generateId('ent'),
+    // Build the NewEntity input (no id, version, createdAt, updatedAt).
+    const newEntity: NewEntity = {
       type: input.type,
       displayName: input.displayName,
       aliases: input.aliases ? [...input.aliases] : undefined,
@@ -190,11 +234,9 @@ export class MemorySystem implements IDisposable {
       groupId: input.groupId ?? scope.groupId,
       ownerId: input.ownerId ?? scope.userId,
       metadata: input.metadata,
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
     };
-    await this.store.putEntity(entity);
+    const entity = await this.store.createEntity(newEntity);
+    this.queueIdentityEmbedding(entity, scope);
     this.emit({ type: 'entity.upsert', entity, created: true });
     return {
       entity,
@@ -202,6 +244,73 @@ export class MemorySystem implements IDisposable {
       mergedIdentifiers: entity.identifiers.length,
       mergeCandidates: [],
     };
+  }
+
+  /**
+   * Merge new aliases + identifiers into an existing entity (no-op if all are
+   * already present). Bumps version, writes, emits event, and triggers identity
+   * embedding refresh. Used by EntityResolver when it matches a surface to an
+   * existing entity.
+   */
+  private async appendAliasesAndIdentifiers(
+    id: EntityId,
+    newAliases: string[],
+    newIdentifiers: Identifier[],
+    scope: ScopeFilter,
+  ): Promise<IEntity> {
+    const current = await this.store.getEntity(id, scope);
+    if (!current) throw new Error(`appendAliasesAndIdentifiers: entity ${id} not found`);
+
+    const aliases = [...(current.aliases ?? [])];
+    let dirty = false;
+    for (const a of newAliases) {
+      if (!a || a.trim().length === 0) continue;
+      const exists =
+        aliases.some((x) => x.toLowerCase() === a.toLowerCase()) ||
+        current.displayName.toLowerCase() === a.toLowerCase();
+      if (!exists) {
+        aliases.push(a);
+        dirty = true;
+      }
+    }
+
+    const identifiers = [...current.identifiers];
+    for (const ident of newIdentifiers) {
+      const present = identifiers.some(
+        (i) => i.kind === ident.kind && i.value.toLowerCase() === ident.value.toLowerCase(),
+      );
+      if (!present) {
+        identifiers.push({ ...ident, addedAt: ident.addedAt ?? new Date() });
+        dirty = true;
+      }
+    }
+
+    if (!dirty) return current;
+
+    const next: IEntity = {
+      ...current,
+      aliases: aliases.length > 0 ? aliases : current.aliases,
+      identifiers,
+      version: current.version + 1,
+      updatedAt: new Date(),
+    };
+    await this.store.updateEntity(next);
+    this.queueIdentityEmbedding(next, scope);
+    this.emit({ type: 'entity.upsert', entity: next, created: false });
+    return next;
+  }
+
+  /** Queue an identity-embedding refresh if the feature is enabled + embedder present. */
+  private queueIdentityEmbedding(entity: IEntity, scope: ScopeFilter): void {
+    if (!this.embedder) return;
+    if (this.resolutionConfig.enableIdentityEmbedding === false) return;
+    const text = buildIdentityString({
+      type: entity.type,
+      displayName: entity.displayName,
+      aliases: entity.aliases ?? [],
+      identifiers: entity.identifiers,
+    });
+    this.queue.enqueueIdentity(entity.id, text, scope);
   }
 
   getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
@@ -216,6 +325,37 @@ export class MemorySystem implements IDisposable {
   ) {
     assertNotDestroyed(this, 'searchEntities');
     return this.store.searchEntities(query, opts, scope);
+  }
+
+  /**
+   * Resolve a surface form ("Microsoft", "Q3 Planning", "John") to ranked
+   * candidate entities. Matching tiers: strong identifier → exact displayName →
+   * exact alias → fuzzy → semantic (identityEmbedding). Returns candidates
+   * sorted by confidence; empty if nothing meets `opts.threshold` (default 0.5).
+   */
+  resolveEntity(
+    query: ResolveEntityQuery,
+    scope: ScopeFilter,
+    opts?: ResolveEntityOptions,
+  ): Promise<EntityCandidate[]> {
+    assertNotDestroyed(this, 'resolveEntity');
+    return this.resolver.resolve(query, scope, opts);
+  }
+
+  /**
+   * Upsert-or-resolve by surface form. If the top candidate clears
+   * `autoResolveThreshold` (default conservative 0.90), returns that entity
+   * with the new surface + identifiers merged in (alias accumulation).
+   * Otherwise creates a new entity and reports near-matches as
+   * `mergeCandidates` for deferred human review.
+   */
+  upsertEntityBySurface(
+    input: UpsertBySurfaceInput,
+    scope: ScopeFilter,
+    opts?: UpsertBySurfaceOptions,
+  ): Promise<UpsertBySurfaceResult> {
+    assertNotDestroyed(this, 'upsertEntityBySurface');
+    return this.resolver.upsertBySurface(input, scope, opts);
   }
 
   /**
@@ -253,7 +393,7 @@ export class MemorySystem implements IDisposable {
       version: winner.version + 1,
       updatedAt: new Date(),
     };
-    await this.store.putEntity(nextWinner);
+    await this.store.updateEntity(nextWinner);
 
     // Rewrite facts: subjectId or objectId === loserId → winnerId
     await this.rewriteFactReferences(loserId, winnerId, scope);
@@ -383,12 +523,24 @@ export class MemorySystem implements IDisposable {
       }
     }
 
+    // Context visibility check — same reasoning as object. Every entity listed
+    // in contextIds must be visible to the caller.
+    if (input.contextIds && input.contextIds.length > 0) {
+      for (const cid of input.contextIds) {
+        const ent = await this.store.getEntity(cid, scope);
+        if (!ent) {
+          throw new Error(
+            `addFact: context entity ${cid} not visible or not found`,
+          );
+        }
+      }
+    }
+
     const factScope = deriveFactScope(input, subject, scope);
     assertScopeInvariant(subject, factScope);
 
     const now = new Date();
-    const fact: IFact = {
-      id: input.id ?? generateId('fact'),
+    const newFact: NewFact = {
       subjectId: input.subjectId,
       predicate: input.predicate,
       kind: input.kind,
@@ -399,8 +551,10 @@ export class MemorySystem implements IDisposable {
       embedding: input.embedding,
       isSemantic: input.isSemantic ?? computeIsSemantic(input),
       confidence: input.confidence,
-      sourceSignalIds: input.sourceSignalIds,
+      sourceSignalId: input.sourceSignalId,
       derivedBy: input.derivedBy,
+      importance: input.importance,
+      contextIds: input.contextIds,
       supersedes: input.supersedes,
       archived: input.archived,
       isAggregate: input.isAggregate,
@@ -410,14 +564,13 @@ export class MemorySystem implements IDisposable {
       metadata: input.metadata,
       groupId: factScope.groupId,
       ownerId: factScope.ownerId,
-      createdAt: now,
     };
 
     // Crash-safe supersession: write the new fact first, THEN archive the
     // predecessor. If the process dies between the two, the worst case is a
     // recoverable duplicate (old + new both visible), not an invisible gap.
     // Adapters with native transactions can make this truly atomic.
-    await this.store.putFact(fact);
+    const fact = await this.store.createFact(newFact);
     if (fact.supersedes) {
       await this.store.updateFact(fact.supersedes, { archived: true }, scope);
     }
@@ -491,13 +644,16 @@ export class MemorySystem implements IDisposable {
       this.getProfile(entityId, scope),
       this.store.findFacts(
         {
-          subjectId: entityId,
+          // touchesEntity: subject OR object OR contextIds includes entityId.
+          // Broader than v1 (subject-only) — enables "activity around this deal"
+          // queries where the deal is referenced via contextIds.
+          touchesEntity: entityId,
           kind: 'atomic',
           minConfidence: this.ranking.minConfidence,
           asOf: opts.asOf,
         },
         {
-          // Fetch a superset; we re-rank in memory for confidence × recency × predicate weight.
+          // Fetch a superset; we re-rank in memory for confidence × recency × predicate weight × importance.
           limit: topFactsLimit * 3,
           orderBy: { field: 'observedAt', direction: 'desc' },
         },
@@ -508,6 +664,12 @@ export class MemorySystem implements IDisposable {
     const topFacts = rankFacts(candidatePage.items, this.ranking, now).slice(0, topFactsLimit);
 
     const view: EntityView = { entity, profile, topFacts };
+
+    // Default-on tiers: relatedTasks + relatedEvents (unless caller opted out).
+    if (opts.tiers !== 'minimal') {
+      view.relatedTasks = await this.resolveRelatedTasks(entityId, opts, scope);
+      view.relatedEvents = await this.resolveRelatedEvents(entityId, opts, scope);
+    }
 
     if (includeSet.has('documents')) {
       const docPredicates = opts.documentPredicates ?? [];
@@ -556,6 +718,162 @@ export class MemorySystem implements IDisposable {
     }
 
     return view;
+  }
+
+  /**
+   * Tasks related to a subject entity. Finds task entities (type='task') where
+   * any of the common relational metadata fields point at the subject, OR
+   * where a relational fact ties a task to the subject. Returns only non-
+   * terminal states by default.
+   */
+  private async resolveRelatedTasks(
+    entityId: EntityId,
+    opts: ContextOptions,
+    scope: ScopeFilter,
+  ): Promise<RelatedTask[]> {
+    const limit = opts.relatedTasksLimit ?? 15;
+    const acc = new Map<EntityId, RelatedTask>();
+
+    for (const role of RELATIONAL_TASK_FIELDS) {
+      if (acc.size >= limit) break;
+      const page = await this.store.listEntities(
+        {
+          type: 'task',
+          metadataFilter: {
+            [role]: entityId,
+            state: { $in: TASK_ACTIVE_STATES },
+          },
+        },
+        { limit: limit - acc.size },
+        scope,
+      );
+      for (const t of page.items) {
+        if (!acc.has(t.id)) acc.set(t.id, { task: t, role: ROLE_BY_FIELD[role]! });
+      }
+    }
+
+    // Also include tasks where `entityId` appears in contextIds of any fact
+    // whose subject is a task entity.
+    if (acc.size < limit) {
+      const contextFacts = await this.store.findFacts(
+        { contextId: entityId, kind: 'atomic', asOf: opts.asOf },
+        { limit: 200 },
+        scope,
+      );
+      const seenTaskIds = new Set<EntityId>();
+      for (const f of contextFacts.items) {
+        seenTaskIds.add(f.subjectId);
+        if (f.objectId) seenTaskIds.add(f.objectId);
+      }
+      for (const tid of seenTaskIds) {
+        if (acc.has(tid) || acc.size >= limit) continue;
+        const t = await this.store.getEntity(tid, scope);
+        if (!t || t.type !== 'task') continue;
+        const state = (t.metadata as Record<string, unknown> | undefined)?.state;
+        if (!TASK_ACTIVE_STATES.includes(state as string)) continue;
+        acc.set(t.id, { task: t, role: 'context_of' });
+      }
+    }
+
+    return [...acc.values()].slice(0, limit);
+  }
+
+  /**
+   * Events related to a subject entity. Finds event entities in a recent
+   * window where subject is the designated attendee/host/reference, plus
+   * events surfacing via contextIds on facts about the subject.
+   */
+  private async resolveRelatedEvents(
+    entityId: EntityId,
+    opts: ContextOptions,
+    scope: ScopeFilter,
+  ): Promise<RelatedEvent[]> {
+    const limit = opts.relatedEventsLimit ?? 15;
+    const windowDays = opts.recentEventsWindowDays ?? 90;
+    const windowStart = new Date(Date.now() - windowDays * 86_400_000);
+
+    const acc = new Map<EntityId, RelatedEvent>();
+
+    // Events where this entity is in attendeeIds (simple equality — adapters
+    // don't yet support array-membership on metadataFilter, so fall back to
+    // listing events in window and filtering client-side here).
+    // For now we query by group and filter in-memory; this is still bounded
+    // because we cap with `limit: 200`.
+    const eventsPage = await this.store.listEntities(
+      { type: 'event' },
+      { limit: 200 },
+      scope,
+    );
+    for (const ev of eventsPage.items) {
+      if (acc.size >= limit) break;
+      const md = (ev.metadata ?? {}) as Record<string, unknown>;
+      const startTime = md.startTime instanceof Date
+        ? md.startTime
+        : typeof md.startTime === 'string'
+          ? new Date(md.startTime)
+          : undefined;
+      if (startTime && startTime < windowStart) continue;
+      const attendeeIds = Array.isArray(md.attendeeIds) ? (md.attendeeIds as string[]) : [];
+      const hostId = typeof md.hostId === 'string' ? md.hostId : undefined;
+      let role: string | null = null;
+      if (attendeeIds.includes(entityId)) role = 'attended';
+      else if (hostId === entityId) role = 'hosted';
+      if (!role) continue;
+      acc.set(ev.id, { event: ev, role, when: startTime });
+    }
+
+    // Also include events where entity appears in contextIds of facts whose
+    // subject or object is an event entity.
+    if (acc.size < limit) {
+      const contextFacts = await this.store.findFacts(
+        { contextId: entityId, kind: 'atomic', asOf: opts.asOf },
+        { limit: 200 },
+        scope,
+      );
+      const candidateIds = new Set<EntityId>();
+      for (const f of contextFacts.items) {
+        candidateIds.add(f.subjectId);
+        if (f.objectId) candidateIds.add(f.objectId);
+      }
+      for (const cid of candidateIds) {
+        if (acc.has(cid) || acc.size >= limit) continue;
+        const ev = await this.store.getEntity(cid, scope);
+        if (!ev || ev.type !== 'event') continue;
+        const md = (ev.metadata ?? {}) as Record<string, unknown>;
+        const startTime = md.startTime instanceof Date
+          ? md.startTime
+          : typeof md.startTime === 'string'
+            ? new Date(md.startTime)
+            : undefined;
+        acc.set(ev.id, { event: ev, role: 'context_of', when: startTime });
+      }
+    }
+
+    return [...acc.values()].slice(0, limit);
+  }
+
+  /**
+   * Shallow-merge a patch into entity.metadata. Version-bumping, scope-checked,
+   * emits entity.upsert event. Caller does NOT read-modify-write — this helper
+   * handles all of that atomically (from the caller's perspective).
+   */
+  async updateEntityMetadata(
+    id: EntityId,
+    patch: Record<string, unknown>,
+    scope: ScopeFilter,
+  ): Promise<IEntity> {
+    assertNotDestroyed(this, 'updateEntityMetadata');
+    const current = await this.store.getEntity(id, scope);
+    if (!current) throw new Error(`updateEntityMetadata: entity ${id} not found`);
+    const next: IEntity = {
+      ...current,
+      metadata: { ...(current.metadata ?? {}), ...patch },
+      version: current.version + 1,
+      updatedAt: new Date(),
+    };
+    await this.store.updateEntity(next);
+    this.emit({ type: 'entity.upsert', entity: next, created: false });
+    return next;
   }
 
   /**
@@ -803,14 +1121,6 @@ class ScopedMemoryView implements IScopedMemoryView {
 // Pure helpers
 // =============================================================================
 
-function generateId(prefix: string): string {
-  const rand =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? (crypto as { randomUUID: () => string }).randomUUID()
-      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-  return `${prefix}_${rand}`;
-}
-
 function computeIsSemantic(input: Partial<IFact>): boolean {
   if (input.kind === 'document') return true;
   if (input.kind !== 'atomic') return false;
@@ -905,15 +1215,26 @@ function mergeIdentifiersAndAliases(
   };
 }
 
+function embeddingsEqual(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    // Allow tiny floating-point drift — if providers return the same vector
+    // across calls it's identical, but be defensive.
+    if (Math.abs(a[i]! - b[i]!) > 1e-6) return false;
+  }
+  return true;
+}
+
 // =============================================================================
 // Embedding queue — async, bounded concurrency, retried
 // =============================================================================
 
 interface QueueItem {
-  factId: FactId;
   text: string;
   scope: ScopeFilter;
   attempts: number;
+  /** Called with the computed embedding vector; queue retries if this or embed() throws. */
+  onComplete: (embedding: number[]) => Promise<void>;
 }
 
 class EmbeddingQueue {
@@ -933,9 +1254,46 @@ class EmbeddingQueue {
     this.maxRetries = config?.retries ?? DEFAULT_EMBED_RETRIES;
   }
 
+  /** Enqueue a fact's embedding — writes to IFact.embedding via updateFact. */
   enqueue(factId: FactId, text: string, scope: ScopeFilter): void {
     if (this.stopped || !this.embedder) return;
-    this.queue.push({ factId, text, scope, attempts: 0 });
+    this.queue.push({
+      text,
+      scope,
+      attempts: 0,
+      onComplete: async (embedding) => {
+        await this.store.updateFact(factId, { embedding }, scope);
+      },
+    });
+    this.kick();
+  }
+
+  /** Enqueue an entity's identity embedding — read/modify/write on IEntity.identityEmbedding. */
+  enqueueIdentity(entityId: EntityId, text: string, scope: ScopeFilter): void {
+    if (this.stopped || !this.embedder) return;
+    this.queue.push({
+      text,
+      scope,
+      attempts: 0,
+      onComplete: async (embedding) => {
+        const cur = await this.store.getEntity(entityId, scope);
+        if (!cur) return;
+        // Skip write if the embedding hasn't changed — avoids version churn.
+        if (
+          cur.identityEmbedding &&
+          embeddingsEqual(cur.identityEmbedding, embedding)
+        ) {
+          return;
+        }
+        const next: IEntity = {
+          ...cur,
+          identityEmbedding: embedding,
+          version: cur.version + 1,
+          updatedAt: new Date(),
+        };
+        await this.store.updateEntity(next);
+      },
+    });
     this.kick();
   }
 
@@ -970,7 +1328,7 @@ class EmbeddingQueue {
     try {
       if (!this.embedder) return;
       const vector = await this.embedder.embed(item.text);
-      await this.store.updateFact(item.factId, { embedding: vector }, item.scope);
+      await item.onComplete(vector);
     } catch {
       if (item.attempts < this.maxRetries) {
         item.attempts++;

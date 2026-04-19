@@ -1,16 +1,21 @@
 /**
  * FakeMongoCollection — a minimal in-memory implementation of
  * IMongoCollectionLike used for unit testing MongoMemoryAdapter without a real
- * Mongo instance. Supports the subset of Mongo operators the adapter uses:
+ * Mongo instance.
+ *
+ * Implements the wrapper-level contract (post-id-translation), so it sees
+ * `id: <string>` in filters and returns documents with `id` populated. No
+ * ObjectId or _id handling needed — wrappers encapsulate that.
+ *
+ * Supports the subset of Mongo operators the adapter uses:
  *   $and, $or, $in, $exists, $elemMatch, $regex (with $options 'i'),
  *   $gte, $lte, $gt, $lt, $ne
- * plus $set / $inc update operators and a small aggregation ($match +
- * $graphLookup + $addFields + $vectorSearch for testing fast paths).
+ * plus $set / $inc update operators and minimal aggregation
+ * ($match + $graphLookup + $addFields + $vectorSearch).
  */
 
 import type {
   IMongoCollectionLike,
-  MongoBulkOp,
   MongoFilter,
   MongoFindOptions,
   MongoUpdate,
@@ -22,9 +27,8 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
   private docs: T[] = [];
   private indexes: Array<{ spec: Record<string, 1 | -1>; unique: boolean; name?: string }> = [];
   private txActive = false;
+  private seq = 0;
 
-  /** For verifying bulkWrite path — call count incremented on each invocation. */
-  public bulkWriteCalls = 0;
   /** For verifying aggregate path. */
   public aggregateCalls = 0;
 
@@ -38,22 +42,24 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
   reset(): void {
     this.docs = [];
     this.indexes = [];
-    this.bulkWriteCalls = 0;
     this.aggregateCalls = 0;
   }
 
   // ---------- writes ----------
-  async insertOne(doc: T): Promise<void> {
-    if (this.docs.some((d) => d.id === doc.id)) {
-      const err = new Error(`E11000 duplicate key error on id ${doc.id}`);
-      (err as { code?: number }).code = 11000;
-      throw err;
-    }
-    this.docs.push(clone(doc));
+  async insertOne(doc: T): Promise<string> {
+    // Strip incoming id (wrapper contract: collection assigns)
+    const { id: _omit, ...rest } = doc as T & { id?: string };
+    void _omit;
+    const assignedId = `fake_${this.name}_${++this.seq}`;
+    const stored = { ...rest, id: assignedId } as T;
+    this.docs.push(clone(stored));
+    return assignedId;
   }
 
-  async insertMany(docs: T[]): Promise<void> {
-    for (const d of docs) await this.insertOne(d);
+  async insertMany(docs: T[]): Promise<string[]> {
+    const ids: string[] = [];
+    for (const d of docs) ids.push(await this.insertOne(d));
+    return ids;
   }
 
   async updateOne(
@@ -61,11 +67,11 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
     update: MongoUpdate,
     opts?: MongoUpdateOptions,
   ): Promise<MongoUpdateResult> {
+    const cleanUpdate = stripIdFromUpdate(update);
     const idx = this.docs.findIndex((d) => matches(d, filter));
     if (idx === -1) {
       if (opts?.upsert) {
-        // Build document from $set fields + id from filter.
-        const setPart = (update as { $set?: Record<string, unknown> }).$set ?? {};
+        const setPart = (cleanUpdate as { $set?: Record<string, unknown> }).$set ?? {};
         const idFromFilter = (filter as { id?: string }).id;
         if (!idFromFilter) {
           throw new Error('FakeMongoCollection upsert requires id in filter');
@@ -77,7 +83,7 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
       return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
     }
     const current = this.docs[idx]!;
-    const next = applyUpdate(current, update);
+    const next = applyUpdate(current, cleanUpdate);
     this.docs[idx] = clone(next);
     return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0 };
   }
@@ -89,20 +95,6 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
 
   async deleteMany(filter: MongoFilter): Promise<void> {
     this.docs = this.docs.filter((d) => !matches(d, filter));
-  }
-
-  async bulkWrite(ops: Array<MongoBulkOp<T>>): Promise<void> {
-    this.bulkWriteCalls++;
-    for (const op of ops) {
-      if ('insertOne' in op) await this.insertOne(op.insertOne.document);
-      else if ('updateOne' in op) {
-        await this.updateOne(op.updateOne.filter, op.updateOne.update, {
-          upsert: op.updateOne.upsert,
-        });
-      } else if ('deleteOne' in op) {
-        await this.deleteOne(op.deleteOne.filter);
-      }
-    }
   }
 
   // ---------- reads ----------
@@ -166,16 +158,16 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
   }
 }
 
-/** Collection variant that has NO aggregate, NO bulkWrite — for fallback coverage. */
+/** Collection variant with NO aggregate, NO createIndex — for fallback coverage. */
 export class MinimalFakeMongoCollection<T extends { id: string }>
   implements IMongoCollectionLike<T>
 {
   private readonly backing = new FakeMongoCollection<T>();
 
-  insertOne(doc: T): Promise<void> {
+  insertOne(doc: T): Promise<string> {
     return this.backing.insertOne(doc);
   }
-  insertMany(docs: T[]): Promise<void> {
+  insertMany(docs: T[]): Promise<string[]> {
     return this.backing.insertMany(docs);
   }
   updateOne(
@@ -200,7 +192,6 @@ export class MinimalFakeMongoCollection<T extends { id: string }>
   countDocuments(filter: MongoFilter): Promise<number> {
     return this.backing.countDocuments(filter);
   }
-  // No aggregate, no bulkWrite, no createIndex, no withTransaction.
 }
 
 // =============================================================================
@@ -241,11 +232,9 @@ function fieldMatches(actual: unknown, expected: unknown): boolean {
     if (keys.some((k) => k.startsWith('$'))) {
       return evaluateOperators(actual, ops);
     }
-    // Nested object equality — fallback
     return JSON.stringify(actual) === JSON.stringify(expected);
   }
   if (Array.isArray(actual)) {
-    // Match if any element equals expected.
     return actual.some((v) => v === expected);
   }
   return actual === expected;
@@ -308,14 +297,13 @@ function evaluateOperators(actual: unknown, ops: Record<string, unknown>): boole
         break;
       }
       case '$options':
-        break; // handled alongside $regex
+        break;
       case '$elemMatch': {
         if (!Array.isArray(actual)) return false;
         if (!actual.some((el) => matches(el, expected as MongoFilter))) return false;
         break;
       }
       default:
-        // Unknown operator — treat as literal mismatch
         return false;
     }
   }
@@ -341,7 +329,6 @@ function getField(doc: unknown, path: string): unknown {
     if (cur == null) return undefined;
     if (typeof cur !== 'object') return undefined;
     if (Array.isArray(cur)) {
-      // Flatten one level: collect the path from every element.
       const collected: unknown[] = [];
       for (const el of cur) {
         const v = getField(el, p);
@@ -370,9 +357,19 @@ function applyUpdate<T>(doc: T, update: MongoUpdate): T {
   return next as T;
 }
 
-// =============================================================================
-// Minimal aggregation pipeline — supports the operators our adapter uses
-// =============================================================================
+function stripIdFromUpdate(update: MongoUpdate): MongoUpdate {
+  const out: MongoUpdate = {};
+  for (const [op, value] of Object.entries(update)) {
+    if ((op === '$set' || op === '$setOnInsert') && value && typeof value === 'object') {
+      const { id: _omit, ...rest } = value as Record<string, unknown>;
+      void _omit;
+      out[op] = rest;
+    } else {
+      out[op] = value;
+    }
+  }
+  return out;
+}
 
 function evaluatePipeline(docs: unknown[], pipeline: unknown[]): unknown[] {
   let current = docs.map((d) => clone(d));
@@ -385,7 +382,6 @@ function evaluatePipeline(docs: unknown[], pipeline: unknown[]): unknown[] {
       current = current.map((d) => {
         const out = { ...(d as Record<string, unknown>) };
         for (const [k, v] of Object.entries(fields)) {
-          // Very minimal — support literal values + {$meta: '...'}
           if (typeof v === 'object' && v && '$meta' in v) {
             out[k] = (d as Record<string, unknown>)[k] ?? 0;
           } else {
@@ -395,14 +391,9 @@ function evaluatePipeline(docs: unknown[], pipeline: unknown[]): unknown[] {
         return out;
       });
     } else if ('$graphLookup' in stage) {
-      // Not exercised in unit tests — Mongo adapter turns off native graph
-      // lookup when collection has no aggregate, and with `aggregate` we still
-      // recommend iterative traversal via genericTraverse for deterministic tests.
-      // Pass through empty descendants field.
       const params = stage.$graphLookup as { as: string };
       current = current.map((d) => ({ ...(d as Record<string, unknown>), [params.as]: [] }));
     } else if ('$vectorSearch' in stage) {
-      // Stub: ignore vector search — integration tests cover real Atlas flow.
       current = [];
     }
   }

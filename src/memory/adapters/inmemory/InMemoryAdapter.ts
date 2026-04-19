@@ -23,6 +23,8 @@ import type {
   Identifier,
   ListOptions,
   Neighborhood,
+  NewEntity,
+  NewFact,
   Page,
   ScopeFilter,
   SemanticSearchOptions,
@@ -42,6 +44,7 @@ export class InMemoryAdapter implements IMemoryStore {
   private readonly factsById = new Map<FactId, IFact>();
   private readonly factsBySubject = new Map<EntityId, Set<FactId>>();
   private readonly factsByObject = new Map<EntityId, Set<FactId>>();
+  private readonly factsByContext = new Map<EntityId, Set<FactId>>();
   private destroyed = false;
 
   constructor(opts: InMemoryAdapterOptions = {}) {
@@ -57,28 +60,41 @@ export class InMemoryAdapter implements IMemoryStore {
   // Entities
   // ==========================================================================
 
-  async putEntity(entity: IEntity): Promise<void> {
+  async createEntity(input: NewEntity): Promise<IEntity> {
     this.assertLive();
-    const existing = this.entitiesById.get(entity.id);
-    if (existing) {
-      if (entity.version !== existing.version + 1) {
-        throw new OptimisticConcurrencyError(
-          `Entity ${entity.id}: expected version ${existing.version + 1}, got ${entity.version}`,
-        );
-      }
-      this.unindexEntityIdentifiers(existing);
-    } else {
-      if (entity.version !== 1) {
-        throw new OptimisticConcurrencyError(
-          `Entity ${entity.id}: new entity must have version 1, got ${entity.version}`,
-        );
-      }
-    }
+    const now = new Date();
+    const entity: IEntity = {
+      ...input,
+      id: newId(),
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
     this.indexEntity(entity);
+    return clone(entity);
   }
 
-  async putEntities(entities: IEntity[]): Promise<void> {
-    for (const e of entities) await this.putEntity(e);
+  async createEntities(inputs: NewEntity[]): Promise<IEntity[]> {
+    const out: IEntity[] = [];
+    for (const input of inputs) out.push(await this.createEntity(input));
+    return out;
+  }
+
+  async updateEntity(entity: IEntity): Promise<void> {
+    this.assertLive();
+    const existing = this.entitiesById.get(entity.id);
+    if (!existing) {
+      throw new OptimisticConcurrencyError(
+        `Entity ${entity.id}: cannot update non-existent entity`,
+      );
+    }
+    if (entity.version !== existing.version + 1) {
+      throw new OptimisticConcurrencyError(
+        `Entity ${entity.id}: expected version ${existing.version + 1}, got ${entity.version}`,
+      );
+    }
+    this.unindexEntityIdentifiers(existing);
+    this.indexEntity(entity);
   }
 
   async getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
@@ -145,6 +161,7 @@ export class InMemoryAdapter implements IMemoryStore {
       if (wantArchived !== isArchived) continue;
       if (filter.type && e.type !== filter.type) continue;
       if (!isVisible(e, scope)) continue;
+      if (filter.metadataFilter && !matchesMetadataFilter(e.metadata, filter.metadataFilter)) continue;
       results.push(e);
     }
     return paginate(results.map(clone), opts.limit, opts.cursor);
@@ -182,17 +199,21 @@ export class InMemoryAdapter implements IMemoryStore {
   // Facts
   // ==========================================================================
 
-  async putFact(fact: IFact): Promise<void> {
+  async createFact(input: NewFact): Promise<IFact> {
     this.assertLive();
-    const existing = this.factsById.get(fact.id);
-    if (existing) {
-      this.unindexFact(existing);
-    }
+    const fact: IFact = {
+      ...input,
+      id: newId(),
+      createdAt: new Date(),
+    };
     this.indexFact(fact);
+    return clone(fact);
   }
 
-  async putFacts(facts: IFact[]): Promise<void> {
-    for (const f of facts) await this.putFact(f);
+  async createFacts(inputs: NewFact[]): Promise<IFact[]> {
+    const out: IFact[] = [];
+    for (const input of inputs) out.push(await this.createFact(input));
+    return out;
   }
 
   async getFact(id: FactId, scope: ScopeFilter): Promise<IFact | null> {
@@ -288,6 +309,7 @@ export class InMemoryAdapter implements IMemoryStore {
     this.factsById.clear();
     this.factsBySubject.clear();
     this.factsByObject.clear();
+    this.factsByContext.clear();
   }
 
   get isDestroyed(): boolean {
@@ -331,6 +353,11 @@ export class InMemoryAdapter implements IMemoryStore {
     if (fact.objectId) {
       addToSetMap(this.factsByObject, fact.objectId, fact.id);
     }
+    if (fact.contextIds) {
+      for (const cid of fact.contextIds) {
+        addToSetMap(this.factsByContext, cid, fact.id);
+      }
+    }
   }
 
   private unindexFact(fact: IFact): void {
@@ -339,6 +366,11 @@ export class InMemoryAdapter implements IMemoryStore {
     if (fact.objectId) {
       removeFromSetMap(this.factsByObject, fact.objectId, fact.id);
     }
+    if (fact.contextIds) {
+      for (const cid of fact.contextIds) {
+        removeFromSetMap(this.factsByContext, cid, fact.id);
+      }
+    }
   }
 
   /**
@@ -346,6 +378,15 @@ export class InMemoryAdapter implements IMemoryStore {
    * Caller still applies full filter via factMatches().
    */
   private selectCandidateFacts(filter: FactFilter): Iterable<IFact> {
+    // touchesEntity: union of subject, object, and context index lookups.
+    if (filter.touchesEntity) {
+      const eid = filter.touchesEntity;
+      const ids = new Set<FactId>();
+      this.factsBySubject.get(eid)?.forEach((id) => ids.add(id));
+      this.factsByObject.get(eid)?.forEach((id) => ids.add(id));
+      this.factsByContext.get(eid)?.forEach((id) => ids.add(id));
+      return mapLookup(this.factsById, ids);
+    }
     if (filter.subjectId) {
       const ids = this.factsBySubject.get(filter.subjectId);
       if (!ids) return [];
@@ -353,6 +394,11 @@ export class InMemoryAdapter implements IMemoryStore {
     }
     if (filter.objectId) {
       const ids = this.factsByObject.get(filter.objectId);
+      if (!ids) return [];
+      return mapLookup(this.factsById, ids);
+    }
+    if (filter.contextId) {
+      const ids = this.factsByContext.get(filter.contextId);
       if (!ids) return [];
       return mapLookup(this.factsById, ids);
     }
@@ -412,6 +458,17 @@ function factMatches(fact: IFact, filter: FactFilter, scope: ScopeFilter): boole
 
   if (filter.subjectId && fact.subjectId !== filter.subjectId) return false;
   if (filter.objectId && fact.objectId !== filter.objectId) return false;
+  if (filter.contextId !== undefined) {
+    if (!fact.contextIds || !fact.contextIds.includes(filter.contextId)) return false;
+  }
+  if (filter.touchesEntity !== undefined) {
+    const e = filter.touchesEntity;
+    const hit =
+      fact.subjectId === e ||
+      fact.objectId === e ||
+      (fact.contextIds ? fact.contextIds.includes(e) : false);
+    if (!hit) return false;
+  }
   if (filter.predicate && fact.predicate !== filter.predicate) return false;
   if (filter.predicates && filter.predicates.length > 0 && !filter.predicates.includes(fact.predicate)) {
     return false;
@@ -500,6 +557,36 @@ function cosine(a: number[], b: number[]): number {
 
 function clone<T>(x: T): T {
   return structuredClone(x);
+}
+
+/** Generate a fresh id for a new record. Uses crypto.randomUUID() — plain UUID, no prefix. */
+function newId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return (crypto as { randomUUID: () => string }).randomUUID();
+  }
+  // Fallback for environments without crypto.randomUUID — unlikely on Node 18+.
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * Equality match on entity.metadata fields. Supports literal values and
+ * the `{ $in: [...] }` operator. All conditions must match (AND semantics).
+ */
+function matchesMetadataFilter(
+  metadata: Record<string, unknown> | undefined,
+  filter: Record<string, unknown>,
+): boolean {
+  if (!metadata) return Object.keys(filter).length === 0;
+  for (const [key, expected] of Object.entries(filter)) {
+    const actual = metadata[key];
+    if (expected && typeof expected === 'object' && '$in' in expected) {
+      const list = (expected as { $in: unknown[] }).$in;
+      if (!list.includes(actual)) return false;
+    } else if (actual !== expected) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Keep Identifier type live-referenced to avoid accidental import pruning in tooling.

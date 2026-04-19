@@ -26,13 +26,15 @@ import type {
   IMemoryStore,
   ListOptions,
   Neighborhood,
+  NewEntity,
+  NewFact,
   Page,
   ScopeFilter,
   SemanticSearchOptions,
   TraversalOptions,
 } from '../../types.js';
 import { genericTraverse } from '../../GenericTraversal.js';
-import type { IMongoCollectionLike, MongoBulkOp, MongoFilter, MongoSort } from './IMongoCollectionLike.js';
+import type { IMongoCollectionLike, MongoFilter, MongoSort } from './IMongoCollectionLike.js';
 import { mergeFilters, scopeToFilter } from './scopeFilter.js';
 import {
   factFilterToMongo,
@@ -125,29 +127,43 @@ export class MongoMemoryAdapter implements IMemoryStore {
   // Entities
   // ==========================================================================
 
-  async putEntity(entity: IEntity): Promise<void> {
+  async createEntity(input: NewEntity): Promise<IEntity> {
     this.assertLive();
-    const normalized = normalizeEntityForStorage(entity);
+    const now = new Date();
+    const doc = normalizeNewEntityForStorage({
+      ...input,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const id = await this.entities.insertOne(doc as unknown as IEntity);
+    return reviveEntity({ ...doc, id } as IEntity);
+  }
 
-    if (entity.version === 1) {
-      // New entity — upsert keyed on id, but only succeed if no existing row.
-      // Using updateOne with a $setOnInsert is not quite right; insertOne is
-      // cleaner. Duplicate key error becomes OptimisticConcurrencyError.
-      try {
-        await this.entities.insertOne(normalized);
-        return;
-      } catch (err) {
-        // Existing entity — version=1 means caller thought it was new.
-        if (isDuplicateKey(err)) {
-          throw new MongoOptimisticConcurrencyError(
-            `Entity ${entity.id}: version 1 specified but entity already exists`,
-          );
-        }
-        throw err;
-      }
+  async createEntities(inputs: NewEntity[]): Promise<IEntity[]> {
+    this.assertLive();
+    if (inputs.length === 0) return [];
+    const now = new Date();
+    const docs = inputs.map((input) =>
+      normalizeNewEntityForStorage({
+        ...input,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    const ids = await this.entities.insertMany(docs as unknown as IEntity[]);
+    return docs.map((d, i) => reviveEntity({ ...d, id: ids[i]! } as IEntity));
+  }
+
+  async updateEntity(entity: IEntity): Promise<void> {
+    this.assertLive();
+    if (entity.version < 2) {
+      throw new MongoOptimisticConcurrencyError(
+        `Entity ${entity.id}: update requires version >= 2 (got ${entity.version})`,
+      );
     }
-
-    // Update: match on id + version=N-1, $set the new document with version=N.
+    const normalized = normalizeEntityForStorage(entity);
     const res = await this.entities.updateOne(
       { id: entity.id, version: entity.version - 1 },
       { $set: normalized },
@@ -157,14 +173,6 @@ export class MongoMemoryAdapter implements IMemoryStore {
         `Entity ${entity.id}: version mismatch (expected stored version = ${entity.version - 1})`,
       );
     }
-  }
-
-  async putEntities(entities: IEntity[]): Promise<void> {
-    this.assertLive();
-    if (entities.length === 0) return;
-    // Optimistic concurrency is per-entity; bulkWrite of replaceOnes won't
-    // express it cleanly. Keep correctness over throughput here — sequential.
-    for (const e of entities) await this.putEntity(e);
   }
 
   async getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
@@ -235,6 +243,9 @@ export class MongoMemoryAdapter implements IMemoryStore {
     else clauses.push(ARCHIVED_HIDDEN);
     if (filter.type) clauses.push({ type: filter.type });
     if (filter.ids && filter.ids.length > 0) clauses.push({ id: { $in: filter.ids } });
+    if (filter.metadataFilter) {
+      clauses.push(metadataFilterToMongo(filter.metadataFilter));
+    }
     const mongoFilter = mergeFilters(...clauses);
 
     const skip = parseCursor(opts.cursor);
@@ -265,29 +276,21 @@ export class MongoMemoryAdapter implements IMemoryStore {
   // Facts
   // ==========================================================================
 
-  async putFact(fact: IFact): Promise<void> {
+  async createFact(input: NewFact): Promise<IFact> {
     this.assertLive();
-    const normalized = normalizeFactForStorage(fact);
-    // Idempotent upsert by id — the supersession flow expects repeated writes
-    // to the same fact id to overwrite cleanly.
-    await this.facts.updateOne({ id: fact.id }, { $set: normalized }, { upsert: true });
+    const now = new Date();
+    const doc = normalizeNewFactForStorage({ ...input, createdAt: now });
+    const id = await this.facts.insertOne(doc as unknown as IFact);
+    return reviveFact({ ...doc, id } as IFact);
   }
 
-  async putFacts(facts: IFact[]): Promise<void> {
+  async createFacts(inputs: NewFact[]): Promise<IFact[]> {
     this.assertLive();
-    if (facts.length === 0) return;
-    if (this.facts.bulkWrite) {
-      const ops: Array<MongoBulkOp<IFact>> = facts.map((f) => ({
-        updateOne: {
-          filter: { id: f.id },
-          update: { $set: normalizeFactForStorage(f) } as Record<string, unknown>,
-          upsert: true,
-        },
-      }));
-      await this.facts.bulkWrite(ops);
-      return;
-    }
-    for (const f of facts) await this.putFact(f);
+    if (inputs.length === 0) return [];
+    const now = new Date();
+    const docs = inputs.map((input) => normalizeNewFactForStorage({ ...input, createdAt: now }));
+    const ids = await this.facts.insertMany(docs as unknown as IFact[]);
+    return docs.map((d, i) => reviveFact({ ...d, id: ids[i]! } as IFact));
   }
 
   async getFact(id: FactId, scope: ScopeFilter): Promise<IFact | null> {
@@ -566,11 +569,28 @@ function normalizeEntityForStorage(entity: IEntity): IEntity {
   };
 }
 
-function normalizeFactForStorage(fact: IFact): IFact {
+/** Same as normalizeEntityForStorage but for records without id (pre-insert). */
+function normalizeNewEntityForStorage(
+  input: NewEntity & { version: number; createdAt: Date; updatedAt: Date },
+): Omit<IEntity, 'id'> {
   return {
-    ...fact,
-    groupId: fact.groupId ?? (null as unknown as undefined),
-    ownerId: fact.ownerId ?? (null as unknown as undefined),
+    ...input,
+    groupId: input.groupId ?? (null as unknown as undefined),
+    ownerId: input.ownerId ?? (null as unknown as undefined),
+    identifiers: input.identifiers.map((i) => ({
+      ...i,
+      value: i.value.toLowerCase(),
+    })),
+  };
+}
+
+function normalizeNewFactForStorage(
+  input: NewFact & { createdAt: Date },
+): Omit<IFact, 'id'> {
+  return {
+    ...input,
+    groupId: input.groupId ?? (null as unknown as undefined),
+    ownerId: input.ownerId ?? (null as unknown as undefined),
   };
 }
 
@@ -633,8 +653,21 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function isDuplicateKey(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: number; codeName?: string; message?: string };
-  return e.code === 11000 || e.codeName === 'DuplicateKey' || /duplicate key/i.test(e.message ?? '');
+/**
+ * Translate { state: 'pending', priority: { $in: ['high','urgent'] } } into
+ * { 'metadata.state': 'pending', 'metadata.priority': { $in: [...] } }.
+ * Supports literal values and { $in: [...] }; caller is expected to use
+ * only those two shapes (see EntityListFilter.metadataFilter docstring).
+ */
+function metadataFilterToMongo(filter: Record<string, unknown>): MongoFilter {
+  const out: MongoFilter = {};
+  for (const [key, expected] of Object.entries(filter)) {
+    const path = `metadata.${key}`;
+    if (expected && typeof expected === 'object' && !Array.isArray(expected) && '$in' in expected) {
+      out[path] = expected;
+    } else {
+      out[path] = expected;
+    }
+  }
+  return out;
 }

@@ -209,6 +209,37 @@ Extensible `{{COMMAND}}` / `{{COMMAND:arg}}` substitution for agent instructions
 
 35+ services (Slack, GitHub, Stripe, etc.). `ConnectorTools.for(connectorName)` returns generic API tool.
 
+## Memory Layer (`src/memory/`)
+
+Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** (triples with provenance, confidence, importance, contextIds). Self-contained — only dependency is `IDisposable`.
+
+**Core:** `MemorySystem.ts` (facade), `Ranking.ts`, `GenericTraversal.ts`, `types.ts`.
+
+**Adapters** (pluggable):
+- `adapters/inmemory/InMemoryAdapter.ts` — zero-dep default.
+- `adapters/mongo/` — `MongoMemoryAdapter` + `RawMongoCollection` (mongodb driver) + `MeteorMongoCollection` (Meteor-reactive writes). Configurable collection names, optional `$graphLookup` + Atlas Vector Search fast paths.
+
+**Integration** (`src/memory/integration/`):
+- `ConnectorEmbedder` + `ConnectorProfileGenerator` — wire oneringai Connectors into memory's `IEmbedder`/`IProfileGenerator`.
+- `createMemorySystemWithConnectors({ store, connectors: { embedding: {connector, model, dimensions}, profile: {connector, model} } })` — one-call setup.
+- `ExtractionResolver` + `defaultExtractionPrompt` — raw LLM output (`{mentions, facts}`) → resolved entities + facts with `sourceSignalId` attached.
+
+**Resolution** (`src/memory/resolution/`):
+- `EntityResolver` translates surface forms ("Microsoft", "Q3 Planning") to entity IDs. Tiers: identifier (1.0) → exact displayName (0.9) → exact alias (0.85) → fuzzy (0.6–0.84) → semantic (identityEmbedding). Conservative default auto-resolve threshold 0.9; configurable via `entityResolution.autoResolveThreshold`.
+- `fuzzy.ts` — normalized Levenshtein (strips Inc/Corp/LLC, case-insensitive, punctuation-tolerant).
+
+**Entity type conventions** (see `types.ts` header):
+- `person`, `organization`, `topic`: minimal metadata.
+- `task`: `metadata.{state, dueAt, priority, assigneeId, reporterId, projectId}`. State history via supersession facts.
+- `event`: `metadata.{startTime, endTime, attendeeIds, location, kind}`.
+- `project`, `cluster`: extensible.
+
+**Key invariants:**
+- `IFact`: `contextIds?` for multi-entity binding; `importance?` (0..1, default 0.5) multiplies into ranking; `sourceSignalId?` opaque (library user owns the signal store).
+- `getContext` returns profile + topFacts (subject OR object OR contextIds) + relatedTasks + relatedEvents by default. Pass `tiers: 'minimal'` to suppress.
+- Scope visibility: `(groupId, ownerId)` absent = global; both match for user-within-group.
+- Tests: 303 unit tests, 14 files. Mongo real-DB integration gated on `mongodb` + `mongodb-memory-server` optional peer deps.
+
 ---
 
 **Version**: 0.5.1 | **Last Updated**: 2026-04-04 | **Architecture**: Connector-First + NextGen Context

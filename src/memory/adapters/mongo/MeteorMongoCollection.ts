@@ -7,13 +7,19 @@
  * via `rawCollection()`, bypassing reactivity (which is fine — reads don't
  * mutate anyway).
  *
+ * Id mapping:
+ *   - Meteor's `_id` is a string (Meteor's `Random.id()`, 17 chars).
+ *   - On insert, any `id` field on the input is stripped. Meteor assigns the
+ *     string id; we return it directly.
+ *   - On reads, documents have `_id` renamed to `id`.
+ *   - In filters, `id: <string>` is translated to `_id: <string>` (no casting).
+ *
  * No runtime import of 'meteor/mongo'. Callers pass any object matching the
  * structural shape below; Meteor's real Collection object satisfies it.
  */
 
 import type {
   IMongoCollectionLike,
-  MongoBulkOp,
   MongoFilter,
   MongoFindOptions,
   MongoUpdate,
@@ -49,12 +55,15 @@ export class MeteorMongoCollection<T extends { id: string }> implements IMongoCo
 
   // ----- Writes: Meteor API (reactive-safe) -----
 
-  async insertOne(doc: T): Promise<void> {
-    await this.col.insertAsync(doc);
+  async insertOne(doc: T): Promise<string> {
+    const stripped = stripId(doc) as T;
+    return this.col.insertAsync(stripped);
   }
 
-  async insertMany(docs: T[]): Promise<void> {
-    for (const d of docs) await this.col.insertAsync(d);
+  async insertMany(docs: T[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const d of docs) out.push(await this.insertOne(d));
+    return out;
   }
 
   async updateOne(
@@ -62,51 +71,41 @@ export class MeteorMongoCollection<T extends { id: string }> implements IMongoCo
     update: MongoUpdate,
     opts?: MongoUpdateOptions,
   ): Promise<MongoUpdateResult> {
-    const n = await this.col.updateAsync(filter, update, { upsert: opts?.upsert });
+    const translated = translateIdField(filter);
+    const cleanUpdate = stripIdFromUpdate(update);
+    const n = await this.col.updateAsync(translated, cleanUpdate, { upsert: opts?.upsert });
     // Meteor's updateAsync returns modified count; we can't distinguish upsert
     // vs update from its return. For our adapter's needs, matched=modified.
     return { matchedCount: n, modifiedCount: n, upsertedCount: 0 };
   }
 
   async deleteOne(filter: MongoFilter): Promise<void> {
-    await this.col.removeAsync(filter);
+    await this.col.removeAsync(translateIdField(filter));
   }
 
   async deleteMany(filter: MongoFilter): Promise<void> {
-    await this.col.removeAsync(filter);
-  }
-
-  async bulkWrite(ops: Array<MongoBulkOp<T>>): Promise<void> {
-    // Meteor doesn't expose bulkWrite through the reactive API — fallback is
-    // sequential writes. Users who need true bulkWrite can drop to rawCollection().
-    for (const op of ops) {
-      if ('insertOne' in op) await this.col.insertAsync(op.insertOne.document);
-      else if ('updateOne' in op) {
-        await this.col.updateAsync(op.updateOne.filter, op.updateOne.update, {
-          upsert: op.updateOne.upsert,
-        });
-      } else if ('deleteOne' in op) {
-        await this.col.removeAsync(op.deleteOne.filter);
-      }
-    }
+    await this.col.removeAsync(translateIdField(filter));
   }
 
   // ----- Reads -----
 
-  findOne(filter: MongoFilter, opts?: MongoFindOptions): Promise<T | null> {
-    return this.col.findOneAsync(filter, opts);
+  async findOne(filter: MongoFilter, opts?: MongoFindOptions): Promise<T | null> {
+    const doc = await this.col.findOneAsync(translateIdField(filter), opts);
+    return doc ? reviveDoc(doc) : null;
   }
 
   async find(filter: MongoFilter, opts?: MongoFindOptions): Promise<T[]> {
-    return this.col.find(filter, opts).fetchAsync();
+    const docs = await this.col.find(translateIdField(filter), opts).fetchAsync();
+    return docs.map(reviveDoc);
   }
 
   async countDocuments(filter: MongoFilter): Promise<number> {
-    return this.col.find(filter).countAsync();
+    return this.col.find(translateIdField(filter)).countAsync();
   }
 
   async aggregate(pipeline: unknown[]): Promise<unknown[]> {
-    return this.col.rawCollection().aggregate(pipeline).toArray();
+    const rows = await this.col.rawCollection().aggregate(pipeline).toArray();
+    return rows.map(reviveRawRow);
   }
 
   async createIndex(
@@ -118,4 +117,69 @@ export class MeteorMongoCollection<T extends { id: string }> implements IMongoCo
 
   // No withTransaction — Meteor + transactions is fragile; callers that need
   // it can use RawMongoCollection against the same collection alongside.
+}
+
+// ============================================================================
+// Helpers — identical shape to RawMongoCollection's but without ObjectId cast
+// ============================================================================
+
+function stripId<T extends { id?: string }>(doc: T): Omit<T, 'id'> {
+  const { id: _omit, ...rest } = doc;
+  void _omit;
+  return rest;
+}
+
+function stripIdFromUpdate(update: MongoUpdate): MongoUpdate {
+  const out: MongoUpdate = {};
+  for (const [op, value] of Object.entries(update)) {
+    if ((op === '$set' || op === '$setOnInsert') && value && typeof value === 'object') {
+      const { id: _omit, ...rest } = value as Record<string, unknown>;
+      void _omit;
+      out[op] = rest;
+    } else {
+      out[op] = value;
+    }
+  }
+  return out;
+}
+
+function reviveDoc<T extends { id: string }>(doc: T & { _id?: string }): T {
+  if (doc._id === undefined) return doc;
+  const { _id, id: _ignoreIncoming, ...rest } = doc as T & { _id: string; id?: string };
+  void _ignoreIncoming;
+  return { ...rest, id: _id } as unknown as T;
+}
+
+function reviveRawRow(row: unknown): unknown {
+  if (!row || typeof row !== 'object') return row;
+  if ('_id' in row) {
+    const { _id, ...rest } = row as { _id: string } & Record<string, unknown>;
+    return { id: _id, ...rest };
+  }
+  return row;
+}
+
+function translateIdField(filter: MongoFilter): MongoFilter {
+  return walkFilter(filter, (key, value) => (key === 'id' ? ['_id', value] : null));
+}
+
+function walkFilter(
+  filter: MongoFilter,
+  rewrite: (key: string, value: unknown) => [string, unknown] | null,
+): MongoFilter {
+  const out: MongoFilter = {};
+  for (const [key, value] of Object.entries(filter)) {
+    if ((key === '$and' || key === '$or' || key === '$nor') && Array.isArray(value)) {
+      out[key] = (value as MongoFilter[]).map((f) => walkFilter(f, rewrite));
+      continue;
+    }
+    const replaced = rewrite(key, value);
+    if (replaced) {
+      const [newKey, newValue] = replaced;
+      out[newKey] = newValue;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
 }

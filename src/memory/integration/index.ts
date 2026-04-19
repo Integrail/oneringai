@@ -15,3 +15,18 @@ export type {
   MemoryConnectorsConfig,
   MemorySystemWithConnectorsConfig,
 } from './createMemorySystemWithConnectors.js';
+
+// Extraction helpers — signal → memory pipeline.
+export { defaultExtractionPrompt } from './defaultExtractionPrompt.js';
+export type { ExtractionPromptContext } from './defaultExtractionPrompt.js';
+
+export { ExtractionResolver } from './ExtractionResolver.js';
+export type {
+  ExtractionMention,
+  ExtractionFactSpec,
+  ExtractionOutput,
+  IngestionResolvedEntity,
+  IngestionError,
+  IngestionResult,
+  ExtractionResolverOptions,
+} from './ExtractionResolver.js';

@@ -26,6 +26,13 @@ export function factFilterToMongo(filter: FactFilter, scope: ScopeFilter): Mongo
 
   if (filter.subjectId !== undefined) clauses.push({ subjectId: filter.subjectId });
   if (filter.objectId !== undefined) clauses.push({ objectId: filter.objectId });
+  if (filter.contextId !== undefined) clauses.push({ contextIds: filter.contextId });
+  if (filter.touchesEntity !== undefined) {
+    const e = filter.touchesEntity;
+    clauses.push({
+      $or: [{ subjectId: e }, { objectId: e }, { contextIds: e }],
+    });
+  }
   if (filter.predicate !== undefined) clauses.push({ predicate: filter.predicate });
   if (filter.predicates && filter.predicates.length > 0) {
     clauses.push({ predicate: { $in: filter.predicates } });

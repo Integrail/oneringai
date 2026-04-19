@@ -5,38 +5,36 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { genericTraverse } from '@/memory/GenericTraversal.js';
 import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
-import type { IEntity, IFact, ScopeFilter } from '@/memory/types.js';
+import type { IEntity, NewEntity, NewFact, ScopeFilter } from '@/memory/types.js';
 
-function entity(id: string, type = 'person'): IEntity {
-  const now = new Date();
+function entityInput(name: string, overrides: Partial<NewEntity> = {}): NewEntity {
   return {
-    id,
-    type,
-    displayName: id,
+    type: overrides.type ?? 'person',
+    displayName: name,
     identifiers: [],
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
+    groupId: overrides.groupId,
+    ownerId: overrides.ownerId,
   };
 }
 
-function fact(
-  id: string,
+function factInput(
   subjectId: string,
   predicate: string,
   objectId: string,
-  overrides: Partial<IFact> = {},
-): IFact {
+  overrides: Partial<NewFact> = {},
+): NewFact {
   const now = new Date();
   return {
-    id,
     subjectId,
     objectId,
     predicate,
     kind: 'atomic',
-    createdAt: now,
-    observedAt: now,
-    ...overrides,
+    observedAt: overrides.observedAt ?? now,
+    archived: overrides.archived,
+    validFrom: overrides.validFrom,
+    validUntil: overrides.validUntil,
+    groupId: overrides.groupId,
+    ownerId: overrides.ownerId,
   };
 }
 
@@ -64,100 +62,99 @@ describe('genericTraverse', () => {
   });
 
   it('depth=0 returns only the start node', async () => {
-    await store.putEntity(entity('A'));
-    await store.putEntity(entity('B'));
-    await store.putFact(fact('f1', 'A', 'works_with', 'B'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    await store.createFact(factInput(a.id, 'works_with', b.id));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'both', maxDepth: 0 },
       global,
     );
     expect(result.nodes).toHaveLength(1);
-    expect(result.nodes[0]!.entity.id).toBe('A');
+    expect(result.nodes[0]!.entity.id).toBe(a.id);
     expect(result.edges).toHaveLength(0);
   });
 
   it('direction=out walks subject → object', async () => {
-    await store.putEntities([entity('A'), entity('B')]);
-    await store.putFact(fact('f1', 'A', 'works_at', 'B'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    await store.createFact(factInput(a.id, 'works_at', b.id));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'out', maxDepth: 1 },
       global,
     );
-    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual(['A', 'B']);
+    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id].sort());
     expect(result.edges).toHaveLength(1);
-    expect(result.edges[0]!.from).toBe('A');
-    expect(result.edges[0]!.to).toBe('B');
+    expect(result.edges[0]!.from).toBe(a.id);
+    expect(result.edges[0]!.to).toBe(b.id);
   });
 
   it('direction=in walks object → subject (reverse edges)', async () => {
-    await store.putEntities([entity('A'), entity('B')]);
-    await store.putFact(fact('f1', 'A', 'works_at', 'B'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    await store.createFact(factInput(a.id, 'works_at', b.id));
 
     const result = await genericTraverse(
       store,
-      'B',
+      b.id,
       { direction: 'in', maxDepth: 1 },
       global,
     );
-    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual(['A', 'B']);
+    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id].sort());
     expect(result.edges).toHaveLength(1);
-    expect(result.edges[0]!.from).toBe('A');
+    expect(result.edges[0]!.from).toBe(a.id);
   });
 
   it('direction=both walks both ways', async () => {
-    await store.putEntities([entity('A'), entity('B'), entity('C')]);
-    await store.putFact(fact('f1', 'A', 'works_at', 'B')); // A→B
-    await store.putFact(fact('f2', 'C', 'manages', 'A')); // C→A
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    const c = await store.createEntity(entityInput('C'));
+    await store.createFact(factInput(a.id, 'works_at', b.id));
+    await store.createFact(factInput(c.id, 'manages', a.id));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'both', maxDepth: 1 },
       global,
     );
-    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual(['A', 'B', 'C']);
+    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id, c.id].sort());
     expect(result.edges).toHaveLength(2);
   });
 
   it('respects maxDepth bound', async () => {
-    // Chain: A → B → C → D
-    await store.putEntities([entity('A'), entity('B'), entity('C'), entity('D')]);
-    await store.putFact(fact('f1', 'A', 'knows', 'B'));
-    await store.putFact(fact('f2', 'B', 'knows', 'C'));
-    await store.putFact(fact('f3', 'C', 'knows', 'D'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    const c = await store.createEntity(entityInput('C'));
+    const d = await store.createEntity(entityInput('D'));
+    await store.createFact(factInput(a.id, 'knows', b.id));
+    await store.createFact(factInput(b.id, 'knows', c.id));
+    await store.createFact(factInput(c.id, 'knows', d.id));
 
-    const r2 = await genericTraverse(
-      store,
-      'A',
-      { direction: 'out', maxDepth: 2 },
-      global,
-    );
-    expect(r2.nodes.map((n) => n.entity.id).sort()).toEqual(['A', 'B', 'C']);
+    const r2 = await genericTraverse(store, a.id, { direction: 'out', maxDepth: 2 }, global);
+    expect(r2.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id, c.id].sort());
 
-    const r3 = await genericTraverse(
-      store,
-      'A',
-      { direction: 'out', maxDepth: 3 },
-      global,
-    );
-    expect(r3.nodes.map((n) => n.entity.id).sort()).toEqual(['A', 'B', 'C', 'D']);
+    const r3 = await genericTraverse(store, a.id, { direction: 'out', maxDepth: 3 }, global);
+    expect(r3.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id, c.id, d.id].sort());
   });
 
   it('respects limit on nodes returned', async () => {
-    await store.putEntities([entity('A'), entity('B'), entity('C'), entity('D')]);
-    await store.putFact(fact('f1', 'A', 'knows', 'B'));
-    await store.putFact(fact('f2', 'A', 'knows', 'C'));
-    await store.putFact(fact('f3', 'A', 'knows', 'D'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    const c = await store.createEntity(entityInput('C'));
+    const d = await store.createEntity(entityInput('D'));
+    await store.createFact(factInput(a.id, 'knows', b.id));
+    await store.createFact(factInput(a.id, 'knows', c.id));
+    await store.createFact(factInput(a.id, 'knows', d.id));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'out', maxDepth: 1, limit: 2 },
       global,
     );
@@ -165,44 +162,47 @@ describe('genericTraverse', () => {
   });
 
   it('filters edges by predicate', async () => {
-    await store.putEntities([entity('A'), entity('B'), entity('C')]);
-    await store.putFact(fact('f1', 'A', 'works_at', 'B'));
-    await store.putFact(fact('f2', 'A', 'knows', 'C'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    const c = await store.createEntity(entityInput('C'));
+    await store.createFact(factInput(a.id, 'works_at', b.id));
+    await store.createFact(factInput(a.id, 'knows', c.id));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'out', maxDepth: 1, predicates: ['works_at'] },
       global,
     );
-    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual(['A', 'B']);
+    expect(result.nodes.map((n) => n.entity.id).sort()).toEqual([a.id, b.id].sort());
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0]!.fact.predicate).toBe('works_at');
   });
 
   it('visits each node once even with cycles', async () => {
-    await store.putEntities([entity('A'), entity('B')]);
-    await store.putFact(fact('f1', 'A', 'knows', 'B'));
-    await store.putFact(fact('f2', 'B', 'knows', 'A'));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    await store.createFact(factInput(a.id, 'knows', b.id));
+    await store.createFact(factInput(b.id, 'knows', a.id));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'both', maxDepth: 5 },
       global,
     );
-    // Each node visited once in `nodes`; edges may appear once per direction hit.
     const ids = result.nodes.map((n) => n.entity.id);
     expect(ids).toHaveLength(new Set(ids).size);
   });
 
   it('skips archived facts in traversal', async () => {
-    await store.putEntities([entity('A'), entity('B')]);
-    await store.putFact(fact('f1', 'A', 'works_at', 'B', { archived: true }));
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    await store.createFact(factInput(a.id, 'works_at', b.id, { archived: true }));
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'out', maxDepth: 1 },
       global,
     );
@@ -211,51 +211,48 @@ describe('genericTraverse', () => {
   });
 
   it('respects asOf on edges via validFrom/validUntil', async () => {
-    const yesterday = new Date('2026-04-16');
     const today = new Date('2026-04-17');
     const tomorrow = new Date('2026-04-18');
+    const farFuture = new Date(Date.now() + 100 * 86_400_000);
 
-    await store.putEntities([entity('A'), entity('B')]);
-    await store.putFact(
-      fact('f1', 'A', 'works_at', 'B', {
-        validFrom: tomorrow,
-      }),
+    const a = await store.createEntity(entityInput('A'));
+    const b = await store.createEntity(entityInput('B'));
+    await store.createFact(
+      factInput(a.id, 'works_at', b.id, { validFrom: tomorrow }),
     );
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'out', maxDepth: 1, asOf: today },
       global,
     );
-    // Fact not yet valid as of today → edge absent.
     expect(result.edges).toHaveLength(0);
 
-    const resultLater = await genericTraverse(
+    const later = await genericTraverse(
       store,
-      'A',
-      { direction: 'out', maxDepth: 1, asOf: tomorrow },
+      a.id,
+      { direction: 'out', maxDepth: 1, asOf: farFuture },
       global,
     );
-    expect(resultLater.edges).toHaveLength(1);
-
-    // Suppress unused var warning
-    expect(yesterday).toBeDefined();
+    expect(later.edges).toHaveLength(1);
   });
 
   it('enforces scope — invisible neighbors excluded', async () => {
-    await store.putEntity({ ...entity('A'), groupId: 'g1' });
-    await store.putEntity({ ...entity('B'), groupId: 'g2' });
-    // A fact from a caller in g1 cannot reach B in g2.
-    await store.putFact({ ...fact('f1', 'A', 'knows', 'B'), groupId: 'g1' });
+    const a = await store.createEntity(entityInput('A', { groupId: 'g1' }));
+    const b = await store.createEntity(entityInput('B', { groupId: 'g2' }));
+    await store.createFact({
+      ...factInput(a.id, 'knows', b.id),
+      groupId: 'g1',
+    });
 
     const result = await genericTraverse(
       store,
-      'A',
+      a.id,
       { direction: 'out', maxDepth: 1 },
       { groupId: 'g1' },
     );
-    // Edge's object B is in g2; getEntity returns null, so B is not added to nodes.
-    expect(result.nodes.map((n) => n.entity.id)).toEqual(['A']);
+    // b is in g2, invisible to g1 caller
+    expect(result.nodes.map((n) => n.entity.id)).toEqual([a.id]);
   });
 });
