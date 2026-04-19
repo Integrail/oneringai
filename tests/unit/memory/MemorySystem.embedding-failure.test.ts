@@ -36,7 +36,7 @@ describe('EmbeddingQueue — fact.embedding.failed observability', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'a@a.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     // isSemantic triggers via long details string.
     await mem.addFact(
@@ -46,7 +46,7 @@ describe('EmbeddingQueue — fact.embedding.failed observability', () => {
         kind: 'document',
         details: 'x'.repeat(100),
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
 
@@ -74,7 +74,7 @@ describe('EmbeddingQueue — fact.embedding.failed observability', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'a@a.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
 

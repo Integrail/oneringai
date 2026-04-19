@@ -26,10 +26,12 @@ import type {
   NewEntity,
   NewFact,
   Page,
+  Permissions,
   ScopeFilter,
   SemanticSearchOptions,
   TraversalOptions,
 } from '../../types.js';
+import { canAccess } from '../../AccessControl.js';
 import { genericTraverse } from '../../GenericTraversal.js';
 
 export interface InMemoryAdapterOptions {
@@ -440,10 +442,11 @@ function identKey(kind: string, value: string): string {
   return `${kind}:${value}`;
 }
 
-function isVisible(record: { groupId?: string; ownerId?: string }, scope: ScopeFilter): boolean {
-  if (record.groupId && record.groupId !== scope.groupId) return false;
-  if (record.ownerId && record.ownerId !== scope.userId) return false;
-  return true;
+function isVisible(
+  record: { groupId?: string; ownerId?: string; permissions?: Permissions },
+  scope: ScopeFilter,
+): boolean {
+  return canAccess(record, scope, 'read');
 }
 
 /**

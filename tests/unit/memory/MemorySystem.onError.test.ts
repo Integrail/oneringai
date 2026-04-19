@@ -30,7 +30,7 @@ describe('MemorySystem.onError — listener exception routing', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'a@a.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     expect(captured).toHaveLength(1);
     expect((captured[0]!.error as Error).message).toBe('listener broke');
@@ -51,7 +51,7 @@ describe('MemorySystem.onError — listener exception routing', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'a@a.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     expect(res.entity.id).toBeTruthy();
     expect(res.created).toBe(true);
@@ -72,7 +72,7 @@ describe('MemorySystem.onError — listener exception routing', () => {
           displayName: 'X',
           identifiers: [{ kind: 'email', value: 'x@a.com' }],
         },
-        {},
+        { userId: 'u1' },
       );
       expect(warn).toHaveBeenCalled();
       expect(
@@ -102,7 +102,7 @@ describe('MemorySystem.onError — listener exception routing', () => {
           displayName: 'X',
           identifiers: [{ kind: 'email', value: 'x@a.com' }],
         },
-        {},
+        { userId: 'u1' },
       ),
     ).resolves.toBeTruthy();
   });

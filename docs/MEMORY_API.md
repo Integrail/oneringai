@@ -16,9 +16,10 @@ All public symbols are exported from `@everworker/oneringai/src/memory/index.js`
 6. [Extraction Helpers](#extraction-helpers)
 7. [Ranking](#ranking)
 8. [Predicate Registry](#predicate-registry)
-9. [Events](#events)
-10. [Errors](#errors)
-11. [Type Reference](#type-reference)
+9. [Access Control](#access-control)
+10. [Events](#events)
+11. [Errors](#errors)
+12. [Type Reference](#type-reference)
 
 ---
 
@@ -1197,6 +1198,100 @@ The rendered block is appended to the default extraction prompt. LLM output pred
 
 ---
 
+## Access Control
+
+See [MEMORY_PERMISSIONS.md](./MEMORY_PERMISSIONS.md) for the full model, defaults, recipes, and migration. This section is the API reference.
+
+Three-principal access model layered on top of scope:
+
+```ts
+type AccessLevel = 'none' | 'read' | 'write';  // 'write' implies 'read'
+type Permission = 'read' | 'write';
+
+interface Permissions {
+  group?: AccessLevel;   // what group members (non-owner) can do
+  world?: AccessLevel;   // what callers outside the group (or everyone, when groupless) can do
+}
+```
+
+Attached to every `IEntity` and `IFact` as an optional `permissions` field.
+
+### Invariants
+
+- **Owner required.** Every record must have `ownerId`. `MemorySystem.upsertEntity` / `addFact` throw `OwnerRequiredError` when neither input nor scope provides one. Admin delegation is allowed — `input.ownerId` can be any user id; equality with `scope.userId` is NOT enforced.
+- **Owner always wins.** If `record.ownerId === caller.userId`, the caller has full access regardless of `permissions`.
+- **Permissions are write-once in v1.** `MemorySystem.upsertEntity` does NOT rewrite `permissions` on existing records; the dirty path silently preserves stored permissions. Use the store's `updateEntity` / `updateFact` as an admin escape hatch, or re-emit as the owner. See [MEMORY_PERMISSIONS.md § Changing permissions](./MEMORY_PERMISSIONS.md#changing-permissions-on-an-existing-record-v1-write-once).
+- **Profile regeneration preserves privacy.** `regenerateProfile` inherits the prior profile's `permissions` when one exists (so a private profile stays private across auto-regen). First-time generation uses library defaults.
+- **Supersession chains stay per-subject.** `addFact` with `supersedes` now validates that `predecessor.subjectId === input.subjectId` and throws otherwise — prevents retrieval corruption where "what superseded F1?" returns a fact about a different subject.
+
+### Defaults (when `permissions` is omitted)
+
+```ts
+DEFAULT_GROUP_LEVEL = 'read'    // meaningful only when groupId is set
+DEFAULT_WORLD_LEVEL = 'read'
+```
+
+Records are **public-read / owner-write** by default. Opt out with `permissions.world = 'none'` (group-private) or `permissions.group = 'none'` (owner-private-within-group). `permissions.group` is silently ignored when `record.groupId` is unset (group principal doesn't exist for groupless records).
+
+### Pure evaluators
+
+Exposed from `@everworker/oneringai` (or `src/memory/AccessControl.ts`):
+
+```ts
+function canAccess(
+  record: { ownerId?: string; groupId?: string; permissions?: Permissions },
+  caller: ScopeFilter,
+  need: Permission,
+): boolean;
+
+function effectivePermissions(
+  record,
+): { group: AccessLevel; world: AccessLevel };   // applies defaults
+
+function assertCanAccess(
+  record: { id?: string; ... },
+  caller: ScopeFilter,
+  need: Permission,
+  recordKind: 'entity' | 'fact',
+): void;    // throws PermissionDeniedError on denial
+
+function levelGrants(level: AccessLevel, need: Permission): boolean;
+```
+
+### Error classes
+
+```ts
+class OwnerRequiredError extends Error {
+  recordKind: 'entity' | 'fact';
+}
+
+class PermissionDeniedError extends Error {
+  recordId: string;
+  recordKind: 'entity' | 'fact';
+  operation: Permission;
+}
+```
+
+### Enforcement surface
+
+| Operation                                                     | Read filter | Write check |
+| ------------------------------------------------------------- | ----------- | ----------- |
+| `getEntity`, `getFact`, `findFacts`, `listEntities`, etc.     | ✓ (adapter) | —           |
+| `searchEntities`, `findEntitiesByIdentifier`, `traverse`      | ✓ (adapter) | —           |
+| `semanticSearch`, `countFacts`                                | ✓ (adapter) | —           |
+| `addFact` (when `supersedes` set)                             | —           | ✓           |
+| `archiveFact`, `supersedeFact`                                | —           | ✓           |
+| `archiveEntity`, `deleteEntity`, `mergeEntities`              | —           | ✓           |
+| `upsertEntity` (dirty path — adding identifier to existing)   | —           | ✓           |
+
+Reads that aren't visible return empty/null; writes that aren't authorized throw `PermissionDeniedError`.
+
+### Cascade caveat
+
+`archiveEntity`, `deleteEntity`, and `mergeEntities` cascade to referencing facts, using BOTH the scope window (visibility) and the permission window (writability). Facts the caller can see but not write are skipped silently — intended (no privilege escalation via cascade), but it means partial cleanup is possible for callers without broad write access.
+
+---
+
 ## Events
 
 Optional `onChange` callback fires on every state-changing operation. Fire-and-forget — listener errors never impact the data path.
@@ -1290,6 +1385,12 @@ Full list of exported types:
 **Events + config**
 - `ChangeEvent`
 - `MemorySystemConfig`, `EmbeddingQueueConfig`, `RankingConfig`
+
+**Access control**
+- `AccessLevel`, `Permission`, `Permissions`, `AccessControlled`
+- `PermissionDeniedError`, `OwnerRequiredError`
+- `canAccess`, `effectivePermissions`, `assertCanAccess`, `levelGrants`
+- `DEFAULT_GROUP_LEVEL`, `DEFAULT_WORLD_LEVEL`
 
 ---
 

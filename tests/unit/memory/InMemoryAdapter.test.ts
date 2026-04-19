@@ -25,8 +25,14 @@ function entityInput(overrides: Partial<NewEntity> = {}): NewEntity {
     archived: overrides.archived,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
+    permissions: overrides.permissions,
   };
 }
+
+/** Scope-private perms: group members can read (default), world cannot. */
+const PRIVATE_PERMS = { world: 'none' as const };
+/** Fully-private perms: owner-only. Neither group nor world can read. */
+const OWNER_ONLY_PERMS = { group: 'none' as const, world: 'none' as const };
 
 function factInput(subjectId: string, overrides: Partial<NewFact> = {}): NewFact {
   const now = new Date();
@@ -50,6 +56,7 @@ function factInput(subjectId: string, overrides: Partial<NewFact> = {}): NewFact
     metadata: overrides.metadata,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
+    permissions: overrides.permissions,
   };
 }
 
@@ -155,7 +162,10 @@ describe('InMemoryAdapter', () => {
     });
 
     it('archiveEntity throws ScopeViolationError when not visible', async () => {
-      const e = await store.createEntity(entityInput({ groupId: 'g1' }));
+      // Private-to-group — public-by-default would let `other` group see it.
+      const e = await store.createEntity(
+        entityInput({ groupId: 'g1', permissions: PRIVATE_PERMS }),
+      );
       await expect(store.archiveEntity(e.id, { groupId: 'other' })).rejects.toThrow(
         ScopeViolationError,
       );
@@ -193,12 +203,14 @@ describe('InMemoryAdapter', () => {
         entityInput({
           groupId: 'g1',
           identifiers: [ident('email', 'x@example.com')],
+          permissions: PRIVATE_PERMS,
         }),
       );
       await store.createEntity(
         entityInput({
           groupId: 'g2',
           identifiers: [ident('email', 'x@example.com')],
+          permissions: PRIVATE_PERMS,
         }),
       );
       const found = await store.findEntitiesByIdentifier('email', 'x@example.com', {
@@ -610,28 +622,39 @@ describe('InMemoryAdapter', () => {
     });
 
     it('group-scoped entity only visible to matching groupId', async () => {
-      const e = await store.createEntity(entityInput({ groupId: 'g1' }));
+      // Private-to-group: opt out of world access with permissions.world='none'.
+      const e = await store.createEntity(
+        entityInput({ groupId: 'g1', permissions: PRIVATE_PERMS }),
+      );
       expect(await store.getEntity(e.id, { groupId: 'g1' })).not.toBeNull();
       expect(await store.getEntity(e.id, { groupId: 'g2' })).toBeNull();
       expect(await store.getEntity(e.id, {})).toBeNull();
     });
 
     it('user-scoped entity only visible to matching userId', async () => {
-      const e = await store.createEntity(entityInput({ ownerId: 'u1' }));
+      const e = await store.createEntity(
+        entityInput({ ownerId: 'u1', permissions: PRIVATE_PERMS }),
+      );
       expect(await store.getEntity(e.id, { userId: 'u1' })).not.toBeNull();
       expect(await store.getEntity(e.id, { userId: 'u2' })).toBeNull();
     });
 
     it('group+user scoped entity requires BOTH to match', async () => {
-      const e = await store.createEntity(entityInput({ groupId: 'g1', ownerId: 'u1' }));
+      // Owner-only: no group or world access; only ownerId=u1 can see it.
+      const e = await store.createEntity(
+        entityInput({ groupId: 'g1', ownerId: 'u1', permissions: OWNER_ONLY_PERMS }),
+      );
       expect(await store.getEntity(e.id, { groupId: 'g1', userId: 'u1' })).not.toBeNull();
       expect(await store.getEntity(e.id, { groupId: 'g1', userId: 'u2' })).toBeNull();
-      expect(await store.getEntity(e.id, { groupId: 'g2', userId: 'u1' })).toBeNull();
+      // u1 owner match → visible even without group match.
+      expect(await store.getEntity(e.id, { groupId: 'g2', userId: 'u1' })).not.toBeNull();
     });
 
     it('fact scope is independent of entity scope for visibility checks', async () => {
-      const e = await store.createEntity(entityInput()); // global entity
-      const f = await store.createFact(factInput(e.id, { groupId: 'g1' }));
+      const e = await store.createEntity(entityInput()); // public entity
+      const f = await store.createFact(
+        factInput(e.id, { groupId: 'g1', permissions: PRIVATE_PERMS }),
+      );
       expect(await store.getFact(f.id, { groupId: 'g1' })).not.toBeNull();
       expect(await store.getFact(f.id, { groupId: 'g2' })).toBeNull();
     });
@@ -690,7 +713,7 @@ describe('InMemoryAdapter', () => {
     it('respects filter + scope', async () => {
       const b = await store.createEntity(entityInput({ groupId: 'g2' }));
       const fb = await store.createFact(
-        factInput(b.id, { groupId: 'g2', embedding: [1, 0, 0] }),
+        factInput(b.id, { groupId: 'g2', embedding: [1, 0, 0], permissions: PRIVATE_PERMS }),
       );
       const results = await store.semanticSearch([1, 0, 0], {}, { topK: 10 }, { groupId: 'g1' });
       expect(results.map((r) => r.fact.id)).not.toContain(fb.id);

@@ -13,7 +13,7 @@ describe('ExtractionResolver', () => {
   let store: InMemoryAdapter;
   let mem: MemorySystem;
   let resolver: ExtractionResolver;
-  const scope: ScopeFilter = {};
+  const scope: ScopeFilter = { userId: 'test-user' };
 
   beforeEach(() => {
     store = new InMemoryAdapter();
@@ -293,7 +293,7 @@ describe('ExtractionResolver', () => {
         scope,
       );
 
-      const countBefore = (await store.listEntities(scope, { limit: 100 })).items.length;
+      const countBefore = (await store.listEntities({}, { limit: 100 }, scope)).items.length;
 
       const output: ExtractionOutput = {
         mentions: {
@@ -314,7 +314,7 @@ describe('ExtractionResolver', () => {
       expect(result.facts[0]!.subjectId).toBe(antonSeed.entity.id);
       expect(result.unresolved).toEqual([]);
 
-      const countAfter = (await store.listEntities(scope, { limit: 100 })).items.length;
+      const countAfter = (await store.listEntities({}, { limit: 100 }, scope)).items.length;
       expect(countAfter).toBe(countBefore + 1);
     });
 

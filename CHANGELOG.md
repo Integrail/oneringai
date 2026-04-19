@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory layer — access control (BREAKING)
+
+Three-principal permission model layered on top of the existing scope system. Every entity and fact now carries an optional `permissions: { group?, world? }` block with `AccessLevel = 'none' | 'read' | 'write'` (write implies read). Owner always has full access unconditionally.
+
+**New types / errors / functions (`src/memory/AccessControl.ts`):**
+- `AccessLevel`, `Permission`, `Permissions`, `AccessControlled` types.
+- `canAccess(record, caller, need)`, `effectivePermissions(record)`, `assertCanAccess(record, caller, need, recordKind)`, `levelGrants(level, need)` pure evaluators — backend-agnostic source of truth for access semantics.
+- `PermissionDeniedError` (carries `recordId`, `recordKind`, `operation`) and `OwnerRequiredError` (carries `recordKind`) thrown by MemorySystem.
+- `DEFAULT_GROUP_LEVEL = 'read'`, `DEFAULT_WORLD_LEVEL = 'read'` constants.
+
+**Type additions:**
+- `IEntity.permissions?`, `IFact.permissions?` (propagates through `NewEntity`/`NewFact` via Omit).
+
+**Enforcement:**
+- Read paths filter via `canAccess(..., 'read')` at the adapter layer. `InMemoryAdapter` uses an in-process predicate; `MongoMemoryAdapter.scopeToFilter` rewritten to produce an `$or` of three branches (owner shortcut, group match with group level ≠ 'none', world match with world level ≠ 'none').
+- Write paths (`archiveEntity`, `deleteEntity`, `archiveFact`, `supersedeFact`, `mergeEntities`, `addFact` with `supersedes`, `upsertEntity` dirty path) load the record first and call `assertCanAccess(..., 'write')` — throws `PermissionDeniedError` when denied.
+- Cascades (`archiveEntity`, `deleteEntity`, `mergeEntities → rewriteFactReferences`, `archiveFactsReferencing`, `rewriteFactsForDeletion`) silently skip facts the caller can see but cannot write — documented permission-window caveat.
+
+**Breaking changes / migration:**
+- **Owner required.** `upsertEntity` / `addFact` throw `OwnerRequiredError` when neither input nor `scope.userId` provides one. Admins can set `ownerId` to any user id (no equality check enforced). Migration: backfill legacy records with a system `ownerId`; add `userId` to test scopes or pass explicit `input.ownerId`.
+- **Public-read defaults.** Previously a record with `{groupId: 'acme', ownerId: 'alice'}` was invisible outside `acme` (scope isolation). Now default `world: 'read'` makes it readable by anyone. To preserve the old group-private behavior, set `permissions: { world: 'none' }` explicitly at write time.
+- **Stricter writes.** Previously any caller in scope could mutate; now non-owner callers require explicit `permissions.group = 'write'` or `permissions.world = 'write'`. Expect `PermissionDeniedError` in places that silently succeeded before.
+
+**Tests:**
+- 29 pure evaluator tests (`tests/unit/memory/AccessControl.test.ts`) covering level × need × principal matrix, defaults, error classes.
+- 19 end-to-end tests (`tests/unit/memory/MemorySystem.permissions.test.ts`) covering owner-required invariant, admin delegation, write-path denial for each mutation method, read-filtering via scope + permissions, cascade respects write permission.
+- Existing adapter + resolver + predicate tests updated (scope-isolation tests now opt in to `permissions: { world: 'none' }` to preserve their semantics). 4605 total unit tests green (+48 from permissions).
+
+**Docs:**
+- New `docs/MEMORY_PERMISSIONS.md` — model, the three principals, access levels, defaults table, owner invariant, admin delegation, read filter vs write auth, recipes (team-private note, owner-private note, public reference, wiki-editable, group-collaborative task), migration notes, adapter contract, pitfalls.
+- `docs/MEMORY_API.md` — new "Access Control" section with enforcement table + error classes + pure evaluator signatures; new exports entry; TOC updated.
+- `docs/MEMORY_GUIDE.md` — scope section opens with permissions cross-link + owner invariant callout; four-scope table rewritten to reflect public-read defaults.
+- `CLAUDE.md` — memory-layer key-invariants block updated.
+
 ### Memory layer — signal ingestion pipeline
 
 **New high-level ingestion facade** (`src/memory/integration/signals/`) — turns raw source documents (email, plain text, custom sources) into entities + facts with deterministic participant seeding from metadata, so identity ambiguity for senders/recipients is eliminated upstream of the LLM.

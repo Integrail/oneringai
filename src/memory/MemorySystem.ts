@@ -12,6 +12,11 @@
 
 import { assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import type { IDisposable } from '../domain/interfaces/IDisposable.js';
+import {
+  assertCanAccess,
+  canAccess,
+  OwnerRequiredError,
+} from './AccessControl.js';
 import { genericTraverse } from './GenericTraversal.js';
 import { rankFacts } from './Ranking.js';
 import type { PredicateRegistry } from './predicates/PredicateRegistry.js';
@@ -230,6 +235,8 @@ export class MemorySystem implements IDisposable {
     const changedCount = merged.entity.identifiers.length - best.identifiers.length;
 
     if (merged.dirty) {
+      // Dirty path mutates an existing entity — write access required.
+      assertCanAccess(best, scope, 'write', 'entity');
       const next: IEntity = {
         ...merged.entity,
         version: best.version + 1,
@@ -263,6 +270,15 @@ export class MemorySystem implements IDisposable {
     scope: ScopeFilter,
   ): Promise<UpsertEntityResult> {
     const now = new Date();
+    // Owner invariant: every record must carry an ownerId. Callers can set
+    // ownerId explicitly (admin delegation) or rely on scope.userId fallback.
+    // When neither is present, we reject up front — the library refuses to
+    // create ownerless records because the owner principal is a cornerstone of
+    // access control.
+    const ownerId = input.ownerId ?? scope.userId;
+    if (!ownerId) {
+      throw new OwnerRequiredError('entity');
+    }
     // Build the NewEntity input (no id, version, createdAt, updatedAt).
     const newEntity: NewEntity = {
       type: input.type,
@@ -270,8 +286,9 @@ export class MemorySystem implements IDisposable {
       aliases: input.aliases ? [...input.aliases] : undefined,
       identifiers: input.identifiers.map((i) => ({ ...i, addedAt: i.addedAt ?? now })),
       groupId: input.groupId ?? scope.groupId,
-      ownerId: input.ownerId ?? scope.userId,
+      ownerId,
       metadata: input.metadata,
+      permissions: input.permissions,
     };
     const entity = await this.store.createEntity(newEntity);
     this.queueIdentityEmbedding(entity, scope);
@@ -298,6 +315,7 @@ export class MemorySystem implements IDisposable {
   ): Promise<IEntity> {
     const current = await this.store.getEntity(id, scope);
     if (!current) throw new Error(`appendAliasesAndIdentifiers: entity ${id} not found`);
+    assertCanAccess(current, scope, 'write', 'entity');
 
     const aliases = [...(current.aliases ?? [])];
     let dirty = false;
@@ -448,6 +466,10 @@ export class MemorySystem implements IDisposable {
         `mergeEntities: loser ${loserId} not found or not visible in caller scope`,
       );
     }
+    // Write access required on both: winner is updated (identifiers + aliases +
+    // version bump), loser is archived. Either being read-only denies the merge.
+    assertCanAccess(winner, scope, 'write', 'entity');
+    assertCanAccess(loser, scope, 'write', 'entity');
 
     // Merge identifiers + aliases into winner
     const merged = mergeIdentifiersAndAliases(winner, {
@@ -476,6 +498,10 @@ export class MemorySystem implements IDisposable {
     toId: EntityId,
     scope: ScopeFilter,
   ): Promise<void> {
+    // Permission-window caveat (composes with scope-window caveat on mergeEntities):
+    // we skip facts the caller can see but cannot write. Those facts keep their
+    // old reference — the merge is incomplete for that subset. Document on
+    // mergeEntities; no warning here to avoid log spam.
     // Subjects
     let cursor: string | undefined;
     do {
@@ -485,6 +511,7 @@ export class MemorySystem implements IDisposable {
         scope,
       );
       for (const f of page.items) {
+        if (!canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { subjectId: toId }, scope);
       }
       cursor = page.nextCursor;
@@ -499,6 +526,7 @@ export class MemorySystem implements IDisposable {
         scope,
       );
       for (const f of page.items) {
+        if (!canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { objectId: toId }, scope);
       }
       cursor = page.nextCursor;
@@ -507,6 +535,11 @@ export class MemorySystem implements IDisposable {
 
   async archiveEntity(id: EntityId, scope: ScopeFilter): Promise<void> {
     assertNotDestroyed(this, 'archiveEntity');
+    const entity = await this.store.getEntity(id, scope);
+    if (!entity) {
+      throw new Error(`archiveEntity: entity ${id} not found or not visible in caller scope`);
+    }
+    assertCanAccess(entity, scope, 'write', 'entity');
     // Cascade: archive facts referencing this entity first so consumers never
     // see active edges pointing at an archived (null on getEntity) node.
     await this.archiveFactsReferencing(id, scope);
@@ -520,6 +553,11 @@ export class MemorySystem implements IDisposable {
     opts: { hard?: boolean } = {},
   ): Promise<void> {
     assertNotDestroyed(this, 'deleteEntity');
+    const entity = await this.store.getEntity(id, scope);
+    if (!entity) {
+      throw new Error(`deleteEntity: entity ${id} not found or not visible in caller scope`);
+    }
+    assertCanAccess(entity, scope, 'write', 'entity');
     if (opts.hard) {
       // Hard delete: remove entity + every fact referencing it.
       await this.rewriteFactsForDeletion(id, scope);
@@ -533,11 +571,17 @@ export class MemorySystem implements IDisposable {
   }
 
   private async rewriteFactsForDeletion(entityId: EntityId, scope: ScopeFilter): Promise<void> {
+    // Permission-window caveat: we silently skip facts the caller can see but
+    // cannot write (analogous to the scope-window caveat documented on
+    // mergeEntities). A caller deleting an entity they own may leave behind
+    // group/world facts that reference it unless they also hold write on those
+    // facts. Those facts will dangle — document but don't fight it here.
     for (const filter of [{ subjectId: entityId }, { objectId: entityId }]) {
       let cursor: string | undefined;
       do {
         const page = await this.store.findFacts(filter, { limit: 200, cursor }, scope);
         for (const f of page.items) {
+          if (!canAccess(f, scope, 'write')) continue;
           await this.store.updateFact(f.id, { archived: true }, scope);
         }
         cursor = page.nextCursor;
@@ -551,6 +595,7 @@ export class MemorySystem implements IDisposable {
       do {
         const page = await this.store.findFacts(filter, { limit: 200, cursor }, scope);
         for (const f of page.items) {
+          if (!canAccess(f, scope, 'write')) continue;
           await this.store.updateFact(f.id, { archived: true }, scope);
           this.emit({ type: 'fact.archive', factId: f.id });
         }
@@ -657,6 +702,13 @@ export class MemorySystem implements IDisposable {
     }
 
     const factScope = deriveFactScope(input, subject, scope);
+    if (!factScope.ownerId) {
+      // Owner invariant: every fact must carry an ownerId. deriveFactScope
+      // falls back to input.ownerId → subject.ownerId → undefined. Undefined
+      // means the caller provided none AND the subject entity is itself
+      // ownerless (legacy data). Reject explicitly.
+      throw new OwnerRequiredError('fact');
+    }
     assertScopeInvariant(subject, factScope);
 
     // Auto-supersede for singleValued predicates (e.g. current_title, has_due_date).
@@ -699,9 +751,35 @@ export class MemorySystem implements IDisposable {
       validFrom: input.validFrom,
       validUntil: input.validUntil,
       metadata: input.metadata,
+      permissions: input.permissions,
       groupId: factScope.groupId,
       ownerId: factScope.ownerId,
     };
+
+    // Supersession write check — caller must have write access to the
+    // predecessor fact they're archiving. This may differ from read access
+    // (e.g. a group-readable record with permissions.group='read' is not
+    // group-writable). Loading first with scope-read filter distinguishes
+    // "not found/invisible" from "visible but denied".
+    //
+    // We also enforce that the predecessor lives on the same subject: a
+    // supersession chain must stay per-subject or retrieval semantics break
+    // ("what superseded F1?" would return a fact about a different subject).
+    if (supersedes) {
+      const predecessor = await this.store.getFact(supersedes, scope);
+      if (!predecessor) {
+        throw new Error(
+          `addFact: predecessor fact ${supersedes} not found or not visible in caller scope`,
+        );
+      }
+      assertCanAccess(predecessor, scope, 'write', 'fact');
+      if (predecessor.subjectId !== input.subjectId) {
+        throw new Error(
+          `addFact: predecessor ${supersedes} has subjectId=${predecessor.subjectId}, ` +
+            `but new fact targets ${input.subjectId} (supersession chains are per-subject)`,
+        );
+      }
+    }
 
     // Crash-safe supersession: write the new fact first, THEN archive the
     // predecessor. If the process dies between the two, the worst case is a
@@ -756,6 +834,11 @@ export class MemorySystem implements IDisposable {
 
   async archiveFact(id: FactId, scope: ScopeFilter): Promise<void> {
     assertNotDestroyed(this, 'archiveFact');
+    const fact = await this.store.getFact(id, scope);
+    if (!fact) {
+      throw new Error(`archiveFact: fact ${id} not found or not visible in caller scope`);
+    }
+    assertCanAccess(fact, scope, 'write', 'fact');
     await this.store.updateFact(id, { archived: true }, scope);
     this.emit({ type: 'fact.archive', factId: id });
   }
@@ -1112,6 +1195,11 @@ export class MemorySystem implements IDisposable {
         supersedes: priorProfile?.id,
         groupId: targetScope.groupId,
         ownerId: targetScope.ownerId,
+        // Inherit prior profile's permissions so auto-regen never silently
+        // widens visibility. A private (world='none') prior profile stays
+        // private across regenerations; undefined on first regen falls back
+        // to library defaults (public-read).
+        permissions: priorProfile?.permissions,
       },
       readScope,
     );

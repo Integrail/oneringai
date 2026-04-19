@@ -105,6 +105,24 @@ export { scoreFact, rankFacts } from './Ranking.js';
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
 export type { PredicateDefinition } from './predicates/index.js';
 
+// Access control — three-principal permission model (owner / group / world).
+export {
+  PermissionDeniedError,
+  OwnerRequiredError,
+  canAccess,
+  effectivePermissions,
+  assertCanAccess,
+  levelGrants,
+  DEFAULT_GROUP_LEVEL,
+  DEFAULT_WORLD_LEVEL,
+} from './AccessControl.js';
+export type {
+  AccessLevel,
+  Permission,
+  Permissions,
+  AccessControlled,
+} from './AccessControl.js';
+
 // ---- Types ----
 export type {
   // Ids + primitives

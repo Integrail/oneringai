@@ -1,52 +1,62 @@
 /**
- * Translation from ScopeFilter to Mongo filter.
+ * Translation from ScopeFilter to Mongo filter — permission-aware.
  *
- * Visibility rule (mirror of MemorySystem + InMemoryAdapter):
- *   record visible iff
- *     (!record.groupId || record.groupId === filter.groupId) AND
- *     (!record.ownerId || record.ownerId === filter.userId)
+ * Visibility rule (mirror of MemorySystem + InMemoryAdapter via AccessControl):
+ *   record visible to caller C iff any of:
+ *     (a) record.ownerId === C.userId                          — owner shortcut
+ *     (b) record.groupId === C.groupId AND permissions.group !== 'none'   — group access
+ *     (c) record.groupId !== C.groupId AND permissions.world !== 'none'   — world access
  *
- * Convention: scope fields stored as `null` when absent (NOT undefined), so the
- * index behaves consistently. Missing fields are treated as null via $exists.
+ * Defaults: `permissions.group` missing ⇒ 'read' (visible), `permissions.world`
+ * missing ⇒ 'read' (visible). So a field that's either missing or not 'none'
+ * satisfies the read check.
+ *
+ * Recommended compound indexes (caller owns them — see `ensureIndexes`):
+ *   - `(ownerId, groupId)` for the owner shortcut + group match.
+ *   - Single-field on `permissions.group` and `permissions.world` so the
+ *     `$ne: 'none'` branch is sargable when records carry explicit levels.
  */
 
 import type { ScopeFilter } from '../../types.js';
 import type { MongoFilter } from './IMongoCollectionLike.js';
 
+const WORLD_ALLOWS_READ: MongoFilter = {
+  $or: [
+    { 'permissions.world': { $exists: false } },
+    { 'permissions.world': { $ne: 'none' } },
+  ],
+};
+
+const GROUP_ALLOWS_READ: MongoFilter = {
+  $or: [
+    { 'permissions.group': { $exists: false } },
+    { 'permissions.group': { $ne: 'none' } },
+  ],
+};
+
 export function scopeToFilter(scope: ScopeFilter): MongoFilter {
-  const clauses: MongoFilter[] = [];
+  const branches: MongoFilter[] = [];
 
-  // groupId clause
-  if (scope.groupId !== undefined) {
-    clauses.push({
-      $or: [
-        { groupId: null },
-        { groupId: { $exists: false } },
-        { groupId: scope.groupId },
-      ],
-    });
-  } else {
-    clauses.push({
-      $or: [{ groupId: null }, { groupId: { $exists: false } }],
-    });
-  }
-
-  // ownerId clause
+  // (a) Owner shortcut.
   if (scope.userId !== undefined) {
-    clauses.push({
-      $or: [
-        { ownerId: null },
-        { ownerId: { $exists: false } },
-        { ownerId: scope.userId },
-      ],
-    });
-  } else {
-    clauses.push({
-      $or: [{ ownerId: null }, { ownerId: { $exists: false } }],
-    });
+    branches.push({ ownerId: scope.userId });
   }
 
-  return clauses.length === 1 ? clauses[0]! : { $and: clauses };
+  // (b) Group access.
+  if (scope.groupId !== undefined) {
+    branches.push({ $and: [{ groupId: scope.groupId }, GROUP_ALLOWS_READ] });
+  }
+
+  // (c) World access — caller is NOT in the record's group (or record has no
+  //     group, which `$ne` matches since Mongo's $ne matches null/missing too).
+  if (scope.groupId !== undefined) {
+    branches.push({ $and: [{ groupId: { $ne: scope.groupId } }, WORLD_ALLOWS_READ] });
+  } else {
+    // Caller has no groupId → every record is "world" for them.
+    branches.push(WORLD_ALLOWS_READ);
+  }
+
+  return branches.length === 1 ? branches[0]! : { $or: branches };
 }
 
 export function mergeFilters(...filters: Array<MongoFilter | null | undefined>): MongoFilter {

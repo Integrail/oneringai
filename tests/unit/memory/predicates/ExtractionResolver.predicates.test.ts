@@ -56,7 +56,7 @@ describe('ExtractionResolver — canonicalization', () => {
         { subject: 'm1', predicate: 'employed_by', object: 'm2' },
       ],
     };
-    const result = await resolver.resolveAndIngest(output, 'sig_1', {});
+    const result = await resolver.resolveAndIngest(output, 'sig_1', { userId: 'test-user' });
     expect(result.facts).toHaveLength(2);
     expect(result.facts.every((f) => f.predicate === 'works_at')).toBe(true);
     expect(result.newPredicates).toEqual([]);
@@ -85,7 +85,7 @@ describe('ExtractionResolver — canonicalization', () => {
         { subject: 'm1', predicate: 'unknown-thing-one', value: 'z' },
       ],
     };
-    const result = await resolver.resolveAndIngest(output, 'sig_2', {});
+    const result = await resolver.resolveAndIngest(output, 'sig_2', { userId: 'test-user' });
     expect(result.facts).toHaveLength(3); // permissive — all written
     expect(result.newPredicates).toEqual(['unknown_thing_one', 'unknown_thing_two']);
     await mem.shutdown();
@@ -112,7 +112,7 @@ describe('ExtractionResolver — canonicalization', () => {
         { subject: 'm1', predicate: 'mystery', value: 'y' }, // rejected
       ],
     };
-    const result = await resolver.resolveAndIngest(output, 'sig_3', {});
+    const result = await resolver.resolveAndIngest(output, 'sig_3', { userId: 'test-user' });
     expect(result.facts).toHaveLength(1);
     expect(result.facts[0]!.predicate).toBe('works_at');
     expect(result.unresolved).toHaveLength(1);
@@ -135,7 +135,7 @@ describe('ExtractionResolver — canonicalization', () => {
       },
       facts: [{ subject: 'm1', predicate: 'anything', value: 'x' }],
     };
-    const result = await resolver.resolveAndIngest(output, 'sig_4', {});
+    const result = await resolver.resolveAndIngest(output, 'sig_4', { userId: 'test-user' });
     expect(result.facts).toHaveLength(1);
     expect(result.newPredicates).toEqual([]);
     await mem.shutdown();

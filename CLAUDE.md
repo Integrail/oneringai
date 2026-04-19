@@ -238,7 +238,10 @@ Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** 
 **Key invariants:**
 - `IFact`: `contextIds?` for multi-entity binding; `importance?` (0..1, default 0.5) multiplies into ranking; `sourceSignalId?` opaque (library user owns the signal store).
 - `getContext` returns profile + topFacts (subject OR object OR contextIds) + relatedTasks + relatedEvents by default. Pass `tiers: 'minimal'` to suppress.
-- Scope visibility: `(groupId, ownerId)` absent = global; both match for user-within-group.
+- **Owner required:** every entity + fact MUST have `ownerId`. `OwnerRequiredError` thrown at creation when absent from both input and `scope.userId`. Admins can set `ownerId` to any user id (no equality check vs `scope.userId`).
+- **Permissions (three-principal):** every record carries optional `permissions: { group?, world? }` with `AccessLevel = 'none'|'read'|'write'`. Owner always has full access. Defaults: `group='read'`, `world='read'` (public-read, owner-write). See `src/memory/AccessControl.ts` + `docs/MEMORY_PERMISSIONS.md`.
+- **Read vs write enforcement:** reads are filtered at storage (adapter translates `canAccess(..., 'read')` into native query). Writes are checked at MemorySystem (`assertCanAccess(..., 'write')` throws `PermissionDeniedError`).
+- Scope visibility: `(groupId, ownerId)` absent = global; both match for user-within-group. Layered under permissions — scope defines the principal; permissions define the level.
 - Tests: 303 unit tests, 14 files. Mongo real-DB integration gated on `mongodb` + `mongodb-memory-server` optional peer deps.
 
 ---

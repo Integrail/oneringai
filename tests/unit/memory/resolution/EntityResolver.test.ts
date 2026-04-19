@@ -7,10 +7,11 @@ import { MemorySystem } from '@/memory/MemorySystem.js';
 import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
 import type { ScopeFilter } from '@/memory/types.js';
 
+const scope: ScopeFilter = { userId: 'test-user' };
+
 describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
   let store: InMemoryAdapter;
   let mem: MemorySystem;
-  const scope: ScopeFilter = {};
 
   beforeEach(() => {
     store = new InMemoryAdapter();
@@ -24,7 +25,7 @@ describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
   async function seedOrg(name: string, aliases: string[], identifiers: { kind: string; value: string }[]) {
     return await mem.upsertEntity(
       { type: 'organization', displayName: name, aliases, identifiers },
-      {},
+      scope,
     );
   }
 
@@ -100,7 +101,7 @@ describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
         displayName: 'Microsoft',
         identifiers: [{ kind: 'project_slug', value: 'microsoft-internal' }],
       },
-      {},
+      scope,
     );
 
     const orgCandidates = await mem.resolveEntity(
@@ -119,12 +120,17 @@ describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
         displayName: 'Microsoft',
         identifiers: [{ kind: 'domain', value: 'msft-local.com' }],
         groupId: 'g2',
+        ownerId: 'u-g2',
+        permissions: { world: 'none' },
       },
-      { groupId: 'g2' },
+      { groupId: 'g2', userId: 'u-g2' },
     );
 
-    // Caller in g1 should only see the global Microsoft.
-    const c = await mem.resolveEntity({ surface: 'Microsoft', type: 'organization' }, { groupId: 'g1' });
+    // Caller in g1 should only see the other Microsoft (the g2 one is private to g2).
+    const c = await mem.resolveEntity(
+      { surface: 'Microsoft', type: 'organization' },
+      { groupId: 'g1', userId: 'u-caller' },
+    );
     expect(c).toHaveLength(1);
   });
 
@@ -138,7 +144,7 @@ describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
         displayName: 'John Doe',
         identifiers: [{ kind: 'email', value: 'john@acme.com' }],
       },
-      {},
+      scope,
     );
     const john2 = await mem.upsertEntity(
       {
@@ -146,7 +152,7 @@ describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
         displayName: 'John Doe',
         identifiers: [{ kind: 'email', value: 'john@other.com' }],
       },
-      {},
+      scope,
     );
 
     // Link john1 to acme via a fact.
@@ -200,7 +206,7 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
       },
-      {},
+      scope,
     );
     expect(result.resolved).toBe(false);
     expect(result.entity.displayName).toBe('Microsoft');
@@ -214,7 +220,7 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
       },
-      {},
+      scope,
     );
 
     // Second pass uses a different surface but same identifier.
@@ -224,7 +230,7 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
       },
-      {},
+      scope,
     );
     expect(second.resolved).toBe(true);
     expect(second.entity.id).toBe(first.entity.id);
@@ -239,7 +245,7 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
       },
-      {},
+      scope,
     );
     await mem.upsertEntityBySurface(
       {
@@ -247,7 +253,7 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
       },
-      {},
+      scope,
     );
     const ent = (await mem.searchEntities('Microsoft', {}, {})).items[0]!;
     expect(ent.aliases).toContain('MSFT');
@@ -260,11 +266,11 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
       },
-      {},
+      scope,
     );
     const result = await mem.upsertEntityBySurface(
       { surface: 'Microsft', type: 'organization' }, // typo
-      {},
+      scope,
     );
     // v1: no fuzzy tier → no candidates → new entity created.
     expect(result.resolved).toBe(false);
@@ -279,11 +285,11 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
         aliases: ['MSFT'],
       },
-      {},
+      scope,
     );
     const result = await mem.upsertEntityBySurface(
       { surface: 'MSFT', type: 'organization' },
-      {},
+      scope,
       { autoResolveThreshold: 0.8 },
     );
     expect(result.resolved).toBe(true);
@@ -297,11 +303,11 @@ describe('EntityResolver.upsertBySurface — via MemorySystem.upsertEntityBySurf
         type: 'organization',
         identifiers: [{ kind: 'domain', value: 'acme.com' }],
       },
-      {},
+      scope,
     );
     const second = await mem.upsertEntityBySurface(
       { surface: 'Acme', type: 'organization' },
-      {},
+      scope,
     );
     expect(second.resolved).toBe(true);
     expect(second.entity.id).toBe(first.entity.id);
@@ -323,12 +329,12 @@ describe('Configurable entity resolution thresholds', () => {
         identifiers: [{ kind: 'domain', value: 'microsoft.com' }],
         aliases: ['MSFT'],
       },
-      {},
+      scope,
     );
     // Alias match (0.85 confidence) now auto-resolves under the lower threshold.
     const result = await mem.upsertEntityBySurface(
       { surface: 'MSFT', type: 'organization' },
-      {},
+      scope
     );
     expect(result.resolved).toBe(true);
     expect(result.entity.id).toBe(first.entity.id);
@@ -357,7 +363,7 @@ describe('Configurable entity resolution thresholds', () => {
         displayName: 'X',
         identifiers: [{ kind: 'email', value: 'x@y.com' }],
       },
-      {},
+      scope,
     );
     await mem.flushEmbeddings();
     expect(embedCalls).toBe(0);
@@ -381,7 +387,7 @@ describe('Configurable entity resolution thresholds', () => {
         displayName: 'X',
         identifiers: [{ kind: 'email', value: 'x@y.com' }],
       },
-      {},
+      scope,
     );
     await mem.flushEmbeddings();
     expect(embedCalls).toBeGreaterThan(0);

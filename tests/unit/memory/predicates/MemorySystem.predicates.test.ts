@@ -14,6 +14,8 @@ import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
 import { PredicateRegistry } from '@/memory/predicates/index.js';
 import type { PredicateDefinition } from '@/memory/predicates/index.js';
 
+const TEST_SCOPE = { userId: 'test-user' };
+
 async function seedPerson(mem: MemorySystem, name = 'Alice'): Promise<string> {
   const res = await mem.upsertEntity(
     {
@@ -21,7 +23,7 @@ async function seedPerson(mem: MemorySystem, name = 'Alice'): Promise<string> {
       displayName: name,
       identifiers: [{ kind: 'email', value: `${name.toLowerCase()}@example.com` }],
     },
-    {},
+    TEST_SCOPE,
   );
   return res.entity.id;
 }
@@ -143,7 +145,7 @@ describe('MemorySystem.addFact — canonicalization', () => {
   it('camelCase input is stored as canonical snake_case', async () => {
     const fact = await mem.addFact(
       { subjectId: aliceId, predicate: 'worksAt', kind: 'atomic', value: 'Acme' },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.predicate).toBe('works_at');
   });
@@ -151,7 +153,7 @@ describe('MemorySystem.addFact — canonicalization', () => {
   it('alias input is stored as canonical name', async () => {
     const fact = await mem.addFact(
       { subjectId: aliceId, predicate: 'employed_by', kind: 'atomic', value: 'Acme' },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.predicate).toBe('works_at');
   });
@@ -159,7 +161,7 @@ describe('MemorySystem.addFact — canonicalization', () => {
   it('unknown predicate passes through normalized (permissive mode)', async () => {
     const fact = await mem.addFact(
       { subjectId: aliceId, predicate: 'randomThing', kind: 'atomic', value: 'x' },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.predicate).toBe('random_thing');
   });
@@ -167,7 +169,7 @@ describe('MemorySystem.addFact — canonicalization', () => {
   it('applies defaultImportance when caller omits importance', async () => {
     const fact = await mem.addFact(
       { subjectId: aliceId, predicate: 'works_at', kind: 'atomic', value: 'Acme' },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.importance).toBe(1.0);
   });
@@ -181,7 +183,7 @@ describe('MemorySystem.addFact — canonicalization', () => {
         value: 'Acme',
         importance: 0.2,
       },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.importance).toBe(0.2);
   });
@@ -194,7 +196,7 @@ describe('MemorySystem.addFact — canonicalization', () => {
         kind: 'atomic',
         value: 1,
       },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.isAggregate).toBe(true);
   });
@@ -220,7 +222,7 @@ describe('MemorySystem.addFact — strict mode', () => {
     await expect(
       mem.addFact(
         { subjectId: aliceId, predicate: 'unknownPredicate', kind: 'atomic', value: 'x' },
-        {},
+        TEST_SCOPE,
       ),
     ).rejects.toThrow(/not in registry/);
   });
@@ -229,7 +231,7 @@ describe('MemorySystem.addFact — strict mode', () => {
     await expect(
       mem.addFact(
         { subjectId: aliceId, predicate: 'works_at', kind: 'atomic', value: 'Acme' },
-        {},
+        TEST_SCOPE,
       ),
     ).resolves.toBeTruthy();
   });
@@ -238,7 +240,7 @@ describe('MemorySystem.addFact — strict mode', () => {
     await expect(
       mem.addFact(
         { subjectId: aliceId, predicate: 'employed_by', kind: 'atomic', value: 'Acme' },
-        {},
+        TEST_SCOPE,
       ),
     ).resolves.toBeTruthy();
   });
@@ -262,18 +264,18 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
   it('writing a singleValued predicate twice supersedes the first', async () => {
     const first = await mem.addFact(
       { subjectId: aliceId, predicate: 'current_title', kind: 'atomic', value: 'Engineer' },
-      {},
+      TEST_SCOPE,
     );
     const second = await mem.addFact(
       { subjectId: aliceId, predicate: 'current_title', kind: 'atomic', value: 'Senior' },
-      {},
+      TEST_SCOPE,
     );
     expect(second.supersedes).toBe(first.id);
 
     // First is archived; second is active.
     const firstNow = await (mem as unknown as { store: InMemoryAdapter }).store.getFact(
       first.id,
-      {},
+      TEST_SCOPE,
     );
     expect(firstNow?.archived).toBe(true);
   });
@@ -281,12 +283,12 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
   it('camelCase + alias inputs still trigger supersede (via canonicalization)', async () => {
     const first = await mem.addFact(
       { subjectId: aliceId, predicate: 'current_title', kind: 'atomic', value: 'A' },
-      {},
+      TEST_SCOPE,
     );
     // Write with a different case form — must be recognized as the same predicate.
     const second = await mem.addFact(
       { subjectId: aliceId, predicate: 'currentTitle', kind: 'atomic', value: 'B' },
-      {},
+      TEST_SCOPE,
     );
     expect(second.supersedes).toBe(first.id);
   });
@@ -300,17 +302,17 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
     const pid = await seedPerson(memOff, 'Bob');
     const a = await memOff.addFact(
       { subjectId: pid, predicate: 'current_title', kind: 'atomic', value: 'A' },
-      {},
+      TEST_SCOPE,
     );
     const b = await memOff.addFact(
       { subjectId: pid, predicate: 'current_title', kind: 'atomic', value: 'B' },
-      {},
+      TEST_SCOPE,
     );
     expect(b.supersedes).toBeUndefined();
     // First is NOT archived.
     const firstNow = await (memOff as unknown as { store: InMemoryAdapter }).store.getFact(
       a.id,
-      {},
+      TEST_SCOPE,
     );
     expect(firstNow?.archived).toBeFalsy();
     await memOff.shutdown();
@@ -319,11 +321,11 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
   it('does NOT override an explicit supersedes passed by the caller', async () => {
     const a = await mem.addFact(
       { subjectId: aliceId, predicate: 'current_title', kind: 'atomic', value: 'A' },
-      {},
+      TEST_SCOPE,
     );
     const b = await mem.addFact(
       { subjectId: aliceId, predicate: 'current_title', kind: 'atomic', value: 'B' },
-      {},
+      TEST_SCOPE,
     );
     // Third call explicitly supersedes the FIRST fact (not the second), to
     // demonstrate caller's choice is respected.
@@ -335,7 +337,7 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
         value: 'C',
         supersedes: a.id,
       },
-      {},
+      TEST_SCOPE,
     );
     expect(c.supersedes).toBe(a.id); // not b.id (which would be auto)
   });
@@ -343,11 +345,11 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
   it('does NOT auto-supersede for non-singleValued predicates', async () => {
     const a = await mem.addFact(
       { subjectId: aliceId, predicate: 'works_at', kind: 'atomic', value: 'Acme' },
-      {},
+      TEST_SCOPE,
     );
     const b = await mem.addFact(
       { subjectId: aliceId, predicate: 'works_at', kind: 'atomic', value: 'Contoso' },
-      {},
+      TEST_SCOPE,
     );
     expect(b.supersedes).toBeUndefined();
     expect(a.id).not.toBe(b.id);
@@ -356,11 +358,11 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
   it('does NOT fire when the predicate is unknown (registry has no singleValued info)', async () => {
     const a = await mem.addFact(
       { subjectId: aliceId, predicate: 'mystery_predicate', kind: 'atomic', value: 'A' },
-      {},
+      TEST_SCOPE,
     );
     const b = await mem.addFact(
       { subjectId: aliceId, predicate: 'mystery_predicate', kind: 'atomic', value: 'B' },
-      {},
+      TEST_SCOPE,
     );
     expect(b.supersedes).toBeUndefined();
     expect(a.id).not.toBe(b.id);
@@ -376,11 +378,11 @@ describe('MemorySystem.addFact — singleValued auto-supersede', () => {
     const pid = await seedPerson(mem2, 'Carol');
     await mem2.addFact(
       { subjectId: pid, predicate: 'current_title', kind: 'atomic', value: 'A' },
-      {},
+      TEST_SCOPE,
     );
     await mem2.addFact(
       { subjectId: pid, predicate: 'current_title', kind: 'atomic', value: 'B' },
-      {},
+      TEST_SCOPE,
     );
     expect(events).toContain('fact.supersede');
     await mem2.shutdown();
@@ -414,7 +416,7 @@ describe('MemorySystem — ranking weight merge', () => {
         importance: 0.5,
         observedAt: new Date(nowMs),
       },
-      {},
+      TEST_SCOPE,
     );
     await mem.addFact(
       {
@@ -425,9 +427,9 @@ describe('MemorySystem — ranking weight merge', () => {
         importance: 0.5,
         observedAt: new Date(nowMs),
       },
-      {},
+      TEST_SCOPE,
     );
-    const ctx = await mem.getContext(aliceId, { topFactsLimit: 5 }, {});
+    const ctx = await mem.getContext(aliceId, { topFactsLimit: 5 }, TEST_SCOPE);
     const preds = ctx.topFacts.map((f) => f.predicate);
     // works_at should rank higher than noted given 2.0 vs 0.5 weight.
     expect(preds.indexOf('works_at')).toBeLessThan(preds.indexOf('noted'));
@@ -452,7 +454,7 @@ describe('MemorySystem — ranking weight merge', () => {
         importance: 0.5,
         observedAt: new Date(nowMs),
       },
-      {},
+      TEST_SCOPE,
     );
     await mem.addFact(
       {
@@ -463,9 +465,9 @@ describe('MemorySystem — ranking weight merge', () => {
         importance: 0.5,
         observedAt: new Date(nowMs),
       },
-      {},
+      TEST_SCOPE,
     );
-    const ctx = await mem.getContext(aliceId, { topFactsLimit: 5 }, {});
+    const ctx = await mem.getContext(aliceId, { topFactsLimit: 5 }, TEST_SCOPE);
     const preds = ctx.topFacts.map((f) => f.predicate);
     // With inverted weights, noted should now rank higher.
     expect(preds.indexOf('noted')).toBeLessThan(preds.indexOf('works_at'));
@@ -484,7 +486,7 @@ describe('MemorySystem.addFacts — batch canonicalization', () => {
         { subjectId: aliceId, predicate: 'worksAt', kind: 'atomic', value: 'Acme' },
         { subjectId: aliceId, predicate: 'employed_by', kind: 'atomic', value: 'Contoso' },
       ],
-      {},
+      TEST_SCOPE,
     );
     expect(facts.map((f) => f.predicate)).toEqual(['works_at', 'works_at']);
     await mem.shutdown();
@@ -492,54 +494,52 @@ describe('MemorySystem.addFacts — batch canonicalization', () => {
 });
 
 describe('MemorySystem — auto-supersede scope isolation', () => {
-  it('auto-supersede only sees facts in the caller scope', async () => {
-    // Two scopes: (g1, u1) and (g1, u2). Writing current_title as u1 must NOT
-    // supersede a current_title written as u2 (which u1 cannot see).
+  it('auto-supersede only sees facts visible to the caller (owner-private subjects)', async () => {
+    // Two distinct user-owned subjects. Writing current_title on u2's subject
+    // must not touch u1's fact: u1 cannot see u2's subject at all, so the
+    // auto-supersede lookup scopes away their prior fact.
     const mem = new MemorySystem({
       store: new InMemoryAdapter(),
       predicates: minimalRegistry(),
     });
-    // Group-scoped person (visible to both u1 and u2 within g1).
-    const personRes = await mem.upsertEntity(
+    const u1Person = await mem.upsertEntity(
       {
         type: 'person',
-        displayName: 'Shared',
-        identifiers: [{ kind: 'email', value: 'shared@example.com' }],
-        groupId: 'g1',
-      },
-      { groupId: 'g1' },
-    );
-    const pid = personRes.entity.id;
-
-    // User 1 sets current_title.
-    const u1Fact = await mem.addFact(
-      {
-        subjectId: pid,
-        predicate: 'current_title',
-        kind: 'atomic',
-        value: 'Engineer',
+        displayName: 'Alice',
+        identifiers: [{ kind: 'email', value: 'alice@example.com' }],
         ownerId: 'u1',
+        permissions: { world: 'none', group: 'none' },
       },
-      { groupId: 'g1', userId: 'u1' },
+      { userId: 'u1' },
     );
-
-    // User 2 sets current_title — must NOT supersede u1's (different scope).
-    const u2Fact = await mem.addFact(
+    const u2Person = await mem.upsertEntity(
       {
-        subjectId: pid,
-        predicate: 'current_title',
-        kind: 'atomic',
-        value: 'Manager',
+        type: 'person',
+        displayName: 'Bob',
+        identifiers: [{ kind: 'email', value: 'bob@example.com' }],
         ownerId: 'u2',
+        permissions: { world: 'none', group: 'none' },
       },
-      { groupId: 'g1', userId: 'u2' },
+      { userId: 'u2' },
     );
 
+    const u1Fact = await mem.addFact(
+      { subjectId: u1Person.entity.id, predicate: 'current_title', kind: 'atomic', value: 'Engineer' },
+      { userId: 'u1' },
+    );
+
+    const u2Fact = await mem.addFact(
+      { subjectId: u2Person.entity.id, predicate: 'current_title', kind: 'atomic', value: 'Manager' },
+      { userId: 'u2' },
+    );
+
+    // Different subjects, different caller scopes → neither supersedes the other.
+    expect(u1Fact.supersedes).toBeUndefined();
     expect(u2Fact.supersedes).toBeUndefined();
-    // u1 fact is untouched.
+
     const u1Now = await (mem as unknown as { store: InMemoryAdapter }).store.getFact(
       u1Fact.id,
-      { groupId: 'g1', userId: 'u1' },
+      { userId: 'u1' },
     );
     expect(u1Now?.archived).toBeFalsy();
     await mem.shutdown();

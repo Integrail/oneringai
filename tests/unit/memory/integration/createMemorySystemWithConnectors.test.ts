@@ -37,7 +37,7 @@ describe('createMemorySystemWithConnectors', () => {
         displayName: 'X',
         identifiers: [{ kind: 'email', value: 'x@example.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     expect(res.created).toBe(true);
     await expect(mem.semanticSearch('q', {}, {})).rejects.toThrow(SemanticSearchUnavailableError);
@@ -96,7 +96,7 @@ describe('createMemorySystemWithConnectors', () => {
         displayName: 'P',
         identifiers: [{ kind: 'email', value: 'p@x.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     expect(entity).toBeDefined();
     await mem.shutdown();
@@ -131,7 +131,7 @@ describe('createMemorySystemWithConnectors', () => {
         displayName: 'N',
         identifiers: [{ kind: 'email', value: 'n@x.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     expect(events).toContain('entity.upsert');
     await mem.shutdown();

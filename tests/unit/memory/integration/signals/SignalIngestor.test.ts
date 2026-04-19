@@ -45,7 +45,7 @@ function makeExtractor(fixture: ExtractionOutput): IExtractor & {
 describe('SignalIngestor', () => {
   let store: InMemoryAdapter;
   let mem: MemorySystem;
-  const scope: ScopeFilter = {};
+  const scope: ScopeFilter = { userId: 'test-user' };
 
   beforeEach(() => {
     store = new InMemoryAdapter();

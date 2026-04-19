@@ -38,7 +38,7 @@ describe('MemorySystem — identity embedding dedup', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'alice@example.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
     expect(embedder.embed).toHaveBeenCalledTimes(1);
@@ -51,7 +51,7 @@ describe('MemorySystem — identity embedding dedup', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'alice@example.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
     expect(embedder.embed).toHaveBeenCalledTimes(1);
@@ -63,7 +63,7 @@ describe('MemorySystem — identity embedding dedup', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'alice@example.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
     // Still exactly 1 — second upsert is a no-op (mergedIdentifiers=0, dirty=false).
@@ -78,7 +78,7 @@ describe('MemorySystem — identity embedding dedup', () => {
         displayName: 'Alice',
         identifiers: [{ kind: 'email', value: 'alice@example.com' }],
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
     const firstCount = embedder.embed.mock.calls.length;
@@ -93,7 +93,7 @@ describe('MemorySystem — identity embedding dedup', () => {
           { kind: 'slack_id', value: 'U123' },
         ],
       },
-      {},
+      { userId: 'u1' },
     );
     await mem.flushEmbeddings();
     expect(embedder.embed.mock.calls.length).toBeGreaterThan(firstCount);

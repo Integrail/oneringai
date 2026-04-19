@@ -24,8 +24,14 @@ function entityInput(overrides: Partial<NewEntity> = {}): NewEntity {
     archived: overrides.archived,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
+    permissions: overrides.permissions,
   };
 }
+
+/** Scope-private: group can read (default), world cannot. */
+const PRIVATE_PERMS = { world: 'none' as const };
+/** Owner-only: neither group nor world can read. */
+const OWNER_ONLY_PERMS = { group: 'none' as const, world: 'none' as const };
 
 function factInput(subjectId: string, overrides: Partial<NewFact> = {}): NewFact {
   const now = new Date();
@@ -49,6 +55,7 @@ function factInput(subjectId: string, overrides: Partial<NewFact> = {}): NewFact
     metadata: overrides.metadata,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
+    permissions: overrides.permissions,
   };
 }
 
@@ -149,10 +156,18 @@ describe('MongoMemoryAdapter', () => {
 
       it('scope-filters', async () => {
         const a = await adapter.createEntity(
-          entityInput({ groupId: 'g1', identifiers: [ident('email', 'shared@x.com')] }),
+          entityInput({
+            groupId: 'g1',
+            identifiers: [ident('email', 'shared@x.com')],
+            permissions: PRIVATE_PERMS,
+          }),
         );
         await adapter.createEntity(
-          entityInput({ groupId: 'g2', identifiers: [ident('email', 'shared@x.com')] }),
+          entityInput({
+            groupId: 'g2',
+            identifiers: [ident('email', 'shared@x.com')],
+            permissions: PRIVATE_PERMS,
+          }),
         );
         const found = await adapter.findEntitiesByIdentifier('email', 'shared@x.com', {
           groupId: 'g1',
@@ -492,17 +507,22 @@ describe('MongoMemoryAdapter', () => {
     });
 
     it('group-scoped record only visible to matching groupId', async () => {
-      const e = await adapter.createEntity(entityInput({ groupId: 'g1' }));
+      const e = await adapter.createEntity(
+        entityInput({ groupId: 'g1', permissions: PRIVATE_PERMS }),
+      );
       expect(await adapter.getEntity(e.id, { groupId: 'g1' })).not.toBeNull();
       expect(await adapter.getEntity(e.id, { groupId: 'g2' })).toBeNull();
       expect(await adapter.getEntity(e.id, {})).toBeNull();
     });
 
     it('user+group requires both to match', async () => {
-      const e = await adapter.createEntity(entityInput({ groupId: 'g1', ownerId: 'u1' }));
+      const e = await adapter.createEntity(
+        entityInput({ groupId: 'g1', ownerId: 'u1', permissions: OWNER_ONLY_PERMS }),
+      );
       expect(await adapter.getEntity(e.id, { groupId: 'g1', userId: 'u1' })).not.toBeNull();
       expect(await adapter.getEntity(e.id, { groupId: 'g1', userId: 'u2' })).toBeNull();
-      expect(await adapter.getEntity(e.id, { groupId: 'g2', userId: 'u1' })).toBeNull();
+      // u1 is the owner — visible even without group match.
+      expect(await adapter.getEntity(e.id, { groupId: 'g2', userId: 'u1' })).not.toBeNull();
     });
   });
 

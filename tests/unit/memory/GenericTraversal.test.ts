@@ -14,6 +14,7 @@ function entityInput(name: string, overrides: Partial<NewEntity> = {}): NewEntit
     identifiers: [],
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
+    permissions: overrides.permissions,
   };
 }
 
@@ -240,7 +241,9 @@ describe('genericTraverse', () => {
 
   it('enforces scope — invisible neighbors excluded', async () => {
     const a = await store.createEntity(entityInput('A', { groupId: 'g1' }));
-    const b = await store.createEntity(entityInput('B', { groupId: 'g2' }));
+    const b = await store.createEntity(
+      entityInput('B', { groupId: 'g2', permissions: { world: 'none' } }),
+    );
     await store.createFact({
       ...factInput(a.id, 'knows', b.id),
       groupId: 'g1',

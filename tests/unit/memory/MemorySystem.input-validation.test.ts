@@ -8,6 +8,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { MemorySystem } from '@/memory/MemorySystem.js';
 import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
+import type { ScopeFilter } from '@/memory/types.js';
+
+const TEST_SCOPE: ScopeFilter = { userId: 'test-user' };
 
 async function seedPerson(mem: MemorySystem, email = 'a@a.com'): Promise<string> {
   const res = await mem.upsertEntity(
@@ -16,7 +19,7 @@ async function seedPerson(mem: MemorySystem, email = 'a@a.com'): Promise<string>
       displayName: 'Test',
       identifiers: [{ kind: 'email', value: email }],
     },
-    {},
+    TEST_SCOPE,
   );
   return res.entity.id;
 }
@@ -34,14 +37,14 @@ describe('MemorySystem.addFact — input validation', () => {
   it('rejects empty-string predicate', async () => {
     const id = await seedPerson(mem);
     await expect(
-      mem.addFact({ subjectId: id, predicate: '', kind: 'atomic', value: 'x' }, {}),
+      mem.addFact({ subjectId: id, predicate: '', kind: 'atomic', value: 'x' }, TEST_SCOPE),
     ).rejects.toThrow(/non-empty string/);
   });
 
   it('rejects whitespace-only predicate', async () => {
     const id = await seedPerson(mem);
     await expect(
-      mem.addFact({ subjectId: id, predicate: '   ', kind: 'atomic', value: 'x' }, {}),
+      mem.addFact({ subjectId: id, predicate: '   ', kind: 'atomic', value: 'x' }, TEST_SCOPE),
     ).rejects.toThrow(/non-empty string/);
   });
 
@@ -51,7 +54,7 @@ describe('MemorySystem.addFact — input validation', () => {
       mem.addFact(
         // @ts-expect-error deliberately wrong type
         { subjectId: id, predicate: null, kind: 'atomic', value: 'x' },
-        {},
+        TEST_SCOPE,
       ),
     ).rejects.toThrow(/non-empty string/);
   });
@@ -61,7 +64,7 @@ describe('MemorySystem.addFact — input validation', () => {
     await expect(
       mem.addFact(
         { subjectId: id, predicate: 'knows', kind: 'atomic', objectId: id },
-        {},
+        TEST_SCOPE,
       ),
     ).rejects.toThrow(/self-referential/);
   });
@@ -72,7 +75,7 @@ describe('MemorySystem.addFact — input validation', () => {
     await expect(
       mem.addFact(
         { subjectId: id, predicate: 'note', kind: 'atomic', value: 'hello' },
-        {},
+        TEST_SCOPE,
       ),
     ).resolves.toBeTruthy();
   });
@@ -87,7 +90,7 @@ describe('MemorySystem.addFact — input validation', () => {
         value: 'hello',
         contextIds: [],
       },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.contextIds).toBeUndefined();
   });
@@ -103,7 +106,7 @@ describe('MemorySystem.addFact — input validation', () => {
         value: 'x',
         contextIds: [b],
       },
-      {},
+      TEST_SCOPE,
     );
     expect(fact.contextIds).toEqual([b]);
   });

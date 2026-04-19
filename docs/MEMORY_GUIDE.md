@@ -1549,12 +1549,29 @@ Output JSON: { "details": "<markdown>", "summaryForEmbedding": "<~80 word gist>"
 
 ## Scope and multi-tenancy
 
-### The four scope shapes
+Scope is **who the record is for** (`groupId` + `ownerId`). Permissions are **what they can do with it** (`permissions.group` + `permissions.world`). Both must pass for a caller to read/write.
 
-- **Global** (no `groupId`, no `ownerId`) — visible to every caller.
-- **Group-wide** (`groupId` set) — visible to users in that group.
-- **User-private cross-group** (only `ownerId` set) — private notes visible to one user anywhere.
-- **User-private within group** (both set) — private to one user in one group.
+> **Every record now requires an `ownerId`.** The library throws `OwnerRequiredError` when you try to create an entity or fact without one. Either set `scope.userId` (auto-defaulted to `ownerId`) or pass `input.ownerId` explicitly (admin delegation). See [MEMORY_PERMISSIONS.md](./MEMORY_PERMISSIONS.md#the-owner-invariant).
+>
+> **Records are public-read by default.** UNIX `644` semantics. If you need to prevent cross-group reads, set `permissions: { world: 'none' }` at write time. The sections below describe the four scope shapes; permissions layer on top.
+
+### Access control at a glance
+
+```ts
+permissions?: {
+  group?: 'none' | 'read' | 'write';   // default 'read' when groupId is set
+  world?: 'none' | 'read' | 'write';   // default 'read'
+}
+```
+
+Owner always has full access. See the dedicated guide — [MEMORY_PERMISSIONS.md](./MEMORY_PERMISSIONS.md) — for model, recipes, migration, and pitfalls.
+
+### The four scope shapes (scope-only — see MEMORY_PERMISSIONS.md for permissions interaction)
+
+- **Public** (no `groupId`, `ownerId` set) — with default `world: 'read'`, visible to every caller; writable only by the owner.
+- **Group-wide** (`groupId` set, `ownerId` set) — default group `read`, world `read`. Set `world: 'none'` for group-private.
+- **User-private cross-group** (only `ownerId` set) — private to one user when `world: 'none'`; public-read otherwise.
+- **User-private within group** (both set) — private to the owner when `group: 'none', world: 'none'`.
 
 ### When to use which
 

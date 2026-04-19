@@ -28,6 +28,21 @@
  */
 
 import type { IDisposable } from '../domain/interfaces/IDisposable.js';
+import type { Permissions } from './AccessControl.js';
+
+// Re-export access-control surface so callers only need to import from
+// `@everworker/oneringai` (or the memory barrel) to get the full type set.
+export type { AccessLevel, Permission, Permissions, AccessControlled } from './AccessControl.js';
+export {
+  PermissionDeniedError,
+  OwnerRequiredError,
+  canAccess,
+  effectivePermissions,
+  assertCanAccess,
+  levelGrants,
+  DEFAULT_GROUP_LEVEL,
+  DEFAULT_WORLD_LEVEL,
+} from './AccessControl.js';
 
 // ---------------------------------------------------------------------------
 // Scope
@@ -92,6 +107,12 @@ export interface IEntity extends ScopeFields {
    */
   metadata?: Record<string, unknown>;
   archived?: boolean;
+  /**
+   * Access-control block governing non-owner reads/writes. Undefined → library
+   * defaults (`group: 'read'` when `groupId` set, `world: 'read'` always).
+   * See `AccessControl.ts` for semantics. Owner always has full access.
+   */
+  permissions?: Permissions;
   /**
    * Lightweight embedding over `displayName + top aliases + primary identifier
    * values`, used by EntityResolver for semantic fallback when string matching
@@ -175,6 +196,13 @@ export interface IFact extends ScopeFields {
   validUntil?: Date;
 
   metadata?: Record<string, unknown>;
+
+  /**
+   * Access-control block governing non-owner reads/writes. Undefined → library
+   * defaults (`group: 'read'` when `groupId` set, `world: 'read'` always).
+   * See `AccessControl.ts` for semantics. Owner always has full access.
+   */
+  permissions?: Permissions;
 
   createdAt: Date;
 }
