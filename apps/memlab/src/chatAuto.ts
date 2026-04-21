@@ -26,6 +26,7 @@
 
 import {
   Agent,
+  MemoryPluginNextGen,
   SessionIngestorPluginNextGen,
   StreamEventType,
   type IFact,
@@ -36,6 +37,7 @@ import chalk from 'chalk';
 import type { UI } from './ui.js';
 import type { VendorEntry } from './env.js';
 import { listActiveRules, renderRules } from './rules.js';
+import { renderMe } from './me.js';
 
 export interface ChatAutoConfig {
   ui: UI;
@@ -88,7 +90,7 @@ export async function runChatAuto(cfg: ChatAutoConfig): Promise<void> {
   ui.heading(`chat-auto — agent (explicit-writes) + background ingestor`);
   ui.dim(`  chat model       : ${primary.connectorName} / ${chatModel}`);
   ui.dim(`  extraction model : ${primary.connectorName} / ${extractModel}`);
-  ui.dim(`  userId=${userId} agentId=${agentId} — /back to return · /rules to list active rules`);
+  ui.dim(`  userId=${userId} agentId=${agentId} — /back to return · /rules list behavior rules · /me show user profile`);
   ui.dim(`  ingestor batches every ≥6 messages; final flush runs on /back, /exit, or Ctrl-C.`);
   ui.dim(`  behavior rules   : say "be terse" / "reply in Russian" → agent calls memory_set_agent_rule`);
   ui.dim(`                     → shown as "## User-specific instructions for this agent" next turn.`);
@@ -142,6 +144,17 @@ export async function runChatAuto(cfg: ChatAutoConfig): Promise<void> {
           renderRules(ui, rules, { title: 'Active rules' });
         } catch (err) {
           ui.error(`/rules failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        continue;
+      }
+
+      if (input.toLowerCase() === '/me') {
+        try {
+          const plugin = agent.context.getPlugin<MemoryPluginNextGen>('memory');
+          const ids = plugin?.getBootstrappedIds();
+          await renderMe(ui, memory, ids?.userEntityId, scope);
+        } catch (err) {
+          ui.error(`/me failed: ${err instanceof Error ? err.message : String(err)}`);
         }
         continue;
       }

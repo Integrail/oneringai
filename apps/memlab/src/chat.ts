@@ -5,6 +5,7 @@
 
 import {
   Agent,
+  MemoryPluginNextGen,
   StreamEventType,
   type MemorySystem,
   type ScopeFilter,
@@ -13,6 +14,7 @@ import chalk from 'chalk';
 import type { UI } from './ui.js';
 import type { VendorEntry } from './env.js';
 import { listActiveRules, renderRules } from './rules.js';
+import { renderMe } from './me.js';
 
 export interface ChatConfig {
   ui: UI;
@@ -49,7 +51,7 @@ export async function runChat(cfg: ChatConfig): Promise<void> {
   });
 
   ui.heading(`chat — ${primary.connectorName} / ${chatModel}`);
-  ui.dim(`userId=${userId} agentId=${agentId} — /back to return · /rules to list active behavior rules`);
+  ui.dim(`userId=${userId} agentId=${agentId} — /back to return · /rules list behavior rules · /me show user profile`);
 
   const scope: ScopeFilter = { userId };
 
@@ -77,6 +79,17 @@ export async function runChat(cfg: ChatConfig): Promise<void> {
           renderRules(ui, rules, { title: 'Active rules' });
         } catch (err) {
           ui.error(`/rules failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        continue;
+      }
+
+      if (input.toLowerCase() === '/me') {
+        try {
+          const plugin = agent.context.getPlugin<MemoryPluginNextGen>('memory');
+          const ids = plugin?.getBootstrappedIds();
+          await renderMe(ui, memory, ids?.userEntityId, scope);
+        } catch (err) {
+          ui.error(`/me failed: ${err instanceof Error ? err.message : String(err)}`);
         }
         continue;
       }
