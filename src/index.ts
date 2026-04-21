@@ -1477,6 +1477,18 @@ export {
   PlainTextAdapter,
   EmailSignalAdapter,
   CalendarSignalAdapter,
+  // Mongo adapter — host apps (e.g. V25/Meteor) build MemorySystem on top
+  // of this. Exposed here because package.json has no './memory' subpath
+  // and the memory barrel is not otherwise reachable from consumers.
+  MongoMemoryAdapter,
+  MongoOptimisticConcurrencyError,
+  RawMongoCollection,
+  MeteorMongoCollection,
+  ensureIndexes,
+  scopeToFilter,
+  mergeFilters,
+  factFilterToMongo,
+  orderByToSort,
   // Traversal + ranking
   genericTraverse,
   scoreFact,
@@ -1499,6 +1511,21 @@ export {
 export type {
   // Adapter options
   InMemoryAdapterOptions,
+  // Mongo adapter types — paired with the runtime exports above.
+  MongoMemoryAdapterOptions,
+  RawMongoDriverCollection,
+  RawMongoClientLike,
+  MeteorCollectionLike,
+  EnsureIndexesArgs,
+  IMongoCollectionLike,
+  MongoFilter,
+  MongoFindOptions,
+  MongoSort,
+  MongoUpdate,
+  MongoUpdateOptions,
+  MongoUpdateResult,
+  ObjectIdLike,
+  ObjectIdCtor,
   // Integration config
   ConnectorEmbedderConfig,
   ConnectorProfileGeneratorConfig,
