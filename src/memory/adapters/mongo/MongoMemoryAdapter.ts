@@ -198,6 +198,23 @@ export class MongoMemoryAdapter implements IMemoryStore {
     return doc ? reviveEntity(doc) : null;
   }
 
+  async getEntities(ids: EntityId[], scope: ScopeFilter): Promise<Array<IEntity | null>> {
+    this.assertLive();
+    if (ids.length === 0) return [];
+    const filter = mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, {
+      id: { $in: ids },
+    });
+    // Single batch query — one round-trip regardless of ids.length.
+    const docs = await this.entities.find(filter, { limit: ids.length });
+    const byId = new Map<string, IEntity>();
+    for (const d of docs) {
+      const e = reviveEntity(d);
+      byId.set(e.id, e);
+    }
+    // Preserve input order; null for missing / scope-filtered-out.
+    return ids.map((id) => byId.get(id) ?? null);
+  }
+
   async findEntitiesByIdentifier(
     kind: string,
     value: string,

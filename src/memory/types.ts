@@ -424,6 +424,15 @@ export interface IMemoryStore {
   /** Update an existing entity. Incoming version must equal stored.version + 1. */
   updateEntity(entity: IEntity): Promise<void>;
   getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null>;
+  /**
+   * Batch fetch entities by id. Returned array is in the same order as input;
+   * ids not found or filtered out by scope resolve to `null` in-place. Lets
+   * callers render references (e.g. `fact.objectId` → entity displayName)
+   * without firing N round-trips. Adapters SHOULD implement this as a single
+   * native batch query (e.g. Mongo `{_id:{$in:[…]}}`); the default InMemory
+   * impl maps over `getEntity`.
+   */
+  getEntities(ids: EntityId[], scope: ScopeFilter): Promise<Array<IEntity | null>>;
   findEntitiesByIdentifier(kind: string, value: string, scope: ScopeFilter): Promise<IEntity[]>;
   searchEntities(query: string, opts: EntitySearchOptions, scope: ScopeFilter): Promise<Page<IEntity>>;
   listEntities(filter: EntityListFilter, opts: ListOptions, scope: ScopeFilter): Promise<Page<IEntity>>;

@@ -64,7 +64,7 @@ import type {
 const DEFAULT_TOP_FACTS_LIMIT = 15;
 const DEFAULT_SEMANTIC_TOP_K = 5;
 const DEFAULT_NEIGHBOR_DEPTH = 1;
-const DEFAULT_PROFILE_THRESHOLD = 10;
+const DEFAULT_PROFILE_THRESHOLD = 3;
 const DEFAULT_EMBED_CONCURRENCY = 4;
 const DEFAULT_EMBED_RETRIES = 3;
 const SEMANTIC_MIN_DETAILS_LENGTH = 80;
@@ -542,6 +542,18 @@ export class MemorySystem implements IDisposable {
   getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
     assertNotDestroyed(this, 'getEntity');
     return this.store.getEntity(id, scope);
+  }
+
+  /**
+   * Batch fetch. Returned array aligns with `ids` positionally; missing ids /
+   * scope-filtered-out entries become `null`. Intended for call sites that
+   * need to resolve many EntityId references cheaply (e.g. rendering
+   * `fact.objectId` as a displayName in the system message).
+   */
+  getEntities(ids: EntityId[], scope: ScopeFilter): Promise<Array<IEntity | null>> {
+    assertNotDestroyed(this, 'getEntities');
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.store.getEntities(ids, scope);
   }
 
   /**
@@ -2055,9 +2067,16 @@ export class MemorySystem implements IDisposable {
       } finally {
         this.regenInFlight.delete(key);
       }
-    } catch {
-      // Background regen failures must not impact the write path.
+    } catch (err) {
+      // Background regen failures must not impact the write path — but they
+      // must never be silent. Surface via console.warn (same pattern as
+      // reportWarning / onChange listener failures elsewhere in this file).
       this.regenInFlight.delete(key);
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[MemorySystem.maybeRegenerateProfile] background profile regeneration failed',
+        { entityId, groupId: scope.groupId, ownerId: scope.ownerId, error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
+      );
     }
   }
 

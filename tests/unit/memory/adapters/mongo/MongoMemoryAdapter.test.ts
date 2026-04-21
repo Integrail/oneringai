@@ -127,6 +127,54 @@ describe('MongoMemoryAdapter', () => {
       expect(await adapter.getEntity(e.id, {})).toBeNull();
     });
 
+    describe('getEntities (batch)', () => {
+      it('returns [] for empty input', async () => {
+        expect(await adapter.getEntities([], {})).toEqual([]);
+      });
+
+      it('preserves input order across a scrambled id list', async () => {
+        const a = await adapter.createEntity(entityInput({ displayName: 'A' }));
+        const b = await adapter.createEntity(entityInput({ displayName: 'B' }));
+        const c = await adapter.createEntity(entityInput({ displayName: 'C' }));
+
+        const out = await adapter.getEntities([c.id, a.id, b.id], {});
+        expect(out).toHaveLength(3);
+        expect(out[0]?.displayName).toBe('C');
+        expect(out[1]?.displayName).toBe('A');
+        expect(out[2]?.displayName).toBe('B');
+      });
+
+      it('null-pads missing ids', async () => {
+        const a = await adapter.createEntity(entityInput({ displayName: 'A' }));
+        const out = await adapter.getEntities(['ghost-1', a.id, 'ghost-2'], {});
+        expect(out[0]).toBeNull();
+        expect(out[1]?.displayName).toBe('A');
+        expect(out[2]).toBeNull();
+      });
+
+      it('hides archived entities', async () => {
+        const e = await adapter.createEntity(entityInput());
+        await adapter.archiveEntity(e.id, {});
+        const [got] = await adapter.getEntities([e.id], {});
+        expect(got).toBeNull();
+      });
+
+      it('applies scope visibility filter (owner-only invisible to other users)', async () => {
+        const priv = await adapter.createEntity(
+          entityInput({ displayName: 'Private', ownerId: 'alice', permissions: OWNER_ONLY_PERMS }),
+        );
+        const pub = await adapter.createEntity(
+          entityInput({ displayName: 'Public', ownerId: 'alice' }),
+        );
+        const bobView = await adapter.getEntities([priv.id, pub.id], { userId: 'bob' });
+        expect(bobView[0]).toBeNull();
+        expect(bobView[1]?.displayName).toBe('Public');
+        const aliceView = await adapter.getEntities([priv.id, pub.id], { userId: 'alice' });
+        expect(aliceView[0]?.displayName).toBe('Private');
+        expect(aliceView[1]?.displayName).toBe('Public');
+      });
+    });
+
     it('deleteEntity removes the document', async () => {
       const e = await adapter.createEntity(entityInput());
       await adapter.deleteEntity(e.id, {});

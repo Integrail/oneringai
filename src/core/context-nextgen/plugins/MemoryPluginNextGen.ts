@@ -622,11 +622,46 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
         return inj.factPredicates.includes(f.predicate);
       });
       if (facts.length > 0) {
+        // Batch-resolve object entity ids to displayNames so the LLM sees
+        // `works_at: → Everworker Inc.` instead of `works_at: → C3NQzt2iaLx…`.
+        // Only runs for facts that actually reference another entity and fall
+        // through to the objectId branch in `renderFactLine` (i.e. no details
+        // text). One round-trip total (Mongo: `$in` batch; InMemory: map).
+        const displayed = facts.slice(0, inj.topFacts);
+        const idsNeedingLookup = Array.from(
+          new Set(
+            displayed
+              .filter((f) => (!f.details || f.details.length === 0) && !!f.objectId)
+              .map((f) => f.objectId as EntityId),
+          ),
+        );
+        const nameById = new Map<EntityId, string>();
+        if (idsNeedingLookup.length > 0) {
+          try {
+            const ents = await this.memory.getEntities(idsNeedingLookup, scope);
+            for (let i = 0; i < idsNeedingLookup.length; i++) {
+              const e = ents[i];
+              const id = idsNeedingLookup[i];
+              if (id !== undefined && e?.displayName) nameById.set(id, e.displayName);
+            }
+          } catch (err) {
+            logger.warn(
+              {
+                component: 'MemoryPluginNextGen',
+                agentId: this.agentId,
+                userId: this.userId,
+                error: err instanceof Error ? err.message : String(err),
+              },
+              'object-entity name resolution failed — falling back to raw ids',
+            );
+          }
+        }
+
         lines.push('', `### Recent top facts (up to ${inj.topFacts})`);
-        for (const f of facts.slice(0, inj.topFacts)) {
+        for (const f of displayed) {
           // renderFactLine output contains fact.details/value/predicate — all
           // untrusted. Escape the whole line then re-prefix with the bullet.
-          lines.push(`- ${escapeInline(renderFactLine(f, inj.maxFactLineChars))}`);
+          lines.push(`- ${escapeInline(renderFactLine(f, inj.maxFactLineChars, nameById))}`);
         }
       }
     }
@@ -669,12 +704,16 @@ function resolveInjection(
   };
 }
 
-function renderFactLine(f: IFact, maxChars: number): string {
+function renderFactLine(
+  f: IFact,
+  maxChars: number,
+  nameByEntityId?: ReadonlyMap<EntityId, string>,
+): string {
   const payload =
     f.details && f.details.length > 0
       ? f.details
       : f.objectId
-        ? `→ ${f.objectId}`
+        ? `→ ${nameByEntityId?.get(f.objectId) ?? f.objectId}`
         : f.value !== undefined
           ? JSON.stringify(f.value)
           : '';
@@ -685,8 +724,12 @@ function renderFactLine(f: IFact, maxChars: number): string {
 
 // Small helper exposed for tests + advanced callers — not part of the public
 // plugin API but harmless to export.
-export function _renderFactLineForTest(f: IFact, maxChars = 200): string {
-  return renderFactLine(f, maxChars);
+export function _renderFactLineForTest(
+  f: IFact,
+  maxChars = 200,
+  nameByEntityId?: ReadonlyMap<EntityId, string>,
+): string {
+  return renderFactLine(f, maxChars, nameByEntityId);
 }
 
 // ===========================================================================

@@ -231,4 +231,34 @@ describe('GoogleConverter', () => {
       expect(request2.contents).toBeTruthy();
     });
   });
+
+  describe('temperature handling', () => {
+    it('forwards temperature for Gemini models that support it', async () => {
+      const request = await converter.convertRequest({
+        model: 'gemini-2.5-flash',
+        input: [{
+          type: 'message',
+          role: MessageRole.USER,
+          content: [{ type: ContentType.INPUT_TEXT, text: 'test' }]
+        }],
+        temperature: 0.42,
+        tools: [],
+      });
+      expect(request.generationConfig?.temperature).toBe(0.42);
+    });
+
+    it('omits temperature entirely when caller did not provide one', async () => {
+      const request = await converter.convertRequest({
+        model: 'gemini-2.5-flash',
+        input: [{
+          type: 'message',
+          role: MessageRole.USER,
+          content: [{ type: ContentType.INPUT_TEXT, text: 'test' }]
+        }],
+        tools: [],
+      });
+      // No temperature supplied → no temperature key set (undefined, not 0).
+      expect(request.generationConfig?.temperature).toBeUndefined();
+    });
+  });
 });

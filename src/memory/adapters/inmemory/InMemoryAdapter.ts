@@ -108,6 +108,15 @@ export class InMemoryAdapter implements IMemoryStore {
     return clone(e);
   }
 
+  async getEntities(ids: EntityId[], scope: ScopeFilter): Promise<Array<IEntity | null>> {
+    this.assertLive();
+    return ids.map((id) => {
+      const e = this.entitiesById.get(id);
+      if (!e || e.archived || !isVisible(e, scope)) return null;
+      return clone(e);
+    });
+  }
+
   async findEntitiesByIdentifier(
     kind: string,
     value: string,

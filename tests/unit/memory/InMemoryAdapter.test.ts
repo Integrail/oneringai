@@ -114,6 +114,57 @@ describe('InMemoryAdapter', () => {
       expect(await store.getEntity(out[0]!.id, {})).not.toBeNull();
       expect(await store.getEntity(out[1]!.id, {})).not.toBeNull();
     });
+
+    describe('getEntities (batch)', () => {
+      it('returns [] for empty input', async () => {
+        expect(await store.getEntities([], {})).toEqual([]);
+      });
+
+      it('preserves input order, null-pads missing ids', async () => {
+        const a = await store.createEntity(entityInput({ displayName: 'A' }));
+        const b = await store.createEntity(entityInput({ displayName: 'B' }));
+        const out = await store.getEntities([b.id, 'missing-1', a.id, 'missing-2'], {});
+        expect(out).toHaveLength(4);
+        expect(out[0]?.displayName).toBe('B');
+        expect(out[1]).toBeNull();
+        expect(out[2]?.displayName).toBe('A');
+        expect(out[3]).toBeNull();
+      });
+
+      it('hides archived entities (parity with getEntity)', async () => {
+        const e = await store.createEntity(entityInput({ displayName: 'ToArchive' }));
+        await store.archiveEntity(e.id, {});
+        expect(await store.getEntity(e.id, {})).toBeNull();
+        const [got] = await store.getEntities([e.id], {});
+        expect(got).toBeNull();
+      });
+
+      it('applies scope visibility filter (owner-only entity invisible to other users)', async () => {
+        // Strictly private: neither group nor world can read — only the owner.
+        const priv = await store.createEntity(
+          entityInput({ displayName: 'Private', ownerId: 'alice', permissions: OWNER_ONLY_PERMS }),
+        );
+        const pub = await store.createEntity(
+          entityInput({ displayName: 'Public', ownerId: 'alice' }),
+        );
+        // Bob should see the public entity but NOT the owner-only private one.
+        const bobView = await store.getEntities([priv.id, pub.id], { userId: 'bob' });
+        expect(bobView[0]).toBeNull();
+        expect(bobView[1]?.displayName).toBe('Public');
+        // Alice (owner) sees both.
+        const aliceView = await store.getEntities([priv.id, pub.id], { userId: 'alice' });
+        expect(aliceView[0]?.displayName).toBe('Private');
+        expect(aliceView[1]?.displayName).toBe('Public');
+      });
+
+      it('returns cloned entities (no aliasing)', async () => {
+        const a = await store.createEntity(entityInput({ displayName: 'Alias' }));
+        const [got] = await store.getEntities([a.id], {});
+        got!.displayName = 'Mutated';
+        const [got2] = await store.getEntities([a.id], {});
+        expect(got2?.displayName).toBe('Alias');
+      });
+    });
   });
 
   describe('entities — update + optimistic concurrency', () => {

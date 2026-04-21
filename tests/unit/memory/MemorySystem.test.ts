@@ -550,6 +550,32 @@ describe('MemorySystem', () => {
   // mergeEntities
   // ==========================================================================
 
+  describe('getEntities (facade)', () => {
+    it('empty input short-circuits without touching the store', async () => {
+      const spy = vi.spyOn(store, 'getEntities');
+      expect(await mem.getEntities([], TEST_SCOPE)).toEqual([]);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it('delegates to store.getEntities and forwards scope', async () => {
+      const a = await seedEntity(mem, { identifiers: [{ kind: 'email', value: 'ga@x.com' }] });
+      const b = await seedEntity(mem, { identifiers: [{ kind: 'email', value: 'gb@x.com' }] });
+      const out = await mem.getEntities([b, 'missing', a], TEST_SCOPE);
+      expect(out).toHaveLength(3);
+      expect(out[0]?.id).toBe(b);
+      expect(out[1]).toBeNull();
+      expect(out[2]?.id).toBe(a);
+    });
+
+    it('throws after destroy', () => {
+      const m = new MemorySystem({ store: new InMemoryAdapter() });
+      m.destroy();
+      // assertNotDestroyed throws synchronously before the promise is built.
+      expect(() => m.getEntities(['x'], TEST_SCOPE)).toThrow(/destroyed/);
+    });
+  });
+
   describe('mergeEntities', () => {
     it('merges identifiers + aliases onto winner', async () => {
       const winner = await mem.upsertEntity(
@@ -861,6 +887,7 @@ describe('MemorySystem', () => {
         createEntities: shadow.createEntities.bind(shadow),
         updateEntity: shadow.updateEntity.bind(shadow),
         getEntity: shadow.getEntity.bind(shadow),
+        getEntities: shadow.getEntities.bind(shadow),
         findEntitiesByIdentifier: shadow.findEntitiesByIdentifier.bind(shadow),
         searchEntities: shadow.searchEntities.bind(shadow),
         listEntities: shadow.listEntities.bind(shadow),
@@ -902,6 +929,7 @@ describe('MemorySystem', () => {
         createEntities: store.createEntities.bind(store),
         updateEntity: store.updateEntity.bind(store),
         getEntity: store.getEntity.bind(store),
+        getEntities: store.getEntities.bind(store),
         findEntitiesByIdentifier: store.findEntitiesByIdentifier.bind(store),
         searchEntities: store.searchEntities.bind(store),
         listEntities: store.listEntities.bind(store),
@@ -1114,6 +1142,51 @@ describe('MemorySystem', () => {
         m.addFact({ subjectId: subj, predicate: 'p', kind: 'atomic' }, TEST_SCOPE),
       ).resolves.toBeDefined();
       await new Promise((r) => setTimeout(r, 30));
+      await m.shutdown();
+    });
+
+    it('regen failure is logged via console.warn (no silent errors)', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const generate = vi.fn(async () => {
+          throw new Error('LLM blew up');
+        });
+        const m = new MemorySystem({
+          store,
+          profileGenerator: { generate },
+          profileRegenerationThreshold: 1,
+        });
+        const subj = await seedEntity(m, {
+          identifiers: [{ kind: 'email', value: 'logme@x.com' }],
+        });
+        await m.addFact({ subjectId: subj, predicate: 'p', kind: 'atomic' }, TEST_SCOPE);
+        await new Promise((r) => setTimeout(r, 30));
+        expect(warnSpy).toHaveBeenCalled();
+        const call = warnSpy.mock.calls.find(
+          (c) => typeof c[0] === 'string' && c[0].includes('maybeRegenerateProfile'),
+        );
+        expect(call).toBeDefined();
+        expect(JSON.stringify(call)).toContain('LLM blew up');
+        await m.shutdown();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('default threshold is 3 atomic facts (triggers regen without config override)', async () => {
+      const generate = vi.fn(async () => ({
+        details: 'auto',
+        summaryForEmbedding: 'auto',
+      }));
+      const m = new MemorySystem({ store, profileGenerator: { generate } });
+      const subj = await seedEntity(m, {
+        identifiers: [{ kind: 'email', value: 'threshold@x.com' }],
+      });
+      for (let i = 0; i < 3; i++) {
+        await m.addFact({ subjectId: subj, predicate: 'p', kind: 'atomic', value: i }, TEST_SCOPE);
+      }
+      await new Promise((r) => setTimeout(r, 50));
+      expect(generate).toHaveBeenCalled();
       await m.shutdown();
     });
   });

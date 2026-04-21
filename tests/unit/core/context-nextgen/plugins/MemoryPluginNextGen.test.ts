@@ -157,6 +157,40 @@ describe('MemoryPluginNextGen — injection shape', () => {
     expect(out).toMatch(/preference_/);
   });
 
+  it('resolves fact.objectId to entity displayName in recent top facts', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      userProfileInjection: { topFacts: 5 },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    // Create the object entity that the fact will point at.
+    const { entity: org } = await mem.upsertEntity(
+      {
+        type: 'organization',
+        displayName: 'Everworker Inc.',
+        identifiers: [{ kind: 'domain', value: 'everworker.ai' }],
+      },
+      { userId: USER_ID },
+    );
+    await mem.addFact(
+      {
+        subjectId: userEntityId!,
+        predicate: 'works_at',
+        kind: 'atomic',
+        objectId: org.id,
+        importance: 0.9,
+      },
+      { userId: USER_ID },
+    );
+    const out = await plugin.getContent();
+    expect(out).toMatch(/works_at: → Everworker Inc\./);
+    // The raw entity id must NOT appear when a displayName resolved.
+    expect(out).not.toMatch(new RegExp(`→ ${org.id}`));
+  });
+
   it('topFacts=0 omits the facts section entirely', async () => {
     const plugin = new MemoryPluginNextGen({
       memory: mem,
