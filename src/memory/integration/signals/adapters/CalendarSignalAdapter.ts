@@ -89,6 +89,11 @@ export class CalendarSignalAdapter implements SignalSourceAdapter<CalendarSignal
       identifiers: [canonicalId],
       displayName: raw.title,
       metadata,
+      // A calendar pull is authoritative for structural schedule fields —
+      // re-ingests after a reschedule MUST update startTime/endTime/location.
+      // Person seeds below stay on the fillMissing default so a signal can't
+      // rename an attendee.
+      metadataMerge: 'overwrite',
     });
 
     // Organizer seed — always distinct role so seedFacts can refer to them.

@@ -388,6 +388,7 @@ export class SignalIngestor {
             metadata: seed.metadata,
           },
           scope,
+          seed.metadataMerge ? { metadataMerge: seed.metadataMerge } : undefined,
         );
         bindings.push({
           label: `m${bindings.length + 1}`,

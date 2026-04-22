@@ -51,9 +51,23 @@ export interface ParticipantSeed {
   /**
    * Type-specific fields to set on the entity (e.g. event `startTime`/`endTime`,
    * task `state`/`dueAt`). Merge semantics follow `upsertEntityBySurface.metadata`:
-   * verbatim on create, `fillMissing` on resolve.
+   * verbatim on create, `fillMissing` on resolve (by default).
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Merge policy for `metadata` when the seed resolves to an existing entity.
+   * Defaults to `'fillMissing'` — the conservative policy that never overwrites
+   * a value already on the entity. Set to `'overwrite'` ONLY when the signal
+   * is an authoritative refresh of structural state (e.g. a calendar pull
+   * rescheduling an event, a CRM sync updating a deal's stage). LLM-extracted
+   * mentions should leave this unset — re-extractions can be wrong and
+   * `fillMissing` protects against clobbering good data.
+   *
+   * Applies per-seed: a calendar adapter can set `'overwrite'` on the event
+   * seed while leaving person seeds at the default so a rogue signal can't
+   * rename a person.
+   */
+  metadataMerge?: 'fillMissing' | 'overwrite';
 }
 
 /**

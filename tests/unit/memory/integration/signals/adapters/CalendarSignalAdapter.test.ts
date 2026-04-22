@@ -247,6 +247,108 @@ describe('CalendarSignalAdapter via SignalIngestor', () => {
     expect(attendedByBob.items).toHaveLength(1);
   });
 
+  it('re-ingest with changed startTime/endTime/location updates event metadata (overwrite)', async () => {
+    const ingestor = new SignalIngestor({
+      memory: mem,
+      extractor: emptyExtractor,
+      adapters: [new CalendarSignalAdapter()],
+    });
+    const originalStart = new Date('2026-06-01T15:00:00Z');
+    const originalEnd = new Date('2026-06-01T16:00:00Z');
+    const rescheduledStart = new Date('2026-06-01T16:00:00Z');
+    const rescheduledEnd = new Date('2026-06-01T17:00:00Z');
+
+    const first = await ingestor.ingest({
+      kind: 'calendar',
+      raw: {
+        id: 'cal_reschedule',
+        title: 'Design review',
+        startTime: originalStart,
+        endTime: originalEnd,
+        location: 'Room A',
+        organizer: { email: 'alice@acme.com' },
+      },
+      sourceSignalId: 'sig-orig',
+      scope,
+    });
+    const originalEvent = first.entities.find((e) => e.entity.type === 'event')!;
+    expect(originalEvent.entity.metadata).toMatchObject({
+      startTime: originalStart,
+      endTime: originalEnd,
+      location: 'Room A',
+    });
+
+    // Meeting moved — same canonical id (same source + external id), new schedule.
+    const second = await ingestor.ingest({
+      kind: 'calendar',
+      raw: {
+        id: 'cal_reschedule',
+        title: 'Design review',
+        startTime: rescheduledStart,
+        endTime: rescheduledEnd,
+        location: 'Room B',
+        organizer: { email: 'alice@acme.com' },
+      },
+      sourceSignalId: 'sig-resched',
+      scope,
+    });
+    const updatedEvent = second.entities.find((e) => e.entity.type === 'event')!;
+    // Same entity id (canonical-id match).
+    expect(updatedEvent.entity.id).toBe(originalEvent.entity.id);
+    // Metadata actually reflects the new schedule — this is the bug fix.
+    expect(updatedEvent.entity.metadata).toMatchObject({
+      startTime: rescheduledStart,
+      endTime: rescheduledEnd,
+      location: 'Room B',
+    });
+  });
+
+  it('person seeds stay on fillMissing — a signal does not rename an existing person', async () => {
+    const ingestor = new SignalIngestor({
+      memory: mem,
+      extractor: emptyExtractor,
+      adapters: [new CalendarSignalAdapter()],
+    });
+    // Pre-create Alice with a displayName the user cares about + custom metadata.
+    await mem.upsertEntityBySurface(
+      {
+        surface: 'Alice Lovelace',
+        type: 'person',
+        identifiers: [{ kind: 'email', value: 'alice@acme.com' }],
+        metadata: { role: 'CTO' },
+      },
+      scope,
+    );
+
+    await ingestor.ingest({
+      kind: 'calendar',
+      raw: {
+        id: 'cal_person_preserve',
+        title: 'Sync',
+        startTime: new Date('2026-06-02T10:00:00Z'),
+        // Calendar signal carries a shorter display + no role metadata.
+        organizer: { email: 'alice@acme.com', name: 'Alice' },
+      },
+      sourceSignalId: 'sig-person',
+      scope,
+    });
+
+    const alice = (
+      await mem.upsertEntityBySurface(
+        {
+          surface: 'alice@acme.com',
+          type: 'person',
+          identifiers: [{ kind: 'email', value: 'alice@acme.com' }],
+        },
+        scope,
+      )
+    ).entity;
+    // displayName preserved (aliases accumulate, not replace).
+    expect(alice.displayName).toBe('Alice Lovelace');
+    // Pre-existing metadata untouched (fillMissing default on person seed).
+    expect(alice.metadata).toMatchObject({ role: 'CTO' });
+  });
+
   it('same calendar event ingested twice converges on the same entity', async () => {
     const ingestor = new SignalIngestor({
       memory: mem,
