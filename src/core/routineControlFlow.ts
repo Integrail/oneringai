@@ -14,6 +14,7 @@ import type { InContextMemoryPluginNextGen } from './context-nextgen/plugins/InC
 import type { WorkingMemoryPluginNextGen } from './context-nextgen/plugins/WorkingMemoryPluginNextGen.js';
 import { executeRoutine } from './routineRunner.js';
 import { logger } from '../infrastructure/observability/Logger.js';
+import { parseJsonPermissive } from '../utils/jsonRepair.js';
 
 // ============================================================================
 // Constants
@@ -494,7 +495,7 @@ function tryCoerceToArray(value: unknown): unknown {
  * Uses runDirect() to avoid polluting the agent's conversation history.
  * Truncates input to 8000 chars to keep the extraction call fast and cheap.
  */
-async function llmExtractArray(agent: Agent, rawValue: unknown): Promise<unknown[]> {
+export async function llmExtractArray(agent: Agent, rawValue: unknown): Promise<unknown[]> {
   const serialized = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue);
   const truncated = serialized.length > 8000
     ? serialized.slice(0, 8000) + '\n...(truncated)'
@@ -512,19 +513,19 @@ async function llmExtractArray(agent: Agent, rawValue: unknown): Promise<unknown
     { temperature: 0, maxOutputTokens: 4096 }
   );
 
-  const text = response.output_text?.trim() ?? '';
+  const text = response.output_text ?? '';
 
-  // Strip markdown code fences if present (LLMs often wrap in ```json)
-  const cleaned = text
-    .replace(/^```(?:json|JSON)?\s*\n?/, '')
-    .replace(/\n?\s*```$/, '')
-    .trim();
-
+  // Robust parse — the prompt asks for a bare JSON array but models often
+  // wrap it in fences, add explanations, or emit trailing commas. The
+  // permissive parser walks fence+bracket extraction → conservative repair →
+  // aggressive repair (single quotes / unquoted keys) → field-strip fallback.
   let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = parseJsonPermissive(text);
   } catch (parseErr) {
-    throw new Error(`LLM returned invalid JSON: ${(parseErr as Error).message}. Raw: "${text.slice(0, 200)}"`);
+    throw new Error(
+      `LLM returned invalid JSON: ${(parseErr as Error).message}. Raw: "${text.slice(0, 200)}"`,
+    );
   }
 
   if (!Array.isArray(parsed)) {

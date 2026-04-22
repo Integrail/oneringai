@@ -12,7 +12,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createOrchestrator } from '@/core/orchestrator/createOrchestrator.js';
+import {
+  createOrchestrator,
+  parseAutoDescribeResponse,
+} from '@/core/orchestrator/createOrchestrator.js';
 import type { OrchestratorConfig } from '@/core/orchestrator/createOrchestrator.js';
 import { Connector } from '@/core/Connector.js';
 import { Vendor } from '@/core/Vendor.js';
@@ -441,6 +444,53 @@ describe('createOrchestrator', () => {
         .find(t => t.definition.function.name === 'assign_turn');
       expect(assignTool!.definition.timeout).toBe(300000);
       orchestrator.destroy();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // parseAutoDescribeResponse — robust parse of auto-describe LLM output
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('parseAutoDescribeResponse', () => {
+    it('parses a clean JSON object of descriptions', () => {
+      const raw = JSON.stringify({
+        researcher: {
+          description: 'Finds information',
+          scenarios: ['web search', 'fact check'],
+          capabilities: ['search', 'summarize'],
+        },
+      });
+      const result = parseAutoDescribeResponse(raw);
+      expect(result?.researcher?.description).toBe('Finds information');
+      expect(result?.researcher?.scenarios).toEqual(['web search', 'fact check']);
+    });
+
+    it('recovers a description object wrapped in ```json fences + trailing prose', () => {
+      const raw =
+        '```json\n{"writer":{"description":"Drafts content","capabilities":["draft","edit"]}}\n```\n\nHope that helps!';
+      const result = parseAutoDescribeResponse(raw);
+      expect(result?.writer?.description).toBe('Drafts content');
+    });
+
+    it('recovers from trailing commas', () => {
+      const raw = '{"a":{"description":"d",},}';
+      const result = parseAutoDescribeResponse(raw);
+      expect(result?.a?.description).toBe('d');
+    });
+
+    it('recovers from single-quoted keys/strings', () => {
+      const raw = "{'a':{'description':'d'}}";
+      const result = parseAutoDescribeResponse(raw);
+      expect(result?.a?.description).toBe('d');
+    });
+
+    it('returns undefined on empty input', () => {
+      expect(parseAutoDescribeResponse('')).toBeUndefined();
+      expect(parseAutoDescribeResponse('   ')).toBeUndefined();
+    });
+
+    it('returns undefined on unparseable garbage', () => {
+      expect(parseAutoDescribeResponse('not json at all')).toBeUndefined();
     });
   });
 

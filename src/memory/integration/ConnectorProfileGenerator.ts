@@ -10,6 +10,7 @@
  */
 
 import { Agent } from '../../core/Agent.js';
+import { parseJsonPermissive } from '../../utils/jsonRepair.js';
 import type { IEntity, IFact, IProfileGenerator, ProfileGeneratorInput } from '../types.js';
 import { defaultProfilePrompt, type PromptContext } from './defaultPrompt.js';
 
@@ -99,10 +100,18 @@ export function parseProfileResponse(
   entity: IEntity,
   priorProfile: IFact | undefined,
 ): { details: string; summaryForEmbedding: string } {
-  const cleaned = stripCodeFences(raw).trim();
-
-  // Fast path — valid JSON with both fields.
-  const parsed = safeJsonParse(cleaned);
+  // Fast path — robust parse across markdown fences, prose wrappers, trailing
+  // commas, single quotes, etc. `details` is in the default strip list so if
+  // the LLM's verbatim narrative breaks escape rules the field is nulled and
+  // we fall through to the markdown-passthrough fallback below.
+  let parsed: unknown = null;
+  if (raw && raw.trim().length > 0) {
+    try {
+      parsed = parseJsonPermissive(raw);
+    } catch {
+      parsed = null;
+    }
+  }
   if (
     parsed &&
     typeof parsed === 'object' &&
@@ -117,31 +126,10 @@ export function parseProfileResponse(
   }
 
   // Fallback — treat the raw text as markdown, synthesize a summary from it.
+  const cleaned = raw.trim();
   const details = cleaned.length > 0 ? cleaned : fallbackDetails(entity, priorProfile);
   const summaryForEmbedding = deriveSummary(details);
   return { details, summaryForEmbedding };
-}
-
-function safeJsonParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    // Try to extract the first JSON object from the text.
-    const first = s.indexOf('{');
-    const last = s.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      try {
-        return JSON.parse(s.slice(first, last + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
-
-function stripCodeFences(s: string): string {
-  return s.replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '');
 }
 
 function fallbackDetails(entity: IEntity, prior: IFact | undefined): string {

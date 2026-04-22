@@ -27,6 +27,7 @@ import type { ContextFeatures, PluginConfigs } from '../context-nextgen/types.js
 import { buildOrchestrationTools, createDelegationState } from './tools.js';
 import type { OrchestrationToolsContext, DelegationState } from './tools.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
+import { parseJsonPermissive } from '../../utils/jsonRepair.js';
 
 // ============================================================================
 // Types
@@ -379,18 +380,8 @@ ${typesSummary}`;
     });
 
     const text = response.output_text ?? '';
-    // Extract JSON from response (handle potential markdown wrapping)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      logger.warn('autoDescribe: could not parse LLM response');
-      return;
-    }
-
-    const descriptions = JSON.parse(jsonMatch[0]) as Record<string, {
-      description?: string;
-      scenarios?: string[];
-      capabilities?: string[];
-    }>;
+    const descriptions = parseAutoDescribeResponse(text);
+    if (!descriptions) return;
 
     // Apply generated descriptions to config (mutate in place)
     for (const [id, desc] of Object.entries(descriptions)) {
@@ -403,6 +394,47 @@ ${typesSummary}`;
     }
   } catch (error) {
     logger.warn({ error }, 'autoDescribe: LLM call failed, using fallback descriptions');
+  }
+}
+
+/**
+ * Describe-object shape returned by the auto-describe LLM call.
+ * Exported for unit testing of the response parser.
+ */
+export interface AgentTypeDescription {
+  description?: string;
+  scenarios?: string[];
+  capabilities?: string[];
+}
+
+/**
+ * Parse the auto-describe LLM response into a `{ typeId: description }` map.
+ *
+ * Robust against markdown fences, explanatory prose wrappers, trailing
+ * commas, and single-quoted strings that slip through the `json_object`
+ * response-format hint on some providers. Returns `undefined` when the
+ * response is empty or unparseable — callers treat that as "no descriptions
+ * to apply" and fall back to the config-provided defaults.
+ *
+ * Exported for unit testing; callers should invoke `autoDescribeAgentTypes`
+ * instead of calling this directly.
+ */
+export function parseAutoDescribeResponse(
+  text: string,
+): Record<string, AgentTypeDescription> | undefined {
+  if (!text.trim()) {
+    logger.warn('autoDescribe: LLM response was empty');
+    return undefined;
+  }
+
+  try {
+    return parseJsonPermissive(text) as Record<string, AgentTypeDescription>;
+  } catch (parseErr) {
+    logger.warn(
+      { error: (parseErr as Error).message },
+      'autoDescribe: could not parse LLM response',
+    );
+    return undefined;
   }
 }
 

@@ -15,8 +15,10 @@ import {
   resolveFlowSource,
   resolveStepArgs,
   executeControlFlow,
+  llmExtractArray,
   ROUTINE_KEYS,
 } from '@/core/routineControlFlow.js';
+import type { Agent } from '@/core/Agent.js';
 import type { Task } from '@/domain/entities/Task.js';
 import type { RoutineParameter, RoutineExecution } from '@/domain/entities/Routine.js';
 import { createRoutineDefinition } from '@/domain/entities/Routine.js';
@@ -1064,5 +1066,57 @@ describe('resolveStepArgs', () => {
       { inputs: { user: 'Alice' }, taskResults }
     );
     expect(result).toEqual({ msg: 'Results for Alice: the report' });
+  });
+});
+
+// ============================================================================
+// llmExtractArray — robust parse of LLM array output
+// ============================================================================
+
+describe('llmExtractArray', () => {
+  // Minimal Agent shim — only runDirect is exercised.
+  function agentReturning(text: string): Agent {
+    return {
+      runDirect: vi.fn(async () => ({ output_text: text })),
+    } as unknown as Agent;
+  }
+
+  it('parses a clean JSON array', async () => {
+    const result = await llmExtractArray(agentReturning('[1,2,3]'), 'any');
+    expect(result).toEqual([1, 2, 3]);
+  });
+
+  it('recovers from ```json fences + trailing explanatory prose', async () => {
+    const raw = '```json\n["a","b","c"]\n```\n\nThose are the items.';
+    const result = await llmExtractArray(agentReturning(raw), 'any');
+    expect(result).toEqual(['a', 'b', 'c']);
+  });
+
+  it('recovers from trailing commas', async () => {
+    const result = await llmExtractArray(agentReturning('[1,2,3,]'), 'any');
+    expect(result).toEqual([1, 2, 3]);
+  });
+
+  it('recovers from single-quoted elements', async () => {
+    const result = await llmExtractArray(agentReturning("['a','b']"), 'any');
+    expect(result).toEqual(['a', 'b']);
+  });
+
+  it('recovers an array wrapped in surrounding prose', async () => {
+    const raw = 'The items are: ["first","second"] — end of list.';
+    const result = await llmExtractArray(agentReturning(raw), 'any');
+    expect(result).toEqual(['first', 'second']);
+  });
+
+  it('throws when the LLM emits something that is not an array', async () => {
+    await expect(llmExtractArray(agentReturning('{"x":1}'), 'any')).rejects.toThrow(
+      /expected array/,
+    );
+  });
+
+  it('throws with a Raw excerpt when the LLM emits unparseable garbage', async () => {
+    await expect(llmExtractArray(agentReturning('not even close'), 'any')).rejects.toThrow(
+      /invalid JSON/,
+    );
   });
 });

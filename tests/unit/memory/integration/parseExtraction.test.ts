@@ -95,6 +95,58 @@ describe('parseExtractionWithStatus', () => {
     expect(r.rawExcerpt!.length).toBeLessThanOrEqual(501);
     expect(r.rawExcerpt!.endsWith('…')).toBe(true);
   });
+
+  // ── Regression coverage for the onboarding parse failures ──
+
+  it('recovers when ```json fences have trailing explanatory prose', () => {
+    const raw =
+      '```json\n{"mentions":{"m_peter":{"surface":"Peter","type":"person"}},"facts":[]}\n```\n\nLet me know if anything needs adjusting.';
+    const r = parseExtractionWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.mentions.m_peter!.surface).toBe('Peter');
+  });
+
+  it('recovers when LLM output is truncated before the closing fence (maxOutputTokens)', () => {
+    const raw = '```json\n{"mentions":{"m1":{"surface":"A","type":"topic"}},"facts":[]}';
+    const r = parseExtractionWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.mentions.m1!.surface).toBe('A');
+  });
+
+  it('recovers from trailing commas', () => {
+    const raw = '{"mentions":{"m1":{"surface":"A","type":"topic",},},"facts":[],}';
+    const r = parseExtractionWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.mentions.m1!.surface).toBe('A');
+  });
+
+  it('recovers from single-quoted strings', () => {
+    const raw = "{'mentions':{'m1':{'surface':'A','type':'topic'}},'facts':[]}";
+    const r = parseExtractionWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.mentions.m1!.surface).toBe('A');
+  });
+
+  it('recovers from unquoted keys', () => {
+    const raw = '{mentions:{"m1":{"surface":"A","type":"topic"}},facts:[]}';
+    const r = parseExtractionWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.mentions.m1!.surface).toBe('A');
+  });
+
+  it('nulls out `details` field when verbatim text breaks parsing, keeps rest', () => {
+    // Real failure mode: LLM emits a fact with unescaped quotes inside
+    // verbatim email/transcript text. Strategy 5 nulls `details` and keeps
+    // the structured facts so we don't lose the signal entirely.
+    const raw =
+      '{"mentions":{},"facts":[{"subject":"m1","predicate":"said","details":"Peter said "yes" and left."}]}';
+    const r = parseExtractionWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.facts).toHaveLength(1);
+    expect(r.facts[0].subject).toBe('m1');
+    expect(r.facts[0].predicate).toBe('said');
+    expect(r.facts[0].details).toBeNull();
+  });
 });
 
 describe('parseExtractionResponse (back-compat)', () => {

@@ -7,6 +7,7 @@
 
 import { Agent } from '../core/Agent.js';
 import { MessageBuilder } from '../utils/messageBuilder.js';
+import { parseJsonPermissive } from '../utils/jsonRepair.js';
 import { InputItem } from '../domain/entities/Message.js';
 import { ConnectorConfigResult } from '../domain/entities/Connector.js';
 
@@ -197,21 +198,7 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
    * Extract configuration from AI response
    */
   private extractConfig(responseText: string): ConnectorConfigResult {
-    // Find config between markers
-    const configMatch = responseText.match(/===CONFIG_START===\s*([\s\S]*?)\s*===CONFIG_END===/);
-
-    if (!configMatch) {
-      throw new Error('No configuration found in response. The AI may need more information.');
-    }
-
-    try {
-      const configJson = configMatch[1]!.trim();
-      const config = JSON.parse(configJson);
-
-      return config as ConnectorConfigResult;
-    } catch (error) {
-      throw new Error(`Failed to parse configuration JSON: ${(error as Error).message}`);
-    }
+    return extractProviderConfig(responseText);
   }
 
   /**
@@ -228,5 +215,31 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   reset(): void {
     this.conversationHistory = [];
     this.agent = null;
+  }
+}
+
+/**
+ * Extract a provider configuration JSON object from an LLM response that
+ * wraps the config between `===CONFIG_START===` and `===CONFIG_END===`
+ * markers. Parses the extracted JSON permissively so that markdown fences,
+ * trailing commas, and single-quoted strings inside the marker block don't
+ * break a configuration the LLM otherwise produced correctly.
+ *
+ * Exported for unit testing; callers should prefer
+ * {@link ProviderConfigAgent.sendMessage}.
+ */
+export function extractProviderConfig(responseText: string): ConnectorConfigResult {
+  const configMatch = responseText.match(/===CONFIG_START===\s*([\s\S]*?)\s*===CONFIG_END===/);
+
+  if (!configMatch) {
+    throw new Error('No configuration found in response. The AI may need more information.');
+  }
+
+  try {
+    const configJson = configMatch[1]!.trim();
+    const config = parseJsonPermissive(configJson);
+    return config as ConnectorConfigResult;
+  } catch (error) {
+    throw new Error(`Failed to parse configuration JSON: ${(error as Error).message}`);
   }
 }

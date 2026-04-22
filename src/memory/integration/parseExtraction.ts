@@ -21,6 +21,7 @@
  */
 
 import type { ExtractionOutput } from './ExtractionResolver.js';
+import { parseJsonPermissive } from '../../utils/jsonRepair.js';
 
 /** Outcome of a parse attempt. `ok` is the only shape callers can trust the
  *  mentions/facts fields on (though they may still be empty). */
@@ -54,9 +55,8 @@ const RAW_EXCERPT_MAX = 500;
  */
 export function parseExtractionWithStatus(raw: string): ParseExtractionResult {
   const rawExcerpt = raw.length > RAW_EXCERPT_MAX ? raw.slice(0, RAW_EXCERPT_MAX) + '…' : raw;
-  const cleaned = stripCodeFences(raw).trim();
 
-  if (cleaned.length === 0) {
+  if (!raw || raw.trim().length === 0) {
     // Explicitly treat empty output as parse_error — an empty string is not
     // a valid "nothing to extract" signal (that would be `{"mentions":{},"facts":[]}`).
     return {
@@ -68,7 +68,17 @@ export function parseExtractionWithStatus(raw: string): ParseExtractionResult {
     };
   }
 
-  const parsed = safeJsonParse(cleaned);
+  // `parseJsonPermissive` runs 5 repair strategies: direct parse → fence/bracket
+  // extraction → conservative repair → aggressive repair → verbatim-field strip.
+  // Extraction facts carry `details` (verbatim transcript/email quotes) which is
+  // the #1 cause of residual parse failures — strip it as a last resort rather
+  // than lose the entire extraction for one bad escape.
+  let parsed: unknown;
+  try {
+    parsed = parseJsonPermissive(raw, { stripFieldsAsLastResort: ['details'] });
+  } catch {
+    parsed = null;
+  }
   if (!parsed || typeof parsed !== 'object') {
     return {
       status: 'parse_error',
@@ -118,23 +128,3 @@ export function parseExtractionResponse(raw: string): ExtractionOutput {
   return { mentions, facts };
 }
 
-function safeJsonParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    const first = s.indexOf('{');
-    const last = s.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      try {
-        return JSON.parse(s.slice(first, last + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
-
-function stripCodeFences(s: string): string {
-  return s.replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '');
-}

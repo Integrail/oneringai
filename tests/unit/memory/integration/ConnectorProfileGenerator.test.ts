@@ -193,6 +193,30 @@ describe('parseProfileResponse', () => {
     const parsed = parseProfileResponse(raw, ent, undefined);
     expect(parsed.summaryForEmbedding.split(' ').length).toBeLessThanOrEqual(80);
   });
+
+  // ── parseJsonPermissive integration (robust against LLM drift) ──
+
+  it('recovers JSON wrapped in ```json fences + trailing explanatory prose', () => {
+    const raw =
+      '```json\n{"details":"# d","summaryForEmbedding":"s"}\n```\n\nLet me know if you want me to tweak it.';
+    const parsed = parseProfileResponse(raw, ent, undefined);
+    expect(parsed.details).toBe('# d');
+    expect(parsed.summaryForEmbedding).toBe('s');
+  });
+
+  it('recovers JSON with trailing commas', () => {
+    const raw = '{"details":"d","summaryForEmbedding":"s",}';
+    const parsed = parseProfileResponse(raw, ent, undefined);
+    expect(parsed.details).toBe('d');
+    expect(parsed.summaryForEmbedding).toBe('s');
+  });
+
+  it('recovers JSON with single-quoted strings', () => {
+    const raw = "{'details':'d','summaryForEmbedding':'s'}";
+    const parsed = parseProfileResponse(raw, ent, undefined);
+    expect(parsed.details).toBe('d');
+    expect(parsed.summaryForEmbedding).toBe('s');
+  });
 });
 
 describe('defaultProfilePrompt', () => {
