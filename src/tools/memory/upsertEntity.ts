@@ -82,7 +82,14 @@ export function createUpsertEntityTool(
           return { error: 'upsert: identifiers must be non-empty' };
         }
 
-        const permissions = visibilityToPermissions(args.visibility ?? 'private');
+        // Explicit visibility (programmatic callers) → map to permissions and
+        // pass through. Absent → pass `permissions: undefined` so the host's
+        // `MemorySystem.visibilityPolicy` decides. LLMs no longer see
+        // `visibility` in the tool schema, so absent is the common case.
+        const permissions =
+          args.visibility !== undefined
+            ? visibilityToPermissions(args.visibility)
+            : undefined;
 
         const result = await deps.memory.upsertEntity(
           {

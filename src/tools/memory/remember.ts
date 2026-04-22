@@ -3,12 +3,12 @@
  * whenever the user reveals something you should remember, store it.
  */
 
+import type { Permissions } from '../../memory/index.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { MemoryToolDeps, SubjectRef, Visibility } from './types.js';
 import {
-  SUBJECT_TOKEN_ME,
-  SUBJECT_TOKEN_THIS_AGENT,
   clampUnit,
+  permissionsToVisibility,
   resolveScope,
   toErrorMessage,
   visibilityToPermissions,
@@ -134,8 +134,16 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
         };
       }
 
-      // Pick visibility: explicit arg > per-subject default.
-      let vis = args.visibility ?? pickDefaultVisibility(deps, args.subject, resolved.entity.id);
+      // Resolve `permissions` to pass to addFact:
+      //   - args.visibility set (programmatic caller) → map and pass through.
+      //   - args.visibility absent (LLM case, since the schema no longer
+      //     exposes the field) → pass `undefined` so the host's
+      //     `MemorySystem.visibilityPolicy` decides.
+      //   - Foreign-contextId safety: force owner-only regardless, because a
+      //     wider fact would leak into foreign owners' graph-touchesEntity
+      //     queries.
+      let permissions: Permissions | undefined =
+        args.visibility !== undefined ? visibilityToPermissions(args.visibility) : undefined;
 
       const warnings: string[] = [];
 
@@ -145,12 +153,14 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
       const ownerlessWarn = ownerlessSubjectWarning(resolved.entity.ownerId, scope.userId);
       if (ownerlessWarn) warnings.push(ownerlessWarn);
 
-      // H-2: if any contextId points to a foreign-owned (but visible) entity
-      // and the chosen visibility would leak it via graph-touchesEntity
-      // queries, downgrade to 'private'. Invisible contextIds are left for
-      // the memory layer to reject. Adapter errors during the check are
-      // treated as "foreign" (fail-safe) rather than crashing the tool.
-      if (args.contextIds?.length && (vis === 'group' || vis === 'public')) {
+      // H-2: if any contextId points to a foreign-owned entity, the written
+      // fact must be owner-only — a wider fact would leak into the foreign
+      // owners' graph-touchesEntity queries. Fire the check whenever the
+      // caller didn't explicitly ask for private (since either they asked for
+      // group/public, or they left it for the host policy which could return
+      // wide). Adapter errors during the check are treated as "foreign"
+      // (fail-safe) rather than crashing the tool.
+      if (args.contextIds?.length && args.visibility !== 'private') {
         const foreign = await findForeignContextIds(
           deps.memory,
           args.contextIds,
@@ -158,15 +168,16 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
           { tool: 'memory_remember', subjectId: resolved.entity.id },
         );
         if (foreign.length > 0) {
-          vis = 'private';
+          // Hard override — takes precedence over both explicit arg and host
+          // policy. Owner-only = only the fact's owner (caller) can read it.
+          permissions = { group: 'none', world: 'none' };
           warnings.push(
-            `visibility downgraded to "private": contextIds include entities you don't own or couldn't verify (${foreign.join(', ')}). ` +
+            `visibility restricted to owner-only: contextIds include entities you don't own or couldn't verify (${foreign.join(', ')}). ` +
             `Non-private writes on foreign context would leak into their owners' graph queries.`,
           );
         }
       }
 
-      const permissions = visibilityToPermissions(vis);
       const observedAt = args.observedAt ? new Date(args.observedAt) : new Date();
 
       try {
@@ -201,7 +212,9 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
             permissions: fact.permissions,
             observedAt: fact.observedAt,
           },
-          visibility: vis,
+          // Derived from the actual stored permissions — reflects what the
+          // host policy chose when `args.visibility` was absent.
+          visibility: permissionsToVisibility(fact.permissions),
         };
         if (warnings.length > 0) payload.warnings = warnings;
         return payload;
@@ -210,20 +223,5 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction<RememberA
       }
     },
   };
-}
-
-function pickDefaultVisibility(
-  deps: MemoryToolDeps,
-  subject: SubjectRef,
-  resolvedId: string,
-): Visibility {
-  const { userEntityId, agentEntityId } = deps.getOwnSubjectIds();
-  if (subject === SUBJECT_TOKEN_ME || resolvedId === userEntityId) {
-    return deps.defaultVisibility.forUser;
-  }
-  if (subject === SUBJECT_TOKEN_THIS_AGENT || resolvedId === agentEntityId) {
-    return deps.defaultVisibility.forAgent;
-  }
-  return deps.defaultVisibility.forOther;
 }
 

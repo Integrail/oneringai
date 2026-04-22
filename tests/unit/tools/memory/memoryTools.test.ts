@@ -435,16 +435,22 @@ describe('memory_remember', () => {
     expect(r.fact.id).toBeDefined();
     expect(r.fact.predicate).toBe('prefers');
     expect(r.fact.value).toBe('concise');
-    // Default visibility for "me" = private → { group: 'none', world: 'none' }
-    expect(r.fact.permissions).toEqual({ group: 'none', world: 'none' });
+    // Visibility absent → tool passes undefined permissions → host policy
+    // applies. This test has no visibilityPolicy on the MemorySystem, so
+    // stored permissions stays undefined (library defaults apply at read).
+    expect(r.fact.permissions).toBeUndefined();
   });
 
-  it('default visibility for "this_agent" is "group"', async () => {
-    const mem = makeMem();
+  it('defers to host visibilityPolicy when visibility arg is absent', async () => {
+    // Configure a MemorySystem with a policy and verify the tool defers to it.
+    const mem = new MemorySystemClass({
+      store: new InMemoryAdapter(),
+      visibilityPolicy: () => ({ group: 'read', world: 'none' }),
+    });
     const ids = await bootstrap(mem);
     const remember = toolByName(tools(mem, ids), 'memory_remember');
     const r: any = await remember.execute(
-      { subject: 'this_agent', predicate: 'learned', details: 'x' },
+      { subject: 'me', predicate: 'learned', details: 'policy wins' },
       { userId: USER_ID },
     );
     expect(r.fact.permissions).toEqual({ group: 'read', world: 'none' });
@@ -1145,7 +1151,7 @@ describe('contextIds downgrade (H-2)', () => {
     expect(r.fact.permissions).toEqual({ group: 'none', world: 'none' });
     expect(r.visibility).toBe('private');
     expect(r.warnings).toBeDefined();
-    expect(r.warnings[0]).toMatch(/downgraded to "private"/);
+    expect(r.warnings[0]).toMatch(/restricted to owner-only/);
   });
 
   it('memory_remember preserves explicit "public" when contextIds are all owned by caller', async () => {
@@ -1441,47 +1447,40 @@ describe('addFact confidence/importance clamp (defense-in-depth)', () => {
   });
 });
 
-describe('memory_link default visibility (M-3)', () => {
-  it('uses forAgent default when "from" is this_agent', async () => {
+describe('memory_link — defers to host policy when visibility absent', () => {
+  it('passes undefined permissions when no explicit visibility and no host policy', async () => {
     const mem = makeMem();
     const ids = await bootstrap(mem);
-    const linkTools = createMemoryTools({
-      memory: mem,
-      agentId: AGENT_ID,
-      defaultUserId: USER_ID,
-      getOwnSubjectIds: () => ids,
-      defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
-    });
-    const link = toolByName(linkTools, 'memory_link');
-    const r: any = await link.execute(
-      { from: 'this_agent', predicate: 'linked_to', to: { identifier: { kind: 'email', value: 'bob@a.com' } } },
-      { userId: USER_ID },
-    );
-    // 'group' → { group: 'read', world: 'none' }
-    expect(r.fact.permissions).toEqual({ group: 'read', world: 'none' });
-    expect(r.visibility).toBe('group');
-  });
-
-  it('uses forOther default when "from" is a non-user, non-agent entity', async () => {
-    const mem = makeMem();
-    const ids = await bootstrap(mem);
-    const linkTools = createMemoryTools({
-      memory: mem,
-      agentId: AGENT_ID,
-      defaultUserId: USER_ID,
-      getOwnSubjectIds: () => ids,
-      defaultVisibility: { forUser: 'group', forAgent: 'group', forOther: 'private' },
-    });
-    const link = toolByName(linkTools, 'memory_link');
+    const link = toolByName(tools(mem, ids), 'memory_link');
     const r: any = await link.execute(
       {
-        from: { identifier: { kind: 'email', value: 'bob@a.com' } },
-        predicate: 'works_with',
-        to: 'me',
+        from: 'this_agent',
+        predicate: 'linked_to',
+        to: { identifier: { kind: 'email', value: 'bob@a.com' } },
       },
       { userId: USER_ID },
     );
-    expect(r.fact.permissions).toEqual({ group: 'none', world: 'none' });
-    expect(r.visibility).toBe('private');
+    // No policy → library keeps permissions undefined.
+    expect(r.fact.permissions).toBeUndefined();
+  });
+
+  it('host visibilityPolicy governs the default', async () => {
+    const mem = new MemorySystemClass({
+      store: new InMemoryAdapter(),
+      visibilityPolicy: (ctx) =>
+        ctx.kind === 'fact' ? { group: 'read', world: 'none' } : { group: 'none', world: 'none' },
+    });
+    const ids = await bootstrap(mem);
+    const link = toolByName(tools(mem, ids), 'memory_link');
+    const r: any = await link.execute(
+      {
+        from: 'me',
+        predicate: 'linked_to',
+        to: { identifier: { kind: 'email', value: 'bob@a.com' } },
+      },
+      { userId: USER_ID },
+    );
+    expect(r.fact.permissions).toEqual({ group: 'read', world: 'none' });
+    expect(r.visibility).toBe('group');
   });
 });

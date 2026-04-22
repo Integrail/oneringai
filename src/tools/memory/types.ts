@@ -77,6 +77,26 @@ export function visibilityToPermissions(
   }
 }
 
+/**
+ * Reverse of `visibilityToPermissions` — map a stored `Permissions` record
+ * back to the LLM-friendly label. Used when the tool deferred to the host's
+ * `MemorySystem.visibilityPolicy` and we need to report back what the policy
+ * chose. Collapses non-{private,group} combinations to `'public'`.
+ */
+export function permissionsToVisibility(p: Permissions | undefined): Visibility {
+  // Library defaults (undefined permissions) are public-read at both group and
+  // world levels — treat as 'public'.
+  if (!p) return 'public';
+  const group = p.group ?? 'read';
+  const world = p.world ?? 'read';
+  if (group === 'none' && world === 'none') return 'private';
+  if (group === 'read' && world === 'none') return 'group';
+  // Anything else (world='read', or mixed levels) falls under 'public' for
+  // reporting purposes — callers that care about exact levels should read
+  // `fact.permissions` / `entity.permissions` directly.
+  return 'public';
+}
+
 // ===========================================================================
 // Dependency container + tool results
 // ===========================================================================

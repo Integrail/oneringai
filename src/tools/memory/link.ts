@@ -3,12 +3,12 @@
  * Both sides are entities (not scalar values).
  */
 
+import type { Permissions } from '../../memory/index.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { MemoryToolDeps, SubjectRef, Visibility } from './types.js';
 import {
-  SUBJECT_TOKEN_ME,
-  SUBJECT_TOKEN_THIS_AGENT,
   clampUnit,
+  permissionsToVisibility,
   resolveScope,
   toErrorMessage,
   visibilityToPermissions,
@@ -104,10 +104,13 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
         };
       }
 
-      // M-3: pick default visibility based on the `from` subject class, not
-      // always `forOther`. This matches memory_remember and respects host
-      // config like `defaultVisibility.forAgent='group'`.
-      let vis = args.visibility ?? pickDefaultVisibility(deps, args.from, fromRes.entity.id);
+      // Resolve `permissions` the same way memory_remember does:
+      //   - args.visibility set (programmatic caller) → map and pass through.
+      //   - absent (LLM case, schema no longer exposes it) → pass undefined,
+      //     host `visibilityPolicy` decides.
+      //   - Foreign-contextId safety downgrade overrides either.
+      let permissions: Permissions | undefined =
+        args.visibility !== undefined ? visibilityToPermissions(args.visibility) : undefined;
 
       const warnings: string[] = [];
 
@@ -115,9 +118,11 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
       const ownerlessWarn = ownerlessSubjectWarning(fromRes.entity.ownerId, scope.userId);
       if (ownerlessWarn) warnings.push(ownerlessWarn);
 
-      // H-2: downgrade on foreign contextIds. Adapter errors → fail-safe to
-      // "foreign" (downgrade to private).
-      if (args.contextIds?.length && (vis === 'group' || vis === 'public')) {
+      // H-2: hard owner-only override when contextIds reference foreign
+      // entities. Fires whenever the caller didn't explicitly ask for private
+      // (either they asked for wider, or the host policy could return wider).
+      // Adapter errors during the check are treated as "foreign" (fail-safe).
+      if (args.contextIds?.length && args.visibility !== 'private') {
         const foreign = await findForeignContextIds(
           deps.memory,
           args.contextIds,
@@ -125,14 +130,13 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
           { tool: 'memory_link', fromId: fromRes.entity.id },
         );
         if (foreign.length > 0) {
-          vis = 'private';
+          permissions = { group: 'none', world: 'none' };
           warnings.push(
-            `visibility downgraded to "private": contextIds include entities you don't own or couldn't verify (${foreign.join(', ')}).`,
+            `visibility restricted to owner-only: contextIds include entities you don't own or couldn't verify (${foreign.join(', ')}).`,
           );
         }
       }
 
-      const permissions = visibilityToPermissions(vis);
       const observedAt = args.observedAt ? new Date(args.observedAt) : new Date();
 
       try {
@@ -164,7 +168,9 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
           },
           from: { id: fromRes.entity.id, displayName: fromRes.entity.displayName },
           to: { id: toRes.entity.id, displayName: toRes.entity.displayName },
-          visibility: vis,
+          // Derived from stored permissions so the label reflects what the
+          // host policy chose when `args.visibility` was absent.
+          visibility: permissionsToVisibility(fact.permissions),
         };
         if (warnings.length > 0) payload.warnings = warnings;
         return payload;
@@ -173,20 +179,5 @@ export function createLinkTool(deps: MemoryToolDeps): ToolFunction<LinkArgs> {
       }
     },
   };
-}
-
-function pickDefaultVisibility(
-  deps: MemoryToolDeps,
-  subject: SubjectRef,
-  resolvedId: string,
-): Visibility {
-  const { userEntityId, agentEntityId } = deps.getOwnSubjectIds();
-  if (subject === SUBJECT_TOKEN_ME || resolvedId === userEntityId) {
-    return deps.defaultVisibility.forUser;
-  }
-  if (subject === SUBJECT_TOKEN_THIS_AGENT || resolvedId === agentEntityId) {
-    return deps.defaultVisibility.forAgent;
-  }
-  return deps.defaultVisibility.forOther;
 }
 

@@ -193,12 +193,15 @@ describe('MemoryWritePluginNextGen — instructions + content', () => {
     expect(text).toMatch(/mentioned_by/);
   });
 
-  it('instructs the agent to never ask about visibility (memory-internal concept)', () => {
+  it('instructs the agent to never ask about privacy / visibility (host-decided)', () => {
     const mem = makeMem();
     const plugin = new MemoryWritePluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
     const text = plugin.getInstructions() ?? '';
-    // The "do not ask" rule around visibility must be explicit.
-    expect(text).toMatch(/do NOT ask about visibility|do not ask about visibility/i);
+    // Visibility is host-decided, never LLM-decided. The instructions must
+    // make this explicit so the agent doesn't ask the user.
+    expect(text).toMatch(
+      /not decided by you|decided by the host|do not ask .* (privacy|visibility|sharing|groups?)/i,
+    );
   });
 
   it('forbids the agent from claiming a save without an actual tool call', () => {
