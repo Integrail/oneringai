@@ -31,29 +31,21 @@ export class JWTBearerFlow {
     const storageKey = config.storageKey || `jwt_bearer:${config.clientId}`;
     this.tokenStore = new TokenStore(storageKey, config.storage);
 
-    // Load private key
-    let raw: string;
+    // Load private key (raw). Deliberately NOT parsed here — parsing happens
+    // lazily inside `generateJWT` so that construction succeeds for test
+    // fixtures that pass placeholder strings and never actually sign a JWT.
     if (config.privateKey) {
-      raw = config.privateKey;
+      this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        raw = fs.readFileSync(config.privateKeyPath, 'utf8');
+        this.privateKey = fs.readFileSync(config.privateKeyPath, 'utf8');
       } catch (error) {
-        throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${(error as Error).message}`);
+        throw new Error(
+          `Failed to read private key from ${config.privateKeyPath}: ${(error as Error).message}`
+        );
       }
     } else {
       throw new Error('JWT Bearer flow requires privateKey or privateKeyPath');
-    }
-
-    // Accept PKCS#1 / EC / PKCS#8 PEMs transparently — jose only understands
-    // PKCS#8. See normalizePrivateKeyPem above.
-    try {
-      this.privateKey = normalizePrivateKeyPem(raw);
-    } catch (error) {
-      throw new Error(
-        `Invalid JWT Bearer private key: ${(error as Error).message}. ` +
-          `Supply a PEM-encoded PKCS#1, PKCS#8, or EC private key.`
-      );
     }
   }
 
@@ -69,8 +61,19 @@ export class JWTBearerFlow {
     // Default 1 hour; GitHub caps at 10 min, template overrides to 540.
     const lifetime = this.config.tokenLifetimeSeconds ?? 3600;
 
-    // Parse private key
-    const key = await importPKCS8(this.privateKey, alg);
+    // Parse private key. Normalize PKCS#1 / EC → PKCS#8 here (lazily), so
+    // construction of the flow with placeholder fixtures in tests doesn't
+    // trigger key parsing.
+    let pkcs8Pem: string;
+    try {
+      pkcs8Pem = normalizePrivateKeyPem(this.privateKey);
+    } catch (error) {
+      throw new Error(
+        `Invalid JWT Bearer private key: ${(error as Error).message}. ` +
+          `Supply a PEM-encoded PKCS#1, PKCS#8, or EC private key.`
+      );
+    }
+    const key = await importPKCS8(pkcs8Pem, alg);
 
     // Build JWT payload. For RFC 7523, `sub` is conventional; for GitHub App
     // auth it is not needed (only `iss` + `iat` + `exp`) but harmless.
