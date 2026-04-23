@@ -77,6 +77,23 @@ export interface MemoryPluginInjectionConfig {
    * can set this explicitly. See feedback_no_truncation.md.
    */
   maxFactLineChars?: number;
+  /**
+   * Time-ordered recent activity about this entity. Renders a
+   * `### Recent activity` section after the top facts. Unlike `topFacts`
+   * (ranked), this is strict newest-first — the agent sees a rolling window
+   * of what the subject has actually been doing.
+   *
+   * Defaults: ON with `{ limit: 20, windowDays: 7 }`. Pass `{ limit: 0 }`
+   * to disable.
+   */
+  recentActivity?: {
+    /** How many rows to render. 0 disables. Default 20. */
+    limit?: number;
+    /** Lookback window in days. Default 7. */
+    windowDays?: number;
+    /** Optional predicate allowlist — e.g. `['completed','attended','responded_to']`. */
+    predicates?: string[];
+  };
 }
 
 export interface MemoryPluginConfig {
@@ -130,7 +147,20 @@ interface ResolvedInjection {
   relatedEvents: boolean;
   identifiers: boolean;
   maxFactLineChars: number | undefined;
+  recentActivity: ResolvedRecentActivity;
 }
+
+interface ResolvedRecentActivity {
+  limit: number;
+  windowDays: number;
+  predicates: string[] | undefined;
+}
+
+const RECENT_ACTIVITY_DEFAULT: ResolvedRecentActivity = Object.freeze({
+  limit: 20,
+  windowDays: 7,
+  predicates: undefined,
+});
 
 // ===========================================================================
 // Constants
@@ -733,6 +763,16 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
       }
     }
 
+    if (inj.recentActivity.limit > 0) {
+      const recentBlock = await this.renderRecentActivityBlock(
+        entityId,
+        inj.recentActivity,
+        inj.maxFactLineChars,
+        scope,
+      );
+      if (recentBlock) lines.push('', recentBlock);
+    }
+
     if (inj.relatedTasks && view.relatedTasks && view.relatedTasks.length > 0) {
       lines.push('', '### Active tasks');
       for (const t of view.relatedTasks) {
@@ -749,6 +789,99 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
       }
     }
 
+    return lines.join('\n');
+  }
+
+  /**
+   * Render a `### Recent activity` section — strict newest-first stream of
+   * facts the subject has participated in (subject-role). Filters:
+   *  - observedAfter: now - windowDays
+   *  - archived: false
+   *  - predicates?: optional allowlist
+   * Ordered by observedAt desc. Uses the same object-entity batch-rename path
+   * as topFacts so "responded_to → Alice" reads naturally instead of a raw id.
+   *
+   * Returns null (section omitted entirely) when:
+   *  - limit is 0 (disabled by caller)
+   *  - no matching facts in the window
+   *  - findFacts throws — logged at warn, rendering continues without the block
+   */
+  private async renderRecentActivityBlock(
+    entityId: EntityId,
+    cfg: ResolvedRecentActivity,
+    maxFactLineChars: number | undefined,
+    scope: ScopeFilter,
+  ): Promise<string | null> {
+    if (cfg.limit <= 0) return null;
+    const cutoff = new Date(Date.now() - cfg.windowDays * 86_400_000);
+    let page: { items: IFact[] };
+    try {
+      page = await this.memory.findFacts(
+        {
+          subjectId: entityId,
+          archived: false,
+          observedAfter: cutoff,
+          predicates: cfg.predicates,
+        },
+        { orderBy: { field: 'observedAt', direction: 'desc' }, limit: cfg.limit },
+        scope,
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          component: 'MemoryPluginNextGen',
+          agentId: this.agentId,
+          userId: this.userId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'recent-activity fetch failed — section omitted for this turn',
+      );
+      return null;
+    }
+
+    if (page.items.length === 0) return null;
+
+    // Batch-resolve objectId → displayName (same pattern as topFacts render).
+    const idsNeedingLookup = Array.from(
+      new Set(
+        page.items
+          .filter((f) => (!f.details || f.details.length === 0) && !!f.objectId)
+          .map((f) => f.objectId as EntityId),
+      ),
+    );
+    const nameById = new Map<EntityId, string>();
+    if (idsNeedingLookup.length > 0) {
+      try {
+        const ents = await this.memory.getEntities(idsNeedingLookup, scope);
+        for (let i = 0; i < idsNeedingLookup.length; i++) {
+          const e = ents[i];
+          const id = idsNeedingLookup[i];
+          if (id !== undefined && e?.displayName) nameById.set(id, e.displayName);
+        }
+      } catch (err) {
+        logger.warn(
+          {
+            component: 'MemoryPluginNextGen',
+            agentId: this.agentId,
+            userId: this.userId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'recent-activity object-entity name resolution failed — falling back to raw ids',
+        );
+      }
+    }
+
+    const lines: string[] = [
+      `### Recent activity (last ${cfg.windowDays}d, newest first)`,
+    ];
+    for (const f of page.items) {
+      const when = f.observedAt instanceof Date
+        ? f.observedAt.toISOString().slice(0, 16).replace('T', ' ')
+        : '';
+      const body = renderFactLine(f, maxFactLineChars, nameById);
+      const prefix = when ? `${when} — ` : '';
+      lines.push(`- ${escapeInline(prefix + body)}`);
+    }
     return lines.join('\n');
   }
 }
@@ -768,6 +901,18 @@ function resolveInjection(
     relatedEvents: inj?.relatedEvents ?? false,
     identifiers: inj?.identifiers ?? false,
     maxFactLineChars: inj?.maxFactLineChars,
+    recentActivity: resolveRecentActivity(inj?.recentActivity),
+  };
+}
+
+function resolveRecentActivity(
+  cfg: MemoryPluginInjectionConfig['recentActivity'],
+): ResolvedRecentActivity {
+  if (cfg === undefined) return { ...RECENT_ACTIVITY_DEFAULT };
+  return {
+    limit: cfg.limit ?? RECENT_ACTIVITY_DEFAULT.limit,
+    windowDays: cfg.windowDays ?? RECENT_ACTIVITY_DEFAULT.windowDays,
+    predicates: cfg.predicates,
   };
 }
 

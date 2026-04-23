@@ -330,7 +330,9 @@ export class MongoMemoryAdapter implements IMemoryStore {
 
     const skip = parseCursor(opts.cursor);
     const limit = opts.limit ?? this.defaultPageSize;
-    const docs = await this.entities.find(mongoFilter, { limit, skip });
+    const sort = entityOrderByToSort(opts.orderBy);
+    const projection = selectToProjection(opts.select);
+    const docs = await this.entities.find(mongoFilter, { limit, skip, sort, projection });
     return {
       items: docs.map(reviveEntity),
       nextCursor: formatCursor(skip, limit, docs.length),
@@ -999,13 +1001,21 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Translate { state: 'pending', priority: { $in: ['high','urgent'] } } into
- * { 'metadata.state': 'pending', 'metadata.priority': { $in: [...] } }.
+ * Translate
+ *   { state: 'pending', 'jarvis.importance': { $gte: 70 }, dueAt: { $lt: d } }
+ * into
+ *   { 'metadata.state': 'pending',
+ *     'metadata.jarvis.importance': { $gte: 70 },
+ *     'metadata.dueAt': { $lt: d } }.
  *
- * Hardened against operator injection: only literal scalars/arrays and a
- * single `{ $in: [...] }` shape are accepted. Keys starting with `$` or
- * containing `.` are rejected. Any other object shape (multiple keys, other
- * Mongo operators like `$where`, `$regex`, `$function`) throws.
+ * Hardened against operator injection:
+ *  - Keys may use dot-notation for nested paths, but NO path segment may start
+ *    with `$` — blocks `$where`, `a.$function`, etc.
+ *  - Values must be one of: literal scalar / Date / array of those / one
+ *    allowed operator object. Allowed operators: `$in`, `$lt`, `$lte`, `$gt`,
+ *    `$gte`. Range ops may be combined (e.g. `{ $gte: 10, $lt: 20 }`).
+ *  - Anything else (bare object, unknown operator keys, `$regex`, `$where`)
+ *    throws.
  *
  * Callers who forward untrusted input into `metadataFilter` get defense in
  * depth: a user can't smuggle `{$where: "..."}` through even by accident.
@@ -1013,17 +1023,49 @@ function escapeRegex(s: string): string {
 function metadataFilterToMongo(filter: Record<string, unknown>): MongoFilter {
   const out: MongoFilter = {};
   for (const [key, expected] of Object.entries(filter)) {
-    if (key.startsWith('$') || key.includes('.')) {
-      throw new Error(
-        `metadataFilter: invalid key '${key}' — keys must not start with '$' or contain '.'`,
-      );
-    }
+    assertAllowedMetadataKey(key);
     const path = `metadata.${key}`;
     assertAllowedMetadataValue(key, expected);
     out[path] = expected;
   }
   return out;
 }
+
+function assertAllowedMetadataKey(key: string): void {
+  assertAllowedFieldPath('metadataFilter', key);
+}
+
+/**
+ * Shared path validator for any LLM-reachable field reference — metadataFilter
+ * keys, `orderBy.field`, `select` projection paths. Rejects empty / trailing /
+ * consecutive dots and any segment starting with `$`. Defense-in-depth:
+ *  - `$natural` as a sort key is valid Mongo but forces a full collection scan
+ *    (index-bypass DoS).
+ *  - `$where`, `$function`, `$expr` segments aren't evaluated in sort/projection
+ *    keys, but the library contract is "no `$`-prefixed segments anywhere a
+ *    caller controls the path" — consistent with metadataFilter hardening.
+ */
+function assertAllowedFieldPath(context: string, path: string): void {
+  if (typeof path !== 'string' || path.length === 0) {
+    throw new Error(`${context}: empty path`);
+  }
+  const segments = path.split('.');
+  for (const seg of segments) {
+    if (seg.length === 0) {
+      throw new Error(
+        `${context}: invalid path '${path}' — empty path segment (leading/trailing or consecutive dots)`,
+      );
+    }
+    if (seg.startsWith('$')) {
+      throw new Error(
+        `${context}: invalid path '${path}' — path segments must not start with '$'`,
+      );
+    }
+  }
+}
+
+/** Range operators permitted on metadata values. */
+const RANGE_OPS = new Set(['$lt', '$lte', '$gt', '$gte']);
 
 function assertAllowedMetadataValue(key: string, value: unknown): void {
   if (value === null || value === undefined) return;
@@ -1050,8 +1092,19 @@ function assertAllowedMetadataValue(key: string, value: unknown): void {
     return;
   }
   if (t === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>);
-    if (keys.length === 1 && keys[0] === '$in') {
+    const opKeys = Object.keys(value as Record<string, unknown>);
+    if (opKeys.length === 0) {
+      throw new Error(
+        `metadataFilter['${key}']: empty operator object — use a literal or one of {$in, $lt, $lte, $gt, $gte}`,
+      );
+    }
+    // $in must stand alone (array value). Range ops may combine.
+    if (opKeys.includes('$in')) {
+      if (opKeys.length !== 1) {
+        throw new Error(
+          `metadataFilter['${key}']: $in cannot be combined with other operators`,
+        );
+      }
       const inArr = (value as { $in: unknown }).$in;
       if (!Array.isArray(inArr)) {
         throw new Error(`metadataFilter['${key}']: $in must be an array`);
@@ -1059,12 +1112,86 @@ function assertAllowedMetadataValue(key: string, value: unknown): void {
       assertAllowedMetadataValue(key, inArr);
       return;
     }
-    throw new Error(
-      `metadataFilter['${key}']: only literal values or {$in: [...]} are allowed ` +
-        `(got keys: ${keys.join(', ')})`,
-    );
+    // Range-ops path: every key must be a range op; every RHS must be scalar/Date.
+    for (const op of opKeys) {
+      if (!RANGE_OPS.has(op)) {
+        throw new Error(
+          `metadataFilter['${key}']: unsupported operator '${op}' ` +
+            `(allowed: $in, $lt, $lte, $gt, $gte)`,
+        );
+      }
+      const rhs = (value as Record<string, unknown>)[op];
+      const rt = typeof rhs;
+      if (
+        rhs === null ||
+        rhs === undefined ||
+        !(rt === 'string' || rt === 'number' || rt === 'boolean' || rhs instanceof Date)
+      ) {
+        throw new Error(
+          `metadataFilter['${key}']: range operator '${op}' requires a scalar or Date value`,
+        );
+      }
+    }
+    return;
   }
   throw new Error(`metadataFilter['${key}']: unsupported value type '${t}'`);
+}
+
+/**
+ * Translate `EntityOrderBy | EntityOrderBy[]` to a Mongo sort spec. Preserves
+ * insertion order so multi-key sorts behave predictably. Paths are used
+ * verbatim — callers pre-dotted (e.g. `'metadata.jarvis.importance'`).
+ */
+function entityOrderByToSort(
+  orderBy: import('../../types.js').EntityOrderBy | import('../../types.js').EntityOrderBy[] | undefined,
+): MongoSort | undefined {
+  if (!orderBy) return undefined;
+  const keys = Array.isArray(orderBy) ? orderBy : [orderBy];
+  if (keys.length === 0) return undefined;
+  const sort: MongoSort = {};
+  for (const k of keys) {
+    if (!k.field || k.field.length === 0) continue;
+    assertAllowedFieldPath('orderBy.field', k.field);
+    sort[k.field] = k.direction === 'asc' ? 1 : -1;
+  }
+  return Object.keys(sort).length > 0 ? sort : undefined;
+}
+
+/**
+ * Fields the caller ALWAYS receives on a projected `listEntities` result.
+ * These are the identity + scope + lifecycle columns — without them the
+ * returned object isn't interpretable (reviveEntity needs createdAt/updatedAt;
+ * scope filtering needs ownerId/groupId; identity needs id/type/displayName;
+ * optimistic concurrency needs version).
+ */
+const REQUIRED_PROJECTION_FIELDS: readonly string[] = Object.freeze([
+  'id',
+  'type',
+  'displayName',
+  'version',
+  'createdAt',
+  'updatedAt',
+  'ownerId',
+  'groupId',
+  'archived',
+]);
+
+/**
+ * Translate a caller `select: string[]` into a Mongo projection doc. Always
+ * merges `REQUIRED_PROJECTION_FIELDS` so the result remains a valid `IEntity`.
+ */
+function selectToProjection(
+  select: string[] | undefined,
+): Record<string, 0 | 1> | undefined {
+  if (!select || select.length === 0) return undefined;
+  const projection: Record<string, 0 | 1> = {};
+  for (const f of REQUIRED_PROJECTION_FIELDS) projection[f] = 1;
+  for (const f of select) {
+    if (typeof f !== 'string' || f.length === 0) continue;
+    assertAllowedFieldPath('select', f);
+    projection[f] = 1;
+  }
+  return projection;
 }
 
 // =============================================================================

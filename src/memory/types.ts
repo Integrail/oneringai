@@ -357,11 +357,35 @@ export interface EntityListFilter {
   ids?: EntityId[];
   archived?: boolean;
   /**
-   * Equality filter on entity.metadata fields. Adapters support literal values
-   * AND the one operator `{ $in: [...] }`. Example:
-   *   { assigneeId: 'user_123', state: { $in: ['pending', 'in_progress'] } }
+   * Filter on entity.metadata fields. Keys may use dot-notation to reach
+   * nested paths (e.g. `'jarvis.importance'` → `metadata.jarvis.importance`).
+   * Keys whose path segments begin with `$` are rejected — no operator
+   * injection. Supported value shapes per key:
+   *   - literal scalar: `state: 'pending'`
+   *   - literal Date
+   *   - array of primitives/Dates (equality against array field)
+   *   - `{ $in: [...] }` — membership
+   *   - one or more range operators (may combine): `{ $gte: 10, $lt: 20 }` —
+   *     operators allowed: `$lt`, `$lte`, `$gt`, `$gte`. RHS must be scalar
+   *     or Date.
+   * Example:
+   *   {
+   *     'state': { $in: ['pending', 'in_progress'] },
+   *     'dueAt': { $lt: new Date('2026-05-01') },
+   *     'jarvis.importance': { $gte: 70 },
+   *   }
    */
   metadataFilter?: Record<string, unknown>;
+}
+
+/**
+ * Sort key for `listEntities`. `field` is a dot-path into the entity document
+ * (e.g. `'displayName'`, `'updatedAt'`, `'metadata.jarvis.importance'`).
+ * Missing values sort to the end regardless of direction.
+ */
+export interface EntityOrderBy {
+  field: string;
+  direction: 'asc' | 'desc';
 }
 
 export interface EntitySearchOptions {
@@ -373,6 +397,21 @@ export interface EntitySearchOptions {
 export interface ListOptions {
   limit?: number;
   cursor?: string;
+  /**
+   * Stable multi-key sort. Single `EntityOrderBy` or array (earlier keys
+   * dominant). Nested metadata paths allowed. When omitted the adapter's
+   * natural order is used (Mongo: _id asc; InMemory: insertion order).
+   */
+  orderBy?: EntityOrderBy | EntityOrderBy[];
+  /**
+   * Field projection (dot-paths allowed). When omitted, full entity is
+   * returned. When provided, the response always includes a required minimum
+   * (`id`, `type`, `displayName`, `version`, `createdAt`, `updatedAt`,
+   * `ownerId`, `groupId`, `archived`) plus the requested paths. Unrequested
+   * optional fields (`identifiers`, `aliases`, `metadata`, `permissions`,
+   * `identityEmbedding`) are absent from returned objects.
+   */
+  select?: string[];
 }
 
 export interface FactQueryOptions {

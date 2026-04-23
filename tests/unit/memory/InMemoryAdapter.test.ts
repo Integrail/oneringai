@@ -392,6 +392,228 @@ describe('InMemoryAdapter', () => {
     });
   });
 
+  describe('entities — listEntities extended query surface', () => {
+    // Seed a task-like entity set with varied metadata, including nested
+    // `metadata.jarvis.{urgency,importance}`, `metadata.priority`, and a bare
+    // entity with no metadata at all.
+    let taskIds: string[];
+
+    beforeEach(async () => {
+      taskIds = [];
+      const specs: Array<{ name: string; md: Record<string, unknown> }> = [
+        {
+          name: 'T-low',
+          md: {
+            state: 'pending',
+            priority: 1,
+            dueAt: new Date(2026, 3, 1),
+            jarvis: { urgency: 10, importance: 50 },
+          },
+        },
+        {
+          name: 'T-midA',
+          md: {
+            state: 'pending',
+            priority: 3,
+            dueAt: new Date(2026, 3, 3),
+            jarvis: { urgency: 90, importance: 40 },
+          },
+        },
+        {
+          name: 'T-midB',
+          md: {
+            state: 'in_progress',
+            priority: 3,
+            dueAt: new Date(2026, 3, 5),
+            jarvis: { urgency: 90, importance: 60 },
+          },
+        },
+        {
+          name: 'T-high',
+          md: {
+            state: 'pending',
+            priority: 5,
+            dueAt: new Date(2026, 3, 7),
+            jarvis: { urgency: 100, importance: 80 },
+          },
+        },
+        {
+          name: 'T-bare',
+          md: {},
+        },
+      ];
+      for (const s of specs) {
+        const e = await store.createEntity(
+          entityInput({ type: 'task', displayName: s.name, metadata: s.md }),
+        );
+        taskIds.push(e.id);
+      }
+    });
+
+    describe('metadataFilter range operators', () => {
+      it('$gte returns matching rows', async () => {
+        const res = await store.listEntities(
+          { type: 'task', metadataFilter: { priority: { $gte: 3 } } },
+          {},
+          {},
+        );
+        expect(res.items.map((e) => e.displayName).sort()).toEqual(['T-high', 'T-midA', 'T-midB']);
+      });
+
+      it('combined $gte + $lt returns half-open range', async () => {
+        const res = await store.listEntities(
+          { type: 'task', metadataFilter: { priority: { $gte: 2, $lt: 5 } } },
+          {},
+          {},
+        );
+        expect(res.items.map((e) => e.displayName).sort()).toEqual(['T-midA', 'T-midB']);
+      });
+
+      it('$lt on Date metadata', async () => {
+        const res = await store.listEntities(
+          {
+            type: 'task',
+            metadataFilter: { dueAt: { $lt: new Date(2026, 3, 4) } },
+          },
+          {},
+          {},
+        );
+        expect(res.items.map((e) => e.displayName).sort()).toEqual(['T-low', 'T-midA']);
+      });
+
+      it('nested path ($gte on jarvis.importance)', async () => {
+        const res = await store.listEntities(
+          { type: 'task', metadataFilter: { 'jarvis.importance': { $gte: 60 } } },
+          {},
+          {},
+        );
+        expect(res.items.map((e) => e.displayName).sort()).toEqual(['T-high', 'T-midB']);
+      });
+
+      it('$in still works alongside range ops (separate keys)', async () => {
+        const res = await store.listEntities(
+          {
+            type: 'task',
+            metadataFilter: {
+              state: { $in: ['pending', 'in_progress'] },
+              priority: { $gte: 3 },
+            },
+          },
+          {},
+          {},
+        );
+        expect(res.items.map((e) => e.displayName).sort()).toEqual(['T-high', 'T-midA', 'T-midB']);
+      });
+
+      it('rows missing the filter path are excluded from range match', async () => {
+        const res = await store.listEntities(
+          { type: 'task', metadataFilter: { priority: { $gte: 0 } } },
+          {},
+          {},
+        );
+        // T-bare has no metadata.priority → excluded.
+        expect(res.items.find((e) => e.displayName === 'T-bare')).toBeUndefined();
+      });
+    });
+
+    describe('orderBy', () => {
+      it('single-key desc on nested path', async () => {
+        const res = await store.listEntities(
+          { type: 'task' },
+          { orderBy: { field: 'metadata.jarvis.urgency', direction: 'desc' } },
+          {},
+        );
+        const names = res.items.map((e) => e.displayName);
+        expect(names[0]).toBe('T-high');
+        expect(names[names.length - 1]).toBe('T-bare'); // missing → end
+      });
+
+      it('multi-key: urgency desc, then importance desc', async () => {
+        const res = await store.listEntities(
+          { type: 'task' },
+          {
+            orderBy: [
+              { field: 'metadata.jarvis.urgency', direction: 'desc' },
+              { field: 'metadata.jarvis.importance', direction: 'desc' },
+            ],
+          },
+          {},
+        );
+        expect(res.items.map((e) => e.displayName)).toEqual([
+          'T-high', // 100,80
+          'T-midB', // 90,60
+          'T-midA', // 90,40
+          'T-low', //  10,50
+          'T-bare', // missing
+        ]);
+      });
+
+      it('asc direction still sorts missing values LAST (nulls-last contract)', async () => {
+        const res = await store.listEntities(
+          { type: 'task' },
+          { orderBy: { field: 'metadata.jarvis.urgency', direction: 'asc' } },
+          {},
+        );
+        const names = res.items.map((e) => e.displayName);
+        expect(names[0]).toBe('T-low'); // urgency 10
+        expect(names[names.length - 1]).toBe('T-bare'); // missing → end
+      });
+    });
+
+    describe('select projection', () => {
+      it('includes required identity / lifecycle fields automatically', async () => {
+        const res = await store.listEntities(
+          { type: 'task', ids: [taskIds[3]!] }, // T-high
+          { select: ['metadata.jarvis.urgency'] },
+          {},
+        );
+        const e = res.items[0]!;
+        expect(e.id).toBe(taskIds[3]);
+        expect(e.type).toBe('task');
+        expect(e.displayName).toBe('T-high');
+        expect(e.version).toBe(1);
+        expect(e.createdAt).toBeInstanceOf(Date);
+        expect(e.updatedAt).toBeInstanceOf(Date);
+      });
+
+      it('omits unrequested optional fields (identifiers, aliases)', async () => {
+        const res = await store.listEntities(
+          { type: 'task', ids: [taskIds[3]!] },
+          { select: ['metadata.jarvis.urgency'] },
+          {},
+        );
+        const e = res.items[0]!;
+        expect(e.aliases).toBeUndefined();
+        // identifiers is required by IEntity but projection omits when not requested.
+        expect(e.identifiers).toBeUndefined();
+      });
+
+      it('includes requested nested paths assembled into metadata', async () => {
+        const res = await store.listEntities(
+          { type: 'task', ids: [taskIds[3]!] },
+          { select: ['metadata.jarvis.urgency', 'metadata.state'] },
+          {},
+        );
+        const md = res.items[0]!.metadata as Record<string, unknown>;
+        expect((md.jarvis as Record<string, unknown>).urgency).toBe(100);
+        expect(md.state).toBe('pending');
+        // importance wasn't requested — omitted.
+        expect((md.jarvis as Record<string, unknown>).importance).toBeUndefined();
+        // priority wasn't requested — omitted.
+        expect(md.priority).toBeUndefined();
+      });
+
+      it('empty select falls through to full-entity response', async () => {
+        const res = await store.listEntities(
+          { type: 'task', ids: [taskIds[3]!] },
+          { select: [] },
+          {},
+        );
+        expect(res.items[0]!.identifiers).toBeDefined();
+      });
+    });
+  });
+
   // ==========================================================================
   // Facts
   // ==========================================================================

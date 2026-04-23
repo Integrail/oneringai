@@ -7,6 +7,7 @@ import { AuthCodePKCEFlow } from './flows/AuthCodePKCE.js';
 import { ClientCredentialsFlow } from './flows/ClientCredentials.js';
 import { JWTBearerFlow } from './flows/JWTBearer.js';
 import { StaticTokenFlow } from './flows/StaticToken.js';
+import { FileStorage } from './infrastructure/storage/FileStorage.js';
 import type { OAuthConfig } from './types.js';
 
 export class OAuthManager {
@@ -225,11 +226,15 @@ export class OAuthManager {
         break;
     }
 
-    // Warn if using FileStorage without encryption key
-    if (config.storage && !process.env.OAUTH_ENCRYPTION_KEY) {
+    // Warn only if the built-in FileStorage is in play without an encryption
+    // key. Custom ITokenStorage implementations (MongoDB, Redis, app-specific)
+    // manage their own encryption and do not read OAUTH_ENCRYPTION_KEY —
+    // warning them is a false alarm that obscures real problems.
+    if (config.storage instanceof FileStorage && !process.env.OAUTH_ENCRYPTION_KEY) {
       console.warn(
-        'WARNING: Using persistent storage without OAUTH_ENCRYPTION_KEY environment variable. ' +
-          'Tokens will be encrypted with auto-generated key that changes on restart!'
+        'WARNING: Using FileStorage without OAUTH_ENCRYPTION_KEY environment variable. ' +
+          'Tokens will be encrypted with an auto-generated key that changes on restart, ' +
+          'making previously persisted tokens undecryptable after a restart!'
       );
     }
   }

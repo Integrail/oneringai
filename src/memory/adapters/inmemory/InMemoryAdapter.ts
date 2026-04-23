@@ -184,7 +184,15 @@ export class InMemoryAdapter implements IMemoryStore {
       if (filter.metadataFilter && !matchesMetadataFilter(e.metadata, filter.metadataFilter)) continue;
       results.push(e);
     }
-    return paginate(results.map(clone), opts.limit, opts.cursor);
+    if (opts.orderBy) {
+      const keys = Array.isArray(opts.orderBy) ? opts.orderBy : [opts.orderBy];
+      results.sort(makeEntityComparator(keys));
+    }
+    const cloned = results.map(clone);
+    const projected = opts.select && opts.select.length > 0
+      ? cloned.map((e) => projectEntity(e, opts.select as string[]))
+      : cloned;
+    return paginate(projected, opts.limit, opts.cursor);
   }
 
   async archiveEntity(id: EntityId, scope: ScopeFilter): Promise<void> {
@@ -641,24 +649,172 @@ function newId(): string {
 }
 
 /**
- * Equality match on entity.metadata fields. Supports literal values and
- * the `{ $in: [...] }` operator. All conditions must match (AND semantics).
+ * Match entity.metadata against `filter`. Keys may use dot-notation to reach
+ * nested paths. Value grammar: literal, Date, array-equality, `{ $in: [...] }`,
+ * or a combination of `$lt/$lte/$gt/$gte` range operators. All conditions
+ * AND-composed.
+ *
+ * Mirror of `metadataFilterToMongo` validation in the Mongo adapter — we
+ * accept the same shapes silently rather than throw so the InMemory path
+ * stays usable in tests where the caller already passed Mongo validation.
  */
 function matchesMetadataFilter(
   metadata: Record<string, unknown> | undefined,
   filter: Record<string, unknown>,
 ): boolean {
-  if (!metadata) return Object.keys(filter).length === 0;
-  for (const [key, expected] of Object.entries(filter)) {
-    const actual = metadata[key];
-    if (expected && typeof expected === 'object' && '$in' in expected) {
-      const list = (expected as { $in: unknown[] }).$in;
-      if (!list.includes(actual)) return false;
-    } else if (actual !== expected) {
-      return false;
+  const filterKeys = Object.keys(filter);
+  if (filterKeys.length === 0) return true;
+  if (!metadata) return false;
+  for (const key of filterKeys) {
+    const expected = filter[key];
+    const actual = walkPath(metadata, key);
+    if (expected && typeof expected === 'object' && !(expected instanceof Date) && !Array.isArray(expected)) {
+      const ops = expected as Record<string, unknown>;
+      if ('$in' in ops) {
+        const list = ops.$in;
+        if (!Array.isArray(list) || !list.some((v) => equalsValue(actual, v))) return false;
+        continue;
+      }
+      let opsMatched = false;
+      for (const opKey of Object.keys(ops)) {
+        if (opKey === '$lt' || opKey === '$lte' || opKey === '$gt' || opKey === '$gte') {
+          if (!compareRange(actual, opKey, ops[opKey])) return false;
+          opsMatched = true;
+        }
+      }
+      if (!opsMatched) return false;
+      continue;
     }
+    if (!equalsValue(actual, expected)) return false;
   }
   return true;
+}
+
+/**
+ * Walk a dotted path into a nested object. Returns undefined if any segment
+ * is missing or lands on a non-object along the way.
+ */
+function walkPath(root: Record<string, unknown> | undefined, path: string): unknown {
+  if (!root) return undefined;
+  const segments = path.split('.');
+  let cur: unknown = root;
+  for (const seg of segments) {
+    if (cur === null || cur === undefined) return undefined;
+    if (typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return cur;
+}
+
+function equalsValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  return false;
+}
+
+function compareRange(actual: unknown, op: '$lt' | '$lte' | '$gt' | '$gte', rhs: unknown): boolean {
+  const a = toComparable(actual);
+  const b = toComparable(rhs);
+  if (a === undefined || b === undefined) return false;
+  switch (op) {
+    case '$lt': return a < b;
+    case '$lte': return a <= b;
+    case '$gt': return a > b;
+    case '$gte': return a >= b;
+  }
+}
+
+function toComparable(v: unknown): number | string | undefined {
+  if (v === null || v === undefined) return undefined;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') return v;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  return undefined;
+}
+
+/**
+ * Fields the caller ALWAYS receives on a projected result. Mirrors
+ * `REQUIRED_PROJECTION_FIELDS` in the Mongo adapter — without these the
+ * returned object isn't a valid `IEntity`.
+ */
+const IM_REQUIRED_FIELDS: readonly (keyof IEntity)[] = Object.freeze([
+  'id',
+  'type',
+  'displayName',
+  'version',
+  'createdAt',
+  'updatedAt',
+  'ownerId',
+  'groupId',
+  'archived',
+]);
+
+/**
+ * Produce a projected copy of an entity. Top-level fields named in `select`
+ * are copied as-is. Dotted paths projecting into `metadata` are assembled
+ * into a partial `metadata` object on the output. Required fields are always
+ * included.
+ */
+function projectEntity(entity: IEntity, select: string[]): IEntity {
+  const out: Record<string, unknown> = {};
+  for (const f of IM_REQUIRED_FIELDS) {
+    const v = (entity as unknown as Record<string, unknown>)[f as string];
+    if (v !== undefined) out[f as string] = v;
+  }
+  for (const path of select) {
+    if (typeof path !== 'string' || path.length === 0) continue;
+    if (!path.includes('.')) {
+      const v = (entity as unknown as Record<string, unknown>)[path];
+      if (v !== undefined) out[path] = v;
+      continue;
+    }
+    // Nested path. Walk source, build matching nested shape on output.
+    const value = walkPath(entity as unknown as Record<string, unknown>, path);
+    if (value === undefined) continue;
+    const segments = path.split('.');
+    let target = out;
+    for (let i = 0; i < segments.length - 1; i++) {
+      const seg = segments[i] as string;
+      if (target[seg] === undefined || typeof target[seg] !== 'object' || target[seg] === null) {
+        target[seg] = {};
+      }
+      target = target[seg] as Record<string, unknown>;
+    }
+    target[segments[segments.length - 1] as string] = value;
+  }
+  return out as unknown as IEntity;
+}
+
+/**
+ * Build a multi-key comparator for `EntityOrderBy[]`. Missing values sort to
+ * the end regardless of direction (stable "nulls last" semantics). Paths may
+ * be nested (e.g. `'metadata.jarvis.importance'`).
+ */
+function makeEntityComparator(
+  keys: { field: string; direction: 'asc' | 'desc' }[],
+): (a: IEntity, b: IEntity) => number {
+  return (a, b) => {
+    for (const k of keys) {
+      const av = walkPath(a as unknown as Record<string, unknown>, k.field);
+      const bv = walkPath(b as unknown as Record<string, unknown>, k.field);
+      const aMissing = av === undefined || av === null;
+      const bMissing = bv === undefined || bv === null;
+      if (aMissing && bMissing) continue;
+      if (aMissing) return 1;       // a to end
+      if (bMissing) return -1;      // b to end
+      const ac = toComparable(av);
+      const bc = toComparable(bv);
+      if (ac === undefined && bc === undefined) continue;
+      if (ac === undefined) return 1;
+      if (bc === undefined) return -1;
+      let cmp = 0;
+      if (ac < bc) cmp = -1;
+      else if (ac > bc) cmp = 1;
+      if (cmp !== 0) return k.direction === 'asc' ? cmp : -cmp;
+    }
+    return 0;
+  };
 }
 
 // Keep Identifier type live-referenced to avoid accidental import pruning in tooling.

@@ -123,8 +123,19 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
       const entries = Object.entries(opts.sort);
       out = [...out].sort((a, b) => {
         for (const [field, dir] of entries) {
-          const av = (a as Record<string, unknown>)[field];
-          const bv = (b as Record<string, unknown>)[field];
+          // Support nested paths like `metadata.jarvis.importance`.
+          const av = getField(a, field);
+          const bv = getField(b, field);
+          // Nulls-last semantics: missing values always come AFTER present
+          // values regardless of direction. Mongo's default behavior for
+          // ascending sort puts nulls/missing first, but our adapter layer
+          // documents nulls-last consistently across Mongo + InMemory, so
+          // the fake follows the adapter contract.
+          const aMissing = av === undefined || av === null;
+          const bMissing = bv === undefined || bv === null;
+          if (aMissing && !bMissing) return 1;
+          if (!aMissing && bMissing) return -1;
+          if (aMissing && bMissing) continue;
           const cmp = compareAny(av, bv);
           if (cmp !== 0) return cmp * dir;
         }
@@ -134,6 +145,7 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
     const skip = opts?.skip ?? 0;
     const limit = opts?.limit;
     out = out.slice(skip, limit ? skip + limit : undefined);
+    if (opts?.projection) out = out.map((d) => applyProjection(d, opts.projection as Record<string, 0 | 1>));
     return out;
   }
 
@@ -364,6 +376,40 @@ function getField(doc: unknown, path: string): unknown {
     }
   }
   return cur;
+}
+
+/**
+ * Field projection. `{foo:1, 'bar.baz':1}` keeps only those paths (plus `id`
+ * which Mongo always includes when not explicitly excluded). Top-level fields
+ * are copied as-is; dotted paths are assembled into a nested sub-document.
+ * Exclusion-style projection (`{foo:0}`) is not used by the adapter so not
+ * implemented here.
+ */
+function applyProjection<T>(doc: T, projection: Record<string, 0 | 1>): T {
+  const paths = Object.entries(projection).filter(([, v]) => v === 1).map(([k]) => k);
+  if (paths.length === 0) return doc;
+  const out: Record<string, unknown> = {};
+  // Mongo always includes `_id` (or `id` in this adapter) unless explicitly excluded.
+  if (!paths.includes('id')) paths.unshift('id');
+  for (const path of paths) {
+    const value = getField(doc, path);
+    if (value === undefined) continue;
+    if (!path.includes('.')) {
+      out[path] = value;
+      continue;
+    }
+    const segments = path.split('.');
+    let target = out;
+    for (let i = 0; i < segments.length - 1; i++) {
+      const seg = segments[i] as string;
+      if (target[seg] === undefined || typeof target[seg] !== 'object' || target[seg] === null) {
+        target[seg] = {};
+      }
+      target = target[seg] as Record<string, unknown>;
+    }
+    target[segments[segments.length - 1] as string] = value;
+  }
+  return out as T;
 }
 
 function applyUpdate<T>(doc: T, update: MongoUpdate): T {

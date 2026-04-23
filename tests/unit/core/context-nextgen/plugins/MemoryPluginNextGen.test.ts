@@ -218,7 +218,14 @@ describe('MemoryPluginNextGen — injection shape', () => {
       memory: mem,
       agentId: AGENT_ID,
       userId: USER_ID,
-      userProfileInjection: { topFacts: 20, factPredicates: ['prefers'] },
+      // factPredicates scopes topFacts only, not recentActivity (separate
+      // narrow, independent). Disable recentActivity here so the assertion
+      // below targets only the top-facts block.
+      userProfileInjection: {
+        topFacts: 20,
+        factPredicates: ['prefers'],
+        recentActivity: { limit: 0 },
+      },
     });
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
@@ -245,6 +252,218 @@ describe('MemoryPluginNextGen — injection shape', () => {
     const out = await plugin.getContent();
     expect(out).toMatch(/Identifiers/);
     expect(out).toMatch(/system_user_id=test-user/);
+  });
+});
+
+// ===========================================================================
+// recentActivity injection
+// ===========================================================================
+
+describe('MemoryPluginNextGen — recentActivity injection', () => {
+  let mem: MemorySystem;
+  beforeEach(() => {
+    mem = makeMem();
+  });
+
+  async function seedUserFacts(
+    userEntityId: string,
+    rows: { predicate: string; value: string; daysAgo: number }[],
+  ): Promise<void> {
+    for (const r of rows) {
+      await mem.addFact(
+        {
+          subjectId: userEntityId,
+          predicate: r.predicate,
+          kind: 'atomic',
+          value: r.value,
+          observedAt: new Date(Date.now() - r.daysAgo * 86_400_000),
+        },
+        { userId: USER_ID },
+      );
+    }
+  }
+
+  it('default-ON renders a "Recent activity" section when facts exist', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'completed', value: 'Task Alpha', daysAgo: 1 },
+      { predicate: 'responded_to', value: 'thread-1', daysAgo: 2 },
+    ]);
+    const out = await plugin.getContent();
+    expect(out).toMatch(/### Recent activity/);
+    expect(out).toMatch(/Task Alpha/);
+    expect(out).toMatch(/thread-1/);
+  });
+
+  it('windowDays excludes facts older than cutoff', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      // Disable topFacts so absence is cleanly attributable to the window,
+      // not the top-facts block also rendering.
+      userProfileInjection: { topFacts: 0, recentActivity: { limit: 20, windowDays: 3 } },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'completed', value: 'Recent thing', daysAgo: 1 },
+      { predicate: 'completed', value: 'Old thing', daysAgo: 10 },
+    ]);
+    const out = await plugin.getContent();
+    expect(out).toMatch(/Recent thing/);
+    expect(out).not.toMatch(/Old thing/);
+  });
+
+  it('limit caps the number of rows', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      userProfileInjection: { topFacts: 0, recentActivity: { limit: 2, windowDays: 30 } },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'completed', value: 'A', daysAgo: 0 },
+      { predicate: 'completed', value: 'B', daysAgo: 1 },
+      { predicate: 'completed', value: 'C', daysAgo: 2 },
+      { predicate: 'completed', value: 'D', daysAgo: 3 },
+    ]);
+    const out = await plugin.getContent();
+    // Newest first: A, B expected; C, D excluded by limit.
+    expect(out).toMatch(/"A"/);
+    expect(out).toMatch(/"B"/);
+    expect(out).not.toMatch(/"C"/);
+    expect(out).not.toMatch(/"D"/);
+  });
+
+  it('predicates allowlist narrows the stream', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      userProfileInjection: {
+        topFacts: 0,
+        recentActivity: { limit: 20, windowDays: 30, predicates: ['completed'] },
+      },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'completed', value: 'task-x', daysAgo: 0 },
+      { predicate: 'noise_predicate', value: 'chit-chat', daysAgo: 0 },
+    ]);
+    const out = await plugin.getContent();
+    expect(out).toMatch(/task-x/);
+    expect(out).not.toMatch(/chit-chat/);
+  });
+
+  it('limit: 0 disables the section entirely', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      userProfileInjection: { recentActivity: { limit: 0 } },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'completed', value: 'present-but-hidden', daysAgo: 0 },
+    ]);
+    const out = await plugin.getContent();
+    expect(out).not.toMatch(/### Recent activity/);
+  });
+
+  it('empty result (no facts in window) omits the section', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+    });
+    // Don't seed any facts.
+    const out = await plugin.getContent();
+    expect(out).not.toMatch(/### Recent activity/);
+  });
+
+  it('renders chronological (newest-first) order', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      userProfileInjection: { recentActivity: { limit: 10, windowDays: 30 } },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'completed', value: 'first', daysAgo: 5 },
+      { predicate: 'completed', value: 'middle', daysAgo: 3 },
+      { predicate: 'completed', value: 'latest', daysAgo: 1 },
+    ]);
+    const out = await plugin.getContent();
+    const iLatest = out!.indexOf('latest');
+    const iMiddle = out!.indexOf('middle');
+    const iFirst = out!.indexOf('first');
+    expect(iLatest).toBeGreaterThan(-1);
+    expect(iMiddle).toBeGreaterThan(iLatest);
+    expect(iFirst).toBeGreaterThan(iMiddle);
+  });
+
+  it('resolves objectId → displayName in recent activity lines', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    const { entity: topic } = await mem.upsertEntity(
+      {
+        type: 'topic',
+        displayName: 'Q3 Planning',
+        identifiers: [{ kind: 'internal_id', value: 'topic:q3-plan' }],
+      },
+      { userId: USER_ID },
+    );
+    await mem.addFact(
+      {
+        subjectId: userEntityId!,
+        predicate: 'responded_to',
+        kind: 'atomic',
+        objectId: topic.id,
+        observedAt: new Date(),
+      },
+      { userId: USER_ID },
+    );
+    const out = await plugin.getContent();
+    expect(out).toMatch(/Q3 Planning/);
+    expect(out).not.toMatch(new RegExp(`→ ${topic.id}`));
+  });
+
+  it('does not contaminate other sections (topFacts still renders)', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      userProfileInjection: { topFacts: 5 },
+    });
+    await plugin.getContent();
+    const { userEntityId } = plugin.getBootstrappedIds();
+    await seedUserFacts(userEntityId!, [
+      { predicate: 'prefers', value: 'concise-replies', daysAgo: 0 },
+    ]);
+    const out = await plugin.getContent();
+    // Both blocks should be present; top facts first.
+    const iTopFacts = out!.indexOf('Recent top facts');
+    const iRecent = out!.indexOf('Recent activity');
+    expect(iTopFacts).toBeGreaterThan(-1);
+    expect(iRecent).toBeGreaterThan(iTopFacts);
   });
 });
 

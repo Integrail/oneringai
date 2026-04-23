@@ -1884,13 +1884,21 @@ export class MemorySystem implements IDisposable {
     };
     if (opts.assigneeId) metadataFilter.assigneeId = opts.assigneeId;
     if (opts.projectId) metadataFilter.projectId = opts.projectId;
+    // Push-down sort: dueAt asc primarily, updatedAt desc as tiebreak.
+    // Missing-dueAt sorts to the end (adapter-enforced nulls-last). The
+    // updatedAt tiebreak preserves the previous client-side ordering.
     const page = await this.store.listEntities(
       { type: 'task', metadataFilter },
-      { limit },
+      {
+        limit,
+        orderBy: [
+          { field: 'metadata.dueAt', direction: 'asc' },
+          { field: 'updatedAt', direction: 'desc' },
+        ],
+      },
       scope,
     );
-    // Client-side sort — adapters don't support orderBy on listEntities yet.
-    return [...page.items].sort(compareTasksForListing);
+    return page.items;
   }
 
   /**
@@ -1909,15 +1917,19 @@ export class MemorySystem implements IDisposable {
     const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
     const days = Math.max(1, opts.days ?? 30);
     const cutoff = new Date(Date.now() - days * 86_400_000);
-    const fetchLimit = Math.min(limit * 4, 200);
+    // Push-down: updatedAt desc + filter can't be pushed for updatedAt (not
+    // in metadata grammar), so we still post-filter, but at least the sort
+    // is adapter-side and we can trim the fetch tightly.
     const page = await this.store.listEntities(
       { type: 'topic' },
-      { limit: fetchLimit },
+      {
+        limit: Math.min(limit * 4, 200),
+        orderBy: { field: 'updatedAt', direction: 'desc' },
+      },
       scope,
     );
     return page.items
       .filter((e) => e.updatedAt.getTime() >= cutoff.getTime())
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, limit);
   }
 
@@ -2609,23 +2621,6 @@ class EmbeddingQueue {
 // Helpers
 // =============================================================================
 
-/**
- * Sort open tasks by `metadata.dueAt` ascending (undefined last), then
- * `updatedAt` descending. Stable across equal keys.
- */
-function compareTasksForListing(a: IEntity, b: IEntity): number {
-  const dueA = toTimestamp((a.metadata ?? {}).dueAt);
-  const dueB = toTimestamp((b.metadata ?? {}).dueAt);
-  if (dueA !== null && dueB !== null) {
-    if (dueA !== dueB) return dueA - dueB;
-  } else if (dueA !== null) {
-    return -1;
-  } else if (dueB !== null) {
-    return 1;
-  }
-  return b.updatedAt.getTime() - a.updatedAt.getTime();
-}
-
 function toDateMaybe(v: unknown): Date | undefined {
   if (v instanceof Date) return v;
   if (typeof v === 'string') {
@@ -2633,16 +2628,6 @@ function toDateMaybe(v: unknown): Date | undefined {
     return Number.isNaN(d.getTime()) ? undefined : d;
   }
   return undefined;
-}
-
-function toTimestamp(v: unknown): number | null {
-  if (v instanceof Date) return v.getTime();
-  if (typeof v === 'string') {
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d.getTime();
-  }
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  return null;
 }
 
 function validateTaskStates(cfg: TaskStatesConfig | undefined): TaskStatesConfig {

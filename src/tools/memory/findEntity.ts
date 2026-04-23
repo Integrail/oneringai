@@ -6,7 +6,7 @@
  */
 
 import type { ToolFunction } from '../../domain/entities/Tool.js';
-import type { MemorySystem, ScopeFilter } from '../../memory/index.js';
+import type { EntityOrderBy, MemorySystem, ScopeFilter } from '../../memory/index.js';
 import type { MemoryToolDeps } from './types.js';
 import { clamp, resolveScope, toErrorMessage } from './types.js';
 
@@ -19,7 +19,25 @@ export interface FindEntityArgs {
     identifier?: { kind: string; value: string };
     surface?: string;
     type?: string;
+    /**
+     * Metadata filter. Keys may use dot-notation for nested paths
+     * (`jarvis.importance`). Values: literal, `{$in:[...]}`, or any combination
+     * of `$lt/$lte/$gt/$gte`.
+     */
     metadataFilter?: Record<string, unknown>;
+    /**
+     * Stable sort (list action). Single key or array (earlier keys dominant).
+     * Paths may be nested (e.g. `metadata.jarvis.urgency`). Missing values
+     * sort to the end regardless of direction.
+     */
+    orderBy?: EntityOrderBy | EntityOrderBy[];
+    /**
+     * Projection (list action). When present, returned entities include the
+     * required minimum (id, type, displayName, version, createdAt, updatedAt,
+     * ownerId, groupId, archived) PLUS the requested paths. Other optional
+     * fields are omitted — cuts token cost when listing many entities.
+     */
+    select?: string[];
   };
   /** For list: page size. Default 20, max 200. */
   limit?: number;
@@ -29,14 +47,18 @@ const DESCRIPTION = `Look up or list entities. An entity can have many identifie
 
 Actions:
 - "find" (default): look up ONE entity. Use by.id OR by.identifier OR by.surface.
-- "list": enumerate entities by by.type + optional by.metadataFilter.
+- "list": enumerate entities by by.type + optional by.metadataFilter, by.orderBy, by.select.
 
 Read-only — to create or merge entities use memory_upsert_entity (available only when the write plugin is enabled).
+
+metadataFilter grammar: keys may use dot-notation into nested metadata (e.g. "jarvis.importance"). Values may be a literal, {$in:[...]}, or any combination of $lt/$lte/$gt/$gte. No other operators are accepted.
 
 Examples:
 - find by email: {"by":{"identifier":{"kind":"email","value":"alice@a.com"}}}
 - find by surface: {"by":{"surface":"Alice from accounting"}}
-- list active projects: {"action":"list","by":{"type":"project","metadataFilter":{"state":"active"}},"limit":20}`;
+- list active projects: {"action":"list","by":{"type":"project","metadataFilter":{"state":"active"}},"limit":20}
+- top open tasks by priority (short form):
+    {"action":"list","by":{"type":"task","metadataFilter":{"state":{"$in":["pending","in_progress"]},"dueAt":{"$lt":"2026-05-01T00:00:00Z"}},"orderBy":[{"field":"metadata.jarvis.urgency","direction":"desc"},{"field":"metadata.jarvis.importance","direction":"desc"}],"select":["metadata.jarvis.quadrant","metadata.jarvis.urgency","metadata.jarvis.importance","metadata.dueAt","metadata.state"]},"limit":50}`;
 
 export function createFindEntityTool(
   deps: MemoryToolDeps,
@@ -118,7 +140,7 @@ async function doList(
       type: by.type,
       metadataFilter: by.metadataFilter,
     },
-    { limit },
+    { limit, orderBy: by.orderBy, select: by.select },
     scope,
   );
   return {

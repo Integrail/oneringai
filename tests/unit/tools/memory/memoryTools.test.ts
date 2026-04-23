@@ -342,6 +342,99 @@ describe('memory_find_entity / memory_upsert_entity', () => {
     expect(r.entities.length).toBeGreaterThanOrEqual(2); // Alice + Bob
   });
 
+  describe('list: metadataFilter range ops + orderBy + select', () => {
+    async function seedTasks(mem: MemorySystem): Promise<void> {
+      const specs = [
+        { name: 'T1', priority: 1, urgency: 10, importance: 50, state: 'pending' },
+        { name: 'T2', priority: 3, urgency: 90, importance: 40, state: 'pending' },
+        { name: 'T3', priority: 3, urgency: 90, importance: 60, state: 'in_progress' },
+        { name: 'T4', priority: 5, urgency: 100, importance: 80, state: 'pending' },
+      ];
+      for (const s of specs) {
+        await mem.upsertEntity(
+          {
+            type: 'task',
+            displayName: s.name,
+            identifiers: [{ kind: 'canonical', value: `task:${s.name}` }],
+            metadata: {
+              state: s.state,
+              priority: s.priority,
+              jarvis: { urgency: s.urgency, importance: s.importance },
+            },
+          },
+          { userId: USER_ID },
+        );
+      }
+    }
+
+    it('forwards range operators on nested metadata', async () => {
+      const mem = makeMem();
+      const ids = await bootstrap(mem);
+      await seedTasks(mem);
+      const find = toolByName(tools(mem, ids), 'memory_find_entity');
+      const r: any = await find.execute(
+        {
+          action: 'list',
+          by: {
+            type: 'task',
+            metadataFilter: { 'jarvis.importance': { $gte: 50 } },
+          },
+          limit: 50,
+        },
+        { userId: USER_ID },
+      );
+      const names = r.entities.map((e: any) => e.displayName).sort();
+      expect(names).toEqual(['T1', 'T3', 'T4']);
+    });
+
+    it('forwards multi-key orderBy (urgency desc, importance desc)', async () => {
+      const mem = makeMem();
+      const ids = await bootstrap(mem);
+      await seedTasks(mem);
+      const find = toolByName(tools(mem, ids), 'memory_find_entity');
+      const r: any = await find.execute(
+        {
+          action: 'list',
+          by: {
+            type: 'task',
+            orderBy: [
+              { field: 'metadata.jarvis.urgency', direction: 'desc' },
+              { field: 'metadata.jarvis.importance', direction: 'desc' },
+            ],
+          },
+          limit: 50,
+        },
+        { userId: USER_ID },
+      );
+      expect(r.entities.map((e: any) => e.displayName)).toEqual(['T4', 'T3', 'T2', 'T1']);
+    });
+
+    it('forwards select — response metadata contains only requested paths', async () => {
+      const mem = makeMem();
+      const ids = await bootstrap(mem);
+      await seedTasks(mem);
+      const find = toolByName(tools(mem, ids), 'memory_find_entity');
+      const r: any = await find.execute(
+        {
+          action: 'list',
+          by: {
+            type: 'task',
+            select: ['metadata.jarvis.urgency', 'metadata.state'],
+          },
+          limit: 50,
+        },
+        { userId: USER_ID },
+      );
+      for (const e of r.entities) {
+        const md = e.metadata as Record<string, any>;
+        expect(md.priority).toBeUndefined(); // not requested
+        expect(md.state).toBeDefined();
+        expect(md.jarvis?.urgency).toBeDefined();
+        expect(md.jarvis?.importance).toBeUndefined();
+      }
+    });
+  });
+
   it('upsert requires type + displayName + identifiers', async () => {
     const mem = makeMem();
     const ids = await bootstrap(mem);

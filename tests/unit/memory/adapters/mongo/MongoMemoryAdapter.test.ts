@@ -357,36 +357,93 @@ describe('MongoMemoryAdapter', () => {
           ).resolves.toBeTruthy();
         });
 
-        it('rejects keys starting with $', async () => {
+        it('accepts dotted keys for nested paths', async () => {
+          await expect(
+            adapter.listEntities(
+              { metadataFilter: { 'jarvis.importance': { $gte: 70 } } },
+              {},
+              {},
+            ),
+          ).resolves.toBeTruthy();
+        });
+
+        it('accepts range operators: $lt, $lte, $gt, $gte, combined', async () => {
+          const cases: Record<string, unknown>[] = [
+            { priority: { $lt: 5 } },
+            { priority: { $lte: 5 } },
+            { priority: { $gt: 0 } },
+            { priority: { $gte: 1 } },
+            { priority: { $gte: 1, $lt: 10 } },
+            { dueAt: { $lt: new Date('2026-05-01') } },
+          ];
+          for (const mf of cases) {
+            await expect(
+              adapter.listEntities({ metadataFilter: mf }, {}, {}),
+            ).resolves.toBeTruthy();
+          }
+        });
+
+        it('rejects keys starting with $ at top level', async () => {
           await expect(
             adapter.listEntities({ metadataFilter: { $where: 'x' } }, {}, {}),
-          ).rejects.toThrow(/must not start with/);
+          ).rejects.toThrow(/must not start with '\$'/);
         });
 
-        it('rejects keys containing a dot', async () => {
+        it('rejects dollar segment inside dotted key', async () => {
           await expect(
-            adapter.listEntities({ metadataFilter: { 'nested.field': 'x' } }, {}, {}),
-          ).rejects.toThrow(/must not start with .* or contain/);
+            adapter.listEntities(
+              { metadataFilter: { 'jarvis.$where': 'x' } },
+              {},
+              {},
+            ),
+          ).rejects.toThrow(/must not start with '\$'/);
         });
 
-        it('rejects unknown operator shapes', async () => {
+        it('rejects empty / trailing-dot keys', async () => {
+          await expect(
+            adapter.listEntities({ metadataFilter: { 'a..b': 1 } }, {}, {}),
+          ).rejects.toThrow(/empty path segment/);
+          await expect(
+            adapter.listEntities({ metadataFilter: { 'a.': 1 } }, {}, {}),
+          ).rejects.toThrow(/empty path segment/);
+        });
+
+        it('rejects unsupported operator shapes', async () => {
           await expect(
             adapter.listEntities(
               { metadataFilter: { state: { $regex: '.*' } } },
               {},
               {},
             ),
-          ).rejects.toThrow(/only literal values or \{\$in/);
+          ).rejects.toThrow(/unsupported operator '\$regex'/);
         });
 
-        it('rejects multi-key operator objects', async () => {
+        it('rejects empty operator object', async () => {
+          await expect(
+            adapter.listEntities({ metadataFilter: { state: {} } }, {}, {}),
+          ).rejects.toThrow(/empty operator object/);
+        });
+
+        it('rejects combining $in with range operators', async () => {
           await expect(
             adapter.listEntities(
-              { metadataFilter: { state: { $in: ['x'], $regex: '.*' } } },
+              { metadataFilter: { state: { $in: ['x'], $gt: 1 } } },
               {},
               {},
             ),
-          ).rejects.toThrow(/only literal values or \{\$in/);
+          ).rejects.toThrow(/\$in cannot be combined/);
+        });
+
+        it('rejects range operator with non-scalar RHS', async () => {
+          await expect(
+            adapter.listEntities(
+              {
+                metadataFilter: { priority: { $gt: { weird: true } as unknown as number } },
+              },
+              {},
+              {},
+            ),
+          ).rejects.toThrow(/requires a scalar or Date/);
         });
 
         it('rejects $in with non-array values', async () => {
@@ -407,6 +464,281 @@ describe('MongoMemoryAdapter', () => {
               {},
             ),
           ).rejects.toThrow(/array must contain only primitives/);
+        });
+      });
+
+      describe('range filters match expected rows', () => {
+        beforeEach(async () => {
+          // Replace the baseline 4 entities with ones that carry metadata so
+          // we can actually test the filter matching end-to-end.
+          await adapter.destroy();
+          entColl = new FakeMongoCollection<IEntity>('entities');
+          factColl = new FakeMongoCollection<IFact>('facts');
+          adapter = new MongoMemoryAdapter({ entities: entColl, facts: factColl });
+          for (let i = 1; i <= 5; i++) {
+            await adapter.createEntity(
+              entityInput({
+                type: 'task',
+                displayName: `Task ${i}`,
+                metadata: {
+                  state: 'pending',
+                  priority: i,
+                  dueAt: new Date(2026, 3, i), // Apr 1–5
+                  jarvis: { importance: i * 10, urgency: 100 - i * 10 },
+                },
+              }),
+            );
+          }
+        });
+
+        it('$gte filter returns only rows at or above threshold', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task', metadataFilter: { priority: { $gte: 3 } } },
+            {},
+            {},
+          );
+          const priorities = res.items
+            .map((e) => Number(e.metadata?.priority))
+            .sort((a, b) => a - b);
+          expect(priorities).toEqual([3, 4, 5]);
+        });
+
+        it('nested-path $gte on metadata.jarvis.importance', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task', metadataFilter: { 'jarvis.importance': { $gte: 30 } } },
+            {},
+            {},
+          );
+          expect(res.items.length).toBe(3);
+        });
+
+        it('combined $gte + $lt returns half-open range', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task', metadataFilter: { priority: { $gte: 2, $lt: 5 } } },
+            {},
+            {},
+          );
+          expect(res.items.length).toBe(3);
+        });
+
+        it('Date range filter on metadata.dueAt', async () => {
+          const res = await adapter.listEntities(
+            {
+              type: 'task',
+              metadataFilter: { dueAt: { $lt: new Date(2026, 3, 3) } },
+            },
+            {},
+            {},
+          );
+          expect(res.items.length).toBe(2);
+        });
+      });
+
+      describe('orderBy', () => {
+        beforeEach(async () => {
+          await adapter.destroy();
+          entColl = new FakeMongoCollection<IEntity>('entities');
+          factColl = new FakeMongoCollection<IFact>('facts');
+          adapter = new MongoMemoryAdapter({ entities: entColl, facts: factColl });
+          // Seed with unsorted metadata.jarvis.urgency / importance.
+          await adapter.createEntity(
+            entityInput({
+              type: 'task',
+              displayName: 'Low',
+              metadata: { jarvis: { urgency: 10, importance: 50 } },
+            }),
+          );
+          await adapter.createEntity(
+            entityInput({
+              type: 'task',
+              displayName: 'High-A',
+              metadata: { jarvis: { urgency: 90, importance: 40 } },
+            }),
+          );
+          await adapter.createEntity(
+            entityInput({
+              type: 'task',
+              displayName: 'High-B',
+              metadata: { jarvis: { urgency: 90, importance: 60 } },
+            }),
+          );
+          // Entity with NO jarvis block — should sort to end regardless.
+          await adapter.createEntity(
+            entityInput({
+              type: 'task',
+              displayName: 'Bare',
+              metadata: {},
+            }),
+          );
+        });
+
+        it('single-key desc on nested metadata path', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            { orderBy: { field: 'metadata.jarvis.urgency', direction: 'desc' } },
+            {},
+          );
+          // High-A and High-B tie at urgency=90; Low at 10; Bare missing.
+          // Nulls-last: Bare comes after Low.
+          const names = res.items.map((e) => e.displayName);
+          expect(names[3]).toBe('Bare');
+          expect(new Set(names.slice(0, 2))).toEqual(new Set(['High-A', 'High-B']));
+          expect(names[2]).toBe('Low');
+        });
+
+        it('multi-key sort: urgency desc then importance desc', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            {
+              orderBy: [
+                { field: 'metadata.jarvis.urgency', direction: 'desc' },
+                { field: 'metadata.jarvis.importance', direction: 'desc' },
+              ],
+            },
+            {},
+          );
+          expect(res.items.map((e) => e.displayName)).toEqual([
+            'High-B', // urgency 90, importance 60
+            'High-A', // urgency 90, importance 40
+            'Low', // urgency 10
+            'Bare', // missing urgency → end
+          ]);
+        });
+
+        it('asc direction places missing values at end (nulls-last)', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            { orderBy: { field: 'metadata.jarvis.urgency', direction: 'asc' } },
+            {},
+          );
+          const names = res.items.map((e) => e.displayName);
+          expect(names[0]).toBe('Low');
+          expect(names[names.length - 1]).toBe('Bare');
+        });
+      });
+
+      describe('select projection', () => {
+        beforeEach(async () => {
+          await adapter.destroy();
+          entColl = new FakeMongoCollection<IEntity>('entities');
+          factColl = new FakeMongoCollection<IFact>('facts');
+          adapter = new MongoMemoryAdapter({ entities: entColl, facts: factColl });
+          await adapter.createEntity(
+            entityInput({
+              type: 'task',
+              displayName: 'Picky',
+              aliases: ['alias-1', 'alias-2'],
+              identifiers: [{ kind: 'canonical', value: 'task:x' }],
+              metadata: { jarvis: { quadrant: 'important', urgency: 42 }, state: 'pending' },
+            }),
+          );
+        });
+
+        it('always includes required identity/lifecycle fields', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            { select: ['metadata.jarvis.quadrant'] },
+            {},
+          );
+          const e = res.items[0]!;
+          expect(e.id).toBeTruthy();
+          expect(e.type).toBe('task');
+          expect(e.displayName).toBe('Picky');
+          expect(e.version).toBe(1);
+          expect(e.createdAt).toBeInstanceOf(Date);
+          expect(e.updatedAt).toBeInstanceOf(Date);
+          // archived is never stored when false (Mongo-idiomatic) — absence
+          // is the "not archived" signal. Projection correctly omits it.
+          expect(e.archived ?? false).toBe(false);
+        });
+
+        it('omits unrequested optional fields', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            { select: ['metadata.jarvis.quadrant'] },
+            {},
+          );
+          const e = res.items[0]!;
+          expect(e.aliases).toBeUndefined();
+          expect(e.identifiers).toBeUndefined();
+          // state lives alongside the projected quadrant — NOT requested.
+          expect((e.metadata as Record<string, unknown> | undefined)?.state).toBeUndefined();
+        });
+
+        it('includes requested nested paths assembled into metadata', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            { select: ['metadata.jarvis.quadrant', 'metadata.jarvis.urgency'] },
+            {},
+          );
+          const md = res.items[0]!.metadata as Record<string, unknown>;
+          const jarvis = md.jarvis as Record<string, unknown>;
+          expect(jarvis.quadrant).toBe('important');
+          expect(jarvis.urgency).toBe(42);
+        });
+
+        it('empty select behaves as no-projection (full entity)', async () => {
+          const res = await adapter.listEntities(
+            { type: 'task' },
+            { select: [] },
+            {},
+          );
+          expect(res.items[0]!.aliases).toEqual(['alias-1', 'alias-2']);
+        });
+      });
+
+      describe('orderBy / select path hardening (defense-in-depth)', () => {
+        it('orderBy rejects $-prefixed top-level field (blocks $natural DoS)', async () => {
+          await expect(
+            adapter.listEntities(
+              { type: 'task' },
+              { orderBy: { field: '$natural', direction: 'desc' } },
+              {},
+            ),
+          ).rejects.toThrow(/orderBy\.field.*must not start with '\$'/);
+        });
+
+        it('orderBy rejects $-prefixed nested segment', async () => {
+          await expect(
+            adapter.listEntities(
+              { type: 'task' },
+              { orderBy: { field: 'metadata.$where', direction: 'asc' } },
+              {},
+            ),
+          ).rejects.toThrow(/orderBy\.field.*must not start with '\$'/);
+        });
+
+        it('orderBy rejects empty / double-dot path segments', async () => {
+          await expect(
+            adapter.listEntities(
+              { type: 'task' },
+              { orderBy: { field: 'metadata..urgency', direction: 'asc' } },
+              {},
+            ),
+          ).rejects.toThrow(/orderBy\.field.*empty path segment/);
+        });
+
+        it('select rejects $-prefixed paths', async () => {
+          await expect(
+            adapter.listEntities({ type: 'task' }, { select: ['$meta'] }, {}),
+          ).rejects.toThrow(/select.*must not start with '\$'/);
+          await expect(
+            adapter.listEntities(
+              { type: 'task' },
+              { select: ['metadata.$slice'] },
+              {},
+            ),
+          ).rejects.toThrow(/select.*must not start with '\$'/);
+        });
+
+        it('select rejects malformed paths', async () => {
+          await expect(
+            adapter.listEntities(
+              { type: 'task' },
+              { select: ['metadata..foo'] },
+              {},
+            ),
+          ).rejects.toThrow(/select.*empty path segment/);
         });
       });
     });

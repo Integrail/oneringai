@@ -183,6 +183,7 @@ export type {
   Page,
   UpsertEntityResult,
   EntityListFilter,
+  EntityOrderBy,
   EntitySearchOptions,
   ListOptions,
   SemanticSearchOptions,
