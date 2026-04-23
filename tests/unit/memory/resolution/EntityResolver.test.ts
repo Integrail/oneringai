@@ -642,6 +642,44 @@ describe('EntityResolver — tier 4: semantic match', () => {
       scope,
     );
     expect(candidates.every((c) => c.entity.type === 'organization')).toBe(true);
+    await mem.shutdown();
+  });
+
+  it('skips tier 4 when surface normalizes to empty (pure punctuation)', async () => {
+    // Punctuation-only surface → normalizeSurface returns empty → tier 4
+    // must skip embed+search entirely (don't fall back to embedding the
+    // raw garbage).
+    let embedCalls = 0;
+    const embedder = {
+      dimensions: 4,
+      embed: async () => {
+        embedCalls++;
+        return [1, 0, 0, 0];
+      },
+    };
+    const store = new InMemoryAdapter();
+    const mem = new MemorySystem({
+      store,
+      embedder,
+      entityResolution: { enableSemanticResolution: true },
+    });
+
+    await mem.upsertEntity(
+      { type: 'organization', displayName: 'Alpha', identifiers: [] },
+      scope,
+    );
+    await mem.flushEmbeddings();
+    const before = embedCalls;
+
+    const candidates = await mem.resolveEntity(
+      { surface: '!!!', type: 'organization' },
+      scope,
+    );
+    // Empty normalized surface → no tier-4 embed, no semantic candidates.
+    // (Tier 1-3 also produce nothing because "!!!" doesn't exact-match.)
+    expect(embedCalls).toBe(before);
+    expect(candidates).toEqual([]);
+    await mem.shutdown();
   });
 
   it('below minScore cosine floor (0.75) → no semantic candidate', async () => {

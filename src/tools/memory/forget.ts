@@ -118,14 +118,15 @@ export function createForgetTool(deps: MemoryToolDeps): ToolFunction<ForgetArgs>
         }
 
         // H-2: downgrade on foreign contextIds when visibility is non-private.
-        // Adapter errors on the check are fail-safe to "foreign".
+        // Match remember.ts / link.ts — fire the check whenever visibility is
+        // not explicitly `'private'`. Undefined means the new fact will inherit
+        // the predecessor's permissions (line below), which could be group- or
+        // public-readable, so foreign contextIds would leak. Adapter errors
+        // on the check are fail-safe to "foreign".
         const warnings: string[] = [];
         let vis = rw.visibility;
         const effectiveVisBeforeCheck = vis; // may be undefined → inherit predecessor
-        if (
-          rw.contextIds?.length &&
-          (effectiveVisBeforeCheck === 'group' || effectiveVisBeforeCheck === 'public')
-        ) {
+        if (rw.contextIds?.length && effectiveVisBeforeCheck !== 'private') {
           const foreign = await findForeignContextIds(
             deps.memory,
             rw.contextIds,

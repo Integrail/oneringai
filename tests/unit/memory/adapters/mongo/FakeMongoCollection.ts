@@ -37,8 +37,6 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
   /** For verifying search-index calls. */
   public createSearchIndexCalls: SearchIndexDefinition[] = [];
   public listSearchIndexCalls = 0;
-  /** When set, successive listSearchIndexes calls yield from this queue (oldest first). */
-  public searchIndexSequence?: SearchIndexInfo[][];
 
   constructor(private readonly name: string = 'fake') {}
 
@@ -164,24 +162,8 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
 
   async listSearchIndexes(name?: string): Promise<SearchIndexInfo[]> {
     this.listSearchIndexCalls++;
-    // Optional scripted sequence — each call pops the next snapshot. Useful
-    // for simulating the PENDING → BUILDING → READY lifecycle under polling.
-    if (this.searchIndexSequence && this.searchIndexSequence.length > 0) {
-      const snapshot = this.searchIndexSequence.shift()!;
-      const filtered = name ? snapshot.filter((i) => i.name === name) : snapshot;
-      return filtered;
-    }
     const all = this.searchIndexes;
     return name ? all.filter((i) => i.name === name) : [...all];
-  }
-
-  /** Test helper: mark a scripted index as READY without using the sequence. */
-  markSearchIndexReady(name: string): void {
-    const i = this.searchIndexes.find((x) => x.name === name);
-    if (i) {
-      i.status = 'READY';
-      i.queryable = true;
-    }
   }
 
   get createdIndexes(): Array<{ spec: Record<string, 1 | -1>; name?: string }> {

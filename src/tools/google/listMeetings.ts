@@ -60,7 +60,7 @@ function toMeetingEntry(event: GoogleCalendarEvent): GoogleMeetingListEntry {
     location: event.location,
     meetLink,
     isOnlineMeeting: Boolean(meetLink || event.hangoutLink || event.conferenceData),
-    description: event.description ? event.description.slice(0, 200) : undefined,
+    description: event.description || undefined,
   };
 }
 

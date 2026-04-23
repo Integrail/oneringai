@@ -24,6 +24,10 @@ import {
 } from './types.js';
 import { FormatDetector } from '../../capabilities/documents/FormatDetector.js';
 import { DocumentReader, mergeTextPieces } from '../../capabilities/documents/DocumentReader.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
+
+/** Threshold (chars) above which read_file emits an operator warn log. */
+const LARGE_READ_WARN_CHARS = 1_000_000;
 
 /**
  * Arguments for the read file tool
@@ -221,18 +225,32 @@ EXAMPLES:
         const endIndex = Math.min(totalLines, startIndex + limit);
         const selectedLines = allLines.slice(startIndex, endIndex);
 
-        // Format with line numbers
+        // Format with line numbers — no per-line length clip. The caller's
+        // existing `offset`/`limit` (line-based) already gives them paging
+        // control, and lines with genuine content (minified JS, long JSON,
+        // lock files) are exactly what they often want to see in full.
         const lineNumberWidth = String(endIndex).length;
         const formattedLines = selectedLines.map((line, i) => {
           const lineNum = startIndex + i + 1;
           const paddedNum = String(lineNum).padStart(lineNumberWidth, ' ');
-          // Truncate very long lines
-          const truncatedLine = line.length > 2000 ? line.substring(0, 2000) + '...' : line;
-          return `${paddedNum}\t${truncatedLine}`;
+          return `${paddedNum}\t${line}`;
         });
 
         const truncated = endIndex < totalLines;
         const result = formattedLines.join('\n');
+
+        if (result.length >= LARGE_READ_WARN_CHARS) {
+          logger.warn(
+            {
+              component: 'read_file',
+              path: file_path,
+              chars: result.length,
+              lines: selectedLines.length,
+              fileBytes: stats.size,
+            },
+            'read_file returned a large payload; it will flow into the next LLM turn verbatim',
+          );
+        }
 
         return {
           success: true,

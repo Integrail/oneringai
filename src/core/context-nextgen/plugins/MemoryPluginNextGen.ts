@@ -70,7 +70,12 @@ export interface MemoryPluginInjectionConfig {
   relatedEvents?: boolean;
   /** Include the entity's identifiers (kind=value). Default: false. */
   identifiers?: boolean;
-  /** Truncate each rendered fact line. Default: 200. */
+  /**
+   * Optional cap on each rendered fact line. Default: undefined (no cap).
+   * Previously defaulted to 200 chars, which clipped fact details mid-sentence
+   * in the system message. Hosts who want to keep the system message small
+   * can set this explicitly. See feedback_no_truncation.md.
+   */
   maxFactLineChars?: number;
 }
 
@@ -124,7 +129,7 @@ interface ResolvedInjection {
   relatedTasks: boolean;
   relatedEvents: boolean;
   identifiers: boolean;
-  maxFactLineChars: number;
+  maxFactLineChars: number | undefined;
 }
 
 // ===========================================================================
@@ -134,19 +139,9 @@ interface ResolvedInjection {
 const USER_IDENTIFIER_KIND = 'system_user_id';
 const AGENT_IDENTIFIER_KIND = 'system_agent_id';
 
-/** Truncate each rule's rendered body at this length (chars). Individual rules
- *  that exceed this are clipped with an ellipsis; the full text stays in the
- *  underlying fact (`details`) and is available via `memory_list_facts`. */
-const MAX_RULE_CHARS = 300;
-
 /** How many most-recent facts (visible to the current user's scope) to ship
  *  in the UI snapshot via `getContents()`. Not seen by the LLM. */
 const SNAPSHOT_RECENT_FACTS_LIMIT = 30;
-
-function truncate(s: string, maxChars: number): string {
-  if (s.length <= maxChars) return s;
-  return s.slice(0, maxChars - 1) + '…';
-}
 
 /** Drop retrieval-internal fields (embeddings are huge float arrays) so the
  *  snapshot stays small over the wire. The UI doesn't need them to render. */
@@ -484,6 +479,13 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
         scope,
       );
       this.agentEntityId = result.entity.id;
+      await this.checkBootstrapUniqueness(
+        'agent',
+        AGENT_IDENTIFIER_KIND,
+        this.agentId,
+        result.entity.id,
+        scope,
+      );
     }
 
     // User entity — only if we have a userId.
@@ -500,6 +502,68 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
         scope,
       );
       this.userEntityId = result.entity.id;
+      await this.checkBootstrapUniqueness(
+        'user',
+        USER_IDENTIFIER_KIND,
+        this.userId,
+        result.entity.id,
+        scope,
+      );
+    }
+  }
+
+  /**
+   * Post-bootstrap self-check: after upserting the user/agent entity, query
+   * every visible entity carrying the same identifier. If more than one row
+   * comes back, the cross-process uniqueness index documented in H8 is missing
+   * or not enforcing — log loudly so the misconfiguration surfaces before
+   * it silently shards the user's profile across duplicate entities.
+   *
+   * Intentionally best-effort: a store that throws here (adapter bug, network
+   * blip) must not break agent bootstrap, so we swallow to `logger.warn`. Use
+   * logger.error for the duplicate case itself — that's a real operational
+   * alarm condition.
+   */
+  private async checkBootstrapUniqueness(
+    which: 'user' | 'agent',
+    identifierKind: string,
+    identifierValue: string,
+    resolvedId: string,
+    scope: ScopeFilter,
+  ): Promise<void> {
+    try {
+      const matches = await this.memory.findEntitiesByIdentifier(
+        identifierKind,
+        identifierValue,
+        scope,
+      );
+      if (matches.length > 1) {
+        logger.error(
+          {
+            component: 'MemoryPluginNextGen',
+            agentId: this.agentId,
+            userId: this.userId,
+            which,
+            identifierKind,
+            identifierValue,
+            resolvedId,
+            duplicateIds: matches.map((e) => e.id).filter((id) => id !== resolvedId),
+            duplicateCount: matches.length,
+          },
+          'bootstrap duplicate detected — the cross-process unique index on (identifiers.kind, identifiers.value) is missing or not enforcing. Profile + facts will be split across duplicate entities until merged. See H8 in MemoryPluginNextGen / CLAUDE.md.',
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          component: 'MemoryPluginNextGen',
+          agentId: this.agentId,
+          userId: this.userId,
+          which,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'bootstrap uniqueness self-check failed — continuing without duplicate detection',
+      );
     }
   }
 
@@ -568,7 +632,10 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
       // short-id bracket + `ruleId=<full>` tag side-by-side; that wastes ~30
       // tokens per rule with no benefit since the agent doesn't need the short
       // form for anything.
-      const body = escapeInline(truncate(f.details!, MAX_RULE_CHARS));
+      // Full rule body — user-authored behavior rules are often nuanced and
+      // clipping at a fixed char budget silently dropped the qualifying
+      // clause the agent was supposed to respect.
+      const body = escapeInline(f.details!);
       lines.push(`- [${f.id}] ${body}`);
     }
     return lines.join('\n');
@@ -700,13 +767,13 @@ function resolveInjection(
     relatedTasks: inj?.relatedTasks ?? false,
     relatedEvents: inj?.relatedEvents ?? false,
     identifiers: inj?.identifiers ?? false,
-    maxFactLineChars: inj?.maxFactLineChars ?? 200,
+    maxFactLineChars: inj?.maxFactLineChars,
   };
 }
 
 function renderFactLine(
   f: IFact,
-  maxChars: number,
+  maxChars: number | undefined,
   nameByEntityId?: ReadonlyMap<EntityId, string>,
 ): string {
   const payload =
@@ -719,14 +786,15 @@ function renderFactLine(
           : '';
   const conf = typeof f.confidence === 'number' ? ` (conf=${f.confidence.toFixed(2)})` : '';
   const line = `${f.predicate}: ${payload}${conf}`;
-  return line.length <= maxChars ? line : line.slice(0, maxChars - 1) + '…';
+  if (maxChars === undefined || line.length <= maxChars) return line;
+  return line.slice(0, maxChars - 1) + '…';
 }
 
 // Small helper exposed for tests + advanced callers — not part of the public
 // plugin API but harmless to export.
 export function _renderFactLineForTest(
   f: IFact,
-  maxChars = 200,
+  maxChars: number | undefined = undefined,
   nameByEntityId?: ReadonlyMap<EntityId, string>,
 ): string {
   return renderFactLine(f, maxChars, nameByEntityId);

@@ -845,7 +845,7 @@ describe('renderMessage (transcript builder)', () => {
     expect(out).toContain('"dueAt":"2026-04-30T09:00:00Z"');
   });
 
-  it('truncates oversized tool_call args to cap transcript cost', () => {
+  it('renders tool_call args in full — no per-item cap', () => {
     const m = {
       role: 'assistant',
       content: [
@@ -857,9 +857,11 @@ describe('renderMessage (transcript builder)', () => {
       ],
     };
     const out = renderMessage(m);
-    // Cap is 500; with room for closing quote + structure, payload must be trimmed.
-    expect(out.length).toBeLessThan(650);
-    expect(out).toMatch(/…/); // truncation ellipsis
+    // The outer `maxTranscriptChars` budget is the single source of truth
+    // for transcript size. Per-item clipping silently hid what the agent
+    // actually did from the extractor.
+    expect(out).toContain('x'.repeat(2000));
+    expect(out).not.toMatch(/…/);
   });
 
   it('renders tool_result with ok tag when call succeeded', () => {

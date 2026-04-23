@@ -6,6 +6,10 @@ import { load } from 'cheerio';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { detectContentQuality } from './contentDetector.js';
 import { htmlToMarkdown } from './htmlToMarkdown.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
+
+/** Threshold (chars) above which web_fetch logs an operator warn. */
+const LARGE_FETCH_WARN_CHARS = 1_000_000;
 import { FormatDetector } from '../../capabilities/documents/FormatDetector.js';
 import { DocumentReader, mergeTextPieces } from '../../capabilities/documents/DocumentReader.js';
 
@@ -270,6 +274,18 @@ Fetch an Excel spreadsheet:
 
       // Convert HTML to clean markdown
       const mdResult = await htmlToMarkdown(html, args.url);
+
+      if (mdResult.markdown.length >= LARGE_FETCH_WARN_CHARS) {
+        logger.warn(
+          {
+            component: 'web_fetch',
+            url: args.url,
+            markdownChars: mdResult.markdown.length,
+            htmlChars: html.length,
+          },
+          'web_fetch returned a large markdown payload; it will flow into the next LLM turn verbatim',
+        );
+      }
 
       // Use markdown result title or fallback to cheerio extraction
       const title = mdResult.title || $('title').text() || $('h1').first().text() || 'Untitled';

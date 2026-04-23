@@ -493,13 +493,14 @@ function tryCoerceToArray(value: unknown): unknown {
 /**
  * Last-resort LLM extraction: ask the agent to extract a JSON array from raw data.
  * Uses runDirect() to avoid polluting the agent's conversation history.
- * Truncates input to 8000 chars to keep the extraction call fast and cheap.
+ *
+ * No input truncation: modern models handle hundreds of KB of input trivially,
+ * and clipping here silently lost tail items from the extracted array. No
+ * output cap for the same reason (see feedback_no_output_limits.md) — the
+ * model's own default is always the maximum it can emit.
  */
 export async function llmExtractArray(agent: Agent, rawValue: unknown): Promise<unknown[]> {
   const serialized = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue);
-  const truncated = serialized.length > 8000
-    ? serialized.slice(0, 8000) + '\n...(truncated)'
-    : serialized;
 
   const response = await agent.runDirect(
     [
@@ -508,9 +509,9 @@ export async function llmExtractArray(agent: Agent, rawValue: unknown): Promise<
       'If the data contains a list in any format (JSON, markdown, numbered list, comma-separated), convert it to a JSON array of items.',
       '',
       'Data:',
-      truncated,
+      serialized,
     ].join('\n'),
-    { temperature: 0, maxOutputTokens: 4096 }
+    { temperature: 0 }
   );
 
   const text = response.output_text ?? '';

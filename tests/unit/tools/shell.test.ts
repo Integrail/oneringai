@@ -181,13 +181,39 @@ describe('Shell Tools', () => {
       expect(result.success).toBe(true);
       expect(result.duration).toBeGreaterThan(50); // At least 50ms
     });
+
+    it('sets truncated=true and preserves the tail when output exceeds maxOutputSize * 2', async () => {
+      // Force the rolling buffer to fire by configuring a tiny cap.
+      const tool = createBashTool({ maxOutputSize: 100 });
+      // Emits >250 bytes of stdout with monotonic markers so we can prove
+      // the tail was kept (head bytes start with "A", tail ends with "Z").
+      const result = await tool.execute({
+        command: "printf 'A%.0s' {1..150}; printf 'Z%.0s' {1..150}",
+      });
+
+      expect(result.success).toBe(true);
+      // Rolling buffer fired → caller must be signalled.
+      expect(result.truncated).toBe(true);
+      // Tail preserved (Z chars at the end), head discarded.
+      expect(result.stdout?.endsWith('Z')).toBe(true);
+      // Buffer size should be near the cap, not the original total.
+      expect(result.stdout!.length).toBeLessThanOrEqual(200);
+    });
+
+    it('leaves truncated=false when output stays within the buffer ceiling', async () => {
+      const tool = createBashTool({ maxOutputSize: 100_000 });
+      const result = await tool.execute({ command: "echo 'hello world'" });
+
+      expect(result.success).toBe(true);
+      expect(result.truncated).toBeFalsy();
+    });
   });
 
   describe('DEFAULT_SHELL_CONFIG', () => {
     it('should have sensible defaults', () => {
       expect(DEFAULT_SHELL_CONFIG.defaultTimeout).toBe(120000); // 2 minutes
       expect(DEFAULT_SHELL_CONFIG.maxTimeout).toBe(600000); // 10 minutes
-      expect(DEFAULT_SHELL_CONFIG.maxOutputSize).toBe(100000);
+      expect(DEFAULT_SHELL_CONFIG.maxOutputSize).toBe(10_000_000);
       expect(DEFAULT_SHELL_CONFIG.blockedCommands.length).toBeGreaterThan(0);
     });
 

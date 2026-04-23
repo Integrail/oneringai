@@ -24,14 +24,18 @@ export interface ConnectorExtractorConfig {
   model: string;
   /** Default 0.2 — tighter sampling keeps JSON well-formed. */
   temperature?: number;
-  /** Default 2000 — rooms for ~20 mentions + ~50 facts. */
+  /**
+   * Max output tokens per LLM call. Default: undefined — use the model's own
+   * ceiling, which is always the maximum it can emit. Hardcoded defaults
+   * silently truncate long extractions. See feedback_no_output_limits.md.
+   */
   maxOutputTokens?: number;
 }
 
 export class ConnectorExtractor implements IExtractor {
   private readonly agent: Agent;
   private readonly temperature: number;
-  private readonly maxOutputTokens: number;
+  private readonly maxOutputTokens: number | undefined;
 
   constructor(config: ConnectorExtractorConfig) {
     this.agent = Agent.create({
@@ -39,7 +43,7 @@ export class ConnectorExtractor implements IExtractor {
       model: config.model,
     });
     this.temperature = config.temperature ?? 0.2;
-    this.maxOutputTokens = config.maxOutputTokens ?? 2000;
+    this.maxOutputTokens = config.maxOutputTokens;
   }
 
   /**
@@ -56,11 +60,11 @@ export class ConnectorExtractor implements IExtractor {
     const bag = instance as unknown as {
       agent: { runDirect: Agent['runDirect']; destroy: Agent['destroy'] };
       temperature: number;
-      maxOutputTokens: number;
+      maxOutputTokens: number | undefined;
     };
     bag.agent = args.agent;
     bag.temperature = args.temperature ?? 0.2;
-    bag.maxOutputTokens = args.maxOutputTokens ?? 2000;
+    bag.maxOutputTokens = args.maxOutputTokens;
     return instance;
   }
 

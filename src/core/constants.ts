@@ -269,8 +269,13 @@ export const DOCUMENT_DEFAULTS = {
   /** Maximum Excel columns per sheet */
   MAX_EXCEL_COLUMNS: 50,
 
-  /** Maximum HTML content length */
-  MAX_HTML_LENGTH: 50_000,
+  /**
+   * Maximum HTML → markdown output length in chars. Default 10MB — covers
+   * essentially every real article, doc, or scraped page without silently
+   * clipping mid-content. Raised from 50KB which was routinely hitting the
+   * middle of long-form content (Wikipedia articles, docs sites, etc.).
+   */
+  MAX_HTML_LENGTH: 10_000_000,
 
   /** Characters per token estimate */
   CHARS_PER_TOKEN: 4,

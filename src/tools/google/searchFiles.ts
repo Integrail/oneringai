@@ -180,7 +180,7 @@ EXAMPLES:
           return {
             name: file.name,
             path: file.parents?.[0],
-            snippet: file.description?.slice(0, 200),
+            snippet: file.description,
             size,
             sizeFormatted: formatFileSize(size),
             webUrl: file.webViewLink,

@@ -137,7 +137,12 @@ export interface PDFFormatOptions {
 }
 
 export interface HTMLFormatOptions {
-  /** Maximum HTML length to process (default: 50000) */
+  /**
+   * Optional cap on the HTML → markdown output length (chars). Default is
+   * `DOCUMENT_DEFAULTS.MAX_HTML_LENGTH` (10_000_000 chars), which covers
+   * essentially every real article without clipping. Set explicitly only
+   * when the caller genuinely needs a smaller result.
+   */
   maxLength?: number;
 }
 

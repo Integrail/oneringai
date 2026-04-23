@@ -19,6 +19,16 @@ import { getModelInfo } from '../../../domain/entities/Model.js';
 import { convertToolsToStandardFormat, transformForAnthropic, ProviderToolFormat } from '../shared/ToolConversionUtils.js';
 import { mapAnthropicStatus, ResponseStatus } from '../shared/ResponseBuilder.js';
 import { validateThinkingConfig } from '../shared/validateThinkingConfig.js';
+import { logger } from '../../observability/Logger.js';
+
+/**
+ * Last-resort `max_tokens` default when the model isn't in the registry
+ * (or its entry lacks `features.output.tokens`) and the caller didn't pass
+ * `max_output_tokens`. Sized for current-generation Anthropic output ceilings;
+ * falling through to this value triggers a warn log so operators can audit
+ * the misconfigured model.
+ */
+const ANTHROPIC_UNKNOWN_MODEL_MAX_TOKENS = 64_000;
 
 export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreateParams, Anthropic.Message> {
   readonly providerName = 'anthropic';
@@ -30,9 +40,37 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
     const messages = this.convertMessages(options.input);
     const tools = this.convertAnthropicTools(options.tools);
 
+    // Anthropic's Messages API REQUIRES `max_tokens`. When the caller didn't
+    // set one, use the model's capability max (from the registry) so the
+    // model can emit as much as it physically can. Hardcoding a small
+    // fallback (previously 4096) silently truncated long responses. Final
+    // fallback for unknown models is `ANTHROPIC_UNKNOWN_MODEL_MAX_TOKENS` —
+    // and when we reach it, emit a warn so operators notice the missing
+    // registry entry (otherwise an Anthropic 400 would be the only signal).
+    // See feedback_no_output_limits.md.
+    let max_tokens: number;
+    if (options.max_output_tokens !== undefined) {
+      max_tokens = options.max_output_tokens;
+    } else {
+      const modelMax = getModelInfo(options.model)?.features?.output?.tokens;
+      if (typeof modelMax === 'number') {
+        max_tokens = modelMax;
+      } else {
+        max_tokens = ANTHROPIC_UNKNOWN_MODEL_MAX_TOKENS;
+        logger.warn(
+          {
+            component: 'AnthropicConverter',
+            model: options.model,
+            fallback: ANTHROPIC_UNKNOWN_MODEL_MAX_TOKENS,
+          },
+          'Anthropic model not in registry (or missing features.output.tokens); defaulted max_tokens to library fallback. Register the model via Model.create() to suppress.',
+        );
+      }
+    }
+
     const params: Anthropic.MessageCreateParams = {
       model: options.model,
-      max_tokens: options.max_output_tokens || 4096,
+      max_tokens,
       messages,
     };
 

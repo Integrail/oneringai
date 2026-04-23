@@ -793,6 +793,20 @@ export interface MemorySystemConfig {
    * explicitly by the host.
    */
   autoApplyTaskTransitions?: boolean;
+  /**
+   * Maximum number of entries retained in `task.metadata.stateHistory`.
+   * `transitionTaskState` keeps the most-recent N entries (older entries are
+   * dropped in FIFO order). Guards against unbounded metadata growth on chatty
+   * tasks — a task that cycles through states thousands of times could
+   * otherwise push the entity document past Mongo's 16 MB cap. Full audit
+   * history is still recoverable via the `state_changed` facts themselves,
+   * which carry `sourceSignalId` + `observedAt`.
+   *
+   * Default: 200. Must be >= 1. Set to a larger value only if full in-document
+   * history matters for your queries and you've sized the document budget
+   * accordingly.
+   */
+  stateHistoryCap?: number;
   /** Number of new atomic facts since last profile regen that triggers auto-regeneration. */
   profileRegenerationThreshold?: number;
   topFactsRanking?: RankingConfig;

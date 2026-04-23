@@ -47,9 +47,14 @@ export interface CalendarSignal {
 
 export interface CalendarSignalAdapterOptions {
   /**
-   * When true, attendees with `rsvpStatus: 'declined'` are still seeded as
-   * person entities but do NOT get an `attended` seed fact written. Default
-   * true — we don't want to mark someone as attending if they declined.
+   * When true, attendees with `rsvpStatus: 'declined'` are omitted entirely —
+   * no person seed, no `attended` seed fact, and they are not listed in
+   * `signalText`. Default true: we don't want the declined attendee's name
+   * showing up in the prompt, because the LLM can (and does) infer
+   * attendance from the presence alone, defeating the skip intent.
+   *
+   * Set false to preserve prior behavior (declined attendees seeded + listed
+   * in signalText; only the deterministic `attended` seed fact is skipped).
    */
   skipDeclinedAttendance?: boolean;
 }
@@ -119,12 +124,16 @@ export class CalendarSignalAdapter implements SignalSourceAdapter<CalendarSignal
       }
     }
 
-    // Attendees — deduped by email, declined RSVPs skipped for seedFacts only.
+    // Attendees — deduped by email. Declined RSVPs are dropped entirely when
+    // skipDeclinedAttendance is true (no seed, no seedFact, and filtered out
+    // of signalText below) so the LLM can't infer attendance from the mere
+    // presence of a name.
     let attendeeIdx = 0;
     for (const attendee of raw.attendees ?? []) {
       if (!attendee.email) continue;
       const email = attendee.email.trim().toLowerCase();
       if (!email || seenEmails.has(email)) continue;
+      if (this.skipDeclinedAttendance && attendee.rsvpStatus === 'declined') continue;
       seenEmails.add(email);
       const role = `attendee_${attendeeIdx++}`;
       participants.push({
@@ -133,7 +142,6 @@ export class CalendarSignalAdapter implements SignalSourceAdapter<CalendarSignal
         identifiers: [{ kind: 'email', value: email }],
         displayName: attendee.name?.trim() || undefined,
       });
-      if (this.skipDeclinedAttendance && attendee.rsvpStatus === 'declined') continue;
       seedFacts.push({
         subjectRole: role,
         predicate: 'attended',
@@ -142,7 +150,7 @@ export class CalendarSignalAdapter implements SignalSourceAdapter<CalendarSignal
       });
     }
 
-    const signalText = buildSignalText(raw);
+    const signalText = buildSignalText(raw, { skipDeclinedAttendance: this.skipDeclinedAttendance });
     const signalSourceDescription = `calendar event "${raw.title}" on ${raw.startTime.toISOString()}`;
 
     return {
@@ -154,15 +162,21 @@ export class CalendarSignalAdapter implements SignalSourceAdapter<CalendarSignal
   }
 }
 
-function buildSignalText(raw: CalendarSignal): string {
+function buildSignalText(
+  raw: CalendarSignal,
+  opts: { skipDeclinedAttendance: boolean },
+): string {
   const parts: string[] = [];
   parts.push(`Title: ${raw.title}`);
   parts.push(`Start: ${raw.startTime.toISOString()}`);
   if (raw.endTime) parts.push(`End: ${raw.endTime.toISOString()}`);
   if (raw.location) parts.push(`Location: ${raw.location}`);
+  const filteredAttendees = (raw.attendees ?? []).filter(
+    (a) => !opts.skipDeclinedAttendance || a.rsvpStatus !== 'declined',
+  );
   const emails = [
     ...(raw.organizer?.email ? [`${raw.organizer.email} (organizer)`] : []),
-    ...(raw.attendees ?? []).map((a) => a.email).filter(Boolean),
+    ...filteredAttendees.map((a) => a.email).filter(Boolean),
   ];
   if (emails.length > 0) parts.push(`Attendees: ${emails.join(', ')}`);
   if (raw.description && raw.description.trim().length > 0) {

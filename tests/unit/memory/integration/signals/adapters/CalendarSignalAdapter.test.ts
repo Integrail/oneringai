@@ -96,7 +96,7 @@ describe('CalendarSignalAdapter.extract (pure — no I/O)', () => {
     expect(attendedCount).toBe(2);
   });
 
-  it('declined attendees: person seeded but no attended seed fact', () => {
+  it('declined attendees: dropped entirely (no seed, no seedFact, not in signalText)', () => {
     const out = adapter.extract({
       ...base,
       attendees: [
@@ -104,13 +104,34 @@ describe('CalendarSignalAdapter.extract (pure — no I/O)', () => {
         { email: 'accepted@acme.com', rsvpStatus: 'accepted' },
       ],
     });
-    // Both should be seeded as people.
+    const emails = out.participants.filter((p) => p.type === 'person').map((p) => p.identifiers[0]!.value);
+    // Declined attendee must not appear anywhere the LLM would see them —
+    // mere presence is enough for the extractor to infer attendance.
+    expect(emails).not.toContain('declined@acme.com');
+    expect(emails).toContain('accepted@acme.com');
+    expect(out.signalText).not.toContain('declined@acme.com');
+    expect(out.signalText).toContain('accepted@acme.com');
+    const attended = out.seedFacts!.filter((sf) => sf.predicate === 'attended');
+    expect(attended).toHaveLength(1);
+  });
+
+  it('skipDeclinedAttendance=false: declined attendees seeded and listed, no attended seedFact', () => {
+    const permissive = new CalendarSignalAdapter({ skipDeclinedAttendance: false });
+    const out = permissive.extract({
+      ...base,
+      attendees: [
+        { email: 'declined@acme.com', rsvpStatus: 'declined' },
+        { email: 'accepted@acme.com', rsvpStatus: 'accepted' },
+      ],
+    });
     const emails = out.participants.filter((p) => p.type === 'person').map((p) => p.identifiers[0]!.value);
     expect(emails).toContain('declined@acme.com');
     expect(emails).toContain('accepted@acme.com');
-    // Only one `attended` seed fact (declined was skipped).
+    expect(out.signalText).toContain('declined@acme.com');
+    // Both attendees get attended seed facts when the flag is off — the caller
+    // has opted into the old behavior.
     const attended = out.seedFacts!.filter((sf) => sf.predicate === 'attended');
-    expect(attended).toHaveLength(1);
+    expect(attended).toHaveLength(2);
   });
 
   it('signalText includes title + start + attendee emails + description', () => {

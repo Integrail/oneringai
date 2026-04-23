@@ -131,11 +131,11 @@ function buildAgentTypesSection(agentTypes: Record<string, AgentTypeConfig>): st
       if (cfg.description) {
         parts.push(cfg.description);
       } else {
-        // Fallback: truncated system prompt
-        const desc = cfg.systemPrompt.length > 200
-          ? cfg.systemPrompt.slice(0, 200) + '...'
-          : cfg.systemPrompt;
-        parts.push(desc);
+        // Fallback: full system prompt. A verbose systemPrompt is exactly
+        // what helps the orchestrator pick the right agent; clipping it at
+        // 200 chars silently hid the agent's specialization. Hosts who want
+        // a tight orchestrator view should set `description` explicitly.
+        parts.push(cfg.systemPrompt);
       }
 
       if (cfg.scenarios && cfg.scenarios.length > 0) {
@@ -361,7 +361,7 @@ async function autoDescribeAgentTypes(
   const typesSummary = needsDescription.map(([id, cfg]) => {
     const toolNames = cfg.tools?.map(t => t.definition.function.name).join(', ') ?? 'none';
     return `Type "${id}":
-- System prompt: ${cfg.systemPrompt.slice(0, 500)}
+- System prompt: ${cfg.systemPrompt}
 - Tools: ${toolNames}`;
   }).join('\n\n');
 
@@ -509,11 +509,14 @@ function logDelegationExchange(
   const turnNum = delegationState.turnCount;
   const key = `delegation:turn:${turnNum}`;
   // Use the store API directly (no ToolContext needed)
+  // Full delegation turn content — clipping at 500 chars silently dropped
+  // the substance of long user prompts / agent responses from the workspace
+  // log. See feedback_no_truncation.md.
   workspace.storeSet(key, {
     summary: `Turn ${turnNum}: user asked, agent responded`,
     content: JSON.stringify({
-      user: userInput.slice(0, 500),
-      agent: agentResponse.slice(0, 500),
+      user: userInput,
+      agent: agentResponse,
     }),
     author: 'orchestrator',
     status: 'logged',
@@ -708,8 +711,8 @@ export async function createOrchestrator(config: OrchestratorConfig): Promise<Ag
     // Active monitoring: orchestrator reviews after each delegated turn
     if (delegationState.monitoring === 'active') {
       const turnSummary = `[Delegation Monitor] Turn ${delegationState.turnCount} with "${delegationState.agentName}".
-User said: ${userText.slice(0, 300)}
-Agent responded: ${(response.output_text ?? '').slice(0, 500)}
+User said: ${userText}
+Agent responded: ${response.output_text ?? ''}
 
 Should you intervene, attach other agents, or let the session continue? If no action needed, respond with just "continue".`;
 
@@ -795,8 +798,8 @@ Should you intervene, attach other agents, or let the session continue? If no ac
     // Post-stream monitoring (same as run() but after stream completes)
     if (delegationState.monitoring === 'active') {
       const turnSummary = `[Delegation Monitor] Turn ${delegationState.turnCount} with "${delegationState.agentName}".
-User said: ${userText.slice(0, 300)}
-Agent responded: ${responseText.slice(0, 500)}
+User said: ${userText}
+Agent responded: ${responseText}
 
 Should you intervene, attach other agents, or let the session continue? If no action needed, respond with just "continue".`;
 

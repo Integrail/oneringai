@@ -50,8 +50,13 @@ export interface ShellToolConfig {
   blockedPatterns?: RegExp[];
 
   /**
-   * Maximum output size in characters before truncation.
-   * Default: 100000 (100KB)
+   * Soft ceiling on in-memory output buffer per command, in characters.
+   * Purely a process-memory safeguard — the bash tool uses a rolling tail
+   * buffer so a runaway command that writes gigabytes cannot OOM the host.
+   * The FULL buffer up to this ceiling is returned to the caller verbatim
+   * (no head-clip). Default: 10_000_000 (10MB), which fits a typical LLM's
+   * context window many times over and only kicks in on genuinely runaway
+   * commands. Lower only if you have tight memory constraints.
    */
   maxOutputSize?: number;
 
@@ -86,7 +91,7 @@ export const DEFAULT_SHELL_CONFIG: Required<ShellToolConfig> = {
     /mkfs/i,
     /dd\s+.*of=\/dev\//i, // dd to devices
   ],
-  maxOutputSize: 100000,
+  maxOutputSize: 10_000_000,
   allowBackground: true,
 };
 

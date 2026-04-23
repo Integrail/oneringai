@@ -35,13 +35,16 @@ export interface MarkdownResult {
  *
  * @param html - Raw HTML string
  * @param url - URL of the page (used for resolving relative links)
- * @param maxLength - Maximum length of output markdown (default: 50000)
+ * @param maxLength - Optional cap on output markdown length. Undefined by
+ *   default — the full article is returned (modern LLMs handle megabyte-sized
+ *   pages trivially and clipping here silently lost content mid-article).
+ *   Callers that genuinely need a small result can pass an explicit cap.
  * @returns MarkdownResult with cleaned content
  */
 export async function htmlToMarkdown(
   html: string,
   url: string,
-  maxLength: number = 50000
+  maxLength?: number,
 ): Promise<MarkdownResult> {
   // 1. Parse HTML with JSDOM (lazy-loaded)
   const JSDOMClass = await getJSDOM();
@@ -104,15 +107,14 @@ export async function htmlToMarkdown(
     .replace(/^\s+|\s+$/g, '') // Trim start/end
     .replace(/[ \t]+$/gm, ''); // Remove trailing spaces on lines
 
-  // 5. Truncate at paragraph boundary if needed
+  // 5. Optional caller-supplied cap — off by default. When set, prefer a
+  // paragraph boundary near the cap so we don't slice mid-sentence.
   let wasTruncated = false;
-  if (markdown.length > maxLength) {
-    // Find last paragraph break before maxLength
+  if (maxLength !== undefined && markdown.length > maxLength) {
     const truncateAt = markdown.lastIndexOf('\n\n', maxLength);
     if (truncateAt > maxLength * 0.5) {
       markdown = markdown.slice(0, truncateAt) + '\n\n...[content truncated]';
     } else {
-      // No good break point, just truncate
       markdown = markdown.slice(0, maxLength) + '...[truncated]';
     }
     wasTruncated = true;

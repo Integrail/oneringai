@@ -769,128 +769,158 @@ describe('MongoMemoryAdapter', () => {
   // ==========================================================================
 
   describe('ensureVectorSearchIndexes', () => {
-    it('creates facts + entities vector search indexes with expected definition', async () => {
-      // waitUntilReady=false to avoid polling the fake's PENDING default forever.
-      await adapter.ensureVectorSearchIndexes({
-        dimensions: 1536,
-        waitUntilReady: false,
-      });
+    it('creates facts + entities indexes with vector + filter fields', async () => {
+      await adapter.ensureVectorSearchIndexes({ dimensions: 1536 });
+
       const factDefs = factColl.createSearchIndexCalls.filter((d) => d.name === 'facts_vector');
       const entDefs = entColl.createSearchIndexCalls.filter((d) => d.name === 'entities_vector');
       expect(factDefs).toHaveLength(1);
       expect(entDefs).toHaveLength(1);
       expect(factDefs[0]!.type).toBe('vectorSearch');
-      expect(factDefs[0]!.definition.fields![0]).toEqual({
+
+      // Vector field first, then filter fields.
+      const factFields = factDefs[0]!.definition.fields!;
+      expect(factFields[0]).toEqual({
         type: 'vector',
         path: 'embedding',
         numDimensions: 1536,
         similarity: 'cosine',
       });
-      expect(entDefs[0]!.definition.fields![0]).toEqual({
+      // Filter fields required for $vectorSearch.filter to actually work —
+      // without these declared, Atlas silently ignores the filter clause
+      // (scope bypass). See F1 in the fix plan.
+      const factFilterPaths = factFields
+        .filter((f): f is { type: 'filter'; path: string } => f.type === 'filter')
+        .map((f) => f.path)
+        .sort();
+      expect(factFilterPaths).toEqual(
+        [
+          'archived',
+          'groupId',
+          'kind',
+          'objectId',
+          'ownerId',
+          'permissions.group',
+          'permissions.world',
+          'predicate',
+          'subjectId',
+        ].sort(),
+      );
+
+      const entFields = entDefs[0]!.definition.fields!;
+      expect(entFields[0]).toEqual({
         type: 'vector',
         path: 'identityEmbedding',
         numDimensions: 1536,
         similarity: 'cosine',
       });
+      const entFilterPaths = entFields
+        .filter((f): f is { type: 'filter'; path: string } => f.type === 'filter')
+        .map((f) => f.path)
+        .sort();
+      expect(entFilterPaths).toEqual(
+        [
+          'archived',
+          'groupId',
+          'ownerId',
+          'permissions.group',
+          'permissions.world',
+          'type',
+        ].sort(),
+      );
     });
 
     it('skips creation when index already present (idempotent)', async () => {
-      // First run seeds both indexes.
-      await adapter.ensureVectorSearchIndexes({ dimensions: 8, waitUntilReady: false });
+      await adapter.ensureVectorSearchIndexes({ dimensions: 8 });
       expect(factColl.createSearchIndexCalls).toHaveLength(1);
       expect(entColl.createSearchIndexCalls).toHaveLength(1);
 
-      // Second run must be a no-op for creation.
-      await adapter.ensureVectorSearchIndexes({ dimensions: 8, waitUntilReady: false });
+      await adapter.ensureVectorSearchIndexes({ dimensions: 8 });
       expect(factColl.createSearchIndexCalls).toHaveLength(1);
       expect(entColl.createSearchIndexCalls).toHaveLength(1);
     });
 
-    it('honors custom index names (factsIndexName / entitiesIndexName)', async () => {
+    it('honors explicit custom index names', async () => {
       await adapter.ensureVectorSearchIndexes({
         dimensions: 4,
         factsIndexName: 'custom_facts_idx',
         entitiesIndexName: 'custom_ents_idx',
-        waitUntilReady: false,
       });
       expect(factColl.createSearchIndexCalls[0]!.name).toBe('custom_facts_idx');
       expect(entColl.createSearchIndexCalls[0]!.name).toBe('custom_ents_idx');
     });
 
-    it('skips facts when factsIndexName is null', async () => {
-      await adapter.ensureVectorSearchIndexes({
-        dimensions: 4,
-        factsIndexName: null,
-        waitUntilReady: false,
+    it('defaults to adapter-configured names when caller omits them', async () => {
+      // Separate adapter constructed with custom index names — helper should
+      // pick those up instead of the literal defaults.
+      const entsCustom = new FakeMongoCollection<IEntity>('entities');
+      const factsCustom = new FakeMongoCollection<IFact>('facts');
+      const customAdapter = new MongoMemoryAdapter({
+        entities: entsCustom,
+        facts: factsCustom,
+        factsCollectionName: 'facts',
+        vectorIndexName: 'my_facts_idx',
+        entityVectorIndexName: 'my_ents_idx',
       });
+      try {
+        await customAdapter.ensureVectorSearchIndexes({ dimensions: 4 });
+        expect(factsCustom.createSearchIndexCalls[0]!.name).toBe('my_facts_idx');
+        expect(entsCustom.createSearchIndexCalls[0]!.name).toBe('my_ents_idx');
+      } finally {
+        customAdapter.destroy();
+      }
+    });
+
+    it('skips facts when factsIndexName is null', async () => {
+      await adapter.ensureVectorSearchIndexes({ dimensions: 4, factsIndexName: null });
       expect(factColl.createSearchIndexCalls).toHaveLength(0);
       expect(entColl.createSearchIndexCalls).toHaveLength(1);
     });
 
     it('accepts non-default similarity', async () => {
-      await adapter.ensureVectorSearchIndexes({
-        dimensions: 4,
-        similarity: 'dotProduct',
-        waitUntilReady: false,
-      });
+      await adapter.ensureVectorSearchIndexes({ dimensions: 4, similarity: 'dotProduct' });
       expect(
         (factColl.createSearchIndexCalls[0]!.definition.fields![0] as { similarity: string })
           .similarity,
       ).toBe('dotProduct');
     });
 
-    it('waits for queryable=true when waitUntilReady=true', async () => {
-      // Script lifecycle: first list = empty (triggers create), then PENDING,
-      // then READY. Each call consumes one snapshot.
-      factColl.searchIndexSequence = [
-        [], // list before create
-        [{ name: 'facts_vector', status: 'PENDING', queryable: false }],
-        [{ name: 'facts_vector', status: 'READY', queryable: true }],
-      ];
-      entColl.searchIndexSequence = [
-        [],
-        [{ name: 'entities_vector', status: 'PENDING', queryable: false }],
-        [{ name: 'entities_vector', status: 'READY', queryable: true }],
-      ];
-      await adapter.ensureVectorSearchIndexes({
-        dimensions: 4,
-        waitUntilReady: true,
-        readyPollMs: 1,
-        readyTimeoutMs: 5_000,
-      });
-      // Reached READY for both.
-      expect(factColl.listSearchIndexCalls).toBeGreaterThanOrEqual(3);
-      expect(entColl.listSearchIndexCalls).toBeGreaterThanOrEqual(3);
+    it('validates dimensions is a positive integer', async () => {
+      await expect(
+        adapter.ensureVectorSearchIndexes({ dimensions: 0 }),
+      ).rejects.toThrow(/positive integer/);
+      await expect(
+        adapter.ensureVectorSearchIndexes({ dimensions: -1 }),
+      ).rejects.toThrow(/positive integer/);
+      await expect(
+        adapter.ensureVectorSearchIndexes({ dimensions: 3.14 }),
+      ).rejects.toThrow(/positive integer/);
     });
 
-    it('throws when Atlas reports FAILED status', async () => {
-      factColl.searchIndexSequence = [
-        [], // before create
-        [{ name: 'facts_vector', status: 'FAILED', queryable: false }],
-      ];
+    it('absorbs concurrent-create race (createSearchIndex throws, index is present on retry)', async () => {
+      // Simulate: listSearchIndexes first call = empty → we try to create →
+      // another process already created it in the gap → create throws →
+      // we re-check → it's there → swallow.
+      const originalCreate = factColl.createSearchIndex.bind(factColl);
+      factColl.createSearchIndex = async (def) => {
+        // Populate the index state as if another process created it first,
+        // then throw a duplicate-name error.
+        await originalCreate(def);
+        throw new Error('Duplicate index name');
+      };
+      // Not throwing = race absorbed.
       await expect(
-        adapter.ensureVectorSearchIndexes({
-          dimensions: 4,
-          waitUntilReady: true,
-          readyPollMs: 1,
-          readyTimeoutMs: 2_000,
-          entitiesIndexName: null, // isolate to facts
-        }),
-      ).rejects.toThrow(/FAILED/);
+        adapter.ensureVectorSearchIndexes({ dimensions: 4, entitiesIndexName: null }),
+      ).resolves.toBeUndefined();
     });
 
-    it('times out with an actionable error', async () => {
-      // Never becomes queryable within the deadline.
-      factColl.searchIndexSequence = [[]]; // triggers create, then polls real state
+    it('rethrows genuine createSearchIndex failures (index NOT present on retry)', async () => {
+      factColl.createSearchIndex = async () => {
+        throw new Error('Atlas cluster unreachable');
+      };
       await expect(
-        adapter.ensureVectorSearchIndexes({
-          dimensions: 4,
-          waitUntilReady: true,
-          readyPollMs: 1,
-          readyTimeoutMs: 10,
-          entitiesIndexName: null,
-        }),
-      ).rejects.toThrow(/timed out/);
+        adapter.ensureVectorSearchIndexes({ dimensions: 4, entitiesIndexName: null }),
+      ).rejects.toThrow(/Atlas cluster unreachable/);
     });
   });
 

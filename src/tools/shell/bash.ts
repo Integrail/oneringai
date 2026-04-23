@@ -21,6 +21,10 @@ import {
   isBlockedCommand,
 } from './types.js';
 import { BackgroundProcessManager } from './BackgroundProcessManager.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
+
+/** Threshold (bytes) above which bash output triggers an operator warn log. */
+const LARGE_OUTPUT_WARN_BYTES = 1_000_000;
 
 /**
  * Arguments for the bash tool
@@ -177,6 +181,12 @@ GIT SAFETY:
         let stdout = '';
         let stderr = '';
         let killed = false;
+        // Rolling-buffer activation tracking: flipped to `true` if either
+        // stream exceeded `maxOutputSize * 2` and we sliced the head to
+        // preserve the tail. When set, the close handler reports
+        // `truncated: true` and logs a warn so the caller isn't left
+        // thinking they have full output.
+        let rollingBufferTruncated = false;
 
         // Helper to kill the entire process group (not just the shell).
         // Uses negative PID to signal the whole group created by detached: true.
@@ -206,9 +216,12 @@ GIT SAFETY:
         // Collect stdout
         childProcess.stdout.on('data', (data) => {
           stdout += data.toString();
-          // Prevent memory issues with huge outputs
+          // Process-memory safety: if output grows past 2× the cap, slice the
+          // head to keep the tail. Record the event so the caller sees
+          // `truncated: true` on the result (and the close handler warn-logs).
           if (stdout.length > mergedConfig.maxOutputSize * 2) {
             stdout = stdout.slice(-mergedConfig.maxOutputSize);
+            rollingBufferTruncated = true;
           }
         });
 
@@ -217,6 +230,7 @@ GIT SAFETY:
           stderr += data.toString();
           if (stderr.length > mergedConfig.maxOutputSize * 2) {
             stderr = stderr.slice(-mergedConfig.maxOutputSize);
+            rollingBufferTruncated = true;
           }
         });
 
@@ -250,15 +264,37 @@ GIT SAFETY:
         childProcess.on('close', (code, signal) => {
           const duration = Date.now() - startTime;
 
-          // Truncate output if needed
-          let truncated = false;
-          if (stdout.length > mergedConfig.maxOutputSize) {
-            stdout = stdout.slice(0, mergedConfig.maxOutputSize) + '\n... (output truncated)';
-            truncated = true;
-          }
-          if (stderr.length > mergedConfig.maxOutputSize) {
-            stderr = stderr.slice(0, mergedConfig.maxOutputSize) + '\n... (output truncated)';
-            truncated = true;
+          // No head-clip on close — the streaming rolling buffer above already
+          // bounds in-memory growth (preserves the TAIL). Reflect whether
+          // the rolling buffer actually fired so callers aren't misled
+          // into thinking they have the complete output.
+          const truncated = rollingBufferTruncated;
+          if (rollingBufferTruncated) {
+            logger.warn(
+              {
+                component: 'bash',
+                command,
+                stdoutBytes: stdout.length,
+                stderrBytes: stderr.length,
+                maxOutputSize: mergedConfig.maxOutputSize,
+              },
+              'bash output exceeded 2× maxOutputSize; head was discarded to preserve the tail (process-memory safeguard)',
+            );
+          } else if (
+            stdout.length >= LARGE_OUTPUT_WARN_BYTES ||
+            stderr.length >= LARGE_OUTPUT_WARN_BYTES
+          ) {
+            // Not a truncation — just a heads-up that a large payload is
+            // about to flow into the next LLM turn.
+            logger.warn(
+              {
+                component: 'bash',
+                command,
+                stdoutBytes: stdout.length,
+                stderrBytes: stderr.length,
+              },
+              'bash returned a large output; it will flow into the next LLM turn verbatim',
+            );
           }
 
           if (killed) {

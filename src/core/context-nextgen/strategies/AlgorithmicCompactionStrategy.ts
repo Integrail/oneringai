@@ -194,16 +194,35 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
     );
 
     if (remainingPairs.length > this.maxToolPairs) {
-      // Remove oldest pairs (they're sorted oldest first)
+      // Age-based eviction — oldest pairs first. When working memory is
+      // available, spill the content there before dropping the pair from
+      // context so the agent can still retrieve it via memory lookup.
+      // Without WM, we drop to stay under the pair cap; this is the only
+      // place in the path where content is genuinely unrecoverable, and it
+      // requires the host to deliberately disable WM.
       const toRemove = remainingPairs.slice(0, remainingPairs.length - this.maxToolPairs);
       for (const pair of toRemove) {
+        if (memory) {
+          const key = this.generateKey(pair.toolName, pair.toolUseId);
+          const desc = this.generateDescription(pair.toolName, pair.toolArgs, context);
+          await memory.store(key, desc, pair.resultContent, {
+            tier: 'raw',
+            priority: 'low',
+          });
+          log.push(
+            `Spilled aged tool pair to memory: ${pair.toolName} → ${key} (exceeds ${this.maxToolPairs} pair limit)`,
+          );
+        } else {
+          log.push(
+            `Dropped aged tool pair: ${pair.toolName} (exceeds ${this.maxToolPairs} pair limit, no working memory available)`,
+          );
+        }
         if (!indicesToRemove.includes(pair.toolUseIndex)) {
           indicesToRemove.push(pair.toolUseIndex);
         }
         if (!indicesToRemove.includes(pair.toolResultIndex)) {
           indicesToRemove.push(pair.toolResultIndex);
         }
-        log.push(`Removed old tool pair: ${pair.toolName} (exceeds ${this.maxToolPairs} pair limit)`);
       }
     }
 
@@ -327,62 +346,54 @@ export class AlgorithmicCompactionStrategy implements ICompactionStrategy {
    * falls back to generic key=value summary.
    */
   private generateDescription(toolName: string, toolArgs: unknown, context?: CompactionContext): string {
-    // Try tool's own describeCall first — produces rich descriptions like
-    // 'src/core/Agent.ts [lines 100-200]' or '"TODO|FIXME" in *.ts (src/)'
+    // Tool's own describeCall produces rich descriptions like
+    // 'src/core/Agent.ts [lines 100-200]' or '"TODO|FIXME" in *.ts (src/)'.
+    // Use it verbatim — the tool author decided how to describe its own call
+    // and we shouldn't second-guess that with a char cap.
     const toolDesc = context?.describeToolCall?.(toolName, toolArgs);
     if (toolDesc) {
-      const desc = `${toolName}: ${toolDesc}`;
-      return desc.length > 150 ? desc.slice(0, 147) + '...' : desc;
+      return `${toolName}: ${toolDesc}`;
     }
 
     // Fallback to generic arg summary
-    const argSummary = this.summarizeArgs(toolArgs, 120);
+    const argSummary = this.summarizeArgs(toolArgs);
     if (!argSummary) {
       return `Result of ${toolName}()`;
     }
-    const desc = `${toolName}(${argSummary})`;
-    return desc.length > 150 ? desc.slice(0, 147) + '...' : desc;
+    return `${toolName}(${argSummary})`;
   }
 
   /**
-   * Summarize arguments for description, limiting to maxLength chars.
+   * Summarize arguments for description. Full key=value rendering — the
+   * compaction placeholder needs to remain readable, not shorter-is-better.
    */
-  private summarizeArgs(args: unknown, maxLength: number): string {
+  private summarizeArgs(args: unknown): string {
     if (args === undefined || args === null) {
       return '';
     }
 
     try {
       if (typeof args === 'object') {
-        // For objects, show key=value pairs
         const entries = Object.entries(args as Record<string, unknown>);
         const parts: string[] = [];
-        let totalLen = 0;
 
         for (const [key, value] of entries) {
           let valueStr: string;
           if (typeof value === 'string') {
-            // Truncate long strings
-            valueStr = value.length > 30 ? `"${value.slice(0, 27)}..."` : `"${value}"`;
+            valueStr = `"${value}"`;
           } else if (typeof value === 'object' && value !== null) {
             valueStr = Array.isArray(value) ? `[${value.length} items]` : '{...}';
           } else {
             valueStr = String(value);
           }
 
-          const part = `${key}=${valueStr}`;
-          if (totalLen + part.length + 2 > maxLength) {
-            parts.push('...');
-            break;
-          }
-          parts.push(part);
-          totalLen += part.length + 2;
+          parts.push(`${key}=${valueStr}`);
         }
 
         return parts.join(', ');
       }
 
-      return String(args).slice(0, maxLength);
+      return String(args);
     } catch {
       return '...';
     }

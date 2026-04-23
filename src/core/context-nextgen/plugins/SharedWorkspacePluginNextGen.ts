@@ -476,11 +476,11 @@ export class SharedWorkspacePluginNextGen implements IContextPluginNextGen, ISto
       parts.push(`  tags: ${entry.tags.join(', ')}`);
     }
     if (entry.content) {
-      // Show inline content (truncated if long)
-      const preview = entry.content.length > 500
-        ? entry.content.substring(0, 500) + '... [truncated, use store_get for full content]'
-        : entry.content;
-      parts.push('```\n' + preview + '\n```');
+      // Full content — workspaces are shared between agents specifically so
+      // they can exchange substantive material; clipping at 500 chars
+      // defeated the point. Provider-level context-limit enforcement still
+      // acts as the model-ceiling backstop.
+      parts.push('```\n' + entry.content + '\n```');
     }
 
     return parts.join('\n');

@@ -68,6 +68,12 @@ const DEFAULT_TOP_FACTS_LIMIT = 15;
 const DEFAULT_SEMANTIC_TOP_K = 5;
 const DEFAULT_NEIGHBOR_DEPTH = 1;
 const DEFAULT_PROFILE_THRESHOLD = 3;
+/**
+ * Threshold (chars of estimated input) above which `regenerateProfile` emits
+ * an operator warn log. No cap is applied — the log is purely observability
+ * so large profiles don't cost a surprise without the operator knowing.
+ */
+const PROFILE_GEN_WARN_CHARS = 200_000;
 const DEFAULT_EMBED_CONCURRENCY = 4;
 const DEFAULT_EMBED_RETRIES = 3;
 const SEMANTIC_MIN_DETAILS_LENGTH = 80;
@@ -235,6 +241,7 @@ export class MemorySystem implements IDisposable {
   private readonly unknownPredicateFuzzyMaxDistance: number | undefined;
   private readonly _taskStates: TaskStatesConfig;
   private readonly _autoApplyTaskTransitions: boolean;
+  private readonly _stateHistoryCap: number;
   private readonly visibilityPolicy?: VisibilityPolicy;
 
   /** Tracks pending profile regenerations per (entityId + scopeKey) to prevent overlap. */
@@ -273,6 +280,7 @@ export class MemorySystem implements IDisposable {
     }
     this._taskStates = validateTaskStates(config.taskStates);
     this._autoApplyTaskTransitions = config.autoApplyTaskTransitions ?? true;
+    this._stateHistoryCap = validateStateHistoryCap(config.stateHistoryCap);
     this.visibilityPolicy = config.visibilityPolicy;
     // Fold registry ranking weights into the base ranking config. Caller-supplied
     // weights win on collision — user config always trumps registry defaults.
@@ -577,6 +585,21 @@ export class MemorySystem implements IDisposable {
     assertNotDestroyed(this, 'getEntities');
     if (ids.length === 0) return Promise.resolve([]);
     return this.store.getEntities(ids, scope);
+  }
+
+  /**
+   * Return every entity visible at `scope` whose identifier list contains
+   * `(kind, value)`. Thin pass-through to the store — exposed so callers that
+   * need to detect bootstrap duplicates (e.g. `MemoryPluginNextGen`) don't
+   * have to reach into `store` directly.
+   */
+  findEntitiesByIdentifier(
+    kind: string,
+    value: string,
+    scope: ScopeFilter,
+  ): Promise<IEntity[]> {
+    assertNotDestroyed(this, 'findEntitiesByIdentifier');
+    return this.store.findEntitiesByIdentifier(kind, value, scope);
   }
 
   /**
@@ -1679,7 +1702,10 @@ export class MemorySystem implements IDisposable {
    * Side effects (atomic from the caller's perspective, but read-modify-write
    * at the MemorySystem layer — adapters with native transactions may promote):
    *   - Sets `metadata.state = newState`.
-   *   - Appends `metadata.stateHistory: TaskStateHistoryEntry[]` (no library cap).
+   *   - Appends `metadata.stateHistory: TaskStateHistoryEntry[]`, keeping only
+   *     the most-recent `stateHistoryCap` entries (default 200). Older entries
+   *     drop in FIFO order — full audit history is still recoverable from the
+   *     `state_changed` facts themselves.
    *   - When `newState` is in `taskStates.terminal` AND `metadata.completedAt`
    *     is unset, sets `metadata.completedAt = at`.
    *   - Writes a `state_changed` fact with `value: { from, to }`, the provided
@@ -1764,7 +1790,12 @@ export class MemorySystem implements IDisposable {
     const priorHistory = Array.isArray(md.stateHistory)
       ? (md.stateHistory as TaskStateHistoryEntry[])
       : [];
-    const stateHistory = [...priorHistory, historyEntry];
+    // Cap retained entries so chatty tasks can't grow the entity document
+    // unbounded. Full audit history lives on the `state_changed` facts.
+    const cap = this._stateHistoryCap;
+    const retainedPrior =
+      priorHistory.length >= cap ? priorHistory.slice(priorHistory.length - (cap - 1)) : priorHistory;
+    const stateHistory = [...retainedPrior, historyEntry];
 
     const nextMetadata: Record<string, unknown> = {
       ...md,
@@ -1991,6 +2022,12 @@ export class MemorySystem implements IDisposable {
       { limit: 500, orderBy: { field: 'observedAt', direction: 'desc' } },
       readScope,
     );
+    // All newly-observed facts flow to the generator — no in-library
+    // truncation or token-budget drop. Modern generators have 200k–1M token
+    // input windows and can handle the full delta; the 500-item query cap
+    // above is already generous. If a specific host needs a tighter input
+    // (e.g. cost control on a small model), they can lower that cap via a
+    // future config knob. See feedback_no_truncation.md.
     const newFacts = newFactsPage.items;
 
     let invalidatedFactIds: FactId[] = [];
@@ -2016,6 +2053,25 @@ export class MemorySystem implements IDisposable {
       const directlyArchived = archivedPage.items.map((f) => f.id);
 
       invalidatedFactIds = Array.from(new Set([...supersededIds, ...directlyArchived]));
+    }
+
+    // Observability: surface when the generator input is unusually large so
+    // operators see cost/latency spikes. No cap is applied — policy is
+    // "warn and proceed" (see feedback_no_truncation.md). Estimate input
+    // chars as prior profile + sum of fact details/value/summary.
+    const estimatedInputChars = estimateProfileGenInputChars(priorProfile, newFacts);
+    if (estimatedInputChars >= PROFILE_GEN_WARN_CHARS) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[MemorySystem.regenerateProfile] large generator input',
+        {
+          entityId,
+          estimatedInputChars,
+          newFactsCount: newFacts.length,
+          priorProfileChars: priorProfile?.details?.length ?? 0,
+          invalidatedFactCount: invalidatedFactIds.length,
+        },
+      );
     }
 
     const { details, summaryForEmbedding } = await this.profileGenerator.generate({
@@ -2627,3 +2683,38 @@ function validateTaskStates(cfg: TaskStatesConfig | undefined): TaskStatesConfig
   }
   return { active: [...cfg.active], terminal: [...cfg.terminal] };
 }
+
+/** Default retained entries in `task.metadata.stateHistory`. */
+const DEFAULT_STATE_HISTORY_CAP = 200;
+
+function validateStateHistoryCap(v: number | undefined): number {
+  if (v === undefined) return DEFAULT_STATE_HISTORY_CAP;
+  if (!Number.isFinite(v) || !Number.isInteger(v) || v < 1) {
+    throw new Error(
+      `MemorySystem: stateHistoryCap must be a positive integer (got ${String(v)})`,
+    );
+  }
+  return v;
+}
+
+/**
+ * Estimate the char count that will be fed into the profile generator. Rough
+ * upper-bound: prior profile details + every new fact's details / stringified
+ * value / summary. Only used for the "large input" warn log — a slight
+ * over-estimate is harmless (errs on the side of warning).
+ */
+function estimateProfileGenInputChars(
+  priorProfile: IFact | undefined,
+  newFacts: readonly IFact[],
+): number {
+  let total = typeof priorProfile?.details === 'string' ? priorProfile.details.length : 0;
+  for (const f of newFacts) {
+    if (typeof f.details === 'string') total += f.details.length;
+    if (typeof f.summaryForEmbedding === 'string') total += f.summaryForEmbedding.length;
+    if (f.value !== undefined && f.value !== null) {
+      total += typeof f.value === 'string' ? f.value.length : JSON.stringify(f.value).length;
+    }
+  }
+  return total;
+}
+

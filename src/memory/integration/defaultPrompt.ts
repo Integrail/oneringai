@@ -28,10 +28,11 @@ export function defaultProfilePrompt(ctx: PromptContext): string {
     .map((i) => `${i.kind}=${i.value}`)
     .join(', ');
 
-  const factLines = newFacts
-    .slice(0, 100)
-    .map((f) => renderFactLine(f))
-    .join('\n');
+  // No per-prompt cap on newFacts — upstream `MemorySystem.regenerateProfile`
+  // already bounds the query at 500 facts by recency, and modern generators
+  // handle the full delta without issue. Clipping here silently dropped
+  // tail facts from the profile update.
+  const factLines = newFacts.map((f) => renderFactLine(f)).join('\n');
 
   const priorSection = priorProfile?.details
     ? `\n## Previous Profile (authoritative starting point)\n${priorProfile.details}\n\n(This is what we already know. Evolve it — fold in the new observations below, preserve what hasn't changed, stay concise.)`
@@ -83,24 +84,23 @@ Output ONLY the JSON object. No surrounding prose, no code fences.`;
 }
 
 function renderFactLine(f: IFact): string {
+  // No per-field truncation — the generator model needs the full `details` /
+  // `value` to produce an accurate profile. Previously clipped details at 160
+  // chars and value at 80 chars, which routinely cut nuances mid-sentence.
   const scope =
     f.groupId || f.ownerId ? ` [${[f.groupId, f.ownerId].filter(Boolean).join('/')}]` : '';
   const conf = typeof f.confidence === 'number' ? ` (conf=${f.confidence.toFixed(2)})` : '';
   const when = f.observedAt ? ` @${f.observedAt.toISOString().slice(0, 10)}` : '';
   const payload =
     f.details && f.details.length > 0
-      ? truncate(f.details, 160)
+      ? f.details
       : f.objectId
         ? `→ ${f.objectId}`
         : f.value !== undefined
-          ? `= ${JSON.stringify(f.value).slice(0, 80)}`
+          ? `= ${JSON.stringify(f.value)}`
           : '';
   const supersedes = f.supersedes ? ` supersedes=${f.supersedes}` : '';
   return `- [${f.id}] ${f.predicate}: ${payload}${scope}${conf}${when}${supersedes}`;
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : s.slice(0, n - 1) + '…';
 }
 
 function describeScope(scope: { groupId?: string; ownerId?: string }): string {

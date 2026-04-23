@@ -129,13 +129,26 @@ describe('ConnectorProfileGenerator', () => {
       });
     });
 
-    it('uses default temperature 0.3 and maxOutputTokens 1200', async () => {
+    it('uses default temperature 0.3 and leaves maxOutputTokens unset (no cap)', async () => {
       const mock = makeMockAgent(JSON.stringify({ details: 'd', summaryForEmbedding: 's' }));
       const gen = ConnectorProfileGenerator.withAgent({ agent: mock as never });
       await gen.generate(makeInput());
       expect(mock.runDirect).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({ temperature: 0.3, maxOutputTokens: 1200 }),
+        expect.objectContaining({ temperature: 0.3, maxOutputTokens: undefined }),
+      );
+    });
+
+    it('passes through caller-supplied maxOutputTokens verbatim', async () => {
+      const mock = makeMockAgent(JSON.stringify({ details: 'd', summaryForEmbedding: 's' }));
+      const gen = ConnectorProfileGenerator.withAgent({
+        agent: mock as never,
+        maxOutputTokens: 4096,
+      });
+      await gen.generate(makeInput());
+      expect(mock.runDirect).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ temperature: 0.3, maxOutputTokens: 4096 }),
       );
     });
 
@@ -188,10 +201,14 @@ describe('parseProfileResponse', () => {
     expect(parsed.details).toContain('Prior profile');
   });
 
-  it('synthesizes summary from details via first ~80 words', () => {
+  it('fallback summary is the full plain text (no 80-word cap)', () => {
     const raw = 'Alice is an engineer. '.repeat(100); // ~300 words
     const parsed = parseProfileResponse(raw, ent, undefined);
-    expect(parsed.summaryForEmbedding.split(' ').length).toBeLessThanOrEqual(80);
+    // No cap: the fallback summary preserves the whole text, trusting the
+    // embedder to handle its own input budget. Truncating here silently
+    // threw away content the embedder could have used.
+    expect(parsed.summaryForEmbedding.split(' ').length).toBeGreaterThan(80);
+    expect(parsed.summaryForEmbedding).toContain('Alice is an engineer');
   });
 
   // ── parseJsonPermissive integration (robust against LLM drift) ──

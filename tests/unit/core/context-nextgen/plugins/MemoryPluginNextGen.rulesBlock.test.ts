@@ -93,7 +93,7 @@ describe('MemoryPluginNextGen — rules block', () => {
     expect(out).not.toContain(`[${deadId}]`);
   });
 
-  it('truncates long rules with an ellipsis', async () => {
+  it('renders long rules in full (no char cap on rule bodies)', async () => {
     const plugin = new MemoryPluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
     await plugin.getContent();
     const { agentEntityId } = plugin.getBootstrappedIds();
@@ -101,11 +101,11 @@ describe('MemoryPluginNextGen — rules block', () => {
     await seedRule(mem, agentEntityId!, long);
 
     const out = (await plugin.getContent())!;
-    // Block present, but the rule body is clipped.
+    // Block present AND the rule body is rendered verbatim — no ellipsis,
+    // no silent clip of user-authored behavior directives.
     expect(out).toMatch(/User-specific instructions for this agent/);
-    expect(out).toContain('…');
-    // Not the full 1000 chars.
-    expect(out.length).toBeLessThan(2000);
+    expect(out).toContain(long);
+    expect(out).not.toContain('…');
   });
 
   it('block appears BEFORE the user profile block (directives take priority)', async () => {

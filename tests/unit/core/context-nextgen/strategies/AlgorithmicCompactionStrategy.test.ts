@@ -447,11 +447,10 @@ describe('AlgorithmicCompactionStrategy', () => {
       expect(description).toContain('/src/Agent.ts');
     });
 
-    it('should truncate long descriptions', async () => {
+    it('renders long descriptions verbatim (no 150-char cap)', async () => {
       const mockMemory = createMockWorkingMemory();
       const largeResult = 'x'.repeat(2000);
 
-      // Create args with very long values
       const longArgs = {
         path: '/very/long/path/'.repeat(20),
         content: 'x'.repeat(500),
@@ -468,7 +467,12 @@ describe('AlgorithmicCompactionStrategy', () => {
       await strategy.consolidate(context);
 
       const description = mockMemory.store.mock.calls[0][1];
-      expect(description.length).toBeLessThanOrEqual(150);
+      // Full arg content preserved — hosts that want a short description
+      // should pass an explicit `describeToolCall`, not rely on silent
+      // library-level clipping.
+      expect(description.length).toBeGreaterThan(150);
+      expect(description).toContain('write_file');
+      expect(description).toContain('/very/long/path/');
     });
   });
 

@@ -229,11 +229,16 @@ ${content}
 
 Provide the summary:`;
 
+    // No output cap — the prompt already instructs the model on a target
+    // length. A hardcoded `max_output_tokens` fallback silently cut off
+    // summaries that needed to run a bit longer. Let the model respect the
+    // prompt target; if it overshoots the target materially the worst-case
+    // is a slightly longer summary, not a corrupted/clipped one. See
+    // feedback_no_output_limits.md.
     const response = await this.config.textProvider.generate({
       model: this.config.model || 'gpt-4o-mini', // Use a fast, cheap model for summarization
       input: prompt,
       temperature: this.config.temperature,
-      max_output_tokens: maxSummaryTokens + 100, // Allow some buffer
     });
 
     return response.output_text || content;

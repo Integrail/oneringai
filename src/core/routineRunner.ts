@@ -563,10 +563,13 @@ async function injectRoutineContext(
       await wmPlugin.store(depKey, depLabel, output, { tier: 'findings' });
       workingMemoryDeps.push(depTask.name);
     } else if (icmPlugin) {
-      // No WM available, truncate and put in ICM
-      const truncated = output.slice(0, 20000) + '\n... (truncated, full result not available)';
-      icmPlugin.set(depKey, depLabel, truncated, 'high');
-      inContextDeps.push(depTask.name + ' (truncated)');
+      // No WM available — store full output in ICM. ICM's own eviction policy
+      // (priority-based, configurable) handles overflow; silent truncation
+      // here was dropping tail content the next task needed. Large dependency
+      // results ideally go through WM (branch above); hosts that care about
+      // ICM size should enable WM. See feedback_no_truncation.md.
+      icmPlugin.set(depKey, depLabel, output, 'high');
+      inContextDeps.push(depTask.name);
     }
   }
 

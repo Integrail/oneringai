@@ -1,11 +1,13 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 2** — bump this number whenever the prompt surface changes
- * materially so callers pinning snapshots notice. v2 added:
- *   - "## Parsimony" section (zero-fact is valid, expected fact counts, neg/pos example)
- *   - Metadata-on-mentions for task/event structural fields
- *   - State-change routing guidance (single `state_changed` fact; no separate attrs)
+ * **Prompt version: 4** — bump this number whenever the prompt surface changes
+ * materially so callers pinning snapshots notice.
+ *   - v4: nonce-wrapped `<signal_content_*>` delimiters (prompt-injection defense).
+ *   - v3: closed predicate vocabulary warning when a registry is present.
+ *   - v2: "## Parsimony" section (zero-fact is valid, expected fact counts, neg/pos example);
+ *         metadata-on-mentions for task/event structural fields;
+ *         state-change routing guidance (single `state_changed` fact; no separate attrs).
  *
  * The LLM is instructed to return JSON with:
  *   - `mentions`: map of local labels → entity surface forms (+ optional metadata)
@@ -20,7 +22,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 3;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 4;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, ScopeFields } from '../types.js';
@@ -85,6 +87,12 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
   const scopeDescription = describeScope(targetScope ?? {});
   const preResolvedSection = renderPreResolvedBindings(preResolvedBindings);
   const knownSection = renderKnownEntities(knownEntities);
+  // Nonce-wrapped delimiters prevent signal-body injection. A raw `</signal_content>`
+  // inside an attacker-controlled email body would otherwise close the tag and let
+  // the rest of the body read as prompt instructions.
+  const nonce = makeNonce();
+  const openTag = `signal_content_${nonce}`;
+  const closeTag = `/signal_content_${nonce}`;
   // v3 (H5): when a registry is present, explicitly tell the LLM the
   // vocabulary is closed. The server still applies a fuzzy-mapping fallback
   // for near-misses, but the instruction here prevents most drift from ever
@@ -105,9 +113,9 @@ Your output populates a knowledge graph of entities (people, organizations, task
 ${source}Reference date: ${referenceDate.toISOString().slice(0, 10)}
 Target scope: ${scopeDescription}
 
-<signal_content>
+<${openTag}>
 ${signalText}
-</signal_content>
+<${closeTag}>
 ${preResolvedSection}${knownSection}
 
 ## Output format
@@ -333,4 +341,11 @@ function formatDateMaybe(v: unknown): string {
   if (typeof v === 'string') return v;
   if (typeof v === 'number') return new Date(v).toISOString().slice(0, 16) + 'Z';
   return String(v);
+}
+
+/** Short random token — makes delimiter tags unguessable so attacker-controlled
+ *  signal text cannot close them. Not a security boundary on its own; the
+ *  prompt still leans on the model following instructions. */
+function makeNonce(): string {
+  return Math.random().toString(36).slice(2, 10);
 }

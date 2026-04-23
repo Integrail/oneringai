@@ -23,7 +23,11 @@ export interface ConnectorProfileGeneratorConfig {
   promptTemplate?: (ctx: PromptContext) => string;
   /** Temperature for generation. Default 0.3 (tighter, more factual). */
   temperature?: number;
-  /** Max output tokens. Default 1200 (room for ~600-word markdown + summary). */
+  /**
+   * Max output tokens. Default: undefined — use the model's own ceiling,
+   * which is always the maximum it can emit. Hardcoded defaults silently
+   * truncate profile generation. See feedback_no_output_limits.md.
+   */
   maxOutputTokens?: number;
 }
 
@@ -31,7 +35,7 @@ export class ConnectorProfileGenerator implements IProfileGenerator {
   private readonly agent: Agent;
   private readonly promptFn: (ctx: PromptContext) => string;
   private readonly temperature: number;
-  private readonly maxOutputTokens: number;
+  private readonly maxOutputTokens: number | undefined;
 
   constructor(config: ConnectorProfileGeneratorConfig) {
     this.agent = Agent.create({
@@ -41,7 +45,7 @@ export class ConnectorProfileGenerator implements IProfileGenerator {
     });
     this.promptFn = config.promptTemplate ?? defaultProfilePrompt;
     this.temperature = config.temperature ?? 0.3;
-    this.maxOutputTokens = config.maxOutputTokens ?? 1200;
+    this.maxOutputTokens = config.maxOutputTokens;
   }
 
   /**
@@ -61,12 +65,12 @@ export class ConnectorProfileGenerator implements IProfileGenerator {
       agent: { runDirect: Agent['runDirect']; destroy: Agent['destroy'] };
       promptFn: (ctx: PromptContext) => string;
       temperature: number;
-      maxOutputTokens: number;
+      maxOutputTokens: number | undefined;
     };
     bag.agent = args.agent;
     bag.promptFn = args.promptTemplate ?? defaultProfilePrompt;
     bag.temperature = args.temperature ?? 0.3;
-    bag.maxOutputTokens = args.maxOutputTokens ?? 1200;
+    bag.maxOutputTokens = args.maxOutputTokens;
     return instance;
   }
 
@@ -104,6 +108,12 @@ export function parseProfileResponse(
   // commas, single quotes, etc. `details` is in the default strip list so if
   // the LLM's verbatim narrative breaks escape rules the field is nulled and
   // we fall through to the markdown-passthrough fallback below.
+  //
+  // No size cap on `details` / `summaryForEmbedding` — library must not
+  // silently truncate the LLM's output. Hosts that need a bound should
+  // configure `maxOutputTokens` on the generator (at which point the model
+  // itself stops at that boundary, audibly, rather than us slicing after).
+  // See feedback_no_output_limits.md / feedback_no_truncation.md.
   let parsed: unknown = null;
   if (raw && raw.trim().length > 0) {
     try {
@@ -125,11 +135,15 @@ export function parseProfileResponse(
     };
   }
 
-  // Fallback — treat the raw text as markdown, synthesize a summary from it.
+  // Fallback — treat the raw text as markdown. When the LLM skipped the
+  // structured format we use the full text as BOTH details and embedding
+  // summary; the embedder's own token ceiling is the only place where
+  // length ever bounds things, and it surfaces overflow as a real error
+  // rather than a silent clip.
   const cleaned = raw.trim();
   const details = cleaned.length > 0 ? cleaned : fallbackDetails(entity, priorProfile);
-  const summaryForEmbedding = deriveSummary(details);
-  return { details, summaryForEmbedding };
+  const plainText = details.replace(/^#+\s+/gm, '').replace(/\s+/g, ' ').trim();
+  return { details, summaryForEmbedding: plainText };
 }
 
 function fallbackDetails(entity: IEntity, prior: IFact | undefined): string {
@@ -137,11 +151,4 @@ function fallbackDetails(entity: IEntity, prior: IFact | undefined): string {
     prior?.details ??
     `# ${entity.displayName}\n\n${entity.type}. Profile generation returned no content.`
   );
-}
-
-function deriveSummary(details: string): string {
-  // First ~80 words, stripped of markdown headers.
-  const plain = details.replace(/^#+\s+/gm, '').replace(/\s+/g, ' ').trim();
-  const words = plain.split(' ').slice(0, 80);
-  return words.join(' ');
 }

@@ -18,6 +18,10 @@ import {
   githubFetch,
   formatGitHubToolError,
 } from './types.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
+
+/** Threshold (chars) above which github read_file emits an operator warn log. */
+const LARGE_GH_READ_WARN_CHARS = 1_000_000;
 
 /**
  * Arguments for the GitHub read_file tool
@@ -169,17 +173,31 @@ NOTE: Files larger than 1MB are fetched via the Git Blob API. Very large files (
         const endIndex = Math.min(totalLines, startIndex + limit);
         const selectedLines = allLines.slice(startIndex, endIndex);
 
-        // Format with line numbers (matching filesystem readFile format)
+        // Format with line numbers — no per-line cap; line-based offset/limit
+        // is the pagination surface. Matches the filesystem readFile change.
         const lineNumberWidth = String(endIndex).length;
         const formattedLines = selectedLines.map((line, i) => {
           const lineNum = startIndex + i + 1;
           const paddedNum = String(lineNum).padStart(lineNumberWidth, ' ');
-          const truncatedLine = line.length > 2000 ? line.substring(0, 2000) + '...' : line;
-          return `${paddedNum}\t${truncatedLine}`;
+          return `${paddedNum}\t${line}`;
         });
 
         const truncated = endIndex < totalLines;
         const result = formattedLines.join('\n');
+
+        if (result.length >= LARGE_GH_READ_WARN_CHARS) {
+          logger.warn(
+            {
+              component: 'github_read_file',
+              repository: args.repository,
+              path: args.path,
+              chars: result.length,
+              lines: selectedLines.length,
+              fileBytes: fileSize,
+            },
+            'github_read_file returned a large payload; it will flow into the next LLM turn verbatim',
+          );
+        }
 
         return {
           success: true,

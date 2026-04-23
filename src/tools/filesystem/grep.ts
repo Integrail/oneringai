@@ -147,17 +147,21 @@ async function searchFile(
       regex.lastIndex = 0; // Reset regex state
 
       if (regex.test(line)) {
+        // Full line content — don't clip. Long lines (minified JS, lock files,
+        // SQL dumps) are exactly the kind of lines callers often want to see
+        // in full when debugging. If sheer count is the concern, the caller
+        // should tighten the regex, not rely on us to silently clip.
         const match: GrepMatch = {
           file: filePath,
           line: i + 1,
-          content: line.length > 500 ? line.substring(0, 500) + '...' : line,
+          content: line,
         };
 
-        // Add context if requested
+        // Add context if requested — again, full lines.
         if (contextBefore > 0 || contextAfter > 0) {
           match.context = {
-            before: lines.slice(Math.max(0, i - contextBefore), i).map(l => l.length > 200 ? l.substring(0, 200) + '...' : l),
-            after: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextAfter)).map(l => l.length > 200 ? l.substring(0, 200) + '...' : l),
+            before: lines.slice(Math.max(0, i - contextBefore), i),
+            after: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextAfter)),
           };
         }
 

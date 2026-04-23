@@ -40,7 +40,6 @@ import type {
   MongoFilter,
   MongoSort,
   SearchIndexDefinition,
-  SearchIndexInfo,
 } from './IMongoCollectionLike.js';
 import { mergeFilters, scopeToFilter } from './scopeFilter.js';
 import { ensureIndexes } from './indexes.js';
@@ -750,46 +749,68 @@ export class MongoMemoryAdapter implements IMemoryStore {
    *     (both bundled wrappers do; custom wrappers may need updating).
    *
    * Idempotent — re-running is safe: existing indexes with the configured
-   * name are detected via `listSearchIndexes` and skipped. If
-   * `waitUntilReady` is true, polls each created index until `queryable: true`
-   * or timeout.
+   * name are detected via `listSearchIndexes` and skipped. Concurrent-create
+   * races (two migrations running at once) are absorbed: if
+   * `createSearchIndex` fails but the index is present on re-check, we
+   * treat it as "another process won" and continue.
    *
-   * The adapter's `vectorIndexName` / `entityVectorIndexName` options must
-   * match the `factsIndexName` / `entitiesIndexName` used here, otherwise
-   * runtime queries won't hit the index.
+   * Fire-and-forget: returns as soon as Atlas accepts the create request.
+   * The index builds asynchronously on Atlas (30–60s typical). Runs during
+   * startup migrations, so the index is ready well before real traffic.
+   * The typical first query lands minutes after the migration, not seconds —
+   * no readiness wait needed.
+   *
+   * **Index names come from the adapter's config by default.** If the adapter
+   * was constructed with `vectorIndexName: 'custom_facts'` (or
+   * `entityVectorIndexName: 'custom_entities'`), this helper creates indexes
+   * under those names automatically. Callers can still override via
+   * `factsIndexName` / `entitiesIndexName`, but the default is the safe
+   * choice — runtime queries and helper output always agree.
+   *
+   * **Filter fields are auto-declared in the index definition.** Atlas
+   * `$vectorSearch` silently ignores `filter` clauses whose paths aren't
+   * declared as `type: 'filter'` in the index. We declare scope + archived
+   * + discriminator paths for both collections so scope enforcement works
+   * on the `$vectorSearch` fast path. See the field lists in
+   * `FACTS_FILTER_PATHS` / `ENTITIES_FILTER_PATHS` below — manual Atlas-UI
+   * creators must match or the filter is silently ignored (scope bypass).
    */
   async ensureVectorSearchIndexes(opts: {
-    /** Embedding dimensionality — MUST match your embedder. Fixed per-index. */
+    /** Embedding dimensionality — MUST match your embedder. Must be a positive integer. */
     dimensions: number;
     /** Default: 'cosine'. Match the similarity your embedder was trained for. */
     similarity?: 'cosine' | 'dotProduct' | 'euclidean';
     /**
-     * Atlas index name for facts. Default: 'facts_vector'. Must match
-     * `vectorIndexName` on this adapter for runtime queries to use it.
-     * Pass `null` to skip the facts index entirely.
+     * Atlas index name for facts. Default: the adapter's own `vectorIndexName`
+     * option, or `'facts_vector'` when that's also unset. Pass `null` to skip
+     * the facts index entirely.
      */
     factsIndexName?: string | null;
     /**
-     * Atlas index name for entities. Default: 'entities_vector'. Must match
-     * `entityVectorIndexName` on this adapter. Pass `null` to skip.
+     * Atlas index name for entities. Default: the adapter's own
+     * `entityVectorIndexName` option, or `'entities_vector'` when unset.
+     * Pass `null` to skip.
      */
     entitiesIndexName?: string | null;
-    /** Poll until queryable=true. Default: true. */
-    waitUntilReady?: boolean;
-    /** Poll timeout when `waitUntilReady`. Default: 120000 (2 min). */
-    readyTimeoutMs?: number;
-    /** Poll interval when `waitUntilReady`. Default: 2000 (2s). */
-    readyPollMs?: number;
   }): Promise<void> {
     this.assertLive();
+    if (!Number.isInteger(opts.dimensions) || opts.dimensions <= 0) {
+      throw new Error(
+        `ensureVectorSearchIndexes: dimensions must be a positive integer (got ${String(opts.dimensions)})`,
+      );
+    }
     const similarity = opts.similarity ?? 'cosine';
-    const waitUntilReady = opts.waitUntilReady ?? true;
-    const readyTimeoutMs = opts.readyTimeoutMs ?? 120_000;
-    const readyPollMs = opts.readyPollMs ?? 2_000;
 
-    const factsName = opts.factsIndexName === undefined ? 'facts_vector' : opts.factsIndexName;
+    // Name resolution: explicit arg > adapter config > literal default.
+    // `null` explicitly skips; `undefined` falls through to adapter config.
+    const factsName =
+      opts.factsIndexName === undefined
+        ? (this.vectorIndexName ?? 'facts_vector')
+        : opts.factsIndexName;
     const entitiesName =
-      opts.entitiesIndexName === undefined ? 'entities_vector' : opts.entitiesIndexName;
+      opts.entitiesIndexName === undefined
+        ? (this.entityVectorIndexName ?? 'entities_vector')
+        : opts.entitiesIndexName;
 
     if (factsName !== null) {
       await ensureOneVectorSearchIndex({
@@ -798,9 +819,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
         path: 'embedding',
         dimensions: opts.dimensions,
         similarity,
-        waitUntilReady,
-        readyTimeoutMs,
-        readyPollMs,
+        filterPaths: FACTS_FILTER_PATHS,
       });
     }
     if (entitiesName !== null) {
@@ -810,9 +829,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
         path: 'identityEmbedding',
         dimensions: opts.dimensions,
         similarity,
-        waitUntilReady,
-        readyTimeoutMs,
-        readyPollMs,
+        filterPaths: ENTITIES_FILTER_PATHS,
       });
     }
   }
@@ -1065,23 +1082,63 @@ function entitySemanticFilterToMongo(filter: EntitySemanticSearchFilter): MongoF
 // Atlas Vector Search index management
 // =============================================================================
 
+/**
+ * Filter paths declared as `type:'filter'` in the entities vector-search
+ * index. Any path that `$vectorSearch.filter` might reference MUST be here,
+ * otherwise Atlas silently ignores the filter clause — a scope bypass.
+ *
+ * Derived from `scopeToFilter` (scope + permission enforcement),
+ * `ARCHIVED_HIDDEN`, and `entitySemanticFilterToMongo` (type narrow).
+ */
+const ENTITIES_FILTER_PATHS: readonly string[] = [
+  'groupId',
+  'ownerId',
+  'permissions.group',
+  'permissions.world',
+  'archived',
+  'type',
+];
+
+/**
+ * Filter paths declared as `type:'filter'` in the facts vector-search index.
+ * Derived from `scopeToFilter`, `ARCHIVED_HIDDEN`, and the subset of
+ * `factFilterToMongo` paths commonly passed to `$vectorSearch.filter`
+ * (subject, object, predicate, kind). Temporal filters (`createdAt`,
+ * `validFrom`, `validUntil`) are post-filtered by MemorySystem rather than
+ * pushed into the vector pipeline, so they're omitted here.
+ */
+const FACTS_FILTER_PATHS: readonly string[] = [
+  'groupId',
+  'ownerId',
+  'permissions.group',
+  'permissions.world',
+  'archived',
+  'subjectId',
+  'objectId',
+  'predicate',
+  'kind',
+];
+
 interface EnsureVectorIndexArgs {
   collection: IMongoCollectionLike<{ id: string }>;
   name: string;
   path: string;
   dimensions: number;
   similarity: 'cosine' | 'dotProduct' | 'euclidean';
-  waitUntilReady: boolean;
-  readyTimeoutMs: number;
-  readyPollMs: number;
+  filterPaths: readonly string[];
 }
 
 /**
  * Ensure a single Atlas Vector Search index exists on a collection.
  * - List existing indexes; if our name is present, skip creation.
- * - Otherwise create with the given path/dimensions/similarity.
- * - If `waitUntilReady`, poll until the index reports `queryable: true` or
- *   the timeout elapses.
+ * - Otherwise create with the given path/dimensions/similarity plus the
+ *   filter paths declared in `filterPaths`.
+ * - Concurrent-create races are absorbed: if `createSearchIndex` throws but
+ *   the index shows up on re-check, another process won — continue.
+ *
+ * Fire-and-forget: returns as soon as Atlas accepts the create request. The
+ * index builds asynchronously on Atlas (30–60s typical); runs during
+ * startup migrations so it's ready well before real traffic arrives.
  *
  * Throws if the wrapper does not implement `createSearchIndex` /
  * `listSearchIndexes` (non-Atlas Mongo, older driver, custom wrapper).
@@ -1105,41 +1162,21 @@ async function ensureOneVectorSearchIndex(args: EnsureVectorIndexArgs): Promise<
           numDimensions: args.dimensions,
           similarity: args.similarity,
         },
+        ...args.filterPaths.map((path) => ({ type: 'filter' as const, path })),
       ],
     },
   };
 
   const existing = await collection.listSearchIndexes(name);
-  const present = existing.find((i) => i.name === name);
-  if (!present) {
-    await collection.createSearchIndex(definition);
-  }
-  if (!args.waitUntilReady) return;
-  await waitForSearchIndexReady(collection, name, args.readyTimeoutMs, args.readyPollMs);
-}
+  if (existing.some((i) => i.name === name)) return;
 
-async function waitForSearchIndexReady(
-  collection: IMongoCollectionLike<{ id: string }>,
-  name: string,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<void> {
-  if (!collection.listSearchIndexes) return;
-  const deadline = Date.now() + timeoutMs;
-  let last: SearchIndexInfo | undefined;
-  while (Date.now() < deadline) {
-    const rows = await collection.listSearchIndexes(name);
-    last = rows.find((i) => i.name === name);
-    if (last && last.queryable) return;
-    if (last && last.status === 'FAILED') {
-      throw new Error(
-        `ensureVectorSearchIndexes: Atlas reported index '${name}' as FAILED. Inspect the latest definition and recreate.`,
-      );
-    }
-    await new Promise((r) => setTimeout(r, pollMs));
+  try {
+    await collection.createSearchIndex(definition);
+  } catch (err) {
+    // Concurrent-create race: another process may have created this index
+    // in the gap between our listSearchIndexes and createSearchIndex calls.
+    // Re-check — if it's there, absorb the error. Otherwise rethrow.
+    const retry = await collection.listSearchIndexes(name);
+    if (!retry.some((i) => i.name === name)) throw err;
   }
-  throw new Error(
-    `ensureVectorSearchIndexes: timed out after ${timeoutMs}ms waiting for index '${name}' to become queryable ` +
-      `(last status: ${last?.status ?? 'UNKNOWN'}). Index build is async on Atlas; try increasing readyTimeoutMs.`,
-  );
 }

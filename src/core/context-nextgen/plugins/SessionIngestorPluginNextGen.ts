@@ -77,12 +77,22 @@ export interface SessionIngestorPluginConfig {
 
   /** Sampling temp for the extractor/merger agent. Default 0.2. */
   temperature?: number;
-  /** Max output tokens per LLM call. Default 2000. */
+  /**
+   * Max output tokens per LLM call. Default: undefined — the provider uses the
+   * model's own ceiling, which is always the maximum the model can emit.
+   * Set explicitly only when cost control on ambient extraction matters more
+   * than extraction completeness. See feedback_no_output_limits.md.
+   */
   maxOutputTokens?: number;
 
   /**
-   * Maximum characters of transcript sent to the extractor per run. Older
-   * messages are truncated from the head when over budget. Default 20_000.
+   * Maximum characters of transcript sent to the extractor per run. When the
+   * backlog exceeds this, older messages are deferred to subsequent hook
+   * invocations (not lost — the watermark stays at the last message that fit).
+   * Default 1_000_000 (≈ 250 K tokens at 4 chars/token) — fits every current
+   * cheap-tier extractor model (Haiku 4.5 / gpt-5-mini / Gemini 2.5 Flash)
+   * with substantial headroom. The default is deliberately high so the
+   * "defer to next turn" path is a safety net, not a daily occurrence.
    */
   maxTranscriptChars?: number;
 
@@ -122,7 +132,7 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
   private readonly model: string;
   private readonly diligence: SessionIngestorDiligence;
   private readonly temperature: number;
-  private readonly maxOutputTokens: number;
+  private readonly maxOutputTokens: number | undefined;
   private readonly maxTranscriptChars: number;
   private readonly minBatchMessages: number;
 
@@ -165,8 +175,10 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
     this.model = config.model;
     this.diligence = config.diligence ?? 'normal';
     this.temperature = config.temperature ?? 0.2;
-    this.maxOutputTokens = config.maxOutputTokens ?? 2000;
-    this.maxTranscriptChars = config.maxTranscriptChars ?? 20_000;
+    // No default — hardcoded output limits silently truncate LLM responses.
+    // See feedback_no_output_limits.md.
+    this.maxOutputTokens = config.maxOutputTokens;
+    this.maxTranscriptChars = config.maxTranscriptChars ?? 1_000_000;
     // Clamp to at least 1 — below 1 makes no sense and breaks threshold checks.
     this.minBatchMessages = Math.max(1, config.minBatchMessages ?? 6);
   }
@@ -736,9 +748,12 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
   private async mergeDetails(oldDetails: string, newDetails: string): Promise<string> {
     const prompt = buildMergePrompt(oldDetails, newDetails);
     const agent = await this.ensureLlmAgent();
+    // No output cap — use whatever the caller configured (or the model's
+    // own default when unset). Previously capped at min(maxOutputTokens, 800)
+    // which silently truncated merged narratives. See feedback_no_output_limits.md.
     const response = await agent.runDirect(prompt, {
       temperature: this.temperature,
-      maxOutputTokens: Math.min(this.maxOutputTokens, 800),
+      maxOutputTokens: this.maxOutputTokens,
     });
     return (response.output_text ?? '').trim();
   }
@@ -834,10 +849,11 @@ function findLastMessageIdWithId(messages: ReadonlyArray<unknown>): string | nul
   return null;
 }
 
-/** Max chars of serialized tool-call args rendered into the transcript. */
-const TOOL_CALL_ARGS_MAX_CHARS = 500;
-/** Max chars of serialized tool-result payload rendered into the transcript. */
-const TOOL_RESULT_MAX_CHARS = 240;
+// Per-item caps on tool-call args / tool-result payloads REMOVED — the outer
+// `maxTranscriptChars` budget (default 1M chars) already provides backpressure
+// on transcript size, and the prior 500/240 char caps silently clipped the
+// extractor's view of what the agent actually did, hurting dedup quality.
+// See feedback_no_truncation.md.
 
 /**
  * Best-effort render of a conversation message to plain text. Exported for
@@ -875,24 +891,23 @@ export function renderMessage(m: unknown): string {
 }
 
 /**
- * Render a tool call with truncated JSON args so the extractor can see what
- * has already been captured — critical for dedup against the background
- * extraction pipeline. Args are truncated at `TOOL_CALL_ARGS_MAX_CHARS` to
- * cap the token footprint; the extraction prompt instructs the LLM to treat
+ * Render a tool call with full JSON args so the extractor can see what has
+ * already been captured — critical for dedup against the background
+ * extraction pipeline. The extraction prompt instructs the LLM to treat
  * facts inside the arg block as already-written and NOT to re-extract them.
  */
 function renderToolCall(cc: Record<string, unknown>): string {
   const name = String(cc.name ?? 'unknown');
   const args = cc.arguments ?? cc.input ?? cc.args;
-  const serialized = serializeForTranscript(args, TOOL_CALL_ARGS_MAX_CHARS);
+  const serialized = serializeForTranscript(args);
   if (!serialized) return `[tool_call ${name}]`;
   return `[tool_call ${name} ${serialized}]`;
 }
 
 /**
  * Render a tool result so the extractor can spot failures (and know the fact
- * was NOT captured, so the extractor should still consider it). Success
- * payloads are truncated; errors are surfaced explicitly.
+ * was NOT captured). Full payload — the outer `maxTranscriptChars` budget
+ * provides backpressure, not per-item clipping.
  */
 function renderToolResult(cc: Record<string, unknown>): string {
   // Heuristic: look for `is_error`/`error`/`isError` to distinguish failures.
@@ -905,27 +920,24 @@ function renderToolResult(cc: Record<string, unknown>): string {
       (cc.result as Record<string, unknown>).error !== undefined);
 
   const payload = cc.result ?? cc.content ?? cc.output;
-  const serialized = serializeForTranscript(payload, TOOL_RESULT_MAX_CHARS);
+  const serialized = serializeForTranscript(payload);
   const tag = isError ? 'error' : 'ok';
   if (!serialized) return `[tool_result ${tag}]`;
   return `[tool_result ${tag} ${serialized}]`;
 }
 
 /**
- * JSON-serialize a value with length cap. Returns empty string if the value
- * is absent or unserializable. Truncation appends a single-character ellipsis
- * so the LLM can see the boundary.
+ * JSON-serialize a value. Returns empty string if the value is absent or
+ * unserializable. No length cap — the outer `maxTranscriptChars` budget is
+ * the single source of truth for transcript size.
  */
-function serializeForTranscript(value: unknown, maxChars: number): string {
+function serializeForTranscript(value: unknown): string {
   if (value === undefined || value === null) return '';
-  let s: string;
   try {
-    s = typeof value === 'string' ? value : JSON.stringify(value);
+    return typeof value === 'string' ? value : JSON.stringify(value);
   } catch {
-    s = String(value);
+    return String(value);
   }
-  if (s.length <= maxChars) return s;
-  return s.slice(0, maxChars - 1) + '…';
 }
 
 // ===========================================================================

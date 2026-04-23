@@ -44,6 +44,7 @@ import type {
   UpsertBySurfaceResult,
 } from '../types.js';
 import { normalizeSurface } from './fuzzy.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
 
 const DEFAULT_AUTO_RESOLVE_THRESHOLD = 0.9;
 const DEFAULT_THRESHOLD = 0.5;
@@ -203,9 +204,11 @@ export class EntityResolver {
       const topIdentifierMatch = [...seen.values()].some(
         (c) => c.matchedOn === 'identifier' && c.confidence >= 1.0,
       );
-      if (!topIdentifierMatch) {
+      const normalizedForEmbed = normalizeSurface(surface);
+      // Skip when normalization collapses to empty (pure punctuation / whitespace) —
+      // no signal to embed, and the raw surface would just be noise.
+      if (!topIdentifierMatch && normalizedForEmbed) {
         try {
-          const normalizedForEmbed = normalizeSurface(surface) || surface;
           const queryVec = await this.hooks.embedQuery(normalizedForEmbed);
           const results = await this.hooks.store.semanticSearchEntities(
             queryVec,
@@ -232,10 +235,15 @@ export class EntityResolver {
           // and fall through with tier 1-3 results only. The embedder or the
           // adapter might be temporarily unavailable; resolver still returns
           // useful exact matches.
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[EntityResolver] semantic tier failed for surface='${surface}' type='${query.type ?? ''}': ` +
-              (err instanceof Error ? err.message : String(err)),
+          logger.warn(
+            {
+              component: 'EntityResolver',
+              tier: 'semantic',
+              surface,
+              type: query.type,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'semantic tier failed — falling through to tier 1-3 candidates',
           );
         }
       }

@@ -1828,6 +1828,20 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     msg.content = truncatedContent;
     const finalSize = this.estimateItemTokens(msg);
 
+    // Emergency guardrail fired — surface in logs too (not just via the
+    // returned `warning` field, which only hosts that wire the
+    // `input:oversized` event or read the return value will see).
+    logger.warn(
+      {
+        component: 'AgentContextNextGen',
+        originalTokens: originalSize,
+        finalTokens: finalSize,
+        maxTokens,
+        droppedTokens: originalSize - finalSize,
+      },
+      'emergency tool-result truncation: tool output exceeded the model context window and was clipped. Consider narrower tool queries or a larger-context model.',
+    );
+
     return {
       accepted: true,
       content: JSON.stringify(truncatedContent),
