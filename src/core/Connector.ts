@@ -887,6 +887,8 @@ export class Connector {
       privateKey: auth.privateKey,
       privateKeyPath: auth.privateKeyPath,
       audience: auth.audience,
+      tokenRequestStyle: auth.tokenRequestStyle,
+      tokenLifetimeSeconds: auth.tokenLifetimeSeconds,
       refreshBeforeExpiry: auth.refreshBeforeExpiry,
       authorizationParams: auth.authorizationParams,
       storage: Connector.defaultStorage,

@@ -125,6 +125,22 @@ export class JWTBearerFlow {
     const assertion = await this.generateJWT();
     const style = this.config.tokenRequestStyle ?? 'form';
 
+    // Diagnostic: decode the JWT we're about to send (header+payload, not
+    // signature) so auth failures surface with enough context to identify
+    // iss / iat / exp mismatches at a glance.
+    try {
+      const [headerB64, payloadB64] = assertion.split('.');
+      const dec = (s: string) =>
+        JSON.parse(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+      console.log(
+        `[JWTBearer] POST ${this.config.tokenUrl} style=${style} header=${JSON.stringify(
+          dec(headerB64)
+        )} payload=${JSON.stringify(dec(payloadB64))}`
+      );
+    } catch {
+      /* ignore diagnostic decode failure */
+    }
+
     let response: Response;
     if (style === 'bearer') {
       response = await fetch(this.config.tokenUrl, {

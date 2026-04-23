@@ -13,11 +13,25 @@
  *   ### Recent top facts (up to N)
  *   - ...
  *
+ *   ## Your Organization Profile (<orgName>)      ← only when groupBootstrap set
+ *   <profile.details>
+ *   ### Recent top facts (up to N)
+ *   - ...
+ *
  * Note: global agent personality / base instructions are NOT rendered here
  * any more — they're admin-controlled via `Agent.create({ instructions })`.
  * The agent entity still exists (used as `this_agent` subject, as ruleSubject
  * for the rules block, and for graph queries) but its `profile.details` is
  * not auto-synthesized or injected.
+ *
+ * The organization ("group") block is optional — enabled by passing
+ * `groupBootstrap` in the config. It upserts an `organization` entity keyed
+ * by `{kind: 'system_group_id', value: groupId}` and renders its profile
+ * alongside the user profile. Visibility of facts on this entity is whatever
+ * the host's `MemorySystem.visibilityPolicy` + per-write `permissions` produce.
+ * The library defaults are group-read + world-read; hosts that need per-user
+ * privacy on a shared org entity MUST install a `visibilityPolicy` that
+ * stamps `{group: 'none', world: 'none'}` for those facts.
  *
  * Rules block is populated exclusively by `memory_set_agent_rule` (write bundle).
  * A future rule-inference engine can add facts with the same subject and any
@@ -40,6 +54,7 @@ import type { IContextPluginNextGen, ITokenEstimator } from '../types.js';
 import type { ToolFunction } from '../../../domain/entities/Tool.js';
 import type {
   EntityId,
+  Identifier,
   IEntity,
   IFact,
   MemorySystem,
@@ -119,9 +134,43 @@ export interface MemoryPluginConfig {
   userEntityPermissions?: Permissions;
   /** Permissions stamped on the bootstrapped agent entity. */
   agentEntityPermissions?: Permissions;
+  /**
+   * Optional group ("current organization") bootstrap. When present AND
+   * `groupId` is set, a third `organization` entity is upserted carrying the
+   * identifier `{kind: 'system_group_id', value: groupId}` (plus any extras).
+   * Rendered as a "Your Organization Profile" block alongside the user profile.
+   *
+   * Visibility of facts on this entity is controlled by the host's
+   * `MemorySystem.visibilityPolicy` and per-write `permissions` overrides —
+   * the library's built-in defaults are group-read + world-read. A host
+   * that needs per-user privacy on a shared org entity MUST install a
+   * visibility policy that produces user-private permissions on those facts.
+   *
+   * Skip this field (or leave `groupId` undefined) in non-grouped deployments
+   * or when the caller has no current organization (e.g., platform superadmin).
+   */
+  groupBootstrap?: {
+    /** Display name of the organization (e.g., the group's `name` field). */
+    displayName: string;
+    /**
+     * Additional identifiers beyond `system_group_id`. For example:
+     * `[{ kind: 'domain', value: 'acme.com' }]` lets signal extraction
+     * converge with this same entity — the library's `EmailSignalAdapter`
+     * seeds organizations with `kind: 'domain'` when resolving participant
+     * email addresses. Match that convention so bootstrap doesn't create a
+     * parallel entity.
+     */
+    identifiers?: Identifier[];
+    /** Permissions stamped on the bootstrapped organization entity. */
+    permissions?: Permissions;
+  };
   /** Per-profile injection config. Defaults to `{profile:true, topFacts:20}`. */
   userProfileInjection?: MemoryPluginInjectionConfig;
   agentProfileInjection?: MemoryPluginInjectionConfig;
+  /** Injection config for the group ("organization") profile block. Same
+   *  defaults as `userProfileInjection`. Ignored when `groupBootstrap` is
+   *  not provided. */
+  groupProfileInjection?: MemoryPluginInjectionConfig;
   /** Default visibility for memory_remember / memory_link. Defaults:
    *  forUser='private', forAgent='group', forOther='private'. */
   defaultVisibility?: {
@@ -133,7 +182,8 @@ export interface MemoryPluginConfig {
   autoResolveThreshold?: number;
   /**
    * Entity display names used when bootstrapping. If the user/agent entity
-   * already exists (identifier-keyed), these are ignored.
+   * already exists (identifier-keyed), these are ignored. The group entity's
+   * displayName is taken from `groupBootstrap.displayName`.
    */
   userDisplayName?: string;
   agentDisplayName?: string;
@@ -168,6 +218,7 @@ const RECENT_ACTIVITY_DEFAULT: ResolvedRecentActivity = Object.freeze({
 
 const USER_IDENTIFIER_KIND = 'system_user_id';
 const AGENT_IDENTIFIER_KIND = 'system_agent_id';
+const GROUP_IDENTIFIER_KIND = 'system_group_id';
 
 /** How many most-recent facts (visible to the current user's scope) to ship
  *  in the UI snapshot via `getContents()`. Not seen by the LLM. */
@@ -219,9 +270,14 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
   private readonly groupId: string | undefined;
   private readonly userPerms: Permissions | undefined;
   private readonly agentPerms: Permissions | undefined;
+  private readonly groupPerms: Permissions | undefined;
   private readonly userInj: ResolvedInjection;
+  private readonly groupInj: ResolvedInjection;
   private readonly userDisplayName: string;
   private readonly agentDisplayName: string;
+  private readonly groupDisplayName: string | undefined;
+  private readonly groupExtraIdentifiers: readonly Identifier[];
+  private readonly groupBootstrapEnabled: boolean;
   private readonly defaultVisibility: {
     forUser: Visibility;
     forAgent: Visibility;
@@ -233,6 +289,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
 
   private userEntityId: EntityId | undefined;
   private agentEntityId: EntityId | undefined;
+  private groupEntityId: EntityId | undefined;
   private bootstrapInFlight: Promise<void> | null = null;
 
   private tokenCache = 0;
@@ -259,13 +316,23 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     this.groupId = config.groupId;
     this.userPerms = config.userEntityPermissions;
     this.agentPerms = config.agentEntityPermissions;
+    this.groupPerms = config.groupBootstrap?.permissions;
     this.userInj = resolveInjection(config.userProfileInjection);
+    this.groupInj = resolveInjection(config.groupProfileInjection);
     // `config.agentProfileInjection` is accepted but no longer used — the agent
     // profile block has been removed. Left in the type for backward-compat so
     // existing callers don't need a breaking change.
     void config.agentProfileInjection;
     this.userDisplayName = config.userDisplayName ?? `user:${this.userId}`;
     this.agentDisplayName = config.agentDisplayName ?? `agent:${this.agentId}`;
+    this.groupDisplayName = config.groupBootstrap?.displayName;
+    this.groupExtraIdentifiers = config.groupBootstrap?.identifiers
+      ? [...config.groupBootstrap.identifiers]
+      : [];
+    // Group bootstrap requires both a groupBootstrap config AND a groupId
+    // (the groupId is the identifier value). Without groupId we have nothing
+    // to upsert against — skip silently so non-grouped deployments are unaffected.
+    this.groupBootstrapEnabled = Boolean(config.groupBootstrap && this.groupId);
     this.defaultVisibility = {
       forUser: config.defaultVisibility?.forUser ?? 'private',
       forAgent: config.defaultVisibility?.forAgent ?? 'group',
@@ -310,6 +377,22 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
         if (userBlock) blocks.push(userBlock);
       }
 
+      // Organization profile — rendered only when group bootstrap succeeded.
+      // Facts here are typically a mix of group-visible ones authored by a
+      // group admin (shared across members) and each user's private facts
+      // about the org; the memory layer's `findFacts` already filters by
+      // visibility, so the block only shows what this user can read.
+      if (this.groupEntityId) {
+        const groupBlock = await this.renderProfileBlock(
+          this.groupEntityId,
+          this.groupDisplayName ?? `group:${this.groupId}`,
+          this.groupInj,
+          'Your Organization Profile',
+          scope,
+        );
+        if (groupBlock) blocks.push(groupBlock);
+      }
+
       const rendered = blocks.length > 0 ? wrapMemoryContent(blocks.join('\n\n')) : null;
       this.tokenCache = rendered ? this.estimator.estimateTokens(rendered) : 0;
       return rendered;
@@ -349,6 +432,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     userId: string;
     userEntityId: string | undefined;
     agentEntityId: string | undefined;
+    groupEntityId: string | undefined;
     recentFacts: IFact[];
   }> {
     const base = {
@@ -356,6 +440,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
       userId: this.userId,
       userEntityId: this.userEntityId,
       agentEntityId: this.agentEntityId,
+      groupEntityId: this.groupEntityId,
     };
 
     if (this.destroyed) return { ...base, recentFacts: [] };
@@ -425,28 +510,39 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
 
   getState(): unknown {
     return {
-      version: 1,
+      version: 2,
       agentId: this.agentId,
       userId: this.userId,
+      groupId: this.groupId,
       userEntityId: this.userEntityId,
       agentEntityId: this.agentEntityId,
+      groupEntityId: this.groupEntityId,
     };
   }
 
   restoreState(state: unknown): void {
     if (!state || typeof state !== 'object') return;
     const s = state as Record<string, unknown>;
-    if (s.version !== 1) return;
+    if (s.version !== 1 && s.version !== 2) return;
     // If the persisted userId doesn't match the current one (host rebound
     // the plugin to a different user), drop the stale entity ids — they
     // belong to the prior user's scope and would 404 under the current one.
     if (typeof s.userId === 'string' && s.userId !== this.userId) {
       this.userEntityId = undefined;
       this.agentEntityId = undefined;
+      this.groupEntityId = undefined;
       return;
     }
     if (typeof s.userEntityId === 'string') this.userEntityId = s.userEntityId;
     if (typeof s.agentEntityId === 'string') this.agentEntityId = s.agentEntityId;
+    // Only restore groupEntityId when the persisted groupId matches the current
+    // one — otherwise the host has rebound the plugin to a different group and
+    // the id belongs to the prior org's scope. Version-1 state has no groupId
+    // or groupEntityId fields; leaves groupEntityId undefined, to be created
+    // on next bootstrap.
+    if (s.version === 2 && s.groupId === this.groupId && typeof s.groupEntityId === 'string') {
+      this.groupEntityId = s.groupEntityId;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -454,10 +550,15 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
   // ---------------------------------------------------------------------------
 
   /** Entity IDs created (or resolved) during bootstrap. Undefined before bootstrap. */
-  getBootstrappedIds(): { userEntityId?: string; agentEntityId?: string } {
+  getBootstrappedIds(): {
+    userEntityId?: string;
+    agentEntityId?: string;
+    groupEntityId?: string;
+  } {
     return {
       userEntityId: this.userEntityId,
       agentEntityId: this.agentEntityId,
+      groupEntityId: this.groupEntityId,
     };
   }
 
@@ -467,10 +568,12 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
 
   private async ensureBootstrapped(): Promise<void> {
     if (this.bootstrapInFlight) return this.bootstrapInFlight;
-    if (this.userEntityId !== undefined || this.agentEntityId !== undefined) {
-      // Already done (or partially done — if one failed we re-try).
-      if (this.userEntityId && this.agentEntityId) return;
-    }
+    // Done when all *required* entities are resolved. The group entity is
+    // required only when groupBootstrap was configured; user + agent are
+    // always required (user only when userId is set — it always is per
+    // constructor guard).
+    const groupDone = !this.groupBootstrapEnabled || this.groupEntityId !== undefined;
+    if (this.userEntityId && this.agentEntityId && groupDone) return;
     this.bootstrapInFlight = this.doBootstrap();
     try {
       await this.bootstrapInFlight;
@@ -540,6 +643,39 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
         scope,
       );
     }
+
+    // Group entity — only when the host opted in via `groupBootstrap` AND
+    // we have a `groupId`. Upsert is identifier-keyed on `system_group_id`;
+    // any extra identifiers passed by the host (e.g. `email_domain`) are
+    // merged into the existing entity by the library's `upsertEntity`.
+    //
+    // H8 — same cross-process uniqueness caveat as the user/agent entities
+    // applies: adapters that allow concurrent writes (Mongo) must have a
+    // unique partial index on `(identifiers.kind, identifiers.value)` so
+    // two containers don't end up with duplicate org entities.
+    if (!this.groupEntityId && this.groupBootstrapEnabled && this.groupId) {
+      const identifiers: Identifier[] = [
+        { kind: GROUP_IDENTIFIER_KIND, value: this.groupId },
+        ...this.groupExtraIdentifiers,
+      ];
+      const result = await this.memory.upsertEntity(
+        {
+          type: 'organization',
+          displayName: this.groupDisplayName ?? `group:${this.groupId}`,
+          identifiers,
+          permissions: this.groupPerms,
+        },
+        scope,
+      );
+      this.groupEntityId = result.entity.id;
+      await this.checkBootstrapUniqueness(
+        'group',
+        GROUP_IDENTIFIER_KIND,
+        this.groupId,
+        result.entity.id,
+        scope,
+      );
+    }
   }
 
   /**
@@ -555,7 +691,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
    * alarm condition.
    */
   private async checkBootstrapUniqueness(
-    which: 'user' | 'agent',
+    which: 'user' | 'agent' | 'group',
     identifierKind: string,
     identifierValue: string,
     resolvedId: string,

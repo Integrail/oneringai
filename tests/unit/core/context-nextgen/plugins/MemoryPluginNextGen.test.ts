@@ -112,6 +112,274 @@ describe('MemoryPluginNextGen — entity bootstrap', () => {
 
 });
 
+describe('MemoryPluginNextGen — group entity bootstrap', () => {
+  const GROUP_ID = 'group-acme';
+  let mem: MemorySystem;
+  beforeEach(() => {
+    mem = makeMem();
+  });
+
+  it('is disabled by default — no group entity, no org block', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+    });
+    await plugin.getContent();
+    const ids = plugin.getBootstrappedIds();
+    expect(ids.groupEntityId).toBeUndefined();
+    const out = await plugin.getContent();
+    expect(out).not.toMatch(/Your Organization Profile/);
+  });
+
+  it('bootstrap: upserts an organization entity keyed by system_group_id', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await plugin.getContent();
+    const { groupEntityId } = plugin.getBootstrappedIds();
+    expect(groupEntityId).toBeDefined();
+
+    const ent = await mem.getEntity(groupEntityId!, { userId: USER_ID, groupId: GROUP_ID });
+    expect(ent?.type).toBe('organization');
+    expect(ent?.displayName).toBe('Acme Inc.');
+    expect(ent?.identifiers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'system_group_id', value: GROUP_ID }),
+      ]),
+    );
+  });
+
+  it('idempotent: second plugin on same group resolves the same entity', async () => {
+    const p1 = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await p1.getContent();
+    const id1 = p1.getBootstrappedIds().groupEntityId;
+
+    const p2 = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc. (renamed)' },
+    });
+    await p2.getContent();
+    const id2 = p2.getBootstrappedIds().groupEntityId;
+    expect(id2).toBe(id1);
+  });
+
+  it('merges additional identifiers (e.g. domain) onto the org entity', async () => {
+    // `kind: 'domain'` is the convention used by the library's
+    // EmailSignalAdapter when it seeds orgs from email senders, and by
+    // v25's `orgIdentifiers()` helper. Match it so bootstrap + extraction
+    // converge on one entity instead of creating parallel rows.
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: {
+        displayName: 'Acme Inc.',
+        identifiers: [{ kind: 'domain', value: 'acme.com' }],
+      },
+    });
+    await plugin.getContent();
+    const { groupEntityId } = plugin.getBootstrappedIds();
+    const ent = await mem.getEntity(groupEntityId!, { userId: USER_ID, groupId: GROUP_ID });
+    expect(ent?.identifiers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'system_group_id', value: GROUP_ID }),
+        expect.objectContaining({ kind: 'domain', value: 'acme.com' }),
+      ]),
+    );
+  });
+
+  it('converges with an already-extracted org keyed only by domain', async () => {
+    // Scenario: signal extraction has already created an `organization` keyed
+    // by `{kind: 'domain', value: 'acme.com'}` before the agent runs for the
+    // first time under the new group-bootstrap code path. The bootstrap must
+    // MERGE onto that existing entity (not create a parallel one) and add
+    // `system_group_id` as an additional identifier.
+    const { entity: preExisting } = await mem.upsertEntity(
+      {
+        type: 'organization',
+        displayName: 'Acme Inc.',
+        identifiers: [{ kind: 'domain', value: 'acme.com' }],
+      },
+      { userId: USER_ID, groupId: GROUP_ID },
+    );
+
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: {
+        displayName: 'Acme Inc.',
+        identifiers: [{ kind: 'domain', value: 'acme.com' }],
+      },
+    });
+    await plugin.getContent();
+    const { groupEntityId } = plugin.getBootstrappedIds();
+    expect(groupEntityId).toBe(preExisting.id);
+
+    const ent = await mem.getEntity(groupEntityId!, { userId: USER_ID, groupId: GROUP_ID });
+    expect(ent?.identifiers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'system_group_id', value: GROUP_ID }),
+        expect.objectContaining({ kind: 'domain', value: 'acme.com' }),
+      ]),
+    );
+  });
+
+  it('skipped when groupId is absent even if groupBootstrap is configured', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      // no groupId
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await plugin.getContent();
+    expect(plugin.getBootstrappedIds().groupEntityId).toBeUndefined();
+  });
+
+  it('renders "Your Organization Profile" block when group entity exists', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await plugin.getContent();
+    const { groupEntityId } = plugin.getBootstrappedIds();
+    // Seed a group-visible fact — simulates admin-authored shared profile info.
+    await mem.addFact(
+      {
+        subjectId: groupEntityId!,
+        predicate: 'website',
+        kind: 'atomic',
+        value: 'https://acme.com',
+        permissions: { group: 'read' },
+      },
+      { userId: USER_ID, groupId: GROUP_ID },
+    );
+    const out = await plugin.getContent();
+    expect(out).toMatch(/## Your Organization Profile \(Acme Inc\.\)/);
+    expect(out).toMatch(/acme\.com/);
+  });
+
+  it('stamps configured permissions on the bootstrapped group entity', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: GROUP_ID,
+      groupBootstrap: {
+        displayName: 'Acme Inc.',
+        permissions: { group: 'read', world: 'none' },
+      },
+    });
+    await plugin.getContent();
+    const { groupEntityId } = plugin.getBootstrappedIds();
+    const ent = await mem.getEntity(groupEntityId!, { userId: USER_ID, groupId: GROUP_ID });
+    expect(ent?.permissions).toEqual({ group: 'read', world: 'none' });
+  });
+});
+
+describe('MemoryPluginNextGen — group visibility isolation', () => {
+  const GROUP_ID = 'group-acme';
+  const USER_A = 'user-a';
+  const USER_B = 'user-b';
+
+  it('user-private group facts do NOT leak across group members', async () => {
+    const mem = makeMem();
+    // User A bootstraps and writes a USER-PRIVATE fact against the org.
+    const pluginA = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_A,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await pluginA.getContent();
+    const orgId = pluginA.getBootstrappedIds().groupEntityId!;
+    await mem.addFact(
+      {
+        subjectId: orgId,
+        predicate: 'private_note',
+        kind: 'atomic',
+        value: 'A-secret',
+        // Explicit user-private — matches what the plugin's memory tools stamp
+        // under `defaultVisibility.forUser = 'private'` for user-originated
+        // writes. LLM extraction and tool-layer writes go through this same
+        // mechanism; raw mem.addFact() (used only in tests) requires the
+        // explicit override because the adapter itself has no visibility default.
+        permissions: { group: 'none' },
+      },
+      { userId: USER_A, groupId: GROUP_ID },
+    );
+
+    // User B in the same group — same org entity id, but must NOT see A's note.
+    const pluginB = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_B,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await pluginB.getContent();
+    expect(pluginB.getBootstrappedIds().groupEntityId).toBe(orgId);
+    const outB = await pluginB.getContent();
+    expect(outB).not.toMatch(/A-secret/);
+  });
+
+  it('group-visible facts DO surface to other members', async () => {
+    const mem = makeMem();
+    const pluginA = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_A,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await pluginA.getContent();
+    const orgId = pluginA.getBootstrappedIds().groupEntityId!;
+    await mem.addFact(
+      {
+        subjectId: orgId,
+        predicate: 'website',
+        kind: 'atomic',
+        value: 'https://acme.com',
+        permissions: { group: 'read' },
+      },
+      { userId: USER_A, groupId: GROUP_ID },
+    );
+
+    const pluginB = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_B,
+      groupId: GROUP_ID,
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await pluginB.getContent();
+    const outB = await pluginB.getContent();
+    expect(outB).toMatch(/acme\.com/);
+  });
+});
+
 describe('MemoryPluginNextGen — injection shape', () => {
   let mem: MemorySystem;
   beforeEach(() => {
@@ -546,7 +814,60 @@ describe('MemoryPluginNextGen — state serialization', () => {
     const mem = makeMem();
     const plugin = new MemoryPluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
     plugin.restoreState({ version: 999, userEntityId: 'X', agentEntityId: 'Y' });
-    expect(plugin.getBootstrappedIds()).toEqual({});
+    expect(plugin.getBootstrappedIds()).toEqual({
+      userEntityId: undefined,
+      agentEntityId: undefined,
+      groupEntityId: undefined,
+    });
+  });
+
+  it('group entity id round-trips through v2 state', async () => {
+    const mem = makeMem();
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: 'group-acme',
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await plugin.getContent();
+    const state = plugin.getState();
+    expect((state as any).version).toBe(2);
+
+    const plugin2 = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: 'group-acme',
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    plugin2.restoreState(state);
+    expect(plugin2.getBootstrappedIds()).toEqual(plugin.getBootstrappedIds());
+  });
+
+  it('drops stale group entity id when restored under a different groupId', async () => {
+    const mem = makeMem();
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: 'group-acme',
+      groupBootstrap: { displayName: 'Acme Inc.' },
+    });
+    await plugin.getContent();
+    const state = plugin.getState();
+
+    const rebound = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      groupId: 'group-other',
+      groupBootstrap: { displayName: 'Other Ltd.' },
+    });
+    rebound.restoreState(state);
+    expect(rebound.getBootstrappedIds().groupEntityId).toBeUndefined();
+    // User + agent IDs still restore because the user didn't change.
+    expect(rebound.getBootstrappedIds().userEntityId).toBeDefined();
   });
 });
 
