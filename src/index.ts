@@ -1515,6 +1515,9 @@ export {
   slugify,
   PredicateRegistry,
   STANDARD_PREDICATES,
+  // Metadata diff helper (used by callers detecting external entity changes —
+  // e.g. v25 calendar pipeline detecting event reschedule via API re-fetch).
+  diffEntityMetadata,
   // Access control
   PermissionDeniedError,
   OwnerRequiredError,
@@ -1629,6 +1632,9 @@ export type {
   ContextTier,
   RelatedTask,
   RelatedEvent,
+  RelatedItemHit,
+  RelatedItemsResult,
+  MetadataChange,
   Neighborhood,
   TraversalOptions,
   FactFilter,
