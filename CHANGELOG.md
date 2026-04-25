@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory: task/event lifecycle primitives
+
+Public surface for the v25 task/event reconciliation pipeline. All additions are backwards-compatible.
+
+- **`MemorySystem.upsertEntity` now accepts `metadataMerge` + `metadataMergeKeys`.** The identifier-resolved path can now fold incoming `metadata` into an existing entity. Modes: `'fillMissing'` (only set absent keys) and `'overwrite'` (shallow-merge, incoming wins). Optional `metadataMergeKeys` whitelist pins the merge to a known set so a calendar-style sync caller cannot accidentally leak unrelated extracted fields. Default behaviour is preserved — without the option, metadata is ignored on resolve. Triggers `assertCanAccess(..., 'write')` whenever a merge actually changes a key, so read-only callers cannot push metadata. Deep-equality on values prevents spurious version bumps.
+- **`MemorySystem.resolveRelatedItems(entityIds, scope, opts)`.** Multi-entity public traversal returning tasks + events that touch ANY of `entityIds` via metadata role fields or fact `contextIds`, deduped by id and tagged with `matchedEntityId`. Per-bucket `limit` (tasks and events each capped, default 50, ceiling 200). Bias note: the first input entity to surface a hit wins attribution — pass `entityIds` ordered by relevance.
+- **`MemorySystem.findSimilarOpenTasks(queryText, scope, opts)`.** Semantic kNN over open tasks via `IMemoryStore.semanticSearchEntities`, post-filtered by configured active task states. `topK` clamped to `[1, 100]`, `minScore` clamped to `[0, 1]` (NaN → 0). Over-fetch floor of 30 candidates ensures small `topK` still survives the post-state filter. Returns `[]` (with `console.warn`) when the embedder or semantic adapter is missing — callers should treat semantic similarity as opportunistic, not load-bearing.
+- **`diffEntityMetadata(prev, next, watchedKeys)` exported from `@everworker/oneringai`.** Pure helper for callers detecting external metadata changes (e.g. a calendar API event update) so they can emit predicate facts (`cancelled`, `rescheduled`) without re-implementing diff logic per call site. Reports `added` / `removed` / `changed`, deep-compares arrays/objects/Dates.
+- **Three new lifecycle predicates** (now 54 total in `STANDARD_PREDICATES`):
+  - `prepares_for` (task → event, inverse `prepared_by`) — completing the task readies the user for the event; lets cancellation propagate onto bound prep tasks.
+  - `delegated_to` (task → person, inverse `delegate_of`) — captures the act of handoff distinctly from the resulting `assigned_task`.
+  - `cancelled_due_to` (task | event → entity, inverse `cancellation_cause_for`) — cancellation provenance.
+
 ## [0.6.0] - 2026-04-25
 
 > **Headline: the Memory System.** This release lands a brain-like, self-learning knowledge layer for agents — entity + fact graph, signal ingestion, semantic entity resolution, per-user/per-agent behavior rules, restraint-posture extraction, and a write/read-split plugin pair that turns ambient conversation into durable, scoped memory. Most of the entries below are pieces of that single arc; the rest is plumbing (model-registry refresh, no-silent-truncation policy, Sora extend/remix/edit) and a sweep of test fixes that brought the integration suite back to green.

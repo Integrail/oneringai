@@ -251,6 +251,14 @@ export interface RelatedEvent {
   when?: Date;
 }
 
+/** A related-task / related-event hit augmented with the input entity that produced the match. */
+export type RelatedItemHit<T> = T & { matchedEntityId: EntityId };
+
+export interface RelatedItemsResult {
+  tasks: RelatedItemHit<RelatedTask>[];
+  events: RelatedItemHit<RelatedEvent>[];
+}
+
 export interface EntityView {
   entity: IEntity;
   /** Most-specific visible document fact with predicate='profile', or null if none. */
@@ -871,7 +879,7 @@ export interface MemorySystemConfig {
    * predicates, and folds registry weights into ranking. Absent = free-form
    * predicate strings (pre-registry behavior).
    *
-   * Pass `PredicateRegistry.standard()` for the built-in 51-predicate starter
+   * Pass `PredicateRegistry.standard()` for the built-in 54-predicate starter
    * set, `PredicateRegistry.empty()` plus `.registerAll(...)` for a fully
    * custom vocabulary.
    */

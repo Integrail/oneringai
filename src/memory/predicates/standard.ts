@@ -1,5 +1,5 @@
 /**
- * Standard predicate library — 51 predicates across 9 categories.
+ * Standard predicate library — 54 predicates across 9 categories.
  *
  * Shipped with the memory layer; opt-in via `PredicateRegistry.standard()`.
  * Users can extend (`.register(...)`), override, or replace entirely with
@@ -271,6 +271,51 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.8,
     rankingWeight: 1.2,
     singleValued: true,
+  },
+  {
+    name: 'prepares_for',
+    description:
+      'Task is prep for an event — completing the task readies the user for the event. ' +
+      'Used to propagate event cancellation/reschedule onto bound prep tasks.',
+    category: 'task',
+    payloadKind: 'relational',
+    subjectTypes: ['task'],
+    objectTypes: ['event'],
+    inverse: 'prepared_by',
+    aliases: ['prep_for', 'preparation_for'],
+    defaultImportance: 0.8,
+    rankingWeight: 1.3,
+    examples: ['(task_456, prepares_for, event_789) — "Prepare slides for JP Morgan meeting"'],
+  },
+  {
+    name: 'delegated_to',
+    description:
+      'Task was handed off to a person to execute. Distinct from `assigned_task` (which records ' +
+      'the resulting assignment as person→task): delegation captures the act, the delegator, and ' +
+      'the source signal that effected it.',
+    category: 'task',
+    payloadKind: 'relational',
+    subjectTypes: ['task'],
+    objectTypes: ['person'],
+    inverse: 'delegate_of',
+    aliases: ['handed_off_to'],
+    defaultImportance: 0.9,
+    rankingWeight: 1.3,
+    examples: ['(task_123, delegated_to, person_alice) — "do this by Friday"'],
+  },
+  {
+    name: 'cancelled_due_to',
+    description:
+      'Task or event was cancelled because of another item — typically the cancellation of an ' +
+      'underlying event (meeting cancelled → prep task cancelled) or supersession by a newer signal.',
+    category: 'task',
+    payloadKind: 'relational',
+    subjectTypes: ['task', 'event'],
+    inverse: 'cancellation_cause_for',
+    aliases: ['cancelled_because_of'],
+    defaultImportance: 0.9,
+    rankingWeight: 1.3,
+    examples: ['(task_456, cancelled_due_to, event_789) — meeting was cancelled'],
   },
 
   // ---------------------------------------------------------------------------

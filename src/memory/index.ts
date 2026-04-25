@@ -160,6 +160,11 @@ export { scoreFact, rankFacts } from './Ranking.js';
 export { canonicalIdentifier, slugify } from './identifiers.js';
 export type { CanonicalIdentifierOptions, SlugifyOptions } from './identifiers.js';
 
+// Metadata diff helper — used by callers detecting external changes
+// (e.g. calendar API event metadata updates) to emit predicate facts.
+export { diffEntityMetadata } from './metadataDiff.js';
+export type { MetadataChange } from './metadataDiff.js';
+
 // Predicate library — pluggable vocabulary with a 51-predicate standard set.
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
 export type { PredicateDefinition } from './predicates/index.js';
@@ -207,6 +212,8 @@ export type {
   ContextTier,
   RelatedTask,
   RelatedEvent,
+  RelatedItemHit,
+  RelatedItemsResult,
   Neighborhood,
   TraversalOptions,
   FactFilter,
