@@ -482,19 +482,23 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
   }
 
   /**
-   * Prepare image input for API (input_reference)
+   * Prepare image input for API (input_reference).
+   *
+   * Buffers and ArrayBuffers are passed *directly* to `new File([...])` —
+   * wrapping in `new Uint8Array(buf)` would force the typed-array overload
+   * of the constructor and copy the entire payload before the File even
+   * snapshots it. Direct pass keeps the single Blob-internal snapshot.
    */
   private async prepareImageInput(image: Buffer | string): Promise<any> {
     if (Buffer.isBuffer(image)) {
-      // Create a File-like object from buffer
-      return new File([new Uint8Array(image)], 'input.png', { type: 'image/png' });
+      return new File([image as BlobPart], 'input.png', { type: 'image/png' });
     }
 
     // If it's a file path, read it
     if (!image.startsWith('http')) {
       const fs = await import('fs');
       const data = await fs.promises.readFile(image);
-      return new File([new Uint8Array(data)], 'input.png', { type: 'image/png' });
+      return new File([data as BlobPart], 'input.png', { type: 'image/png' });
     }
 
     // For URLs, fetch and convert to File
@@ -506,16 +510,17 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
       );
     }
     const arrayBuffer = await response.arrayBuffer();
-    return new File([new Uint8Array(arrayBuffer)], 'input.png', { type: 'image/png' });
+    return new File([arrayBuffer], 'input.png', { type: 'image/png' });
   }
 
   /**
    * Prepare video input for API (character creation, etc).
-   * Accepts Buffer, local file path, or HTTP URL.
+   * Accepts Buffer, local file path, or HTTP URL. Same zero-extra-copy
+   * pattern as `prepareImageInput`.
    */
   private async prepareVideoInput(video: Buffer | string): Promise<any> {
     if (Buffer.isBuffer(video)) {
-      return new File([new Uint8Array(video)], 'input.mp4', { type: 'video/mp4' });
+      return new File([video as BlobPart], 'input.mp4', { type: 'video/mp4' });
     }
 
     if (!video.startsWith('http')) {
@@ -525,7 +530,7 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
       const filename = path.basename(video) || 'input.mp4';
       const ext = path.extname(filename).toLowerCase();
       const mime = ext === '.mov' ? 'video/quicktime' : ext === '.webm' ? 'video/webm' : 'video/mp4';
-      return new File([new Uint8Array(data)], filename, { type: mime });
+      return new File([data as BlobPart], filename, { type: mime });
     }
 
     const response = await fetch(video);
@@ -536,7 +541,7 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
       );
     }
     const arrayBuffer = await response.arrayBuffer();
-    return new File([new Uint8Array(arrayBuffer)], 'input.mp4', { type: 'video/mp4' });
+    return new File([arrayBuffer], 'input.mp4', { type: 'video/mp4' });
   }
 
   /**

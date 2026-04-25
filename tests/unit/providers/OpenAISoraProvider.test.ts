@@ -358,5 +358,158 @@ describe('OpenAISoraProvider', () => {
       const file = mockVideosCreateCharacter.mock.calls[0][0].video as File;
       expect(file.type).toBe('video/mp4');
     });
+
+    it('preserves the byte content and length of the source Buffer', async () => {
+      // Regression guard for the zero-extra-copy upload path: dropping the
+      // `new Uint8Array(buffer)` wrapper must not truncate or mangle bytes.
+      const payload = Buffer.from([0x00, 0xff, 0x42, 0x13, 0x37, 0xab, 0xcd]);
+      await provider.createCharacter({ name: 'X', video: payload });
+      const file = mockVideosCreateCharacter.mock.calls[0][0].video as File;
+      expect(file.size).toBe(payload.length);
+      const roundTrip = Buffer.from(await file.arrayBuffer());
+      expect(Buffer.compare(roundTrip, payload)).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Byte-fidelity for the *image* upload paths (generateVideo with image=…).
+  // Each path constructs a `File` for OpenAI; we verify size + bytes survive.
+  // ---------------------------------------------------------------------------
+  describe('prepareImageInput byte fidelity (via generateVideo)', () => {
+    const originalFetch = globalThis.fetch;
+
+    beforeEach(() => {
+      mockVideosCreate.mockResolvedValue(fakeVideoResponse());
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it('Buffer path: File preserves length + bytes', async () => {
+      const payload = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]); // PNG-magic-ish
+      await provider.generateVideo({ model: 'sora-2', prompt: 'hi', image: payload });
+      const file = mockVideosCreate.mock.calls[0][0].input_reference as File;
+      expect(file).toBeInstanceOf(File);
+      expect(file.size).toBe(payload.length);
+      expect(Buffer.compare(Buffer.from(await file.arrayBuffer()), payload)).toBe(0);
+    });
+
+    it('local file path: File preserves length + bytes', async () => {
+      const fs = await import('fs/promises');
+      const os = await import('os');
+      const path = await import('path');
+      const payload = Buffer.from([0x42, 0x4d, 0xff, 0x00, 0x13, 0x37, 0xab]); // arbitrary
+      const tmpPath = path.join(os.tmpdir(), `sora-img-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+      await fs.writeFile(tmpPath, payload);
+      try {
+        await provider.generateVideo({ model: 'sora-2', prompt: 'hi', image: tmpPath });
+        const file = mockVideosCreate.mock.calls[0][0].input_reference as File;
+        expect(file).toBeInstanceOf(File);
+        expect(file.size).toBe(payload.length);
+        expect(Buffer.compare(Buffer.from(await file.arrayBuffer()), payload)).toBe(0);
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
+    });
+
+    it('URL path: File preserves length + bytes', async () => {
+      const payload = Buffer.from([0xde, 0xad, 0xbe, 0xef, 0x00, 0xff]);
+      const ab = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength) as ArrayBuffer;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => ab,
+      }) as unknown as typeof fetch;
+
+      await provider.generateVideo({
+        model: 'sora-2',
+        prompt: 'hi',
+        image: 'https://example.com/ref.png',
+      });
+
+      const file = mockVideosCreate.mock.calls[0][0].input_reference as File;
+      expect(file).toBeInstanceOf(File);
+      expect(file.size).toBe(payload.length);
+      expect(Buffer.compare(Buffer.from(await file.arrayBuffer()), payload)).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Byte-fidelity for the *video* upload paths (createCharacter with video=…).
+  // Buffer path already covered above; here we cover fs path + URL path.
+  // ---------------------------------------------------------------------------
+  describe('prepareVideoInput byte fidelity (via createCharacter)', () => {
+    const originalFetch = globalThis.fetch;
+
+    beforeEach(() => {
+      mockVideosCreateCharacter.mockResolvedValue({
+        id: 'char_x',
+        name: 'X',
+        created_at: 1,
+      });
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it('local .mov path: File preserves length + bytes and infers quicktime MIME', async () => {
+      const fs = await import('fs/promises');
+      const os = await import('os');
+      const path = await import('path');
+      const payload = Buffer.from([0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70]); // MOV-magic-ish
+      const tmpPath = path.join(os.tmpdir(), `sora-vid-${Date.now()}-${Math.random().toString(36).slice(2)}.mov`);
+      await fs.writeFile(tmpPath, payload);
+      try {
+        await provider.createCharacter({ name: 'X', video: tmpPath });
+        const file = mockVideosCreateCharacter.mock.calls[0][0].video as File;
+        expect(file).toBeInstanceOf(File);
+        expect(file.type).toBe('video/quicktime');
+        expect(file.size).toBe(payload.length);
+        expect(Buffer.compare(Buffer.from(await file.arrayBuffer()), payload)).toBe(0);
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
+    });
+
+    it('local .webm path: infers webm MIME', async () => {
+      const fs = await import('fs/promises');
+      const os = await import('os');
+      const path = await import('path');
+      const payload = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]); // EBML magic
+      const tmpPath = path.join(os.tmpdir(), `sora-vid-${Date.now()}.webm`);
+      await fs.writeFile(tmpPath, payload);
+      try {
+        await provider.createCharacter({ name: 'X', video: tmpPath });
+        const file = mockVideosCreateCharacter.mock.calls[0][0].video as File;
+        expect(file.type).toBe('video/webm');
+        expect(file.size).toBe(payload.length);
+      } finally {
+        await fs.unlink(tmpPath).catch(() => {});
+      }
+    });
+
+    it('URL path: File preserves length + bytes', async () => {
+      const payload = Buffer.from([0xca, 0xfe, 0xba, 0xbe, 0x42, 0x13, 0x37]);
+      const ab = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength) as ArrayBuffer;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => ab,
+      }) as unknown as typeof fetch;
+
+      await provider.createCharacter({
+        name: 'X',
+        video: 'https://example.com/clip.mp4',
+      });
+
+      const file = mockVideosCreateCharacter.mock.calls[0][0].video as File;
+      expect(file).toBeInstanceOf(File);
+      expect(file.size).toBe(payload.length);
+      expect(Buffer.compare(Buffer.from(await file.arrayBuffer()), payload)).toBe(0);
+    });
   });
 });

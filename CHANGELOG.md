@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory v5: restraint posture review fixes
+
+Follow-up audit of the restraint-posture work surfaced seven issues; all fixed in this batch.
+
+- **`evidenceQuote` now reaches storage.** The field was added to `IFact`, advertised by the v5 prompt, and accepted by `ExtractionResolver` — but `MemorySystem.addFact` constructed its `NewFact` literal without it, silently dropping the quote at the storage boundary. The same omission existed on the `state_changed` audit-fact path through `transitionTaskState`. Both now propagate. Added `MemorySystem.addFact` and `ExtractionResolver` round-trip tests pinning the behaviour.
+- **v5 primitives re-exported from the package root.** `EAGERNESS_PRESETS`, `buildEagernessProfile`, `getEagernessPreset`, `resolveEagerness`, `StaticAnchorRegistry`, `emitRestraintEvent`, `applyRestrainedExtractionContract`, `SkepticPass`, `defaultSkepticPrompt`, `parseSkepticOutput` (plus the matching types) are now available from `@everworker/oneringai`. Previously only reachable via the `./memory` subpath, which `package.json` does not export.
+- **`emitRestraintEvent` no longer silently swallows listener errors.** A throwing listener was caught and discarded, blackholing every decision invisibly — directly contradicting the project's "no silent error" rule. The catch now logs via `console.error` with the event attached; the throw still does not propagate (a logging failure must not break the data path). Test updated to assert both behaviours.
+- **Prompt-injection hardening on new v5 surfaces.** `defaultExtractionPrompt` now sanitises anchor labels and negative-example snippets (collapse newlines, strip backticks, drop leading `#`) before splicing into the system prompt — same posture as the v4 nonce-wrapped signal body. Same hardening applied to `SkepticPass.defaultSkepticPrompt` for `item.summary` and `contextHint`. Both attacker-controllable today via extracted email content / scraped pages.
+- **`SkepticPass` matches the `IDisposable` pattern.** Added `isDestroyed` getter and made `destroy()` idempotent. Calling `destroy()` twice no longer double-destroys the underlying agent.
+- **Chatty preset no longer renders the Restraint preamble for nothing.** When every flag in the profile is off (e.g. `EAGERNESS_PRESETS.chatty`), `defaultExtractionPrompt` now skips the entire `## Restraint posture` section — saves tokens on every chatty call.
+- **Soft-mode anchor binding distinguishes "stale" from "no binding".** `RestrainedExtractionContract` previously emitted `priority_unbound_soft` for both unbound tasks and tasks pointing at decommissioned anchors. The stale case now emits `priority_stale_soft` with `meta.servesAnchorIdProvided` set, so dashboards can tell "LLM didn't bind" from "LLM bound to inactive priority".
+
 ### Self-Learning Memory documentation overhaul
 
 Rewrote the Self-Learning Memory section in `USER_GUIDE.md` (now a dedicated, comprehensive walkthrough at TOC #15) and updated the matching section in `README.md` (10b). Brings the user-facing docs in sync with the current code surface:
@@ -41,6 +53,14 @@ Aligned the OpenAI Sora provider with the SDK's split between three transforms o
 All four are optional methods on `IVideoProvider` — non-OpenAI providers throw a clear "not supported" error rather than silently no-op. New types exported: `VideoRemixOptions`, `VideoEditOptions`, `CreateCharacterOptions`, `CharacterRef`.
 
 Higher-resolution Sora exports (`1024x1792`, `1792x1024` — 1.4× the standard 720p) were already wired through the `resolution` / `aspectRatio` mappers; the supported set is now documented in the Video Generation section of the user guide.
+
+### Performance: skip redundant Buffer copy on media uploads
+
+Eliminated a double-allocation on the path that turns a `Buffer` (or `ArrayBuffer`) into a `File` for upload to OpenAI / Grok. The previous shape `new File([new Uint8Array(buffer)], …)` triggered the typed-array overload of `Uint8Array`, copying every byte into a fresh `ArrayBuffer` *before* the `File` snapshotted them — so each upload was double-allocating its payload before the bytes left the process. The fix is to pass the `Buffer` / `ArrayBuffer` directly to `new File([buffer], …)` (cast to `BlobPart` to satisfy the modern Node `Buffer<ArrayBufferLike>` typing). For a 500 MB Sora upload, this drops peak memory from ~1.5 GB to ~1 GB during the upload window.
+
+Touched (8 sites in 4 files): `OpenAISoraProvider.prepareImageInput` + `prepareVideoInput`, `OpenAISTTProvider.prepareAudioFile`, `OpenAIImageProvider.prepareImageInput`, `GrokImageProvider.prepareImageInput`. Added a byte-fidelity regression test (`OpenAISoraProvider.test.ts`) that round-trips a known Buffer through `createCharacter` and asserts the resulting `File.size` and bytes match the source.
+
+`PDFHandler.handle` deliberately keeps its `new Uint8Array(buffer)` calls — `unpdf` (pdf.js) detaches the underlying `ArrayBuffer` when posting to its worker, so each call genuinely needs a fresh copy. Added a live round-trip test (`tests/unit/capabilities/documents/PDFHandler.test.ts`) that builds a minimal valid PDF in memory, runs it through `PDFHandler` twice with the *same* source `Buffer`, and asserts text extraction succeeds both times — pinning the existing behaviour so any future "cleanup" PR that drops the explicit copy gets caught.
 
 ### TTS: custom voices (OpenAI)
 

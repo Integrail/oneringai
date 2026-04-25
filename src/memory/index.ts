@@ -53,6 +53,17 @@ export {
   PlainTextAdapter,
   EmailSignalAdapter,
   CalendarSignalAdapter,
+  // v5+ restraint posture
+  EAGERNESS_PRESETS,
+  buildEagernessProfile,
+  getEagernessPreset,
+  resolveEagerness,
+  StaticAnchorRegistry,
+  emitRestraintEvent,
+  applyRestrainedExtractionContract,
+  SkepticPass,
+  defaultSkepticPrompt,
+  parseSkepticOutput,
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
@@ -89,6 +100,27 @@ export type {
   CalendarSignalAdapterOptions,
   ParseExtractionResult,
   ParseStatus,
+  // v5+ restraint posture types
+  EagernessLevel,
+  EagernessPreset,
+  EagernessProfile,
+  EagernessStage,
+  SkepticPassMode,
+  Anchor,
+  AnchorRegistry,
+  RestraintEvent,
+  RestraintEventKind,
+  RestraintEventListener,
+  RestraintModelInfo,
+  RestraintStage,
+  RestrainedExtractionInput,
+  RestrainedExtractionOptions,
+  RestrainedExtractionResult,
+  SkepticPassConfig,
+  SkepticPromptContext,
+  SkepticReviewContext,
+  SkepticReviewItem,
+  SkepticReviewResult,
 } from './integration/index.js';
 
 // Mongo adapter — optional peer dep on `mongodb`; import path is always safe

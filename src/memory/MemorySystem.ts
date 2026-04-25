@@ -208,6 +208,7 @@ export interface TransitionTaskStateOptions {
     validFrom?: Date;
     validUntil?: Date;
     summaryForEmbedding?: string;
+    evidenceQuote?: string;
   };
 }
 
@@ -1137,6 +1138,7 @@ export class MemorySystem implements IDisposable {
       // asking "give me facts with confidence ≥ X" no longer get un-scored
       // legacy facts mixed into high-quality results.
       confidence: clampUnit01(input.confidence) ?? 1.0,
+      evidenceQuote: input.evidenceQuote,
       sourceSignalId: input.sourceSignalId,
       derivedBy: input.derivedBy,
       importance: clampUnit01(input.importance) ?? def?.defaultImportance,
@@ -1837,6 +1839,7 @@ export class MemorySystem implements IDisposable {
           validFrom: o.validFrom,
           validUntil: o.validUntil,
           summaryForEmbedding: o.summaryForEmbedding,
+          evidenceQuote: o.evidenceQuote,
         },
         scope,
       );
