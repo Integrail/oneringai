@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Routines: `routine_list` + `routine_delete` tools, summary-only listing
+
+- **New tool `routine_list`** — slim, paginated listing of routine definitions. Filters by `tags` (ANY-of intersect), `search` (case-insensitive substring on name/description), `limit` (1–200, default 50), `offset`. Returns `{ count, hasMore, routines: RoutineSummary[] }`. The pagination probe fetches `limit + 1` to compute `hasMore` without a second round-trip.
+- **New tool `routine_delete`** — permanently removes a routine definition by ID. Past execution records are preserved; downstream schedules referencing the deleted ID will fail at runtime. Marked `session`/`high` risk.
+- **`routine_update` now supports `tasks` array replacement** — full add/remove/reorder/rename, dependency rewiring, control-flow changes. Re-validated via `createRoutineDefinition` (cycle + missing-dep checks) before saving. For surgical edits to a single existing task, `routine_update_task` is still preferred.
+- **BREAKING — `IRoutineDefinitionStorage.list()` now returns `RoutineSummary[]`** instead of `RoutineDefinition[]`. The summary carries `id`, `name`, `description`, `version`, `author`, `tags`, `taskCount`, `parameterNames`, `updatedAt`. Use `load(id)` for the full definition. This eliminates the per-entry full-document materialization that every backend was paying — Mongo/Postgres impls can now project to summary fields server-side, and the file impl returns its index entries directly without per-entry disk reads. Custom `IRoutineDefinitionStorage` implementers must update their `list()` signature; `routine_get`'s name-search path now does an extra `load()`.
+- **`RoutineSummary` exported** from `@everworker/oneringai` and `@everworker/oneringai/types`.
+
 ### Memory: task/event lifecycle primitives
 
 Public surface for the v25 task/event reconciliation pipeline. All additions are backwards-compatible.

@@ -254,6 +254,7 @@ export type {
 export type {
   RoutineDefinition,
   RoutineDefinitionInput,
+  RoutineSummary,
   RoutineExecutionStatus,
   RoutineExecution,
   RoutineParameter,
