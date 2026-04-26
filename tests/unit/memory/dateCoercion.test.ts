@@ -184,6 +184,28 @@ describe('coerceMetadataDates', () => {
         for (let i = 0; i < 50; i++) probe = (probe as Record<string, unknown>).nested;
         expect((probe as Record<string, unknown>).leaf).toBeInstanceOf(Date);
     });
+    it('handles cyclic metadata without crashing (object self-reference)', () => {
+        // Library safety net: app code that accidentally builds a cyclic
+        // metadata structure must not crash the process with a stack overflow.
+        // The cycle is returned as-is; non-cyclic siblings still coerce.
+        const cyclic: Record<string, unknown> = {
+            startTime: '2026-04-30T13:00:00Z',
+        };
+        cyclic.self = cyclic;
+        const out = coerceMetadataDates(cyclic);
+        expect(out.startTime).toBeInstanceOf(Date);
+        // The cycle node points back at the (now coerced) outer object — what
+        // matters is no crash and no infinite recursion.
+        expect(out.self).toBeDefined();
+    });
+    it('handles cyclic arrays without crashing', () => {
+        const arr: unknown[] = ['2026-04-30T13:00:00Z'];
+        arr.push(arr);
+        const out = coerceMetadataDates({ stateHistory: arr })!;
+        const hist = out.stateHistory as unknown[];
+        expect(hist[0]).toBeInstanceOf(Date);
+        expect(hist[1]).toBeDefined();
+    });
 });
 
 describe('coerceFactTemporalFields', () => {

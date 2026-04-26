@@ -95,36 +95,52 @@ export function toDate(value: unknown): Date | undefined {
  * BSON, which itself rejects cycles and caps at 100 levels). A silent depth
  * cap here would leave deeply-nested ISO strings uncoerced and reintroduce
  * the BSON cross-type range-query bug this helper exists to prevent.
+ *
+ * Cycle-safe: app code that accidentally constructs a cyclic metadata
+ * structure (e.g. `obj.self = obj`) is handled by a `WeakSet` visited-check.
+ * The cycle node is returned as-is rather than crashing the process with a
+ * stack overflow — wrong failure mode for a library safety net.
  */
 export function coerceMetadataDates<T extends Record<string, unknown> | undefined>(
     metadata: T,
 ): T {
     if (!metadata || typeof metadata !== 'object') return metadata;
+    return coerceObjectInternal(metadata as Record<string, unknown>, new WeakSet()) as T;
+}
+
+function coerceObjectInternal(
+    obj: Record<string, unknown>,
+    visited: WeakSet<object>,
+): Record<string, unknown> {
+    if (visited.has(obj)) return obj;
+    visited.add(obj);
     let changed = false;
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(metadata)) {
-        const nv = coerceValueRecursive(v);
+    for (const [k, v] of Object.entries(obj)) {
+        const nv = coerceValueRecursive(v, visited);
         if (nv !== v) changed = true;
         out[k] = nv;
     }
-    return (changed ? out : metadata) as T;
+    return changed ? out : obj;
 }
 
-function coerceValueRecursive(value: unknown): unknown {
+function coerceValueRecursive(value: unknown, visited: WeakSet<object>): unknown {
     if (value === null || value === undefined) return value;
     if (value instanceof Date) return value;
     if (typeof value === 'string') return maybeCoerceToDate(value);
     if (Array.isArray(value)) {
+        if (visited.has(value)) return value;
+        visited.add(value);
         let changed = false;
         const out = value.map((item) => {
-            const nv = coerceValueRecursive(item);
+            const nv = coerceValueRecursive(item, visited);
             if (nv !== item) changed = true;
             return nv;
         });
         return changed ? out : value;
     }
     if (typeof value === 'object' && value.constructor === Object) {
-        return coerceMetadataDates(value as Record<string, unknown>);
+        return coerceObjectInternal(value as Record<string, unknown>, visited);
     }
     return value;
 }
@@ -172,7 +188,9 @@ export function coerceFactTemporalFields<T extends Record<string, unknown>>(inpu
     }
     if ('value' in input) {
         const v = input.value;
-        const coerced = coerceValueRecursive(v);
+        // Fresh visited set per top-level call — `value` is unrelated to
+        // `metadata` so a cycle in one shouldn't block coercion of the other.
+        const coerced = coerceValueRecursive(v, new WeakSet());
         if (coerced !== v) {
             if (!out) out = { ...input };
             out.value = coerced;
