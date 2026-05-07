@@ -1529,6 +1529,10 @@ export {
   // Identifiers + predicates
   canonicalIdentifier,
   slugify,
+  CASE_INSENSITIVE_IDENTIFIER_KINDS,
+  normalizeIdentifierValue,
+  identifierValuesEqual,
+  recaseIdentifierValues,
   PredicateRegistry,
   STANDARD_PREDICATES,
   // Metadata diff helper (used by callers detecting external entity changes —
@@ -1631,6 +1635,10 @@ export type {
   // Identifier config
   CanonicalIdentifierOptions,
   SlugifyOptions,
+  // Identifier-case migration helper types
+  RecaseIdentifierOptions,
+  RecaseIdentifierResult,
+  IdentifierRecoveryFn,
   // Predicate types
   PredicateDefinition,
   // Access control types
