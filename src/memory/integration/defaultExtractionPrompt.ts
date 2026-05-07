@@ -559,12 +559,12 @@ function renderRestraintSection(
       "The user's currently active priorities. For every `task` mention, include `metadata.servesAnchorId` set to one of these ids:",
     );
     for (const a of anchors) {
-      const kind = a.kind ? ` [${sanitizeInlineString(a.kind, 40)}]` : '';
+      const kind = a.kind ? ` [${sanitizeInlineString(a.kind)}]` : '';
       // Anchor labels often originate from user-editable settings or free
       // text. Sanitize to defang headings/code-fences that could prematurely
       // close the prompt structure or inject pseudo-instructions.
       lines.push(
-        `- \`${sanitizeInlineString(a.id, 80)}\`${kind} — ${sanitizeInlineString(a.label, 200)}`,
+        `- \`${sanitizeInlineString(a.id)}\`${kind} — ${sanitizeInlineString(a.label)}`,
       );
     }
     if (eagerness.requirePriorityBinding === 'strict') {
@@ -597,9 +597,9 @@ function renderRestraintSection(
     // crafted snippet can't open a fake instruction block.
     for (const ex of negativeExamples.slice(0, nCount)) {
       const reasonStr = ex.reason
-        ? `  (reason: ${sanitizeInlineString(ex.reason, 200)})`
+        ? `  (reason: ${sanitizeInlineString(ex.reason)})`
         : '';
-      lines.push(`- "${sanitizeInlineString(ex.snippet, 200)}"${reasonStr}`);
+      lines.push(`- "${sanitizeInlineString(ex.snippet)}"${reasonStr}`);
     }
   }
 
@@ -629,11 +629,9 @@ function renderFactSchemaSuffix(eagerness: EagernessProfile): string {
  * instructions — but raises the bar for prompt-injection via
  * attacker-derived strings (anchor labels, negative-example snippets).
  */
-function sanitizeInlineString(s: string, maxLen: number): string {
+function sanitizeInlineString(s: string): string {
   const noBreaks = s.replace(/[\r\n]+/g, ' ');
   const noFences = noBreaks.replace(/`/g, "'");
   const noHeading = noFences.replace(/^[\s>#]+/, '').trimStart();
-  const trimmed = noHeading.trim();
-  if (trimmed.length <= maxLen) return trimmed;
-  return trimmed.slice(0, maxLen) + '…';
+  return noHeading.trim();
 }

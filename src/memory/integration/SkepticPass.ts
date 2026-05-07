@@ -299,17 +299,18 @@ export function defaultSkepticPrompt(ctx: SkepticPromptContext): string {
     // contextHint may carry user-provided priorities or upstream LLM output;
     // sanitize so a crafted hint can't open a fake `## Output` block and
     // pre-fill `{drop:[]}`.
-    lines.push(sanitizePromptString(ctx.contextHint, 1000));
+    lines.push(sanitizePromptString(ctx.contextHint));
     lines.push('');
   }
   lines.push('## Candidates');
   for (let i = 0; i < ctx.items.length; i++) {
     const item = ctx.items[i]!;
     // item.summary often originates from extracted signals (emails, scraped
-    // text) — same prompt-injection risk as contextHint. Cap aggressively
-    // (the docstring promises ≤ 200 chars; we enforce it).
+    // text) — same prompt-injection risk as contextHint. Defang headings/
+    // code-fences but pass full content through; modern LLM context windows
+    // make caller-side truncation a silent information loss.
     lines.push(
-      `${i}. [${sanitizePromptString(item.id, 80)}] ${sanitizePromptString(item.summary, 200)}`,
+      `${i}. [${sanitizePromptString(item.id)}] ${sanitizePromptString(item.summary)}`,
     );
   }
   lines.push('');
@@ -326,12 +327,11 @@ export function defaultSkepticPrompt(ctx: SkepticPromptContext): string {
  * helper in `defaultExtractionPrompt.ts` — not exported across files because
  * the rules are deliberately narrow to each prompt's structure.
  */
-function sanitizePromptString(s: string, maxLen: number): string {
+function sanitizePromptString(s: string): string {
   const noBreaks = s.replace(/[\r\n]+/g, ' ');
   const noFences = noBreaks.replace(/`/g, "'");
   const noHeading = noFences.replace(/^[\s>#]+/, '').trimStart();
-  const trimmed = noHeading.trim();
-  return trimmed.length <= maxLen ? trimmed : trimmed.slice(0, maxLen) + '…';
+  return noHeading.trim();
 }
 
 interface SkepticParseOk {
