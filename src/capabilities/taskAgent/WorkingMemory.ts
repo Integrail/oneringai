@@ -203,7 +203,7 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
    * Store a value in working memory
    *
    * @param key - Unique key for the entry
-   * @param description - Short description for the index (max 150 chars)
+   * @param description - Short description for the index (truncated to descriptionMaxLength, default 500)
    * @param value - The data to store
    * @param options - Optional scope, priority, and pinned settings
    */

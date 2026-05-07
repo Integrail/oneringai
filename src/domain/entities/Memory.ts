@@ -379,7 +379,7 @@ export function detectStaleEntries(
  */
 export interface MemoryEntry {
   key: string;                    // Namespaced key: "user.profile"
-  description: string;            // Short description for index (max 150 chars)
+  description: string;            // Short description for index (max descriptionMaxLength, default 500)
   value: unknown;                 // The actual data
   sizeBytes: number;              // Computed size for tracking
   scope: MemoryScope;             // Lifecycle scope (simple or task-aware)
@@ -506,7 +506,7 @@ export function forPlan(
 export const DEFAULT_MEMORY_CONFIG: WorkingMemoryConfig = {
   maxSizeBytes: 25 * 1024 * 1024, // 25MB default
   maxIndexEntries: 30, // Limit index entries to prevent context bloat
-  descriptionMaxLength: 150,
+  descriptionMaxLength: 500,
   softLimitPercent: 80,
   contextAllocationPercent: 20,
 };

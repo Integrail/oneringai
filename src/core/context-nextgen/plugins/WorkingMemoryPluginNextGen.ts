@@ -353,9 +353,17 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen, IStore
     // Convert simple scope strings to task-aware format
     let scope: MemoryScope = options?.scope ?? 'session';
 
+    // Description is human-readable metadata, not load-bearing. Truncate at the
+    // plugin boundary so a long describeCall output from the compaction strategy
+    // (which deliberately doesn't cap) can never throw out of createMemoryEntry.
+    const safeDescription =
+      description.length > this.config.descriptionMaxLength
+        ? `${description.slice(0, this.config.descriptionMaxLength - 1)}…`
+        : description;
+
     const entry = createMemoryEntry({
       key: finalKey,
-      description,
+      description: safeDescription,
       value,
       scope,
       priority: finalPriority,
@@ -368,7 +376,7 @@ export class WorkingMemoryPluginNextGen implements IContextPluginNextGen, IStore
     await this.storage.set(finalKey, entry);
     this._syncEntries.set(finalKey, {
       key: finalKey,
-      description,
+      description: safeDescription,
       value,
       scope,
       sizeBytes: entry.sizeBytes,

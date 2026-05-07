@@ -30,7 +30,7 @@ export interface WorkingMemoryAccess {
    * Store a value in memory
    *
    * @param key - Unique key for the entry
-   * @param description - Short description (max 150 chars)
+   * @param description - Short description (truncated to descriptionMaxLength, default 500)
    * @param value - Data to store
    * @param options - Optional scope, priority, and pinning
    */
