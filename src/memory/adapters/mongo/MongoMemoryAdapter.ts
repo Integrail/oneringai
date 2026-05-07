@@ -36,6 +36,7 @@ import type {
 } from '../../types.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from '../../dateCoercion.js';
 import { genericTraverse } from '../../GenericTraversal.js';
+import { normalizeIdentifierValue } from '../../identifiers.js';
 import type {
   IMongoCollectionLike,
   MongoFilter,
@@ -246,7 +247,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     this.assertLive();
     const filter = mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, {
       identifiers: {
-        $elemMatch: { kind, value: value.toLowerCase() },
+        $elemMatch: { kind, value: normalizeIdentifierValue(kind, value) },
       },
     });
     const docs = await this.entities.find(filter, { limit: 50 });
@@ -874,9 +875,13 @@ function normalizeEntityForStorage(entity: IEntity): IEntity {
     ...entity,
     groupId: entity.groupId ?? (null as unknown as undefined),
     ownerId: entity.ownerId ?? (null as unknown as undefined),
+    // Kind-aware case normalization: only case-insensitive kinds (email, domain,
+    // phone, url_host) are lowercased. Case-sensitive kinds (system_user_id,
+    // canonical, slack_id, etc.) are preserved as-given. See
+    // src/memory/identifiers.ts for the kind set + rationale.
     identifiers: entity.identifiers.map((i) => ({
       ...i,
-      value: i.value.toLowerCase(),
+      value: normalizeIdentifierValue(i.kind, i.value),
     })),
     // Belt-and-suspenders: re-coerce metadata at the storage boundary so
     // bypass paths (direct adapter use) can't smuggle ISO strings into BSON.
@@ -894,7 +899,7 @@ function normalizeNewEntityForStorage(
     ownerId: input.ownerId ?? (null as unknown as undefined),
     identifiers: input.identifiers.map((i) => ({
       ...i,
-      value: i.value.toLowerCase(),
+      value: normalizeIdentifierValue(i.kind, i.value),
     })),
     metadata: coerceMetadataDates(input.metadata),
   };

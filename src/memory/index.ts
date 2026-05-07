@@ -157,8 +157,20 @@ export { scoreFact, rankFacts } from './Ranking.js';
 
 // Identifier helpers — deterministic canonical ids for entities lacking a
 // natural external strong key (tasks, events, topics, calendar entries).
-export { canonicalIdentifier, slugify } from './identifiers.js';
+export {
+  canonicalIdentifier,
+  slugify,
+  CASE_INSENSITIVE_IDENTIFIER_KINDS,
+  normalizeIdentifierValue,
+  identifierValuesEqual,
+} from './identifiers.js';
 export type { CanonicalIdentifierOptions, SlugifyOptions } from './identifiers.js';
+export { recaseIdentifierValues } from './identifierMigration.js';
+export type {
+  RecaseIdentifierOptions,
+  RecaseIdentifierResult,
+  IdentifierRecoveryFn,
+} from './identifierMigration.js';
 
 // Metadata diff helper — used by callers detecting external changes
 // (e.g. calendar API event metadata updates) to emit predicate facts.

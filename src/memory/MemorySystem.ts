@@ -22,6 +22,7 @@ import {
 } from './AccessControl.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from './dateCoercion.js';
 import { genericTraverse } from './GenericTraversal.js';
+import { identifierValuesEqual } from './identifiers.js';
 import { metadataDeepEqual } from './metadataDiff.js';
 import { rankFacts } from './Ranking.js';
 import type { PredicateRegistry } from './predicates/PredicateRegistry.js';
@@ -547,8 +548,10 @@ export class MemorySystem implements IDisposable {
 
     const identifiers = [...current.identifiers];
     for (const ident of newIdentifiers) {
-      const present = identifiers.some(
-        (i) => i.kind === ident.kind && i.value.toLowerCase() === ident.value.toLowerCase(),
+      // Kind-aware equality: case-insensitive only for email/domain/phone/url_host;
+      // case-preserving for system_user_id, canonical, slack_id, etc.
+      const present = identifiers.some((i) =>
+        identifierValuesEqual(i.kind, i.value, ident.kind, ident.value),
       );
       if (!present) {
         identifiers.push({ ...ident, addedAt: ident.addedAt ?? new Date() });
@@ -2662,8 +2665,9 @@ function mergeIdentifiersAndAliases(
   const identifiers = [...existing.identifiers];
   if (incoming.identifiers) {
     for (const ident of incoming.identifiers) {
-      const already = identifiers.some(
-        (i) => i.kind === ident.kind && i.value.toLowerCase() === ident.value.toLowerCase(),
+      // Kind-aware equality: case-insensitive only for email/domain/phone/url_host.
+      const already = identifiers.some((i) =>
+        identifierValuesEqual(i.kind, i.value, ident.kind, ident.value),
       );
       if (!already) {
         identifiers.push({ ...ident, addedAt: ident.addedAt ?? new Date() });

@@ -21,6 +21,71 @@
 
 import type { Identifier } from './types.js';
 
+// ---------------------------------------------------------------------------
+// Kind-aware identifier-value normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Identifier kinds whose values are semantically case-insensitive — i.e. the
+ * domain-level identity is preserved when you uppercase or lowercase the value.
+ * For these, the storage layer normalizes to lowercase so equality comparisons
+ * are stable across casual typing variations.
+ *
+ * **Examples**
+ *   - `email`        — RFC 5321 treats the local part as case-sensitive in
+ *                      principle, but every mail system in practice treats it
+ *                      case-insensitively. Lowercasing is universally safe.
+ *   - `domain`       — DNS is case-insensitive (RFC 4343).
+ *   - `phone`        — already digits + symbols.
+ *   - `url_host`     — same as `domain`.
+ *
+ * **NOT case-insensitive (preserve original case):**
+ *   - `system_user_id` — Meteor `Random.id()` is base57 (case-sensitive).
+ *                        `JsTx8jbywjpL7dK8B` ≠ `jstx8jbywjpl7dk8b`.
+ *   - `canonical`    — caller-controlled convention; canonicalIdentifier()
+ *                      already lowercases the slug it builds, but external
+ *                      callers may use their own scheme.
+ *   - `slack_id`, `github`, `ticker`, `duns`, hashes, tokens, etc. — case
+ *                      may be load-bearing.
+ *
+ * To extend: add the kind to this set. Doing so retroactively requires data
+ * migration of any existing values stored in the OPPOSITE case — see the
+ * library README's section on "Identifier case migration" for the helper.
+ */
+export const CASE_INSENSITIVE_IDENTIFIER_KINDS: ReadonlySet<string> = new Set([
+  'email',
+  'domain',
+  'phone',
+  'url_host',
+]);
+
+/**
+ * Apply the kind's case-normalization rule to a raw identifier value. This is
+ * the SINGLE source of truth used by both the storage write path (so all
+ * persisted values are normalized identically) and the lookup path (so query
+ * keys match the stored shape). Adding a new case-insensitive kind without
+ * updating this function is a bug — it'll write one shape and look up another.
+ */
+export function normalizeIdentifierValue(kind: string, value: string): string {
+  if (CASE_INSENSITIVE_IDENTIFIER_KINDS.has(kind)) return value.toLowerCase();
+  return value;
+}
+
+/**
+ * Compare two identifier values under their kind-specific normalization rule.
+ * Used by dedup comparators (does this entity already have an identifier
+ * matching the one we're about to add?) and by exact-match lookups.
+ */
+export function identifierValuesEqual(
+  kindA: string,
+  valueA: string,
+  kindB: string,
+  valueB: string,
+): boolean {
+  if (kindA !== kindB) return false;
+  return normalizeIdentifierValue(kindA, valueA) === normalizeIdentifierValue(kindB, valueB);
+}
+
 export interface SlugifyOptions {
   /** Max length of the slug (default 40). Truncation drops whole words where possible. */
   maxLength?: number;

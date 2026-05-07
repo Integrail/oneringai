@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — kind-aware identifier-value case normalization (BREAKING for callers hand-rolling identifier queries)
+
+Prior to this change, both Mongo and InMemory adapters unconditionally lowercased every `Identifier.value` at the storage boundary, regardless of `kind`. This was symmetric on the library's own paths (lookups also lowercased the query, so they matched), but it destroyed original case for case-sensitive identifier kinds — most importantly Meteor `Random.id()`-shaped values stored under custom kinds like `system_user_id`. Any caller hand-rolling a Mongo query against `identifiers[].value` would miss matches.
+
+**Fix:** identifier value normalization is now **kind-aware**. Only kinds in the new `CASE_INSENSITIVE_IDENTIFIER_KINDS` set get lowercased on write and on lookup. All other kinds preserve original case end-to-end.
+
+- **Case-insensitive (lowercase normalized):** `email`, `domain`, `phone`, `url_host`. Matches RFC 5321 (email), RFC 4343 (DNS) — universally safe.
+- **Case-preserving (default for all other kinds):** `system_user_id`, `canonical`, `slack_id`, `github`, `ticker`, `duns`, hashes, tokens, and any caller-defined kind not explicitly in the case-insensitive set.
+
+Touched files:
+- `src/memory/identifiers.ts` — new exports `CASE_INSENSITIVE_IDENTIFIER_KINDS`, `normalizeIdentifierValue(kind, value)`, `identifierValuesEqual(kindA, valueA, kindB, valueB)`.
+- `src/memory/adapters/mongo/MongoMemoryAdapter.ts` — three sites updated: `findEntitiesByIdentifier` lookup, `normalizeEntityForStorage`, `normalizeNewEntityForStorage`.
+- `src/memory/adapters/inmemory/InMemoryAdapter.ts` — five sites updated: `findEntitiesByIdentifier` lookup, `indexEntity` and `unindexEntityIdentifiers` index keys, plus `createEntity` and `updateEntity` now normalize stored identifier values consistently with Mongo (previously they stored raw input — a behavioral inconsistency).
+- `src/memory/MemorySystem.ts` — two dedup comparators (lines ~551 and ~2666) switched from raw `toLowerCase()` to `identifierValuesEqual`.
+- `src/memory/identifierMigration.ts` — **new file**, exports `recaseIdentifierValues(store, options)`. One-shot migration helper for callers whose existing data has lowercased values for case-sensitive kinds. Caller supplies a recovery function that returns the original-case value (the library has no source of truth for what the original was — only the application does).
+
+#### Migration
+
+If your application previously stored case-sensitive identifier values (e.g. `system_user_id`, `canonical`, `slack_id`) under the old behavior, those values are still lowercased in your database. Lookups by original case now miss. Run `recaseIdentifierValues` once per tenant scope — example for Meteor user IDs:
+
+```ts
+import { recaseIdentifierValues } from '@everworker/oneringai';
+
+await recaseIdentifierValues(store, {
+  kind: 'system_user_id',
+  scope: { userId: someUser, groupId: someGroup },
+  recover: async ({ storedValue }) => {
+    // Iterate Meteor.users to find the user whose _id matches case-insensitively.
+    const u = await Meteor.users.findOneAsync({}, { fields: { _id: 1 } });
+    // … your application logic — return the original-case string, or null to skip.
+    return originalCaseUserId;
+  },
+});
+```
+
+Tests:
+- `tests/unit/memory/identifiers.test.ts` — 14 new test cases covering the helper functions, end-to-end storage layer behavior, and the kind-aware dedup comparator.
+- All 954 existing memory tests continue to pass.
+
 ### Connector tools — `actAs` lock for app-only / service-account flows
 
 Closes the impersonation gap on Microsoft Graph and Google API tools. A single shared app-token connector can now be wired into a specific agent that operates ONLY on behalf of a given user, with no way for the LLM to point at a different mailbox / drive.

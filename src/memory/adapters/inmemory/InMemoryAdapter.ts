@@ -35,6 +35,7 @@ import type {
 import { canAccess } from '../../AccessControl.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from '../../dateCoercion.js';
 import { genericTraverse } from '../../GenericTraversal.js';
+import { normalizeIdentifierValue } from '../../identifiers.js';
 
 export interface InMemoryAdapterOptions {
   /** Seed data for tests. */
@@ -76,6 +77,14 @@ export class InMemoryAdapter implements IMemoryStore {
       // Belt-and-suspenders: coerce ISO-string dates in metadata so direct
       // adapter use (without MemorySystem) still yields Date-typed storage.
       metadata: coerceMetadataDates(input.metadata),
+      // Normalize identifier values at the storage boundary — consistent with
+      // MongoMemoryAdapter. Case-insensitive kinds (email, domain, …) are
+      // lowercased; case-sensitive kinds (system_user_id, canonical, …) are
+      // preserved. See src/memory/identifiers.ts.
+      identifiers: input.identifiers.map((i) => ({
+        ...i,
+        value: normalizeIdentifierValue(i.kind, i.value),
+      })),
     };
     this.indexEntity(entity);
     return clone(entity);
@@ -101,8 +110,16 @@ export class InMemoryAdapter implements IMemoryStore {
       );
     }
     this.unindexEntityIdentifiers(existing);
-    // Belt-and-suspenders: coerce metadata dates at the storage boundary.
-    this.indexEntity({ ...entity, metadata: coerceMetadataDates(entity.metadata) });
+    // Belt-and-suspenders: coerce metadata dates + normalize identifier values
+    // at the storage boundary, consistent with createEntity + Mongo adapter.
+    this.indexEntity({
+      ...entity,
+      metadata: coerceMetadataDates(entity.metadata),
+      identifiers: entity.identifiers.map((i) => ({
+        ...i,
+        value: normalizeIdentifierValue(i.kind, i.value),
+      })),
+    });
   }
 
   async getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
@@ -130,7 +147,10 @@ export class InMemoryAdapter implements IMemoryStore {
   ): Promise<IEntity[]> {
     this.assertLive();
     const results: IEntity[] = [];
-    const normalized = value.toLowerCase();
+    // Kind-aware case normalization: lowercase only for case-insensitive kinds
+    // (email, domain, phone, url_host). Other kinds (system_user_id, canonical,
+    // slack_id, etc.) preserve original case. See src/memory/identifiers.ts.
+    const normalized = normalizeIdentifierValue(kind, value);
     // Secondary index lookup — we key by kind:value only (scope filtered post-lookup).
     const ids = this.entitiesByIdent.get(identKey(kind, normalized));
     if (!ids) return results;
@@ -394,7 +414,7 @@ export class InMemoryAdapter implements IMemoryStore {
   private indexEntity(entity: IEntity): void {
     this.entitiesById.set(entity.id, clone(entity));
     for (const ident of entity.identifiers) {
-      const key = identKey(ident.kind, ident.value.toLowerCase());
+      const key = identKey(ident.kind, normalizeIdentifierValue(ident.kind, ident.value));
       let set = this.entitiesByIdent.get(key);
       if (!set) {
         set = new Set();
@@ -406,7 +426,7 @@ export class InMemoryAdapter implements IMemoryStore {
 
   private unindexEntityIdentifiers(entity: IEntity): void {
     for (const ident of entity.identifiers) {
-      const key = identKey(ident.kind, ident.value.toLowerCase());
+      const key = identKey(ident.kind, normalizeIdentifierValue(ident.kind, ident.value));
       const set = this.entitiesByIdent.get(key);
       if (!set) continue;
       set.delete(entity.id);
