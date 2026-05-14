@@ -9,16 +9,28 @@
  * is to enforce `Date` at every write site.
  *
  * Two coercers:
- *   - `coerceMetadataDates(metadata)` — used on `IEntity.metadata` and on
- *     `IFact.metadata`. Walks the object recursively (depth-limited) and
- *     coerces any string value that *looks like* an ISO 8601 date. Conservative
- *     by design: a string that doesn't match the ISO regex is left untouched,
- *     so business-data strings like `expiresAt: 'never'` stay strings.
+ *   - `coerceMetadataDates(metadata)` — used on `IEntity.metadata`, `IFact.metadata`,
+ *     AND on read-side `metadataFilter` inputs (the structure is shape-identical
+ *     — nested plain objects with primitive leaves; the same recursive walk
+ *     descends through operator objects like `{$gte:..., $lt:...}` and `$in`
+ *     arrays without special-casing). Walks the object recursively (cycle-safe)
+ *     and coerces any string value that *looks like* an ISO 8601 date.
+ *     Conservative by design: a string that doesn't match the ISO regex is
+ *     left untouched, so business-data strings like `expiresAt: 'never'` stay
+ *     strings, and operator keys like `$gte` aren't confused for values.
  *   - `coerceFactTemporalFields(input)` — used on `IFact` write inputs and
  *     patches. The fact-level temporal fields (`observedAt`, `validFrom`,
  *     `validUntil`) are *typed* as `Date | undefined`, so we coerce
  *     unconditionally — any string there is contract violation we silently
  *     repair.
+ *
+ * Call sites (current):
+ *   - Write side: adapters apply on every entity/fact create/update so anything
+ *     persisted is `Date`-typed (BSON range queries depend on this).
+ *   - Read side: `MemorySystem.listEntities` normalizes `filter.metadataFilter`
+ *     once at the public boundary so adapters always see `Date` values in
+ *     range/equality clauses. Adapters do NOT re-coerce — single point of
+ *     responsibility, DRY across InMemory + Mongo + any future adapter.
  *
  * Helpers are pure / side-effect-free and return the original reference when
  * no coercion was needed (preserves identity for downstream change detection).

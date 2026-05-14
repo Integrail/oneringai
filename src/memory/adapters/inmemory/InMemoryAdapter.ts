@@ -199,6 +199,9 @@ export class InMemoryAdapter implements IMemoryStore {
     this.assertLive();
     const idSet = filter.ids && filter.ids.length > 0 ? new Set(filter.ids) : null;
     const wantArchived = filter.archived === true;
+    // Date coercion on `metadataFilter` happens once at the MemorySystem boundary
+    // (`MemorySystem.listEntities`) — adapters receive Date-typed range/equality
+    // values. See `src/memory/dateCoercion.ts` header.
     const results: IEntity[] = [];
     for (const e of this.entitiesById.values()) {
       if (idSet && !idSet.has(e.id)) continue;

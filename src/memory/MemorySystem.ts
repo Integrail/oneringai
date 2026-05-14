@@ -687,6 +687,15 @@ export class MemorySystem implements IDisposable {
    * List entities by type + optional metadata equality filter. Thin pass-through
    * to the store's `listEntities` — exposed on MemorySystem so tool layers
    * don't need to reach into the store directly.
+   *
+   * Read-side date coercion: ISO-8601 strings inside `metadataFilter` are
+   * coerced to `Date` here (once, at the public boundary) so adapters always
+   * see Date-typed values in range/equality clauses. Without it, callers (LLM
+   * tools especially) writing the natural shape — `{ startTime: { $gte:
+   * "2026-05-14T00:00:00Z" } }` — would silently get zero matches against
+   * `metadata.startTime` (BSON Date), because Mongo and the InMemory comparator
+   * treat String and Date as distinct types in range comparisons. Adapters do
+   * not re-coerce — DRY, single point of responsibility across all backends.
    */
   listEntities(
     filter: import('./types.js').EntityListFilter,
@@ -694,7 +703,10 @@ export class MemorySystem implements IDisposable {
     scope: ScopeFilter,
   ) {
     assertNotDestroyed(this, 'listEntities');
-    return this.store.listEntities(filter, opts, scope);
+    const normalized = filter.metadataFilter
+      ? { ...filter, metadataFilter: coerceMetadataDates(filter.metadataFilter) }
+      : filter;
+    return this.store.listEntities(normalized, opts, scope);
   }
 
   /**

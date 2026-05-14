@@ -51,12 +51,14 @@ Actions:
 
 Read-only — to create or merge entities use memory_upsert_entity (available only when the write plugin is enabled).
 
-metadataFilter grammar: keys may use dot-notation into nested metadata (e.g. "jarvis.importance"). Values may be a literal, {$in:[...]}, or any combination of $lt/$lte/$gt/$gte. No other operators are accepted.
+metadataFilter grammar: keys may use dot-notation into nested metadata (e.g. "jarvis.importance"). Values may be a literal, {$in:[...]}, or any combination of $lt/$lte/$gt/$gte. No other operators are accepted. Use the literal MongoDB operator names "$gte" / "$lt" / "$in" — do NOT escape "$" (no "_dollar_gte"). ISO 8601 date strings (e.g. "2026-05-14T00:00:00Z") are auto-coerced to Date, so range queries on time-typed metadata fields like startTime / dueAt / endTime work with strings as written.
 
 Examples:
 - find by email: {"by":{"identifier":{"kind":"email","value":"alice@a.com"}}}
 - find by surface: {"by":{"surface":"Alice from accounting"}}
 - list active projects: {"action":"list","by":{"type":"project","metadataFilter":{"state":"active"}},"limit":20}
+- list today's events (Date-typed startTime, ISO strings auto-coerced):
+    {"action":"list","by":{"type":"event","metadataFilter":{"startTime":{"$gte":"2026-05-14T00:00:00Z","$lt":"2026-05-15T00:00:00Z"}},"orderBy":[{"field":"metadata.startTime","direction":"asc"}]},"limit":50}
 - top open tasks by priority (short form):
     {"action":"list","by":{"type":"task","metadataFilter":{"state":{"$in":["pending","in_progress"]},"dueAt":{"$lt":"2026-05-01T00:00:00Z"}},"orderBy":[{"field":"metadata.jarvis.urgency","direction":"desc"},{"field":"metadata.jarvis.importance","direction":"desc"}],"select":["metadata.jarvis.quadrant","metadata.jarvis.urgency","metadata.jarvis.importance","metadata.dueAt","metadata.state"]},"limit":50}`;
 

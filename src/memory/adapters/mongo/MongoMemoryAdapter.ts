@@ -1037,6 +1037,9 @@ function escapeRegex(s: string): string {
  * depth: a user can't smuggle `{$where: "..."}` through even by accident.
  */
 function metadataFilterToMongo(filter: Record<string, unknown>): MongoFilter {
+  // Date coercion on `filter` happens once at the MemorySystem boundary
+  // (`MemorySystem.listEntities`) — adapter receives Date-typed range/equality
+  // values, validator below accepts strings/numbers/booleans/Date.
   const out: MongoFilter = {};
   for (const [key, expected] of Object.entries(filter)) {
     assertAllowedMetadataKey(key);

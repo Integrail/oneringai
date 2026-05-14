@@ -288,3 +288,64 @@ describe('coerceFactTemporalFields', () => {
         expect(out3.value).toBe(7);
     });
 });
+
+// Read-side filter coverage: `coerceMetadataDates` is reused for the
+// `metadataFilter` shape (operator objects like `{$gte:..., $lt:...}` and
+// `$in` arrays). The recursive walk descends through operator keys naturally
+// — `$gte` doesn't match the ISO regex so it's not confused for a value.
+describe('coerceMetadataDates — metadataFilter (read-side) shapes', () => {
+    it('coerces ISO strings inside range operators ($gte / $lt)', () => {
+        const out = coerceMetadataDates({
+            startTime: { $gte: '2026-05-14T00:00:00Z', $lt: '2026-05-15T00:00:00Z' },
+        });
+        const startTime = out?.startTime as Record<string, unknown>;
+        expect(startTime.$gte).toBeInstanceOf(Date);
+        expect((startTime.$gte as Date).toISOString()).toBe('2026-05-14T00:00:00.000Z');
+        expect(startTime.$lt).toBeInstanceOf(Date);
+    });
+
+    it('coerces ISO strings inside $in arrays (Date-typed enum filters)', () => {
+        const out = coerceMetadataDates({
+            createdAt: { $in: ['2026-05-14T00:00:00Z', '2026-05-15T00:00:00Z'] },
+        });
+        const createdAt = out?.createdAt as { $in: unknown[] };
+        expect(createdAt.$in[0]).toBeInstanceOf(Date);
+        expect(createdAt.$in[1]).toBeInstanceOf(Date);
+    });
+
+    it('leaves literal scalars (state, priority, importance) untouched', () => {
+        const filter = {
+            state: 'active',
+            priority: { $gte: 3, $lt: 9 },
+            'jarvis.importance': { $gte: 70 },
+        };
+        const out = coerceMetadataDates(filter);
+        // Same reference is fine — nothing to coerce.
+        expect(out).toBe(filter);
+        expect(out?.state).toBe('active');
+    });
+
+    it('passes Date values through unchanged', () => {
+        const d = new Date('2026-05-14T00:00:00Z');
+        const filter = { startTime: { $gte: d } };
+        const out = coerceMetadataDates(filter);
+        expect(((out?.startTime as Record<string, unknown>).$gte as Date)).toBe(d);
+    });
+
+    it('coerces nested-path filter values', () => {
+        const out = coerceMetadataDates({
+            'jarvis.dueAt': { $lt: '2026-06-01T00:00:00Z' },
+        });
+        const value = out?.['jarvis.dueAt'] as Record<string, unknown>;
+        expect(value.$lt).toBeInstanceOf(Date);
+    });
+
+    it('returns undefined for undefined input', () => {
+        expect(coerceMetadataDates(undefined)).toBe(undefined);
+    });
+
+    it('returns same reference when nothing needs coercion', () => {
+        const filter = { state: 'pending', priority: { $gte: 3 } };
+        expect(coerceMetadataDates(filter)).toBe(filter);
+    });
+});
