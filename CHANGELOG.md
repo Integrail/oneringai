@@ -5,7 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-05-14
+
+### OAuth — `RefreshStrategy` per vendor template (registry-init validated)
+
+Closes the silent-refresh-token-loss class of bugs once and for all. Every `authorization_code` template must now declare how the vendor issues refresh tokens, and the library force-merges whatever the strategy demands into authorize URLs — so operators can override scopes / `authorizationParams` without breaking long-lived sessions.
+
+- **New `RefreshStrategy` discriminated union** on `AuthTemplate.refreshStrategy` (`src/connectors/vendors/types.ts`): `{kind:'scope', scope}` | `{kind:'auth_param', key, value}` | `{kind:'automatic'}` | `{kind:'never_expires'}` | `{kind:'manual_setup', description}`. Required for `flow === 'authorization_code'`; `initVendorRegistry` **throws** at boot if any auth-code template is missing it.
+- **Force-merge semantics** — `buildAuthConfig`/`applyRefreshStrategy` merge the required scope/param **without clobbering operator-set keys** (operator scope additions are kept; the refresh-grant token is appended). The strategy also stamps `requiredScope` onto `OAuthConnectorAuth` so DB-reconstituted connectors re-apply it.
+- **`Connector.setRefreshStrategyBackfill(...)`** — registered automatically by `vendors/index.ts` at import time. `initOAuthManager` looks up the vendor template by `serviceType` and re-applies the strategy whenever a persisted `OAuthConnectorAuth` lacks `requiredScope`. **No migration needed for existing saved connectors** — the upgrade is self-healing.
+- **Per-vendor refresh strategies wired** — Microsoft / Atlassian / GitLab → `scope: 'offline_access'`; Salesforce → `scope: 'refresh_token'`; Twitter/X → `scope: 'offline.access'` (dot, not underscore!); Google → `auth_param: access_type=offline`; Dropbox → `auth_param: token_access_type=offline`; Discord / Asana / HubSpot / Stripe / QuickBooks / Box / Zoom / Pipedrive / Ramp / Bitbucket / Airtable / GitLab / PagerDuty / Sentry → `automatic`; Notion / Linear / Slack / Trello / Mailchimp / Zendesk / Intercom / Shopify / GitHub OAuth Apps → `never_expires`; GitHub App / Slack-rotation → `manual_setup` with operator instructions.
+- **Defensive backfill on `OAuthConnectorAuth.requiredScope`** survives encryption/decryption — spread-preserved by `ConnectorConfigStore`. Hosts that bypass `buildAuthConfig` (e.g. v25's `GroupScopedConnectorRegistry`) get the right behavior via the registered backfill.
+- **`applyRefreshStrategy` exported** for advanced callers; `extractNonSecretCredentials` polish; vendor registry completeness test ensures no auth-code template ever ships without a strategy.
+- New tests in `tests/unit/connectors/vendorHelpers.test.ts` (285 lines), `tests/unit/connectors/vendorRegistryCompleteness.test.ts`, and `tests/unit/oauth/AuthCodePKCE.test.ts` (90+ new lines) covering all five strategy kinds, operator scope-override preservation, backfill correctness, and registry-init failure mode.
+
+### OAuth — `ClientCredentials` + `JWTBearer` flows: shared `TokenStore` semantics
+
+App-token (machine-to-machine) flows now follow the same persistence contract as user OAuth flows. Tokens issued by client-credentials or JWT-bearer grants are stored, refreshed proactively, and shared across processes via `TokenStore`.
+
+- `ClientCredentials.ts` and `JWTBearer.ts` rewritten to delegate token lifecycle to `TokenStore` (was: ad-hoc per-flow caching). Fixes silent re-fetching on every call when running concurrent agents against the same connector.
+- `TokenStore.ts` — minor invariants tightened (audit fact on issue + refresh; expiry skew kept conservative).
+
+### Memory — `memory_list_facts` accepts `sourceSignalId`; "all facts from one signal" mode
+
+Lets callers pull every fact that came out of a specific email / meeting transcript / calendar event, without first resolving the signal to a subject entity. Useful for audit trails, signal-level rebuild, and grounding answers to "what did we agree in the Q3 review?".
+
+- **`subject` is now optional** when `sourceSignalId` is given; both can also be combined to AND the two filters. At least one is required (validated in `execute()`, not via JSON-schema `required`).
+- **New `FactFilter.sourceSignalId` field** propagated through `MemorySystem.listFacts` and both adapters (InMemory + Mongo). Opaque id — the embedding app owns signal-id resolution.
+- Tool description updated with the three modes (subject only / signal only / both) and examples; pass `kind: 'any'` to include narrative-style memos.
+
+### Memory — persona-aware system-message rendering
+
+`MemoryPluginNextGen` now supports a `persona: PersonaConfig` config object that lets the renderer adapt user/agent block headers, profile wording, and instruction copy to a different addressing mode without forking the plugin. Used by Everworker Desktop's "Jarvis" persona; safe to ignore for default agents (no behavior change when `persona` is unset).
+
+- New `PersonaConfig` type exported from `@everworker/oneringai`, `core/context-nextgen`, and `core/context-nextgen/plugins`.
+- New tests in `MemoryPluginNextGen.persona.test.ts` (193 lines) covering header substitution, fallback behavior, and 1st/3rd-person framing under custom personas.
+
+### Tools — `request_user_input` interaction tool
+
+New built-in tool for routines / orchestrator workflows that need to pause and ask the user for structured input (single-select, multi-select, free-text, file upload). Returns the response synchronously from the agent's perspective; host apps render the prompt and call back via `Agent.inject()`.
+
+- Files: `src/tools/interaction/requestUserInput.ts` (281 lines), `src/tools/interaction/types.ts` (145 lines), `src/tools/interaction/index.ts` (registered into the auto-registry as the `interaction` category).
+- Auto-registered in `registry.generated.ts`; the `interaction` category is added to the canonical `ToolCategory` union.
+- 197 lines of unit tests covering schema validation, timeout behavior, malformed-response handling, and integration with `Agent.inject()`.
+
+### Memory — `ExtractionResolver` event-resolution improvements
+
+`ExtractionResolver` now resolves `event` mentions against pre-existing entities via canonical-id + identifier matching (was: blind upsert on every re-extraction). Cross-signal calendar/transcript ingestion now converges on a single event entity instead of fanning out duplicates.
+
+- 158 lines added to `ExtractionResolver.ts`; 313 lines of new tests in `tests/unit/memory/integration/ExtractionResolver.test.ts` covering re-ingestion idempotency, identifier-based merge, and the new event-resolution path.
+
+### Memory — priority entity write path tightened
+
+`memory_upsert_entity` now accepts the priority-specific metadata shape (`metadata.jarvis.priority.{status, weight, horizon, deadline, scope}`) and validates it before persisting, so the rendered `## User's Active Priorities` block can rely on every field being well-formed. Cleanup pass on `MemoryPluginNextGen` + `MemoryWritePluginNextGen` priority handling.
+
+### Memory — `MemoryEntry.description` raised from 150 → 500 chars
+
+`DEFAULT_MEMORY_CONFIG.descriptionMaxLength` bumped from 150 to 500. The 150-char ceiling was forcing the LLM to write cramped, often-useless index entries; the index hit modest token-budget pain at 500 in exchange for a meaningful jump in retrieval quality. `WorkingMemoryAccess.store(...)` docstring updated accordingly. No format change — pre-existing entries are unaffected.
+
+### Memory — entity listing date coercion
+
+`MemorySystem.listEntities` now runs the same date-coercion pass on `metadata` filter values that `upsertEntity` does on writes. Fixes a class of bugs where a caller passing `metadata: { dueAt: new Date(...) }` would silently miss entities whose `dueAt` is stored as an ISO string (or vice versa) because the equality check was structural.
+
+- 22 new lines in `dateCoercion.ts`; coercion added in both adapters (`InMemoryAdapter`, `MongoMemoryAdapter`); 129 lines of new tests in `MemorySystem.listEntities.dateCoercion.test.ts` covering Date↔string parity across both stores.
+- Polish on `findEntity` to use the same coercion helper.
+
+### Memory — extraction-prompt no-truncation pass
+
+`SkepticPass.ts` and `defaultExtractionPrompt.ts` were quietly trimming long mentions / facts before the LLM call. Per the project-wide no-truncation policy (modern LLMs have 200k–1M ctx; truncation silently destroys information), these caps are removed. Callers that need a hard cap can batch upstream.
+
+### Agent — `scopedTo()` now inherits parent permissions
+
+`Agent.scopedTo(toolNames, options)` now propagates the parent's `_config.permissions` (autoApproveAll, allowlist, denylist, policy chain) verbatim onto the scoped sub-agent. Routine execution is autonomous — there is no interactive approval surface — so an `autoApproveAll` superagent must produce `autoApproveAll` scoped children. Previously, scoped sub-agents inherited an empty permission policy and would block on any non-`always`-scope tool call inside a routine.
+
+### Routine builder — compact tool listing + builder improvements
+
+- **`ToolManager.listCompact()`** — new method returning `{name, description, category?, connectorName?}` per enabled tool. Strips parameter schemas. Used by `routine_generate` / `routine_update` to discover available tools on the superagent without paying the token cost of full definitions.
+- **`Agent.scopedTo()` honors `instructions` override** properly; routine runner improvements for control-flow execution paths; `generateRoutine.ts` cleanup.
+
+### Desktop tools — mouse coordinates unified with screenshot pixel space (PR #7)
+
+Fixes click drift on Retina / scaled-DPI displays. Mouse coordinates returned by `desktop_screenshot` are now guaranteed to match the coordinate space accepted by `desktop_mouse_click` / `desktop_mouse_move` / `desktop_mouse_drag` / `desktop_mouse_scroll` and reported by `desktop_get_cursor` — all in physical pixels, regardless of display scaling factor. `screenshotMaxDim` clarification added with explicit tradeoff documentation.
+
+- Substantial refactor of `NutTreeDriver.ts` (~270 lines); coordinate normalization centralized; test coverage expanded in `tests/unit/tools/desktop/NutTreeDriver.test.ts` and `screenshot.test.ts`.
 
 ### Memory — kind-aware identifier-value case normalization (BREAKING for callers hand-rolling identifier queries)
 
