@@ -253,6 +253,13 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    * missing-plugin check fails loudly. Matches Mode 1 (`connector` + `model`)
    * behavior in the routine runner.
    *
+   * **Permissions ARE inherited.** The parent's `permissions` config
+   * (autoApproveAll, allowlist, denylist, policies, etc.) is propagated
+   * verbatim so the scoped sub-agent runs with the same trust posture as
+   * the parent. Routine execution is autonomous — there is no interactive
+   * approval surface — so an autoApproveAll superagent must produce
+   * autoApproveAll scoped children.
+   *
    * Throws if any name is not registered on this agent.
    */
   scopedTo(
@@ -273,6 +280,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       model: this.model,
       userId: this.userId,
       tools: scopedTools,
+      permissions: this._config.permissions,
       ...(options?.instructions !== undefined ? { instructions: options.instructions } : {}),
     });
   }
