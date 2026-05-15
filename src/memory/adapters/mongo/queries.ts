@@ -88,6 +88,12 @@ export function factFilterToMongo(filter: FactFilter, scope: ScopeFilter): Mongo
       $or: [{ validUntil: { $exists: false } }, { validUntil: { $gte: filter.asOf } }],
     });
   }
+  // validUntilBefore — facts past their validity window. Used by expireFacts.
+  // Only matches facts that HAVE validUntil set; facts without are valid forever
+  // by design and are never returned by this filter.
+  if (filter.validUntilBefore instanceof Date) {
+    clauses.push({ validUntil: { $lt: filter.validUntilBefore } });
+  }
 
   return mergeFilters(...clauses);
 }

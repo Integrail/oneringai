@@ -358,6 +358,13 @@ export interface FactFilter {
   /** Temporal filter: validFrom ≤ asOf ≤ (validUntil ?? ∞) AND createdAt ≤ asOf. */
   asOf?: Date;
   /**
+   * Match facts whose `validUntil` is set AND strictly less than this date.
+   * Used by `MemorySystem.expireFacts` to find facts past their validity
+   * window. Facts with no `validUntil` are NEVER matched by this filter —
+   * they are valid forever by design.
+   */
+  validUntilBefore?: Date;
+  /**
    * Match facts whose `supersedes` field equals this fact id. Used by
    * `restoreFact` to detect an existing non-archived successor before
    * un-archiving a previously superseded predecessor. Pass `null` to match
@@ -659,6 +666,15 @@ export type ChangeEvent =
   | { type: 'fact.archive'; factId: FactId }
   | { type: 'fact.restore'; factId: FactId }
   | { type: 'fact.supersede'; oldId: FactId; newId: FactId }
+  /**
+   * Emitted by `MemorySystem.expireFacts` during a scheduled lifecycle sweep,
+   * in addition to (not instead of) the generic `fact.archive` event for the
+   * same fact. The dual emit means existing `fact.archive` subscribers (cache
+   * invalidators, audit log appenders) keep receiving every archival, while
+   * observability that wants to break out automatic expiry vs. operator/agent
+   * archives can subscribe to `fact.expire` and read predicate + validUntil.
+   */
+  | { type: 'fact.expire'; factId: FactId; predicate: string; validUntil: Date }
   /**
    * H3: emitted when a singleValued predicate's auto-supersede couldn't see a
    * prior fact in the caller's scope, but a prior DOES exist in an outer scope

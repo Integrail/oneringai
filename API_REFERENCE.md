@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-04-25
+**Generated:** 2026-05-15
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -18,8 +18,8 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Video Generation](#video-generation) (22 items)
 - [Task Agents](#task-agents) (113 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (45 items)
-- [Tools & Function Calling](#tools-function-calling) (175 items)
+- [Session Management](#session-management) (46 items)
+- [Tools & Function Calling](#tools-function-calling) (179 items)
 - [Streaming](#streaming) (29 items)
 - [Model Registry](#model-registry) (17 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (63 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (600 items)
+- [Other](#other) (622 items)
 
 ## Core
 
@@ -142,6 +142,52 @@ static async hydrate(
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `scopedTo()`
+
+Build a fresh agent restricted to the named tools, reusing this agent's
+connector, model, and userId.
+
+This is the "filtered superagent" pattern: keep one agent carrying every
+possible tool, and at routine-execution time hand the runner an agent
+restricted to exactly the tools the routine declared in `requiredTools`.
+
+The returned agent is independent — its own AgentContextNextGen, own
+ToolManager (with fresh circuit breakers), own hooks. Caller owns its
+lifecycle and must `destroy()` it.
+
+Tool **functions** are shared by reference, so connector tools resolve the
+same way they would on the parent — no re-instantiation. `identities` is
+not propagated to avoid auto-regenerating a full connector tool surface
+(which would defeat the scope).
+
+**Plugins are NOT inherited.** The scoped agent runs with default context
+features only (working memory, in-context memory). Memory plugins,
+SharedWorkspace, custom plugins on the parent are not carried over.
+Routines that need them must declare `requiredPlugins` so the runner's
+missing-plugin check fails loudly. Matches Mode 1 (`connector` + `model`)
+behavior in the routine runner.
+
+**Permissions ARE inherited.** The parent's `permissions` config
+(autoApproveAll, allowlist, denylist, policies, etc.) is propagated
+verbatim so the scoped sub-agent runs with the same trust posture as
+the parent. Routine execution is autonomous — there is no interactive
+approval surface — so an autoApproveAll superagent must produce
+autoApproveAll scoped children.
+
+Throws if any name is not registered on this agent.
+
+```typescript
+scopedTo(
+    allowedToolNames: string[],
+    options?:
+```
+
+**Parameters:**
+- `allowedToolNames`: `string[]`
+- `options`: `{ instructions?: string | undefined; } | undefined` *(optional)*
+
+**Returns:** `Agent`
 
 #### `getAgentType()`
 
@@ -1327,6 +1373,22 @@ static getInfo(): Record&lt;string,
 
 **Returns:** `Record&lt;string, { displayName: string; description: string; baseURL: string; }&gt;`
 
+#### `static setRefreshStrategyBackfill()`
+
+Register the refresh-strategy backfill resolver. Called by
+`vendors/index.ts` once at boot. Idempotent (a second call replaces).
+
+```typescript
+static setRefreshStrategyBackfill(
+    fn: NonNullable&lt;typeof Connector.refreshStrategyBackfill&gt;,
+  ): void
+```
+
+**Parameters:**
+- `fn`: `(serviceType: string | undefined, auth: OAuthConnectorAuth & { type: "oauth"; }) =&gt; { requiredScope?: string | undefined; scope?: string | undefined; authorizationParams?: Record&lt;string, string&gt; | undefined; } | undefined`
+
+**Returns:** `void`
+
 </details>
 
 <details>
@@ -1557,6 +1619,18 @@ isDisposed(): boolean
 | Property | Type | Description |
 |----------|------|-------------|
 | `registry` | `registry: Map&lt;string, Connector&gt;` | - |
+| `refreshStrategyBackfill?` | `refreshStrategyBackfill: ((serviceType: string | undefined, auth: OAuthConnectorAuth & { type: "oauth"; }) =&gt; { requiredScope?: string | undefined; scope?: string | undefined; authorizationParams?: Record&lt;string, string&gt; | undefined; } | undefined) | undefined` | Backfill resolver for OAuth `authorization_code` connectors loaded from
+persisted configs that pre-date the `RefreshStrategy` annotation. Given a
+`serviceType` (e.g. `'microsoft'`), returns a patch that re-applies the
+vendor template's strategy: stamps `requiredScope` and merges the
+scope/authorizationParams. Returns `undefined` if no template is found
+or the strategy is a no-op (`automatic`/`never_expires`/`manual_setup`).
+
+Registered by `vendors/index.ts` at module-load time, so the lookup
+works for any host that imports `@everworker/oneringai`. Hosts that
+bypass `buildAuthConfig` (e.g. v25's GroupScopedConnectorRegistry, which
+reconstructs Connectors from decrypted DB configs) still get the right
+refresh-grant tokens on every authorize URL — no migration required. |
 | `id` | `id: string` | - |
 | `name` | `name: string` | - |
 | `vendor?` | `vendor: Vendor | undefined` | - |
@@ -5930,7 +6004,7 @@ updateTools(tools: ToolFunction[]): void
 
 ### InContextMemoryPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:93`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:89`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -6194,7 +6268,7 @@ async storeList(_filter?: Record&lt;string, unknown&gt;, _context?: ToolContext)
 
 ### InMemoryAdapter `class`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:44`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:46`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7016,7 +7090,7 @@ async getTotalSize(): Promise&lt;number&gt;
 
 ### InvalidTaskTransitionError `class`
 
-📍 [`src/memory/MemorySystem.ts:123`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:137`](src/memory/MemorySystem.ts)
 
 Thrown when `transitionTaskState` is called with `validate: 'strict'` and
 the (from, to) pair is not allowed by the caller-supplied transition matrix.
@@ -7222,7 +7296,7 @@ estimateSavings(component: IContextComponent): number
 
 ### MemoryPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:264`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:318`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7338,12 +7412,34 @@ restoreState(state: unknown): void
 #### `getBootstrappedIds()`
 
 Entity IDs created (or resolved) during bootstrap. Undefined before bootstrap.
+ Always returns the *variant* agent entity id (keyed by `system_agent_id`),
+ even when a persona is configured — for "what was actually bootstrapped"
+ use this; for "what `'me'` / `'this_agent'` resolve to in tools" use
+ `getOwnSubjectIds()`.
 
 ```typescript
 getBootstrappedIds():
 ```
 
 **Returns:** `{ userEntityId?: string | undefined; agentEntityId?: string | undefined; groupEntityId?: string | undefined; }`
+
+#### `getOwnSubjectIds()`
+
+Subject ids for LLM-facing `'me'` / `'this_agent'` token resolution,
+used by both this plugin's read tools and (via `AgentContextNextGen`'s
+wiring) `MemoryWritePluginNextGen`'s write tools. `agentEntityId` here
+is **persona-aware**: if a `personaEntityId` was configured, this returns
+the persona, so `memory_set_agent_rule` writes and rule-block reads share
+one subject across every variant carrying the same persona.
+
+Use `getBootstrappedIds()` instead when you need the variant agent entity
+id (analytics, factContextIds, snapshots).
+
+```typescript
+getOwnSubjectIds():
+```
+
+**Returns:** `{ userEntityId?: string | undefined; agentEntityId?: string | undefined; }`
 
 </details>
 
@@ -7357,6 +7453,7 @@ getBootstrappedIds():
 | `agentId` | `agentId: string` | - |
 | `userId` | `userId: string` | - |
 | `groupId` | `groupId: string | undefined` | - |
+| `personaEntityId` | `personaEntityId: string | undefined` | - |
 | `userPerms` | `userPerms: Permissions | undefined` | - |
 | `agentPerms` | `agentPerms: Permissions | undefined` | - |
 | `groupPerms` | `groupPerms: Permissions | undefined` | - |
@@ -7480,7 +7577,7 @@ async listKeys(): Promise&lt;string[]&gt;
 
 ### MemorySystem `class`
 
-📍 [`src/memory/MemorySystem.ts:226`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:240`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7507,7 +7604,7 @@ async upsertEntity(
 ```
 
 **Parameters:**
-- `input`: `Partial&lt;IEntity&gt; & { identifiers: Identifier[]; displayName: string; type: string; }`
+- `input`: `Partial&lt;IEntity&gt; & { identifiers: Identifier[]; displayName: string; type: string; metadataMerge?: "fillMissing" | "overwrite" | undefined; metadataMergeKeys?: string[] | undefined; }`
 - `scope`: `ScopeFilter`
 
 **Returns:** `Promise&lt;UpsertEntityResult&gt;`
@@ -7583,6 +7680,15 @@ searchEntities(
 List entities by type + optional metadata equality filter. Thin pass-through
 to the store's `listEntities` — exposed on MemorySystem so tool layers
 don't need to reach into the store directly.
+
+Read-side date coercion: ISO-8601 strings inside `metadataFilter` are
+coerced to `Date` here (once, at the public boundary) so adapters always
+see Date-typed values in range/equality clauses. Without it, callers (LLM
+tools especially) writing the natural shape — `{ startTime: { $gte:
+"2026-05-14T00:00:00Z" } }` — would silently get zero matches against
+`metadata.startTime` (BSON Date), because Mongo and the InMemory comparator
+treat String and Date as distinct types in range comparisons. Adapters do
+not re-coerce — DRY, single point of responsibility across all backends.
 
 ```typescript
 listEntities(
@@ -7874,6 +7980,41 @@ async archiveFact(id: FactId, scope: ScopeFilter): Promise&lt;void&gt;
 
 **Returns:** `Promise&lt;void&gt;`
 
+#### `expireFacts()`
+
+Scheduled lifecycle sweep — archives facts whose `validUntil` is in the
+past relative to `asOf` (defaults to "now"). Host applications call this
+on a daily cadence to keep the visible graph trimmed.
+
+Contract:
+- Only affects facts that already have `validUntil` set. Facts without
+  `validUntil` are valid forever and never touched.
+- Only archives facts that are NOT already archived.
+- Archived facts remain queryable via `archivedOnly` / `includeArchived`
+  paths — this is soft archive, not hard delete.
+- Scope-bounded: the caller's scope determines which facts are visible.
+  Multi-tenant schedulers iterate over scopes and call once per scope.
+- Emits BOTH `fact.archive` and `fact.expire` per archived fact. The
+  `fact.archive` event preserves the "any archival" contract that
+  existing subscribers (cache invalidators, audit appenders) depend on;
+  `fact.expire` is the lifecycle-specific signal carrying predicate +
+  validUntil for observability that wants to distinguish automatic
+  expiry from operator/agent archives.
+
+Returns the count of facts archived in this sweep. Paginated internally
+to bound memory; pageSize defaults to 500.
+
+```typescript
+async expireFacts(
+    opts:
+```
+
+**Parameters:**
+- `opts`: `{ asOf?: Date | undefined; predicates?: string[] | undefined; limit?: number | undefined; pageSize?: number | undefined; }`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;{ archived: number; }&gt;`
+
 #### `restoreFact()`
 
 Reverse of `archiveFact` — restore a previously-archived fact so it
@@ -7962,6 +8103,52 @@ async getContext(
 - `scope`: `ScopeFilter`
 
 **Returns:** `Promise&lt;EntityView&gt;`
+
+#### `resolveRelatedItems()`
+
+Tasks related to a subject entity. Finds task entities (type='task') where
+any of the common relational metadata fields point at the subject, OR
+where a relational fact ties a task to the subject. Returns only non-
+terminal states by default.
+
+```typescript
+async resolveRelatedItems(
+    entityIds: EntityId[],
+    scope: ScopeFilter,
+    opts?:
+```
+
+**Parameters:**
+- `entityIds`: `string[]`
+- `scope`: `ScopeFilter`
+- `opts`: `{ types?: ("task" | "event")[] | undefined; taskStates?: string[] | undefined; limit?: number | undefined; asOf?: Date | undefined; recentEventsWindowDays?: number | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;RelatedItemsResult&gt;`
+
+#### `findSimilarOpenTasks()`
+
+Semantic kNN over open task summaries. Embeds `queryText` and ranks active
+tasks by similarity against their identityEmbedding (which covers
+displayName + aliases + primary identifier values — typically the task
+summary). Used by the v25 reconciler to catch cross-channel mentions
+("the JPM thing") that don't share a contextId with the new signal.
+
+Returns empty array when no embedder/semantic adapter is configured —
+callers should treat semantic similarity as opportunistic, not load-bearing.
+
+```typescript
+async findSimilarOpenTasks(
+    queryText: string,
+    scope: ScopeFilter,
+    opts?:
+```
+
+**Parameters:**
+- `queryText`: `string`
+- `scope`: `ScopeFilter`
+- `opts`: `{ topK?: number | undefined; minScore?: number | undefined; taskStates?: string[] | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;{ task: IEntity; score: number; }[]&gt;`
 
 #### `updateEntityMetadata()`
 
@@ -8231,7 +8418,7 @@ async shutdown(): Promise&lt;void&gt;
 
 ### MemoryWritePluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts:189`](src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts:181`](src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -8360,6 +8547,7 @@ restoreState(_state: unknown): void
 | `autoResolveThreshold` | `autoResolveThreshold: number` | - |
 | `getOwnSubjectIds` | `getOwnSubjectIds: () =&gt; { userEntityId?: string | undefined; agentEntityId?: string | undefined; }` | - |
 | `forgetRateLimit` | `forgetRateLimit: { maxCallsPerWindow?: number | undefined; windowMs?: number | undefined; } | undefined` | - |
+| `setAgentRuleRateLimit` | `setAgentRuleRateLimit: { maxCallsPerWindow?: number | undefined; windowMs?: number | undefined; } | undefined` | - |
 | `estimator` | `estimator: ITokenEstimator` | - |
 | `instructionsTokenCache` | `instructionsTokenCache: number | null` | - |
 | `cachedTools` | `cachedTools: ToolFunction&lt;any, any&gt;[] | null` | - |
@@ -8371,7 +8559,7 @@ restoreState(_state: unknown): void
 
 ### MongoMemoryAdapter `class`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:126`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:128`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -10147,7 +10335,7 @@ getTotalSize(): Promise&lt;number&gt;;
 
 ### IMemoryStore `interface`
 
-📍 [`src/memory/types.ts:489`](src/memory/types.ts)
+📍 [`src/memory/types.ts:512`](src/memory/types.ts)
 
 Storage contract. Required methods are the minimum capability; optional
 methods (`traverse`, `semanticSearch`) are discovered by duck-typing.
@@ -10495,7 +10683,7 @@ shutdown?(): Promise&lt;void&gt;;
 
 ### InMemoryAdapterOptions `interface`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:38`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:40`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10615,7 +10803,7 @@ findByWebhookId(webhookId: string): Promise&lt;{ plan: Plan; task: Task } | unde
 
 ### IScopedMemoryView `interface`
 
-📍 [`src/memory/types.ts:621`](src/memory/types.ts)
+📍 [`src/memory/types.ts:644`](src/memory/types.ts)
 
 Read-only view scoped to a specific caller, passed to the rule engine.
 Rules CANNOT write through this view — they return partial IFact specs
@@ -10763,7 +10951,7 @@ Index entry (lightweight, always in context)
 
 ### MemoryPluginConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:114`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:126`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10782,6 +10970,25 @@ NOT accept a groupId arg from the LLM — see the security review. Leave
 undefined for non-grouped deployments. |
 | `userEntityPermissions?` | `userEntityPermissions?: Permissions;` | Permissions stamped on the bootstrapped user entity. |
 | `agentEntityPermissions?` | `agentEntityPermissions?: Permissions;` | Permissions stamped on the bootstrapped agent entity. |
+| `personaEntityId?` | `personaEntityId?: EntityId;` | Optional **persona** entity id. When set, the agent's behavior rules are
+read from and written to this entity instead of the variant agent entity
+bootstrapped by `agentId`. Lets several agent variants share one identity:
+pass the same `personaEntityId` to each variant and any rule written via
+`memory_set_agent_rule` (and any 'me'/'this_agent' subject token in read
+tools) lands on the shared persona, so all variants render the same
+"User-specific instructions for this agent" block.
+
+The variant agent entity (keyed by `system_agent_id:<agentId>`) is still
+bootstrapped — host code that wants per-variant analytics or factContextIds
+can reach it via `getBootstrappedIds().agentEntityId`. Only the LLM-facing
+subject for rules + 'this_agent' is overridden.
+
+The host owns the persona entity's lifecycle (upsert with whatever
+type/identifier scheme fits — e.g. `type:'assistant_persona'` keyed by
+`{kind:'system_assistant_persona_id', value:userId}` for a per-user
+persona). The persona entity MUST be owned by the same `userId` passed
+here, or `memory_set_agent_rule` will reject writes with a cross-owner
+error (the same ownership invariant enforced for variant agents). |
 | `groupBootstrap?` | `groupBootstrap?: {
     /** Display name of the organization (e.g., the group's `name` field). */
     displayName: string;
@@ -10799,7 +11006,8 @@ undefined for non-grouped deployments. |
   };` | Optional group ("current organization") bootstrap. When present AND
 `groupId` is set, a third `organization` entity is upserted carrying the
 identifier `{kind: 'system_group_id', value: groupId}` (plus any extras).
-Rendered as a "Your Organization Profile" block alongside the user profile.
+Rendered as an "About the User's Organization" block alongside the user
+profile.
 
 Visibility of facts on this entity is controlled by the host's
 `MemorySystem.visibilityPolicy` and per-write `permissions` overrides —
@@ -10832,7 +11040,7 @@ displayName is taken from `groupBootstrap.displayName`. |
 
 ### MemoryPluginInjectionConfig `interface`
 
-📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:75`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:87`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10870,7 +11078,7 @@ to disable. |
 
 ### MemorySystemConfig `interface`
 
-📍 [`src/memory/types.ts:827`](src/memory/types.ts)
+📍 [`src/memory/types.ts:859`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10912,7 +11120,7 @@ predicate (camelCase/dash/alias → snake_case), applies `defaultImportance`
 predicates, and folds registry weights into ranking. Absent = free-form
 predicate strings (pre-registry behavior).
 
-Pass `PredicateRegistry.standard()` for the built-in 51-predicate starter
+Pass `PredicateRegistry.standard()` for the built-in 54-predicate starter
 set, `PredicateRegistry.empty()` plus `.registerAll(...)` for a fully
 custom vocabulary. |
 | `predicateMode?` | `predicateMode?: 'permissive' | 'strict';` | 'strict' rejects any `addFact` whose (canonicalized) predicate is not in
@@ -10991,7 +11199,11 @@ Keep the function cheap — it runs on every entity / fact create. |
 | `getOwnSubjectIds?` | `getOwnSubjectIds?: () =&gt; { userEntityId?: string; agentEntityId?: string };` | Callback supplied by the sibling `MemoryPluginNextGen` so `"me"` /
 `"this_agent"` tokens resolve to its bootstrapped entities. When absent,
 those tokens return "not available". |
-| `forgetRateLimit?` | `forgetRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };` | Rate-limit override for memory_forget. |
+| `forgetRateLimit?` | `forgetRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };` | Rate-limit override for memory_forget. Also used as the fallback for
+ `setAgentRuleRateLimit` when that field is omitted. |
+| `setAgentRuleRateLimit?` | `setAgentRuleRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };` | Rate-limit override for memory_set_agent_rule. Falls back to
+ `forgetRateLimit` when omitted; allows hosts to give rule-writes a
+ larger budget than destructive forgets without sharing one knob. |
 
 </details>
 
@@ -10999,7 +11211,7 @@ those tokens return "not available". |
 
 ### MongoMemoryAdapterOptions `interface`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:68`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:70`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11497,7 +11709,7 @@ Reference to a source value for control flow operations.
 
 ### TaskStateHistoryEntry `interface`
 
-📍 [`src/memory/MemorySystem.ts:165`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:179`](src/memory/MemorySystem.ts)
 
 Single entry appended to `task.metadata.stateHistory` on every transition.
 No cap — retention is the caller's problem (audit systems, GDPR, archival).
@@ -11519,7 +11731,7 @@ No cap — retention is the caller's problem (audit systems, GDPR, archival).
 
 ### TaskStatesConfig `interface`
 
-📍 [`src/memory/types.ts:820`](src/memory/types.ts)
+📍 [`src/memory/types.ts:852`](src/memory/types.ts)
 
 Task-state vocabulary configuration. Drives which states `getContext`
 surfaces as "open" in `relatedTasks`, and which are treated as "terminal"
@@ -11642,7 +11854,7 @@ Result of task validation (returned by LLM reflection)
 
 ### TransitionTaskStateOptions `interface`
 
-📍 [`src/memory/MemorySystem.ts:173`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:187`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11683,7 +11895,7 @@ pivot on `contextIds` (e.g. "everything about the Acme deal"). |
 
 ### TransitionTaskStateResult `interface`
 
-📍 [`src/memory/MemorySystem.ts:215`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:229`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12054,7 +12266,7 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createMemoryReadTools `function`
 
-📍 [`src/tools/memory/index.ts:118`](src/tools/memory/index.ts)
+📍 [`src/tools/memory/index.ts:128`](src/tools/memory/index.ts)
 
 Read-only retrieval tools — no memory writes performed.
 
@@ -12078,7 +12290,7 @@ export function createMemorySystemWithConnectors(
 
 ### createMemoryTools `function`
 
-📍 [`src/tools/memory/index.ts:147`](src/tools/memory/index.ts)
+📍 [`src/tools/memory/index.ts:157`](src/tools/memory/index.ts)
 
 All 11 memory tools (5 read + 6 write). Convenience factory — most callers
 should prefer `createMemoryReadTools` / `createMemoryWriteTools` separately
@@ -12092,7 +12304,7 @@ export function createMemoryTools(args: CreateMemoryToolsArgs): ToolFunction[]
 
 ### createMemoryWriteTools `function`
 
-📍 [`src/tools/memory/index.ts:130`](src/tools/memory/index.ts)
+📍 [`src/tools/memory/index.ts:140`](src/tools/memory/index.ts)
 
 Write-side memory tools — mutate entities and facts.
 
@@ -12380,7 +12592,7 @@ Default configuration values
 |----------|------|-------------|
 | `maxSizeBytes` | `25 * 1024 * 1024` | - |
 | `maxIndexEntries` | `30` | - |
-| `descriptionMaxLength` | `150` | - |
+| `descriptionMaxLength` | `500` | - |
 | `softLimitPercent` | `80` | - |
 | `contextAllocationPercent` | `20` | - |
 
@@ -14219,7 +14431,7 @@ getAgentId(): string
 
 ### FileRoutineDefinitionStorage `class`
 
-📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:87`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:91`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
 
 File-based storage for routine definitions.
 
@@ -14300,7 +14512,7 @@ async list(context: StorageUserContextInput, options?:
 - `context`: `StorageUserContextInput`
 - `options`: `{ tags?: string[] | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
 
-**Returns:** `Promise&lt;RoutineDefinition[]&gt;`
+**Returns:** `Promise&lt;RoutineSummary[]&gt;`
 
 #### `getPath()`
 
@@ -15728,7 +15940,7 @@ export function createFileMediaStorage(config?: FileMediaStorageConfig): FileMed
 
 ### createFileRoutineDefinitionStorage `function`
 
-📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:362`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
+📍 [`src/infrastructure/storage/FileRoutineDefinitionStorage.ts:370`](src/infrastructure/storage/FileRoutineDefinitionStorage.ts)
 
 Create a FileRoutineDefinitionStorage with default configuration
 
@@ -15754,13 +15966,23 @@ export function createFileRoutineExecutionStorage(
 
 ---
 
+### toDate `function`
+
+📍 [`src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts:808`](src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts)
+
+```typescript
+function toDate(v: string | Date | undefined): Date | undefined
+```
+
+---
+
 ## Tools & Function Calling
 
 Define and execute tools for agents
 
 ### ConnectorTools `class`
 
-📍 [`src/tools/connector/ConnectorTools.ts:200`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:254`](src/tools/connector/ConnectorTools.ts)
 
 ConnectorTools - Main API for vendor-dependent tools
 
@@ -16807,7 +17029,7 @@ async execute(tool: ToolFunction, args: unknown): Promise&lt;unknown&gt;
 
 ### ToolManager `class`
 
-📍 [`src/core/ToolManager.ts:209`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:225`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -17284,6 +17506,29 @@ listEnabled(): string[]
 ```
 
 **Returns:** `string[]`
+
+#### `listCompact()`
+
+Slim catalog of currently enabled tools — name + description, no parameter schemas.
+
+Used by routine builders to discover what's available on a superagent without
+paying the token cost of full tool definitions. Each entry includes:
+- `name`: the LLM-facing tool name (already connector-prefixed for connector tools,
+  e.g. `msft-personal_send_email`)
+- `description`: the tool's `definition.function.description`
+- `category`: optional grouping
+- `connectorName`: present for connector-bound tools (read from
+  `tool.connectorName`, falling back to parsing the registration `source` like
+  `'connector:msft-personal'` or `'connector:msft-personal:account-id'`)
+
+Disabled tools are excluded — they're not actually callable by the LLM, so listing
+them would mislead a routine builder.
+
+```typescript
+listCompact(): CompactToolDescriptor[]
+```
+
+**Returns:** `CompactToolDescriptor[]`
 
 #### `selectForContext()`
 
@@ -18274,7 +18519,7 @@ Extended registry entry for connector-generated tools
 
 ### ConnectorToolsOptions `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:153`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:181`](src/tools/connector/ConnectorTools.ts)
 
 Options for ConnectorTools methods that accept a scoped registry
 
@@ -18285,6 +18530,57 @@ Options for ConnectorTools methods that accept a scoped registry
 |----------|------|-------------|
 | `registry?` | `registry?: IConnectorRegistry;` | Optional scoped registry for access-controlled connector lookup |
 | `accountId?` | `accountId?: string;` | Account alias for multi-account OAuth. When set, tools are prefixed with accountId and context is bound. |
+| `actAs?` | `actAs?: string;` | Lock the on-behalf-of user identity for tools that act as a specific user
+(Microsoft Graph `/users/{id}`, Google API `userId`). Set ONCE at tool
+instantiation; the LLM cannot override it at call time.
+
+- When set: the per-tool `targetUser` schema parameter is OMITTED and this
+  value is always used.
+- When unset: existing behavior (LLM supplies `targetUser` for app-only auth).
+- Silently ignored for delegated connectors (identity already bound by token).
+- Empty / whitespace-only strings are treated as unset.
+
+Use this when wiring a single shared app-token connector into a specific
+agent that should only ever operate on behalf of one user. The connector
+itself stays generic and can be reused with different `actAs` values
+across different agents.
+
+SCOPE — only tools whose request URL is user-scoped participate in the lock.
+Tools that hit endpoints which are not user-scoped at the URL level
+(Microsoft `/search/query`; Google `/drive/v3/files`, `/calendar/v3/freeBusy`)
+do NOT take `actAs` and are unaffected by it — they always work with whatever
+the underlying token can see. Each non-participating tool's factory carries
+a `NOTE on actAs lock` doc block explaining the data-scope guarantee for
+that specific tool. If you need true per-user isolation for those tools,
+use a delegated connector (where the OAuth token binds identity directly). |
+
+</details>
+
+---
+
+### CreateRequestUserInputToolOptions `interface`
+
+📍 [`src/tools/interaction/requestUserInput.ts:54`](src/tools/interaction/requestUserInput.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolName?` | `toolName?: string;` | Tool name surfaced to the LLM. Default: `'request_user_input'`. |
+| `description?` | `description?: string;` | Override the tool description. The default description tells the model
+to call this when it genuinely needs a human decision/answer that it
+cannot produce itself, and warns that the agent will pause until reply. |
+| `ttl?` | `ttl?: number;` | SuspendSignal TTL in milliseconds (how long to keep the correlation
+before it expires). Defaults to the library's `SuspendSignal` default
+(7 days at the time of writing). |
+| `resumeAs?` | `resumeAs?: 'user_message' | 'tool_result';` | How the user's reply should be injected when the session resumes.
+
+ - `'tool_result'` (default): the reply becomes the tool's actual
+   output — semantically honest ("I asked → user answered → tool
+   returned").
+ - `'user_message'`: reply is added as a fresh user turn — useful when
+   you want the resumed turn to feel conversational. |
 
 </details>
 
@@ -18439,7 +18735,7 @@ Test case for a custom tool
 
 ### DesktopToolConfig `interface`
 
-📍 [`src/tools/desktop/types.ts:91`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:95`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -18516,7 +18812,7 @@ When set, read_file will automatically convert binary document formats to markdo
 
 ### GenericAPICallArgs `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:132`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:160`](src/tools/connector/ConnectorTools.ts)
 
 Arguments for the generic API call tool
 
@@ -18537,7 +18833,7 @@ Arguments for the generic API call tool
 
 ### GenericAPICallResult `interface`
 
-📍 [`src/tools/connector/ConnectorTools.ts:143`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:171`](src/tools/connector/ConnectorTools.ts)
 
 Result from the generic API call tool
 
@@ -19129,6 +19425,24 @@ Tracks a single async tool execution in flight
 
 ---
 
+### RequestUserInputToolDisplayResult `interface`
+
+📍 [`src/tools/interaction/requestUserInput.ts:99`](src/tools/interaction/requestUserInput.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `channel` | `channel: string;` | Channel the prompt was delivered on. |
+| `correlationId` | `correlationId: string;` | Correlation id used to resume the session (opaque to the LLM). |
+| `message` | `message: string;` | Human-readable confirmation, e.g., "Slack DM to |
+| `suspended` | `suspended: true;` | Whether the agent is now suspended (always true on success). |
+
+</details>
+
+---
+
 ### RoutineToolCatalogOptions `interface`
 
 📍 [`src/core/createRoutineTool.ts:55`](src/core/createRoutineTool.ts)
@@ -19164,6 +19478,34 @@ Called per-invocation; the agent is destroyed after the routine completes. |
 | `tags?` | `tags?: Record&lt;string, string[]&gt;;` | Tags by tool name |
 | `categories?` | `categories?: Record&lt;string, string&gt;;` | Categories by tool name |
 | `sources?` | `sources?: Record&lt;string, ToolSource&gt;;` | Sources by tool name |
+
+</details>
+
+---
+
+### ServiceToolFactoryOptions `interface`
+
+📍 [`src/tools/connector/ConnectorTools.ts:110`](src/tools/connector/ConnectorTools.ts)
+
+Options forwarded from `ConnectorTools.for()` to a `ServiceToolFactory`.
+
+Currently carries the optional `actAs` lock. Adding new fields here is a
+non-breaking change because the `options` parameter is itself optional and
+existing factories that ignore extra params continue to work.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `actAs?` | `actAs?: string;` | Lock the on-behalf-of user identity for tools that act as a specific user
+(Microsoft Graph `/users/{id}`, Google API `userId`). Set ONCE at tool
+instantiation; the LLM cannot override it at call time.
+
+- When set: the per-tool `targetUser` schema parameter is OMITTED and this
+  value is always used.
+- When unset: existing behavior (LLM supplies `targetUser` for app-only auth).
+- Silently ignored for delegated connectors (identity already bound by token). |
 
 </details>
 
@@ -19504,7 +19846,7 @@ Used for logging, UI display, and debugging. |
 
 ### ToolManagerConfig `interface`
 
-📍 [`src/core/ToolManager.ts:199`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:215`](src/core/ToolManager.ts)
 
 Configuration for ToolManager
 
@@ -19709,7 +20051,7 @@ Used by initializeFromRegistry() and registerFromToolRegistry().
 
 ### ToolRegistryEntry `interface`
 
-📍 [`src/tools/registry.generated.ts:54`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:56`](src/tools/registry.generated.ts)
 
 Metadata for a tool in the registry
 
@@ -19846,7 +20188,7 @@ type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number]
 
 ### DesktopToolName `type`
 
-📍 [`src/tools/desktop/types.ts:277`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:281`](src/tools/desktop/types.ts)
 
 ```typescript
 type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
@@ -19868,7 +20210,7 @@ type PendingAsyncToolStatus = 'running' | 'completed' | 'failed' | 'timeout' | '
 
 ### ServiceToolFactory `type`
 
-📍 [`src/tools/connector/ConnectorTools.ts:111`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:135`](src/tools/connector/ConnectorTools.ts)
 
 Factory function type for creating service-specific tools.
 Takes a Connector and returns an array of tools that use it.
@@ -19877,8 +20219,15 @@ The `userId` parameter is a legacy fallback — tools should prefer reading
 userId from ToolContext at execution time (auto-populated by Agent).
 Factory userId is used as fallback when ToolContext is not available.
 
+The optional `options` parameter carries forwarded settings such as `actAs`.
+Existing factories that ignore the third argument continue to work.
+
 ```typescript
-type ServiceToolFactory = (connector: Connector, userId?: string) =&gt; ToolFunction[]
+type ServiceToolFactory = (
+  connector: Connector,
+  userId?: string,
+  options?: ServiceToolFactoryOptions,
+) =&gt; ToolFunction[]
 ```
 
 ---
@@ -19895,7 +20244,7 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolCategory `type`
 
-📍 [`src/tools/registry.generated.ts:51`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:53`](src/tools/registry.generated.ts)
 
 Tool category for grouping
 
@@ -20089,7 +20438,7 @@ export function createCustomToolTest(): ToolFunction&lt;TestArgs, TestResult&gt;
 
 ### createDesktopGetCursorTool `function`
 
-📍 [`src/tools/desktop/getCursor.ts:11`](src/tools/desktop/getCursor.ts)
+📍 [`src/tools/desktop/getCursor.ts:12`](src/tools/desktop/getCursor.ts)
 
 ```typescript
 export function createDesktopGetCursorTool(config?: DesktopToolConfig): ToolFunction&lt;Record&lt;string, never&gt;, DesktopGetCursorResult&gt;
@@ -20199,14 +20548,15 @@ export function createDesktopWindowListTool(config?: DesktopToolConfig): ToolFun
 
 ### createDraftEmailTool `function`
 
-📍 [`src/tools/microsoft/createDraftEmail.ts:30`](src/tools/microsoft/createDraftEmail.ts)
+📍 [`src/tools/microsoft/createDraftEmail.ts:35`](src/tools/microsoft/createDraftEmail.ts)
 
 Create a Microsoft Graph create_draft_email tool
 
 ```typescript
 export function createDraftEmailTool(
   connector: Connector,
-  userId?: string
+  userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;CreateDraftEmailArgs, MicrosoftDraftEmailResult&gt;
 ```
 
@@ -20226,14 +20576,15 @@ export function createEditFileTool(config: FilesystemToolConfig =
 
 ### createEditMeetingTool `function`
 
-📍 [`src/tools/microsoft/editMeeting.ts:34`](src/tools/microsoft/editMeeting.ts)
+📍 [`src/tools/microsoft/editMeeting.ts:38`](src/tools/microsoft/editMeeting.ts)
 
 Create a Microsoft Graph edit_meeting tool
 
 ```typescript
 export function createEditMeetingTool(
   connector: Connector,
-  userId?: string
+  userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;EditMeetingArgs, MicrosoftEditMeetingResult&gt;
 ```
 
@@ -20260,7 +20611,7 @@ export function createExecuteJavaScriptTool(
 
 ### createFindEntityTool `function`
 
-📍 [`src/tools/memory/findEntity.ts:63`](src/tools/memory/findEntity.ts)
+📍 [`src/tools/memory/findEntity.ts:65`](src/tools/memory/findEntity.ts)
 
 ```typescript
 export function createFindEntityTool(
@@ -20272,14 +20623,15 @@ export function createFindEntityTool(
 
 ### createFindMeetingSlotsTool `function`
 
-📍 [`src/tools/microsoft/findMeetingSlots.ts:31`](src/tools/microsoft/findMeetingSlots.ts)
+📍 [`src/tools/microsoft/findMeetingSlots.ts:35`](src/tools/microsoft/findMeetingSlots.ts)
 
 Create a Microsoft Graph find_meeting_slots tool
 
 ```typescript
 export function createFindMeetingSlotsTool(
   connector: Connector,
-  userId?: string
+  userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;FindMeetingSlotsArgs, MicrosoftFindSlotsResult&gt;
 ```
 
@@ -20287,7 +20639,7 @@ export function createFindMeetingSlotsTool(
 
 ### createForgetTool `function`
 
-📍 [`src/tools/memory/forget.ts:53`](src/tools/memory/forget.ts)
+📍 [`src/tools/memory/forget.ts:56`](src/tools/memory/forget.ts)
 
 ```typescript
 export function createForgetTool(deps: MemoryToolDeps): ToolFunction&lt;ForgetArgs&gt;
@@ -20310,14 +20662,15 @@ export function createGetChannelInfoTool(
 
 ### createGetMeetingTranscriptTool `function`
 
-📍 [`src/tools/microsoft/getMeetingTranscript.ts:52`](src/tools/microsoft/getMeetingTranscript.ts)
+📍 [`src/tools/microsoft/getMeetingTranscript.ts:56`](src/tools/microsoft/getMeetingTranscript.ts)
 
 Create a Microsoft Graph get_meeting_transcript tool
 
 ```typescript
 export function createGetMeetingTranscriptTool(
   connector: Connector,
-  userId?: string
+  userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;GetMeetingTranscriptArgs, MicrosoftGetTranscriptResult&gt;
 ```
 
@@ -20504,7 +20857,7 @@ export function createListDirectoryTool(config: FilesystemToolConfig =
 
 ### createListFactsTool `function`
 
-📍 [`src/tools/memory/listFacts.ts:43`](src/tools/memory/listFacts.ts)
+📍 [`src/tools/memory/listFacts.ts:59`](src/tools/memory/listFacts.ts)
 
 ```typescript
 export function createListFactsTool(deps: MemoryToolDeps): ToolFunction&lt;ListFactsArgs&gt;
@@ -20527,14 +20880,15 @@ export function createListMessagesTool(
 
 ### createMeetingTool `function`
 
-📍 [`src/tools/microsoft/createMeeting.ts:33`](src/tools/microsoft/createMeeting.ts)
+📍 [`src/tools/microsoft/createMeeting.ts:37`](src/tools/microsoft/createMeeting.ts)
 
 Create a Microsoft Graph create_meeting tool
 
 ```typescript
 export function createMeetingTool(
   connector: Connector,
-  userId?: string
+  userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;CreateMeetingArgs, MicrosoftCreateMeetingResult&gt;
 ```
 
@@ -20542,12 +20896,13 @@ export function createMeetingTool(
 
 ### createMicrosoftListFilesTool `function`
 
-📍 [`src/tools/microsoft/listFiles.ts:42`](src/tools/microsoft/listFiles.ts)
+📍 [`src/tools/microsoft/listFiles.ts:47`](src/tools/microsoft/listFiles.ts)
 
 ```typescript
 export function createMicrosoftListFilesTool(
   connector: Connector,
   userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;ListFilesArgs, MicrosoftListFilesResult&gt;
 ```
 
@@ -20555,13 +20910,14 @@ export function createMicrosoftListFilesTool(
 
 ### createMicrosoftReadFileTool `function`
 
-📍 [`src/tools/microsoft/readFile.ts:49`](src/tools/microsoft/readFile.ts)
+📍 [`src/tools/microsoft/readFile.ts:55`](src/tools/microsoft/readFile.ts)
 
 ```typescript
 export function createMicrosoftReadFileTool(
   connector: Connector,
   userId?: string,
   config?: MicrosoftReadFileConfig,
+  actAs?: string,
 ): ToolFunction&lt;ReadFileArgs, MicrosoftReadFileResult&gt;
 ```
 
@@ -20569,7 +20925,13 @@ export function createMicrosoftReadFileTool(
 
 ### createMicrosoftSearchFilesTool `function`
 
-📍 [`src/tools/microsoft/searchFiles.ts:37`](src/tools/microsoft/searchFiles.ts)
+📍 [`src/tools/microsoft/searchFiles.ts:44`](src/tools/microsoft/searchFiles.ts)
+
+NOTE on `actAs` lock — this tool does NOT participate. It hits Microsoft's
+tenant-global `/search/query` (or `/sites/{siteId}/drive/root/search` when
+`siteId` is given), neither of which is user-scoped at the URL level. Data
+scope is whatever the underlying token can see; the agent-level `actAs` lock
+passed to `ConnectorTools.for(...)` has no effect on this tool.
 
 ```typescript
 export function createMicrosoftSearchFilesTool(
@@ -20647,10 +21009,29 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction&lt;RecallAr
 
 ### createRememberTool `function`
 
-📍 [`src/tools/memory/remember.ts:74`](src/tools/memory/remember.ts)
+📍 [`src/tools/memory/remember.ts:77`](src/tools/memory/remember.ts)
 
 ```typescript
 export function createRememberTool(deps: MemoryToolDeps): ToolFunction&lt;RememberArgs&gt;
+```
+
+---
+
+### createRequestUserInputTool `function`
+
+📍 [`src/tools/interaction/requestUserInput.ts:118`](src/tools/interaction/requestUserInput.ts)
+
+Create a `request_user_input` tool bound to the given delivery.
+
+The returned tool, when called by the agent, returns a `SuspendSignal` —
+the agent loop catches it, performs a final wrap-up LLM call without tools,
+saves the session, persists the correlation, and returns
+`AgentResponse { status: 'suspended' }` to the caller.
+
+```typescript
+export function createRequestUserInputTool(
+  delivery: IUserInteractionDelivery,
+  options: CreateRequestUserInputToolOptions =
 ```
 
 ---
@@ -20739,14 +21120,15 @@ export function createSearchTool(deps: MemoryToolDeps): ToolFunction&lt;SearchAr
 
 ### createSendEmailTool `function`
 
-📍 [`src/tools/microsoft/sendEmail.ts:30`](src/tools/microsoft/sendEmail.ts)
+📍 [`src/tools/microsoft/sendEmail.ts:37`](src/tools/microsoft/sendEmail.ts)
 
 Create a Microsoft Graph send_email tool
 
 ```typescript
 export function createSendEmailTool(
   connector: Connector,
-  userId?: string
+  userId?: string,
+  actAs?: string,
 ): ToolFunction&lt;SendEmailArgs, MicrosoftSendEmailResult&gt;
 ```
 
@@ -20780,7 +21162,7 @@ export function createSendWhatsAppTool(
 
 ### createSetAgentRuleTool `function`
 
-📍 [`src/tools/memory/setAgentRule.ts:99`](src/tools/memory/setAgentRule.ts)
+📍 [`src/tools/memory/setAgentRule.ts:101`](src/tools/memory/setAgentRule.ts)
 
 ```typescript
 export function createSetAgentRuleTool(deps: MemoryToolDeps): ToolFunction&lt;SetAgentRuleArgs&gt;
@@ -20830,7 +21212,7 @@ export function createTextToSpeechTool(
 
 ### createUpsertEntityTool `function`
 
-📍 [`src/tools/memory/upsertEntity.ts:38`](src/tools/memory/upsertEntity.ts)
+📍 [`src/tools/memory/upsertEntity.ts:71`](src/tools/memory/upsertEntity.ts)
 
 ```typescript
 export function createUpsertEntityTool(
@@ -20896,7 +21278,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:413`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:433`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -20908,7 +21290,7 @@ export function getAllBuiltInTools(): ToolFunction[]
 
 ### getConnectorTools `function`
 
-📍 [`src/connectors/vendors/helpers.ts:333`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:458`](src/connectors/vendors/helpers.ts)
 
 Get all tools for a connector (delegates to ConnectorTools)
 
@@ -20920,7 +21302,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:428`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:448`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -20948,7 +21330,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:438`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:458`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -20960,7 +21342,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:418`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:438`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -20972,7 +21354,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:423`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:443`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -20984,7 +21366,7 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:433`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:453`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
@@ -21079,7 +21461,7 @@ registerRoutineToolCategory({
 
 ### resolveConnectorContext `function`
 
-📍 [`src/tools/connector/ConnectorTools.ts:171`](src/tools/connector/ConnectorTools.ts)
+📍 [`src/tools/connector/ConnectorTools.ts:225`](src/tools/connector/ConnectorTools.ts)
 
 Resolve effective userId and accountId from ToolContext.
 
@@ -25606,7 +25988,7 @@ async removeAccount(userId: string, accountId: string): Promise&lt;boolean&gt;
 
 ### AuthTemplate `interface`
 
-📍 [`src/connectors/vendors/types.ts:15`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:44`](src/connectors/vendors/types.ts)
 
 Authentication template for a vendor
 Defines a single authentication method (e.g., API key, OAuth user flow)
@@ -25626,6 +26008,10 @@ Defines a single authentication method (e.g., API key, OAuth user flow)
 | `defaults` | `defaults: Partial&lt;ConnectorAuth&gt;;` | Pre-filled OAuth URLs and defaults |
 | `scopes?` | `scopes?: string[];` | Common scopes for this auth method |
 | `scopeDescriptions?` | `scopeDescriptions?: Record&lt;string, string&gt;;` | Human-readable descriptions for scopes (key = scope ID) |
+| `refreshStrategy?` | `refreshStrategy?: RefreshStrategy;` | How this vendor issues refresh tokens. **Required** when
+`flow === 'authorization_code'`; ignored otherwise. Drives the force-merge
+that guarantees refresh-capable tokens without operator intervention.
+Validated at registry-init time — missing on an auth-code template throws. |
 
 </details>
 
@@ -25633,7 +26019,7 @@ Defines a single authentication method (e.g., API key, OAuth user flow)
 
 ### CreateConnectorOptions `interface`
 
-📍 [`src/connectors/vendors/types.ts:175`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:212`](src/connectors/vendors/types.ts)
 
 Options for creating a connector from a template
 
@@ -25747,6 +26133,10 @@ listKeys?(): Promise&lt;string[]&gt;;
 | `redirectUri?` | `redirectUri?: string;` | - |
 | `scope?` | `scope?: string;` | - |
 | `usePKCE?` | `usePKCE?: boolean;` | - |
+| `requiredScope?` | `requiredScope?: string;` | Vendor-mandated scope token for refresh-token issuance (e.g. `offline_access`,
+`refresh_token`, `offline.access`). Sourced from the vendor template's
+`RefreshStrategy`; force-merged into the authorize URL `scope` parameter
+even when the operator overrides `scope` (e.g. Microsoft `.default`). |
 | `clientSecret?` | `clientSecret?: string;` | - |
 | `privateKey?` | `privateKey?: string;` | - |
 | `privateKeyPath?` | `privateKeyPath?: string;` | - |
@@ -25795,6 +26185,12 @@ Supports multiple OAuth flows
 | `redirectUri?` | `redirectUri?: string;` | - |
 | `scope?` | `scope?: string;` | - |
 | `usePKCE?` | `usePKCE?: boolean;` | - |
+| `requiredScope?` | `requiredScope?: string;` | Vendor-mandated scope token that must appear in every authorize URL for
+refresh-token issuance (e.g. `offline_access` for Microsoft / Atlassian,
+`refresh_token` for Salesforce, `offline.access` for Twitter/X). Stamped
+by `buildAuthConfig` from the template's `RefreshStrategy`. Force-merged
+into `scope` at URL-build time so operator scope overrides
+(e.g. Microsoft `.default`) can't drop it. Idempotent. |
 | `privateKey?` | `privateKey?: string;` | - |
 | `privateKeyPath?` | `privateKeyPath?: string;` | - |
 | `issuer?` | `issuer?: string;` | - |
@@ -25817,7 +26213,7 @@ Supports multiple OAuth flows
 
 ### OptionField `interface`
 
-📍 [`src/connectors/vendors/types.ts:80`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:117`](src/connectors/vendors/types.ts)
 
 Vendor-specific option field definition.
 Declares a configurable option that UI apps render as form fields.
@@ -25869,7 +26265,7 @@ Simple Icons icon data structure
 
 ### StoredToken `interface`
 
-📍 [`src/connectors/oauth/types.ts:71`](src/connectors/oauth/types.ts)
+📍 [`src/connectors/oauth/types.ts:79`](src/connectors/oauth/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -25912,7 +26308,7 @@ All implementations must encrypt tokens at rest
 
 ### VendorInfo `interface`
 
-📍 [`src/connectors/vendors/helpers.ts:340`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:465`](src/connectors/vendors/helpers.ts)
 
 Get vendor template information for display
 
@@ -25963,7 +26359,7 @@ Vendor logo information
 
 ### VendorRegistryEntry `interface`
 
-📍 [`src/connectors/vendors/types.ts:142`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:179`](src/connectors/vendors/types.ts)
 
 Registry entry for a vendor (generated at build time)
 
@@ -25986,7 +26382,7 @@ Registry entry for a vendor (generated at build time)
 
 ### VendorTemplate `interface`
 
-📍 [`src/connectors/vendors/types.ts:107`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:144`](src/connectors/vendors/types.ts)
 
 Vendor template definition
 Complete configuration for a vendor's supported authentication methods
@@ -26013,7 +26409,7 @@ Complete configuration for a vendor's supported authentication methods
 
 ### AuthTemplateField `type`
 
-📍 [`src/connectors/vendors/types.ts:50`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:87`](src/connectors/vendors/types.ts)
 
 Known fields that can be required/optional in auth templates
 
@@ -26057,7 +26453,7 @@ type OAuthFlow = 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 's
 
 ### TemplateCredentials `type`
 
-📍 [`src/connectors/vendors/types.ts:168`](src/connectors/vendors/types.ts)
+📍 [`src/connectors/vendors/types.ts:205`](src/connectors/vendors/types.ts)
 
 Credentials provided by user when creating connector from template
 
@@ -26118,7 +26514,7 @@ const response = await authenticatedFetch(
 
 ### buildAuthConfig `function`
 
-📍 [`src/connectors/vendors/helpers.ts:79`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:191`](src/connectors/vendors/helpers.ts)
 
 Build ConnectorAuth from auth template and credentials
 
@@ -26172,7 +26568,7 @@ const personalEmails = await personalFetch('/me/messages');
 
 ### createConnectorFromTemplate `function`
 
-📍 [`src/connectors/vendors/helpers.ts:272`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:397`](src/connectors/vendors/helpers.ts)
 
 Create a Connector from a vendor template
 
@@ -26201,7 +26597,7 @@ const connector = createConnectorFromTemplate(
 
 ### extractNonSecretCredentials `function`
 
-📍 [`src/connectors/vendors/helpers.ts:213`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:338`](src/connectors/vendors/helpers.ts)
 
 Extract non-secret credentials from a raw credentials dict.
 Used by ConnectorConfigStore.saveFromTemplate() to preserve
@@ -26243,7 +26639,7 @@ export function getAllVendorLogos(): Map&lt;string, VendorLogo&gt;
 
 ### getAllVendorTemplates `function`
 
-📍 [`src/connectors/vendors/helpers.ts:43`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:64`](src/connectors/vendors/helpers.ts)
 
 Get all vendor templates
 
@@ -26255,7 +26651,7 @@ export function getAllVendorTemplates(): VendorTemplate[]
 
 ### getCredentialsSetupURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:423`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:548`](src/connectors/vendors/helpers.ts)
 
 Get credentials setup URL for a vendor
 
@@ -26267,7 +26663,7 @@ export function getCredentialsSetupURL(vendorId: string): string | undefined
 
 ### getDocsURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:431`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:556`](src/connectors/vendors/helpers.ts)
 
 Get docs URL for a vendor
 
@@ -26279,7 +26675,7 @@ export function getDocsURL(vendorId: string): string | undefined
 
 ### getVendorAuthTemplate `function`
 
-📍 [`src/connectors/vendors/helpers.ts:55`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:76`](src/connectors/vendors/helpers.ts)
 
 Get auth template for a vendor
 
@@ -26306,7 +26702,7 @@ export function getVendorColor(vendorId: string): string | undefined
 
 ### getVendorInfo `function`
 
-📍 [`src/connectors/vendors/helpers.ts:360`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:485`](src/connectors/vendors/helpers.ts)
 
 Get vendor information suitable for display
 
@@ -26364,7 +26760,7 @@ export function getVendorLogoSvg(vendorId: string, color?: string): string | und
 
 ### getVendorTemplate `function`
 
-📍 [`src/connectors/vendors/helpers.ts:31`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:52`](src/connectors/vendors/helpers.ts)
 
 Get vendor template by ID
 
@@ -26388,7 +26784,7 @@ export function hasVendorLogo(vendorId: string): boolean
 
 ### listVendorIds `function`
 
-📍 [`src/connectors/vendors/helpers.ts:67`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:88`](src/connectors/vendors/helpers.ts)
 
 List all vendor IDs
 
@@ -26400,7 +26796,7 @@ export function listVendorIds(): string[]
 
 ### listVendors `function`
 
-📍 [`src/connectors/vendors/helpers.ts:385`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:510`](src/connectors/vendors/helpers.ts)
 
 List all vendors with basic info
 
@@ -26412,7 +26808,7 @@ export function listVendors(): VendorInfo[]
 
 ### listVendorsByAuthType `function`
 
-📍 [`src/connectors/vendors/helpers.ts:414`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:539`](src/connectors/vendors/helpers.ts)
 
 List vendors that support a specific auth type
 
@@ -26424,7 +26820,7 @@ export function listVendorsByAuthType(authType: 'api_key' | 'oauth'): VendorInfo
 
 ### listVendorsByCategory `function`
 
-📍 [`src/connectors/vendors/helpers.ts:407`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:532`](src/connectors/vendors/helpers.ts)
 
 List vendors by category
 
@@ -27920,7 +28316,7 @@ getConfig(): Readonly&lt;Required&lt;ErrorHandlerConfig&gt;&gt;
 
 ### FactSupersededError `class`
 
-📍 [`src/memory/MemorySystem.ts:146`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:160`](src/memory/MemorySystem.ts)
 
 F1 — thrown by `restoreFact` when the target fact was superseded by a later
 non-archived fact. Un-archiving the predecessor without first handling the
@@ -28148,7 +28544,7 @@ constructor(
 
 ### MongoOptimisticConcurrencyError `class`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:57`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:59`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28168,7 +28564,7 @@ constructor(message: string)
 
 ### OptimisticConcurrencyError `class`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:470`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:503`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28243,7 +28639,7 @@ constructor(
 
 ### ProfileGeneratorMissingError `class`
 
-📍 [`src/memory/MemorySystem.ts:105`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:119`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28420,7 +28816,7 @@ constructor(
 
 ### ScopeInvariantError `class`
 
-📍 [`src/memory/MemorySystem.ts:98`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:112`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28440,7 +28836,7 @@ constructor(message: string)
 
 ### ScopeViolationError `class`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:477`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:510`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28460,7 +28856,7 @@ constructor(message: string)
 
 ### SemanticSearchUnavailableError `class`
 
-📍 [`src/memory/MemorySystem.ts:112`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:126`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28664,7 +29060,7 @@ Events emitted by ErrorHandler
 
 ### IngestionError `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:80`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:85`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30947,20 +31343,23 @@ exists(context: StorageUserContextInput, id: string): Promise&lt;boolean&gt;;
 
 #### `list()`
 
+List routine summaries (slim projection). Use load(id) to fetch the full
+definition for any returned entry.
+
 ```typescript
 list(context: StorageUserContextInput, options?: {
     tags?: string[];
     search?: string;
     limit?: number;
     offset?: number;
-  }): Promise&lt;RoutineDefinition[]&gt;;
+  }): Promise&lt;RoutineSummary[]&gt;;
 ```
 
 **Parameters:**
 - `context`: `StorageUserContextInput`
 - `options`: `{ tags?: string[] | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined; } | undefined` *(optional)*
 
-**Returns:** `Promise&lt;RoutineDefinition[]&gt;`
+**Returns:** `Promise&lt;RoutineSummary[]&gt;`
 
 #### `getPath()`
 
@@ -32205,6 +32604,19 @@ constructor(config: any)
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `ensureObservabilityInitialized()`
+
+Auto-initialize observability on first use (lazy initialization)
+This is called automatically by executeWithCircuitBreaker(); subclasses
+whose stream paths bypass it (e.g. streamGenerate) should also call it
+at entry so error logs carry the real provider name instead of "unknown".
+
+```typescript
+protected ensureObservabilityInitialized(): void
+```
+
+**Returns:** `void`
 
 #### `initializeObservability()`
 
@@ -34244,7 +34656,7 @@ getSummary()
 
 ### ExtractionResolver `class`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:125`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:160`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -35290,7 +35702,21 @@ async listSearchIndexes(name?: string): Promise&lt;SearchIndexInfo[]&gt;
 
 ### NutTreeDriver `class`
 
-📍 [`src/tools/desktop/driver/NutTreeDriver.ts:133`](src/tools/desktop/driver/NutTreeDriver.ts)
+📍 [`src/tools/desktop/driver/NutTreeDriver.ts:219`](src/tools/desktop/driver/NutTreeDriver.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(opts?: NutTreeDriverOptions)
+```
+
+**Parameters:**
+- `opts`: `NutTreeDriverOptions | undefined` *(optional)*
+
+</details>
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -36277,6 +36703,11 @@ findClosest(
 
 List definitions, optionally filtered by category or subject-type hint.
 
+This is the general enumeration API — it returns every registered
+definition. To get the LLM-facing subset (excluding noise predicates
+tagged `excludeFromExtractionPrompt`), use `renderForPrompt` or filter
+the result yourself on `excludeFromExtractionPrompt`.
+
 ```typescript
 list(filter?:
 ```
@@ -36300,12 +36731,30 @@ Render the registry as a markdown block suitable for injection into an
 LLM extraction prompt. Chunked by category; capped by `maxPerCategory`
 to keep the prompt token budget bounded.
 
+⚠️ **Default-filter behavior change (lifecycle rollout).** Predicates
+flagged `excludeFromExtractionPrompt: true` are omitted by default. In
+the standard registry that hides per-message communication noise from
+the LLM vocabulary: `emailed`, `called`, `messaged`, `cc_ed`,
+`mentioned`, `responded_to`, `acknowledged`, `noted`,
+`interaction_count`. These predicates remain fully valid for direct
+callers (calendar adapters, comms aggregators, extractors that emit
+them programmatically) — only the LLM's view of the vocabulary
+narrows.
+
+**If your host previously embedded the full `renderForPrompt()` output
+into a custom prompt and relied on those names being present, pass
+`includeExcluded: true` to preserve the prior surface.** Default-mode
+callers that just want a cleaner extraction prompt need do nothing.
+
+Use `list()` (or filter on `excludeFromExtractionPrompt` yourself) when
+you need the full registered set for non-prompt purposes.
+
 ```typescript
 renderForPrompt(opts?:
 ```
 
 **Parameters:**
-- `opts`: `{ categories?: string[] | undefined; subjectType?: string | undefined; maxPerCategory?: number | undefined; } | undefined` *(optional)*
+- `opts`: `{ categories?: string[] | undefined; subjectType?: string | undefined; maxPerCategory?: number | undefined; includeExcluded?: boolean | undefined; } | undefined` *(optional)*
 
 **Returns:** `string`
 
@@ -39140,7 +39589,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:795`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:807`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -39421,7 +39870,7 @@ validateBinding(userId: string, anchorId: string): Promise&lt;boolean&gt;;
 
 ### APIKeyConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:82`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:92`](src/domain/entities/Connector.ts)
 
 Static API key authentication
 For services like OpenAI, Anthropic, many SaaS APIs
@@ -39609,6 +40058,14 @@ connector prefix, e.g., 'send_email' from 'microsoft_work_send_email').
 
 When set, only tools whose name ends with `_<suffix>` or equals `<suffix>` are generated.
 When absent, ALL tools for this connector are generated. |
+| `actAs?` | `actAs?: string;` | Lock the on-behalf-of user identity for this identity's tool instances
+(Microsoft Graph `/users/{id}`, Google API `userId`). Set ONCE here and
+the LLM cannot override it at call time.
+
+- When set: the per-tool `targetUser` schema parameter is OMITTED and this
+  value is always used.
+- When unset: existing behavior (LLM supplies `targetUser` for app-only auth).
+- Silently ignored for delegated connectors (identity already bound by token). |
 
 </details>
 
@@ -39779,7 +40236,7 @@ in signalText; only the deterministic `attended` seed fact is skipped). |
 
 ### CanonicalIdentifierOptions `interface`
 
-📍 [`src/memory/identifiers.ts:56`](src/memory/identifiers.ts)
+📍 [`src/memory/identifiers.ts:121`](src/memory/identifiers.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -39815,7 +40272,7 @@ Options for the default SentenceChunkingStrategy
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:979`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:991`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -39917,7 +40374,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:946`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:958`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -39937,7 +40394,7 @@ Result of compact() operation.
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:118`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:128`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -40007,7 +40464,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:218`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:228`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -40088,7 +40545,7 @@ truncate profile generation. See feedback_no_output_limits.md. |
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:963`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:975`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -40107,7 +40564,7 @@ Result of consolidate() operation.
 
 ### ContextBudget `interface`
 
-📍 [`src/core/context-nextgen/types.ts:602`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:614`](src/core/context-nextgen/types.ts)
 
 Token budget breakdown - clear and simple
 
@@ -40141,7 +40598,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:896`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:908`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -40190,7 +40647,7 @@ Same opt-in semantics as `openTasks`. |
 
 ### ContextOptions `interface`
 
-📍 [`src/memory/types.ts:277`](src/memory/types.ts)
+📍 [`src/memory/types.ts:285`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40333,7 +40790,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopGetCursorResult `interface`
 
-📍 [`src/tools/desktop/types.ts:203`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:207`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40351,7 +40808,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopGetScreenSizeResult `interface`
 
-📍 [`src/tools/desktop/types.ts:232`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:236`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40372,7 +40829,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopKeyboardKeyArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:222`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:226`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40387,7 +40844,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopKeyboardKeyResult `interface`
 
-📍 [`src/tools/desktop/types.ts:226`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:230`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40403,7 +40860,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopKeyboardTypeArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:211`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:215`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40419,7 +40876,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopKeyboardTypeResult `interface`
 
-📍 [`src/tools/desktop/types.ts:216`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:220`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40435,7 +40892,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseClickArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:159`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:163`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40453,7 +40910,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseClickResult `interface`
 
-📍 [`src/tools/desktop/types.ts:166`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:170`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40473,7 +40930,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseDragArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:176`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:180`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40492,7 +40949,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseDragResult `interface`
 
-📍 [`src/tools/desktop/types.ts:184`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:188`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40508,7 +40965,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseMoveArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:146`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:150`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40524,7 +40981,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseMoveResult `interface`
 
-📍 [`src/tools/desktop/types.ts:151`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:155`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40542,7 +40999,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseScrollArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:190`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:194`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40560,7 +41017,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopMouseScrollResult `interface`
 
-📍 [`src/tools/desktop/types.ts:197`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:201`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40576,7 +41033,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopPoint `interface`
 
-📍 [`src/tools/desktop/types.ts:15`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:19`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40592,16 +41049,16 @@ the user-facing session to a sub-agent.
 
 ### DesktopScreenshot `interface`
 
-📍 [`src/tools/desktop/types.ts:33`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:37`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `base64` | `base64: string;` | Base64-encoded PNG image data |
-| `width` | `width: number;` | Width in physical pixels |
-| `height` | `height: number;` | Height in physical pixels |
+| `base64` | `base64: string;` | Base64-encoded PNG image data (dimensions in logical pixels) |
+| `width` | `width: number;` | Width in logical pixels — matches mouseClick/mouseMove coordinate space |
+| `height` | `height: number;` | Height in logical pixels — matches mouseClick/mouseMove coordinate space |
 
 </details>
 
@@ -40609,7 +41066,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopScreenshotArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:130`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:134`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40624,7 +41081,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopScreenshotResult `interface`
 
-📍 [`src/tools/desktop/types.ts:134`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:138`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40644,18 +41101,18 @@ the user-facing session to a sub-agent.
 
 ### DesktopScreenSize `interface`
 
-📍 [`src/tools/desktop/types.ts:20`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:24`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `physicalWidth` | `physicalWidth: number;` | Physical pixel width (screenshot space) |
-| `physicalHeight` | `physicalHeight: number;` | Physical pixel height (screenshot space) |
-| `logicalWidth` | `logicalWidth: number;` | Logical OS width |
-| `logicalHeight` | `logicalHeight: number;` | Logical OS height |
-| `scaleFactor` | `scaleFactor: number;` | Scale factor (physical / logical), e.g. 2.0 on Retina |
+| `physicalWidth` | `physicalWidth: number;` | Raw physical pixel width. Diagnostic only — not the coordinate space used by the APIs. |
+| `physicalHeight` | `physicalHeight: number;` | Raw physical pixel height. Diagnostic only — not the coordinate space used by the APIs. |
+| `logicalWidth` | `logicalWidth: number;` | Logical OS width. This is the coordinate space for all mouse/screenshot APIs. |
+| `logicalHeight` | `logicalHeight: number;` | Logical OS height. This is the coordinate space for all mouse/screenshot APIs. |
+| `scaleFactor` | `scaleFactor: number;` | Scale factor (physical / logical), e.g. 2.0 on Retina. For diagnostics only. |
 
 </details>
 
@@ -40663,7 +41120,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopWindow `interface`
 
-📍 [`src/tools/desktop/types.ts:42`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:46`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40673,7 +41130,7 @@ the user-facing session to a sub-agent.
 | `id` | `id: number;` | Window identifier (platform-specific) |
 | `title` | `title: string;` | Window title |
 | `appName?` | `appName?: string;` | Application name |
-| `bounds?` | `bounds?: { x: number; y: number; width: number; height: number };` | Window bounds in physical pixel coords |
+| `bounds?` | `bounds?: { x: number; y: number; width: number; height: number };` | Window bounds in logical pixel coords |
 
 </details>
 
@@ -40681,7 +41138,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopWindowFocusArgs `interface`
 
-📍 [`src/tools/desktop/types.ts:250`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:254`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40696,7 +41153,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopWindowFocusResult `interface`
 
-📍 [`src/tools/desktop/types.ts:254`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:258`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -40712,7 +41169,7 @@ the user-facing session to a sub-agent.
 
 ### DesktopWindowListResult `interface`
 
-📍 [`src/tools/desktop/types.ts:243`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:247`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41022,7 +41479,7 @@ list; pass a custom list to override entirely (not extend). Case-insensitive. |
 
 ### EmbeddingQueueConfig `interface`
 
-📍 [`src/memory/types.ts:690`](src/memory/types.ts)
+📍 [`src/memory/types.ts:722`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41093,7 +41550,7 @@ Configuration for the default energy-based VAD
 
 ### EntityCandidate `interface`
 
-📍 [`src/memory/types.ts:699`](src/memory/types.ts)
+📍 [`src/memory/types.ts:731`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41110,7 +41567,7 @@ Configuration for the default energy-based VAD
 
 ### EntityListFilter `interface`
 
-📍 [`src/memory/types.ts:368`](src/memory/types.ts)
+📍 [`src/memory/types.ts:391`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41144,7 +41601,7 @@ Example:
 
 ### EntityResolutionConfig `interface`
 
-📍 [`src/memory/types.ts:779`](src/memory/types.ts)
+📍 [`src/memory/types.ts:811`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41180,7 +41637,7 @@ and decides. Lower `autoResolveThreshold` only if you trust the mapping. |
 
 ### EntitySearchOptions `interface`
 
-📍 [`src/memory/types.ts:404`](src/memory/types.ts)
+📍 [`src/memory/types.ts:427`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41197,7 +41654,7 @@ and decides. Lower `autoResolveThreshold` only if you trust the mapping. |
 
 ### EntityView `interface`
 
-📍 [`src/memory/types.ts:254`](src/memory/types.ts)
+📍 [`src/memory/types.ts:262`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41238,7 +41695,7 @@ as object OR in contextIds, ranked by confidence × recency × predicateWeight
 
 ### ExecuteRoutineOptions `interface`
 
-📍 [`src/core/routineRunner.ts:64`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:87`](src/core/routineRunner.ts)
 
 Options for executing a routine.
 
@@ -41248,6 +41705,15 @@ Two modes:
 2. **Existing agent**: Pass `agent` (a pre-created Agent instance).
    The agent is NOT destroyed after execution — caller owns its lifecycle.
    The agent's existing connector, model, tools, and hooks are used.
+
+**Tool scoping (Mode 2 + `definition.requiredTools`)**: when the caller
+passes an `agent` AND the routine declares `requiredTools`, the runner
+builds a scoped executor via `existingAgent.scopedTo(requiredTools)` and
+runs the routine on that. The caller's superagent stays untouched; the
+scoped executor is destroyed at end of run. The scoped executor uses
+default context features (working memory, in-context memory) and does NOT
+inherit the caller's plugins — routines that need plugins must declare
+them in `requiredPlugins`.
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41261,6 +41727,18 @@ The agent is NOT destroyed after execution — caller manages its lifecycle. |
 | `model?` | `model?: string;` | Model ID — required when `agent` is not provided |
 | `tools?` | `tools?: ToolFunction[];` | Additional tools — only used when creating a new agent (no `agent` provided) |
 | `inputs?` | `inputs?: Record&lt;string, unknown&gt;;` | Input parameter values for parameterized routines |
+| `initialUserMessage?` | `initialUserMessage?: string;` | Optional verbatim user message used in place of the FIRST executable
+task's prompt. Subsequent tasks still go through the normal
+`prompts.task` (or default) builder.
+
+Use for caller-driven kickoff — e.g. "execute the selected action" — where
+the routine's first step shouldn't follow the routine's own templating.
+Retries of the first task re-use this message; only when the routine
+advances to the next task does the default builder kick in.
+
+For pre-loading context into the system prompt, callers should bake it
+into `agent.instructions` themselves at agent-creation time (Mode 2) or
+into `prompts.system` (Mode 1) — the library does not own that surface. |
 | `hooks?` | `hooks?: HookConfig;` | Hooks — applied to agent for the duration of routine execution.
  For new agents: baked in at creation. For existing agents: registered before
  execution and unregistered after. |
@@ -41391,7 +41869,7 @@ entries; the rest still write. Optional. |
 
 ### ExtractionFactSpec `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:45`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:50`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41422,7 +41900,7 @@ written fact as `IFact.evidenceQuote`. |
 
 ### ExtractionMention `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:31`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:36`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41444,7 +41922,7 @@ on resolve, conservative `fillMissing` merge (never overwrites existing). |
 
 ### ExtractionOutput `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:68`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:73`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41460,7 +41938,7 @@ on resolve, conservative `fillMissing` merge (never overwrites existing). |
 
 ### ExtractionPromptContext `interface`
 
-📍 [`src/memory/integration/defaultExtractionPrompt.ts:54`](src/memory/integration/defaultExtractionPrompt.ts)
+📍 [`src/memory/integration/defaultExtractionPrompt.ts:59`](src/memory/integration/defaultExtractionPrompt.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41498,6 +41976,21 @@ anchor's `id` is what the LLM should echo back as `servesAnchorId`. |
 | `negativeExamples?` | `negativeExamples?: Array&lt;{ snippet: string; reason?: string }&gt;;` | Recent dismissals to inject as negative examples. Rendered up to
 `eagerness.negativeExamplesCount`. Each entry is a short snippet the user
 already chose to ignore — strong calibration signal. |
+| `priorThreadContext?` | `priorThreadContext?: Array&lt;{ header: string; body: string }&gt;;` | Prior conversation context (e.g. earlier emails in the same thread,
+earlier turns in a transcript) that has ALREADY been extracted in
+previous pipeline runs. Rendered as a clearly-labeled "DO NOT extract"
+background block — the LLM must use it for grounding (resolving "she",
+binding follow-up commitments to the original task) but MUST NOT emit
+facts or mentions whose source is exclusively this prior content.
+
+Each entry is a short header (e.g. `From Anton at 2026-05-06T08:44Z`)
+plus the message body, ideally already de-quoted by the host so the
+same sentence doesn't appear repeatedly across nested replies.
+
+Pair with the existing canonical-id rule for tasks: a commitment seen
+in the delta that was already extracted from a prior message MUST yield
+the SAME canonical id, so the resolver merges into the existing entity
+instead of creating a duplicate. |
 
 </details>
 
@@ -41505,7 +41998,7 @@ already chose to ignore — strong calibration signal. |
 
 ### ExtractionResolverOptions `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:103`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:108`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41530,7 +42023,7 @@ wins and the mention is skipped silently. |
 
 ### FactFilter `interface`
 
-📍 [`src/memory/types.ts:323`](src/memory/types.ts)
+📍 [`src/memory/types.ts:331`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41546,11 +42039,20 @@ subject, object, OR in contextIds. Used by `getContext` for the
 | `predicate?` | `predicate?: string;` | - |
 | `predicates?` | `predicates?: string[];` | - |
 | `kind?` | `kind?: FactKind;` | - |
+| `sourceSignalId?` | `sourceSignalId?: string;` | Match facts whose `sourceSignalId` equals this id — i.e. all facts that
+were extracted from one specific source signal (an email, a calendar
+event, a meeting transcript, etc.). The signal id is opaque from the
+library's point of view; the embedding application is responsible for
+resolving "this meeting" / "this email" → signal id. |
 | `archived?` | `archived?: boolean;` | Defaults to false (archived rows hidden). Pass true to include only archived, or undefined for default. |
 | `minConfidence?` | `minConfidence?: number;` | - |
 | `observedAfter?` | `observedAfter?: Date;` | - |
 | `observedBefore?` | `observedBefore?: Date;` | - |
 | `asOf?` | `asOf?: Date;` | Temporal filter: validFrom ≤ asOf ≤ (validUntil ?? ∞) AND createdAt ≤ asOf. |
+| `validUntilBefore?` | `validUntilBefore?: Date;` | Match facts whose `validUntil` is set AND strictly less than this date.
+Used by `MemorySystem.expireFacts` to find facts past their validity
+window. Facts with no `validUntil` are NEVER matched by this filter —
+they are valid forever by design. |
 | `supersedes?` | `supersedes?: FactId;` | Match facts whose `supersedes` field equals this fact id. Used by
 `restoreFact` to detect an existing non-archived successor before
 un-archiving a previously superseded predecessor. Pass `null` to match
@@ -41563,7 +42065,7 @@ needed). |
 
 ### FactOrderBy `interface`
 
-📍 [`src/memory/types.ts:354`](src/memory/types.ts)
+📍 [`src/memory/types.ts:377`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41579,7 +42081,7 @@ needed). |
 
 ### FactQueryOptions `interface`
 
-📍 [`src/memory/types.ts:430`](src/memory/types.ts)
+📍 [`src/memory/types.ts:453`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42119,7 +42621,7 @@ reset(): void;
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:1041`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1053`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -42190,7 +42692,7 @@ If any required plugin is missing, an error is thrown. |
 
 ### IContextPluginNextGen `interface`
 
-📍 [`src/core/context-nextgen/types.ts:174`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:186`](src/core/context-nextgen/types.ts)
 
 Context plugin interface for NextGen context management.
 
@@ -42237,8 +42739,8 @@ Formatted content here...
 ```
 
 Built-in plugins use these headers:
-- WorkingMemory: `## Working Memory (N entries)`
-- InContextMemory: `## Live Context (N entries)`
+- WorkingMemory: `## Notes (N entries)`
+- InContextMemory: `## Whiteboard (N entries)`
 - PersistentInstructions: No header (user's raw instructions)
 
 ## Tool Naming Convention
@@ -42570,7 +43072,7 @@ Aliases (on IEntity) are display hints — NOT identifiers.
 
 ### IDesktopDriver `interface`
 
-📍 [`src/tools/desktop/types.ts:57`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:61`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -42759,7 +43261,7 @@ transform(pieces: DocumentPiece[], context: TransformerContext): Promise&lt;Docu
 
 ### IEmbedder `interface`
 
-📍 [`src/memory/types.ts:568`](src/memory/types.ts)
+📍 [`src/memory/types.ts:591`](src/memory/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -43217,7 +43719,7 @@ The adapter maps provider-specific data to this structure.
 
 ### IngestionResolvedEntity `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:73`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:78`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43235,7 +43737,7 @@ The adapter maps provider-specific data to this structure.
 
 ### IngestionResult `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:86`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:91`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43446,7 +43948,7 @@ Snapshot of a single plugin's state.
 
 ### IProfileGenerator `interface`
 
-📍 [`src/memory/types.ts:610`](src/memory/types.ts)
+📍 [`src/memory/types.ts:633`](src/memory/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -43548,7 +44050,7 @@ getCapabilities?(): SourceCapabilities;
 
 ### IRuleEngine `interface`
 
-📍 [`src/memory/types.ts:626`](src/memory/types.ts)
+📍 [`src/memory/types.ts:649`](src/memory/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -43686,7 +44188,7 @@ Used to track where information came from and when it was last verified
 
 ### IStoreHandler `interface`
 
-📍 [`src/core/context-nextgen/types.ts:557`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:569`](src/core/context-nextgen/types.ts)
 
 Interface for plugins that provide CRUD storage.
 
@@ -43960,7 +44462,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### ITokenEstimator `interface`
 
-📍 [`src/core/context-nextgen/types.ts:50`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:62`](src/core/context-nextgen/types.ts)
 
 Token estimator interface - used for conversation and input estimation
 Plugins handle their own token estimation internally.
@@ -44013,6 +44515,61 @@ estimateImageTokens?(width?: number, height?: number, detail?: string): number;
 - `detail`: `string | undefined` *(optional)*
 
 **Returns:** `number`
+
+</details>
+
+---
+
+### IUserInteractionDelivery `interface`
+
+📍 [`src/tools/interaction/types.ts:126`](src/tools/interaction/types.ts)
+
+App-implemented delivery contract.
+
+Implementations are responsible for:
+ 1. Delivering the prompt over their channel.
+ 2. Embedding (or otherwise persisting) `correlationId` so an inbound reply
+    can be tied back to the suspended session.
+ 3. Wiring the inbound listener that, on reply, resolves the correlation
+    via `ICorrelationStorage`, calls `Agent.hydrate(...)`, and runs
+    `agent.run(reply)` to continue execution.
+
+The library never invokes step 3 — that's the app's responsibility.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `send()`
+
+Deliver the prompt and return a correlation handle.
+
+Errors thrown here propagate out of the tool call — the agent will treat
+the call as failed (no suspension). Apps should throw with descriptive
+messages; the library logs them with full context.
+
+```typescript
+send(
+    request: UserInteractionRequest,
+    ctx: UserInteractionDeliveryContext,
+  ): Promise&lt;UserInteractionDeliveryResult&gt;;
+```
+
+**Parameters:**
+- `request`: `UserInteractionRequest`
+- `ctx`: `UserInteractionDeliveryContext`
+
+**Returns:** `Promise&lt;UserInteractionDeliveryResult&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id?` | `readonly id?: string;` | Channel identifier — used for logging only; the actual channel name
+surfaced in tool results comes from `UserInteractionDeliveryResult.channel`.
+Optional: implementations may omit this if they expose a single channel. |
 
 </details>
 
@@ -44252,7 +44809,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:99`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:109`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -44279,7 +44836,7 @@ For service accounts (Google, Salesforce)
 
 ### KnownContextFeatures `interface`
 
-📍 [`src/core/context-nextgen/types.ts:701`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:713`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins
 
@@ -44303,7 +44860,7 @@ Feature flags for enabling/disabling plugins
 
 ### KnownPluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:766`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:778`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -44329,7 +44886,7 @@ The config shapes match each plugin's constructor parameter.
 
 ### ListOptions `interface`
 
-📍 [`src/memory/types.ts:410`](src/memory/types.ts)
+📍 [`src/memory/types.ts:433`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44677,7 +45234,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MeetingSlotSuggestion `interface`
 
-📍 [`src/tools/google/types.ts:427`](src/tools/google/types.ts)
+📍 [`src/tools/google/types.ts:488`](src/tools/google/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44695,7 +45252,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MeetingSlotSuggestion `interface`
 
-📍 [`src/tools/microsoft/types.ts:427`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:494`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44725,6 +45282,33 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 | `id?` | `id?: string;` | - |
 | `role` | `role: MessageRole;` | - |
 | `content` | `content: Content[];` | - |
+
+</details>
+
+---
+
+### MetadataChange `interface`
+
+📍 [`src/memory/metadataDiff.ts:12`](src/memory/metadataDiff.ts)
+
+Pure helper used by callers (e.g. v25 calendar pipeline) to detect when
+specific top-level metadata keys have changed between successive snapshots
+of an entity. Lets the caller emit predicate facts (`cancelled`,
+`rescheduled`) without re-implementing diff logic per call site.
+
+Intentionally minimal: only top-level keys, deep equality on values, no
+smart shape-aware comparison. Callers are expected to pass canonical values
+(Dates, primitives, plain JSON) — the helper does not normalise.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `key: string;` | - |
+| `before` | `before: unknown;` | - |
+| `after` | `after: unknown;` | - |
+| `kind` | `kind: 'added' | 'removed' | 'changed';` | `'added'` (key absent before), `'removed'` (key absent now), `'changed'` (different value). |
 
 </details>
 
@@ -44830,7 +45414,7 @@ rawCollection(): {
 
 ### MicrosoftCreateMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:357`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:424`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44849,7 +45433,7 @@ rawCollection(): {
 
 ### MicrosoftDraftEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:345`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:412`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44867,7 +45451,7 @@ rawCollection(): {
 
 ### MicrosoftEditMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:365`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:432`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44885,7 +45469,7 @@ rawCollection(): {
 
 ### MicrosoftFindSlotsResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:420`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:487`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44903,7 +45487,7 @@ rawCollection(): {
 
 ### MicrosoftGetTranscriptResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:372`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:439`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44921,7 +45505,7 @@ rawCollection(): {
 
 ### MicrosoftListFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:562`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:629`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44950,7 +45534,7 @@ rawCollection(): {
 
 ### MicrosoftReadFileResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:552`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:619`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -44971,7 +45555,7 @@ rawCollection(): {
 
 ### MicrosoftSearchFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:580`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:647`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45000,7 +45584,7 @@ rawCollection(): {
 
 ### MicrosoftSendEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:352`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:419`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45066,7 +45650,7 @@ rawCollection(): {
 
 ### Neighborhood `interface`
 
-📍 [`src/memory/types.ts:300`](src/memory/types.ts)
+📍 [`src/memory/types.ts:308`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45175,7 +45759,7 @@ Configuration for initiating an outbound call.
 
 ### OversizedInputResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:670`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:682`](src/core/context-nextgen/types.ts)
 
 Result of handling oversized current input
 
@@ -45197,7 +45781,7 @@ Result of handling oversized current input
 
 ### Page `interface`
 
-📍 [`src/memory/types.ts:359`](src/memory/types.ts)
+📍 [`src/memory/types.ts:382`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45685,17 +46269,7 @@ Decision returned by a permission policy.
 
 ### PredicateDefinition `interface`
 
-📍 [`src/memory/predicates/types.ts:13`](src/memory/predicates/types.ts)
-
-Predicate library — types.
-
-A `PredicateDefinition` describes one predicate in the vocabulary: its
-canonical name, description, category, and optional write-time behavior
-(defaultImportance, auto-supersession for single-valued predicates,
-aggregate semantics) plus ranking weight and LLM-prompt metadata.
-
-The registry is *optional*. When no registry is configured on MemorySystem,
-predicates remain free-form strings — nothing in the memory layer breaks.
+📍 [`src/memory/predicates/types.ts:42`](src/memory/predicates/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45722,6 +46296,24 @@ auto-supersedes the prior visible one for (subject, predicate). Can be
 disabled globally via MemorySystemConfig.predicateAutoSupersede:false.
 Mutually exclusive with isAggregate. |
 | `examples?` | `examples?: string[];` | Shown to the LLM in the prompt to disambiguate. Keep ≤ 2 per predicate. |
+| `lifecycle?` | `lifecycle?: PredicateLifecycle;` | Temporal/relevance class. Drives `addFact`'s `validUntil` auto-stamping
+and extraction-prompt rendering. See `PredicateLifecycle` for semantics.
+Optional — undefined means "no automatic lifecycle behavior." |
+| `defaultValidityDays?` | `defaultValidityDays?: number;` | When set, `addFact` stamps `validUntil = (observedAt ?? now) + days`
+on facts of this predicate that the caller did not provide a `validUntil`
+for. Callers can always override by passing `validUntil` explicitly.
+
+Use with care: a too-short window silently archives facts that callers
+may still want surfaced. Pair with `lifecycle: 'ephemeral' | 'episodic'`. |
+| `excludeFromExtractionPrompt?` | `excludeFromExtractionPrompt?: boolean;` | When `true`, `PredicateRegistry.renderForPrompt` omits this predicate
+from the LLM-facing vocabulary by default. The predicate remains valid
+for direct callers (extractors that already know the name, code paths
+that emit it programmatically); only the LLM's view of the vocabulary
+narrows. Pass `{ includeExcluded: true }` to render everything.
+
+Use for predicates the library considers extraction noise (per-message
+communication metadata, vague observations) that should be derived from
+source metadata aggregation rather than re-extracted into facts. |
 
 </details>
 
@@ -45729,7 +46321,7 @@ Mutually exclusive with isAggregate. |
 
 ### PreparedContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:649`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:661`](src/core/context-nextgen/types.ts)
 
 Result of prepare() - ready for LLM call
 
@@ -45749,7 +46341,7 @@ Result of prepare() - ready for LLM call
 
 ### PreResolvedBinding `interface`
 
-📍 [`src/memory/integration/defaultExtractionPrompt.ts:45`](src/memory/integration/defaultExtractionPrompt.ts)
+📍 [`src/memory/integration/defaultExtractionPrompt.ts:50`](src/memory/integration/defaultExtractionPrompt.ts)
 
 A label already bound to an entity before the LLM runs. Typically produced
 from signal metadata (email headers, calendar attendees, Slack user list) —
@@ -45789,7 +46381,7 @@ Options for process/processSync.
 
 ### ProfileGeneratorInput `interface`
 
-📍 [`src/memory/types.ts:588`](src/memory/types.ts)
+📍 [`src/memory/types.ts:611`](src/memory/types.ts)
 
 Input passed to `IProfileGenerator.generate`. Regeneration is **incremental**:
 the generator receives the prior profile (if any) as its starting point and
@@ -45828,7 +46420,7 @@ cannot reference them in the updated profile, only remove existing mentions. |
 
 ### RankingConfig `interface`
 
-📍 [`src/memory/types.ts:680`](src/memory/types.ts)
+📍 [`src/memory/types.ts:712`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46100,6 +46692,46 @@ No separate STT/TTS needed — the model handles audio natively.
 
 ---
 
+### RecaseIdentifierOptions `interface`
+
+📍 [`src/memory/identifierMigration.ts:42`](src/memory/identifierMigration.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `kind` | `kind: string;` | Restrict to entities whose identifiers include this kind. Required. |
+| `scope` | `scope: ScopeFilter;` | Adapter-level scope filter. The migration walks one scope at a time —
+callers iterate scopes themselves to match their tenant model. |
+| `recover` | `recover: IdentifierRecoveryFn;` | Recovery function. See `IdentifierRecoveryFn`. |
+| `batchSize?` | `batchSize?: number;` | Page size for the initial entity listing. Default 200. |
+| `dryRun?` | `dryRun?: boolean;` | When true, log diagnostic counts but do not write. Default false. |
+| `logger?` | `logger?: { info: (msg: string) =&gt; void; warn: (msg: string) =&gt; void };` | Optional logger — defaults to console. |
+
+</details>
+
+---
+
+### RecaseIdentifierResult `interface`
+
+📍 [`src/memory/identifierMigration.ts:66`](src/memory/identifierMigration.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `scanned` | `scanned: number;` | - |
+| `recased` | `recased: number;` | - |
+| `skipped` | `skipped: number;` | - |
+| `unchanged` | `unchanged: number;` | - |
+| `errors` | `errors: Array&lt;{ entityId: string; reason: string }&gt;;` | - |
+
+</details>
+
+---
+
 ### RelatedEvent `interface`
 
 📍 [`src/memory/types.ts:247`](src/memory/types.ts)
@@ -46112,6 +46744,22 @@ No separate STT/TTS needed — the model handles audio natively.
 | `event` | `event: IEntity;` | - |
 | `role` | `role: string;` | - |
 | `when?` | `when?: Date;` | Start time pulled from event.metadata, if present. |
+
+</details>
+
+---
+
+### RelatedItemsResult `interface`
+
+📍 [`src/memory/types.ts:257`](src/memory/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tasks` | `tasks: RelatedItemHit&lt;RelatedTask&gt;[];` | - |
+| `events` | `events: RelatedItemHit&lt;RelatedEvent&gt;[];` | - |
 
 </details>
 
@@ -46215,7 +46863,7 @@ Research execution result
 
 ### ResolveEntityOptions `interface`
 
-📍 [`src/memory/types.ts:720`](src/memory/types.ts)
+📍 [`src/memory/types.ts:752`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46231,7 +46879,7 @@ Research execution result
 
 ### ResolveEntityQuery `interface`
 
-📍 [`src/memory/types.ts:706`](src/memory/types.ts)
+📍 [`src/memory/types.ts:738`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46374,7 +47022,7 @@ Multiple RoutineExecutions can be created from one RoutineDefinition.
 
 ### RoutineDefinitionInput `interface`
 
-📍 [`src/domain/entities/Routine.ts:154`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:172`](src/domain/entities/Routine.ts)
 
 Input for creating a RoutineDefinition.
 id, createdAt, updatedAt are auto-generated if not provided.
@@ -46410,7 +47058,7 @@ id, createdAt, updatedAt are auto-generated if not provided.
 
 ### RoutineExecution `interface`
 
-📍 [`src/domain/entities/Routine.ts:196`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:214`](src/domain/entities/Routine.ts)
 
 Runtime state when executing a routine.
 Created from a RoutineDefinition, delegates task management to Plan.
@@ -46504,6 +47152,34 @@ Enables parameterized, reusable routines.
 | `description` | `description: string;` | Human-readable description |
 | `required?` | `required?: boolean;` | Whether this parameter must be provided (default: false) |
 | `default?` | `default?: unknown;` | Default value when not provided |
+
+</details>
+
+---
+
+### RoutineSummary `interface`
+
+📍 [`src/domain/entities/Routine.ts:156`](src/domain/entities/Routine.ts)
+
+Slim projection of a RoutineDefinition for listing.
+
+Returned by IRoutineDefinitionStorage.list(). Use load() to fetch the
+full definition (tasks, pre/postSteps, instructions, etc.).
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `name` | `name: string;` | - |
+| `description` | `description: string;` | - |
+| `version?` | `version?: string;` | - |
+| `author?` | `author?: string;` | - |
+| `tags?` | `tags?: string[];` | - |
+| `taskCount` | `taskCount: number;` | - |
+| `parameterNames?` | `parameterNames?: string[];` | - |
+| `updatedAt` | `updatedAt: string;` | - |
 
 </details>
 
@@ -46838,7 +47514,7 @@ an `IngestionError` entry rather than silently failing.
 
 ### SemanticSearchOptions `interface`
 
-📍 [`src/memory/types.ts:436`](src/memory/types.ts)
+📍 [`src/memory/types.ts:459`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47458,7 +48134,7 @@ extract(raw: TRaw): ExtractedSignal;
 
 ### SlugifyOptions `interface`
 
-📍 [`src/memory/identifiers.ts:24`](src/memory/identifiers.ts)
+📍 [`src/memory/identifiers.ts:89`](src/memory/identifiers.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47595,7 +48271,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreActionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:503`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:515`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47611,7 +48287,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreDeleteResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:493`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:505`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47627,7 +48303,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreEntrySchema `interface`
 
-📍 [`src/core/context-nextgen/types.ts:435`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:447`](src/core/context-nextgen/types.ts)
 
 Describes a store's schema for dynamic tool description generation.
 The `descriptionFactory` on each store tool uses this to build
@@ -47638,8 +48314,8 @@ a comparison table so the LLM knows which store to use.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `storeId` | `storeId: string;` | Short identifier used as the `store` parameter value (e.g., "memory", "context") |
-| `displayName` | `displayName: string;` | Human-readable store name (e.g., "Working Memory", "Live Context") |
+| `storeId` | `storeId: string;` | Short identifier used as the `store` parameter value (e.g., "notes", "whiteboard") |
+| `displayName` | `displayName: string;` | Human-readable store name (e.g., "Notes", "Whiteboard") |
 | `description` | `description: string;` | One-line description of what this store holds |
 | `usageHint` | `usageHint: string;` | "Use for:" guidance — tells the LLM when to pick this store.
 Should include explicit "NOT for:" guidance referencing other stores. |
@@ -47662,7 +48338,7 @@ If undefined or empty, this store has no actions. |
 
 ### StoreGetResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:477`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:489`](src/core/context-nextgen/types.ts)
 
 Result types for store operations.
 These are intentionally loose (Record-based) to accommodate
@@ -47684,7 +48360,7 @@ store-specific fields in responses.
 
 ### StoreListResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:498`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:510`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47700,7 +48376,7 @@ store-specific fields in responses.
 
 ### StoreSetResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:486`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:498`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48207,7 +48883,7 @@ Emitted by pipelines for UI display and logging.
 
 ### TraversalOptions `interface`
 
-📍 [`src/memory/types.ts:305`](src/memory/types.ts)
+📍 [`src/memory/types.ts:313`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48333,7 +49009,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### UpsertBySurfaceInput `interface`
 
-📍 [`src/memory/types.ts:726`](src/memory/types.ts)
+📍 [`src/memory/types.ts:758`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48366,7 +49042,7 @@ On create (no match), all keys are set verbatim. |
 
 ### UpsertBySurfaceOptions `interface`
 
-📍 [`src/memory/types.ts:752`](src/memory/types.ts)
+📍 [`src/memory/types.ts:784`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48390,7 +49066,7 @@ Irrelevant on create — all keys are set. |
 
 ### UpsertBySurfaceResult `interface`
 
-📍 [`src/memory/types.ts:771`](src/memory/types.ts)
+📍 [`src/memory/types.ts:803`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48407,7 +49083,7 @@ Irrelevant on create — all keys are set. |
 
 ### UpsertEntityResult `interface`
 
-📍 [`src/memory/types.ts:314`](src/memory/types.ts)
+📍 [`src/memory/types.ts:322`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48436,6 +49112,103 @@ Irrelevant on create — all keys are set. |
 | `maxTotalSize?` | `maxTotalSize?: number;` | Maximum total size across all entries in bytes (default: 100000 / ~100KB) |
 | `maxEntries?` | `maxEntries?: number;` | Maximum number of entries (default: 100) |
 | `userId?` | `userId?: string;` | User ID for storage isolation (resolved from AgentContextNextGen._userId) |
+
+</details>
+
+---
+
+### UserInteractionDeliveryContext `interface`
+
+📍 [`src/tools/interaction/types.ts:54`](src/tools/interaction/types.ts)
+
+Per-call context the tool passes to the delivery so it can target the
+right user / agent / session and embed identifiers in the outbound
+message for later correlation.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agentId?` | `agentId?: string;` | Agent ID of the requesting agent. |
+| `sessionId?` | `sessionId?: string;` | Session ID of the suspending session. |
+| `userId?` | `userId?: string;` | End-user ID the agent is acting on behalf of. |
+| `toolCallId?` | `toolCallId?: string;` | Tool call ID of the `request_user_input` invocation. Useful for channels
+that want to render a deterministic request marker. |
+
+</details>
+
+---
+
+### UserInteractionDeliveryResult `interface`
+
+📍 [`src/tools/interaction/types.ts:74`](src/tools/interaction/types.ts)
+
+Result the app's delivery returns after successfully delivering the prompt.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `correlationId` | `correlationId: string;` | Stable identifier the app can reproduce when the user's reply arrives.
+
+Used as the `correlationId` for the resulting `SuspendSignal` and stored
+in `ICorrelationStorage` so the inbound handler can resolve it back to
+the suspended `(agentId, sessionId)`.
+
+Examples:
+ - `"slack-thread:C0123/1700000000.123456"`
+ - `"email:<message-id@example.com>"`
+ - `"inapp:6c7e..."`
+
+Format is entirely app-owned. Must be unique per outstanding request. |
+| `channel` | `channel: string;` | Channel name for logs and tool-result display (e.g., `"slack"`, `"email"`,
+`"inapp"`). Free-form. |
+| `description?` | `description?: string;` | Human-readable description of what was delivered. Returned to the LLM as
+the tool's visible result (e.g., `"Slack DM sent to |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Optional metadata to forward through `SuspendSignal.metadata` →
+`SessionRef.metadata`. Use this for anything the inbound listener needs
+to look up the underlying delivery (e.g., Slack thread ts, email
+Message-ID, in-app notification id). |
+
+</details>
+
+---
+
+### UserInteractionRequest `interface`
+
+📍 [`src/tools/interaction/types.ts:21`](src/tools/interaction/types.ts)
+
+Types for human-in-the-loop interaction tools.
+
+These tools let an agent pause itself and ask the user a question via an
+arbitrary delivery channel (Slack, email, in-app notification, webhook, ...).
+The library defines the shape of the request and the delivery contract; the
+**app** implements the channel-specific delivery + the inbound listener that
+resumes the agent when the user replies.
+
+The full pause/resume cycle is built on `SuspendSignal` + `ICorrelationStorage`
+already provided by the library. See `createRequestUserInputTool` for how the
+pieces fit together.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `prompt` | `prompt: string;` | The question or message to deliver to the user. Required. |
+| `context?` | `context?: string;` | Optional human-readable context shown alongside the prompt
+(e.g., why we're asking, what triggered this). Channels can render
+this as a header / preamble / subject. |
+| `schema?` | `schema?: Record&lt;string, unknown&gt;;` | Optional JSON Schema describing the expected reply shape. Channels that
+render forms (in-app notifications, web webhooks) can use this to build
+structured input. Free-text channels (Slack, email) typically ignore it.
+
+Treated as opaque by the library — pass-through to the delivery + metadata. |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | App-specific extras the LLM (or the surrounding agent code) wants to
+forward to the delivery channel — e.g., recipient hint, priority,
+channel preference. Treated as opaque. |
 
 </details>
 
@@ -48476,7 +49249,7 @@ If empty/omitted, rule applies to ALL calls of this tool (blanket rule). |
 
 ### ValidationContext `interface`
 
-📍 [`src/core/routineRunner.ts:128`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:167`](src/core/routineRunner.ts)
 
 Context snapshot passed to the validation prompt builder.
 Contains everything the validator needs to evaluate task completion
@@ -48856,7 +49629,7 @@ type CallEndReason = 'caller_hangup' | 'agent_hangup' | 'timeout' | 'error' | 'r
 
 ### ChangeEvent `type`
 
-📍 [`src/memory/types.ts:638`](src/memory/types.ts)
+📍 [`src/memory/types.ts:661`](src/memory/types.ts)
 
 ```typescript
 type ChangeEvent = | { type: 'entity.upsert'; entity: IEntity; created: boolean }
@@ -48866,6 +49639,15 @@ type ChangeEvent = | { type: 'entity.upsert'; entity: IEntity; created: boolean 
   | { type: 'fact.archive'; factId: FactId }
   | { type: 'fact.restore'; factId: FactId }
   | { type: 'fact.supersede'; oldId: FactId; newId: FactId }
+  /**
+   * Emitted by `MemorySystem.expireFacts` during a scheduled lifecycle sweep,
+   * in addition to (not instead of) the generic `fact.archive` event for the
+   * same fact. The dual emit means existing `fact.archive` subscribers (cache
+   * invalidators, audit log appenders) keep receiving every archival, while
+   * observability that wants to break out automatic expiry vs. operator/agent
+   * archives can subscribe to `fact.expire` and read predicate + validUntil.
+   */
+  | { type: 'fact.expire'; factId: FactId; predicate: string; validUntil: Date }
   /**
    * H3: emitted when a singleValued predicate's auto-supersede couldn't see a
    * prior fact in the caller's scope, but a prior DOES exist in an outer scope
@@ -48933,7 +49715,7 @@ type Content = | InputTextContent
 
 ### ContextFeatures `type`
 
-📍 [`src/core/context-nextgen/types.ts:732`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:744`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins.
 Known keys provide autocomplete; arbitrary string keys are also accepted
@@ -48947,7 +49729,7 @@ type ContextFeatures = KnownContextFeatures & { [key: string]: boolean | undefin
 
 ### ContextTier `type`
 
-📍 [`src/memory/types.ts:275`](src/memory/types.ts)
+📍 [`src/memory/types.ts:283`](src/memory/types.ts)
 
 Tiers that callers can explicitly include; relatedTasks + relatedEvents are
 included BY DEFAULT unless the caller passes { tiers: 'minimal' }.
@@ -49137,6 +49919,25 @@ type HookName = keyof Omit&lt;HookConfig, 'hookTimeout' | 'parallelHooks'&gt;
 
 ---
 
+### IdentifierRecoveryFn `type`
+
+📍 [`src/memory/identifierMigration.ts:36`](src/memory/identifierMigration.ts)
+
+Recover the original-case identifier value, or `null` to leave the entity
+untouched (no recovery available — the migration logs and skips).
+
+Called once per (entity, identifier) the migration encounters.
+
+```typescript
+type IdentifierRecoveryFn = (args: {
+  entity: IEntity;
+  identifierKind: string;
+  storedValue: string;
+}) =&gt; Promise&lt;string | null&gt;
+```
+
+---
+
 ### InContextPriority `type`
 
 📍 [`src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts:26`](src/core/context-nextgen/plugins/InContextMemoryPluginNextGen.ts)
@@ -49242,13 +50043,17 @@ type MongoUpdate = Record&lt;string, unknown&gt;
 
 ### MouseButton `type`
 
-📍 [`src/tools/desktop/types.ts:13`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:17`](src/tools/desktop/types.ts)
 
 Desktop Automation Tools - Types
 
 Interfaces and types for OS-level desktop automation (screenshot, mouse, keyboard, windows).
-All coordinates are in PHYSICAL pixel space (screenshot space).
-The driver converts to logical OS coords internally using scaleFactor.
+
+Coordinate system: LOGICAL pixels throughout. On HiDPI/Retina displays the
+screenshot PNG is downsampled to logical dimensions before being returned,
+so the pixel coordinates visible to a vision-LLM match the coordinate space
+used by mouseMove/mouseClick/etc. `scaleFactor` is exposed on
+DesktopScreenSize for diagnostics but is NOT applied to caller coordinates.
 
 ```typescript
 type MouseButton = 'left' | 'right' | 'middle'
@@ -49258,7 +50063,7 @@ type MouseButton = 'left' | 'right' | 'middle'
 
 ### NewEntity `type`
 
-📍 [`src/memory/types.ts:457`](src/memory/types.ts)
+📍 [`src/memory/types.ts:480`](src/memory/types.ts)
 
 Input type for creating a new entity. `id`, `version`, `createdAt`, and
 `updatedAt` are assigned by the storage layer (adapter) — callers never
@@ -49272,7 +50077,7 @@ type NewEntity = Omit&lt;IEntity, 'id' | 'version' | 'createdAt' | 'updatedAt'&g
 
 ### NewFact `type`
 
-📍 [`src/memory/types.ts:463`](src/memory/types.ts)
+📍 [`src/memory/types.ts:486`](src/memory/types.ts)
 
 Input type for creating a new fact. `id` and `createdAt` are assigned by
 the storage layer.
@@ -49390,7 +50195,7 @@ type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig
 
 ### PluginConfigs `type`
 
-📍 [`src/core/context-nextgen/types.ts:790`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:802`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 Known keys provide autocomplete; arbitrary string keys accepted
@@ -49444,9 +50249,21 @@ type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra'
 
 ---
 
+### RelatedItemHit `type`
+
+📍 [`src/memory/types.ts:255`](src/memory/types.ts)
+
+A related-task / related-event hit augmented with the input entity that produced the match.
+
+```typescript
+type RelatedItemHit = T & { matchedEntityId: EntityId }
+```
+
+---
+
 ### ResolvedContextFeatures `type`
 
-📍 [`src/core/context-nextgen/types.ts:738`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:750`](src/core/context-nextgen/types.ts)
 
 Resolved features — all known keys guaranteed present, plus any extras.
 Used internally after merging with DEFAULT_FEATURES.
@@ -49542,7 +50359,7 @@ type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 ### RoutineExecutionStatus `type`
 
-📍 [`src/domain/entities/Routine.ts:184`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:202`](src/domain/entities/Routine.ts)
 
 Execution status for a routine run
 
@@ -49881,7 +50698,7 @@ export function canAccess(
 
 ### canonicalIdentifier `function`
 
-📍 [`src/memory/identifiers.ts:81`](src/memory/identifiers.ts)
+📍 [`src/memory/identifiers.ts:146`](src/memory/identifiers.ts)
 
 Build a canonical identifier for an entity that lacks a natural external key.
 
@@ -49911,6 +50728,53 @@ canonicalIdentifier('task', {
 Calendar event
 canonicalIdentifier('event', { source: 'gcal', id: '3k9f...abc' })
 // → { kind: 'canonical', value: 'event:gcal:3k9f-abc' }
+```
+
+---
+
+### coerceFactTemporalFields `function`
+
+📍 [`src/memory/dateCoercion.ts:175`](src/memory/dateCoercion.ts)
+
+Coerce the temporal fields on an `IFact` write input or patch. Operates on
+a copy when changes are made, original ref when not. Also coerces nested
+`metadata` AND `value` — common patterns put dates inside `value` (e.g.
+`state_changed` facts shaped like `{from, to, at}`), and leaving those
+uncoerced reintroduces the BSON range-query bug we exist to prevent.
+`value` recursion uses the same conservative ISO-regex guard as metadata,
+so business strings like `'never'` or `'soon'` stay strings.
+
+```typescript
+export function coerceFactTemporalFields&lt;T extends Record&lt;string, unknown&gt;&gt;(input: T): T
+```
+
+---
+
+### coerceMetadataDates `function`
+
+📍 [`src/memory/dateCoercion.ts:116`](src/memory/dateCoercion.ts)
+
+Walk a metadata object recursively, coercing every ISO-date-looking string
+to a `Date`. Returns the same reference when nothing changes (lets callers'
+deep-equality + dirty checks short-circuit).
+
+Recurses into plain objects and array elements. Skips Date / RegExp /
+Buffer / TypedArray (anything that's not a plain object literal).
+
+No depth cap: metadata in this library is JSON-shaped (round-trips through
+BSON, which itself rejects cycles and caps at 100 levels). A silent depth
+cap here would leave deeply-nested ISO strings uncoerced and reintroduce
+the BSON cross-type range-query bug this helper exists to prevent.
+
+Cycle-safe: app code that accidentally constructs a cyclic metadata
+structure (e.g. `obj.self = obj`) is handled by a `WeakSet` visited-check.
+The cycle node is returned as-is rather than crashing the process with a
+stack overflow — wrong failure mode for a library safety net.
+
+```typescript
+export function coerceMetadataDates&lt;T extends Record&lt;string, unknown&gt; | undefined&gt;(
+    metadata: T,
+): T
 ```
 
 ---
@@ -50007,7 +50871,7 @@ const result = await orchestrator.run('Build an auth module with JWT, tests, and
 
 ### createRoutineDefinition `function`
 
-📍 [`src/domain/entities/Routine.ts:232`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:250`](src/domain/entities/Routine.ts)
 
 Create a RoutineDefinition with defaults.
 Validates task dependency references and detects cycles.
@@ -50020,7 +50884,7 @@ export function createRoutineDefinition(input: RoutineDefinitionInput): RoutineD
 
 ### createRoutineExecution `function`
 
-📍 [`src/domain/entities/Routine.ts:287`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:305`](src/domain/entities/Routine.ts)
 
 Create a RoutineExecution from a RoutineDefinition.
 Instantiates all tasks into a Plan via createPlan().
@@ -50051,7 +50915,7 @@ export function createRoutineExecutionRecord(
 
 ### defaultExtractionPrompt `function`
 
-📍 [`src/memory/integration/defaultExtractionPrompt.ts:112`](src/memory/integration/defaultExtractionPrompt.ts)
+📍 [`src/memory/integration/defaultExtractionPrompt.ts:136`](src/memory/integration/defaultExtractionPrompt.ts)
 
 ```typescript
 export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string
@@ -50087,6 +50951,26 @@ Detect service type from a URL
 
 ```typescript
 export function detectServiceFromURL(url: string): string | undefined
+```
+
+---
+
+### diffEntityMetadata `function`
+
+📍 [`src/memory/metadataDiff.ts:27`](src/memory/metadataDiff.ts)
+
+Compare `prev` and `next` over `watchedKeys`, returning a change record per
+key that differs. Equal keys (deep-equal) are omitted. Order of the input
+`watchedKeys` is preserved in the output.
+
+`prev` and `next` can be undefined — treated as empty objects.
+
+```typescript
+export function diffEntityMetadata(
+  prev: Record&lt;string, unknown&gt; | undefined,
+  next: Record&lt;string, unknown&gt; | undefined,
+  watchedKeys: readonly string[],
+): MetadataChange[]
 ```
 
 ---
@@ -50133,7 +51017,7 @@ export function emitRestraintEvent(
 
 ### encodeSharingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:644`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:711`](src/tools/microsoft/types.ts)
 
 Encode a sharing URL into the Graph API sharing token format.
 
@@ -50182,7 +51066,7 @@ export async function excelToMarkdownKV(
 
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:803`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:858`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 
@@ -50206,6 +51090,21 @@ const execution = await executeRoutine({
 });
 
 console.log(execution.status); // 'completed' | 'failed'
+```
+Caller-driven kickoff (caller bakes pre-loaded context into the
+agent's instructions, library injects the first user message):
+```typescript
+const agent = Agent.create({
+connector: 'openai',
+model: 'gpt-4',
+instructions: agentDef.instructions + '\n\n## Pre-loaded task\nFacts:\n- ...',
+tools,
+});
+const execution = await executeRoutine({
+definition: actionExecutorRoutine,
+agent,
+initialUserMessage: 'Execute the selected action: Send reply.',
+});
 ```
 
 ---
@@ -50254,7 +51153,7 @@ const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
 
 ### formatAttendees `function`
 
-📍 [`src/tools/microsoft/types.ts:256`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:323`](src/tools/microsoft/types.ts)
 
 Convert an array of email addresses (any format) to Microsoft Graph attendee format.
 Normalizes input first, so it's safe to pass LLM output directly.
@@ -50267,7 +51166,7 @@ export function formatAttendees(emails: unknown[]):
 
 ### formatFileSize `function`
 
-📍 [`src/tools/google/types.ts:290`](src/tools/google/types.ts)
+📍 [`src/tools/google/types.ts:351`](src/tools/google/types.ts)
 
 Format a file size in bytes to a human-readable string.
 
@@ -50279,7 +51178,7 @@ export function formatFileSize(bytes: number): string
 
 ### formatFileSize `function`
 
-📍 [`src/tools/microsoft/types.ts:748`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:815`](src/tools/microsoft/types.ts)
 
 Format a file size in bytes to a human-readable string.
 
@@ -50304,7 +51203,7 @@ export function formatPluginDisplayName(name: string): string
 
 ### formatRecipients `function`
 
-📍 [`src/tools/microsoft/types.ts:248`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:315`](src/tools/microsoft/types.ts)
 
 Convert an array of email addresses (any format) to Microsoft Graph recipient format.
 Normalizes input first, so it's safe to pass LLM output directly.
@@ -50425,7 +51324,7 @@ export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;I
 
 ### getDrivePrefix `function`
 
-📍 [`src/tools/microsoft/types.ts:692`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:759`](src/tools/microsoft/types.ts)
 
 Determine the drive prefix for Graph API calls.
 
@@ -50481,7 +51380,7 @@ export function getRegisteredScrapeProviders(): string[]
 
 ### getRoutineProgress `function`
 
-📍 [`src/domain/entities/Routine.ts:316`](src/domain/entities/Routine.ts)
+📍 [`src/domain/entities/Routine.ts:334`](src/domain/entities/Routine.ts)
 
 Compute routine progress (0-100) from plan task statuses.
 
@@ -50529,23 +51428,52 @@ export function getServicesByCategory(category: ServiceCategory): ServiceDefinit
 
 ### getUserPathPrefix `function`
 
-📍 [`src/tools/microsoft/types.ts:54`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:83`](src/tools/microsoft/types.ts)
 
 Get the user path prefix for Microsoft Graph API requests.
 
-- App-permission flows (client_credentials, jwt_bearer, jwt): returns `/users/${targetUser}`
-- Delegated flow (authorization_code): returns `/me` (ignores targetUser)
+Resolution order for app-permission flows:
+  1. `actAs` (lock set at tool instantiation) — ALWAYS wins, LLM can't override
+  2. `targetUser` (LLM-supplied per-call argument)
+  3. throws if neither is provided
+
+- App-permission flows (client_credentials, jwt_bearer, jwt): returns `/users/${effective}`
+- Delegated flow (authorization_code): returns `/me` (ignores targetUser AND actAs —
+  the OAuth token already binds identity)
 - API key / other: returns `/me`
 
 ```typescript
-export function getUserPathPrefix(connector: Connector, targetUser?: string): string
+export function getUserPathPrefix(
+  connector: Connector,
+  targetUser?: string,
+  actAs?: string,
+): string
+```
+
+---
+
+### identifierValuesEqual `function`
+
+📍 [`src/memory/identifiers.ts:79`](src/memory/identifiers.ts)
+
+Compare two identifier values under their kind-specific normalization rule.
+Used by dedup comparators (does this entity already have an identifier
+matching the one we're about to add?) and by exact-match lookups.
+
+```typescript
+export function identifierValuesEqual(
+  kindA: string,
+  valueA: string,
+  kindB: string,
+  valueB: string,
+): boolean
 ```
 
 ---
 
 ### isAppPermissionAuth `function`
 
-📍 [`src/tools/microsoft/types.ts:26`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:44`](src/tools/microsoft/types.ts)
 
 Check whether a connector uses app-level (non-delegated) authentication.
 App-level connectors access resources on behalf of the application, not a
@@ -50607,7 +51535,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### isMicrosoftFileUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:669`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:736`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a OneDrive/SharePoint web URL.
 
@@ -50625,7 +51553,7 @@ export function isMicrosoftFileUrl(source: string): boolean
 
 ### isStoreHandler `function`
 
-📍 [`src/core/context-nextgen/types.ts:580`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:592`](src/core/context-nextgen/types.ts)
 
 Type guard to check if a plugin implements IStoreHandler.
 
@@ -50637,7 +51565,7 @@ export function isStoreHandler(plugin: IContextPluginNextGen): plugin is IContex
 
 ### isTeamsMeetingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:274`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:341`](src/tools/microsoft/types.ts)
 
 Check if a meeting ID input is a Teams join URL.
 
@@ -50657,7 +51585,7 @@ export function isTeamsMeetingUrl(input: string): boolean
 
 ### isWebUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:656`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:723`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a web URL (http/https).
 
@@ -50705,6 +51633,32 @@ export function listConnectorsByServiceTypes(serviceTypes: string[]): string[]
 
 ---
 
+### looksLikeIsoDate `function`
+
+📍 [`src/memory/dateCoercion.ts:53`](src/memory/dateCoercion.ts)
+
+Conservative ISO-string detection — returns true only for unambiguous date literals.
+
+```typescript
+export function looksLikeIsoDate(value: unknown): value is string
+```
+
+---
+
+### maybeCoerceToDate `function`
+
+📍 [`src/memory/dateCoercion.ts:62`](src/memory/dateCoercion.ts)
+
+Coerce a single value to Date if it's an unambiguous date string. Otherwise
+returns the value unchanged. `Date` instances pass through. `null` /
+`undefined` / non-date strings / numbers / objects are returned as-is.
+
+```typescript
+export function maybeCoerceToDate(value: unknown): unknown
+```
+
+---
+
 ### mergeFilters `function`
 
 📍 [`src/memory/adapters/mongo/scopeFilter.ts:62`](src/memory/adapters/mongo/scopeFilter.ts)
@@ -50729,7 +51683,7 @@ export function mergeTextPieces(pieces: DocumentPiece[]): string
 
 ### microsoftFetch `function`
 
-📍 [`src/tools/microsoft/types.ts:149`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:216`](src/tools/microsoft/types.ts)
 
 Make an authenticated Microsoft Graph API request through the connector.
 
@@ -50761,7 +51715,7 @@ export function mulawToPcm(mulaw: Buffer): Buffer
 
 ### normalizeEmails `function`
 
-📍 [`src/tools/google/types.ts:197`](src/tools/google/types.ts)
+📍 [`src/tools/google/types.ts:258`](src/tools/google/types.ts)
 
 Normalize an email array from any format the LLM might send into plain strings.
 Same logic as Microsoft tools for consistency.
@@ -50774,7 +51728,7 @@ export function normalizeEmails(input: unknown[]): string[]
 
 ### normalizeEmails `function`
 
-📍 [`src/tools/microsoft/types.ts:224`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:291`](src/tools/microsoft/types.ts)
 
 Normalize an email array from any format the LLM might send into plain strings.
 
@@ -50788,6 +51742,22 @@ Always returns `string[]` of email addresses.
 
 ```typescript
 export function normalizeEmails(input: unknown[]): string[]
+```
+
+---
+
+### normalizeIdentifierValue `function`
+
+📍 [`src/memory/identifiers.ts:69`](src/memory/identifiers.ts)
+
+Apply the kind's case-normalization rule to a raw identifier value. This is
+the SINGLE source of truth used by both the storage write path (so all
+persisted values are normalized identically) and the lookup path (so query
+keys match the stored shape). Adding a new case-insensitive kind without
+updating this function is a bug — it'll write one shape and look up another.
+
+```typescript
+export function normalizeIdentifierValue(kind: string, value: string): string
 ```
 
 ---
@@ -50824,7 +51794,7 @@ export function normalizeSurface(s: string): string
 
 ### orderByToSort `function`
 
-📍 [`src/memory/adapters/mongo/queries.ts:92`](src/memory/adapters/mongo/queries.ts)
+📍 [`src/memory/adapters/mongo/queries.ts:101`](src/memory/adapters/mongo/queries.ts)
 
 ```typescript
 export function orderByToSort(orderBy?: FactOrderBy): MongoSort | undefined
@@ -50871,7 +51841,7 @@ export function parseExtractionWithStatus(raw: string): ParseExtractionResult
 
 ### parseKeyCombo `function`
 
-📍 [`src/tools/desktop/driver/NutTreeDriver.ts:70`](src/tools/desktop/driver/NutTreeDriver.ts)
+📍 [`src/tools/desktop/driver/NutTreeDriver.ts:89`](src/tools/desktop/driver/NutTreeDriver.ts)
 
 Parse a key combo string like "ctrl+c", "cmd+shift+s", "enter"
 Returns nut-tree Key enum values.
@@ -50943,6 +51913,30 @@ export function pcmToMulaw(pcm: Buffer): Buffer
 
 ```typescript
 export function rankFacts(facts: IFact[], config: RankingConfig, now: Date): IFact[]
+```
+
+---
+
+### recaseIdentifierValues `function`
+
+📍 [`src/memory/identifierMigration.ts:86`](src/memory/identifierMigration.ts)
+
+Walk entities under `scope` whose identifiers include `kind`, ask the caller
+to recover the original-case value for each, and write back. Idempotent
+(re-running a completed migration is a no-op because already-correct values
+make `recover` return the same value as stored).
+
+The migration uses the adapter's `findEntitiesByIdentifier` to list candidates
+efficiently. For each entity, every identifier with the given kind is
+processed independently — a single entity can carry multiple identifiers of
+the same kind (e.g. a Person with multiple emails) and the migration touches
+each one.
+
+```typescript
+export async function recaseIdentifierValues(
+  store: IMemoryStore,
+  options: RecaseIdentifierOptions,
+): Promise&lt;RecaseIdentifierResult&gt;
 ```
 
 ---
@@ -51038,7 +52032,7 @@ export function resolveEagerness(
 
 ### resolveFileEndpoints `function`
 
-📍 [`src/tools/microsoft/types.ts:711`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:778`](src/tools/microsoft/types.ts)
 
 Build the Graph API endpoint and metadata endpoint for a file source.
 
@@ -51092,7 +52086,7 @@ export function resolveMaxContextTokens(
 
 ### resolveMeetingId `function`
 
-📍 [`src/tools/microsoft/types.ts:300`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:367`](src/tools/microsoft/types.ts)
 
 Resolve a meeting input (ID or Teams URL) to a Graph API online meeting ID.
 
@@ -51257,7 +52251,7 @@ export async function slackPaginate&lt;TResponse extends SlackBaseResponse, TIte
 
 ### slugify `function`
 
-📍 [`src/memory/identifiers.ts:34`](src/memory/identifiers.ts)
+📍 [`src/memory/identifiers.ts:99`](src/memory/identifiers.ts)
 
 Deterministic URL-safe slug. Lowercase, ASCII alphanumerics + dashes, no
 leading/trailing dashes, collapsed dash runs. Stable across calls for the
@@ -51315,6 +52309,47 @@ Handles body stringification and query param building
 
 ```typescript
 export function toConnectorOptions(options: ExtendedFetchOptions): ConnectorFetchOptions
+```
+
+---
+
+### toDate `function`
+
+📍 [`src/memory/dateCoercion.ts:83`](src/memory/dateCoercion.ts)
+
+Strict variant of `maybeCoerceToDate` for callers that want a `Date | undefined`
+back. Returns:
+  - the same `Date` if input is a `Date`
+  - a parsed `Date` if input is an ISO-shaped string AND parses to a valid moment
+  - a parsed `Date` if input is a finite number (treated as epoch ms)
+  - `undefined` otherwise
+
+Use at write boundaries inside the library AND in app code that bridges signal
+payloads (where calendar/email adapters may legitimately ship Date OR ISO
+string) into typed domain fields.
+
+```typescript
+export function toDate(value: unknown): Date | undefined
+```
+
+---
+
+### toDate `function`
+
+📍 [`src/memory/integration/ExtractionResolver.ts:570`](src/memory/integration/ExtractionResolver.ts)
+
+```typescript
+function toDate(v: string | Date | undefined): Date | undefined
+```
+
+---
+
+### toDate `function`
+
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:954`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+
+```typescript
+function toDate(v: unknown): Date
 ```
 
 ---
@@ -51406,7 +52441,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:869`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:881`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -51459,7 +52494,7 @@ Default configuration values
 
 ### DEFAULT_DESKTOP_CONFIG `const`
 
-📍 [`src/tools/desktop/types.ts:109`](src/tools/desktop/types.ts)
+📍 [`src/tools/desktop/types.ts:113`](src/tools/desktop/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -51476,7 +52511,7 @@ Default configuration values
 
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:743`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:755`](src/core/context-nextgen/types.ts)
 
 Default feature configuration for built-in plugins.
 

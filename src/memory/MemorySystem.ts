@@ -73,6 +73,7 @@ const DEFAULT_TOP_FACTS_LIMIT = 15;
 const DEFAULT_SEMANTIC_TOP_K = 5;
 const DEFAULT_NEIGHBOR_DEPTH = 1;
 const DEFAULT_PROFILE_THRESHOLD = 3;
+const MILLIS_PER_DAY = 86_400_000;
 /**
  * Threshold (chars of estimated input) above which `regenerateProfile` emits
  * an operator warn log. No cap is applied — the log is purely observability
@@ -1194,6 +1195,23 @@ export class MemorySystem implements IDisposable {
     }
 
     const now = new Date();
+    const observedAt = input.observedAt ?? now;
+
+    // Auto-stamp `validUntil` from predicate lifecycle. Only fires when the
+    // caller did not provide `validUntil` AND the registry definition has
+    // `defaultValidityDays`. Used by ephemeral/episodic predicates so old
+    // commitments and per-message observations naturally expire instead of
+    // accumulating in the active graph. Stable/stateful predicates have no
+    // `defaultValidityDays` and therefore remain valid forever (stateful
+    // ones get superseded; stable ones live indefinitely).
+    let autoValidUntil = input.validUntil;
+    if (autoValidUntil === undefined && def?.defaultValidityDays !== undefined) {
+      const days = def.defaultValidityDays;
+      if (Number.isFinite(days) && days > 0) {
+        autoValidUntil = new Date(observedAt.getTime() + days * MILLIS_PER_DAY);
+      }
+    }
+
     const newFact: NewFact = {
       subjectId: input.subjectId,
       predicate,
@@ -1222,9 +1240,9 @@ export class MemorySystem implements IDisposable {
       supersedes,
       archived: input.archived,
       isAggregate: input.isAggregate ?? def?.isAggregate,
-      observedAt: input.observedAt ?? now,
+      observedAt,
       validFrom: input.validFrom,
-      validUntil: input.validUntil,
+      validUntil: autoValidUntil,
       metadata: input.metadata,
       permissions: this.resolvePermissions(input.permissions, {
         kind: 'fact',
@@ -1320,6 +1338,98 @@ export class MemorySystem implements IDisposable {
     assertCanAccess(fact, scope, 'write', 'fact');
     await this.store.updateFact(id, { archived: true }, scope);
     this.emit({ type: 'fact.archive', factId: id });
+  }
+
+  /**
+   * Scheduled lifecycle sweep — archives facts whose `validUntil` is in the
+   * past relative to `asOf` (defaults to "now"). Host applications call this
+   * on a daily cadence to keep the visible graph trimmed.
+   *
+   * Contract:
+   * - Only affects facts that already have `validUntil` set. Facts without
+   *   `validUntil` are valid forever and never touched.
+   * - Only archives facts that are NOT already archived.
+   * - Archived facts remain queryable via `archivedOnly` / `includeArchived`
+   *   paths — this is soft archive, not hard delete.
+   * - Scope-bounded: the caller's scope determines which facts are visible.
+   *   Multi-tenant schedulers iterate over scopes and call once per scope.
+   * - Emits BOTH `fact.archive` and `fact.expire` per archived fact. The
+   *   `fact.archive` event preserves the "any archival" contract that
+   *   existing subscribers (cache invalidators, audit appenders) depend on;
+   *   `fact.expire` is the lifecycle-specific signal carrying predicate +
+   *   validUntil for observability that wants to distinguish automatic
+   *   expiry from operator/agent archives.
+   *
+   * Returns the count of facts archived in this sweep. Paginated internally
+   * to bound memory; pageSize defaults to 500.
+   */
+  async expireFacts(
+    opts: {
+      /** Cutoff. Facts with `validUntil < asOf` are eligible. Defaults to `new Date()`. */
+      asOf?: Date;
+      /**
+       * Restrict to specific predicates. When omitted, all expired facts in
+       * scope are archived. Pass `[]` to short-circuit to 0 (no-op).
+       */
+      predicates?: string[];
+      /** Maximum number of facts to archive in this call. Defaults to unbounded. */
+      limit?: number;
+      /** Internal page size for findFacts. Defaults to 500. */
+      pageSize?: number;
+    },
+    scope: ScopeFilter,
+  ): Promise<{ archived: number }> {
+    assertNotDestroyed(this, 'expireFacts');
+
+    const asOf = opts.asOf ?? new Date();
+    const predicates = opts.predicates;
+    if (predicates && predicates.length === 0) return { archived: 0 };
+    const hardLimit = opts.limit;
+    const pageSize = Math.max(1, opts.pageSize ?? 500);
+
+    const filter: FactFilter = {
+      validUntilBefore: asOf,
+      archived: false,
+    };
+    if (predicates && predicates.length > 0) filter.predicates = predicates;
+
+    let archived = 0;
+    // Drain in pages. Each page is bounded; we re-query because the previous
+    // page's facts have moved out of the non-archived set so the next page's
+    // offset would shift anyway.
+    while (true) {
+      if (hardLimit !== undefined && archived >= hardLimit) break;
+      const remaining =
+        hardLimit !== undefined ? Math.min(pageSize, hardLimit - archived) : pageSize;
+      const page = await this.store.findFacts(
+        filter,
+        { limit: remaining, orderBy: { field: 'observedAt', direction: 'asc' } },
+        scope,
+      );
+      if (page.items.length === 0) break;
+      for (const fact of page.items) {
+        // Defensive — store SHOULD honor the filter, but if not we'd loop.
+        if (fact.archived) continue;
+        if (!fact.validUntil || fact.validUntil >= asOf) continue;
+        await this.store.updateFact(fact.id, { archived: true }, scope);
+        archived += 1;
+        // Emit both: `fact.archive` for the generic "any archival" contract,
+        // `fact.expire` for callers that want to distinguish automatic
+        // expiry from operator/agent archives.
+        this.emit({ type: 'fact.archive', factId: fact.id });
+        this.emit({
+          type: 'fact.expire',
+          factId: fact.id,
+          predicate: fact.predicate,
+          validUntil: fact.validUntil,
+        });
+      }
+      // Loop break when the page is smaller than the requested size — there
+      // is no next page even if we have remaining budget.
+      if (page.items.length < remaining) break;
+    }
+
+    return { archived };
   }
 
   /**

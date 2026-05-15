@@ -192,7 +192,7 @@ export {
 
 // Predicate library — pluggable vocabulary with a 51-predicate standard set.
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
-export type { PredicateDefinition } from './predicates/index.js';
+export type { PredicateDefinition, PredicateLifecycle } from './predicates/index.js';
 
 // Access control — three-principal permission model (owner / group / world).
 export {

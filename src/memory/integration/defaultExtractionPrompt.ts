@@ -1,8 +1,13 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 5** — bump this number whenever the prompt surface changes
+ * **Prompt version: 6** — bump this number whenever the prompt surface changes
  * materially so callers pinning snapshots notice.
+ *   - v6: explicit "Do NOT emit per-message communication noise" rule in
+ *         Parsimony; lifecycle-aware Validity period note (system auto-stamps
+ *         validUntil for ephemeral/episodic predicates from registry). Paired
+ *         with predicate registry's `excludeFromExtractionPrompt` filter that
+ *         removes noise predicates from the vocabulary by default.
  *   - v5: restraint posture controls (`EagernessProfile`) — optional
  *         `whyActionable`, optional per-fact `evidenceQuote`, optional
  *         priority/anchor binding, configurable negative-example slot.
@@ -28,7 +33,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 5;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 6;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, ScopeFields } from '../types.js';
@@ -237,6 +242,14 @@ Expected fact counts by signal type:
 - **Multi-topic** (two distinct commitments, a decision + a concern): **2 facts**
 - **Long transcript / meeting recap**: **3–6 facts** — the salient decisions and commitments, NOT every sentence
 
+### Do NOT emit per-message communication noise
+The fact that an email/message exists at all is metadata the host already tracks — do NOT re-extract it. Specifically, NEVER emit facts like:
+- "John emailed Jane" / "John cc-ed Jane" / "John messaged Jane" — these are message envelope data, not facts about the world.
+- "John mentioned Jane" / "John responded to X" — same: per-message participation, captured elsewhere.
+- "John acknowledged" / "John noted" / "John observed" — vague observations with no actionable content.
+
+Extract only what carries durable knowledge: **decisions, commitments, status changes, preferences, identity claims, substantive observations** (concerns expressed, interest declared). The communication act itself is not a fact. The CONTENT of the communication — what was decided, promised, asked, or learned — is.
+
 ## Tasks: ONE commitment = ONE task (do NOT decompose)
 A single commitment, decision, or unblock-request becomes a SINGLE task — even when it spans multiple sub-actions, integrations, or deliverables. The Decision Queue is a tool for the executive: 7 cards for one conversation is rejection territory.
 
@@ -325,6 +338,8 @@ Calibration:
 - **Superseded by a later fact** (role change, preference change): leave \`validUntil\` undefined here — use \`supersedes\` in the new fact.
 
 When unsure, PREFER leaving \`validUntil\` undefined over guessing — a too-early expiry silently hides the fact from queries. Queries that filter by \`asOf\` treat "no validUntil" as "valid forever".
+
+Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral/episodic predicates (commitments, scheduled events, expressed concerns, attendance) based on their registered lifecycle. Setting \`validUntil\` here only overrides that default — needed when you have a specific deadline ("by Friday") or want to keep an ephemeral fact alive longer than the default.
 
 ## Guidelines
 1. **Mentions, not IDs.** The LLM never sees entity IDs. Use local labels like "m1", "m2" to reference entities within this extraction. The system will resolve labels to existing entities or create new ones. If the prompt contains a "Pre-resolved labels" block, those labels are already bound — reference them directly in \`facts\` and DO NOT redeclare them in \`mentions\`.

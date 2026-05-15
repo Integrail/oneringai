@@ -10,6 +10,35 @@
  * predicates remain free-form strings — nothing in the memory layer breaks.
  */
 
+/**
+ * Temporal/relevance class for a predicate. Governs default `validUntil`
+ * stamping on `addFact` and (optionally) extraction-prompt rendering.
+ *
+ * - 'stable'    — identity / structural / decision facts that remain true
+ *                  indefinitely. No `defaultValidityDays`. Examples:
+ *                  works_at, knows, profile, tracks_priority.
+ *
+ * - 'stateful'  — current-value snapshot, expected to be replaced by a newer
+ *                  one over time. Typically `singleValued: true`. No
+ *                  `defaultValidityDays` — supersession handles obsolescence.
+ *                  Examples: current_title, has_status, has_due_date.
+ *
+ * - 'ephemeral' — time-bounded assertion (a commitment, a scheduled event,
+ *                  an expressed concern). `defaultValidityDays` should be set
+ *                  so the fact auto-expires when the window passes.
+ *                  Examples: committed_to, scheduled_for, expressed_concern.
+ *
+ * - 'episodic'  — transient observation about a moment (per-message comms,
+ *                  passing mentions). Cheap to capture, cheap to lose.
+ *                  Short `defaultValidityDays`; often
+ *                  `excludeFromExtractionPrompt: true` to keep extractors
+ *                  from emitting them in the first place.
+ *                  Examples: emailed, cc_ed, mentioned, noted.
+ *
+ * Lifecycle is optional — predicates without one behave exactly as before.
+ */
+export type PredicateLifecycle = 'stable' | 'stateful' | 'ephemeral' | 'episodic';
+
 export interface PredicateDefinition {
   /** Canonical snake_case name — the id. */
   name: string;
@@ -64,4 +93,34 @@ export interface PredicateDefinition {
 
   /** Shown to the LLM in the prompt to disambiguate. Keep ≤ 2 per predicate. */
   examples?: string[];
+
+  /**
+   * Temporal/relevance class. Drives `addFact`'s `validUntil` auto-stamping
+   * and extraction-prompt rendering. See `PredicateLifecycle` for semantics.
+   * Optional — undefined means "no automatic lifecycle behavior."
+   */
+  lifecycle?: PredicateLifecycle;
+
+  /**
+   * When set, `addFact` stamps `validUntil = (observedAt ?? now) + days`
+   * on facts of this predicate that the caller did not provide a `validUntil`
+   * for. Callers can always override by passing `validUntil` explicitly.
+   *
+   * Use with care: a too-short window silently archives facts that callers
+   * may still want surfaced. Pair with `lifecycle: 'ephemeral' | 'episodic'`.
+   */
+  defaultValidityDays?: number;
+
+  /**
+   * When `true`, `PredicateRegistry.renderForPrompt` omits this predicate
+   * from the LLM-facing vocabulary by default. The predicate remains valid
+   * for direct callers (extractors that already know the name, code paths
+   * that emit it programmatically); only the LLM's view of the vocabulary
+   * narrows. Pass `{ includeExcluded: true }` to render everything.
+   *
+   * Use for predicates the library considers extraction noise (per-message
+   * communication metadata, vague observations) that should be derived from
+   * source metadata aggregation rather than re-extracted into facts.
+   */
+  excludeFromExtractionPrompt?: boolean;
 }

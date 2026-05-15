@@ -602,6 +602,12 @@ function factMatches(fact: IFact, filter: FactFilter, scope: ScopeFilter): boole
     if (fact.validUntil && fact.validUntil < filter.asOf) return false;
   }
 
+  if (filter.validUntilBefore) {
+    // Facts without validUntil are valid forever — never matched by this filter.
+    if (!fact.validUntil) return false;
+    if (fact.validUntil >= filter.validUntilBefore) return false;
+  }
+
   return true;
 }
 

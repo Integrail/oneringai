@@ -11,6 +11,20 @@
  * Note: `profile` is consumed by MemorySystem.getContext (document fact with
  * predicate='profile' is the canonical per-entity profile). Renaming it would
  * break retrieval.
+ *
+ * **Lifecycle policy (added 2026-05).** Every predicate carries a
+ * `lifecycle` tag plus optional `defaultValidityDays`. `MemorySystem.addFact`
+ * auto-stamps `validUntil` from `defaultValidityDays` so old commitments,
+ * observations, and per-message comms naturally expire while identity,
+ * structural, and decision facts remain.
+ *
+ * Per-message communication predicates (`emailed`, `cc_ed`, `mentioned`,
+ * `responded_to`, `noted`, `acknowledged`, `interaction_count`) are tagged
+ * `excludeFromExtractionPrompt: true` — they remain valid for callers that
+ * emit them programmatically (calendar adapters, comms aggregators) but the
+ * default extraction prompt no longer advertises them to the LLM. This is
+ * deliberate: per-message metadata belongs in aggregation, not in the
+ * extracted-fact stream.
  */
 
 import type { PredicateDefinition } from './types.js';
@@ -31,6 +45,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 1.0,
     rankingWeight: 1.5,
     examples: ['(John, works_at, Acme)'],
+    lifecycle: 'stable',
   },
   {
     name: 'reports_to',
@@ -43,6 +58,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.9,
     rankingWeight: 1.4,
     examples: ['(John, reports_to, Jane)'],
+    lifecycle: 'stable',
   },
   {
     name: 'current_title',
@@ -54,6 +70,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     rankingWeight: 1.5,
     singleValued: true,
     examples: ['(John, current_title, "VP of Engineering")'],
+    lifecycle: 'stateful',
   },
   {
     name: 'current_role',
@@ -65,6 +82,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 1.0,
     rankingWeight: 1.5,
     singleValued: true,
+    lifecycle: 'stateful',
   },
   {
     name: 'located_in',
@@ -74,6 +92,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'location_of',
     defaultImportance: 0.6,
     rankingWeight: 1.0,
+    lifecycle: 'stable',
   },
   {
     name: 'is_member_of',
@@ -85,6 +104,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'has_member',
     defaultImportance: 0.8,
     rankingWeight: 1.2,
+    lifecycle: 'stable',
   },
   {
     name: 'founded',
@@ -96,6 +116,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'founded_by',
     defaultImportance: 1.0,
     rankingWeight: 1.3,
+    lifecycle: 'stable',
   },
 
   // ---------------------------------------------------------------------------
@@ -109,6 +130,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'has_part',
     defaultImportance: 0.7,
     rankingWeight: 1.1,
+    lifecycle: 'stable',
   },
   {
     name: 'subsidiary_of',
@@ -120,6 +142,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'parent_of',
     defaultImportance: 0.9,
     rankingWeight: 1.2,
+    lifecycle: 'stable',
   },
   {
     name: 'manages',
@@ -131,6 +154,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'reports_to',
     defaultImportance: 0.9,
     rankingWeight: 1.4,
+    lifecycle: 'stable',
   },
   {
     name: 'owns',
@@ -140,6 +164,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'owned_by',
     defaultImportance: 0.8,
     rankingWeight: 1.1,
+    lifecycle: 'stable',
   },
   {
     name: 'acquired',
@@ -151,6 +176,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'acquired_by',
     defaultImportance: 0.9,
     rankingWeight: 1.2,
+    lifecycle: 'stable',
   },
   {
     name: 'merged_with',
@@ -162,6 +188,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'merged_with',
     defaultImportance: 0.9,
     rankingWeight: 1.1,
+    lifecycle: 'stable',
   },
 
   // ---------------------------------------------------------------------------
@@ -177,6 +204,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'assignee_of',
     defaultImportance: 0.8,
     rankingWeight: 1.3,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'committed_to',
@@ -190,6 +219,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.9,
     rankingWeight: 1.3,
     examples: ['(John, committed_to, "Send budget by Friday")'],
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'completed',
@@ -201,6 +232,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'completed_by',
     defaultImportance: 0.7,
     rankingWeight: 1.2,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 180,
   },
   {
     name: 'created',
@@ -211,6 +244,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'created_by',
     defaultImportance: 0.6,
     rankingWeight: 0.9,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 180,
   },
   {
     name: 'reviewed',
@@ -221,6 +256,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'reviewed_by',
     defaultImportance: 0.6,
     rankingWeight: 0.9,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'approved',
@@ -231,6 +268,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'approved_by',
     defaultImportance: 0.7,
     rankingWeight: 1.0,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 180,
   },
   {
     name: 'blocked_by',
@@ -241,6 +280,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'blocks',
     defaultImportance: 0.9,
     rankingWeight: 1.3,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 60,
   },
   {
     name: 'depends_on',
@@ -250,6 +291,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     inverse: 'dependency_of',
     defaultImportance: 0.8,
     rankingWeight: 1.2,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'has_due_date',
@@ -261,6 +304,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     rankingWeight: 1.4,
     singleValued: true,
     examples: ['(task_123, has_due_date, "2026-04-30")'],
+    lifecycle: 'stateful',
   },
   {
     name: 'has_priority',
@@ -271,6 +315,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.8,
     rankingWeight: 1.2,
     singleValued: true,
+    lifecycle: 'stateful',
   },
   {
     name: 'prepares_for',
@@ -286,6 +331,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.8,
     rankingWeight: 1.3,
     examples: ['(task_456, prepares_for, event_789) — "Prepare slides for JP Morgan meeting"'],
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'delegated_to',
@@ -302,6 +349,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.9,
     rankingWeight: 1.3,
     examples: ['(task_123, delegated_to, person_alice) — "do this by Friday"'],
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'cancelled_due_to',
@@ -316,6 +365,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.9,
     rankingWeight: 1.3,
     examples: ['(task_456, cancelled_due_to, event_789) — meeting was cancelled'],
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 180,
   },
 
   // ---------------------------------------------------------------------------
@@ -329,6 +380,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.7,
     rankingWeight: 1.0,
     examples: ['(task_123, state_changed, { from: "open", to: "in_progress" })'],
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'has_status',
@@ -338,6 +391,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.8,
     rankingWeight: 1.1,
     singleValued: true,
+    lifecycle: 'stateful',
   },
   {
     name: 'current_status',
@@ -347,10 +401,17 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.9,
     rankingWeight: 1.3,
     singleValued: true,
+    lifecycle: 'stateful',
   },
 
   // ---------------------------------------------------------------------------
   // communication
+  //
+  // Per-message comms (`emailed`, `called`, `messaged`, `cc_ed`, `mentioned`,
+  // `responded_to`) are episodic AND excluded from extraction prompts — they
+  // belong in metadata aggregation (counts, last_communication_at), not in
+  // the LLM's extracted-fact stream. Programmatic callers (calendar adapters,
+  // comms aggregators) can still emit them directly.
   // ---------------------------------------------------------------------------
   {
     name: 'emailed',
@@ -361,6 +422,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.4,
     rankingWeight: 0.8,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'called',
@@ -371,6 +435,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.4,
     rankingWeight: 0.8,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'messaged',
@@ -381,6 +448,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.4,
     rankingWeight: 0.8,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'met_with',
@@ -391,6 +461,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.6,
     rankingWeight: 1.0,
+    lifecycle: 'episodic',
+    defaultValidityDays: 90,
   },
   {
     name: 'mentioned',
@@ -400,6 +472,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.3,
     rankingWeight: 0.6,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'cc_ed',
@@ -410,6 +485,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.2,
     rankingWeight: 0.5,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'responded_to',
@@ -419,6 +497,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.4,
     rankingWeight: 0.7,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'interaction_count',
@@ -428,6 +509,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.5,
     rankingWeight: 1.0,
     isAggregate: true,
+    lifecycle: 'stable',
+    excludeFromExtractionPrompt: true,
   },
 
   // ---------------------------------------------------------------------------
@@ -442,6 +525,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['topic'],
     defaultImportance: 0.5,
     rankingWeight: 0.8,
+    lifecycle: 'episodic',
+    defaultValidityDays: 60,
   },
   {
     name: 'expressed_concern',
@@ -451,6 +536,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.8,
     rankingWeight: 1.1,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'expressed_interest',
@@ -460,6 +547,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.7,
     rankingWeight: 1.0,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'acknowledged',
@@ -469,6 +558,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.4,
     rankingWeight: 0.7,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'noted',
@@ -478,6 +570,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.3,
     rankingWeight: 0.6,
+    lifecycle: 'episodic',
+    defaultValidityDays: 30,
+    excludeFromExtractionPrompt: true,
   },
 
   // ---------------------------------------------------------------------------
@@ -491,6 +586,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['event'],
     defaultImportance: 0.7,
     rankingWeight: 1.0,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 180,
   },
   {
     name: 'scheduled_for',
@@ -499,6 +596,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     payloadKind: 'attribute',
     defaultImportance: 0.8,
     rankingWeight: 1.1,
+    lifecycle: 'ephemeral',
+    defaultValidityDays: 90,
   },
   {
     name: 'started_on',
@@ -508,6 +607,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.7,
     rankingWeight: 0.9,
     singleValued: true,
+    lifecycle: 'stateful',
   },
   {
     name: 'ended_on',
@@ -517,6 +617,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.7,
     rankingWeight: 0.9,
     singleValued: true,
+    lifecycle: 'stateful',
   },
 
   // ---------------------------------------------------------------------------
@@ -533,6 +634,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.5,
     rankingWeight: 0.9,
     examples: ['(Alice, attended, Q3-planning-review)'],
+    lifecycle: 'episodic',
+    defaultValidityDays: 90,
   },
   {
     name: 'hosted',
@@ -545,6 +648,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.7,
     rankingWeight: 1.0,
     examples: ['(Alice, hosted, Q3-planning-review)'],
+    lifecycle: 'episodic',
+    defaultValidityDays: 90,
   },
 
   // ---------------------------------------------------------------------------
@@ -563,6 +668,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.9,
     rankingWeight: 1.4,
     examples: ['(me, tracks_priority, "Ship NA launch Q2 2026")'],
+    lifecycle: 'stable',
   },
   {
     name: 'priority_affects',
@@ -575,6 +681,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.8,
     rankingWeight: 1.2,
     examples: ['("Ship NA launch", priority_affects, "NA Launch project")'],
+    lifecycle: 'stable',
   },
 
   // ---------------------------------------------------------------------------
@@ -588,6 +695,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     payloadKind: 'narrative',
     defaultImportance: 1.0,
     rankingWeight: 1.0,
+    lifecycle: 'stable',
   },
   {
     name: 'biography',
@@ -597,6 +705,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     subjectTypes: ['person'],
     defaultImportance: 0.8,
     rankingWeight: 1.0,
+    lifecycle: 'stable',
   },
   {
     name: 'memo',
@@ -605,6 +714,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     payloadKind: 'narrative',
     defaultImportance: 0.6,
     rankingWeight: 1.0,
+    lifecycle: 'stable',
   },
   {
     name: 'meeting_notes',
@@ -613,6 +723,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     payloadKind: 'narrative',
     defaultImportance: 0.7,
     rankingWeight: 1.0,
+    lifecycle: 'stable',
   },
   {
     name: 'research_note',
@@ -621,6 +732,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     payloadKind: 'narrative',
     defaultImportance: 0.6,
     rankingWeight: 1.0,
+    lifecycle: 'stable',
   },
 
   // ---------------------------------------------------------------------------
@@ -635,6 +747,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.5,
     rankingWeight: 0.8,
+    lifecycle: 'stable',
   },
   {
     name: 'works_with',
@@ -645,6 +758,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.6,
     rankingWeight: 0.9,
+    lifecycle: 'stable',
   },
   {
     name: 'colleague_of',
@@ -655,5 +769,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     objectTypes: ['person'],
     defaultImportance: 0.5,
     rankingWeight: 0.8,
+    lifecycle: 'stable',
   },
 ];

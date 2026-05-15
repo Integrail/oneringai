@@ -23,8 +23,10 @@ const ANCHORS: Anchor[] = [
 ];
 
 describe('prompt v5 — version', () => {
-  it('version constant is 5', () => {
-    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(5);
+  it('version constant is at least 5', () => {
+    // Bumped to 6 in lifecycle rollout; later bumps remain backward-compatible
+    // with the v5 surface (whyActionable, evidenceQuote, anchors, negatives).
+    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBeGreaterThanOrEqual(5);
   });
 });
 

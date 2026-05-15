@@ -159,7 +159,14 @@ export class PredicateRegistry {
     return best;
   }
 
-  /** List definitions, optionally filtered by category or subject-type hint. */
+  /**
+   * List definitions, optionally filtered by category or subject-type hint.
+   *
+   * This is the general enumeration API — it returns every registered
+   * definition. To get the LLM-facing subset (excluding noise predicates
+   * tagged `excludeFromExtractionPrompt`), use `renderForPrompt` or filter
+   * the result yourself on `excludeFromExtractionPrompt`.
+   */
   list(filter?: { categories?: string[]; subjectType?: string }): PredicateDefinition[] {
     const all = Array.from(this.byName.values());
     if (!filter) return all;
@@ -187,15 +194,38 @@ export class PredicateRegistry {
    * Render the registry as a markdown block suitable for injection into an
    * LLM extraction prompt. Chunked by category; capped by `maxPerCategory`
    * to keep the prompt token budget bounded.
+   *
+   * ⚠️ **Default-filter behavior change (lifecycle rollout).** Predicates
+   * flagged `excludeFromExtractionPrompt: true` are omitted by default. In
+   * the standard registry that hides per-message communication noise from
+   * the LLM vocabulary: `emailed`, `called`, `messaged`, `cc_ed`,
+   * `mentioned`, `responded_to`, `acknowledged`, `noted`,
+   * `interaction_count`. These predicates remain fully valid for direct
+   * callers (calendar adapters, comms aggregators, extractors that emit
+   * them programmatically) — only the LLM's view of the vocabulary
+   * narrows.
+   *
+   * **If your host previously embedded the full `renderForPrompt()` output
+   * into a custom prompt and relied on those names being present, pass
+   * `includeExcluded: true` to preserve the prior surface.** Default-mode
+   * callers that just want a cleaner extraction prompt need do nothing.
+   *
+   * Use `list()` (or filter on `excludeFromExtractionPrompt` yourself) when
+   * you need the full registered set for non-prompt purposes.
    */
   renderForPrompt(opts?: {
     categories?: string[];
     subjectType?: string;
     maxPerCategory?: number;
+    /** When true, include `excludeFromExtractionPrompt` predicates. */
+    includeExcluded?: boolean;
   }): string {
     const max = opts?.maxPerCategory ?? 5;
     const filter = { categories: opts?.categories, subjectType: opts?.subjectType };
-    const defs = this.list(filter);
+    const includeExcluded = opts?.includeExcluded === true;
+    const defs = this.list(filter).filter(
+      (d) => includeExcluded || !d.excludeFromExtractionPrompt,
+    );
     if (defs.length === 0) return '';
 
     const byCategory = new Map<string, PredicateDefinition[]>();
