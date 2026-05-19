@@ -107,6 +107,23 @@ export interface ExecuteRoutineOptions {
   inputs?: Record<string, unknown>;
 
   /**
+   * When `true`, skip the `scopedTo(requiredTools)` step in Mode 2.
+   * The agent keeps its full tool surface during the routine, so preSteps /
+   * postSteps may use any tool registered on the agent — not only those
+   * listed in `definition.requiredTools`.
+   *
+   * `requiredTools` is still validated as a "must be present" gate; this
+   * flag only disables the *restriction* of the agent's runtime toolset.
+   *
+   * Use when the routine's preSteps invoke tools the LLM tasks don't need,
+   * and listing every such tool in `requiredTools` would be misleading
+   * (e.g. internal context-loading tools the LLM should not see directly).
+   *
+   * Defaults to `false` — scoping ON is the safer default.
+   */
+  disableToolScoping?: boolean;
+
+  /**
    * Optional verbatim user message used in place of the FIRST executable
    * task's prompt. Subsequent tasks still go through the normal
    * `prompts.task` (or default) builder.
@@ -872,6 +889,7 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
     hooks,
     prompts,
     inputs: rawInputs,
+    disableToolScoping,
   } = options;
 
   // Validate: must provide either `agent` or `connector` + `model`
@@ -921,16 +939,33 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
         return execution;
       }
 
-      agent = existingAgent.scopedTo(definition.requiredTools, {
-        instructions: buildSystemPrompt(definition),
-      });
-      ownsAgent = true; // runner now owns the scoped executor
+      if (disableToolScoping) {
+        // Opt-out: keep the caller's full superagent — preSteps + postSteps
+        // can use any registered tool. The requiredTools check above served
+        // only as a sanity gate. Hooks register/unregister on the existing
+        // agent, same shape as the no-requiredTools fallback below.
+        agent = existingAgent;
+        if (hooks) {
+          for (const name of ROUTINE_HOOK_NAMES) {
+            const hook = hooks[name];
+            if (hook) {
+              agent.registerHook(name, hook as any);
+              registeredHooks.push({ name, hook });
+            }
+          }
+        }
+      } else {
+        agent = existingAgent.scopedTo(definition.requiredTools, {
+          instructions: buildSystemPrompt(definition),
+        });
+        ownsAgent = true; // runner now owns the scoped executor
 
-      if (hooks) {
-        for (const name of ROUTINE_HOOK_NAMES) {
-          const hook = hooks[name];
-          if (hook) {
-            agent.registerHook(name, hook as any);
+        if (hooks) {
+          for (const name of ROUTINE_HOOK_NAMES) {
+            const hook = hooks[name];
+            if (hook) {
+              agent.registerHook(name, hook as any);
+            }
           }
         }
       }
