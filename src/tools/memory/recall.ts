@@ -104,6 +104,20 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction<RecallArgs>
             displayName: view.entity.displayName,
             aliases: view.entity.aliases,
             identifiers: view.entity.identifiers,
+            // `metadata` is THE source of truth for original / case-sensitive
+            // ids that the canonical identifier had to mangle for indexing
+            // (e.g. Microsoft Graph immutable ids ~150 chars long, base64url
+            // with `==` padding). Callers needing the verbatim provider id
+            // (to re-call its API) MUST read `metadata.jarvis.source.externalId`
+            // — never reconstruct from the canonical identifier, which is
+            // intentionally lossy.
+            //
+            // Shipped alongside the existing `relatedTasks[*].metadata` and
+            // `relatedEvents[*].metadata` projections (lines below), which
+            // already pass entity metadata through. The omission on the
+            // primary `entity` object was the asymmetry causing agents to
+            // hallucinate ids when calling provider tools.
+            metadata: view.entity.metadata,
           },
           profile: view.profile
             ? { id: view.profile.id, details: view.profile.details, createdAt: view.profile.createdAt }
