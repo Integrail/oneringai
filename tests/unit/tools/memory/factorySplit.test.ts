@@ -2,9 +2,9 @@
  * createMemoryReadTools / createMemoryWriteTools / createMemoryTools — factory
  * split coverage.
  *
- *   - Read factory returns the 5 read tools only (no mutators)
+ *   - Read factory returns the 6 read tools only (no mutators)
  *   - Write factory returns the 6 write tools only (no readers, includes memory_set_agent_rule)
- *   - Combined factory returns all 11 tools, no duplicates
+ *   - Combined factory returns all 12 tools, no duplicates
  *   - Each tool in each bundle has a well-formed ToolFunction.definition
  *     (so OpenAI's strict schema validator can accept them — guards against
  *     another "array missing items" regression)
@@ -32,6 +32,7 @@ const READ_NAMES = [
   'memory_list_facts',
   'memory_recall',
   'memory_search',
+  'memory_search_documents',
 ];
 
 const WRITE_NAMES = [
@@ -44,7 +45,7 @@ const WRITE_NAMES = [
 ];
 
 describe('memory tool factory split', () => {
-  it('createMemoryReadTools returns exactly the 5 read tools', () => {
+  it('createMemoryReadTools returns exactly the 6 read tools', () => {
     const mem = makeMem();
     const tools = createMemoryReadTools({ memory: mem, agentId: AGENT_ID, defaultUserId: USER_ID });
     const names = tools.map((t) => t.definition.function.name).sort();
@@ -62,12 +63,12 @@ describe('memory tool factory split', () => {
     expect(names).toEqual(WRITE_NAMES);
   });
 
-  it('createMemoryTools returns the union — 11 tools, no duplicates', () => {
+  it('createMemoryTools returns the union — 12 tools, no duplicates', () => {
     const mem = makeMem();
     const tools = createMemoryTools({ memory: mem, agentId: AGENT_ID, defaultUserId: USER_ID });
     const names = tools.map((t) => t.definition.function.name);
-    expect(names.length).toBe(11);
-    expect(new Set(names).size).toBe(11);
+    expect(names.length).toBe(12);
+    expect(new Set(names).size).toBe(12);
     for (const expected of [...READ_NAMES, ...WRITE_NAMES]) {
       expect(names).toContain(expected);
     }

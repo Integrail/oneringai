@@ -4114,13 +4114,14 @@ type SubjectRef =
   | { surface: string };                               // fuzzy resolution by name/alias
 ```
 
-**Read tools (5)** — registered when `features.memory: true`:
+**Read tools (6)** — registered when `features.memory: true`:
 
 | Tool | What it does | Example |
 |------|--------------|---------|
 | `memory_recall` | Profile + top facts + optional tiers (`documents` / `semantic` / `neighbors`) | `{"subject":"me"}` · `{"subject":{"surface":"Acme deal"},"include":["neighbors"]}` |
 | `memory_graph` | N-hop graph traversal (Mongo `$graphLookup` for `direction:'out'`/`'in'`; iterative BFS for `'both'`) | `{"start":"me","direction":"out","maxDepth":2}` |
 | `memory_search` | Semantic text search across embedded facts | `{"query":"deployment incidents last quarter","topK":10}` |
+| `memory_search_documents` | Search long-form documents (`type='document'`) by content. `mode:'semantic'\|'keyword'`; filters by `attachedTo` / `role`. | `{"query":"Q3 launch brief"}` · `{"query":"TODO","mode":"keyword","role":"notes"}` |
 | `memory_find_entity` | Lookup or list by id, identifier, surface, or type+metadata (read-only — actions: `find` / `list`) | `{"by":{"identifier":{"kind":"email","value":"alice@a.com"}}}` |
 | `memory_list_facts` | Paginated raw fact enumeration; `archivedOnly: true` returns audit view | `{"subject":"me","predicate":"prefers"}` |
 

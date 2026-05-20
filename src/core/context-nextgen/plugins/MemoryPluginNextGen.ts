@@ -307,6 +307,30 @@ Example — list the user's active quarterly priorities, heaviest first
 (\`metadataFilter\` keys are short-form — relative to \`metadata\`. \`orderBy.field\` is a full dot-path on the entity document — include the \`metadata.\` prefix):
 \`memory_find_entity({action:'list', by:{type:'priority', metadataFilter:{'jarvis.priority.status':'active', 'jarvis.priority.horizon':'Q'}, orderBy:[{field:'metadata.jarvis.priority.weight', direction:'desc'}]}})\`
 
+### Documents (long-form work artefacts)
+
+Documents are entities with \`type='document'\` carrying long-form content in \`metadata.body\`. Use them for plans, briefs, transcripts, specs, notes — anything that's too long for a fact.
+
+Document fields:
+- \`displayName\` — human title.
+- \`identifiers\` — when a slug is set, the doc has \`{kind:'canonical', value:'doc:<slug>'}\`. You can look it up by the bare slug ("q3-plan") OR the full canonical form.
+- \`metadata.body\` — full content (markdown by default).
+- \`metadata.role\` — free-string marker (\`brief\` | \`plan\` | \`transcript\` | \`spec\` | \`notes\` | \`artifact\` | ...). Use to filter searches/lists.
+- \`metadata.format\` — \`markdown\` | \`plain\` | \`json\` (default \`markdown\`).
+- \`metadata.summary\` — optional short abstract (when present, used as the embedding source — produces better semantic matches on long docs).
+- \`metadata.byteSize\` — computed; do not set.
+
+How to find documents (read-only):
+- By content (preferred when you don't know the slug): \`memory_search_documents({query, mode?, attachedTo?, role?, limit?})\`. \`semantic\` (default) embeds the query against \`contentEmbedding\`; \`keyword\` is case-insensitive substring match over body + title.
+- By id / slug: \`memory_find_entity({by:{id:"ent_…"}})\` or \`memory_find_entity({by:{identifier:{kind:'canonical', value:'doc:q3-plan'}}})\`. Returns the full entity including \`metadata.body\`.
+- List by type / role: \`memory_find_entity({action:'list', by:{type:'document', metadataFilter:{role:'brief'}}})\`.
+- Documents attached to an entity: facts use predicate \`has_document\`. Walk them via \`memory_graph\` or \`memory_list_facts({subjectId, predicate:'has_document'})\`.
+
+Examples:
+- \`memory_search_documents({query:"Q3 launch brief"})\` — semantic match across visible docs.
+- \`memory_search_documents({query:"TODO", mode:"keyword"})\` — exact substring match.
+- \`memory_search_documents({query:"design", attachedTo:{surface:"NA Launch project"}, role:["spec","plan"]})\` — narrow to docs attached to a specific project, filtered by role.
+
 If you're missing information, answer from what you can retrieve rather than apologising for "not remembering". Write-side capabilities, if any, are described separately below (and may be absent — some deployments update memory through a background pipeline instead).`;
 
 // Write-side instructions live in MemoryWritePluginNextGen.

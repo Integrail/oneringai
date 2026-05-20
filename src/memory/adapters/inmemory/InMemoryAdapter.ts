@@ -10,6 +10,7 @@
  */
 
 import type {
+  EntityEmbeddingField,
   EntityId,
   EntityListFilter,
   EntitySearchOptions,
@@ -362,7 +363,7 @@ export class InMemoryAdapter implements IMemoryStore {
   async semanticSearchEntities(
     queryVector: number[],
     filter: EntitySemanticSearchFilter,
-    opts: SemanticSearchOptions & { minScore?: number },
+    opts: SemanticSearchOptions & { minScore?: number; embeddingField?: EntityEmbeddingField },
     scope: ScopeFilter,
   ): Promise<Array<{ entity: IEntity; score: number }>> {
     this.assertLive();
@@ -374,13 +375,18 @@ export class InMemoryAdapter implements IMemoryStore {
           ? new Set(filter.types)
           : null;
     const minScore = opts.minScore;
+    const field: EntityEmbeddingField = opts.embeddingField ?? 'identity';
     const scored: Array<{ entity: IEntity; score: number }> = [];
     for (const e of this.entitiesById.values()) {
       if (e.archived) continue;
       if (!isVisible(e, scope)) continue;
       if (typeSet && !typeSet.has(e.type)) continue;
-      if (!e.identityEmbedding || e.identityEmbedding.length !== queryVector.length) continue;
-      const score = cosine(queryVector, e.identityEmbedding);
+      // Strict field selection — no silent fallback to the other embedding,
+      // per IMemoryStore contract. Mixing identity/content matches would
+      // leak document content into EntityResolver's identity tier.
+      const vec = field === 'content' ? e.contentEmbedding : e.identityEmbedding;
+      if (!vec || vec.length !== queryVector.length) continue;
+      const score = cosine(queryVector, vec);
       if (minScore !== undefined && score < minScore) continue;
       scored.push({ entity: clone(e), score });
     }

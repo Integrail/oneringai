@@ -194,6 +194,29 @@ export {
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
 export type { PredicateDefinition, PredicateLifecycle } from './predicates/index.js';
 
+// Documents — entities with type='document' carrying long-form content.
+// Pure convention over IEntity/IFact; CRUD lives on MemorySystem as
+// create/update/get/attach/detach/list/searchDocument(s).
+export {
+  DOCUMENT_TYPE,
+  HAS_DOCUMENT_PREDICATE,
+  DOCUMENT_SLUG_KIND,
+  DOCUMENT_SLUG_PREFIX,
+  DEFAULT_EMBED_SOURCE_CHAR_LIMIT,
+  documentSlugIdentifier,
+} from './documents/index.js';
+export type {
+  Document,
+  CreateDocumentInput,
+  UpdateDocumentInput,
+  ListDocumentsFilter,
+  SearchDocumentsInput,
+  DocumentSearchHit,
+  DetachDocumentResult,
+  SuggestedDocumentRole,
+  DocumentFormat,
+} from './documents/index.js';
+
 // Access control — three-principal permission model (owner / group / world).
 export {
   PermissionDeniedError,
@@ -246,9 +269,11 @@ export type {
   FactQueryOptions,
   Page,
   UpsertEntityResult,
+  EntityEmbeddingField,
   EntityListFilter,
   EntityOrderBy,
   EntitySearchOptions,
+  EntitySemanticSearchFilter,
   ListOptions,
   SemanticSearchOptions,
 

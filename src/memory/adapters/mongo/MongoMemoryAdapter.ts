@@ -15,6 +15,7 @@
  */
 
 import type {
+  EntityEmbeddingField,
   EntityId,
   EntityListFilter,
   EntitySearchOptions,
@@ -98,6 +99,16 @@ export interface MongoMemoryAdapterOptions {
   entityVectorIndexName?: string;
 
   /**
+   * Atlas Vector Search index for `entity.contentEmbedding` — used when
+   * `semanticSearchEntities` is called with `opts.embeddingField:'content'`
+   * (currently consumed by `MemorySystem.searchDocuments`). Distinct from
+   * `entityVectorIndexName` so identity matches never leak into content
+   * search and vice versa. Same auto-creation rules as the identity index:
+   * not built by `ensureIndexes()`; create via `ensureVectorSearchIndexes()`.
+   */
+  entityContentVectorIndexName?: string;
+
+  /**
    * Number of vector candidates to ask Atlas Vector Search to consider before
    * returning topK. Used by both `semanticSearch` (facts) and
    * `semanticSearchEntities` when the corresponding index name is set.
@@ -131,6 +142,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
   private readonly useNativeGraphLookup: boolean;
   private readonly vectorIndexName?: string;
   private readonly entityVectorIndexName?: string;
+  private readonly entityContentVectorIndexName?: string;
   private readonly vectorCandidateMultiplier: number;
   private readonly factsCollectionName?: string;
   private readonly defaultPageSize: number;
@@ -143,6 +155,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
       !!opts.useNativeGraphLookup && !!opts.facts.aggregate && !!opts.factsCollectionName;
     this.vectorIndexName = opts.vectorIndexName;
     this.entityVectorIndexName = opts.entityVectorIndexName;
+    this.entityContentVectorIndexName = opts.entityContentVectorIndexName;
     this.vectorCandidateMultiplier = opts.vectorCandidateMultiplier ?? 10;
     this.factsCollectionName = opts.factsCollectionName;
     this.defaultPageSize = opts.defaultPageSize ?? DEFAULT_PAGE_SIZE;
@@ -667,14 +680,18 @@ export class MongoMemoryAdapter implements IMemoryStore {
   async semanticSearchEntities(
     queryVector: number[],
     filter: EntitySemanticSearchFilter,
-    opts: SemanticSearchOptions & { minScore?: number },
+    opts: SemanticSearchOptions & { minScore?: number; embeddingField?: EntityEmbeddingField },
     scope: ScopeFilter,
   ): Promise<Array<{ entity: IEntity; score: number }>> {
     this.assertLive();
-    if (this.entityVectorIndexName && this.entities.aggregate) {
-      return this.atlasVectorSearchEntities(queryVector, filter, opts, scope);
+    const field: EntityEmbeddingField = opts.embeddingField ?? 'identity';
+    const indexName =
+      field === 'content' ? this.entityContentVectorIndexName : this.entityVectorIndexName;
+    const path = field === 'content' ? 'contentEmbedding' : 'identityEmbedding';
+    if (indexName && this.entities.aggregate) {
+      return this.atlasVectorSearchEntities(queryVector, filter, opts, scope, indexName, path);
     }
-    return this.cursorCosineEntities(queryVector, filter, opts, scope);
+    return this.cursorCosineEntities(queryVector, filter, opts, scope, path);
   }
 
   private async atlasVectorSearchEntities(
@@ -682,6 +699,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
     filter: EntitySemanticSearchFilter,
     opts: SemanticSearchOptions & { minScore?: number },
     scope: ScopeFilter,
+    indexName: string,
+    path: 'identityEmbedding' | 'contentEmbedding',
   ): Promise<Array<{ entity: IEntity; score: number }>> {
     const vectorFilter = mergeFilters(
       scopeToFilter(scope),
@@ -691,8 +710,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
     const pipeline = [
       {
         $vectorSearch: {
-          index: this.entityVectorIndexName!,
-          path: 'identityEmbedding',
+          index: indexName,
+          path,
           queryVector,
           numCandidates: opts.topK * this.vectorCandidateMultiplier,
           limit: opts.topK,
@@ -714,20 +733,22 @@ export class MongoMemoryAdapter implements IMemoryStore {
     filter: EntitySemanticSearchFilter,
     opts: SemanticSearchOptions & { minScore?: number },
     scope: ScopeFilter,
+    path: 'identityEmbedding' | 'contentEmbedding',
   ): Promise<Array<{ entity: IEntity; score: number }>> {
     const mongoFilter = mergeFilters(
       scopeToFilter(scope),
       ARCHIVED_HIDDEN,
       entitySemanticFilterToMongo(filter),
-      { identityEmbedding: { $exists: true } },
+      { [path]: { $exists: true } },
     );
     // Cap at 5000 to match fact-level cursor scan — scope + type narrows early.
     const docs = await this.entities.find(mongoFilter, { limit: 5000 });
     const minScore = opts.minScore;
     const scored: Array<{ entity: IEntity; score: number }> = [];
     for (const doc of docs) {
-      if (!doc.identityEmbedding || doc.identityEmbedding.length !== queryVector.length) continue;
-      const score = cosine(queryVector, doc.identityEmbedding);
+      const vec = path === 'contentEmbedding' ? doc.contentEmbedding : doc.identityEmbedding;
+      if (!vec || vec.length !== queryVector.length) continue;
+      const score = cosine(queryVector, vec);
       if (minScore !== undefined && score < minScore) continue;
       scored.push({ entity: reviveEntity(doc), score });
     }
@@ -791,11 +812,24 @@ export class MongoMemoryAdapter implements IMemoryStore {
      */
     factsIndexName?: string | null;
     /**
-     * Atlas index name for entities. Default: the adapter's own
-     * `entityVectorIndexName` option, or `'entities_vector'` when unset.
-     * Pass `null` to skip.
+     * Atlas index name for entities (identityEmbedding). Default: the
+     * adapter's own `entityVectorIndexName` option, or `'entities_vector'`
+     * when unset. Pass `null` to skip.
      */
     entitiesIndexName?: string | null;
+    /**
+     * Atlas index name for entity content (contentEmbedding) — used by
+     * document semantic search. **Opt-in.** Default: the adapter's own
+     * `entityContentVectorIndexName` option, or **`null` (skip)** when that's
+     * also unset. Hosts that use documents should either set the adapter's
+     * `entityContentVectorIndexName` (so the runtime path and this helper
+     * agree on the name) or pass `entitiesContentIndexName` explicitly here.
+     *
+     * Default-skip is deliberate: adding a third Atlas index automatically
+     * on `ensureVectorSearchIndexes()` would silently bill existing
+     * deployments that aren't using documents.
+     */
+    entitiesContentIndexName?: string | null;
   }): Promise<void> {
     this.assertLive();
     if (!Number.isInteger(opts.dimensions) || opts.dimensions <= 0) {
@@ -815,6 +849,13 @@ export class MongoMemoryAdapter implements IMemoryStore {
       opts.entitiesIndexName === undefined
         ? (this.entityVectorIndexName ?? 'entities_vector')
         : opts.entitiesIndexName;
+    // Content index is opt-in: skip unless the caller passed a name OR the
+    // adapter was constructed with `entityContentVectorIndexName`. See the
+    // option's JSDoc for the rationale (avoid silent Atlas billing).
+    const entitiesContentName =
+      opts.entitiesContentIndexName === undefined
+        ? (this.entityContentVectorIndexName ?? null)
+        : opts.entitiesContentIndexName;
 
     if (factsName !== null) {
       await ensureOneVectorSearchIndex({
@@ -831,6 +872,16 @@ export class MongoMemoryAdapter implements IMemoryStore {
         collection: this.entities as unknown as IMongoCollectionLike<{ id: string }>,
         name: entitiesName,
         path: 'identityEmbedding',
+        dimensions: opts.dimensions,
+        similarity,
+        filterPaths: ENTITIES_FILTER_PATHS,
+      });
+    }
+    if (entitiesContentName !== null) {
+      await ensureOneVectorSearchIndex({
+        collection: this.entities as unknown as IMongoCollectionLike<{ id: string }>,
+        name: entitiesContentName,
+        path: 'contentEmbedding',
         dimensions: opts.dimensions,
         similarity,
         filterPaths: ENTITIES_FILTER_PATHS,
@@ -1243,6 +1294,11 @@ const ENTITIES_FILTER_PATHS: readonly string[] = [
   'permissions.world',
   'archived',
   'type',
+  // Used by document search (semanticSearchEntities with embeddingField:'content')
+  // to narrow by role within the document type. Declared as a filter path so
+  // Atlas Vector Search actually honours role-scoped queries instead of
+  // silently ignoring them.
+  'metadata.role',
 ];
 
 /**

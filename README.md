@@ -23,7 +23,7 @@
   - [8. InContextMemory](#8-incontextmemory)
   - [9. Persistent Instructions](#9-persistent-instructions)
   - [10. User Info](#10-user-info)
-  - [10b. Self-Learning Memory — plugin + tools](#10b-self-learning-memory--plugin--tools) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` with **11 `memory_*` LLM tools** (5 read + 6 write incl. `memory_set_agent_rule`); supersedes 9 & 10
+  - [10b. Self-Learning Memory — plugin + tools](#10b-self-learning-memory--plugin--tools) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` with **12 `memory_*` LLM tools** (6 read incl. `memory_search_documents` + 6 write incl. `memory_set_agent_rule`); supersedes 9 & 10
   - [11. Direct LLM Access](#11-direct-llm-access)
   - [12. Audio Capabilities](#12-audio-capabilities)
   - [Embeddings](#embeddings-new) — Multi-vendor text embeddings with MRL dimension control
@@ -1028,7 +1028,7 @@ const agent = Agent.create({
 | `userInfo` | `false` | UserInfoPluginNextGen | Unified `store_*` tools (store="user_info") + `todo_add/update/remove` |
 | `toolCatalog` | `false` | ToolCatalogPluginNextGen | `tool_catalog_search/load/unload` |
 | `sharedWorkspace` | `false` | SharedWorkspacePluginNextGen | Unified `store_*` tools (store="workspace"). Actions: log, history, archive, clear |
-| `memory` | `false` | MemoryPluginNextGen | 5 read tools: `memory_recall`, `memory_graph`, `memory_search`, `memory_find_entity`, `memory_list_facts`. Requires `plugins.memory.memory: MemorySystem`. |
+| `memory` | `false` | MemoryPluginNextGen | 6 read tools: `memory_recall`, `memory_graph`, `memory_search`, `memory_search_documents`, `memory_find_entity`, `memory_list_facts`. Requires `plugins.memory.memory: MemorySystem`. |
 | `memoryWrite` | `false` | MemoryWritePluginNextGen | 6 write tools: `memory_remember`, `memory_link`, `memory_upsert_entity`, `memory_forget`, `memory_restore`, `memory_set_agent_rule`. Requires `memory: true`. |
 
 **AgentContextNextGen architecture:**
@@ -1222,12 +1222,13 @@ await agent.run('Remember I prefer concise answers');
 - 🏢 **Optional org bootstrap** — when `groupBootstrap` is set, an `organization` entity is upserted and rendered as a separate "Your Organization Profile" block alongside the user profile
 - 🛡️ **LLM-safe** — `groupId` fixed by host app (never from tool args); ghost-write protection; `contextIds` auto-downgrade; numeric limits clamped
 
-**11 LLM tools** (`memory_*`), split into two opt-in bundles:
+**12 LLM tools** (`memory_*`), split into two opt-in bundles:
 
 *Read (via `MemoryPluginNextGen`, feature flag `memory`):*
 - `memory_recall(subject, include?)` — profile + top facts + optional tiers (`documents` / `semantic` / `neighbors`)
 - `memory_graph(start, direction, maxDepth, predicates?)` — N-hop traversal
-- `memory_search(query, topK?, filter?)` — semantic text search
+- `memory_search(query, topK?, filter?)` — semantic text search across facts
+- `memory_search_documents(query, mode?, attachedTo?, role?, limit?)` — search long-form documents (`type='document'`) by content. Semantic mode matches `contentEmbedding`; keyword mode is case-insensitive substring over body + title.
 - `memory_find_entity(by, action? ∈ {find, list})` — lookup or list (read-only)
 - `memory_list_facts(subject, predicate?, archivedOnly?)` — structured enumeration
 

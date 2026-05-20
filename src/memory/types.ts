@@ -132,6 +132,16 @@ export interface IEntity extends ScopeFields {
    * fails. Populated async by the embedding queue when enabled.
    */
   identityEmbedding?: number[];
+  /**
+   * Embedding over the entity's primary long-form content — currently used
+   * exclusively by documents (type='document') over `displayName + summary
+   * (or truncated body)`. Distinct from `identityEmbedding` so semantic
+   * matching on content never bleeds into EntityResolver's identity
+   * resolution tier. Populated async by the embedding queue when the entity
+   * is a document with a body. Adapters honor it via
+   * `semanticSearchEntities({ embeddingField: 'content' })`.
+   */
+  contentEmbedding?: number[];
   /** Optimistic concurrency token — incremented on every write. */
   version: number;
   createdAt: Date;
@@ -461,6 +471,19 @@ export interface SemanticSearchOptions {
 }
 
 /**
+ * Which entity embedding to search against in
+ * `IMemoryStore.semanticSearchEntities`. `'identity'` (default) targets
+ * `IEntity.identityEmbedding` — name/alias/identifier embedding consumed by
+ * EntityResolver's semantic tier. `'content'` targets `IEntity.contentEmbedding`
+ * — long-form-content embedding currently used for document search.
+ *
+ * Adapters that don't implement the requested field SHOULD return an empty
+ * array (they will be skipped); they MUST NOT silently fall back to the other
+ * field or callers risk leaking identity matches into content searches.
+ */
+export type EntityEmbeddingField = 'identity' | 'content';
+
+/**
  * Narrow filter for `IMemoryStore.semanticSearchEntities`. Type narrowing is
  * the only supported pre-filter — resolver tier-4 always knows (or guesses)
  * the type. Scope still flows through `scope: ScopeFilter` separately.
@@ -557,10 +580,13 @@ export interface IMemoryStore {
   ): Promise<Array<{ fact: IFact; score: number }>>;
 
   /**
-   * Entity-level semantic search over `identityEmbedding`. Consumed by
-   * `EntityResolver`'s semantic tier (Tier 4) when
-   * `EntityResolutionConfig.enableSemanticResolution` is on. Adapters that
-   * don't implement this are skipped — the resolver falls back to Tiers 1-3.
+   * Entity-level semantic search. Default field is `identityEmbedding`,
+   * consumed by `EntityResolver`'s semantic tier (Tier 4) when
+   * `EntityResolutionConfig.enableSemanticResolution` is on. With
+   * `opts.embeddingField:'content'`, the same method searches
+   * `contentEmbedding` — used by `MemorySystem.searchDocuments`. Adapters
+   * that don't implement this are skipped — the resolver falls back to
+   * Tiers 1-3.
    *
    * Contract:
    *  - `filter.type` / `filter.types` narrow by `IEntity.type`. At least one
@@ -568,6 +594,9 @@ export interface IMemoryStore {
    *  - `opts.topK` clamped by the caller (resolver passes small values, ~10).
    *  - `opts.minScore` optional noise floor (adapter MAY pre-filter; resolver
    *    post-filters regardless, so implementations can ignore it).
+   *  - `opts.embeddingField` selects which entity embedding to search; defaults
+   *    to `'identity'` for backward compatibility. Adapters MUST NOT silently
+   *    fall back to the other field on misses — return an empty result.
    *  - Results ordered by descending `score` (cosine similarity, 0..1).
    *  - Archived entities MUST be excluded.
    *  - `scope` enforcement identical to every other read.
@@ -575,7 +604,7 @@ export interface IMemoryStore {
   semanticSearchEntities?(
     queryVector: number[],
     filter: EntitySemanticSearchFilter,
-    opts: SemanticSearchOptions & { minScore?: number },
+    opts: SemanticSearchOptions & { minScore?: number; embeddingField?: EntityEmbeddingField },
     scope: ScopeFilter,
   ): Promise<Array<{ entity: IEntity; score: number }>>;
 

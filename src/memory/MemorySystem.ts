@@ -21,6 +21,23 @@ import {
   type VisibilityPolicy,
 } from './AccessControl.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from './dateCoercion.js';
+import {
+  DEFAULT_EMBED_SOURCE_CHAR_LIMIT,
+  DOCUMENT_SLUG_KIND,
+  DOCUMENT_SLUG_PREFIX,
+  DOCUMENT_TYPE,
+  HAS_DOCUMENT_PREDICATE,
+  documentSlugIdentifier,
+} from './documents/types.js';
+import type {
+  CreateDocumentInput,
+  DetachDocumentResult,
+  Document,
+  DocumentSearchHit,
+  ListDocumentsFilter,
+  SearchDocumentsInput,
+  UpdateDocumentInput,
+} from './documents/types.js';
 import { genericTraverse } from './GenericTraversal.js';
 import { identifierValuesEqual } from './identifiers.js';
 import { metadataDeepEqual } from './metadataDiff.js';
@@ -2548,6 +2565,531 @@ export class MemorySystem implements IDisposable {
   }
 
   // ==========================================================================
+  // Documents — entities with type='document' carrying long-form content in
+  // metadata.body. Thin wrappers around upsertEntity/addFact that enforce the
+  // conventions documented in `documents/types.ts` and queue the
+  // content-embedding refresh on body changes.
+  // ==========================================================================
+
+  /**
+   * Create a new document. When `slug` is provided, the document carries
+   * `{kind:'canonical', value:'doc:<slug>'}` so subsequent lookups via
+   * `getDocument(slug)` resolve deterministically. When `attachTo` is set, an
+   * idempotent `has_document` fact is written linking the parent to the new
+   * document.
+   *
+   * Returns the created entity. Content-embedding refresh is queued
+   * asynchronously — read `pendingEmbeddings()` / `flushEmbeddings()` to
+   * observe.
+   */
+  async createDocument(input: CreateDocumentInput, scope: ScopeFilter): Promise<Document> {
+    assertNotDestroyed(this, 'createDocument');
+    if (!input.title || input.title.trim().length === 0) {
+      throw new Error('createDocument: title must be a non-empty string');
+    }
+    if (typeof input.body !== 'string') {
+      throw new Error('createDocument: body must be a string');
+    }
+    // Slug-collision pre-flight. `upsertEntity` resolves matches by identifier
+    // BEFORE looking at type, so calling it with a slug that's been squatted
+    // by a non-document entity (a task, event, …) would apply our
+    // `metadataMerge:'overwrite'` to that entity — writing document-shape
+    // fields (body/byteSize/role/…) into a non-document record and bumping
+    // its version — before we got a chance to reject. Bail here so the
+    // squatter is left untouched. No-op when no slug is supplied (anonymous
+    // documents can't collide).
+    if (input.slug) {
+      const slugValue = `${DOCUMENT_SLUG_PREFIX}${input.slug}`;
+      const existing = await this.store.findEntitiesByIdentifier(
+        DOCUMENT_SLUG_KIND,
+        slugValue,
+        scope,
+      );
+      const squatter = existing.find((e) => e.type !== DOCUMENT_TYPE && !e.archived);
+      if (squatter) {
+        throw new Error(
+          `createDocument: identifier 'doc:${input.slug}' already exists ` +
+            `on a non-document entity (id='${squatter.id}', type='${squatter.type}'). ` +
+            `Pick a different slug or repair the existing entity.`,
+        );
+      }
+    }
+    const identifiers: Identifier[] = input.slug ? [documentSlugIdentifier(input.slug)] : [];
+    const metadata = buildDocumentMetadata(undefined, input);
+    // `metadataMerge:'overwrite'` makes createDocument idempotent on slug
+    // collision: a second call with the same slug refreshes body/role/format/
+    // summary instead of silently dropping the new content. Without this,
+    // `upsertEntity` resolves to the existing entity and ignores `metadata`.
+    const res = await this.upsertEntity(
+      {
+        type: DOCUMENT_TYPE,
+        displayName: input.title,
+        aliases: input.aliases,
+        identifiers,
+        metadata,
+        ownerId: input.ownerId,
+        groupId: input.groupId,
+        permissions: input.permissions,
+        metadataMerge: 'overwrite',
+      },
+      scope,
+    );
+    // Belt-and-suspenders: the pre-flight above should already have rejected
+    // the squat case, but if `upsertEntity`'s resolution semantics ever drift
+    // we'd rather fail closed than mis-cast the result.
+    if (res.entity.type !== DOCUMENT_TYPE) {
+      throw new Error(
+        `createDocument: identifier 'doc:${input.slug ?? ''}' resolved to a ` +
+          `non-document entity (id='${res.entity.id}', type='${res.entity.type}'). ` +
+          `Pick a different slug or repair the existing entity.`,
+      );
+    }
+    let doc = res.entity as Document;
+    // `upsertEntity` merges identifiers/aliases/metadata on resolve but never
+    // touches `displayName`. For createDocument's "true upsert" contract, if
+    // the caller passed a different title from what's stored, write that too.
+    if (!res.created && doc.displayName !== input.title) {
+      assertCanAccess(doc, scope, 'write', 'entity');
+      const next: IEntity = {
+        ...doc,
+        displayName: input.title,
+        version: doc.version + 1,
+        updatedAt: new Date(),
+      };
+      await this.store.updateEntity(next);
+      // Title is part of the identity-embedding source — without this the
+      // EntityResolver's semantic tier would keep matching the prior title.
+      this.queueIdentityEmbedding(next, scope, doc);
+      this.emit({ type: 'entity.upsert', entity: next, created: false });
+      doc = next as Document;
+    }
+    this.queueContentEmbedding(doc, scope);
+    if (input.attachTo) {
+      await this.attachDocument(input.attachTo, doc.id, scope);
+    }
+    return doc;
+  }
+
+  /**
+   * Update a document — body, role, format, summary, or extra metadata. All
+   * fields optional; only provided keys are touched (shallow overwrite over
+   * `metadata`). Queues a content-embedding refresh if `body` changed
+   * (gated by `metadataDeepEqual` short-circuit in `applyMetadataMerge`).
+   *
+   * `idOrSlug` accepts either a raw entity id or a bare slug (the `doc:`
+   * prefix is added automatically when the value isn't recognized as an id).
+   */
+  async updateDocument(
+    idOrSlug: string,
+    patch: UpdateDocumentInput,
+    scope: ScopeFilter,
+  ): Promise<Document> {
+    assertNotDestroyed(this, 'updateDocument');
+    const existing = await this.resolveDocument(idOrSlug, scope);
+    if (!existing) {
+      throw new Error(`updateDocument: document '${idOrSlug}' not found or not visible`);
+    }
+    assertCanAccess(existing, scope, 'write', 'entity');
+
+    const incomingMetadata = buildDocumentMetadata(existing.metadata, {
+      // Title is on displayName, not metadata. Only body/role/format/summary/extras here.
+      title: existing.displayName,
+      body: patch.body ?? (existing.metadata?.body as string | undefined) ?? '',
+      role: patch.role ?? (existing.metadata?.role as string | undefined),
+      format: patch.format ?? (existing.metadata?.format as string | undefined),
+      summary: patch.summary ?? (existing.metadata?.summary as string | undefined),
+      metadata: patch.metadata,
+    });
+
+    const nextAliases = patch.aliases
+      ? appendUniqueAliases(existing.aliases ?? [], patch.aliases)
+      : existing.aliases;
+
+    const next: IEntity = {
+      ...existing,
+      displayName: patch.title ?? existing.displayName,
+      aliases: nextAliases,
+      metadata: incomingMetadata,
+      version: existing.version + 1,
+      updatedAt: new Date(),
+    };
+
+    const bodyChanged = patch.body !== undefined && patch.body !== (existing.metadata?.body as string | undefined);
+    const titleChanged = patch.title !== undefined && patch.title !== existing.displayName;
+    const summaryChanged =
+      patch.summary !== undefined && patch.summary !== (existing.metadata?.summary as string | undefined);
+    if (!bodyChanged && !titleChanged && !summaryChanged && metadataDeepEqual(existing.metadata, incomingMetadata) && nextAliases === existing.aliases) {
+      return existing as Document;
+    }
+    await this.store.updateEntity(next);
+    this.emit({ type: 'entity.upsert', entity: next, created: false });
+    if (bodyChanged || titleChanged || summaryChanged) {
+      this.queueContentEmbedding(next as Document, scope);
+    }
+    return next as Document;
+  }
+
+  /**
+   * Fetch a document by id or slug. Returns the entity verbatim (including
+   * `metadata.body`). Returns `null` when not found / not visible.
+   */
+  async getDocument(idOrSlug: string, scope: ScopeFilter): Promise<Document | null> {
+    assertNotDestroyed(this, 'getDocument');
+    const doc = await this.resolveDocument(idOrSlug, scope);
+    return doc;
+  }
+
+  /**
+   * Attach a document to a parent entity via the canonical `has_document`
+   * predicate. Idempotent — a no-op when an identical non-archived fact
+   * already exists in the caller's scope.
+   */
+  async attachDocument(parentId: EntityId, docIdOrSlug: string, scope: ScopeFilter): Promise<void> {
+    assertNotDestroyed(this, 'attachDocument');
+    const doc = await this.resolveDocument(docIdOrSlug, scope);
+    if (!doc) {
+      throw new Error(`attachDocument: document '${docIdOrSlug}' not found or not visible`);
+    }
+    if (parentId === doc.id) {
+      throw new Error('attachDocument: parentId and document id must differ');
+    }
+    // Dedup — `addFact({dedup:true})` bumps `observedAt` on an existing match
+    // rather than inserting a duplicate. Matches our idempotency contract.
+    await this.addFact(
+      {
+        subjectId: parentId,
+        predicate: HAS_DOCUMENT_PREDICATE,
+        kind: 'atomic',
+        objectId: doc.id,
+        dedup: true,
+      },
+      scope,
+    );
+  }
+
+  /**
+   * Remove a `has_document` attachment between a parent entity and a document.
+   * Archives EVERY matching non-archived fact in scope (idempotent), so
+   * duplicate attachments — should they exist due to race conditions — are
+   * cleaned up in one call.
+   *
+   * Returns `{archived, skippedDueToPermissions}` so callers can distinguish
+   * "no matching facts" (both zero) from "had matches but couldn't write any"
+   * (archived=0, skipped>0).
+   */
+  async detachDocument(
+    parentId: EntityId,
+    docIdOrSlug: string,
+    scope: ScopeFilter,
+  ): Promise<DetachDocumentResult> {
+    assertNotDestroyed(this, 'detachDocument');
+    const doc = await this.resolveDocument(docIdOrSlug, scope);
+    if (!doc) {
+      throw new Error(`detachDocument: document '${docIdOrSlug}' not found or not visible`);
+    }
+    let archived = 0;
+    let skippedDueToPermissions = 0;
+    let cursor: string | undefined;
+    do {
+      const page = await this.store.findFacts(
+        { subjectId: parentId, predicate: HAS_DOCUMENT_PREDICATE, objectId: doc.id },
+        { limit: 100, cursor },
+        scope,
+      );
+      for (const f of page.items) {
+        if (f.archived) continue;
+        if (!canAccess(f, scope, 'write')) {
+          skippedDueToPermissions++;
+          continue;
+        }
+        await this.store.updateFact(f.id, { archived: true }, scope);
+        archived++;
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { archived, skippedDueToPermissions };
+  }
+
+  /**
+   * List documents — optionally narrowed by `attachedTo`, `role`, `ownerId`.
+   * By default the response strips `metadata.body` (listing pages can be
+   * large); pass `includeBody: true` to keep it.
+   */
+  async listDocuments(filter: ListDocumentsFilter, scope: ScopeFilter): Promise<Document[]> {
+    assertNotDestroyed(this, 'listDocuments');
+    const limit = clampPositive(filter.limit, 20, 200);
+
+    // attachedTo: pull `has_document` facts first, then load each document.
+    if (filter.attachedTo) {
+      const docIds = await this.findAttachedDocIds(filter.attachedTo, scope);
+      if (docIds.length === 0) return [];
+      const entities = await this.store.getEntities(docIds, scope);
+      const docs = entities.filter((e): e is IEntity => !!e && e.type === DOCUMENT_TYPE && !e.archived) as Document[];
+      const filtered = applyDocFilters(docs, filter);
+      const ranked = filtered.slice(0, limit);
+      return ranked.map((d) => projectDocument(d, !!filter.includeBody));
+    }
+
+    const metadataFilter: Record<string, unknown> = {};
+    if (filter.role !== undefined) {
+      metadataFilter.role = Array.isArray(filter.role) ? { $in: filter.role } : filter.role;
+    }
+    const page = await this.listEntities(
+      {
+        type: DOCUMENT_TYPE,
+        metadataFilter: Object.keys(metadataFilter).length > 0 ? metadataFilter : undefined,
+      },
+      { limit, cursor: filter.cursor, orderBy: filter.orderBy },
+      scope,
+    );
+    // `ownerId` is not part of EntityListFilter (the adapter contract narrows
+    // by type + metadata only); post-filter here. Cheap since the page is
+    // already bounded by `limit`.
+    const ownerFiltered =
+      filter.ownerId === undefined
+        ? page.items
+        : page.items.filter((e) => e.ownerId === filter.ownerId);
+    return ownerFiltered
+      .filter((e) => e.type === DOCUMENT_TYPE)
+      .map((e) => projectDocument(e as Document, !!filter.includeBody));
+  }
+
+  /**
+   * Search documents — `semantic` mode uses `contentEmbedding` (requires an
+   * embedder); `keyword` mode runs a case-insensitive substring match over
+   * `metadata.body` and `displayName` against a page of candidates. Both
+   * modes honor `attachedTo` / `role` filters and clamp `limit` to [1, 50].
+   *
+   * Score semantics: semantic returns 0..1 cosine similarity from the
+   * underlying `semanticSearchEntities`; keyword returns a coarse 0..1 hit
+   * score (1.0 for displayName match, 0.5 for body-only).
+   */
+  async searchDocuments(input: SearchDocumentsInput, scope: ScopeFilter): Promise<DocumentSearchHit[]> {
+    assertNotDestroyed(this, 'searchDocuments');
+    if (typeof input.query !== 'string' || input.query.trim().length === 0) {
+      throw new Error('searchDocuments: query must be a non-empty string');
+    }
+    const limit = clampPositive(input.limit, 10, 50);
+    const mode = input.mode ?? 'semantic';
+
+    // When `attachedTo` is set we resolve the bounded set of attached docs
+    // FIRST and search directly within it. Doing this as a post-filter would
+    // starve results — top-K semantic candidates / first-page keyword scan
+    // may contain none of the attached docs even when real matches exist.
+    // Resolving up front turns this into a tiny bounded search.
+    let restrictTo: Document[] | null = null;
+    if (input.attachedTo) {
+      const docIds = await this.findAttachedDocIds(input.attachedTo, scope);
+      if (docIds.length === 0) return [];
+      const entities = await this.store.getEntities(docIds, scope);
+      restrictTo = entities.filter(
+        (e): e is IEntity => !!e && e.type === DOCUMENT_TYPE && !e.archived,
+      ) as Document[];
+      if (input.role !== undefined) {
+        const roles = Array.isArray(input.role) ? new Set(input.role) : new Set([input.role]);
+        restrictTo = restrictTo.filter((d) => {
+          const r = d.metadata?.role;
+          return typeof r === 'string' && roles.has(r);
+        });
+      }
+      if (restrictTo.length === 0) return [];
+    }
+
+    const scored: Array<{ doc: Document; score: number }> = mode === 'semantic'
+      ? await this.searchDocumentsSemantic(input.query, input.role, limit, scope, restrictTo)
+      : await this.searchDocumentsKeyword(input.query, input.role, limit, scope, restrictTo);
+
+    return scored.slice(0, limit).map(({ doc, score }) => ({
+      doc: projectDocument(doc, true),
+      score,
+      snippet: buildSnippet(doc, input.query, mode),
+      matchedVia: mode,
+    }));
+  }
+
+  // ----- Document internals ---------------------------------------------------
+
+  private async searchDocumentsSemantic(
+    query: string,
+    role: string | string[] | undefined,
+    limit: number,
+    scope: ScopeFilter,
+    restrictTo: Document[] | null,
+  ): Promise<Array<{ doc: Document; score: number }>> {
+    if (!this.embedder) return [];
+    const vector = await this.embedder.embed(query);
+
+    // attachedTo path: score the restricted set directly. No vector index
+    // hop, no top-K starvation — every attached doc with a contentEmbedding
+    // is a candidate.
+    if (restrictTo !== null) {
+      const scored: Array<{ doc: Document; score: number }> = [];
+      for (const d of restrictTo) {
+        const vec = d.contentEmbedding;
+        if (!vec || vec.length !== vector.length) continue;
+        scored.push({ doc: d, score: cosineSimilarity(vector, vec) });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      return scored.slice(0, limit);
+    }
+
+    if (typeof this.store.semanticSearchEntities !== 'function') return [];
+    // `EntitySemanticSearchFilter` only narrows by type today, so `role` is
+    // applied as a JS post-filter. When it's set, over-fetch the candidate
+    // pool 5× so the post-filter doesn't starve the result list when the top
+    // matches happen to be of a different role. The proper fix (pushing
+    // metadata filters into the vector pipeline) is an adapter contract
+    // change tracked separately.
+    const overFetch = role === undefined ? 1 : 5;
+    const candidates = await this.store.semanticSearchEntities(
+      vector,
+      { type: DOCUMENT_TYPE },
+      { topK: Math.max(limit * 2 * overFetch, 10), embeddingField: 'content' },
+      scope,
+    );
+    let scored = candidates
+      .filter((c) => c.entity.type === DOCUMENT_TYPE)
+      .map((c) => ({ doc: c.entity as Document, score: c.score }));
+    if (role !== undefined) {
+      const roles = Array.isArray(role) ? new Set(role) : new Set([role]);
+      scored = scored.filter((s) => {
+        const r = s.doc.metadata?.role;
+        return typeof r === 'string' && roles.has(r);
+      });
+    }
+    return scored;
+  }
+
+  private async searchDocumentsKeyword(
+    query: string,
+    role: string | string[] | undefined,
+    limit: number,
+    scope: ScopeFilter,
+    restrictTo: Document[] | null,
+  ): Promise<Array<{ doc: Document; score: number }>> {
+    const needle = query.toLowerCase();
+    const scored: Array<{ doc: Document; score: number }> = [];
+
+    const scanOne = (e: IEntity): void => {
+      if (e.type !== DOCUMENT_TYPE) return;
+      const body = e.metadata?.body;
+      const bodyHit = typeof body === 'string' && body.toLowerCase().includes(needle);
+      const nameHit = e.displayName.toLowerCase().includes(needle);
+      if (!bodyHit && !nameHit) return;
+      scored.push({ doc: e as Document, score: nameHit ? 1.0 : 0.5 });
+    };
+
+    // attachedTo path: scan only the bounded restricted set.
+    if (restrictTo !== null) {
+      for (const d of restrictTo) scanOne(d);
+      scored.sort((a, b) => b.score - a.score);
+      return scored.slice(0, limit);
+    }
+
+    // No attachedTo: paginate through ALL visible documents (with a hard
+    // safety cap and a structured log on hitting it). The previous version
+    // silently scanned only the first 1000 — for scopes with more documents
+    // matches in older docs were dropped without any signal to the caller.
+    const metadataFilter: Record<string, unknown> = {};
+    if (role !== undefined) {
+      metadataFilter.role = Array.isArray(role) ? { $in: role } : role;
+    }
+    const pageSize = 1000;
+    const HARD_CAP = 10_000;
+    let scanned = 0;
+    let cursor: string | undefined;
+    let truncated = false;
+    do {
+      const page = await this.listEntities(
+        {
+          type: DOCUMENT_TYPE,
+          metadataFilter: Object.keys(metadataFilter).length > 0 ? metadataFilter : undefined,
+        },
+        { limit: pageSize, cursor },
+        scope,
+      );
+      for (const e of page.items) {
+        scanOne(e);
+        scanned++;
+      }
+      cursor = page.nextCursor;
+      if (cursor && scanned >= HARD_CAP) {
+        truncated = true;
+        break;
+      }
+    } while (cursor);
+
+    if (truncated) {
+      // Loud truncation: callers (and operators) need to know the scope
+      // outgrew the in-memory keyword path so they can plan an index
+      // migration. Pattern matches the rest of MemorySystem — direct
+      // console.warn rather than a logger field that doesn't exist.
+      console.warn(
+        '[MemorySystem.searchDocumentsKeyword] keyword document scan hit hard cap — ' +
+          `results may be incomplete; scanned=${scanned}, hardCap=${HARD_CAP}, ` +
+          `scope.userId=${scope.userId ?? 'unset'}, scope.groupId=${scope.groupId ?? 'unset'}. ` +
+          'Consider a Mongo $text index.',
+      );
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
+  }
+
+  private async findAttachedDocIds(parentId: EntityId, scope: ScopeFilter): Promise<EntityId[]> {
+    const ids: EntityId[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.store.findFacts(
+        { subjectId: parentId, predicate: HAS_DOCUMENT_PREDICATE },
+        { limit: 200, cursor },
+        scope,
+      );
+      for (const f of page.items) {
+        if (f.archived) continue;
+        if (f.objectId) ids.push(f.objectId);
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return ids;
+  }
+
+  /**
+   * Resolve a document by id OR by bare slug (no `doc:` prefix expected from
+   * the caller; the prefix is added when the input doesn't match a known
+   * entity id). Returns `null` when not found.
+   */
+  private async resolveDocument(idOrSlug: string, scope: ScopeFilter): Promise<Document | null> {
+    if (typeof idOrSlug !== 'string' || idOrSlug.trim().length === 0) return null;
+    // Try as id first — cheapest path when caller already has the id.
+    const byId = await this.store.getEntity(idOrSlug, scope);
+    if (byId && byId.type === DOCUMENT_TYPE && !byId.archived) return byId as Document;
+    // Then try as canonical slug — accept both bare (`q3-plan`) and prefixed
+    // (`doc:q3-plan`) forms.
+    const slugValue = idOrSlug.startsWith(DOCUMENT_SLUG_PREFIX)
+      ? idOrSlug
+      : `${DOCUMENT_SLUG_PREFIX}${idOrSlug}`;
+    const matches = await this.store.findEntitiesByIdentifier(DOCUMENT_SLUG_KIND, slugValue, scope);
+    const doc = matches.find((m) => m.type === DOCUMENT_TYPE && !m.archived);
+    return (doc as Document | undefined) ?? null;
+  }
+
+  /**
+   * Queue the content-embedding refresh for a document. Source: `title + "\n\n"
+   * + (summary ?? body.slice(0, DEFAULT_EMBED_SOURCE_CHAR_LIMIT))`. No-op when
+   * no embedder is configured.
+   */
+  private queueContentEmbedding(doc: Document, scope: ScopeFilter): void {
+    if (!this.embedder) return;
+    const body = (doc.metadata?.body as string | undefined) ?? '';
+    const summary = doc.metadata?.summary as string | undefined;
+    const source = summary && summary.length > 0
+      ? `${doc.displayName}\n\n${summary}`
+      : `${doc.displayName}\n\n${body.slice(0, DEFAULT_EMBED_SOURCE_CHAR_LIMIT)}`;
+    if (source.trim().length === 0) return;
+    this.queue.enqueueContent(doc.id, source, scope);
+  }
+
+  // ==========================================================================
   // Embedding queue control
   // ==========================================================================
 
@@ -2855,6 +3397,139 @@ function applyMetadataMerge(
   return { entity: { ...existing, metadata: next }, changed: true };
 }
 
+// =============================================================================
+// Documents helpers — used by MemorySystem.create/update/list/searchDocuments.
+// =============================================================================
+
+/**
+ * Build the canonical document metadata shape from the incoming input. Merges
+ * caller-supplied `metadata` (extras) with the standard fields (body, role,
+ * format, summary, byteSize). Standard fields win on collision — the bag of
+ * extras can't shadow `body` etc.
+ *
+ * `prior` is the existing metadata before the merge; passed on update so
+ * un-touched keys survive.
+ */
+function buildDocumentMetadata(
+  prior: Record<string, unknown> | undefined,
+  input: {
+    title?: string;
+    body: string;
+    role?: string;
+    format?: string;
+    summary?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Record<string, unknown> {
+  // Coerce any ISO date strings in caller-supplied extras BEFORE we overlay
+  // standard keys — keeps the storage-boundary contract symmetric with the
+  // rest of MemorySystem.
+  const extras = coerceMetadataDates(input.metadata) ?? {};
+  const byteSize = Buffer.byteLength(input.body ?? '', 'utf8');
+  const standard: Record<string, unknown> = {
+    body: input.body,
+    byteSize,
+  };
+  if (input.role !== undefined) standard.role = input.role;
+  if (input.format !== undefined) standard.format = input.format;
+  if (input.summary !== undefined) standard.summary = input.summary;
+  // Order: prior < extras < standard. Standard keys are authoritative.
+  return { ...(prior ?? {}), ...extras, ...standard };
+}
+
+/**
+ * Append `incoming` aliases to `existing` (case-insensitive de-dupe). Returns
+ * the original array reference when no new aliases were added — lets callers
+ * detect "nothing changed" via referential equality.
+ */
+function appendUniqueAliases(existing: string[], incoming: string[]): string[] {
+  const lower = new Set(existing.map((a) => a.toLowerCase()));
+  const additions: string[] = [];
+  for (const a of incoming) {
+    if (!a || a.trim().length === 0) continue;
+    const k = a.toLowerCase();
+    if (lower.has(k)) continue;
+    lower.add(k);
+    additions.push(a);
+  }
+  if (additions.length === 0) return existing;
+  return [...existing, ...additions];
+}
+
+/**
+ * Apply `role` filter to an in-memory document array (used by `listDocuments`
+ * when `attachedTo` triggered an id-set fetch instead of `listEntities`).
+ */
+function applyDocFilters(docs: Document[], filter: ListDocumentsFilter): Document[] {
+  let out = docs;
+  if (filter.role !== undefined) {
+    const roles = Array.isArray(filter.role) ? new Set(filter.role) : new Set([filter.role]);
+    out = out.filter((d) => {
+      const r = d.metadata?.role;
+      return typeof r === 'string' && roles.has(r);
+    });
+  }
+  if (filter.ownerId !== undefined) {
+    out = out.filter((d) => d.ownerId === filter.ownerId);
+  }
+  return out;
+}
+
+/**
+ * Strip `metadata.body` from the document if the caller didn't ask for it.
+ * Returns a NEW object (no mutation of the input). The body is the only
+ * potentially-large field documented out of `listDocuments`; other metadata
+ * keys survive untouched.
+ */
+function projectDocument(doc: Document, includeBody: boolean): Document {
+  if (includeBody) return doc;
+  if (!doc.metadata) return doc;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { body, ...rest } = doc.metadata as { body?: unknown } & Record<string, unknown>;
+  return { ...doc, metadata: rest };
+}
+
+/**
+ * Clamp `n` into `[1, max]` with `defaultValue` fallback for undefined.
+ */
+function clampPositive(n: number | undefined, defaultValue: number, max: number): number {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return defaultValue;
+  return Math.min(Math.floor(n), max);
+}
+
+const SNIPPET_RADIUS = 100;
+const SNIPPET_FALLBACK_LENGTH = 200;
+
+/**
+ * Build a ~200-char preview of a document. Keyword mode centers the snippet
+ * around the first case-insensitive match of `query` (radius 100 chars).
+ * Semantic mode returns the first 200 chars of `summary` (if present) or
+ * `body`.
+ */
+function buildSnippet(doc: Document, query: string, mode: 'semantic' | 'keyword'): string {
+  const body = (doc.metadata?.body as string | undefined) ?? '';
+  const summary = doc.metadata?.summary as string | undefined;
+  if (mode === 'semantic') {
+    const source = summary && summary.length > 0 ? summary : body;
+    return source.slice(0, SNIPPET_FALLBACK_LENGTH);
+  }
+  // Keyword: find first hit in body, then displayName, then summary.
+  const needle = query.toLowerCase();
+  const sources: string[] = [body];
+  if (summary) sources.push(summary);
+  for (const src of sources) {
+    const idx = src.toLowerCase().indexOf(needle);
+    if (idx < 0) continue;
+    const start = Math.max(0, idx - SNIPPET_RADIUS);
+    const end = Math.min(src.length, idx + needle.length + SNIPPET_RADIUS);
+    const prefix = start > 0 ? '…' : '';
+    const suffix = end < src.length ? '…' : '';
+    return `${prefix}${src.slice(start, end)}${suffix}`;
+  }
+  // Last resort — head of body, even if it doesn't contain a match.
+  return body.slice(0, SNIPPET_FALLBACK_LENGTH);
+}
+
 function embeddingsEqual(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -2863,6 +3538,31 @@ function embeddingsEqual(a: number[], b: number[]): boolean {
     if (Math.abs(a[i]! - b[i]!) > 1e-6) return false;
   }
   return true;
+}
+
+/**
+ * Cosine similarity between two equal-length unit-ish vectors. Same math as
+ * the adapter-local helpers, duplicated here so `searchDocumentsSemantic`
+ * can score a caller-supplied bounded candidate set without going through
+ * the adapter's vector index (used by the `attachedTo` path).
+ *
+ * Caller must guarantee equal lengths — returns 0 on length mismatch as a
+ * defensive fallback rather than throwing.
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
 // =============================================================================
@@ -2946,6 +3646,38 @@ class EmbeddingQueue {
         const next: IEntity = {
           ...cur,
           identityEmbedding: embedding,
+          version: cur.version + 1,
+          updatedAt: new Date(),
+        };
+        await this.store.updateEntity(next);
+      },
+    });
+    this.kick();
+  }
+
+  /**
+   * Enqueue an entity's content embedding — read/modify/write on
+   * `IEntity.contentEmbedding`. Used by document writes (title + body) for
+   * semantic search via `semanticSearchEntities({embeddingField:'content'})`.
+   * Mirrors `enqueueIdentity`'s no-op-on-equal optimization.
+   */
+  enqueueContent(entityId: EntityId, text: string, scope: ScopeFilter): void {
+    if (this.stopped || !this.embedder) return;
+    this.queue.push({
+      text,
+      scope,
+      attempts: 0,
+      factId: null,
+      entityId,
+      onComplete: async (embedding) => {
+        const cur = await this.store.getEntity(entityId, scope);
+        if (!cur) return;
+        if (cur.contentEmbedding && embeddingsEqual(cur.contentEmbedding, embedding)) {
+          return;
+        }
+        const next: IEntity = {
+          ...cur,
+          contentEmbedding: embedding,
           version: cur.version + 1,
           updatedAt: new Date(),
         };

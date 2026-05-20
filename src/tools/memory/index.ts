@@ -6,12 +6,13 @@
  * an agent retrieval-only access while a separate pipeline (e.g.
  * `SessionIngestorPluginNextGen`) handles writes.
  *
- * Read tools (5):
- *   memory_recall       — profile + top-ranked facts for a subject
- *   memory_graph        — N-hop traversal (native $graphLookup on Mongo)
- *   memory_search       — semantic text search
- *   memory_find_entity  — lookup/list by id, identifier, surface, or type
- *   memory_list_facts   — paginated raw fact enumeration
+ * Read tools (6):
+ *   memory_recall            — profile + top-ranked facts for a subject
+ *   memory_graph             — N-hop traversal (native $graphLookup on Mongo)
+ *   memory_search            — semantic text search over facts
+ *   memory_search_documents  — search documents (type='document') by content
+ *   memory_find_entity       — lookup/list by id, identifier, surface, or type
+ *   memory_list_facts        — paginated raw fact enumeration
  *
  * Write tools (6):
  *   memory_remember         — write an atomic fact
@@ -29,6 +30,7 @@ import type { MemoryToolDeps, Visibility } from './types.js';
 import { createRecallTool } from './recall.js';
 import { createGraphTool } from './graph.js';
 import { createSearchTool } from './search.js';
+import { createSearchDocumentsTool } from './searchDocuments.js';
 import { createFindEntityTool } from './findEntity.js';
 import { createListFactsTool } from './listFacts.js';
 import { createRememberTool } from './remember.js';
@@ -58,6 +60,7 @@ export { createSubjectResolver } from './resolveSubject.js';
 export { createRecallTool } from './recall.js';
 export { createGraphTool } from './graph.js';
 export { createSearchTool } from './search.js';
+export { createSearchDocumentsTool } from './searchDocuments.js';
 export { createFindEntityTool } from './findEntity.js';
 export { createListFactsTool } from './listFacts.js';
 export { createRememberTool } from './remember.js';
@@ -131,6 +134,7 @@ export function createMemoryReadTools(args: CreateMemoryToolsArgs): ToolFunction
     createRecallTool(deps),
     createGraphTool(deps),
     createSearchTool(deps),
+    createSearchDocumentsTool(deps),
     createFindEntityTool(deps),
     createListFactsTool(deps),
   ];
@@ -150,7 +154,7 @@ export function createMemoryWriteTools(args: CreateMemoryToolsArgs): ToolFunctio
 }
 
 /**
- * All 11 memory tools (5 read + 6 write). Convenience factory — most callers
+ * All 12 memory tools (6 read + 6 write). Convenience factory — most callers
  * should prefer `createMemoryReadTools` / `createMemoryWriteTools` separately
  * so read agents don't carry the write-tool schema overhead.
  */

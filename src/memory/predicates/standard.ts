@@ -734,6 +734,26 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     rankingWeight: 1.0,
     lifecycle: 'stable',
   },
+  {
+    name: 'has_document',
+    description:
+      'Canonical relational predicate binding any entity (event, project, task, person, …) to a long-form document entity (type=\'document\'). One predicate for every kind of attached doc — distinguish by the document\'s own metadata.role (brief, plan, transcript, spec, notes, artifact, …).',
+    category: 'document',
+    payloadKind: 'relational',
+    objectTypes: ['document'],
+    inverse: 'document_of',
+    aliases: ['has_doc', 'attached_document'],
+    defaultImportance: 0.7,
+    rankingWeight: 1.0,
+    examples: [
+      '(event_q3-planning, has_document, doc_brief-q3-planning)',
+      '(project_na-launch, has_document, doc_plan-na-launch)',
+    ],
+    lifecycle: 'stable',
+    // Programmatic only — emitted by attachDocument/detachDocument, not by the
+    // extraction pipeline. Authoring attachments belongs to the wrapper API.
+    excludeFromExtractionPrompt: true,
+  },
 
   // ---------------------------------------------------------------------------
   // social

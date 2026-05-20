@@ -765,7 +765,7 @@ describe('MemoryPluginNextGen — graceful degradation', () => {
 });
 
 describe('MemoryPluginNextGen — getTools', () => {
-  it('returns exactly the 5 read-only memory tools, cached across calls', () => {
+  it('returns exactly the 6 read-only memory tools, cached across calls', () => {
     const mem = makeMem();
     const plugin = new MemoryPluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
     const tools = plugin.getTools();
@@ -776,6 +776,7 @@ describe('MemoryPluginNextGen — getTools', () => {
       'memory_list_facts',
       'memory_recall',
       'memory_search',
+      'memory_search_documents',
     ]);
     // Same array on second call (cached).
     expect(plugin.getTools()).toBe(tools);

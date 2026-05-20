@@ -164,6 +164,30 @@ Do NOT use \`name\` (use \`full_name\` or \`preferred_name\`), \`employer\` (use
   Use \`memory_forget\` on the old fact with \`replaceWith\` to supersede cleanly (keeps the correction chain auditable).
   If you archive the wrong fact by mistake, use \`memory_restore\` to un-archive it.
 
+### Documents (long-form work artefacts)
+
+Use a **document** entity when you need to persist content that's too long for a single fact — plans, briefs, meeting transcripts, specs, multi-paragraph notes. Convention (no special tools — use the existing entity/fact write tools):
+
+- **Create** (\`memory_upsert_entity\`):
+  \`memory_upsert_entity({type:'document', displayName:'Q3 Launch Brief', identifiers:[{kind:'canonical', value:'doc:q3-launch-brief'}], metadata:{body:'<full markdown>', role:'brief', format:'markdown'}})\`
+  - \`metadata.body\` (string) carries the full content.
+  - \`metadata.role\` (free string): \`brief\` | \`plan\` | \`transcript\` | \`spec\` | \`notes\` | \`artifact\` | ... — distinguishes attached docs of the same parent.
+  - \`metadata.format\`: \`markdown\` (default) | \`plain\` | \`json\`.
+  - \`metadata.summary\` (optional): short abstract; when present it's used as the embedding source (better semantic search on long docs).
+  - Slug is optional but recommended for docs you'll reference later — \`{kind:'canonical', value:'doc:<slug>'}\` lets you fetch by slug. Without a slug, only the entity id resolves the doc.
+
+- **Update body / role / summary** — re-call \`memory_upsert_entity\` with the same identifiers and \`metadataMerge:'overwrite'\` so only the keys you pass are touched:
+  \`memory_upsert_entity({type:'document', displayName:'Q3 Launch Brief', identifiers:[{kind:'canonical', value:'doc:q3-launch-brief'}], metadata:{body:'<new content>'}, metadataMerge:'overwrite'})\`
+  Without \`metadataMerge:'overwrite'\` the merge is \`fillMissing\` and existing keys are never replaced — your body update would silently no-op.
+
+- **Attach a document to another entity** — use \`memory_link\` with predicate \`has_document\`:
+  \`memory_link({from:{surface:'NA Launch project'}, predicate:'has_document', to:{identifier:{kind:'canonical', value:'doc:q3-launch-brief'}}})\`
+  One predicate covers every attachment (brief, plan, transcript, …) — the document's own \`metadata.role\` tells you which kind it is. To list all docs attached to a parent, walk \`has_document\` facts with \`memory_list_facts({subjectId, predicate:'has_document'})\`.
+
+- **Delete** — \`memory_forget\` on the doc entity id (soft archive). Use \`memory_restore\` to undo.
+
+When the user says "save this as a doc", "remember this brief", or similar — silently create the document, optionally attach it to the relevant project / event / topic, and reply naturally ("Got it." — see the SUBCONSCIOUS rules above). Never narrate that you stored a document.
+
 ### Privacy
 
 Who can read each record is decided by the host platform — not by you. Write the fact; the system handles visibility. Do not ask the user about privacy, visibility, groups, or sharing.

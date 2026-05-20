@@ -1101,13 +1101,22 @@ describe('MongoMemoryAdapter', () => {
   // ==========================================================================
 
   describe('ensureVectorSearchIndexes', () => {
-    it('creates facts + entities indexes with vector + filter fields', async () => {
+    it('default: creates facts + entity-identity indexes only (content is opt-in)', async () => {
       await adapter.ensureVectorSearchIndexes({ dimensions: 1536 });
 
       const factDefs = factColl.createSearchIndexCalls.filter((d) => d.name === 'facts_vector');
-      const entDefs = entColl.createSearchIndexCalls.filter((d) => d.name === 'entities_vector');
+      const entIdentityDefs = entColl.createSearchIndexCalls.filter(
+        (d) => d.name === 'entities_vector',
+      );
+      const entContentDefs = entColl.createSearchIndexCalls.filter(
+        (d) => d.name === 'entities_content_vector',
+      );
       expect(factDefs).toHaveLength(1);
-      expect(entDefs).toHaveLength(1);
+      expect(entIdentityDefs).toHaveLength(1);
+      // Content index is opt-in — must be requested via constructor option
+      // or explicit `entitiesContentIndexName` arg. Avoids silently billing
+      // hosts that don't use documents.
+      expect(entContentDefs).toHaveLength(0);
       expect(factDefs[0]!.type).toBe('vectorSearch');
 
       // Vector field first, then filter fields.
@@ -1139,7 +1148,7 @@ describe('MongoMemoryAdapter', () => {
         ].sort(),
       );
 
-      const entFields = entDefs[0]!.definition.fields!;
+      const entFields = entIdentityDefs[0]!.definition.fields!;
       expect(entFields[0]).toEqual({
         type: 'vector',
         path: 'identityEmbedding',
@@ -1154,12 +1163,65 @@ describe('MongoMemoryAdapter', () => {
         [
           'archived',
           'groupId',
+          'metadata.role',
           'ownerId',
           'permissions.group',
           'permissions.world',
           'type',
         ].sort(),
       );
+    });
+
+    it('creates content entity index when caller passes entitiesContentIndexName', async () => {
+      await adapter.ensureVectorSearchIndexes({
+        dimensions: 1536,
+        entitiesContentIndexName: 'entities_content_vector',
+      });
+      const contentDefs = entColl.createSearchIndexCalls.filter(
+        (d) => d.name === 'entities_content_vector',
+      );
+      expect(contentDefs).toHaveLength(1);
+      const fields = contentDefs[0]!.definition.fields!;
+      expect(fields[0]).toEqual({
+        type: 'vector',
+        path: 'contentEmbedding',
+        numDimensions: 1536,
+        similarity: 'cosine',
+      });
+      // Same filter-path set as the identity index (incl. metadata.role).
+      const contentFilterPaths = fields
+        .filter((f): f is { type: 'filter'; path: string } => f.type === 'filter')
+        .map((f) => f.path)
+        .sort();
+      expect(contentFilterPaths).toEqual(
+        [
+          'archived',
+          'groupId',
+          'metadata.role',
+          'ownerId',
+          'permissions.group',
+          'permissions.world',
+          'type',
+        ].sort(),
+      );
+    });
+
+    it('creates content index when adapter was constructed with entityContentVectorIndexName', async () => {
+      const ents = new FakeMongoCollection<IEntity>('entities');
+      const facts = new FakeMongoCollection<IFact>('facts');
+      const a = new MongoMemoryAdapter({
+        entities: ents,
+        facts,
+        factsCollectionName: 'facts',
+        entityContentVectorIndexName: 'my_content_idx',
+      });
+      try {
+        await a.ensureVectorSearchIndexes({ dimensions: 4 });
+        const names = ents.createSearchIndexCalls.map((c) => c.name).sort();
+        expect(names).toContain('my_content_idx');
+      } finally {
+        a.destroy();
+      }
     });
 
     it('skips creation when index already present (idempotent)', async () => {
@@ -1177,14 +1239,17 @@ describe('MongoMemoryAdapter', () => {
         dimensions: 4,
         factsIndexName: 'custom_facts_idx',
         entitiesIndexName: 'custom_ents_idx',
+        entitiesContentIndexName: 'custom_ents_content_idx',
       });
       expect(factColl.createSearchIndexCalls[0]!.name).toBe('custom_facts_idx');
-      expect(entColl.createSearchIndexCalls[0]!.name).toBe('custom_ents_idx');
+      const entNames = entColl.createSearchIndexCalls.map((c) => c.name).sort();
+      expect(entNames).toEqual(['custom_ents_content_idx', 'custom_ents_idx']);
     });
 
     it('defaults to adapter-configured names when caller omits them', async () => {
       // Separate adapter constructed with custom index names — helper should
-      // pick those up instead of the literal defaults.
+      // pick those up instead of the literal defaults. Content index is
+      // created here because the constructor sets the option.
       const entsCustom = new FakeMongoCollection<IEntity>('entities');
       const factsCustom = new FakeMongoCollection<IFact>('facts');
       const customAdapter = new MongoMemoryAdapter({
@@ -1193,11 +1258,13 @@ describe('MongoMemoryAdapter', () => {
         factsCollectionName: 'facts',
         vectorIndexName: 'my_facts_idx',
         entityVectorIndexName: 'my_ents_idx',
+        entityContentVectorIndexName: 'my_ents_content_idx',
       });
       try {
         await customAdapter.ensureVectorSearchIndexes({ dimensions: 4 });
         expect(factsCustom.createSearchIndexCalls[0]!.name).toBe('my_facts_idx');
-        expect(entsCustom.createSearchIndexCalls[0]!.name).toBe('my_ents_idx');
+        const entNames = entsCustom.createSearchIndexCalls.map((c) => c.name).sort();
+        expect(entNames).toEqual(['my_ents_content_idx', 'my_ents_idx']);
       } finally {
         customAdapter.destroy();
       }
@@ -1206,7 +1273,19 @@ describe('MongoMemoryAdapter', () => {
     it('skips facts when factsIndexName is null', async () => {
       await adapter.ensureVectorSearchIndexes({ dimensions: 4, factsIndexName: null });
       expect(factColl.createSearchIndexCalls).toHaveLength(0);
+      // Identity index is still created; content is opt-in (not created here).
       expect(entColl.createSearchIndexCalls).toHaveLength(1);
+      expect(entColl.createSearchIndexCalls[0]!.name).toBe('entities_vector');
+    });
+
+    it('skips identity entity index when entitiesIndexName is null', async () => {
+      await adapter.ensureVectorSearchIndexes({
+        dimensions: 4,
+        entitiesIndexName: null,
+      });
+      // Content is opt-in; with no constructor option + no arg passed, it
+      // also skips. Net: zero entity index writes.
+      expect(entColl.createSearchIndexCalls).toHaveLength(0);
     });
 
     it('accepts non-default similarity', async () => {
@@ -1240,9 +1319,14 @@ describe('MongoMemoryAdapter', () => {
         await originalCreate(def);
         throw new Error('Duplicate index name');
       };
-      // Not throwing = race absorbed.
+      // Not throwing = race absorbed. Skip both entity indexes so the test
+      // focuses on the facts collection race behavior.
       await expect(
-        adapter.ensureVectorSearchIndexes({ dimensions: 4, entitiesIndexName: null }),
+        adapter.ensureVectorSearchIndexes({
+          dimensions: 4,
+          entitiesIndexName: null,
+          entitiesContentIndexName: null,
+        }),
       ).resolves.toBeUndefined();
     });
 
@@ -1251,7 +1335,11 @@ describe('MongoMemoryAdapter', () => {
         throw new Error('Atlas cluster unreachable');
       };
       await expect(
-        adapter.ensureVectorSearchIndexes({ dimensions: 4, entitiesIndexName: null }),
+        adapter.ensureVectorSearchIndexes({
+          dimensions: 4,
+          entitiesIndexName: null,
+          entitiesContentIndexName: null,
+        }),
       ).rejects.toThrow(/Atlas cluster unreachable/);
     });
   });
