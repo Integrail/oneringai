@@ -33,10 +33,10 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 6;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 7;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
-import type { IEntity, ScopeFields } from '../types.js';
+import type { IEntity, IFact, ScopeFields } from '../types.js';
 import type { Anchor } from './AnchorRegistry.js';
 import type { EagernessProfile } from './EagernessProfile.js';
 
@@ -56,9 +56,40 @@ export interface PreResolvedBinding {
   role?: string;
 }
 
+/**
+ * One message inside a multi-signal conversation thread. When the caller passes
+ * a `signalThread`, the prompt renders the messages chronologically in a single
+ * nonce-wrapped block — replacing the single `signalText` path entirely for
+ * that call. Used by per-conversation reconciliation (V25 Jarvis pipeline) so
+ * the LLM sees the whole conversation, not one message at a time.
+ */
+export interface SignalThreadMessage {
+  /** Stable signal id — referenced back in `evidenceQuote`/op `reason` fields. */
+  id: string;
+  /** When this message was observed (rendered as the per-message header). */
+  observedAt: Date;
+  /** Optional sender label ("From: ..."). */
+  sender?: string;
+  /** Message body. Caller is expected to have already stripped quoted replies. */
+  body: string;
+}
+
 export interface ExtractionPromptContext {
-  /** Raw text of the signal (email body, transcript, doc content, …). */
-  signalText: string;
+  /**
+   * Raw text of the signal (email body, transcript, doc content, …).
+   *
+   * Required when `signalThread` is not provided. When `signalThread` is set
+   * (per-conversation reconciliation mode), this field is ignored — the
+   * thread rendering replaces the single-signal block.
+   */
+  signalText?: string;
+  /**
+   * Multi-signal conversation input. When set, the prompt renders these
+   * messages chronologically in place of `signalText`. Use this for
+   * per-conversation reconciliation; leave undefined for single-signal
+   * extraction (current behavior, unchanged for backward compat).
+   */
+  signalThread?: SignalThreadMessage[];
   /** Optional hint describing where this came from, e.g. "email from john@acme.com". */
   signalSourceDescription?: string;
   /** Scope the extractor should treat as target — guides the LLM's privacy judgment. */
@@ -129,13 +160,35 @@ export interface ExtractionPromptContext {
    * in the delta that was already extracted from a prior message MUST yield
    * the SAME canonical id, so the resolver merges into the existing entity
    * instead of creating a duplicate.
+   *
+   * Superseded by `signalThread` + `priorFacts` (reconciliation mode); kept
+   * for backward compat with callers that still use single-signal extraction
+   * with thread background.
    */
   priorThreadContext?: Array<{ header: string; body: string }>;
+
+  /**
+   * Facts already extracted from PRIOR signals on this same conversation/thread,
+   * surfaced so the LLM can RECONCILE them against new content. When non-empty,
+   * the prompt renders a "Prior facts to reconcile" block and instructs the
+   * LLM to emit `operations` (create / update / archive) in addition to the
+   * usual `facts` array.
+   *
+   * Use this for per-conversation reconciliation: the LLM sees what's already
+   * known and decides what the new messages imply (status changed → update,
+   * reply needed → archive, brand-new commitment → create) without leaving
+   * tombstone-chain churn behind.
+   *
+   * Each fact MUST be referenceable by `id` — the output `operations` array
+   * cites these ids. Hallucinated ids are rejected at resolve time.
+   */
+  priorFacts?: IFact[];
 }
 
 export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
   const {
     signalText,
+    signalThread,
     signalSourceDescription,
     targetScope,
     knownEntities,
@@ -147,6 +200,7 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
     anchors,
     negativeExamples,
     priorThreadContext,
+    priorFacts,
   } = ctx;
 
   const source = signalSourceDescription ? `Source: ${signalSourceDescription}\n` : '';
@@ -154,6 +208,8 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
   const preResolvedSection = renderPreResolvedBindings(preResolvedBindings);
   const knownSection = renderKnownEntities(knownEntities);
   const restraintSection = renderRestraintSection(eagerness, anchors, negativeExamples);
+  const reconciliationMode = !!priorFacts && priorFacts.length > 0;
+  const reconciliationSection = renderReconciliationSection(priorFacts);
   const factSchemaSuffix = eagerness ? renderFactSchemaSuffix(eagerness) : '';
   const topLevelJustification = eagerness?.requireJustification
     ? ',\n  "whyActionable": "<one sentence — REQUIRED only when mentions or facts are non-empty>"'
@@ -171,6 +227,20 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
     priorOpenTag,
     priorCloseTag,
   );
+  // Pick which signal-body rendering to use. `signalThread` (multi-signal) wins
+  // when set; `signalText` (single-signal) is the default. Callers must pass
+  // at least one — otherwise the prompt has no extraction target.
+  const signalBody = signalThread && signalThread.length > 0
+    ? renderSignalThread(signalThread, openTag, closeTag)
+    : `<${openTag}>\n${signalText ?? ''}\n<${closeTag}>`;
+  const operationsSchemaField = reconciliationMode
+    ? ',\n  "operations": [\n' +
+      '    // Reconciliation ops against `priorFacts`. Required when prior facts apply.\n' +
+      '    { "op": "create", "subject": "<local_label>", "predicate": "...", "kind": "atomic|document", "value": "...", "objectId": "<local_label>", "details": "...", "evidenceQuote": "<verbatim quote from NEW content>" },\n' +
+      '    { "op": "update", "factId": "<F-id from priorFacts>", "newValue": "<replacement value>", "evidenceQuote": "<verbatim quote>", "reason": "<short reason>" },\n' +
+      '    { "op": "archive", "factId": "<F-id from priorFacts>", "evidenceQuote": "<verbatim quote>", "reason": "<short reason>" }\n' +
+      '  ]'
+    : '';
   // v3 (H5): when a registry is present, explicitly tell the LLM the
   // vocabulary is closed. The server still applies a fuzzy-mapping fallback
   // for near-misses, but the instruction here prevents most drift from ever
@@ -190,10 +260,8 @@ Your output populates a knowledge graph of entities (people, organizations, task
 ## Signal
 ${source}Reference date: ${referenceDate.toISOString().slice(0, 10)}
 Target scope: ${scopeDescription}
-${priorThreadSection}
-<${openTag}>
-${signalText}
-<${closeTag}>
+${priorThreadSection}${reconciliationSection}
+${signalBody}
 ${preResolvedSection}${knownSection}${restraintSection}
 
 ## Output format
@@ -228,7 +296,7 @@ Return JSON with the following top-level keys:
       "validFrom": "YYYY-MM-DDTHH:MM:SSZ",  // ISO-8601; optional — see Validity period below
       "validUntil": "YYYY-MM-DDTHH:MM:SSZ", // ISO-8601; optional${factSchemaSuffix}
     }
-  ]${topLevelJustification}
+  ]${operationsSchemaField}${topLevelJustification}
 }
 
 ## Parsimony (most important)
@@ -649,4 +717,90 @@ function sanitizeInlineString(s: string): string {
   const noFences = noBreaks.replace(/`/g, "'");
   const noHeading = noFences.replace(/^[\s>#]+/, '').trimStart();
   return noHeading.trim();
+}
+
+/**
+ * Render a multi-signal conversation thread inside a single nonce-wrapped
+ * block. Each message gets a header line so the LLM can cite individual
+ * messages in evidenceQuote/reason fields.
+ */
+function renderSignalThread(
+  thread: SignalThreadMessage[],
+  openTag: string,
+  closeTag: string,
+): string {
+  const blocks = thread.map((m) => {
+    const from = m.sender ? `, from ${m.sender}` : '';
+    const ts = m.observedAt instanceof Date ? m.observedAt.toISOString() : String(m.observedAt);
+    return `--- signal:${m.id} (${ts}${from}) ---\n${m.body.trim()}`;
+  });
+  return `<${openTag}>\n${blocks.join('\n\n')}\n<${closeTag}>`;
+}
+
+/**
+ * Render the reconciliation block. Emitted when `priorFacts` is non-empty.
+ * Tells the LLM that the listed facts are PRIOR knowledge and instructs it to
+ * emit `operations` (create / update / archive) reconciling those facts against
+ * the new signal content.
+ */
+function renderReconciliationSection(priorFacts: IFact[] | undefined): string {
+  if (!priorFacts || priorFacts.length === 0) return '';
+
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('## Prior facts to reconcile');
+  lines.push(
+    'The following facts were already extracted from EARLIER signals on this same conversation/thread.',
+  );
+  lines.push(
+    'Decide what the NEW signal content (in `<signal_content_*>`) implies for each:',
+  );
+  lines.push('');
+  lines.push('- **archive** — fact is now resolved/closed/contradicted by the new content.');
+  lines.push('- **update** — fact\'s value changed (in-place mutation, no tombstone).');
+  lines.push('- **create** — brand-new fact that isn\'t covered by any prior. (Use the regular `facts` array OR an `operations.create` op.)');
+  lines.push('');
+  lines.push('If a prior fact is still accurate, emit NO operation for it. Silence = "still true".');
+  lines.push('Every `archive`/`update` op MUST cite a verbatim quote from NEW content as `evidenceQuote` and a short `reason`.');
+  lines.push('Hallucinated factIds (not in the list below) will be REJECTED. Use the literal `id` values shown.');
+  lines.push('');
+
+  for (const f of priorFacts) {
+    const valueOrObject = f.objectId
+      ? ` object=${f.objectId}`
+      : f.value !== undefined
+        ? ` value=${truncateInline(stringifyForPrompt(f.value), 120)}`
+        : '';
+    const detailsBit = f.details
+      ? ` details="${truncateInline(sanitizeInlineString(f.details), 100)}"`
+      : '';
+    const evidenceBit = f.evidenceQuote
+      ? ` evidence="${truncateInline(sanitizeInlineString(f.evidenceQuote), 80)}"`
+      : '';
+    const observedBit = f.observedAt instanceof Date
+      ? ` observed=${f.observedAt.toISOString().slice(0, 10)}`
+      : '';
+    lines.push(
+      `- F[${f.id}] subject=${f.subjectId} predicate=${f.predicate}${valueOrObject}${detailsBit}${observedBit}${evidenceBit}`,
+    );
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+function stringifyForPrompt(v: unknown): string {
+  if (v === null) return 'null';
+  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function truncateInline(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + '…';
 }

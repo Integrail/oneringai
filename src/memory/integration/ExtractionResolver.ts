@@ -18,10 +18,12 @@
  * per-item and surfaced in the result for caller review.
  */
 
+import { logger } from '../../infrastructure/observability/Logger.js';
 import type { MemorySystem } from '../MemorySystem.js';
 import type {
   EntityCandidate,
   EntityId,
+  FactId,
   FactKind,
   IEntity,
   IFact,
@@ -70,9 +72,57 @@ export interface ExtractionFactSpec {
   evidenceQuote?: string;
 }
 
+/**
+ * Reconciliation operations emitted by the LLM in per-conversation
+ * reconciliation mode (when `priorFacts` is passed to the prompt). Each op is
+ * dispatched against the existing fact graph: `create` adds, `update` mutates
+ * in place, `archive` flips `archived: true`. The factId on `update`/`archive`
+ * MUST be one of the priorFact ids; hallucinated ids are rejected.
+ */
+export type ReconciliationOp =
+  | {
+      op: 'create';
+      subject: string;
+      predicate: string;
+      kind: FactKind;
+      object?: string;
+      objectId?: string;
+      value?: unknown;
+      details?: string;
+      contextIds?: string[];
+      evidenceQuote?: string;
+      importance?: number;
+      confidence?: number;
+    }
+  | {
+      op: 'update';
+      factId: FactId;
+      newValue?: unknown;
+      details?: string;
+      evidenceQuote?: string;
+      reason?: string;
+    }
+  | {
+      op: 'archive';
+      factId: FactId;
+      evidenceQuote?: string;
+      reason?: string;
+    };
+
+/** Counts of operations applied/rejected by the resolver. */
+export interface OperationOutcome {
+  creates: number;
+  updates: number;
+  archives: number;
+  rejectedHallucinated: number;
+  rejectedSkeptic: number;
+}
+
 export interface ExtractionOutput {
   mentions: Record<string, ExtractionMention>;
   facts: ExtractionFactSpec[];
+  /** Reconciliation ops — populated when LLM ran in reconciliation mode. */
+  operations?: ReconciliationOp[];
 }
 
 export interface IngestionResolvedEntity {
@@ -103,6 +153,11 @@ export interface IngestionResult {
    * Deduped.
    */
   newPredicates: string[];
+  /**
+   * Op-level counts from reconciliation dispatch. Populated when the caller
+   * passed `priorFacts` AND the LLM emitted `operations`. Undefined otherwise.
+   */
+  operationsApplied?: OperationOutcome;
 }
 
 export interface ExtractionResolverOptions {
@@ -121,6 +176,27 @@ export interface ExtractionResolverOptions {
    * wins and the mention is skipped silently.
    */
   preResolved?: Record<string, EntityId>;
+  /**
+   * Prior facts that were rendered into the prompt for reconciliation. When
+   * set, the resolver:
+   *   - validates every `update`/`archive` op's `factId` against this set
+   *     (rejecting hallucinated ids);
+   *   - dispatches the surviving ops through `memory.updateFact`;
+   *   - passes `dedup: true` to every `create` op so retries don't duplicate.
+   *
+   * Leave undefined when calling extraction in fresh (non-reconciliation)
+   * mode — the resolver then ignores any `operations` the LLM may have
+   * emitted erroneously.
+   */
+  priorFacts?: IFact[];
+  /**
+   * Optional skeptic-pass hook. When set, the resolver passes every
+   * reconciliation op through this callback before dispatch. Return `true`
+   * to accept, `false` to drop (counted as `rejectedSkeptic`). The host
+   * normally implements skeptic-pass at a higher level — this hook lets the
+   * library route ops through the same gate.
+   */
+  skepticFilter?: (op: ReconciliationOp) => boolean;
 }
 
 // =============================================================================
@@ -502,13 +578,222 @@ export class ExtractionResolver {
       }
     }
 
+    // ----- Pass 3: reconciliation operations -----
+    // When the caller passed `priorFacts`, dispatch any LLM-emitted ops
+    // against the existing fact graph. Hallucinated factIds are rejected;
+    // surviving ops are routed through addFact / updateFact.
+    let operationsApplied: OperationOutcome | undefined;
+    if (opts?.priorFacts && (output.operations?.length ?? 0) > 0) {
+      operationsApplied = await this.dispatchReconciliationOps(
+        output.operations!,
+        opts.priorFacts,
+        labelToEntityId,
+        sourceSignalId,
+        scope,
+        unresolved,
+        opts.skepticFilter,
+      );
+      // Capture newly created facts so callers see them in the result.
+      // (dispatchReconciliationOps pushes onto writtenFacts directly.)
+    }
+
     return {
       entities,
       facts: writtenFacts,
       mergeCandidates,
       unresolved,
       newPredicates: Array.from(newPredicatesSet).sort(),
+      ...(operationsApplied ? { operationsApplied } : {}),
     };
+  }
+
+  /**
+   * Dispatch reconciliation ops emitted by the LLM. Returns op-level counts.
+   *
+   * Validation rules:
+   * - `update`/`archive` factId must exist in `priorFacts` (case-sensitive).
+   *   Hallucinated ids → counted as `rejectedHallucinated`, op skipped.
+   * - `skepticFilter` (when provided) can drop ops with weak evidence → counted
+   *   as `rejectedSkeptic`.
+   * - `update` with no `newValue` AND no `details` is silently dropped (parser
+   *   already filtered, defence in depth).
+   *
+   * Side effects:
+   * - `create` → `memory.addFact({...}, scope)` with `dedup: true` (idempotent
+   *   under retry).
+   * - `update` → `memory.updateFact(factId, {value|details, observedAt, ...evidence}, scope)`.
+   * - `archive` → `memory.updateFact(factId, {archived: true}, scope)`.
+   * - Each accepted op appends to `writtenFacts` (creates) / pushes a touched-fact
+   *   entry; callers can also read the returned outcome.
+   */
+  private async dispatchReconciliationOps(
+    ops: ReconciliationOp[],
+    priorFacts: IFact[],
+    labelToEntityId: Map<string, EntityId>,
+    sourceSignalId: string,
+    scope: ScopeFilter,
+    unresolved: IngestionError[],
+    skepticFilter: ((op: ReconciliationOp) => boolean) | undefined,
+  ): Promise<OperationOutcome> {
+    const outcome: OperationOutcome = {
+      creates: 0,
+      updates: 0,
+      archives: 0,
+      rejectedHallucinated: 0,
+      rejectedSkeptic: 0,
+    };
+    const priorFactIds = new Set(priorFacts.map((f) => f.id));
+    const priorById = new Map(priorFacts.map((f) => [f.id, f]));
+
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]!;
+
+      if (skepticFilter && !skepticFilter(op)) {
+        outcome.rejectedSkeptic++;
+        logger.info(
+          {
+            component: 'ExtractionResolver.reconcile',
+            op: op.op,
+            factId: 'factId' in op ? op.factId : undefined,
+            sourceSignalId,
+          },
+          'reconciliation op rejected by skeptic filter',
+        );
+        continue;
+      }
+
+      if (op.op === 'create') {
+        try {
+          const subjectId = labelToEntityId.get(op.subject);
+          if (!subjectId) {
+            unresolved.push({
+              where: `op:${i}`,
+              reason: `create: subject label "${op.subject}" not found in mentions`,
+            });
+            continue;
+          }
+          let objectId: EntityId | undefined;
+          if (op.objectId) {
+            objectId = labelToEntityId.get(op.objectId);
+            if (!objectId) {
+              unresolved.push({
+                where: `op:${i}`,
+                reason: `create: objectId label "${op.objectId}" not found in mentions`,
+              });
+              continue;
+            }
+          } else if (op.object) {
+            objectId = labelToEntityId.get(op.object);
+            if (!objectId) {
+              unresolved.push({
+                where: `op:${i}`,
+                reason: `create: object label "${op.object}" not found in mentions`,
+              });
+              continue;
+            }
+          }
+          const contextIds = op.contextIds
+            ?.map((c) => labelToEntityId.get(c))
+            .filter((c): c is EntityId => !!c);
+          await this.memory.addFact(
+            {
+              subjectId,
+              predicate: op.predicate,
+              kind: op.kind,
+              objectId,
+              value: op.value,
+              details: op.details,
+              contextIds,
+              importance: op.importance,
+              confidence: op.confidence,
+              sourceSignalId,
+              evidenceQuote: op.evidenceQuote,
+              dedup: true,
+            },
+            scope,
+          );
+          outcome.creates++;
+        } catch (err) {
+          unresolved.push({
+            where: `op:${i}`,
+            reason: `create: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        continue;
+      }
+
+      // update / archive — factId must be a prior fact id.
+      if (!priorFactIds.has(op.factId)) {
+        outcome.rejectedHallucinated++;
+        logger.warn(
+          {
+            component: 'ExtractionResolver.reconcile',
+            op: op.op,
+            factId: op.factId,
+            sourceSignalId,
+          },
+          'reconciliation op references unknown factId — rejected',
+        );
+        unresolved.push({
+          where: `op:${i}`,
+          reason: `${op.op}: factId "${op.factId}" not in priorFacts (hallucinated)`,
+        });
+        continue;
+      }
+
+      if (op.op === 'update') {
+        try {
+          const target = priorById.get(op.factId)!;
+          // Write newValue to whichever field the original fact used. `value`
+          // for atomic facts; `details` for document facts; if both undefined,
+          // default to value.
+          const patch: Partial<IFact> = {
+            observedAt: new Date(),
+            sourceSignalId,
+          };
+          if (op.newValue !== undefined) {
+            if (target.kind === 'document' && op.details === undefined) {
+              // newValue routed to details for document facts (LLM may pass
+              // either field for a doc-kind update; prefer explicit details).
+              patch.details = typeof op.newValue === 'string'
+                ? op.newValue
+                : JSON.stringify(op.newValue);
+            } else {
+              patch.value = op.newValue;
+            }
+          }
+          if (op.details !== undefined) {
+            patch.details = op.details;
+          }
+          if (op.evidenceQuote !== undefined) {
+            patch.evidenceQuote = op.evidenceQuote;
+          }
+          await this.memory.updateFact(op.factId, patch, scope);
+          outcome.updates++;
+        } catch (err) {
+          unresolved.push({
+            where: `op:${i}`,
+            reason: `update: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        continue;
+      }
+
+      if (op.op === 'archive') {
+        try {
+          await this.memory.archiveFact(op.factId, scope);
+          outcome.archives++;
+        } catch (err) {
+          unresolved.push({
+            where: `op:${i}`,
+            reason: `archive: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        continue;
+      }
+    }
+
+    return outcome;
   }
 
   /**

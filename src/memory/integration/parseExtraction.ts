@@ -20,7 +20,7 @@
  *     callers should prefer the rich form.
  */
 
-import type { ExtractionOutput } from './ExtractionResolver.js';
+import type { ExtractionOutput, ReconciliationOp } from './ExtractionResolver.js';
 import { parseJsonPermissive } from '../../utils/jsonRepair.js';
 
 /** Outcome of a parse attempt. `ok` is the only shape callers can trust the
@@ -33,6 +33,14 @@ export interface ParseExtractionResult {
   status: ParseStatus;
   mentions: ExtractionOutput['mentions'];
   facts: ExtractionOutput['facts'];
+  /**
+   * Reconciliation operations emitted against `priorFacts` (per-conversation
+   * reconciliation mode). Captured opportunistically — always populated when
+   * the LLM output contained an `operations` array, regardless of whether the
+   * prompt was in reconciliation mode. The resolver decides what to do with
+   * it (apply if reconciliation mode, log+ignore otherwise).
+   */
+  operations?: ReconciliationOp[];
   /**
    * One-sentence justification for emitting non-empty output, when the prompt
    * required it (`EagernessProfile.requireJustification = true`). Always
@@ -103,22 +111,28 @@ export function parseExtractionWithStatus(raw: string): ParseExtractionResult {
     obj.mentions !== null &&
     !Array.isArray(obj.mentions);
   const factsOk = obj.facts === undefined || Array.isArray(obj.facts);
+  const operationsOk = obj.operations === undefined || Array.isArray(obj.operations);
 
   const mentions = mentionsOk ? (obj.mentions as ExtractionOutput['mentions']) : {};
   const facts = factsOk && Array.isArray(obj.facts) ? (obj.facts as ExtractionOutput['facts']) : [];
+  const operations = operationsOk && Array.isArray(obj.operations)
+    ? filterValidOperations(obj.operations)
+    : undefined;
   const whyActionable =
     typeof obj.whyActionable === 'string' && obj.whyActionable.trim().length > 0
       ? obj.whyActionable.trim()
       : undefined;
 
-  if (!mentionsOk || !factsOk) {
+  if (!mentionsOk || !factsOk || !operationsOk) {
     const shapeIssues: string[] = [];
     if (!mentionsOk) shapeIssues.push('mentions is not an object');
     if (!factsOk) shapeIssues.push('facts is not an array');
+    if (!operationsOk) shapeIssues.push('operations is not an array');
     return {
       status: 'shape_error',
       mentions,
       facts,
+      ...(operations !== undefined ? { operations } : {}),
       ...(whyActionable !== undefined ? { whyActionable } : {}),
       reason: shapeIssues.join('; '),
       rawExcerpt,
@@ -129,8 +143,65 @@ export function parseExtractionWithStatus(raw: string): ParseExtractionResult {
     status: 'ok',
     mentions,
     facts,
+    ...(operations !== undefined ? { operations } : {}),
     ...(whyActionable !== undefined ? { whyActionable } : {}),
   };
+}
+
+/**
+ * Validate raw LLM ops into the `ReconciliationOp` shape. Drops anything that
+ * doesn't match: missing `op`, missing required fields for that op kind, wrong
+ * types. We log NOTHING here — caller logs after dispatch with full context.
+ * The dispatcher does the real factId-validity check against the priorFacts
+ * set.
+ */
+function filterValidOperations(raw: unknown[]): ReconciliationOp[] {
+  const out: ReconciliationOp[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const op = o.op;
+    if (op === 'create') {
+      if (typeof o.subject !== 'string' || typeof o.predicate !== 'string') continue;
+      const kind = o.kind === 'document' ? 'document' : 'atomic';
+      out.push({
+        op: 'create',
+        subject: o.subject,
+        predicate: o.predicate,
+        kind,
+        object: typeof o.object === 'string' ? o.object : undefined,
+        objectId: typeof o.objectId === 'string' ? o.objectId : undefined,
+        value: 'value' in o ? o.value : undefined,
+        details: typeof o.details === 'string' ? o.details : undefined,
+        contextIds: Array.isArray(o.contextIds)
+          ? o.contextIds.filter((x): x is string => typeof x === 'string')
+          : undefined,
+        evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+        importance: typeof o.importance === 'number' ? o.importance : undefined,
+        confidence: typeof o.confidence === 'number' ? o.confidence : undefined,
+      });
+    } else if (op === 'update') {
+      if (typeof o.factId !== 'string') continue;
+      if (!('newValue' in o) && typeof o.details !== 'string') continue;
+      out.push({
+        op: 'update',
+        factId: o.factId,
+        newValue: 'newValue' in o ? o.newValue : undefined,
+        details: typeof o.details === 'string' ? o.details : undefined,
+        evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+        reason: typeof o.reason === 'string' ? o.reason : undefined,
+      });
+    } else if (op === 'archive') {
+      if (typeof o.factId !== 'string') continue;
+      out.push({
+        op: 'archive',
+        factId: o.factId,
+        evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+        reason: typeof o.reason === 'string' ? o.reason : undefined,
+      });
+    }
+  }
+  return out;
 }
 
 /**

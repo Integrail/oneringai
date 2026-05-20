@@ -46,6 +46,10 @@ import type { PredicateRegistry } from './predicates/PredicateRegistry.js';
 import type { PredicateDefinition } from './predicates/types.js';
 import { EntityResolver, buildIdentityString } from './resolution/EntityResolver.js';
 import type {
+  OperationOutcome,
+  ReconciliationOp,
+} from './integration/ExtractionResolver.js';
+import type {
   ChangeEvent,
   ContextOptions,
   EmbeddingQueueConfig,
@@ -1536,6 +1540,195 @@ export class MemorySystem implements IDisposable {
 
     const updated = await this.store.getFact(id, scope);
     return updated ?? { ...fact, ...patch };
+  }
+
+  /**
+   * Apply entity-anchored reconciliation operations (Pillar 2).
+   *
+   * Caller has:
+   *   1. Built an `entityReconciliationPrompt` for ONE entity's non-archived facts.
+   *   2. Run that prompt through an extractor (LLM call).
+   *   3. Parsed the LLM output into `ReconciliationOp[]` via `parseExtractionWithStatus`.
+   *
+   * This method dispatches the resulting ops against the fact graph:
+   *   - `update` → `updateFact` (value / details / observedAt patch).
+   *   - `archive` → `archiveFact`.
+   *   - `create` ops are REJECTED (counted as `rejectedHallucinated` in the
+   *     outcome) — Pillar 2 only resolves, never creates.
+   *
+   * factId validation: every `update`/`archive` op's `factId` MUST appear in
+   * `priorFacts`. Hallucinations are rejected with a warn-level log entry.
+   *
+   * Returns op-level counts so callers can log decisions + emit activity-log
+   * entries (per `feedback_log_every_decision`).
+   */
+  async applyEntityReconciliationOps(
+    ops: ReconciliationOp[],
+    priorFacts: IFact[],
+    scope: ScopeFilter,
+    opts?: {
+      /** Optional skeptic filter — return false to drop an op with logging. */
+      skepticFilter?: (op: ReconciliationOp) => boolean;
+      /**
+       * Source signal id to stamp on `updateFact` patches. Optional — entity
+       * reconciliation isn't bound to a single source signal (that's the
+       * point), so callers may leave it undefined.
+       */
+      sourceSignalId?: string;
+    },
+  ): Promise<OperationOutcome> {
+    assertNotDestroyed(this, 'applyEntityReconciliationOps');
+
+    const outcome: OperationOutcome = {
+      creates: 0,
+      updates: 0,
+      archives: 0,
+      rejectedHallucinated: 0,
+      rejectedSkeptic: 0,
+    };
+    const priorFactIds = new Set(priorFacts.map((f) => f.id));
+    const priorById = new Map(priorFacts.map((f) => [f.id, f]));
+
+    for (const op of ops) {
+      if (opts?.skepticFilter && !opts.skepticFilter(op)) {
+        outcome.rejectedSkeptic++;
+        continue;
+      }
+
+      if (op.op === 'create') {
+        // Pillar 2 doesn't create. The LLM emitting a create op here is a
+        // contract violation — log and skip.
+        outcome.rejectedHallucinated++;
+        this.emit({
+          type: 'fact.reconcile.rejected',
+          factId: null,
+          reason: 'create op emitted in entity-reconciliation (Pillar 2 only resolves)',
+        });
+        continue;
+      }
+
+      if (!priorFactIds.has(op.factId)) {
+        outcome.rejectedHallucinated++;
+        this.emit({
+          type: 'fact.reconcile.rejected',
+          factId: op.factId,
+          reason: `${op.op}: factId not in priorFacts (hallucinated)`,
+        });
+        continue;
+      }
+
+      if (op.op === 'update') {
+        const target = priorById.get(op.factId)!;
+        const patch: Partial<IFact> = {
+          observedAt: new Date(),
+        };
+        if (opts?.sourceSignalId) {
+          patch.sourceSignalId = opts.sourceSignalId;
+        }
+        if (op.newValue !== undefined) {
+          if (target.kind === 'document' && op.details === undefined) {
+            patch.details = typeof op.newValue === 'string'
+              ? op.newValue
+              : JSON.stringify(op.newValue);
+          } else {
+            patch.value = op.newValue;
+          }
+        }
+        if (op.details !== undefined) {
+          patch.details = op.details;
+        }
+        if (op.evidenceQuote !== undefined) {
+          patch.evidenceQuote = op.evidenceQuote;
+        }
+        await this.updateFact(op.factId, patch, scope);
+        outcome.updates++;
+      } else if (op.op === 'archive') {
+        await this.archiveFact(op.factId, scope);
+        outcome.archives++;
+      }
+    }
+
+    return outcome;
+  }
+
+  /**
+   * Mutate a fact in-place. Used by per-conversation reconciliation
+   * (ExtractionResolver) to update `value` / `details` / `observedAt` /
+   * `sourceSignalId` / `evidenceQuote` on a prior fact when the LLM emits
+   * an `update` op — replacing the legacy "supersede chain" pattern that
+   * left tombstones behind.
+   *
+   * Restrictions:
+   * - Cannot change `subjectId`, `predicate`, `kind`, `objectId`, `id`,
+   *   `createdAt`, `archived` (use `archiveFact` / `restoreFact`).
+   * - Caller's scope must have write access to the fact.
+   *
+   * Side effects:
+   * - When `details` changes, re-computes `isSemantic`, clears stale
+   *   `embedding` + `summaryForEmbedding`, and re-embeds on the embedder
+   *   queue (best-effort).
+   */
+  async updateFact(
+    id: FactId,
+    patch: Partial<
+      Pick<
+        IFact,
+        | 'value'
+        | 'details'
+        | 'observedAt'
+        | 'sourceSignalId'
+        | 'evidenceQuote'
+        | 'confidence'
+        | 'importance'
+        | 'metadata'
+      >
+    >,
+    scope: ScopeFilter,
+  ): Promise<IFact> {
+    assertNotDestroyed(this, 'updateFact');
+    const fact = await this.store.getFact(id, scope);
+    if (!fact) {
+      throw new Error(`updateFact: fact ${id} not found or not visible in caller scope`);
+    }
+    assertCanAccess(fact, scope, 'write', 'fact');
+
+    const storePatch: Partial<IFact> = { ...patch };
+    let detailsChanged = false;
+    if ('details' in patch && patch.details !== fact.details) {
+      detailsChanged = true;
+      const isSemantic = computeIsSemantic({
+        ...fact,
+        details: patch.details,
+      });
+      storePatch.isSemantic = isSemantic;
+      storePatch.embedding = undefined;
+      storePatch.summaryForEmbedding = undefined;
+    }
+    await this.store.updateFact(id, storePatch, scope);
+
+    if (
+      detailsChanged &&
+      storePatch.isSemantic &&
+      this.embedder &&
+      typeof patch.details === 'string' &&
+      patch.details.length > 0
+    ) {
+      try {
+        const vec = await this.embedder.embed(patch.details);
+        await this.store.updateFact(id, { embedding: vec }, scope);
+      } catch (err) {
+        this.emit({
+          type: 'fact.embedding.failed',
+          factId: id,
+          entityId: null,
+          attempts: 1,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const updated = await this.store.getFact(id, scope);
+    return updated ?? { ...fact, ...storePatch };
   }
 
   private async findDedupMatch(

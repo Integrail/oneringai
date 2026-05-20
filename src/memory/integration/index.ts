@@ -21,7 +21,11 @@ export {
   defaultExtractionPrompt,
   DEFAULT_EXTRACTION_PROMPT_VERSION,
 } from './defaultExtractionPrompt.js';
-export type { ExtractionPromptContext, PreResolvedBinding } from './defaultExtractionPrompt.js';
+export type {
+  ExtractionPromptContext,
+  PreResolvedBinding,
+  SignalThreadMessage,
+} from './defaultExtractionPrompt.js';
 
 export { ExtractionResolver } from './ExtractionResolver.js';
 export type {
@@ -32,7 +36,16 @@ export type {
   IngestionError,
   IngestionResult,
   ExtractionResolverOptions,
+  ReconciliationOp,
+  OperationOutcome,
 } from './ExtractionResolver.js';
+
+// Entity-anchored cross-source reconciliation (Pillar 2).
+export {
+  entityReconciliationPrompt,
+  ENTITY_RECONCILIATION_PROMPT_VERSION,
+} from './entityReconciliationPrompt.js';
+export type { EntityReconciliationPromptContext } from './entityReconciliationPrompt.js';
 
 // Extraction-output parser (rich + back-compat forms).
 export { parseExtractionWithStatus } from './parseExtraction.js';

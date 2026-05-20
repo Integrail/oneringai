@@ -732,6 +732,18 @@ export type ChangeEvent =
       entityId: EntityId | null;
       attempts: number;
       reason: string;
+    }
+  /**
+   * Emitted when a reconciliation op (Pillar 1 thread or Pillar 2 entity-anchored)
+   * is rejected — either because the LLM hallucinated a factId not in priorFacts,
+   * or because Pillar 2 emitted a `create` op (it only resolves). Lets observers
+   * surface LLM-drift in the audit log without grepping logger output.
+   */
+  | {
+      type: 'fact.reconcile.rejected';
+      /** Null when the op had no factId (e.g. a stray create in Pillar 2). */
+      factId: FactId | null;
+      reason: string;
     };
 
 // ---------------------------------------------------------------------------
