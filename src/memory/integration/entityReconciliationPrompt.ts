@@ -167,6 +167,19 @@ function truncateInline(s: string, max: number): string {
   return s.slice(0, max - 1) + '…';
 }
 
-function escapeQuotes(s: string): string {
-  return s.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"');
+function escapeQuotes(s: unknown): string {
+  // Runtime guard: callers pass `entity.displayName` / `f.details` /
+  // `f.sourceSignalDescription` / `f.evidenceQuote`, all typed `string` —
+  // but MongoDB-sourced data can legitimately violate that (undefined
+  // displayName, object/number details from older writes). Coerce defensively
+  // so one bad field never kills the whole entity reconciliation.
+  if (typeof s === 'string') {
+    return s.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"');
+  }
+  if (s === undefined || s === null) return '';
+  try {
+    return JSON.stringify(s).replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"');
+  } catch {
+    return String(s).replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"');
+  }
 }
