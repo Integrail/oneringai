@@ -60,6 +60,49 @@ describe('scopeToFilter', () => {
     expect(s).toContain('$exists');
     expect(s).toContain('"none"');
   });
+
+  describe('disableWorld option', () => {
+    it('omits the world branch — only owner + group remain', () => {
+      const f = scopeToFilter({ groupId: 'g1', userId: 'u1' }, { disableWorld: true });
+      const branches = (f as { $or: unknown[] }).$or;
+      expect(branches).toHaveLength(2);
+      const s = JSON.stringify(f);
+      // The non-sargable world-branch shape is `groupId: { $ne: <caller.groupId> }`.
+      // GROUP_ALLOWS_READ uses `$ne: 'none'` on permissions.group, so a bare
+      // "$ne" check would over-match. Assert against the world-branch shape
+      // specifically.
+      expect(s).not.toContain('"groupId":{"$ne":"g1"}');
+      // No world-permission check either.
+      expect(s).not.toContain('permissions.world');
+      // Owner + group branches still present.
+      expect(s).toContain('u1');
+      expect(s).toContain('g1');
+      expect(s).toContain('permissions.group');
+    });
+
+    it('returns a matches-nothing filter when scope is empty AND world is disabled', () => {
+      const f = scopeToFilter({}, { disableWorld: true });
+      // Defensive shape: caller has neither userId nor groupId and the world
+      // fallback is suppressed — no legitimate read path remains, so the
+      // filter must match zero docs. Implementation uses {_id: {$exists:false}}.
+      expect(f).toEqual({ _id: { $exists: false } });
+    });
+
+    it('userId-only scope collapses to a single owner branch (no world)', () => {
+      const f = scopeToFilter({ userId: 'u1' }, { disableWorld: true });
+      // Only one branch ⇒ scopeToFilter returns it directly, not wrapped in $or.
+      expect(f).toEqual({ ownerId: 'u1' });
+    });
+
+    it('default behavior unchanged when option is omitted (backwards-compatible)', () => {
+      const withFlag = scopeToFilter({ groupId: 'g1', userId: 'u1' });
+      const withExplicitFalse = scopeToFilter(
+        { groupId: 'g1', userId: 'u1' },
+        { disableWorld: false },
+      );
+      expect(JSON.stringify(withFlag)).toBe(JSON.stringify(withExplicitFalse));
+    });
+  });
 });
 
 describe('mergeFilters', () => {

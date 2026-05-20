@@ -222,4 +222,86 @@ describe('MeteorMongoCollection — id ↔ _id translation (string-based)', () =
       expect(col.lastSelector).toEqual({ groupId: { $ne: 'g1' } });
     });
   });
+
+  // ----------------------------------------------------------------------
+  // H2: matchedCount semantics. Meteor's `updateAsync` returns MODIFIED
+  // count, not MATCHED count — for idempotent `$set` (the patch leaves the
+  // doc unchanged), it returns 0 even though the doc was matched. Adapter
+  // code that branches on `matchedCount === 0` (move-on-archive's "is this
+  // doc in primary?" probe) would mis-route the patch on Meteor without
+  // disambiguation. The wrapper now does a single `findOneAsync` to
+  // disambiguate not-matched from matched-but-unchanged.
+  // ----------------------------------------------------------------------
+  describe('updateOne matchedCount disambiguation (H2)', () => {
+    /**
+     * Variant of FakeMeteorCollection where `updateAsync` returns whatever
+     * the test sets — letting us model Meteor's actual modified-count
+     * behavior (0 when unchanged) without contortion.
+     */
+    class FlexibleFakeMeteorCollection<T extends { id?: string; _id?: string }>
+      extends FakeMeteorCollection<T> {
+      public nextUpdateCount = 0;
+      public findOneCalls = 0;
+      public override async updateAsync(
+        selector: MongoFilter,
+        modifier: MongoUpdate,
+      ): Promise<number> {
+        this.lastSelector = selector;
+        this.lastModifier = modifier;
+        return this.nextUpdateCount;
+      }
+      public override async findOneAsync(selector: MongoFilter): Promise<T | null> {
+        this.findOneCalls++;
+        this.lastSelector = selector;
+        return this.docs[0] ?? null;
+      }
+    }
+
+    it('matched-but-unchanged: returns matchedCount=1 after probe', async () => {
+      const flex = new FlexibleFakeMeteorCollection<TestDoc>();
+      const w = new MeteorMongoCollection<TestDoc>(flex);
+      flex.docs.push({ name: 'A', _id: 'meteor_1' } as TestDoc);
+      flex.nextUpdateCount = 0; // Meteor: idempotent $set returns 0
+
+      const res = await w.updateOne({ id: 'meteor_1' }, { $set: { name: 'A' } });
+      expect(res.matchedCount).toBe(1);
+      expect(res.modifiedCount).toBe(0);
+      expect(flex.findOneCalls).toBe(1);
+    });
+
+    it('not-matched: returns matchedCount=0 after probe', async () => {
+      const flex = new FlexibleFakeMeteorCollection<TestDoc>();
+      const w = new MeteorMongoCollection<TestDoc>(flex);
+      // No docs in collection.
+      flex.nextUpdateCount = 0;
+
+      const res = await w.updateOne({ id: 'absent' }, { $set: { name: 'X' } });
+      expect(res.matchedCount).toBe(0);
+      expect(res.modifiedCount).toBe(0);
+      expect(flex.findOneCalls).toBe(1);
+    });
+
+    it('modified > 0: skips the probe (fast path)', async () => {
+      const flex = new FlexibleFakeMeteorCollection<TestDoc>();
+      const w = new MeteorMongoCollection<TestDoc>(flex);
+      flex.docs.push({ name: 'A', _id: 'meteor_1' } as TestDoc);
+      flex.nextUpdateCount = 1;
+
+      const res = await w.updateOne({ id: 'meteor_1' }, { $set: { name: 'B' } });
+      expect(res.matchedCount).toBe(1);
+      expect(res.modifiedCount).toBe(1);
+      expect(flex.findOneCalls).toBe(0);
+    });
+
+    it('upsert: no probe even when updateAsync returns 0', async () => {
+      const flex = new FlexibleFakeMeteorCollection<TestDoc>();
+      const w = new MeteorMongoCollection<TestDoc>(flex);
+      flex.nextUpdateCount = 0;
+
+      const res = await w.updateOne({ id: 'new' }, { $set: { name: 'X' } }, { upsert: true });
+      expect(res.matchedCount).toBe(0);
+      expect(res.modifiedCount).toBe(0);
+      expect(flex.findOneCalls).toBe(0);
+    });
+  });
 });

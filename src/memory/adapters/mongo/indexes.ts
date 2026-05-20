@@ -41,16 +41,35 @@ import type { IEntity, IFact } from '../../types.js';
 export interface EnsureIndexesArgs {
   entities: IMongoCollectionLike<IEntity>;
   facts: IMongoCollectionLike<IFact>;
+  /**
+   * Optional archive collection (move-on-archive deployments). When provided,
+   * the same subject/object/context/predicate-led indexes are built on the
+   * archive so `findFacts({archived: true})`, `countFacts({archived: true})`,
+   * and the `getFact(id)` archive-fallback don't degrade to collection scans
+   * as the archive grows. Legacy `groupId+ownerId`-led compounds are NOT
+   * mirrored — the archive isn't on the hot path for admin tooling.
+   */
+  factsArchive?: IMongoCollectionLike<IFact>;
 }
 
 export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
-  const { entities, facts } = args;
+  const { entities, facts, factsArchive } = args;
 
   if (entities.createIndex) {
     // Identifier lookup is the hottest path — groupId/ownerId first for selectivity.
     await entities.createIndex(
       { groupId: 1, ownerId: 1, 'identifiers.kind': 1, 'identifiers.value': 1 } as Record<string, 1 | -1>,
       { name: 'memory_ent_ident' },
+    );
+    // Access-filter-friendly identifier lookup. The access $or (ownerId /
+    // groupId-eq / groupId-$ne) can never pin groupId+ownerId as a leading
+    // equality across all three branches, so `memory_ent_ident` falls back
+    // to wide scans on the world branch. This identifier-led variant works
+    // for every branch — the planner post-filters access cheaply on the
+    // tiny per-identifier candidate set.
+    await entities.createIndex(
+      { 'identifiers.kind': 1, 'identifiers.value': 1, archived: 1 } as Record<string, 1 | -1>,
+      { name: 'memory_ent_ident_only' },
     );
     // List/search by type.
     await entities.createIndex(
@@ -74,6 +93,49 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
   }
 
   if (facts.createIndex) {
+    // ── SUBJECT/OBJECT/CONTEXT-LED INDEXES (new) ──────────────────────────
+    //
+    // The access $or from `scopeToFilter` (ownerId / groupId-eq / groupId-$ne)
+    // can never pin `groupId` or `ownerId` as a leading equality for every
+    // branch — the world branch uses `$ne`, the owner branch lacks groupId,
+    // and the group branch lacks ownerId. So compound indexes that LEAD with
+    // groupId+ownerId (the legacy shape below) can only be used by ONE of
+    // the three $or branches; the other two fall back to wider scans.
+    //
+    // The fix: lead with the highly-selective subject/object/context key
+    // directly. The planner can then use the SAME index for ALL three
+    // branches (subjectId is constrained equally for each), post-filtering
+    // the cheap access $or on the few docs per subject. Empirically this
+    // turns 530-second, 58k-doc-examined queries into millisecond seeks.
+    //
+    // Sort is included so observedAt-desc / observedAt-asc reads serve the
+    // sort directly from the index — no in-memory top-K resort needed.
+    await facts.createIndex(
+      { subjectId: 1, observedAt: -1 },
+      { name: 'memory_fact_subject_observed' },
+    );
+    await facts.createIndex(
+      { objectId: 1, observedAt: -1 },
+      { name: 'memory_fact_object_observed' },
+    );
+    await facts.createIndex(
+      { contextIds: 1, observedAt: -1 },
+      { name: 'memory_fact_context_observed' },
+    );
+    // getLatestForPredicate(subject, predicate) is hit on every addFact for
+    // singleValued predicates — dedupe check before insert. Subject-led so
+    // the access $or stays cheap.
+    await facts.createIndex(
+      { subjectId: 1, predicate: 1, observedAt: -1 },
+      { name: 'memory_fact_subject_pred_observed' },
+    );
+
+    // ── LEGACY GROUPID-LED COMPOUNDS (retained) ───────────────────────────
+    //
+    // Still useful for callers that explicitly pin both `groupId` and
+    // `ownerId` (admin tooling, tenant-scoped reports). The library no
+    // longer drives the hot path through these — the subject-led indexes
+    // above carry that load.
     await facts.createIndex(
       { groupId: 1, ownerId: 1, subjectId: 1, predicate: 1, archived: 1, observedAt: -1 },
       { name: 'memory_fact_by_subject' },
@@ -82,7 +144,6 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
       { groupId: 1, ownerId: 1, objectId: 1, predicate: 1, archived: 1 },
       { name: 'memory_fact_by_object' },
     );
-    // contextIds enables the "everything about this deal/event" queries.
     await facts.createIndex(
       { groupId: 1, ownerId: 1, contextIds: 1, archived: 1 },
       { name: 'memory_fact_by_context' },
@@ -91,9 +152,6 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
       { groupId: 1, predicate: 1, observedAt: -1 },
       { name: 'memory_fact_recent_pred' },
     );
-    // Owner-leading: covers the owner shortcut branch when looking up facts
-    // by subject/object without constraining groupId. Essential once the
-    // permission model lets owner shortcut match records across groups.
     await facts.createIndex(
       { ownerId: 1, subjectId: 1, predicate: 1, archived: 1, observedAt: -1 },
       { name: 'memory_fact_owner_subject' },
@@ -115,6 +173,36 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
     await entities.createIndex(
       { groupId: 1, type: 1, 'metadata.startTime': -1 } as Record<string, 1 | -1>,
       { name: 'memory_ent_events' },
+    );
+  }
+
+  // ── ARCHIVE COLLECTION (move-on-archive deployments) ──────────────────────
+  //
+  // The archive holds every fact that has ever been archived. Its read paths:
+  //   - `getFact(id)` fallback when an id misses primary (audit + supersession
+  //     chain walks). Backed by Mongo's `_id` unique index.
+  //   - `findFacts({archived: true}, ...)` / `countFacts({archived: true}, ...)`
+  //     — subject/object/context queries against the archive. Same shape as
+  //     the primary hot path, so we mirror the subject/object/context-led
+  //     indexes here. We deliberately skip the legacy `groupId+ownerId`-led
+  //     compounds — admin tooling that pins both keys typically targets the
+  //     LIVE collection, not the archive.
+  if (factsArchive?.createIndex) {
+    await factsArchive.createIndex(
+      { subjectId: 1, observedAt: -1 },
+      { name: 'memory_fact_archive_subject_observed' },
+    );
+    await factsArchive.createIndex(
+      { objectId: 1, observedAt: -1 },
+      { name: 'memory_fact_archive_object_observed' },
+    );
+    await factsArchive.createIndex(
+      { contextIds: 1, observedAt: -1 },
+      { name: 'memory_fact_archive_context_observed' },
+    );
+    await factsArchive.createIndex(
+      { subjectId: 1, predicate: 1, observedAt: -1 },
+      { name: 'memory_fact_archive_subject_pred_observed' },
     );
   }
 }

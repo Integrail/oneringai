@@ -73,6 +73,60 @@ export interface MongoMemoryAdapterOptions {
   facts: IMongoCollectionLike<IFact>;
 
   /**
+   * Optional archive collection for facts. When provided, the adapter
+   * switches to **move-on-archive** semantics:
+   *
+   *   - `updateFact(id, {archived: true}, scope)` moves the doc from
+   *     `facts` to `factsArchive` (stamping `archivedAt`) instead of
+   *     setting `archived: true` in place.
+   *   - `updateFact(id, {archived: false}, scope)` (restoreFact) moves
+   *     the doc back from `factsArchive` to `facts`.
+   *   - `getFact(id)` falls back to `factsArchive` when the id isn't in
+   *     `facts` — supersession-chain walks and audit reads of archived
+   *     facts keep working.
+   *   - `findFacts(filter)` with `filter.archived === true` queries
+   *     `factsArchive`; otherwise queries `facts` (which stays live-only).
+   *   - `countFacts(...)` uses the same routing.
+   *
+   * Benefits at scale: the live (primary) collection stays small even when
+   * archive history is large; indexes don't carry archived rows; the
+   * `archived: false / $exists: false` read filter becomes redundant on the
+   * primary collection (every doc there is live by construction) and can be
+   * dropped by callers.
+   *
+   * When omitted, behaviour is unchanged — archived docs stay in the
+   * primary collection with `archived: true` (legacy mode).
+   */
+  factsArchive?: IMongoCollectionLike<IFact>;
+
+  /**
+   * When true, `scopeToFilter` omits the "world" branch
+   * (`groupId: {$ne: caller.groupId} ∧ permissions.world !== 'none'`) from
+   * the produced read filter. Use this in deployments where cross-tenant
+   * world-readable visibility is not used — the `$ne` predicate is
+   * fundamentally not sargable and forces a wide collection scan on every
+   * branch-equipped query (subject lookups, identifier lookups, traversal),
+   * dwarfing any potential benefit when no docs actually carry
+   * `permissions.world: 'read'`. Default false (backwards-compatible).
+   *
+   * **Security note:** enabling this changes the visibility contract. Any
+   * record carrying `permissions.world: 'read'` becomes invisible to
+   * cross-group callers — silently from the caller's perspective. The
+   * adapter emits a one-time `console.warn` at construction so the
+   * trade-off isn't fully silent operationally; pass a `logger` to route
+   * the warning through your own infrastructure instead.
+   */
+  disableWorldVisibility?: boolean;
+
+  /**
+   * Optional logger used for boot-time advisories (currently: the
+   * `disableWorldVisibility` security trade-off warning). Defaults to
+   * `console.warn`. Pass your app's logger to redirect into structured
+   * logging.
+   */
+  logger?: { warn(msg: string): void };
+
+  /**
    * When true AND `facts.aggregate` is present, `traverse()` uses a single
    * native `$graphLookup` pipeline per direction instead of iterative BFS.
    * Default: false.
@@ -139,6 +193,8 @@ const ARCHIVED_HIDDEN: MongoFilter = {
 export class MongoMemoryAdapter implements IMemoryStore {
   private readonly entities: IMongoCollectionLike<IEntity>;
   private readonly facts: IMongoCollectionLike<IFact>;
+  private readonly factsArchive?: IMongoCollectionLike<IFact>;
+  private readonly disableWorldVisibility: boolean;
   private readonly useNativeGraphLookup: boolean;
   private readonly vectorIndexName?: string;
   private readonly entityVectorIndexName?: string;
@@ -151,6 +207,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
   constructor(opts: MongoMemoryAdapterOptions) {
     this.entities = opts.entities;
     this.facts = opts.facts;
+    this.factsArchive = opts.factsArchive;
+    this.disableWorldVisibility = !!opts.disableWorldVisibility;
     this.useNativeGraphLookup =
       !!opts.useNativeGraphLookup && !!opts.facts.aggregate && !!opts.factsCollectionName;
     this.vectorIndexName = opts.vectorIndexName;
@@ -159,6 +217,29 @@ export class MongoMemoryAdapter implements IMemoryStore {
     this.vectorCandidateMultiplier = opts.vectorCandidateMultiplier ?? 10;
     this.factsCollectionName = opts.factsCollectionName;
     this.defaultPageSize = opts.defaultPageSize ?? DEFAULT_PAGE_SIZE;
+
+    // H1: surface the disableWorldVisibility security trade-off at boot.
+    // Silent toggling of read visibility would violate the project's
+    // "never silent errors / never silent data mutations" rules — operators
+    // need to see the contract change in their logs.
+    if (this.disableWorldVisibility) {
+      const logger = opts.logger ?? console;
+      logger.warn(
+        'MongoMemoryAdapter: disableWorldVisibility=true — the world-read branch ' +
+          'of scope filtering is disabled. Any record carrying ' +
+          "`permissions.world: 'read'` will NOT be returned to cross-group callers. " +
+          'Use only when your deployment never relies on world-readable records.',
+      );
+    }
+  }
+
+  /**
+   * Scope filter helper — honors the `disableWorldVisibility` option.
+   * Always use this in place of bare `this.scope(scope)` inside the
+   * adapter so the toggle propagates uniformly.
+   */
+  private scope(scope: ScopeFilter): MongoFilter {
+    return scopeToFilter(scope, { disableWorld: this.disableWorldVisibility });
   }
 
   /**
@@ -173,7 +254,11 @@ export class MongoMemoryAdapter implements IMemoryStore {
    */
   async ensureIndexes(): Promise<void> {
     this.assertLive();
-    await ensureIndexes({ entities: this.entities, facts: this.facts });
+    await ensureIndexes({
+      entities: this.entities,
+      facts: this.facts,
+      factsArchive: this.factsArchive,
+    });
   }
 
   // ==========================================================================
@@ -230,7 +315,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
 
   async getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
     this.assertLive();
-    const filter = mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, { id });
+    const filter = mergeFilters(this.scope(scope), ARCHIVED_HIDDEN, { id });
     const doc = await this.entities.findOne(filter);
     return doc ? reviveEntity(doc) : null;
   }
@@ -238,7 +323,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
   async getEntities(ids: EntityId[], scope: ScopeFilter): Promise<Array<IEntity | null>> {
     this.assertLive();
     if (ids.length === 0) return [];
-    const filter = mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, {
+    const filter = mergeFilters(this.scope(scope), ARCHIVED_HIDDEN, {
       id: { $in: ids },
     });
     // Single batch query — one round-trip regardless of ids.length.
@@ -258,7 +343,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<IEntity[]> {
     this.assertLive();
-    const filter = mergeFilters(scopeToFilter(scope), ARCHIVED_HIDDEN, {
+    const filter = mergeFilters(this.scope(scope), ARCHIVED_HIDDEN, {
       identifiers: {
         $elemMatch: { kind, value: normalizeIdentifierValue(kind, value) },
       },
@@ -275,7 +360,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     this.assertLive();
     const q = query.trim();
     const qLower = q.toLowerCase();
-    const clauses: MongoFilter[] = [scopeToFilter(scope), ARCHIVED_HIDDEN];
+    const clauses: MongoFilter[] = [this.scope(scope), ARCHIVED_HIDDEN];
 
     if (opts.types && opts.types.length > 0) {
       clauses.push({ type: { $in: opts.types } });
@@ -332,7 +417,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<Page<IEntity>> {
     this.assertLive();
-    const clauses: MongoFilter[] = [scopeToFilter(scope)];
+    const clauses: MongoFilter[] = [this.scope(scope)];
     if (filter.archived === true) clauses.push({ archived: true });
     else if (filter.archived === false) clauses.push(ARCHIVED_HIDDEN);
     else clauses.push(ARCHIVED_HIDDEN);
@@ -356,7 +441,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
 
   async archiveEntity(id: EntityId, scope: ScopeFilter): Promise<void> {
     this.assertLive();
-    const filter = mergeFilters(scopeToFilter(scope), { id });
+    const filter = mergeFilters(this.scope(scope), { id });
     await this.entities.updateOne(filter, {
       $set: { archived: true, updatedAt: new Date() },
       $inc: { version: 1 },
@@ -365,7 +450,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
 
   async deleteEntity(id: EntityId, scope: ScopeFilter): Promise<void> {
     this.assertLive();
-    const filter = mergeFilters(scopeToFilter(scope), { id });
+    const filter = mergeFilters(this.scope(scope), { id });
     await this.entities.deleteOne(filter);
   }
 
@@ -392,9 +477,17 @@ export class MongoMemoryAdapter implements IMemoryStore {
 
   async getFact(id: FactId, scope: ScopeFilter): Promise<IFact | null> {
     this.assertLive();
-    const filter = mergeFilters(scopeToFilter(scope), { id });
+    const filter = mergeFilters(this.scope(scope), { id });
     const doc = await this.facts.findOne(filter);
-    return doc ? reviveFact(doc) : null;
+    if (doc) return reviveFact(doc);
+    // Move-on-archive fallback: an archived fact still needs to be
+    // findable by id (supersession chain traversal, audit reads). Try
+    // the archive collection when the primary returns null.
+    if (this.factsArchive) {
+      const archived = await this.factsArchive.findOne(filter);
+      if (archived) return reviveFact(archived);
+    }
+    return null;
   }
 
   async findFacts(
@@ -403,11 +496,14 @@ export class MongoMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<Page<IFact>> {
     this.assertLive();
-    const mongoFilter = factFilterToMongo(filter, scope);
+    const target = this.pickFactsCollection(filter);
+    const mongoFilter = factFilterToMongo(filter, scope, {
+      disableWorld: this.disableWorldVisibility,
+    });
     const sort: MongoSort | undefined = orderByToSort(opts.orderBy);
     const skip = parseCursor(opts.cursor);
     const limit = opts.limit ?? this.defaultPageSize;
-    const docs = await this.facts.find(mongoFilter, { limit, skip, sort });
+    const docs = await target.find(mongoFilter, { limit, skip, sort });
     return {
       items: docs.map(reviveFact),
       nextCursor: formatCursor(skip, limit, docs.length),
@@ -416,15 +512,136 @@ export class MongoMemoryAdapter implements IMemoryStore {
 
   async updateFact(id: FactId, patch: Partial<IFact>, scope: ScopeFilter): Promise<void> {
     this.assertLive();
-    const filter = mergeFilters(scopeToFilter(scope), { id });
     const { id: _ignoreId, ...rest } = patch;
     void _ignoreId;
-    await this.facts.updateOne(filter, { $set: normalizePartialFactForStorage(rest) });
+    const cleanPatch = normalizePartialFactForStorage(rest);
+
+    // Move-on-archive logic. Three cases:
+    //   1. archived: true → move primary → archive
+    //   2. archived: false (restoreFact) → move archive → primary
+    //   3. anything else → in-place update on whichever collection holds
+    //      the doc (primary first; fall back to archive)
+    if (this.factsArchive) {
+      const archivedValue = cleanPatch.archived;
+      if (archivedValue === true) {
+        await this.moveToArchive(id, scope, cleanPatch);
+        return;
+      }
+      if (archivedValue === false) {
+        await this.restoreFromArchive(id, scope, cleanPatch);
+        return;
+      }
+    }
+
+    // Default path — in-place update.
+    const filter = mergeFilters(this.scope(scope), { id });
+    const res = await this.facts.updateOne(filter, { $set: cleanPatch });
+    if (res.matchedCount === 0 && this.factsArchive) {
+      // Doc may live in archive (e.g. metadata write on an already-archived
+      // fact). Apply the patch there.
+      await this.factsArchive.updateOne(filter, { $set: cleanPatch });
+    }
   }
 
   async countFacts(filter: FactFilter, scope: ScopeFilter): Promise<number> {
     this.assertLive();
-    return this.facts.countDocuments(factFilterToMongo(filter, scope));
+    const target = this.pickFactsCollection(filter);
+    return target.countDocuments(
+      factFilterToMongo(filter, scope, { disableWorld: this.disableWorldVisibility }),
+    );
+  }
+
+  /**
+   * Route reads to the appropriate facts collection based on the
+   * caller-supplied filter. When `archived === true` is requested and the
+   * archive collection is wired up, hit the archive. Otherwise hit primary
+   * (which holds only live docs once move-on-archive is active).
+   */
+  private pickFactsCollection(filter: FactFilter): IMongoCollectionLike<IFact> {
+    if (filter.archived === true && this.factsArchive) return this.factsArchive;
+    return this.facts;
+  }
+
+  /**
+   * Move a doc from primary → archive, applying the caller's patch and
+   * stamping `archivedAt`. Idempotent: if the doc is already in archive
+   * (concurrent archive race, or repeated call) the function is a no-op
+   * beyond ensuring the doc reflects the patch.
+   *
+   * The scope filter is applied to the read so callers can't archive docs
+   * they don't have write access to.
+   */
+  private async moveToArchive(
+    id: FactId,
+    scope: ScopeFilter,
+    patch: Partial<IFact>,
+  ): Promise<void> {
+    if (!this.factsArchive) return;
+    const filter = mergeFilters(this.scope(scope), { id });
+    const doc = await this.facts.findOne(filter);
+    if (!doc) {
+      // Already in archive (or never existed under this scope). Apply the
+      // patch to the archive copy so callers that re-archive get expected
+      // metadata updates.
+      await this.factsArchive.updateOne(filter, { $set: patch });
+      return;
+    }
+    const stamped: Record<string, unknown> = {
+      ...(doc as unknown as Record<string, unknown>),
+      ...patch,
+      archived: true,
+      archivedAt: (patch as Record<string, unknown>).archivedAt ?? new Date(),
+    };
+    // The id is on the doc; insertOne strips it (the collection wrapper
+    // assigns the primary key). We need to PRESERVE the original id on the
+    // archive side so subsequent getFact(id) finds it. Use updateOne with
+    // upsert against `{id}` to write the doc body keyed by the original id.
+    const { id: _strip, ...body } = stamped as { id?: string } & Record<string, unknown>;
+    void _strip;
+    await this.factsArchive.updateOne(
+      { id },
+      { $set: body },
+      { upsert: true },
+    );
+    await this.facts.deleteOne(filter);
+  }
+
+  /**
+   * Reverse of `moveToArchive` — move from archive → primary. Used by
+   * `restoreFact`. The `archived` field is dropped on restore and
+   * `archivedAt` cleared.
+   */
+  private async restoreFromArchive(
+    id: FactId,
+    scope: ScopeFilter,
+    patch: Partial<IFact>,
+  ): Promise<void> {
+    if (!this.factsArchive) return;
+    const filter = mergeFilters(this.scope(scope), { id });
+    const doc = await this.factsArchive.findOne(filter);
+    if (!doc) {
+      // Already in primary. Apply the non-archive patch fields.
+      const { archived: _drop, ...rest } = patch as Record<string, unknown>;
+      void _drop;
+      if (Object.keys(rest).length > 0) {
+        await this.facts.updateOne(filter, { $set: rest });
+      }
+      return;
+    }
+    // Build the restored primary-side doc. Strip archive markers; apply
+    // caller's patch (minus the `archived` flag, which we control here).
+    const { archived: _omitFromPatch, ...patchRest } = patch as Record<string, unknown>;
+    void _omitFromPatch;
+    const restored: Record<string, unknown> = {
+      ...(doc as unknown as Record<string, unknown>),
+      ...patchRest,
+      archived: false,
+      archivedAt: undefined,
+    };
+    const { id: _strip, ...body } = restored as { id?: string } & Record<string, unknown>;
+    void _strip;
+    await this.facts.updateOne({ id }, { $set: body }, { upsert: true });
+    await this.factsArchive.deleteOne(filter);
   }
 
   // ==========================================================================
@@ -475,7 +692,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
         ? { predicate: { $in: opts.predicates } }
         : {};
     const restrict: MongoFilter = mergeFilters(
-      scopeToFilter(scope),
+      this.scope(scope),
       ARCHIVED_HIDDEN,
       predicateClause,
       ...asOfClauses,
@@ -496,7 +713,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     // Outbound — match subjectId=start, then (optionally) recurse object→subject chains.
     if (opts.direction === 'out') {
       const match: MongoFilter = mergeFilters(
-        scopeToFilter(scope),
+        this.scope(scope),
         ARCHIVED_HIDDEN,
         { subjectId: startId },
         predicateClause,
@@ -538,7 +755,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     // Inbound — mirror.
     if (opts.direction === 'in') {
       const match: MongoFilter = mergeFilters(
-        scopeToFilter(scope),
+        this.scope(scope),
         ARCHIVED_HIDDEN,
         { objectId: startId },
         predicateClause,
@@ -642,7 +859,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
           queryVector,
           numCandidates: opts.topK * this.vectorCandidateMultiplier,
           limit: opts.topK,
-          filter: factFilterToMongo(filter, scope),
+          filter: factFilterToMongo(filter, scope, { disableWorld: this.disableWorldVisibility }),
         },
       },
       { $addFields: { score: { $meta: 'vectorSearchScore' } } },
@@ -659,7 +876,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
   ): Promise<Array<{ fact: IFact; score: number }>> {
     // Fall back: scan facts matching the filter + scope, cosine in memory.
     // Only consider facts with an embedding of matching dimension.
-    const mongoFilter = mergeFilters(factFilterToMongo(filter, scope), {
+    const mongoFilter = mergeFilters(factFilterToMongo(filter, scope, { disableWorld: this.disableWorldVisibility }), {
       embedding: { $exists: true },
     });
     const docs = await this.facts.find(mongoFilter, { limit: 5000 });
@@ -703,7 +920,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     path: 'identityEmbedding' | 'contentEmbedding',
   ): Promise<Array<{ entity: IEntity; score: number }>> {
     const vectorFilter = mergeFilters(
-      scopeToFilter(scope),
+      this.scope(scope),
       ARCHIVED_HIDDEN,
       entitySemanticFilterToMongo(filter),
     );
@@ -736,7 +953,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     path: 'identityEmbedding' | 'contentEmbedding',
   ): Promise<Array<{ entity: IEntity; score: number }>> {
     const mongoFilter = mergeFilters(
-      scopeToFilter(scope),
+      this.scope(scope),
       ARCHIVED_HIDDEN,
       entitySemanticFilterToMongo(filter),
       { [path]: { $exists: true } },

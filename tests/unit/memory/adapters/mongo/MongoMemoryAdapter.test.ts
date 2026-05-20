@@ -1666,6 +1666,262 @@ describe('MongoMemoryAdapter', () => {
       await expect(mem.ensureAdapterIndexes()).resolves.toBeUndefined();
       await mem.shutdown();
     });
+
+    it('builds subject/object/context/predicate indexes on factsArchive when wired', async () => {
+      const ents = new FakeMongoCollection<IEntity>();
+      const facts2 = new FakeMongoCollection<IFact>();
+      const archive = new FakeMongoCollection<IFact>('facts_archive');
+      const a = new MongoMemoryAdapter({
+        entities: ents,
+        facts: facts2,
+        factsArchive: archive,
+      });
+      await a.ensureIndexes();
+      const archiveIdx = archive.createdIndexes.map((i) => i.name);
+      expect(archiveIdx).toContain('memory_fact_archive_subject_observed');
+      expect(archiveIdx).toContain('memory_fact_archive_object_observed');
+      expect(archiveIdx).toContain('memory_fact_archive_context_observed');
+      expect(archiveIdx).toContain('memory_fact_archive_subject_pred_observed');
+      // Sanity: legacy groupId-led compounds are deliberately NOT mirrored on
+      // the archive — admin tooling pins groupId+ownerId against the LIVE
+      // collection, not the archive.
+      expect(archiveIdx).not.toContain('memory_fact_by_subject');
+    });
+
+    it('does not touch factsArchive when option is omitted', async () => {
+      // No archive wired ⇒ shared helper must not crash, and no archive
+      // indexes are produced (there's no archive object to receive them).
+      await ensureIndexes({ entities: entColl, facts: factColl });
+      // Trivially passes; the absence of a factsArchive arg means there's
+      // nothing to assert against. This test guards against a future
+      // refactor that requires the archive arg.
+      expect(entColl.createdIndexes.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ==========================================================================
+  // factsArchive (move-on-archive)
+  // ==========================================================================
+
+  describe('factsArchive (move-on-archive)', () => {
+    let primary: FakeMongoCollection<IFact>;
+    let archive: FakeMongoCollection<IFact>;
+    let ents: FakeMongoCollection<IEntity>;
+    let arch: MongoMemoryAdapter;
+    let a: IEntity;
+    let b: IEntity;
+
+    beforeEach(async () => {
+      primary = new FakeMongoCollection<IFact>('facts_live');
+      archive = new FakeMongoCollection<IFact>('facts_archive');
+      ents = new FakeMongoCollection<IEntity>('entities');
+      arch = new MongoMemoryAdapter({
+        entities: ents,
+        facts: primary,
+        factsArchive: archive,
+      });
+      a = await arch.createEntity(entityInput({ displayName: 'A' }));
+      b = await arch.createEntity(entityInput({ displayName: 'B' }));
+    });
+
+    afterEach(() => {
+      if (!arch.isDestroyed) arch.destroy();
+    });
+
+    it('updateFact({archived: true}) moves the doc primary → archive', async () => {
+      const f = await arch.createFact(factInput(a.id, { predicate: 'knows', objectId: b.id }));
+      expect(primary.all.map((d) => d.id)).toContain(f.id);
+      expect(archive.all.map((d) => d.id)).not.toContain(f.id);
+
+      await arch.updateFact(f.id, { archived: true }, {});
+
+      expect(primary.all.map((d) => d.id)).not.toContain(f.id);
+      const inArchive = archive.all.find((d) => d.id === f.id);
+      expect(inArchive).toBeDefined();
+      expect(inArchive!.archived).toBe(true);
+      // archivedAt is stamped automatically when the patch doesn't supply one.
+      expect((inArchive as unknown as { archivedAt?: Date }).archivedAt).toBeInstanceOf(Date);
+    });
+
+    it('getFact falls back to archive when id is missing from primary', async () => {
+      const f = await arch.createFact(factInput(a.id));
+      await arch.updateFact(f.id, { archived: true }, {});
+
+      const got = await arch.getFact(f.id, {});
+      expect(got).not.toBeNull();
+      expect(got!.id).toBe(f.id);
+      expect(got!.archived).toBe(true);
+    });
+
+    it('findFacts({archived: true}) routes to the archive collection', async () => {
+      const liveFact = await arch.createFact(factInput(a.id, { predicate: 'live' }));
+      const archivedFact = await arch.createFact(factInput(a.id, { predicate: 'archived' }));
+      await arch.updateFact(archivedFact.id, { archived: true }, {});
+
+      const archivedPage = await arch.findFacts({ archived: true, subjectId: a.id }, {}, {});
+      expect(archivedPage.items.map((f) => f.id)).toEqual([archivedFact.id]);
+
+      const livePage = await arch.findFacts({ subjectId: a.id }, {}, {});
+      expect(livePage.items.map((f) => f.id)).toEqual([liveFact.id]);
+    });
+
+    it('countFacts({archived: true}) routes to the archive collection', async () => {
+      const f = await arch.createFact(factInput(a.id));
+      await arch.updateFact(f.id, { archived: true }, {});
+      expect(await arch.countFacts({ archived: true, subjectId: a.id }, {})).toBe(1);
+      expect(await arch.countFacts({ subjectId: a.id }, {})).toBe(0);
+    });
+
+    it('restore: updateFact({archived: false}) moves the doc archive → primary', async () => {
+      const f = await arch.createFact(factInput(a.id));
+      await arch.updateFact(f.id, { archived: true }, {});
+      expect(archive.all.map((d) => d.id)).toContain(f.id);
+
+      await arch.updateFact(f.id, { archived: false }, {});
+
+      expect(archive.all.map((d) => d.id)).not.toContain(f.id);
+      const inPrimary = primary.all.find((d) => d.id === f.id);
+      expect(inPrimary).toBeDefined();
+      expect(inPrimary!.archived).toBe(false);
+    });
+
+    it('re-archiving an already-archived doc is idempotent (no crash, archive has one copy)', async () => {
+      const f = await arch.createFact(factInput(a.id));
+      await arch.updateFact(f.id, { archived: true }, {});
+      // Second archive-call should not duplicate or crash.
+      await arch.updateFact(f.id, { archived: true }, {});
+      const matches = archive.all.filter((d) => d.id === f.id);
+      expect(matches).toHaveLength(1);
+      expect(primary.all.find((d) => d.id === f.id)).toBeUndefined();
+    });
+
+    it('updateFact non-archive patch on an archived doc updates the archive in place', async () => {
+      const f = await arch.createFact(factInput(a.id));
+      await arch.updateFact(f.id, { archived: true }, {});
+      // Caller wants to add/refresh metadata on the archived fact without
+      // restoring it. This patch carries no `archived` field.
+      await arch.updateFact(f.id, { details: 'audit note' }, {});
+
+      expect(primary.all.find((d) => d.id === f.id)).toBeUndefined();
+      const inArchive = archive.all.find((d) => d.id === f.id);
+      expect(inArchive!.details).toBe('audit note');
+    });
+
+    it('updateFact non-archive patch on a live doc stays in primary (no archive write)', async () => {
+      const f = await arch.createFact(factInput(a.id));
+      await arch.updateFact(f.id, { details: 'noted' }, {});
+
+      const inPrimary = primary.all.find((d) => d.id === f.id);
+      expect(inPrimary!.details).toBe('noted');
+      expect(archive.all.find((d) => d.id === f.id)).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // disableWorldVisibility (scope-filter shortcut)
+  // ==========================================================================
+
+  describe('disableWorldVisibility', () => {
+    it('emits a one-time warn at construction', async () => {
+      const warned: string[] = [];
+      const logger = { warn: (m: string) => warned.push(m) };
+      const ents = new FakeMongoCollection<IEntity>();
+      const facts2 = new FakeMongoCollection<IFact>();
+      const _a = new MongoMemoryAdapter({
+        entities: ents,
+        facts: facts2,
+        disableWorldVisibility: true,
+        logger,
+      });
+      expect(warned).toHaveLength(1);
+      expect(warned[0]).toMatch(/disableWorldVisibility=true/);
+      expect(warned[0]).toMatch(/permissions\.world.*read/);
+      _a.destroy();
+    });
+
+    it('does NOT warn when the option is false / omitted', () => {
+      const warned: string[] = [];
+      const logger = { warn: (m: string) => warned.push(m) };
+      const ents = new FakeMongoCollection<IEntity>();
+      const facts2 = new FakeMongoCollection<IFact>();
+      const _a = new MongoMemoryAdapter({ entities: ents, facts: facts2, logger });
+      expect(warned).toHaveLength(0);
+      _a.destroy();
+    });
+
+    it('cross-group caller cannot read a world:read record when toggle is on', async () => {
+      const ents = new FakeMongoCollection<IEntity>();
+      const facts2 = new FakeMongoCollection<IFact>();
+      const noWorld = new MongoMemoryAdapter({
+        entities: ents,
+        facts: facts2,
+        disableWorldVisibility: true,
+        // Suppress the boot warn so the test output isn't noisy.
+        logger: { warn: () => {} },
+      });
+      // Sanity baseline: a normal adapter against the same collections
+      // would see the record cross-group via the world branch.
+      const baseline = new MongoMemoryAdapter({ entities: ents, facts: facts2 });
+
+      // A record explicitly marked world:read, scoped to group g1.
+      const worldReadable = await baseline.createEntity(
+        entityInput({
+          displayName: 'Public',
+          groupId: 'g1',
+          ownerId: 'u1',
+          permissions: { world: 'read' },
+        }),
+      );
+      // Cross-group caller (g2/u2) with the WORLD branch active.
+      expect(await baseline.getEntity(worldReadable.id, { groupId: 'g2', userId: 'u2' })).not.toBeNull();
+      // Same caller against the disabled-world adapter ⇒ invisible.
+      expect(await noWorld.getEntity(worldReadable.id, { groupId: 'g2', userId: 'u2' })).toBeNull();
+
+      // Owner branch and same-group branch still work.
+      expect(await noWorld.getEntity(worldReadable.id, { userId: 'u1' })).not.toBeNull();
+      expect(await noWorld.getEntity(worldReadable.id, { groupId: 'g1' })).not.toBeNull();
+
+      noWorld.destroy();
+      baseline.destroy();
+    });
+
+    it('findFacts under disableWorldVisibility omits world-readable cross-group facts', async () => {
+      const ents = new FakeMongoCollection<IEntity>();
+      const facts2 = new FakeMongoCollection<IFact>();
+      const noWorld = new MongoMemoryAdapter({
+        entities: ents,
+        facts: facts2,
+        disableWorldVisibility: true,
+        logger: { warn: () => {} },
+      });
+      const baseline = new MongoMemoryAdapter({ entities: ents, facts: facts2 });
+
+      const subj = await baseline.createEntity(entityInput({ displayName: 'Subject' }));
+      await baseline.createFact(
+        factInput(subj.id, {
+          predicate: 'public_note',
+          groupId: 'g1',
+          ownerId: 'u1',
+          permissions: { world: 'read' },
+        }),
+      );
+
+      const baselineFacts = await baseline.findFacts(
+        { subjectId: subj.id },
+        {},
+        { groupId: 'g2', userId: 'u2' },
+      );
+      const noWorldFacts = await noWorld.findFacts(
+        { subjectId: subj.id },
+        {},
+        { groupId: 'g2', userId: 'u2' },
+      );
+      expect(baselineFacts.items).toHaveLength(1);
+      expect(noWorldFacts.items).toHaveLength(0);
+
+      noWorld.destroy();
+      baseline.destroy();
+    });
   });
 
   // ==========================================================================

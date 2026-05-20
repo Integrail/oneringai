@@ -34,7 +34,23 @@ const GROUP_ALLOWS_READ: MongoFilter = {
   ],
 };
 
-export function scopeToFilter(scope: ScopeFilter): MongoFilter {
+export interface ScopeToFilterOptions {
+  /**
+   * When true, the "world" branch is omitted from the produced filter.
+   * The world branch (`groupId: {$ne: caller.groupId}` paired with
+   * `permissions.world !== 'none'`) is fundamentally not sargable — the
+   * `$ne` predicate forces a scan of every other group's documents. In
+   * deployments where no records carry `permissions.world: 'read'` the
+   * branch costs CPU + IO for no result rows, so callers can disable it
+   * here. Default false (backwards-compatible).
+   */
+  disableWorld?: boolean;
+}
+
+export function scopeToFilter(
+  scope: ScopeFilter,
+  opts: ScopeToFilterOptions = {},
+): MongoFilter {
   const branches: MongoFilter[] = [];
 
   // (a) Owner shortcut.
@@ -49,13 +65,21 @@ export function scopeToFilter(scope: ScopeFilter): MongoFilter {
 
   // (c) World access — caller is NOT in the record's group (or record has no
   //     group, which `$ne` matches since Mongo's $ne matches null/missing too).
-  if (scope.groupId !== undefined) {
-    branches.push({ $and: [{ groupId: { $ne: scope.groupId } }, WORLD_ALLOWS_READ] });
-  } else {
-    // Caller has no groupId → every record is "world" for them.
-    branches.push(WORLD_ALLOWS_READ);
+  if (!opts.disableWorld) {
+    if (scope.groupId !== undefined) {
+      branches.push({ $and: [{ groupId: { $ne: scope.groupId } }, WORLD_ALLOWS_READ] });
+    } else {
+      // Caller has no groupId → every record is "world" for them.
+      branches.push(WORLD_ALLOWS_READ);
+    }
   }
 
+  if (branches.length === 0) {
+    // Caller has neither userId nor groupId AND world is disabled. Return
+    // a filter that matches nothing — there's no legitimate access path.
+    // The library doesn't currently emit this shape; defensive case.
+    return { _id: { $exists: false } } as MongoFilter;
+  }
   return branches.length === 1 ? branches[0]! : { $or: branches };
 }
 

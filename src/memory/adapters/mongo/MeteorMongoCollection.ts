@@ -83,9 +83,22 @@ export class MeteorMongoCollection<T extends { id: string }> implements IMongoCo
     const translated = translateIdField(filter);
     const cleanUpdate = stripIdFromUpdate(update);
     const n = await this.col.updateAsync(translated, cleanUpdate, { upsert: opts?.upsert });
-    // Meteor's updateAsync returns modified count; we can't distinguish upsert
-    // vs update from its return. For our adapter's needs, matched=modified.
-    return { matchedCount: n, modifiedCount: n, upsertedCount: 0 };
+    // Meteor's updateAsync returns MODIFIED count, not MATCHED count. For an
+    // idempotent `$set` (the patch leaves the doc unchanged), Meteor returns
+    // 0 even though the doc was matched. The raw-driver wrapper exposes
+    // matchedCount separately; adapter code that branches on `matchedCount`
+    // (e.g. move-on-archive's "did this exist in primary?" probe) would
+    // mis-route the patch on Meteor without disambiguation.
+    //
+    // When n > 0, we know there was at least one match. When n === 0 and
+    // upsert is off, do a single `findOneAsync` to disambiguate
+    // "not matched" from "matched but unchanged".
+    if (n > 0 || opts?.upsert) {
+      return { matchedCount: n, modifiedCount: n, upsertedCount: 0 };
+    }
+    const probe = await this.col.findOneAsync(translated);
+    const matched = probe ? 1 : 0;
+    return { matchedCount: matched, modifiedCount: 0, upsertedCount: 0 };
   }
 
   async deleteOne(filter: MongoFilter): Promise<void> {

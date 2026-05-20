@@ -7,6 +7,7 @@ export type { MeteorCollectionLike } from './MeteorMongoCollection.js';
 export { ensureIndexes } from './indexes.js';
 export type { EnsureIndexesArgs } from './indexes.js';
 export { scopeToFilter, mergeFilters } from './scopeFilter.js';
+export type { ScopeToFilterOptions } from './scopeFilter.js';
 export { factFilterToMongo, orderByToSort } from './queries.js';
 export type {
   IMongoCollectionLike,

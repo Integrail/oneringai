@@ -3,16 +3,23 @@
  */
 
 import type { FactFilter, FactOrderBy } from '../../types.js';
-import { mergeFilters, scopeToFilter } from './scopeFilter.js';
+import { mergeFilters, scopeToFilter, type ScopeToFilterOptions } from './scopeFilter.js';
 import type { MongoFilter, MongoSort } from './IMongoCollectionLike.js';
 import type { ScopeFilter } from '../../types.js';
 
 /**
  * Build a Mongo filter from a FactFilter + ScopeFilter.
  * Pushes archived and asOf into the DB so the app never scans hidden docs.
+ *
+ * `scopeOpts` propagates to `scopeToFilter` — used by the adapter to honor
+ * its `disableWorldVisibility` option uniformly across read paths.
  */
-export function factFilterToMongo(filter: FactFilter, scope: ScopeFilter): MongoFilter {
-  const clauses: MongoFilter[] = [scopeToFilter(scope)];
+export function factFilterToMongo(
+  filter: FactFilter,
+  scope: ScopeFilter,
+  scopeOpts: ScopeToFilterOptions = {},
+): MongoFilter {
+  const clauses: MongoFilter[] = [scopeToFilter(scope, scopeOpts)];
 
   // Archived handling
   if (filter.archived === true) {
