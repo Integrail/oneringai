@@ -64,6 +64,9 @@ export {
   SkepticPass,
   defaultSkepticPrompt,
   parseSkepticOutput,
+  // Pillar 2 — entity-anchored cross-source reconciliation
+  entityReconciliationPrompt,
+  ENTITY_RECONCILIATION_PROMPT_VERSION,
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
@@ -73,6 +76,7 @@ export type {
   MemorySystemWithConnectorsConfig,
   ExtractionPromptContext,
   PreResolvedBinding,
+  SignalThreadMessage,
   ExtractionMention,
   ExtractionFactSpec,
   ExtractionOutput,
@@ -80,6 +84,9 @@ export type {
   IngestionError,
   IngestionResult,
   ExtractionResolverOptions,
+  ReconciliationOp,
+  OperationOutcome,
+  EntityReconciliationPromptContext,
   SignalIngestorConfig,
   ContextHintsConfig,
   IngestSignalInput,

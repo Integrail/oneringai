@@ -1556,6 +1556,9 @@ export {
   levelGrants,
   DEFAULT_GROUP_LEVEL,
   DEFAULT_WORLD_LEVEL,
+  // Pillar 2 — entity-anchored cross-source reconciliation
+  entityReconciliationPrompt,
+  ENTITY_RECONCILIATION_PROMPT_VERSION,
 } from './memory/index.js';
 export type {
   // Adapter options
@@ -1583,6 +1586,7 @@ export type {
   MemorySystemWithConnectorsConfig,
   ExtractionPromptContext,
   PreResolvedBinding,
+  SignalThreadMessage,
   ExtractionMention,
   ExtractionFactSpec,
   ExtractionOutput,
@@ -1590,6 +1594,9 @@ export type {
   IngestionError,
   IngestionResult,
   ExtractionResolverOptions,
+  ReconciliationOp,
+  OperationOutcome,
+  EntityReconciliationPromptContext,
   SignalIngestorConfig,
   ContextHintsConfig,
   IngestSignalInput,
