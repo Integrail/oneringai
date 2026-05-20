@@ -1570,6 +1570,32 @@ describe('executeRoutine', () => {
       );
     });
 
+    it('should resolve {{result.<task.id>}} templates in postSteps (by canonical id)', async () => {
+      const notifyTool = makeTool('notify', { sent: true });
+
+      mockGenerate.mockImplementation(async () => makeTextResponse('Output from analyze'));
+
+      const routine = createRoutineDefinition({
+        name: 'PostSteps by id',
+        description: 'Test',
+        tasks: [{ id: 'analyze-1', name: 'Analyze', description: 'Do analysis' }],
+        postSteps: [
+          { name: 'Notify', toolName: 'notify', args: { body: '{{result.analyze-1}}' } },
+        ],
+      });
+
+      const execution = await executeRoutine({
+        ...defaultOptions(routine),
+        tools: [notifyTool],
+      });
+
+      expect(execution.status).toBe('completed');
+      expect(notifyTool.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'Output from analyze' }),
+        expect.anything()
+      );
+    });
+
     it('should skip postSteps when routine fails (default on-success trigger)', async () => {
       const notifyTool = makeTool('notify', { sent: true });
 

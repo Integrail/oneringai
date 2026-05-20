@@ -172,7 +172,7 @@ export function resolveTaskTemplates(
 export interface StepResolveContext {
   /** Routine input parameters ({{param.NAME}}) */
   inputs: Record<string, unknown>;
-  /** Task results map: task name → output ({{result.TASK_NAME}}, post-steps only) */
+  /** Task results map: task id OR name → output ({{result.<id-or-name>}}, post-steps only) */
   taskResults?: Map<string, unknown>;
   /** Prior step results map: step name → output ({{step.STEP_NAME}}) */
   stepResults?: Map<string, unknown>;
@@ -183,7 +183,9 @@ export interface StepResolveContext {
  *
  * Walks the argument object recursively. For string values, resolves:
  * - {{param.NAME}} — from inputs
- * - {{result.TASK_NAME}} — from task outputs (post-steps)
+ * - {{result.TASK_ID_OR_NAME}} — from task outputs (post-steps); accepts
+ *   either the task's canonical `id` or its `name` (both are indexed in
+ *   `taskResults`, lookup is a literal key match)
  * - {{step.STEP_NAME}} — from prior step results
  *
  * Non-string values pass through unchanged. Unresolved templates are left as-is.

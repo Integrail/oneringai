@@ -1377,11 +1377,19 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       (definition.postStepsTrigger === 'always' || execution.status === 'completed');
 
     if (shouldRunPostSteps) {
-      // Build task results map for {{result.TASK_NAME}} resolution
+      // Build task results map for {{result.TASK_ID_OR_NAME}} resolution.
+      // Tasks carry both a canonical `id` (referenced by `dependsOn`,
+      // control-flow ops, etc.) and a human-readable `name` (display label).
+      // Index by BOTH so `{{result.<id>}}` and `{{result.<name>}}` resolve —
+      // matches the convention used everywhere else in the runner where the
+      // id is the canonical reference and the name is for display.
       const taskResults = new Map<string, unknown>();
       for (const task of execution.plan.tasks) {
         if (task.status === 'completed' && task.result?.output) {
           taskResults.set(task.name, task.result.output);
+          if (task.id && task.id !== task.name) {
+            taskResults.set(task.id, task.result.output);
+          }
         }
       }
 
