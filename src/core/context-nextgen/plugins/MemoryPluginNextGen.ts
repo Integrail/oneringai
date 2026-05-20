@@ -429,6 +429,27 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     return MEMORY_INSTRUCTIONS;
   }
 
+  /**
+   * Force lazy bootstrap to complete.
+   *
+   * The plugin resolves `userEntityId` / `agentEntityId` / `groupEntityId`
+   * lazily on first `getContent()`. That's fine when the agent starts with
+   * an LLM turn — `getContent()` runs as part of building the first prompt.
+   *
+   * It's NOT fine when the agent starts with deterministic pre-steps (e.g.
+   * routines: `preSteps` execute before the first LLM turn). A pre-step
+   * invoking `memory_recall({ subject: 'me' })` calls
+   * `getOwnSubjectIds().userEntityId` — undefined → "no user scope" error.
+   *
+   * `prepare()` is the contract for "make sure your lazy state is ready
+   * before any tool you contribute is invoked". The routine runner calls it
+   * once after building the agent and before pre-steps fire. Idempotent.
+   */
+  async prepare(): Promise<void> {
+    if (this.destroyed) return;
+    await this.ensureBootstrapped();
+  }
+
   async getContent(): Promise<string | null> {
     if (this.destroyed) return null;
 

@@ -1070,7 +1070,41 @@ export async function executeRoutine(options: ExecuteRoutineOptions): Promise<Ro
       }
     }
 
-    // 6. Execute preSteps (deterministic, no LLM)
+    // 6. Prepare plugins — force any lazy bootstrap to complete before
+    //    deterministic pre-steps run. Without this, plugins that resolve
+    //    state on first `getContent()` (e.g. `MemoryPluginNextGen` which
+    //    bootstraps `userEntityId` / `agentEntityId`) are still in their
+    //    pre-bootstrap state when a pre-step invokes one of their tools,
+    //    and identity tokens like `subject: 'me'` fail with "no user scope".
+    //
+    //    The agent's first LLM turn would have triggered `getContent()`
+    //    naturally — for agents whose first action is a pre-step, we have
+    //    to drive bootstrap explicitly. `prepare()` is optional on the
+    //    plugin interface; plugins without lazy state are unaffected.
+    try {
+      const plugins = agent.context.getPlugins?.() ?? [];
+      await Promise.all(
+        plugins.map(async p => {
+          if (typeof p.prepare === 'function') {
+            try {
+              await p.prepare();
+            } catch (err) {
+              log.error(
+                { plugin: p.name, error: err instanceof Error ? err.message : String(err) },
+                'Plugin prepare() failed; pre-steps using its tools may fail',
+              );
+            }
+          }
+        }),
+      );
+    } catch (err) {
+      log.error(
+        { error: err instanceof Error ? err.message : String(err) },
+        'Failed to enumerate plugins for prepare(); continuing',
+      );
+    }
+
+    // 6.5. Execute preSteps (deterministic, no LLM)
     if (definition.preSteps && definition.preSteps.length > 0) {
       log.info({ count: definition.preSteps.length }, 'Executing pre-steps');
       const preResult = await executeDeterministicSteps({

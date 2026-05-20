@@ -337,6 +337,25 @@ export interface IContextPluginNextGen {
   compact(targetTokensToFree: number): Promise<number>;
 
   /**
+   * Force any lazy initialization to complete.
+   *
+   * Called by the routine runner before deterministic pre-steps execute, so
+   * tools the plugin contributes can rely on the plugin's bootstrapped state
+   * (e.g. `MemoryPluginNextGen.userEntityId`, which resolves the `me` subject
+   * token). Without this, pre-steps that invoke a plugin's tools BEFORE the
+   * first `getContent()` call would see uninitialised state.
+   *
+   * Implementations must be idempotent — `prepare()` may be called multiple
+   * times across an agent's lifetime; each call after the first should be a
+   * no-op (or return the same in-flight promise).
+   *
+   * Optional: plugins with no lazy state need not implement it.
+   *
+   * @returns Resolves when the plugin is ready to be queried.
+   */
+  prepare?(): Promise<void>;
+
+  /**
    * Get tools provided by this plugin.
    *
    * Tools are automatically registered with ToolManager when the plugin
