@@ -963,7 +963,7 @@ export function buildSessionExtractionPrompt(ctx: SessionExtractionPromptContext
 
   return `You are analyzing a recent agent-user conversation turn and extracting memory updates. Your output populates a knowledge graph.
 
-Reference date: ${refDate}
+Reference date (FOR ISO FORMATTING ONLY — do NOT use to resolve relative anchors like "today"/"tomorrow"/"Friday" that appear in source text; see Date discipline below): ${refDate}
 
 <${openTag}>
 ${ctx.transcript}
@@ -1018,11 +1018,67 @@ Every fact sets \`kind\` to exactly ONE of:
 - **"document"** — long-form prose: procedures, patterns, narratives. Use for multi-sentence \`details\`.
 
 ## Validity period
-Set \`validUntil\` when the fact has a natural expiration. Omit for timeless facts. Calibration:
-- Ephemeral (today only): \`validUntil\` = end of today.
-- Task / event bound: \`validUntil\` = due date / event end.
+Set \`validUntil\` when the fact has a natural expiration AND that expiration is grounded in primary evidence (see Date discipline). Omit for timeless facts. Calibration:
+- Task / event bound: \`validUntil\` = due date / event end, ONLY when the date/time is present in primary evidence (calendar end, doc expiry, tool_result field).
 - Role / preference / identity: omit \`validUntil\`.
-When in doubt, OMIT \`validUntil\` — too-early expiry silently hides facts from queries.
+- Ephemeral / relative-anchor cases ("today only", "this week"): OMIT \`validUntil\` unless primary evidence supplies a concrete end-time. Never compute it from the Reference date.
+When in doubt, OMIT \`validUntil\` — too-early expiry silently hides facts from queries, and an invented expiry silently rewrites history.
+
+## Date discipline (HARD RULE — read carefully)
+
+Every date that appears in \`value\`, \`details\`, or \`validUntil\` MUST be an absolute ISO date (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:MM:SSZ\`). Never write a **time anchor** (\`today\`, \`tomorrow\`, \`tonight\`, \`EOD\`, \`this week\`, \`next month\`, \`Friday\`, \`next Tuesday\`, \`in 3 days\`, etc.) into a fact — those are unresolved references to "now" and decay the moment they're written.
+
+**Status descriptors** like \`overdue\` / \`past due\` are different — they describe a state at a moment in time, not a time anchor. Re-encode them as a structured status fact backed by primary evidence: \`{predicate: 'has_status', value: 'overdue'}\` (or \`metadata.state\` on a task entity). Then supersession handles the state change cleanly. Do NOT inline the word \`overdue\` into \`value\`/\`details\` of an unrelated fact, and do NOT emit \`overdue\` at all without primary evidence backing the status.
+
+When the source text uses a relative anchor, you must resolve it against PRIMARY EVIDENCE in this transcript:
+- a \`[tool_result]\` block's date/time fields,
+- a calendar event \`start\`/\`end\`,
+- an email \`Date:\` header,
+- a Slack message timestamp,
+- a document or signal date stamp.
+
+The \`Reference date\` at the top of this prompt is for ISO FORMATTING ONLY (so the year/month in your output is correct when primary evidence supplies a partial date like "May 15"). **Never use the Reference date to resolve a relative anchor that appears in source text** — that produces phantom dates that silently rewrite history.
+
+If a relative anchor in the source CANNOT be resolved against primary evidence in this transcript, do this:
+1. **Omit \`validUntil\`** — do not invent one.
+2. **Strip the date phrase** from \`value\` and \`details\` — keep the rest of the claim if it still says something specific.
+3. If, after stripping the date, the fact has no remaining specific content, **omit the whole fact**.
+
+A dateless true fact is better than a date-shifted wrong one. Never echo "today", "tomorrow", "tonight", "this week" into a fact verbatim — those phrases decay the moment the fact is written.
+
+## Primary-evidence grounding (HARD RULE — read carefully)
+
+Facts fall into two grounding classes. Apply this test to EVERY candidate fact before emitting.
+
+**Class A — Interactional / exploratory facts about the user.** Claims about the user's own curiosity, exploration, or in-progress engagement with a topic/entity that the user themselves revealed: "the user is interested in Category Theory", "the user is exploring Project Atlas", "the user is currently investigating X". Subject must be \`m_user\`. These ARE legitimate to capture (subject to the transcript-shape Anti-patterns above — prefer \`interested_in\`, \`exploring\`, \`investigating\` over pure utterance-event predicates like \`asked_about\`/\`mentioned\`).
+
+Durable preferences and commitments (\`prefers\`, \`dislikes\`, \`works_at\`, \`works_on\`, \`committed_to\`, \`believes\`) are NOT Class A — they're specific observations and belong in the 0.4–0.6 importance bucket below.
+
+**Class B — World-claim facts.** Claims about a third-party entity's state, relationships, deadlines, actions, or attributes — e.g., "Peter has status: RIF pending", "Acme Corp's contract expires 2026-05-31", "John Roberts is CFO", "the meeting on Friday is the RIF prep meeting". These REQUIRE PRIMARY EVIDENCE in this transcript:
+- a direct user statement asserting the claim,
+- an email body inside a \`[tool_result]\`,
+- a calendar event description / attendee list,
+- a document or message the user pasted,
+- a search-tool result, a code-execution output, etc.
+
+**The agent's own narrative / synthesis / day-briefing / summary / explanation IS NOT primary evidence for a Class B fact**, even when the synthesis is plausibly correct. If a Class B claim's only support in this transcript is the agent's own words, SKIP the fact entirely.
+
+Concrete shape — what counts and what doesn't:
+- \`assistant: Peter's RIF status looks pending based on his calendar gap.\` — agent inference, NOT primary evidence. Don't extract "Peter has status: RIF pending" from this alone.
+- \`[tool_result ok {"subject":"RIF prep","attendees":["peter@..."]}]\` — IS primary evidence; an "attended" fact tying Peter to the RIF prep event is extractable.
+- \`user: Peter told me he's being RIF'd.\` — IS primary evidence (direct user statement); a status fact on Peter is extractable. (Any timing — "next month", "soon" — would still be unresolved and must be omitted per Date discipline; the status claim itself stands.)
+
+Self-check before emitting any Class B fact: "Where in this transcript is the primary evidence — a user message, a tool_result, or a quoted document — that directly supports this claim?" If you can't point to one specific source utterance, skip the fact. The agent may have inferred it correctly from prior context, but that prior context is what should be extracted — not the agent's downstream interpretation.
+
+This rule has nothing to do with truth. A fact may be true and still fail this rule; the right move is still to skip, because the agent's interpretation is ephemeral and re-extracting it on every turn produces an echo chamber where speculation hardens into "evidence" over time.
+
+## Importance tiering
+
+Bucket by fact category; downgrade further when grounding is weak. (Class B facts without primary evidence are already SKIPPED by the rule above — they never reach this section.)
+
+- **0.7–1.0** — Identity / structural facts with strong primary evidence (full_name, email, role, has_status, has_deadline) backed by a direct user statement or a clear tool_result field.
+- **0.4–0.6** — Specific observations from primary evidence (a durable preference the user expressed, a commitment they stated, an event on the calendar).
+- **0.1–0.3** — Class A exploratory / interactional facts ("user is interested in X", "user is exploring Y"), tentative inferences with confidence \`<\` 0.7, and any fact whose support is indirect (synthesized across multiple sources rather than stated outright).
 
 ${diligenceSection}
 
