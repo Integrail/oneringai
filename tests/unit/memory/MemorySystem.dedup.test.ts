@@ -80,6 +80,38 @@ describe('addFact dedup=true', () => {
     expect(second.observedAt?.getTime()).toBe(later.getTime());
   });
 
+  it('does NOT walk observedAt backwards on dup match with older observedAt', async () => {
+    // Re-ingesting an older signal (replay, backfill, late delivery) must
+    // not move `observedAt` backwards — recency ranking is forward-only.
+    const mem = makeMem();
+    const subjectId = await bootstrap(mem);
+    const recent = new Date('2026-05-21');
+    const first = await mem.addFact(
+      {
+        subjectId,
+        predicate: 'works_at',
+        kind: 'atomic',
+        value: 'Everworker',
+        observedAt: recent,
+      },
+      { userId: USER },
+    );
+    const older = new Date('2026-01-01');
+    const second = await mem.addFact(
+      {
+        subjectId,
+        predicate: 'works_at',
+        kind: 'atomic',
+        value: 'Everworker',
+        dedup: true,
+        observedAt: older,
+      },
+      { userId: USER },
+    );
+    expect(second.id).toBe(first.id);
+    expect(second.observedAt?.getTime()).toBe(recent.getTime());
+  });
+
   it('inserts new row on (same subject, predicate) but different value', async () => {
     const mem = makeMem();
     const subjectId = await bootstrap(mem);

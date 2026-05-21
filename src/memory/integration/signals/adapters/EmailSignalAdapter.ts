@@ -126,6 +126,7 @@ export class EmailSignalAdapter implements SignalSourceAdapter<EmailSignal> {
       signalText,
       signalSourceDescription,
       participants,
+      observedAt: raw.date,
     };
   }
 }

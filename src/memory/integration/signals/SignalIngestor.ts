@@ -92,6 +92,15 @@ export interface IngestSignalInput<TRaw> {
    * participants) but doesn't want to seed them as hard bindings.
    */
   knownEntities?: IEntity[];
+  /**
+   * Authoritative source timestamp for this signal. Used as
+   * `referenceDate` in the extraction prompt (so the LLM resolves relative
+   * dates against the right week) and as `sourceObservedAt` on the resolver
+   * (so facts inherit the source date, not extraction time). If undefined,
+   * the adapter's `ExtractedSignal.observedAt` is consulted next, then the
+   * resolver falls back to legacy behavior.
+   */
+  sourceObservedAt?: Date;
 }
 
 export interface IngestTextInput {
@@ -102,6 +111,8 @@ export interface IngestTextInput {
   scope: ScopeFilter;
   autoResolveThreshold?: number;
   knownEntities?: IEntity[];
+  /** See {@link IngestSignalInput.sourceObservedAt}. */
+  sourceObservedAt?: Date;
 }
 
 export interface IngestExtractedInput {
@@ -110,6 +121,13 @@ export interface IngestExtractedInput {
   scope: ScopeFilter;
   autoResolveThreshold?: number;
   knownEntities?: IEntity[];
+  /**
+   * Overrides {@link ExtractedSignal.observedAt} when both are present.
+   * Useful when the caller has a more authoritative timestamp than the
+   * adapter (e.g. a pipeline-level signal-receipt time vs. the adapter's
+   * parse of a body-embedded date).
+   */
+  sourceObservedAt?: Date;
 }
 
 export class SignalIngestor {
@@ -154,6 +172,7 @@ export class SignalIngestor {
       scope: input.scope,
       autoResolveThreshold: input.autoResolveThreshold,
       knownEntities: input.knownEntities,
+      sourceObservedAt: input.sourceObservedAt,
     });
   }
 
@@ -164,11 +183,13 @@ export class SignalIngestor {
         signalText: input.text,
         signalSourceDescription: input.signalSourceDescription,
         participants: input.participants ?? [],
+        observedAt: input.sourceObservedAt,
       },
       sourceSignalId: input.sourceSignalId,
       scope: input.scope,
       autoResolveThreshold: input.autoResolveThreshold,
       knownEntities: input.knownEntities,
+      sourceObservedAt: input.sourceObservedAt,
     });
   }
 
@@ -181,6 +202,12 @@ export class SignalIngestor {
 
     const knownEntities = await this.buildKnownEntities(input);
 
+    // Input override wins over adapter-emitted observedAt — caller may have
+    // a more authoritative timestamp than the adapter parse. Threaded into
+    // BOTH the prompt (referenceDate, for "next Wednesday" interpretation)
+    // and the resolver (sourceObservedAt, for fact stamping).
+    const observedAt = input.sourceObservedAt ?? input.extracted.observedAt;
+
     const prompt = this.promptFn({
       signalText: input.extracted.signalText,
       signalSourceDescription: input.extracted.signalSourceDescription,
@@ -189,6 +216,7 @@ export class SignalIngestor {
       knownEntities,
       predicateRegistry: this.predicateRegistry,
       maxPredicatesPerCategory: this.maxPredicatesPerCategory,
+      referenceDate: observedAt,
     });
 
     const extractionOutput = await this.extractor.extract(prompt);
@@ -204,6 +232,7 @@ export class SignalIngestor {
       {
         autoResolveThreshold: input.autoResolveThreshold,
         preResolved,
+        sourceObservedAt: observedAt,
       },
     );
 
@@ -228,6 +257,7 @@ export class SignalIngestor {
         bindings,
         input.sourceSignalId,
         input.scope,
+        observedAt,
       );
       result.facts.push(...writtenFacts);
       result.unresolved.push(...seedFactErrors);
@@ -249,6 +279,7 @@ export class SignalIngestor {
     bindings: PreResolvedBinding[],
     sourceSignalId: string,
     scope: ScopeFilter,
+    sourceObservedAt: Date | undefined,
   ): Promise<{ writtenFacts: IFact[]; seedFactErrors: IngestionError[] }> {
     const byRole = new Map<string, PreResolvedBinding[]>();
     for (const b of bindings) {
@@ -290,6 +321,7 @@ export class SignalIngestor {
                 importance: sf.importance,
                 confidence: sf.confidence,
                 sourceSignalId,
+                observedAt: sourceObservedAt,
                 dedup: true,
               },
               scope,

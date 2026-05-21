@@ -158,6 +158,7 @@ export class CalendarSignalAdapter implements SignalSourceAdapter<CalendarSignal
       signalSourceDescription,
       participants,
       seedFacts: seedFacts.length > 0 ? seedFacts : undefined,
+      observedAt: raw.startTime,
     };
   }
 }

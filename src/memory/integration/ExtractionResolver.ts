@@ -197,6 +197,26 @@ export interface ExtractionResolverOptions {
    * library route ops through the same gate.
    */
   skepticFilter?: (op: ReconciliationOp) => boolean;
+  /**
+   * Authoritative observation timestamp for every fact written from this
+   * extraction. Set to the SIGNAL'S source date — email `Date` header,
+   * calendar event `startTime`, meeting transcript `createdDateTime`, doc
+   * `createdAt`. NOT `Date.now()`.
+   *
+   * When set, this wins over any `observedAt` the LLM may emit and over the
+   * `MemorySystem.addFact` `?? now` fallback. It's also used to anchor
+   * `validUntil` for ephemeral predicates (`committed_to`, `expressed_concern`,
+   * etc.) so commitments observed in historical content expire on the right
+   * schedule instead of looking fresh for 90 more days.
+   *
+   * Strongly recommended whenever extracting from a signal that has a known
+   * source timestamp. When undefined, the resolver logs a warning (once per
+   * resolver instance) and falls back to the legacy behavior (LLM-emitted
+   * observedAt, then `Date.now()`). For reconciliation `update` ops the
+   * fallback is `Date.now()` only — `ReconciliationOp` of kind `update`
+   * doesn't carry an `observedAt` field, so there's nothing to honor.
+   */
+  sourceObservedAt?: Date;
 }
 
 // =============================================================================
@@ -237,6 +257,13 @@ export class ExtractionResolver {
   constructor(private readonly memory: MemorySystem) {}
 
   /**
+   * Latched after the first `sourceObservedAt`-missing warning so callers
+   * don't drown logs on steady-state ingest. The first warning is the
+   * actionable one; the next 10k aren't.
+   */
+  private warnedNoSourceObservedAt = false;
+
+  /**
    * Ingest a raw LLM extraction output. Resolves mentions to entities (upsert
    * if missing), translates facts from label-space to id-space, writes them.
    * Attaches `sourceSignalId` to every written fact.
@@ -251,6 +278,29 @@ export class ExtractionResolver {
     const mergeCandidates: IngestionResult['mergeCandidates'] = [];
     const unresolved: IngestionError[] = [];
     const labelToEntityId = new Map<string, EntityId>();
+
+    // observedAt anchoring: without sourceObservedAt the resolver can only
+    // honor LLM-emitted dates (rarely supplied) or fall back to Date.now()
+    // inside addFact. The latter is dangerous: facts from historical content
+    // (old transcript, archived doc, replayed email) get stamped as if
+    // observed today, which (a) breaks recency filters and (b) re-anchors
+    // the `validUntil` window for ephemeral predicates so commitments from
+    // last year look valid for 90 more days. Warn once per resolver instance
+    // — the first warning is the actionable signal.
+    if (!opts?.sourceObservedAt && !this.warnedNoSourceObservedAt) {
+      this.warnedNoSourceObservedAt = true;
+      logger.warn(
+        {
+          component: 'ExtractionResolver.resolveAndIngest',
+          sourceSignalId,
+        },
+        'sourceObservedAt not provided — facts will be stamped with Date.now(). ' +
+          'Callers extracting from dated signals (emails, calendar events, ' +
+          'transcripts) should pass the signal/content date to anchor observedAt ' +
+          'and the validUntil window for ephemeral predicates. ' +
+          '(Further occurrences suppressed for this resolver instance.)',
+      );
+    }
 
     // ----- Pass 0: pre-resolved bindings (no LLM involvement) -----
     // Seed the label→id map with caller-supplied bindings. If the LLM output
@@ -517,7 +567,7 @@ export class ExtractionResolver {
           predicate === 'state_changed' &&
           this.memory.autoApplyTaskTransitions
         ) {
-          const observedAt = toDate(spec.observedAt);
+          const observedAt = opts?.sourceObservedAt ?? toDate(spec.observedAt);
           const routedFact = await this.tryRouteTaskTransition(
             subjectId,
             spec.value,
@@ -561,7 +611,15 @@ export class ExtractionResolver {
             confidence: spec.confidence,
             importance: spec.importance,
             contextIds,
-            observedAt: toDate(spec.observedAt),
+            // Host-supplied source date wins over LLM-emitted dates — the
+            // host knows the signal timestamp authoritatively and the LLM
+            // often omits this field (it's not in the default prompt schema).
+            // Note: `observedAt` is the SYSTEM observation time, not the
+            // event time. Event time belongs on `validFrom`/`validUntil`,
+            // so overriding any LLM-emitted observedAt with the signal date
+            // is semantically correct even when the LLM mentions a past
+            // event from within current content.
+            observedAt: opts?.sourceObservedAt ?? toDate(spec.observedAt),
             validFrom: toDate(spec.validFrom),
             validUntil: toDate(spec.validUntil),
             sourceSignalId,
@@ -592,6 +650,7 @@ export class ExtractionResolver {
         scope,
         unresolved,
         opts.skepticFilter,
+        opts.sourceObservedAt,
       );
       // Capture newly created facts so callers see them in the result.
       // (dispatchReconciliationOps pushes onto writtenFacts directly.)
@@ -634,6 +693,7 @@ export class ExtractionResolver {
     scope: ScopeFilter,
     unresolved: IngestionError[],
     skepticFilter: ((op: ReconciliationOp) => boolean) | undefined,
+    sourceObservedAt: Date | undefined,
   ): Promise<OperationOutcome> {
     const outcome: OperationOutcome = {
       creates: 0,
@@ -708,6 +768,7 @@ export class ExtractionResolver {
               confidence: op.confidence,
               sourceSignalId,
               evidenceQuote: op.evidenceQuote,
+              observedAt: sourceObservedAt,
               dedup: true,
             },
             scope,
@@ -748,7 +809,9 @@ export class ExtractionResolver {
           // for atomic facts; `details` for document facts; if both undefined,
           // default to value.
           const patch: Partial<IFact> = {
-            observedAt: new Date(),
+            // Anchor on the signal's date — extraction time would falsely
+            // refresh observedAt on every reprocess of historical content.
+            observedAt: sourceObservedAt ?? new Date(),
             sourceSignalId,
           };
           if (op.newValue !== undefined) {

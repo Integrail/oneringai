@@ -1125,9 +1125,17 @@ export class MemorySystem implements IDisposable {
       // to the insert path so a new fact is created under the caller's
       // own scope rather than mutating someone else's.
       if (existing && canAccess(existing, scope, 'write')) {
-        const now = input.observedAt ?? new Date();
-        await this.store.updateFact(existing.id, { observedAt: now }, scope);
-        return { ...existing, observedAt: now };
+        // Monotonic bump: re-ingesting an OLDER signal (replay, late delivery,
+        // backfill) must not move `observedAt` backwards — recency ranking
+        // depends on forward-only progression. Pick the max of incoming vs.
+        // existing.
+        const incoming = input.observedAt ?? new Date();
+        const bumped =
+          existing.observedAt && incoming < existing.observedAt
+            ? existing.observedAt
+            : incoming;
+        await this.store.updateFact(existing.id, { observedAt: bumped }, scope);
+        return { ...existing, observedAt: bumped };
       }
     }
 

@@ -110,6 +110,18 @@ export interface ExtractedSignal {
    * entries; the rest still write. Optional.
    */
   seedFacts?: SeedFact[];
+  /**
+   * Authoritative source timestamp for THIS signal's content — the email
+   * `Date` header, the transcript `createdDateTime`, the calendar event's
+   * `startTime`, the doc's `createdAt`. NOT the time the adapter ran.
+   *
+   * When set, the `SignalIngestor` propagates it to the extraction prompt as
+   * `referenceDate` (so the LLM resolves "Wednesday" against the right week)
+   * and to the resolver as `sourceObservedAt` (so every written fact's
+   * `observedAt` and `validUntil` anchor on the content date, not extraction
+   * time). Strongly recommended for any adapter whose source has a date.
+   */
+  observedAt?: Date;
 }
 
 /**
