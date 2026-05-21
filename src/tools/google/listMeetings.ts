@@ -11,7 +11,7 @@ import {
   type GoogleMeetingListEntry,
   type GoogleCalendarEvent,
   type GoogleCalendarEventListResponse,
-  getGoogleUserId,
+  getGoogleCalendarUserId,
   shouldExposeTargetUserParam,
   TARGET_USER_PARAM_SCHEMA,
   googleFetch,
@@ -143,7 +143,7 @@ EXAMPLE:
       const effectiveAccountId = context?.accountId;
 
       try {
-        const calendarUser = getGoogleUserId(connector, args.targetUser, actAs);
+        const calendarUser = getGoogleCalendarUserId(connector, args.targetUser, actAs);
         const maxResults = Math.min(args.maxResults ?? 50, 100);
 
         const result = await googleFetch<GoogleCalendarEventListResponse>(

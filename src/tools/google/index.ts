@@ -46,6 +46,7 @@ export type {
 export {
   isServiceAccountAuth,
   getGoogleUserId,
+  getGoogleCalendarUserId,
   shouldExposeTargetUserParam,
   TARGET_USER_PARAM_SCHEMA,
   googleFetch,

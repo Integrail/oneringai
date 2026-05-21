@@ -80,6 +80,27 @@ export function getGoogleUserId(
 }
 
 /**
+ * Get the calendar identifier for Google Calendar API requests.
+ *
+ * Identical to `getGoogleUserId` for service-account flows, but returns
+ * `'primary'` (NOT `'me'`) for delegated OAuth — Google Calendar's
+ * `calendars.events.*` endpoints don't accept `'me'` as a calendar identifier
+ * and return 404. The reserved keyword for the authenticated user's primary
+ * calendar is `'primary'`. See:
+ * https://developers.google.com/calendar/api/v3/reference/calendars
+ */
+export function getGoogleCalendarUserId(
+  connector: Connector,
+  targetUser?: string,
+  actAs?: string,
+): string {
+  if (isServiceAccountAuth(connector)) {
+    return getGoogleUserId(connector, targetUser, actAs);
+  }
+  return 'primary';
+}
+
+/**
  * Whether to expose the per-tool `targetUser` JSON-schema parameter to the LLM
  * for a given (connector, actAs) combination.
  *

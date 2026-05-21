@@ -9,7 +9,7 @@ import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GoogleCreateMeetingResult,
   type GoogleCalendarEvent,
-  getGoogleUserId,
+  getGoogleCalendarUserId,
   shouldExposeTargetUserParam,
   TARGET_USER_PARAM_SCHEMA,
   googleFetch,
@@ -165,7 +165,7 @@ EXAMPLE:
         }
 
         // Google Calendar API uses a different base URL
-        const calendarUser = getGoogleUserId(connector, args.targetUser, actAs);
+        const calendarUser = getGoogleCalendarUserId(connector, args.targetUser, actAs);
         const event = await googleFetch<GoogleCalendarEvent>(
           connector,
           `/calendar/v3/calendars/${calendarUser}/events`,

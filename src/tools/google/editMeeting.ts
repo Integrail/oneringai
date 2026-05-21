@@ -9,7 +9,7 @@ import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GoogleEditMeetingResult,
   type GoogleCalendarEvent,
-  getGoogleUserId,
+  getGoogleCalendarUserId,
   shouldExposeTargetUserParam,
   TARGET_USER_PARAM_SCHEMA,
   googleFetch,
@@ -128,7 +128,7 @@ EXAMPLE:
 
       try {
         const tz = args.timeZone ?? 'UTC';
-        const calendarUser = getGoogleUserId(connector, args.targetUser, actAs);
+        const calendarUser = getGoogleCalendarUserId(connector, args.targetUser, actAs);
 
         const patchBody: Record<string, unknown> = {};
 

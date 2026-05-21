@@ -9,7 +9,7 @@ import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
 import {
   type GoogleGetMeetingResult,
   type GoogleCalendarEvent,
-  getGoogleUserId,
+  getGoogleCalendarUserId,
   shouldExposeTargetUserParam,
   TARGET_USER_PARAM_SCHEMA,
   googleFetch,
@@ -91,7 +91,7 @@ EXAMPLE:
       const effectiveAccountId = context?.accountId;
 
       try {
-        const calendarUser = getGoogleUserId(connector, args.targetUser, actAs);
+        const calendarUser = getGoogleCalendarUserId(connector, args.targetUser, actAs);
 
         const event = await googleFetch<GoogleCalendarEvent>(
           connector,
