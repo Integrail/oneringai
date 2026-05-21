@@ -48,11 +48,11 @@ export const googleTemplate: VendorTemplate = {
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.compose',
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/documents',
         'https://www.googleapis.com/auth/contacts.readonly',
         'https://www.googleapis.com/auth/tasks',
-        'https://www.googleapis.com/auth/admin.directory.user.readonly',
       ],
       scopeDescriptions: {
         'openid': 'OpenID Connect (required for account identification)',
@@ -62,11 +62,11 @@ export const googleTemplate: VendorTemplate = {
         'https://www.googleapis.com/auth/calendar': 'Read and write Google Calendar',
         'https://www.googleapis.com/auth/gmail.readonly': 'Read Gmail messages',
         'https://www.googleapis.com/auth/gmail.send': 'Send Gmail messages',
+        'https://www.googleapis.com/auth/gmail.compose': 'Create and update Gmail drafts',
         'https://www.googleapis.com/auth/spreadsheets': 'Read and write Google Sheets',
         'https://www.googleapis.com/auth/documents': 'Read and write Google Docs',
         'https://www.googleapis.com/auth/contacts.readonly': 'Read Google Contacts',
         'https://www.googleapis.com/auth/tasks': 'Read and write Google Tasks',
-        'https://www.googleapis.com/auth/admin.directory.user.readonly': 'Read user directory (Admin)',
       },
       // Google requires `access_type=offline` query param to return a
       // refresh_token. (The `defaults.authorizationParams` above sets it; the
