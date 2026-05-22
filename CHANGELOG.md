@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Connectors — `ipinfo.io` geolocation connector + query-param API-key flow
+
+Replaces the never-shipped `ipapi.co` template with `ipinfo.io` (Bearer-token auth on the `/lite/{ip}` and `/{ip}` endpoints). The supporting infrastructure for query-param API-key auth landed at the same time so future "key in `?key=...`" vendors get first-class treatment.
+
+- **New vendor template** (`src/connectors/vendors/templates/geolocation.ts`) — `ipinfo` with `serviceType: 'ipinfo'`, `baseURL: 'https://api.ipinfo.io'`, Bearer-token API-key auth. Registered in `vendors/templates/index.ts` and `domain/entities/Services.ts`. Vendor registry regenerated.
+- **Query-param API-key auth** (`src/core/Connector.ts`) — when `APIKeyConnectorAuth.queryParamName` is set, `Connector.fetch()` injects the token into the URL's search params and skips the auth header entirely. `buildAuthConfig` (`vendors/helpers.ts`) propagates the field through from vendor `defaults`.
+- **Auth-key URL scrubbing for logs** — new private `scrubAuthQueryParam()` on `Connector` redacts the key value on `logRequest` / `logResponse` / error-log paths so secrets never leak to log sinks even when the caller passes a URL that already carried it.
+
+### Connectors — Google OAuth scope set tightened
+
+- Added `gmail.compose` (Create and update Gmail drafts).
+- Removed `admin.directory.user.readonly` (was unused; required tenant-admin consent and blocked self-serve grants).
+
+### Tools — Microsoft Graph `graphDateTimeToUtcIso` + connector helpers
+
+Microsoft Graph returns calendar datetimes as naïve strings (`"2026-05-22T11:00:00.0000000"`) with the IANA zone in a parallel `timeZone` field — no `Z` suffix, no offset. Downstream consumers that assumed "no Z = UTC" silently shifted times by the local offset, producing display bugs (an 11:00 Berlin meeting rendering as 13:00).
+
+- **New `graphDateTimeToUtcIso(dateTime, timeZone)`** in `src/tools/microsoft/types.ts` — converts Graph's `{dateTime, timeZone}` pair to an unambiguous UTC ISO 8601 string ending with `Z`. DST-correct via `Intl.DateTimeFormat`. Idempotent on strings that already carry `Z` or an offset.
+- Wired through `findMeetingSlots`, `getMeeting`, `listMeetings` — every place where Graph hands the library a calendar `start`/`end`.
+
+### Tools — Google Calendar adapter fix (`getGoogleCalendarUserId`)
+
+Google Calendar's `calendars.events.*` endpoints reject `'me'` as a calendar identifier (404 — the documented reserved keyword for the authenticated user's primary calendar is `'primary'`). Previous code shared `getGoogleUserId` between Gmail and Calendar paths, so delegated-OAuth calendar calls were silently failing.
+
+- **New `getGoogleCalendarUserId(connector, targetUser, actAs)`** in `src/tools/google/types.ts` — returns `'primary'` for delegated OAuth, falls back to the existing service-account behavior. Wired into `createMeeting`, `editMeeting`, `getMeeting`, `listMeetings`.
+
+### Memory — Predicate lifecycle policy + standard-predicate expansion
+
+Every standard predicate now carries a `lifecycle` tag (`'stable' | 'stateful' | 'observation' | 'commitment' | 'communication' | 'decision'`) plus optional `defaultValidityDays`. `MemorySystem.addFact` auto-stamps `validUntil` from `defaultValidityDays` so old commitments / observations / per-message comms naturally expire while identity, structural, and decision facts remain.
+
+- **New `PredicateLifecycle` type** in `src/memory/predicates/types.ts` (~60 lines).
+- **`STANDARD_PREDICATES` annotated** with lifecycle tags (`src/memory/predicates/standard.ts`, ~135 lines added) — identity/structural → `stable`, role/status → `stateful`, comms (`emailed`, `cc_ed`, `mentioned`, `responded_to`, `noted`, `acknowledged`, `interaction_count`) → `communication` + tagged `excludeFromExtractionPrompt: true` so the default extraction prompt no longer advertises them to the LLM (per-message metadata belongs in aggregation, not in the extracted-fact stream).
+- **`PredicateRegistry.renderForPrompt`** updated (sort fix lives in the Pagination section above).
+- **Tests:** 352 new lines in `tests/unit/memory/MemorySystem.lifecycle.test.ts` covering auto-`validUntil` stamping, lifecycle inheritance through `addFact`, and prompt-exclusion of `communication` predicates.
+
+### Memory — Entity-anchored cross-source reconciliation (Pillar 2)
+
+Distinct from the per-thread reconciliation already in `defaultExtractionPrompt` (Pillar 1, paired with new signal content). Pillar 2 shows the LLM **ALL non-archived facts on ONE entity** (regardless of source) and asks it to find genuine conflicts. Output schema is the same `operations` array as the default prompt, restricted to `update` / `archive` only — Pillar 2 reconciles, it never creates.
+
+- **New `entityReconciliationPrompt(ctx)`** + `ENTITY_RECONCILIATION_PROMPT_VERSION = 1` in `src/memory/integration/entityReconciliationPrompt.ts` (~185 lines). Groups facts by `(predicate, objectIdKey)` so conflict candidates are clustered for the LLM.
+- **`EntityReconciliationPromptContext`** + `ReconciliationOp` + `OperationOutcome` + `SignalThreadMessage` exported from `@everworker/oneringai` and `./memory`.
+- **`ExtractionResolver`** extended (~352 lines added across this and the next section) — entity resolution against pre-existing entities via canonical-id + identifier matching for `event` mentions (cross-signal calendar/transcript ingestion now converges on one entity instead of fanning out duplicates).
+
+### Memory — Extraction prompt: date discipline + primary-evidence grounding
+
+The default extraction prompt and the `SessionIngestorPluginNextGen` session-extraction prompt were silently letting the LLM invent `validUntil` dates from the prompt's "Reference date" header whenever the source used a relative anchor like "today" / "Friday" / "next week". That decays the moment the fact is written and silently rewrites history on re-extraction.
+
+- **`defaultExtractionPrompt.ts`** (+172 lines) — explicit date discipline: ISO-only in `value`/`details`/`validUntil`; never resolve a relative anchor against the Reference date; if the source can't pin the date to primary evidence (a `[tool_result]`, calendar event, email `Date:` header, etc.), strip the date phrase and keep the fact dateless, or omit it.
+- **`SessionIngestorPluginNextGen.ts`** (+66 lines) — same rules in the session-ingestion prompt, plus a "Primary-evidence grounding" section that splits facts into Class A (interactional / about-the-user) vs Class B (world claims about third-party entities) and refuses to extract Class B claims grounded only in the agent's own narrative / synthesis.
+- **`parseExtraction.ts`** (+75 lines) — tolerant of the new `operations` shape; never throws on malformed reconciliation ops, surfaces them in `IngestionResult.errors` instead.
+
+### Memory — `recall` tool now passes entity `metadata` through
+
+`memory_recall` was returning entity `displayName`, `aliases`, `identifiers` but stripping `metadata` from the primary entity view (the omission was already fixed for `relatedTasks[*].metadata` and `relatedEvents[*].metadata` — this closes the asymmetry). Agents calling provider tools were forced to reconstruct ids from the canonical identifier (lossy) instead of reading the verbatim provider id from `metadata.jarvis.source.externalId`.
+
+- `src/tools/memory/recall.ts` — `entity.metadata` now passed through verbatim.
+
+### Memory — Routine pre-step plugin bootstrap (`IContextPluginNextGen.prepare()`)
+
+The routine runner's pre-steps execute deterministically before the first LLM turn. Plugins that resolve lazy state on first `getContent()` (e.g. `MemoryPluginNextGen` bootstrapping `userEntityId` / `agentEntityId` / `groupEntityId`) were still in pre-bootstrap state when a pre-step invoked one of their tools, so identity tokens like `subject: 'me'` failed with "no user scope".
+
+- **New optional `prepare?(): Promise<void>`** on `IContextPluginNextGen` — contract: "make sure your lazy state is ready before any tool you contribute is invoked". `src/core/context-nextgen/types.ts` (+19 lines).
+- **`MemoryPluginNextGen.prepare()`** (+21 lines) — idempotent wrapper around `ensureBootstrapped()`. Safe to call multiple times.
+- **`routineRunner.ts`** (+36 lines) — drives `await Promise.all(plugins.map(p => p.prepare?.()))` after the agent is built and before pre-steps fire. Errors are logged but don't abort the routine — the LLM turn will still trigger bootstrap naturally.
+
+### Routines — `disableToolScoping` opt-out
+
+Routines normally call `existingAgent.scopedTo(definition.requiredTools, ...)` so the LLM only sees the tools the routine actually needs. Some routines have preSteps / postSteps that use tools the LLM tasks don't need (e.g. internal context-loading) — listing every such tool in `requiredTools` would be misleading.
+
+- **New `ExecuteRoutineOptions.disableToolScoping?: boolean`** (default `false`) — when `true`, skip the `scopedTo()` step. `requiredTools` is still validated as a "must be present" gate; the flag only disables runtime restriction of the toolset.
+- `src/core/routineRunner.ts` (+45 lines).
+
+### Memory — Mongo archive collection indexing
+
+Move-on-archive deployments (`MeteorMongoCollection` with separate `archive` collection) were degrading to collection scans on `findFacts({archived: true})` / `countFacts({archived: true})` / `getFact(id)` archive-fallback as the archive grew.
+
+- **`EnsureIndexesArgs.factsArchive?`** (`src/memory/adapters/mongo/indexes.ts`, +98 lines) — when provided, the same subject/object/context/predicate-led indexes are built on the archive collection. Legacy `groupId+ownerId`-led compounds are NOT mirrored — the archive isn't on the hot path for admin tooling.
+- **Identifier-led index `memory_ent_ident_only`** — the access `$or` (ownerId / groupId-eq / groupId-`$ne`) can never pin `groupId+ownerId` as a leading equality across all three branches, so `memory_ent_ident` falls back to wide scans on the world branch. Identifier-led variant works for every branch.
+- **Subject/object/context-led fact indexes** — `memory_fact_subject_observed`, `memory_fact_object_observed`, `memory_fact_context_observed`, `memory_fact_subject_pred_observed`. Each leads with the highly-selective key directly so the planner uses the SAME index for ALL three access-`$or` branches. Empirically turns 530-second, 58k-doc-examined queries into millisecond seeks. Legacy `groupId`-led compounds retained for admin tooling.
+- **`MongoMemoryAdapter`** (+261 lines), `MeteorMongoCollection` (+19 lines), `queries.ts` / `scopeFilter.ts` (+~50 lines) — archive collection wiring, `archived: true` query routing, and scope-filter access-$or normalization.
+- **Tests:** 256 lines in `MongoMemoryAdapter.test.ts`, 82 lines in `MeteorMongoCollection.test.ts`, 43 lines in `scopeFilter.test.ts`.
+
 ### Memory — Pagination without silent caps (L0 sort fixes + L1 iterators + L2 truncation warnings)
 
 Closes a class of silent data-loss bugs where read APIs returned items in adapter insertion order ("first N rows of the table") under the guise of relevance. The cap pretended to keep "the most relevant" but actually kept "the first stored." LLM context (related tasks, related events, predicate vocabulary) was biased by storage position, not by what the caller asked for.
