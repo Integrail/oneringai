@@ -245,7 +245,19 @@ export class PredicateRegistry {
     const categories = Array.from(byCategory.keys()).sort();
     for (const category of categories) {
       lines.push(`### ${category}`);
-      const items = byCategory.get(category)!.slice(0, max);
+      // Sort each category by (defaultImportance desc, name asc) so the
+      // most-important predicates surface within the `max`-per-category cap.
+      // Without this, `.slice(0, max)` keeps whatever order the predicates
+      // were registered in (Map insertion order via `byName.values()`),
+      // silently dropping high-importance predicates registered later.
+      // Stable tie-break by name keeps the prompt output deterministic.
+      const sorted = byCategory.get(category)!.slice().sort((a, b) => {
+        const ia = a.defaultImportance ?? 0;
+        const ib = b.defaultImportance ?? 0;
+        if (ia !== ib) return ib - ia; // desc
+        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+      });
+      const items = sorted.slice(0, max);
       for (const def of items) {
         const parts: string[] = [`- \`${def.name}\` — ${def.description}`];
         if (def.inverse) parts.push(`(inverse: \`${def.inverse}\`)`);

@@ -35,6 +35,7 @@ import type {
 } from '../../types.js';
 import { canAccess } from '../../AccessControl.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from '../../dateCoercion.js';
+import { warnIfLimitWithoutOrder } from '../orderByWarning.js';
 import { genericTraverse } from '../../GenericTraversal.js';
 import { normalizeIdentifierValue } from '../../identifiers.js';
 
@@ -198,6 +199,7 @@ export class InMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<Page<IEntity>> {
     this.assertLive();
+    warnIfLimitWithoutOrder('InMemoryAdapter', 'listEntities', opts);
     const idSet = filter.ids && filter.ids.length > 0 ? new Set(filter.ids) : null;
     const wantArchived = filter.archived === true;
     // Date coercion on `metadataFilter` happens once at the MemorySystem boundary
@@ -288,6 +290,7 @@ export class InMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<Page<IFact>> {
     this.assertLive();
+    warnIfLimitWithoutOrder('InMemoryAdapter', 'findFacts', opts);
     const candidates = this.selectCandidateFacts(filter);
     const filtered: IFact[] = [];
     for (const f of candidates) {

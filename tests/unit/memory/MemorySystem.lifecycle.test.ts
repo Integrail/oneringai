@@ -337,7 +337,12 @@ describe('PredicateRegistry.renderForPrompt — excludeFromExtractionPrompt', ()
 
   it('includeExcluded: true surfaces them', () => {
     const reg = PredicateRegistry.standard();
-    const out = reg.renderForPrompt({ includeExcluded: true });
+    // Bump maxPerCategory above the communication-category size so the
+    // importance-based sort doesn't trim lower-importance entries (mentioned
+    // sits at 0.3, below the 0.4-tier emailed/called/messaged/responded_to).
+    // The test's intent is that includeExcluded surfaces excludeFromExtractionPrompt
+    // predicates, not to validate the cap behavior.
+    const out = reg.renderForPrompt({ includeExcluded: true, maxPerCategory: 50 });
     expect(out).toContain('`emailed`');
     expect(out).toContain('`mentioned`');
   });

@@ -77,7 +77,13 @@ export class JWTBearerFlow {
 
     // Build JWT payload. For RFC 7523, `sub` is conventional; for GitHub App
     // auth it is not needed (only `iss` + `iat` + `exp`) but harmless.
-    const builder = new SignJWT({})
+    // For Google Workspace domain-wide delegation, `sub` is the impersonated
+    // user's email (config.subject) — the resulting access token acts as
+    // that user. Without `subject`, falls back to `clientId` (service-account
+    // self-auth) which is correct for GCP / non-impersonation flows.
+    const scopeClaim = this.config.scope?.trim();
+    const extraClaims: Record<string, string> = scopeClaim ? { scope: scopeClaim } : {};
+    const builder = new SignJWT(extraClaims)
       .setProtectedHeader({ alg })
       .setIssuer(this.config.clientId)
       .setIssuedAt(iat)
@@ -86,11 +92,8 @@ export class JWTBearerFlow {
     // Only include those for RFC 7523 flows.
     if ((this.config.tokenRequestStyle ?? 'form') !== 'bearer') {
       builder
-        .setSubject(this.config.clientId)
+        .setSubject(this.config.subject || this.config.clientId)
         .setAudience(this.config.audience || this.config.tokenUrl);
-      if (this.config.scope) {
-        // replay scope via payload (jose doesn't expose a setter for arbitrary claims on SignJWT directly)
-      }
     }
     const jwt = await builder.sign(key);
 

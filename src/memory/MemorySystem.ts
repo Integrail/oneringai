@@ -21,6 +21,7 @@ import {
   type VisibilityPolicy,
 } from './AccessControl.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from './dateCoercion.js';
+import { makeEnvFlag } from './envFlag.js';
 import {
   DEFAULT_EMBED_SOURCE_CHAR_LIMIT,
   DOCUMENT_SLUG_KIND,
@@ -55,10 +56,13 @@ import type {
   EmbeddingQueueConfig,
   EntityCandidate,
   EntityId,
+  EntityListFilter,
+  EntityOrderBy,
   EntityResolutionConfig,
   EntityView,
   FactFilter,
   FactId,
+  FactOrderBy,
   IEmbedder,
   IEntity,
   IFact,
@@ -91,6 +95,50 @@ import type {
 // Defaults --------------------------------------------------------------------
 
 const DEFAULT_TOP_FACTS_LIMIT = 15;
+/**
+ * Over-fetch ratio for getContext.topFacts: we pull `topFactsLimit * N`
+ * candidates from the store (ordered observedAt desc), then re-rank in memory
+ * by confidence × recency × predicate weight × importance and slice to
+ * topFactsLimit. A larger multiplier means the ranker sees a meaningful pool;
+ * too small and a high-importance fact slightly older than position
+ * (topFactsLimit * N) never reaches the ranker.
+ */
+const TOP_FACTS_OVERFETCH_MULTIPLIER = 10;
+/**
+ * `resolveRelatedTasks` / `resolveRelatedEvents` context-fact and event-list
+ * fetches. The cap exists because we filter client-side (attendee membership,
+ * task-state check, etc.) and don't want to pull the entire collection. With
+ * push-down `orderBy` in place, this becomes a "most-recent N" window rather
+ * than insertion-order roulette.
+ */
+const RELATED_FACT_FETCH_LIMIT = 200;
+/**
+ * `resolveRelatedEvents` per-predicate (`attended` / `hosted`) fact fetches.
+ * Smaller than `RELATED_FACT_FETCH_LIMIT` because these are scoped to a single
+ * subject + predicate and `200` would be deep in long-tail territory.
+ */
+const RELATED_PREDICATE_FACT_LIMIT = 100;
+/**
+ * `listRecentTopics` over-fetch ratio. We over-fetch by 4× to give the
+ * client-side `updatedAt >= cutoff` filter headroom, capped at
+ * `RECENT_TOPICS_OVERFETCH_CEILING`. Smaller than `TOP_FACTS_OVERFETCH_MULTIPLIER`
+ * because the post-filter doesn't drop as aggressively — a topic that surfaces
+ * in the desc-ordered fetch is, by definition, within the window unless it's
+ * older than `days`, in which case all subsequent items are too.
+ */
+const RECENT_TOPICS_OVERFETCH_MULTIPLIER = 4;
+const RECENT_TOPICS_OVERFETCH_CEILING = 200;
+/**
+ * Push-down `orderBy` for "open tasks" queries. Used by `listOpenTasks`,
+ * `iterateOpenTasks`, and `resolveRelatedTasks`. Overdue/soonest-due first,
+ * `updatedAt` desc as recency tiebreak, `id` asc as a final deterministic
+ * tiebreak so cursor pagination yields each row exactly once.
+ */
+const OPEN_TASK_ORDER_BY: readonly EntityOrderBy[] = [
+  { field: 'metadata.dueAt', direction: 'asc' },
+  { field: 'updatedAt', direction: 'desc' },
+  { field: 'id', direction: 'asc' },
+];
 const DEFAULT_SEMANTIC_TOP_K = 5;
 const DEFAULT_NEIGHBOR_DEPTH = 1;
 const DEFAULT_PROFILE_THRESHOLD = 3;
@@ -1861,8 +1909,12 @@ export class MemorySystem implements IDisposable {
           asOf: opts.asOf,
         },
         {
-          // Fetch a superset; we re-rank in memory for confidence × recency × predicate weight × importance.
-          limit: topFactsLimit * 3,
+          // Fetch a wide superset (10× the keep-rate); we re-rank in memory
+          // for confidence × recency × predicate weight × importance. The 10×
+          // multiplier means rankFacts sees a meaningful candidate pool — at
+          // 3× a high-importance fact at storage position 46 never reaches
+          // the ranker. Memory cost is bounded (15 default × 10 = 150 facts).
+          limit: topFactsLimit * TOP_FACTS_OVERFETCH_MULTIPLIER,
           orderBy: { field: 'observedAt', direction: 'desc' },
         },
         scope,
@@ -2107,7 +2159,7 @@ export class MemorySystem implements IDisposable {
             state: { $in: activeStates },
           },
         },
-        { limit: limit - acc.size },
+        { limit: limit - acc.size, orderBy: [...OPEN_TASK_ORDER_BY] },
         scope,
       );
       for (const t of page.items) {
@@ -2116,11 +2168,15 @@ export class MemorySystem implements IDisposable {
     }
 
     // Also include tasks where `entityId` appears in contextIds of any fact
-    // whose subject is a task entity.
+    // whose subject is a task entity. Most-recent facts win when the cap
+    // is reached, so freshly-relevant tasks aren't dropped behind ancient ones.
     if (acc.size < limit) {
       const contextFacts = await this.store.findFacts(
         { contextId: entityId, kind: 'atomic', asOf: opts.asOf },
-        { limit: 200 },
+        {
+          limit: RELATED_FACT_FETCH_LIMIT,
+          orderBy: { field: 'observedAt', direction: 'desc' },
+        },
         scope,
       );
       const seenTaskIds = new Set<EntityId>();
@@ -2138,7 +2194,12 @@ export class MemorySystem implements IDisposable {
       }
     }
 
-    return [...acc.values()].slice(0, limit);
+    // Final relevance sort across BOTH sources (per-role + context_of) before
+    // the slice. Without this, the merge order biases by source (all assignee
+    // first, then reporter, etc., then context_of last) regardless of dueAt.
+    return [...acc.values()]
+      .sort((a, b) => compareTaskByDueThenRecency(a.task, b.task))
+      .slice(0, limit);
   }
 
   /**
@@ -2159,12 +2220,20 @@ export class MemorySystem implements IDisposable {
 
     // Events where this entity is in attendeeIds (simple equality — adapters
     // don't yet support array-membership on metadataFilter, so fall back to
-    // listing events in window and filtering client-side here).
-    // For now we query by group and filter in-memory; this is still bounded
-    // because we cap with `limit: 200`.
+    // listing events and filtering client-side here). Bounded by
+    // `RELATED_FACT_FETCH_LIMIT`; sort puts the most-recent events first so
+    // the window+attendance filter survives the truncation — without this,
+    // ancient events dominate insertion order and recent meetings get
+    // silently dropped past the cap.
     const eventsPage = await this.store.listEntities(
       { type: 'event' },
-      { limit: 200 },
+      {
+        limit: RELATED_FACT_FETCH_LIMIT,
+        orderBy: [
+          { field: 'metadata.startTime', direction: 'desc' },
+          { field: 'id', direction: 'asc' },
+        ],
+      },
       scope,
     );
     for (const ev of eventsPage.items) {
@@ -2186,7 +2255,10 @@ export class MemorySystem implements IDisposable {
     if (acc.size < limit) {
       const contextFacts = await this.store.findFacts(
         { contextId: entityId, kind: 'atomic', asOf: opts.asOf },
-        { limit: 200 },
+        {
+          limit: RELATED_FACT_FETCH_LIMIT,
+          orderBy: { field: 'observedAt', direction: 'desc' },
+        },
         scope,
       );
       const candidateIds = new Set<EntityId>();
@@ -2213,7 +2285,10 @@ export class MemorySystem implements IDisposable {
         if (acc.size >= limit) break;
         const facts = await this.store.findFacts(
           { subjectId: entityId, predicate, kind: 'atomic', asOf: opts.asOf },
-          { limit: 100 },
+          {
+            limit: RELATED_PREDICATE_FACT_LIMIT,
+            orderBy: { field: 'observedAt', direction: 'desc' },
+          },
           scope,
         );
         for (const f of facts.items) {
@@ -2228,7 +2303,13 @@ export class MemorySystem implements IDisposable {
       }
     }
 
-    return [...acc.values()].slice(0, limit);
+    // Final relevance sort across all three tiers before the slice. Without
+    // this, the merge order biases by source (attendees first, then context,
+    // then attended/hosted facts) regardless of recency. Most-recent events
+    // win the cap so the LLM sees what's actually relevant now.
+    return [...acc.values()]
+      .sort((a, b) => compareEventByWhenDesc(a, b))
+      .slice(0, limit);
   }
 
   /**
@@ -2448,20 +2529,12 @@ export class MemorySystem implements IDisposable {
     };
     if (opts.assigneeId) metadataFilter.assigneeId = opts.assigneeId;
     if (opts.projectId) metadataFilter.projectId = opts.projectId;
-    // Push-down sort: dueAt asc primarily, updatedAt desc as tiebreak.
-    // Missing-dueAt sorts to the end (adapter-enforced nulls-last). The
-    // updatedAt tiebreak preserves the previous client-side ordering.
     const page = await this.store.listEntities(
       { type: 'task', metadataFilter },
-      {
-        limit,
-        orderBy: [
-          { field: 'metadata.dueAt', direction: 'asc' },
-          { field: 'updatedAt', direction: 'desc' },
-        ],
-      },
+      { limit, orderBy: [...OPEN_TASK_ORDER_BY] },
       scope,
     );
+    warnIfTruncated('listOpenTasks', page.items.length, limit, page.nextCursor, 'iterateOpenTasks');
     return page.items;
   }
 
@@ -2484,17 +2557,188 @@ export class MemorySystem implements IDisposable {
     // Push-down: updatedAt desc + filter can't be pushed for updatedAt (not
     // in metadata grammar), so we still post-filter, but at least the sort
     // is adapter-side and we can trim the fetch tightly.
+    const overFetchLimit = Math.min(
+      limit * RECENT_TOPICS_OVERFETCH_MULTIPLIER,
+      RECENT_TOPICS_OVERFETCH_CEILING,
+    );
     const page = await this.store.listEntities(
       { type: 'topic' },
       {
-        limit: Math.min(limit * 4, 200),
+        limit: overFetchLimit,
         orderBy: { field: 'updatedAt', direction: 'desc' },
       },
       scope,
     );
-    return page.items
+    const result = page.items
       .filter((e) => e.updatedAt.getTime() >= cutoff.getTime())
       .slice(0, limit);
+    // Warn against the USER-FACING result count, not the over-fetch ceiling.
+    // Firing on `overFetchLimit` would mis-attribute the cap and produce
+    // confusing log lines ("returned 200 items (== limit)") when the caller
+    // only sees their `limit` (default 50) items back.
+    warnIfTruncated('listRecentTopics', result.length, limit, page.nextCursor, 'iterateRecentTopics');
+    return result;
+  }
+
+  // ==========================================================================
+  // Async iterators — exhaustive iteration with cursor pagination
+  //
+  // Each iterator wraps the store-level cursor. Callers consume ALL matching
+  // rows via `for await`. No silent cap; the only bound is the row count
+  // actually in the store. Pass `startAfter` to resume from a checkpoint
+  // (e.g., a long-running job that crashed and wants to pick up where it
+  // left off). Pass `batchSize` to tune memory pressure vs round-trip count.
+  // ==========================================================================
+
+  /**
+   * Async iterator over all open tasks visible to `scope`, yielded in batches.
+   *
+   * Sort: `metadata.dueAt` asc nulls-last, then `updatedAt` desc, then `id`
+   * asc tiebreak. Same as `listOpenTasks`, but iterates the full result set
+   * rather than truncating at 200.
+   *
+   * Use this when you need EVERY open task (status refresh, audit sweeps,
+   * backfills). Use `listOpenTasks` when you need a small bounded slice
+   * (prompt injection).
+   *
+   * @example
+   * for await (const batch of memory.iterateOpenTasks(scope, { batchSize: 200 })) {
+   *   for (const task of batch) {
+   *     await processTask(task);
+   *   }
+   * }
+   */
+  async *iterateOpenTasks(
+    scope: ScopeFilter,
+    opts: {
+      assigneeId?: EntityId;
+      projectId?: EntityId;
+      batchSize?: number;
+      /** Resume from a cursor returned by a prior interrupted iteration. */
+      startAfter?: string;
+    } = {},
+  ): AsyncIterable<IEntity[]> {
+    assertNotDestroyed(this, 'iterateOpenTasks');
+    const batchSize = Math.max(1, Math.min(opts.batchSize ?? 200, 1000));
+    const metadataFilter: Record<string, unknown> = {
+      state: { $in: this._taskStates.active },
+    };
+    if (opts.assigneeId) metadataFilter.assigneeId = opts.assigneeId;
+    if (opts.projectId) metadataFilter.projectId = opts.projectId;
+    let cursor = opts.startAfter;
+    while (true) {
+      const page = await this.store.listEntities(
+        { type: 'task', metadataFilter },
+        { limit: batchSize, cursor, orderBy: [...OPEN_TASK_ORDER_BY] },
+        scope,
+      );
+      if (page.items.length > 0) yield page.items;
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+  }
+
+  /**
+   * Async iterator over recent topic entities visible to `scope`, yielded in
+   * batches. Sort: `updatedAt` desc. The `days` window is applied client-side
+   * (consistent with `listRecentTopics`); iteration stops when either the
+   * store is exhausted OR the first batch with all entries older than the
+   * cutoff is encountered (since sort is desc, no younger ones exist past
+   * that point).
+   */
+  async *iterateRecentTopics(
+    scope: ScopeFilter,
+    opts: { days?: number; batchSize?: number; startAfter?: string } = {},
+  ): AsyncIterable<IEntity[]> {
+    assertNotDestroyed(this, 'iterateRecentTopics');
+    const batchSize = Math.max(1, Math.min(opts.batchSize ?? 200, 1000));
+    const days = Math.max(1, opts.days ?? 30);
+    const cutoff = new Date(Date.now() - days * MILLIS_PER_DAY);
+    let cursor = opts.startAfter;
+    while (true) {
+      const page = await this.store.listEntities(
+        { type: 'topic' },
+        {
+          limit: batchSize,
+          cursor,
+          orderBy: { field: 'updatedAt', direction: 'desc' },
+        },
+        scope,
+      );
+      if (page.items.length === 0) {
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+        continue;
+      }
+      const filtered = page.items.filter((e) => e.updatedAt.getTime() >= cutoff.getTime());
+      if (filtered.length > 0) yield filtered;
+      // Early termination: if any item fell outside the window, all subsequent
+      // pages (sorted older-first by desc cursor advance) will also be outside.
+      if (filtered.length < page.items.length) break;
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+  }
+
+  /**
+   * Generic async iterator over entities matching `filter`. The caller MUST
+   * pass `orderBy` to guarantee deterministic iteration — without it, the
+   * adapter's natural order kicks in and the iteration result is non-portable
+   * across stores. This method does not warn (the adapter does) but does
+   * require the caller to be explicit.
+   */
+  async *iterateEntitiesByFilter(
+    filter: EntityListFilter,
+    scope: ScopeFilter,
+    opts: {
+      batchSize?: number;
+      startAfter?: string;
+      orderBy: EntityOrderBy | EntityOrderBy[];
+    },
+  ): AsyncIterable<IEntity[]> {
+    assertNotDestroyed(this, 'iterateEntitiesByFilter');
+    const batchSize = Math.max(1, Math.min(opts.batchSize ?? 200, 1000));
+    let cursor = opts.startAfter;
+    while (true) {
+      const page = await this.store.listEntities(
+        filter,
+        { limit: batchSize, cursor, orderBy: opts.orderBy },
+        scope,
+      );
+      if (page.items.length > 0) yield page.items;
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+  }
+
+  /**
+   * Generic async iterator over facts matching `query`. Like
+   * `iterateEntitiesByFilter`, the caller MUST pass `orderBy` (FactOrderBy
+   * accepts `observedAt | createdAt | confidence`) to ensure deterministic
+   * iteration across stores.
+   */
+  async *iterateFacts(
+    query: FactFilter,
+    scope: ScopeFilter,
+    opts: {
+      batchSize?: number;
+      startAfter?: string;
+      orderBy: FactOrderBy;
+    },
+  ): AsyncIterable<IFact[]> {
+    assertNotDestroyed(this, 'iterateFacts');
+    const batchSize = Math.max(1, Math.min(opts.batchSize ?? 200, 1000));
+    let cursor = opts.startAfter;
+    while (true) {
+      const page = await this.store.findFacts(
+        query,
+        { limit: batchSize, cursor, orderBy: opts.orderBy },
+        scope,
+      );
+      if (page.items.length > 0) yield page.items;
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
   }
 
   /**
@@ -3962,6 +4206,83 @@ function toDateMaybe(v: unknown): Date | undefined {
     return Number.isNaN(d.getTime()) ? undefined : d;
   }
   return undefined;
+}
+
+/**
+ * Truncation warning. Fires (once per call) when a flat-array list method
+ * returns a result whose count equals the requested limit AND the underlying
+ * page has more rows available (`nextCursor` set). Signals to the caller that
+ * data was silently dropped; recommends the iterator alternative.
+ *
+ * Suppress with `ONERINGAI_SUPPRESS_CAP_WARNINGS=1` for callers that genuinely
+ * want a capped result (e.g., prompt-token-budget builders).
+ */
+const capWarningSuppression = makeEnvFlag('ONERINGAI_SUPPRESS_CAP_WARNINGS');
+/** Test-only: reset the cached env-var read. */
+export function _resetCapWarningSuppression(): void {
+  capWarningSuppression.reset();
+}
+function warnIfTruncated(
+  method: string,
+  itemCount: number,
+  requestedLimit: number,
+  nextCursor: string | undefined,
+  iteratorHint: string,
+): void {
+  if (capWarningSuppression.isSet()) return;
+  if (itemCount < requestedLimit) return;
+  if (!nextCursor) return;
+  console.warn(
+    `[oneringai] MemorySystem.${method} returned ${itemCount} items (== limit) and more ` +
+      `exist. Use memory.${iteratorHint}(scope) to consume the full result set, or pass an ` +
+      `explicit higher limit if you want a known truncation. Suppress with ` +
+      `ONERINGAI_SUPPRESS_CAP_WARNINGS=1.`,
+  );
+}
+
+/**
+ * Cross-source relevance ordering for related-tasks output. Matches the
+ * push-down sort on `listOpenTasks` / `resolveRelatedTasks` per-role query
+ * so the final dedup'd slice keeps overdue/soonest-due tasks first regardless
+ * of which source contributed them.
+ *
+ * Sort: dueAt asc nulls-last, then updatedAt desc, then id asc tiebreak.
+ */
+function compareTaskByDueThenRecency(a: IEntity, b: IEntity): number {
+  const da = toDateMaybe((a.metadata as Record<string, unknown> | undefined)?.dueAt);
+  const db = toDateMaybe((b.metadata as Record<string, unknown> | undefined)?.dueAt);
+  if (da && db) {
+    const diff = da.getTime() - db.getTime();
+    if (diff !== 0) return diff;
+  } else if (da && !db) {
+    return -1; // a has dueAt, b doesn't — a wins (nulls-last)
+  } else if (!da && db) {
+    return 1;
+  }
+  const ua = a.updatedAt ? a.updatedAt.getTime() : 0;
+  const ub = b.updatedAt ? b.updatedAt.getTime() : 0;
+  if (ua !== ub) return ub - ua; // desc
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Relevance ordering for related-events output. Sort: when desc (most-recent
+ * past + upcoming first), nulls-last, then id asc tiebreak. Mirrors the
+ * push-down sort on `resolveRelatedEvents` first-tier query.
+ */
+function compareEventByWhenDesc(
+  a: { event: IEntity; when?: Date },
+  b: { event: IEntity; when?: Date },
+): number {
+  if (a.when && b.when) {
+    const diff = b.when.getTime() - a.when.getTime();
+    if (diff !== 0) return diff;
+  } else if (a.when && !b.when) {
+    return -1;
+  } else if (!a.when && b.when) {
+    return 1;
+  }
+  return a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0;
 }
 
 function validateTaskStates(cfg: TaskStatesConfig | undefined): TaskStatesConfig {

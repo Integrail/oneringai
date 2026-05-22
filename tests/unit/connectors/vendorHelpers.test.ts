@@ -285,16 +285,25 @@ describe('buildAuthConfig — RefreshStrategy application', () => {
 });
 
 describe('buildAuthConfig — queryParamName propagation', () => {
-  it('api_key: ipapi template propagates queryParamName=key from defaults', async () => {
-    const { createConnectorFromTemplate } = await import('@/connectors/vendors/index.js');
-    const c = createConnectorFromTemplate('test-ipapi', 'ipapi', 'api-key', {
-      apiKey: 'secret-key-xyz',
-    });
-    const auth = c.config.auth as {
-      type: 'api_key';
-      apiKey: string;
-      queryParamName?: string;
-    };
+  // No shipped vendor template currently uses query-param auth, so we exercise
+  // the propagation logic against a hand-built template directly. This keeps
+  // the test independent of which vendors happen to use query-param auth.
+  it('api_key: queryParamName in template defaults propagates to ConnectorAuth', async () => {
+    const { buildAuthConfig } = await import('@/connectors/vendors/index.js');
+    const auth = buildAuthConfig(
+      {
+        id: 'api-key',
+        name: 'API Key',
+        type: 'api_key',
+        description: 'Synthetic query-param vendor for tests',
+        requiredFields: ['apiKey'],
+        defaults: {
+          type: 'api_key',
+          queryParamName: 'key',
+        } as never,
+      },
+      { apiKey: 'secret-key-xyz' },
+    ) as { type: 'api_key'; apiKey: string; queryParamName?: string };
     expect(auth.type).toBe('api_key');
     expect(auth.apiKey).toBe('secret-key-xyz');
     expect(auth.queryParamName).toBe('key');
@@ -315,10 +324,16 @@ describe('buildAuthConfig — queryParamName propagation', () => {
 });
 
 describe('Connector.fetch — queryParamName auth', () => {
-  it('injects ?key=<apiKey> into URL and omits Authorization header', async () => {
-    const { createConnectorFromTemplate } = await import('@/connectors/vendors/index.js');
-    const c = createConnectorFromTemplate('test-ipapi-fetch', 'ipapi', 'api-key', {
-      apiKey: 'qp-secret-123',
+  it('injects ?<param>=<apiKey> into URL and omits Authorization header', async () => {
+    const { Connector } = await import('@/core/Connector.js');
+    const c = Connector.create({
+      name: 'test-qp-fetch',
+      baseURL: 'https://example.test',
+      auth: {
+        type: 'api_key',
+        apiKey: 'qp-secret-123',
+        queryParamName: 'key',
+      },
     });
 
     const captured: { url?: string; headers?: Record<string, string> } = {};
@@ -330,14 +345,14 @@ describe('Connector.fetch — queryParamName auth', () => {
     }) as typeof fetch;
 
     try {
-      await c.fetch('/json/8.8.8.8/json/');
+      await c.fetch('/lookup/8.8.8.8');
     } finally {
       globalThis.fetch = originalFetch;
     }
 
     expect(captured.url).toContain('key=qp-secret-123');
     // The base URL should still be present.
-    expect(captured.url).toMatch(/^https:\/\/ipapi\.co\//);
+    expect(captured.url).toMatch(/^https:\/\/example\.test\//);
     // No Authorization header should have been added.
     const headers = captured.headers ?? {};
     expect(headers['Authorization']).toBeUndefined();

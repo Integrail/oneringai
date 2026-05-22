@@ -49,6 +49,13 @@ export interface OAuthConfig {
    * `exp` more than 10 minutes in the future; set to 540 for GitHub Apps.
    */
   tokenLifetimeSeconds?: number;
+  /**
+   * JWT `sub` claim override. For Google Workspace domain-wide delegation
+   * this is the email of the user being impersonated; the resulting access
+   * token acts as that user. When unset, `sub` defaults to `clientId`
+   * (RFC 7523 convention for service-account self-auth).
+   */
+  subject?: string;
 
   // Static Token specific (NEW)
   staticToken?: string; // Static API key/token (for OpenAI, Anthropic, etc.)

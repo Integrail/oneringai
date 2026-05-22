@@ -239,7 +239,9 @@ describe('Google tools — actAs lock', () => {
       fetchSpy.mockRestore();
     });
 
-    it('delegated tool always hits /me/... regardless of actAs / targetUser', async () => {
+    it('delegated tool always hits /primary/... regardless of actAs / targetUser', async () => {
+      // Google Calendar API requires the reserved keyword `primary` (not `me`)
+      // for the authenticated user's primary calendar — see getGoogleCalendarUserId.
       const c = makeDelegatedConnector('g-rt-3');
       const fetchSpy = vi.spyOn(c, 'fetch');
       fetchSpy.mockResolvedValue(mockResponse({ items: [] }));
@@ -252,7 +254,8 @@ describe('Google tools — actAs lock', () => {
 
       expect(result.success).toBe(true);
       const calledUrl = fetchSpy.mock.calls[0]![0] as string;
-      expect(calledUrl.includes('/calendar/v3/calendars/me/events')).toBe(true);
+      expect(calledUrl.includes('/calendar/v3/calendars/primary/events')).toBe(true);
+      expect(calledUrl).not.toContain('locked@acme.com');
       fetchSpy.mockRestore();
     });
   });

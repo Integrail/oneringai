@@ -46,6 +46,7 @@ import type {
 } from './IMongoCollectionLike.js';
 import { mergeFilters, scopeToFilter } from './scopeFilter.js';
 import { ensureIndexes } from './indexes.js';
+import { warnIfLimitWithoutOrder } from '../orderByWarning.js';
 import {
   factFilterToMongo,
   formatCursor,
@@ -417,6 +418,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<Page<IEntity>> {
     this.assertLive();
+    warnIfLimitWithoutOrder('MongoMemoryAdapter', 'listEntities', opts);
     const clauses: MongoFilter[] = [this.scope(scope)];
     if (filter.archived === true) clauses.push({ archived: true });
     else if (filter.archived === false) clauses.push(ARCHIVED_HIDDEN);
@@ -496,6 +498,7 @@ export class MongoMemoryAdapter implements IMemoryStore {
     scope: ScopeFilter,
   ): Promise<Page<IFact>> {
     this.assertLive();
+    warnIfLimitWithoutOrder('MongoMemoryAdapter', 'findFacts', opts);
     const target = this.pickFactsCollection(filter);
     const mongoFilter = factFilterToMongo(filter, scope, {
       disableWorld: this.disableWorldVisibility,

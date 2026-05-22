@@ -984,6 +984,7 @@ export class Connector {
       privateKey: auth.privateKey,
       privateKeyPath: auth.privateKeyPath,
       audience: auth.audience,
+      subject: auth.subject,
       tokenRequestStyle: auth.tokenRequestStyle,
       tokenLifetimeSeconds: auth.tokenLifetimeSeconds,
       refreshBeforeExpiry: auth.refreshBeforeExpiry,
@@ -1005,6 +1006,7 @@ export class Connector {
       privateKeyPath: auth.privateKeyPath,
       scope: auth.scope,
       audience: auth.audience,
+      subject: auth.subject,
       storage: Connector.defaultStorage,
       storageKey: this.name,
     });

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Pagination without silent caps (L0 sort fixes + L1 iterators + L2 truncation warnings)
+
+Closes a class of silent data-loss bugs where read APIs returned items in adapter insertion order ("first N rows of the table") under the guise of relevance. The cap pretended to keep "the most relevant" but actually kept "the first stored." LLM context (related tasks, related events, predicate vocabulary) was biased by storage position, not by what the caller asked for.
+
+**L0 — Sort fixes (correctness):**
+- `resolveRelatedTasks` (`MemorySystem.ts:2089`) — every internal `listEntities` + `findFacts` now passes `orderBy`. Per-role queries sort `[metadata.dueAt asc nulls-last, updatedAt desc, id asc]`; fact-context fallback sorts `observedAt desc`. Final dedup'd values sorted by `compareTaskByDueThenRecency` before the slice so cross-source merge order doesn't bias by source.
+- `resolveRelatedEvents` (`MemorySystem.ts:2153`) — first-tier `listEntities({type:'event'})` now sorts `[metadata.startTime desc, id asc]` so the most-recent events survive the 200-cap (previously: insertion-order, so a meeting tomorrow could be dropped while a 89-day-old one stayed). Fact-context + tier-3 `attended`/`hosted` fact queries sort `observedAt desc`. Final dedup'd values sorted by `compareEventByWhenDesc`.
+- `getContext` topFacts (`MemorySystem.ts:1853`) — over-fetch ratio bumped from `3×` to `10×` (new `TOP_FACTS_OVERFETCH_MULTIPLIER` constant). The in-memory ranker now sees 150 candidates (default 15 × 10) before slicing to 15, so high-importance facts at storage positions 16-149 actually reach the ranker.
+- `PredicateRegistry.renderForPrompt` — each category now sorted by `(defaultImportance desc, name asc)` before `.slice(0, maxPerCategory)`. Highest-importance predicates within each category survive the cap; ties broken by name for stability.
+
+**L0 — Adapter contract hardening:**
+- `MongoMemoryAdapter.listEntities` + `findFacts` and `InMemoryAdapter.listEntities` + `findFacts` now emit a one-time `console.warn` when called with `limit` set but no `orderBy`. Without a sort, the adapter falls back to insertion order (Mongo `_id` asc, InMemory `Map.values()` iteration) — that's silent, position-biased truncation. The warning includes a stack trace pointing at the offending caller. Suppress with env var `ONERINGAI_SUPPRESS_ORDER_WARNINGS=1`.
+
+**L1 — Async iterators (no silent caps, ever):**
+- Four new methods on `MemorySystem` for callers that need EVERY matching row (audit sweeps, status refresh, backfills) rather than a bounded slice:
+  - `iterateOpenTasks(scope, {assigneeId?, projectId?, batchSize?, startAfter?})` — yields IEntity[] batches via cursor pagination. Sort matches `listOpenTasks`. Default `batchSize: 200`, max 1000. Pass `startAfter` cursor to resume a long-running job from a checkpoint.
+  - `iterateRecentTopics(scope, {days?, batchSize?, startAfter?})` — sort `updatedAt desc`; early-terminates once a batch contains topics older than the window.
+  - `iterateEntitiesByFilter(filter, scope, {batchSize?, startAfter?, orderBy})` — generic entity iteration; caller MUST pass orderBy.
+  - `iterateFacts(query, scope, {batchSize?, startAfter?, orderBy})` — generic fact iteration; caller MUST pass orderBy.
+- The existing flat-array `listOpenTasks` / `listRecentTopics` are unchanged in signature; new iterators are additive.
+
+**L2 — Truncation warnings on flat-array list methods:**
+- `listOpenTasks` and `listRecentTopics` now emit a `console.warn` when their result length equals the requested limit AND the underlying page has `nextCursor` set (i.e., more rows exist that were dropped). Recommends the matching `iterateX` for full-coverage cases. Suppress with `ONERINGAI_SUPPRESS_CAP_WARNINGS=1` for genuine prompt-budget callers. The warning attribute uses the USER-facing result count + user's `limit` (not the internal over-fetch ceiling) so the message accurately reflects what the caller sees.
+
+**Internal cleanup (DRY / KISS):**
+- Shared `makeEnvFlag()` helper in `src/memory/envFlag.ts` — single source of truth for the cap/order warning suppression pattern (cached env-var read + test-only reset).
+- `OPEN_TASK_ORDER_BY` module-level constant — used by `listOpenTasks`, `iterateOpenTasks`, and `resolveRelatedTasks` per-role push-down. Previously each of the three sites declared its own array; the `iterateOpenTasks` array had an `id asc` tiebreak that `listOpenTasks` didn't, so the docstring claim "Same as listOpenTasks" was slightly wrong. Now genuinely identical.
+- Named cap constants: `RELATED_FACT_FETCH_LIMIT` (200), `RELATED_PREDICATE_FACT_LIMIT` (100), `RECENT_TOPICS_OVERFETCH_MULTIPLIER` (4), `RECENT_TOPICS_OVERFETCH_CEILING` (200). Replaces the magic `200` / `100` / `4` literals scattered across `resolveRelatedTasks`, `resolveRelatedEvents`, and `listRecentTopics`.
+
+**Tests:**
+- New `tests/unit/memory/MemorySystem.pagination-no-silent-caps.test.ts` — 18 tests covering sort regression (overdue/soonest-due wins under cap; recent events win under cap; predicate importance ordering), iterator coverage (500 tasks via cursor; dueAt-asc-nulls-last across batches; filter honored; empty set), and adapter + cap warning fire/suppress paths.
+- One existing test updated: `MemorySystem.lifecycle.test.ts` `includeExcluded: true surfaces them` now passes `maxPerCategory: 50` because `mentioned` (importance 0.3) correctly drops below `met_with` (0.6) and the 0.4-tier predicates under the default cap of 5 — the test was implicitly relying on the broken insertion-order sort.
+
+**Not in scope (filed as separate follow-ups):**
+- `defaultExtractionPrompt.ts` prompt-budget caps (40 entities, 2 aliases, 5 examples) — legitimate token-budget controls; document, don't change.
+- `DEFAULT_EMBED_SOURCE_CHAR_LIMIT = 32_000` (`MemorySystem.ts`) — embeddings miss content past 32k chars; separate plan.
+- `DEFAULT_STATE_HISTORY_CAP = 200` on task `metadata.stateHistory` — write-side cap with documented escape hatch (the `state_changed` fact graph keeps full history); not a read-API issue.
+- Pushing `metadata.startTime` range filter into adapter `metadataFilter` so `resolveRelatedEvents` doesn't have to apply the 90-day window client-side after the 200-cap.
+
 ### Memory — Documents (long-form work artefacts)
 
 Documents are now a first-class concept in the memory layer — entities with `type='document'` carrying long-form content in `metadata.body`. Pure convention over the existing `IEntity` / `IFact` model: same storage, same permissions, same scope filtering. Agents create / update / attach / search documents using the existing entity + fact tools plus **one new read tool** (`memory_search_documents`). Six gaps closed; no new collections.
