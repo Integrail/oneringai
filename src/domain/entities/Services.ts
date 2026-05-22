@@ -416,12 +416,12 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
 
   // ============ Geolocation ============
   {
-    id: 'ipapi',
-    name: 'ipapi',
+    id: 'ipinfo',
+    name: 'ipinfo',
     category: 'other',
-    urlPattern: /ipapi\.co/i,
-    baseURL: 'https://ipapi.co',
-    docsURL: 'https://ipapi.co/api/',
+    urlPattern: /ipinfo\.io/i,
+    baseURL: 'https://api.ipinfo.io',
+    docsURL: 'https://ipinfo.io/developers',
   },
 
   // ============ Other ============

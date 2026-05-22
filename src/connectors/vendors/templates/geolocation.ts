@@ -1,22 +1,21 @@
 /**
- * Geolocation Vendor Templates (ipapi.co)
+ * Geolocation Vendor Templates (ipinfo.io)
  *
- * ipapi.co authenticates by appending the API key as a `?key=` query
- * parameter. Uses the `queryParamName` field on APIKeyConnectorAuth so
- * `connector.fetch()` injects the key into the URL and skips the auth header.
+ * ipinfo.io authenticates with a Bearer token in the Authorization header.
+ * Endpoint shape: `GET /lite/{ip}` (lite plan — country-level) or
+ * `GET /{ip}` (paid plans — full city/region/coordinates).
  */
 import type { VendorTemplate } from '../types.js';
 
-export const ipapiTemplate: VendorTemplate = {
-    id: 'ipapi',
-    name: 'ipapi',
-    serviceType: 'ipapi',
-    baseURL: 'https://ipapi.co',
-    docsURL: 'https://ipapi.co/api/',
-    credentialsSetupURL: 'https://ipapi.co/#pricing',
+export const ipinfoTemplate: VendorTemplate = {
+    id: 'ipinfo',
+    name: 'ipinfo',
+    serviceType: 'ipinfo',
+    baseURL: 'https://api.ipinfo.io',
+    docsURL: 'https://ipinfo.io/developers',
+    credentialsSetupURL: 'https://ipinfo.io/signup',
     category: 'other',
-    notes:
-        'IP-address-based geolocation lookup. API key is sent as the `key` query parameter.',
+    notes: 'IP-address-based geolocation lookup. API key sent as a Bearer token in the Authorization header.',
 
     authTemplates: [
         {
@@ -24,11 +23,12 @@ export const ipapiTemplate: VendorTemplate = {
             name: 'API Key',
             type: 'api_key',
             description:
-                'ipapi.co API key. Get one at ipapi.co/#pricing.',
+                'ipinfo.io access token. Free tier supports country-level lookups (/lite/{ip}); paid plans add city/region. Get one at ipinfo.io/signup.',
             requiredFields: ['apiKey'],
             defaults: {
                 type: 'api_key',
-                queryParamName: 'key',
+                headerName: 'Authorization',
+                headerPrefix: 'Bearer',
             },
         },
     ],
