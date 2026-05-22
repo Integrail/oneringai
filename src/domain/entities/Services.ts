@@ -414,6 +414,16 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     docsURL: 'https://docs.zenrows.com/universal-scraper-api/api-reference',
   },
 
+  // ============ Geolocation ============
+  {
+    id: 'ipapi',
+    name: 'ipapi',
+    category: 'other',
+    urlPattern: /ipapi\.co/i,
+    baseURL: 'https://ipapi.co',
+    docsURL: 'https://ipapi.co/api/',
+  },
+
   // ============ Other ============
   {
     id: 'twilio',

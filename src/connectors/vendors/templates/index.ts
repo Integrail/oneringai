@@ -63,6 +63,9 @@ export {
 // Scrape
 export { zenrowsTemplate } from './scrape.js';
 
+// Geolocation
+export { ipapiTemplate } from './geolocation.js';
+
 // Other
 export { twilioTemplate, zendeskTemplate, intercomTemplate, shopifyTemplate } from './other.js';
 
@@ -113,6 +116,7 @@ import {
   rapidapiSearchTemplate,
 } from './search.js';
 import { zenrowsTemplate } from './scrape.js';
+import { ipapiTemplate } from './geolocation.js';
 import { twilioTemplate, zendeskTemplate, intercomTemplate, shopifyTemplate } from './other.js';
 import type { VendorTemplate } from '../types.js';
 
@@ -180,6 +184,9 @@ export const allVendorTemplates: VendorTemplate[] = [
 
   // Scrape
   zenrowsTemplate,
+
+  // Geolocation
+  ipapiTemplate,
 
   // Other
   twilioTemplate,

@@ -15,6 +15,7 @@ import {
   microsoftFetch,
   formatAttendees,
   formatMicrosoftToolError,
+  graphDateTimeToUtcIso,
 } from './types.js';
 
 export interface FindMeetingSlotsArgs {
@@ -138,16 +139,21 @@ EXAMPLES:
           }
         );
 
-        const slots = (result.meetingTimeSuggestions ?? []).map((s) => ({
-          start: s.meetingTimeSlot.start.dateTime,
-          end: s.meetingTimeSlot.end.dateTime,
-          timeZone: s.meetingTimeSlot.start.timeZone,
-          confidence: String(s.confidence),
-          attendeeAvailability: (s.attendeeAvailability ?? []).map((a) => ({
-            attendee: a.attendee.emailAddress.address,
-            availability: a.availability,
-          })),
-        }));
+        const slots = (result.meetingTimeSuggestions ?? []).map((s) => {
+          const slotTz = s.meetingTimeSlot.start.timeZone;
+          return {
+            // UTC ISO Z (see graphDateTimeToUtcIso) — Graph returns naïve
+            // wall-clock; normalize so downstream sees an unambiguous instant.
+            start: graphDateTimeToUtcIso(s.meetingTimeSlot.start.dateTime, slotTz),
+            end: graphDateTimeToUtcIso(s.meetingTimeSlot.end.dateTime, s.meetingTimeSlot.end.timeZone ?? slotTz),
+            timeZone: slotTz,
+            confidence: String(s.confidence),
+            attendeeAvailability: (s.attendeeAvailability ?? []).map((a) => ({
+              attendee: a.attendee.emailAddress.address,
+              availability: a.availability,
+            })),
+          };
+        });
 
         return {
           success: true,

@@ -224,11 +224,14 @@ export function buildAuthConfig(
       apiKey = Buffer.from(`${basicUser}:${apiKey}`).toString('base64');
     }
 
+    const queryParamName = (defaults as { queryParamName?: string }).queryParamName;
+
     return {
       type: 'api_key',
       apiKey,
       headerName: (defaults as { headerName?: string }).headerName ?? 'Authorization',
       headerPrefix,
+      ...(queryParamName ? { queryParamName } : {}),
       ...(Object.keys(extra).length > 0 ? { extra } : {}),
     };
   }

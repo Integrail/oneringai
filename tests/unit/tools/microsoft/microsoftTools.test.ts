@@ -14,6 +14,7 @@ import {
   isTeamsMeetingUrl,
   resolveMeetingId,
   MicrosoftAPIError,
+  graphDateTimeToUtcIso,
 } from '../../../../src/tools/microsoft/types.js';
 import { createDraftEmailTool } from '../../../../src/tools/microsoft/createDraftEmail.js';
 import { createSendEmailTool } from '../../../../src/tools/microsoft/sendEmail.js';
@@ -21,6 +22,8 @@ import { createMeetingTool } from '../../../../src/tools/microsoft/createMeeting
 import { createEditMeetingTool } from '../../../../src/tools/microsoft/editMeeting.js';
 import { createGetMeetingTranscriptTool } from '../../../../src/tools/microsoft/getMeetingTranscript.js';
 import { createFindMeetingSlotsTool } from '../../../../src/tools/microsoft/findMeetingSlots.js';
+import { createListMeetingsTool } from '../../../../src/tools/microsoft/listMeetings.js';
+import { createGetMeetingTool } from '../../../../src/tools/microsoft/getMeeting.js';
 
 // Import to trigger side-effect registration
 import '../../../../src/tools/microsoft/index.js';
@@ -297,6 +300,137 @@ describe('Microsoft Graph Tools', () => {
 
     it('should handle whitespace', () => {
       expect(isTeamsMeetingUrl('  https://teams.microsoft.com/l/meetup-join/19%3ameeting_X/0  ')).toBe(true);
+    });
+  });
+
+  // ========================================================================
+  // graphDateTimeToUtcIso
+  // ========================================================================
+
+  describe('graphDateTimeToUtcIso', () => {
+    it('treats naïve string + Europe/Berlin (CEST = UTC+2 in May) as wall-clock in zone', () => {
+      // 11:00 wall-clock in Europe/Berlin on 2026-05-22 (CEST) = 09:00 UTC
+      expect(graphDateTimeToUtcIso('2026-05-22T11:00:00.0000000', 'Europe/Berlin')).toBe(
+        '2026-05-22T09:00:00.000Z',
+      );
+    });
+
+    it('treats naïve string + UTC as already-UTC', () => {
+      expect(graphDateTimeToUtcIso('2026-05-22T09:00:00.0000000', 'UTC')).toBe(
+        '2026-05-22T09:00:00.000Z',
+      );
+    });
+
+    it('defaults to UTC when timeZone is missing', () => {
+      expect(graphDateTimeToUtcIso('2026-05-22T09:00:00', undefined)).toBe(
+        '2026-05-22T09:00:00.000Z',
+      );
+    });
+
+    it('preserves an instant carrying explicit Z', () => {
+      expect(graphDateTimeToUtcIso('2026-05-22T09:00:00.000Z', 'Europe/Berlin')).toBe(
+        '2026-05-22T09:00:00.000Z',
+      );
+    });
+
+    it('preserves an instant carrying an explicit offset', () => {
+      expect(graphDateTimeToUtcIso('2026-05-22T11:00:00+02:00', 'Europe/Berlin')).toBe(
+        '2026-05-22T09:00:00.000Z',
+      );
+    });
+
+    it('handles DST correctly — January in Europe/Berlin is CET = UTC+1', () => {
+      // 11:00 wall-clock in Europe/Berlin in winter (CET) = 10:00 UTC
+      expect(graphDateTimeToUtcIso('2026-01-15T11:00:00.0000000', 'Europe/Berlin')).toBe(
+        '2026-01-15T10:00:00.000Z',
+      );
+    });
+
+    it('handles America/New_York EST (UTC-5)', () => {
+      // 09:00 wall-clock in New York in winter = 14:00 UTC
+      expect(graphDateTimeToUtcIso('2026-01-15T09:00:00', 'America/New_York')).toBe(
+        '2026-01-15T14:00:00.000Z',
+      );
+    });
+
+    it('returns empty string for empty input', () => {
+      expect(graphDateTimeToUtcIso('', 'Europe/Berlin')).toBe('');
+      expect(graphDateTimeToUtcIso(undefined, 'Europe/Berlin')).toBe('');
+    });
+
+    it('falls back to naïve-as-UTC interpretation for unknown IANA zones', () => {
+      // Garbage zone — never throw; return a Z-form value.
+      const out = graphDateTimeToUtcIso('2026-05-22T09:00:00', 'Made/Up_Zone');
+      expect(out.endsWith('Z')).toBe(true);
+    });
+  });
+
+  // ========================================================================
+  // list_meetings — timezone normalization integration
+  // ========================================================================
+
+  describe('list_meetings UTC normalization', () => {
+    it('normalizes Graph naïve dateTime + IANA zone to UTC ISO Z', async () => {
+      const connector = createMockConnector('list-meetings-tz');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      // Mock Graph response shape: naïve dateTime + separate IANA timeZone.
+      fetchSpy.mockResolvedValueOnce(
+        mockResponse({
+          value: [
+            {
+              id: 'evt1',
+              subject: 'Stand Up',
+              start: { dateTime: '2026-05-22T11:00:00.0000000', timeZone: 'Europe/Berlin' },
+              end: { dateTime: '2026-05-22T12:00:00.0000000', timeZone: 'Europe/Berlin' },
+              isOnlineMeeting: false,
+            },
+          ],
+        }),
+      );
+
+      const tool = createListMeetingsTool(connector);
+      const result = await tool.execute({
+        startDateTime: '2026-05-22T00:00:00',
+        endDateTime: '2026-05-22T23:59:59',
+        timeZone: 'Europe/Berlin',
+      });
+
+      expect(result.success).toBe(true);
+      // 11:00 Berlin (CEST) = 09:00 UTC — the +2h-from-CEST bug surfaces here
+      // if normalization is broken.
+      expect(result.meetings![0]!.start).toBe('2026-05-22T09:00:00.000Z');
+      expect(result.meetings![0]!.end).toBe('2026-05-22T10:00:00.000Z');
+      expect(result.meetings![0]!.timeZone).toBe('Europe/Berlin');
+      fetchSpy.mockRestore();
+    });
+  });
+
+  // ========================================================================
+  // get_meeting — timezone normalization integration
+  // ========================================================================
+
+  describe('get_meeting UTC normalization', () => {
+    it('returns UTC ISO Z for start/end regardless of caller timeZone', async () => {
+      const connector = createMockConnector('get-meeting-tz');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      fetchSpy.mockResolvedValueOnce(
+        mockResponse({
+          id: 'evt1',
+          subject: 'ICOS <> ChatRevenue',
+          start: { dateTime: '2026-05-22T16:00:00.0000000', timeZone: 'Europe/Berlin' },
+          end: { dateTime: '2026-05-22T22:00:00.0000000', timeZone: 'Europe/Berlin' },
+          isOnlineMeeting: true,
+        }),
+      );
+
+      const tool = createGetMeetingTool(connector);
+      const result = await tool.execute({ eventId: 'evt1' });
+
+      expect(result.success).toBe(true);
+      // 16:00-22:00 Berlin (CEST, +2) = 14:00-20:00 UTC
+      expect(result.start).toBe('2026-05-22T14:00:00.000Z');
+      expect(result.end).toBe('2026-05-22T20:00:00.000Z');
+      fetchSpy.mockRestore();
     });
   });
 
@@ -991,7 +1125,11 @@ Bob: Hi Alice, thanks for setting this up.`;
 
         expect(result.success).toBe(true);
         expect(result.slots).toHaveLength(2);
-        expect(result.slots![0]!.start).toBe('2025-01-15T09:00:00');
+        // Graph returns naïve "2025-01-15T09:00:00" + timeZone "UTC"; the tool
+        // normalizes to canonical UTC ISO Z so all downstream consumers see an
+        // unambiguous instant.
+        expect(result.slots![0]!.start).toBe('2025-01-15T09:00:00.000Z');
+        expect(result.slots![0]!.end).toBe('2025-01-15T09:30:00.000Z');
         expect(result.slots![0]!.confidence).toBe('100');
         expect(result.slots![0]!.attendeeAvailability).toHaveLength(2);
         expect(result.slots![0]!.attendeeAvailability[0]!.attendee).toBe('alice@example.com');

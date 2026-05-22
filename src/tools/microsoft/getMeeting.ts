@@ -18,6 +18,7 @@ import {
   TARGET_USER_PARAM_SCHEMA,
   microsoftFetch,
   formatMicrosoftToolError,
+  graphDateTimeToUtcIso,
 } from './types.js';
 
 export interface GetMeetingArgs {
@@ -111,6 +112,9 @@ Look at the joinUrl field in the result:
 PARAMETER FORMATS:
 - eventId: The calendar event ID string (starts with "AAMk..." or similar). Get this from a list_meetings result.
 
+RESPONSE FORMAT:
+"start" and "end" are returned as UTC ISO 8601 strings ending with "Z" (e.g. "2026-05-22T09:00:00.000Z"). The "timeZone" field carries the IANA zone for display only — never reconstruct an ISO string from a wall-clock value when passing times to other tools.
+
 EXAMPLES:
 - { "eventId": "AAMkADI1M2I3YzgtODg..." }`,
         parameters: {
@@ -164,13 +168,16 @@ EXAMPLES:
             : stripHtml(event.body.content);
         }
 
+        const tz = event.start?.timeZone;
         return {
           success: true,
           eventId: event.id,
           subject: event.subject,
-          start: event.start?.dateTime,
-          end: event.end?.dateTime,
-          timeZone: event.start?.timeZone,
+          // UTC ISO Z — see graphDateTimeToUtcIso for why naïve Graph times
+          // must be normalized here rather than at every consumer.
+          start: graphDateTimeToUtcIso(event.start?.dateTime, tz),
+          end: graphDateTimeToUtcIso(event.end?.dateTime, event.end?.timeZone ?? tz),
+          timeZone: tz,
           organizer: event.organizer?.emailAddress?.address,
           attendees: event.attendees
             ?.filter((a) => a.type !== 'resource')

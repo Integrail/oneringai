@@ -661,7 +661,18 @@ export class Connector {
       const token = await this.getToken(userId, accountId);
       const auth = this.config.auth;
 
-      // Build auth header
+      // Query-param auth (e.g., ipapi.co `?key=...`) — inject into URL and
+      // skip the auth header entirely.
+      let requestUrl = url;
+      const queryParamName =
+        auth.type === 'api_key' ? auth.queryParamName : undefined;
+      if (queryParamName) {
+        const parsed = new URL(requestUrl);
+        parsed.searchParams.set(queryParamName, token);
+        requestUrl = parsed.toString();
+      }
+
+      // Build auth header (skipped when key is in query param)
       let headerName = 'Authorization';
       let headerValue = `Bearer ${token}`;
 
@@ -676,13 +687,15 @@ export class Connector {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       try {
-        const response = await fetch(url, {
+        const response = await fetch(requestUrl, {
           ...options,
           signal: controller.signal,
-          headers: {
-            ...options?.headers,
-            [headerName]: headerValue,
-          },
+          headers: queryParamName
+            ? { ...options?.headers }
+            : {
+                ...options?.headers,
+                [headerName]: headerValue,
+              },
         });
 
         return response;
@@ -795,7 +808,7 @@ export class Connector {
       // Log error
       if (this.config.logging?.enabled) {
         logger.error(
-          { connector: this.name, url, latency, error: (error as Error).message },
+          { connector: this.name, url: this.scrubAuthQueryParam(url), latency, error: (error as Error).message },
           `Connector ${this.name} fetch failed: ${(error as Error).message}`
         );
       }
@@ -850,11 +863,33 @@ export class Connector {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * Strip the value of a known auth query parameter from a URL for logging.
+   * Used when `auth.queryParamName` is in play so the API key never lands in
+   * logs even if a caller passed a URL that already carried it, or a future
+   * change switches `logRequest`/`logResponse` to log the post-injection URL.
+   */
+  private scrubAuthQueryParam(url: string): string {
+    const auth = this.config.auth;
+    const paramName = auth.type === 'api_key' ? auth.queryParamName : undefined;
+    if (!paramName) return url;
+    try {
+      const parsed = new URL(url);
+      if (parsed.searchParams.has(paramName)) {
+        parsed.searchParams.set(paramName, '[REDACTED]');
+        return parsed.toString();
+      }
+      return url;
+    } catch {
+      return url;
+    }
+  }
+
   private logRequest(url: string, options?: RequestInit): void {
     const logData: Record<string, unknown> = {
       connector: this.name,
       method: options?.method ?? 'GET',
-      url,
+      url: this.scrubAuthQueryParam(url),
     };
 
     if (this.config.logging?.logHeaders && options?.headers) {
@@ -878,7 +913,7 @@ export class Connector {
 
   private logResponse(url: string, response: Response, latency: number): void {
     logger.debug(
-      { connector: this.name, url, status: response.status, latency },
+      { connector: this.name, url: this.scrubAuthQueryParam(url), status: response.status, latency },
       `Connector ${this.name} response`
     );
   }

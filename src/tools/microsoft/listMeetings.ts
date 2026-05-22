@@ -20,6 +20,7 @@ import {
   TARGET_USER_PARAM_SCHEMA,
   microsoftFetch,
   formatMicrosoftToolError,
+  graphDateTimeToUtcIso,
 } from './types.js';
 
 export interface ListMeetingsArgs {
@@ -58,12 +59,16 @@ function extractJoinUrl(event: GraphCalendarViewEvent): string | undefined {
  * Map a Graph API calendar event to a compact meeting entry.
  */
 function toMeetingEntry(event: GraphCalendarViewEvent): MeetingListEntry {
+  const tz = event.start?.timeZone ?? 'UTC';
   return {
     eventId: event.id,
     subject: event.subject ?? '(no subject)',
-    start: event.start?.dateTime ?? '',
-    end: event.end?.dateTime ?? '',
-    timeZone: event.start?.timeZone ?? 'UTC',
+    // Graph returns naïve dateTime + separate timeZone — normalize to UTC ISO
+    // `Z` here so downstream consumers (LLM, show_calendar widget) never see an
+    // ambiguous wall-clock string.
+    start: graphDateTimeToUtcIso(event.start?.dateTime, tz),
+    end: graphDateTimeToUtcIso(event.end?.dateTime, event.end?.timeZone ?? tz),
+    timeZone: tz,
     organizer: event.organizer?.emailAddress?.address,
     attendees: event.attendees
       ?.filter((a) => a.type !== 'resource')
@@ -133,6 +138,9 @@ PARAMETER FORMATS:
 - endDateTime: ISO 8601 WITHOUT timezone suffix. Example: "2025-01-17T23:59:59"
 - timeZone: IANA timezone string. Example: "America/New_York". Default: "UTC"
 - maxResults: integer, 1-100. Default: 25
+
+RESPONSE FORMAT:
+Each meeting's "start" and "end" are returned as UTC ISO 8601 strings ending with "Z" (e.g. "2026-05-22T09:00:00.000Z"), regardless of the timeZone you requested. The separate "timeZone" field carries the IANA zone the user/calendar was viewed in, for display only. When passing times to other tools (show_calendar, scheduling, etc.) use the "start"/"end" UTC values verbatim — never reconstruct an ISO string from a wall-clock value.
 
 EXAMPLES:
 - This week: { "startDateTime": "2025-01-13T00:00:00", "endDateTime": "2025-01-17T23:59:59", "timeZone": "America/New_York" }

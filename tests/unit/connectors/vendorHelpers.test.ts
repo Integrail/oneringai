@@ -283,3 +283,64 @@ describe('buildAuthConfig — RefreshStrategy application', () => {
     expect(auth.scope).not.toContain('offline_access');
   });
 });
+
+describe('buildAuthConfig — queryParamName propagation', () => {
+  it('api_key: ipapi template propagates queryParamName=key from defaults', async () => {
+    const { createConnectorFromTemplate } = await import('@/connectors/vendors/index.js');
+    const c = createConnectorFromTemplate('test-ipapi', 'ipapi', 'api-key', {
+      apiKey: 'secret-key-xyz',
+    });
+    const auth = c.config.auth as {
+      type: 'api_key';
+      apiKey: string;
+      queryParamName?: string;
+    };
+    expect(auth.type).toBe('api_key');
+    expect(auth.apiKey).toBe('secret-key-xyz');
+    expect(auth.queryParamName).toBe('key');
+  });
+
+  it('api_key: vendors without queryParamName in defaults do not get the field', async () => {
+    const { createConnectorFromTemplate } = await import('@/connectors/vendors/index.js');
+    // Stripe uses a standard Bearer header — no query-param auth.
+    const c = createConnectorFromTemplate('test-stripe', 'stripe', 'api-key', {
+      apiKey: 'sk_test_abc',
+    });
+    const auth = c.config.auth as {
+      type: 'api_key';
+      queryParamName?: string;
+    };
+    expect(auth.queryParamName).toBeUndefined();
+  });
+});
+
+describe('Connector.fetch — queryParamName auth', () => {
+  it('injects ?key=<apiKey> into URL and omits Authorization header', async () => {
+    const { createConnectorFromTemplate } = await import('@/connectors/vendors/index.js');
+    const c = createConnectorFromTemplate('test-ipapi-fetch', 'ipapi', 'api-key', {
+      apiKey: 'qp-secret-123',
+    });
+
+    const captured: { url?: string; headers?: Record<string, string> } = {};
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      captured.url = typeof input === 'string' ? input : input.toString();
+      captured.headers = (init?.headers ?? {}) as Record<string, string>;
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    try {
+      await c.fetch('/json/8.8.8.8/json/');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(captured.url).toContain('key=qp-secret-123');
+    // The base URL should still be present.
+    expect(captured.url).toMatch(/^https:\/\/ipapi\.co\//);
+    // No Authorization header should have been added.
+    const headers = captured.headers ?? {};
+    expect(headers['Authorization']).toBeUndefined();
+    expect(headers['authorization']).toBeUndefined();
+  });
+});

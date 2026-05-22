@@ -96,6 +96,15 @@ export interface APIKeyConnectorAuth {
   headerPrefix?: string; // Default: "Bearer"
 
   /**
+   * Send the API key as a URL query parameter instead of an HTTP header.
+   * When set, `connector.fetch()` injects `?<queryParamName>=<apiKey>` into
+   * the request URL and does NOT add an auth header. `headerName` and
+   * `headerPrefix` are ignored in that case. Used by vendors like ipapi.co
+   * that authenticate via `?key=...`.
+   */
+  queryParamName?: string;
+
+  /**
    * Vendor-specific extra credentials beyond the primary API key.
    * E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' }
    */
