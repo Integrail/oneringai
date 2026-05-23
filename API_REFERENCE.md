@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-05-15
+**Generated:** 2026-05-22
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (63 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (622 items)
+- [Other](#other) (628 items)
 
 ## Core
 
@@ -6268,7 +6268,7 @@ async storeList(_filter?: Record&lt;string, unknown&gt;, _context?: ToolContext)
 
 ### InMemoryAdapter `class`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:46`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:48`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -6543,7 +6543,7 @@ async semanticSearchEntities(
 **Parameters:**
 - `queryVector`: `number[]`
 - `filter`: `EntitySemanticSearchFilter`
-- `opts`: `SemanticSearchOptions & { minScore?: number | undefined; }`
+- `opts`: `SemanticSearchOptions & { minScore?: number | undefined; embeddingField?: EntityEmbeddingField | undefined; }`
 - `scope`: `ScopeFilter`
 
 **Returns:** `Promise&lt;{ entity: IEntity; score: number; }[]&gt;`
@@ -7090,7 +7090,7 @@ async getTotalSize(): Promise&lt;number&gt;
 
 ### InvalidTaskTransitionError `class`
 
-📍 [`src/memory/MemorySystem.ts:137`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:206`](src/memory/MemorySystem.ts)
 
 Thrown when `transitionTaskState` is called with `validate: 'strict'` and
 the (from, to) pair is not allowed by the caller-supplied transition matrix.
@@ -7296,7 +7296,7 @@ estimateSavings(component: IContextComponent): number
 
 ### MemoryPluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:318`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/MemoryPluginNextGen.ts:342`](src/core/context-nextgen/plugins/MemoryPluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7322,6 +7322,29 @@ getInstructions(): string
 ```
 
 **Returns:** `string`
+
+#### `prepare()`
+
+Force lazy bootstrap to complete.
+
+The plugin resolves `userEntityId` / `agentEntityId` / `groupEntityId`
+lazily on first `getContent()`. That's fine when the agent starts with
+an LLM turn — `getContent()` runs as part of building the first prompt.
+
+It's NOT fine when the agent starts with deterministic pre-steps (e.g.
+routines: `preSteps` execute before the first LLM turn). A pre-step
+invoking `memory_recall({ subject: 'me' })` calls
+`getOwnSubjectIds().userEntityId` — undefined → "no user scope" error.
+
+`prepare()` is the contract for "make sure your lazy state is ready
+before any tool you contribute is invoked". The routine runner calls it
+once after building the agent and before pre-steps fire. Idempotent.
+
+```typescript
+async prepare(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
 
 #### `getContent()`
 
@@ -7577,7 +7600,7 @@ async listKeys(): Promise&lt;string[]&gt;
 
 ### MemorySystem `class`
 
-📍 [`src/memory/MemorySystem.ts:240`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:309`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -8064,6 +8087,88 @@ async updateFactDetails(
 
 **Returns:** `Promise&lt;IFact&gt;`
 
+#### `applyEntityReconciliationOps()`
+
+Apply entity-anchored reconciliation operations (Pillar 2).
+
+Caller has:
+  1. Built an `entityReconciliationPrompt` for ONE entity's non-archived facts.
+  2. Run that prompt through an extractor (LLM call).
+  3. Parsed the LLM output into `ReconciliationOp[]` via `parseExtractionWithStatus`.
+
+This method dispatches the resulting ops against the fact graph:
+  - `update` → `updateFact` (value / details / observedAt patch).
+  - `archive` → `archiveFact`.
+  - `create` ops are REJECTED (counted as `rejectedHallucinated` in the
+    outcome) — Pillar 2 only resolves, never creates.
+
+factId validation: every `update`/`archive` op's `factId` MUST appear in
+`priorFacts`. Hallucinations are rejected with a warn-level log entry.
+
+Returns op-level counts so callers can log decisions + emit activity-log
+entries (per `feedback_log_every_decision`).
+
+```typescript
+async applyEntityReconciliationOps(
+    ops: ReconciliationOp[],
+    priorFacts: IFact[],
+    scope: ScopeFilter,
+    opts?:
+```
+
+**Parameters:**
+- `ops`: `ReconciliationOp[]`
+- `priorFacts`: `IFact[]`
+- `scope`: `ScopeFilter`
+- `opts`: `{ skepticFilter?: ((op: ReconciliationOp) =&gt; boolean) | undefined; sourceSignalId?: string | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;OperationOutcome&gt;`
+
+#### `updateFact()`
+
+Mutate a fact in-place. Used by per-conversation reconciliation
+(ExtractionResolver) to update `value` / `details` / `observedAt` /
+`sourceSignalId` / `evidenceQuote` on a prior fact when the LLM emits
+an `update` op — replacing the legacy "supersede chain" pattern that
+left tombstones behind.
+
+Restrictions:
+- Cannot change `subjectId`, `predicate`, `kind`, `objectId`, `id`,
+  `createdAt`, `archived` (use `archiveFact` / `restoreFact`).
+- Caller's scope must have write access to the fact.
+
+Side effects:
+- When `details` changes, re-computes `isSemantic`, clears stale
+  `embedding` + `summaryForEmbedding`, and re-embeds on the embedder
+  queue (best-effort).
+
+```typescript
+async updateFact(
+    id: FactId,
+    patch: Partial&lt;
+      Pick&lt;
+        IFact,
+        | 'value'
+        | 'details'
+        | 'observedAt'
+        | 'sourceSignalId'
+        | 'evidenceQuote'
+        | 'confidence'
+        | 'importance'
+        | 'metadata'
+      &gt;
+    &gt;,
+    scope: ScopeFilter,
+  ): Promise&lt;IFact&gt;
+```
+
+**Parameters:**
+- `id`: `string`
+- `patch`: `Partial&lt;Pick&lt;IFact, "metadata" | "value" | "details" | "confidence" | "evidenceQuote" | "sourceSignalId" | "importance" | "observedAt"&gt;&gt;`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;IFact&gt;`
+
 #### `findDuplicateFact()`
 
 Find an existing non-archived fact matching the `(subjectId, predicate,
@@ -8273,6 +8378,94 @@ async listRecentTopics(
 
 **Returns:** `Promise&lt;IEntity[]&gt;`
 
+#### `iterateOpenTasks()`
+
+Async iterator over all open tasks visible to `scope`, yielded in batches.
+
+Sort: `metadata.dueAt` asc nulls-last, then `updatedAt` desc, then `id`
+asc tiebreak. Same as `listOpenTasks`, but iterates the full result set
+rather than truncating at 200.
+
+Use this when you need EVERY open task (status refresh, audit sweeps,
+backfills). Use `listOpenTasks` when you need a small bounded slice
+(prompt injection).
+
+```typescript
+async *iterateOpenTasks(
+    scope: ScopeFilter,
+    opts:
+```
+
+**Parameters:**
+- `scope`: `ScopeFilter`
+- `opts`: `{ assigneeId?: string | undefined; projectId?: string | undefined; batchSize?: number | undefined; startAfter?: string | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `AsyncIterable&lt;IEntity[]&gt;`
+
+#### `iterateRecentTopics()`
+
+Async iterator over recent topic entities visible to `scope`, yielded in
+batches. Sort: `updatedAt` desc. The `days` window is applied client-side
+(consistent with `listRecentTopics`); iteration stops when either the
+store is exhausted OR the first batch with all entries older than the
+cutoff is encountered (since sort is desc, no younger ones exist past
+that point).
+
+```typescript
+async *iterateRecentTopics(
+    scope: ScopeFilter,
+    opts:
+```
+
+**Parameters:**
+- `scope`: `ScopeFilter`
+- `opts`: `{ days?: number | undefined; batchSize?: number | undefined; startAfter?: string | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `AsyncIterable&lt;IEntity[]&gt;`
+
+#### `iterateEntitiesByFilter()`
+
+Generic async iterator over entities matching `filter`. The caller MUST
+pass `orderBy` to guarantee deterministic iteration — without it, the
+adapter's natural order kicks in and the iteration result is non-portable
+across stores. This method does not warn (the adapter does) but does
+require the caller to be explicit.
+
+```typescript
+async *iterateEntitiesByFilter(
+    filter: EntityListFilter,
+    scope: ScopeFilter,
+    opts:
+```
+
+**Parameters:**
+- `filter`: `EntityListFilter`
+- `scope`: `ScopeFilter`
+- `opts`: `{ batchSize?: number | undefined; startAfter?: string | undefined; orderBy: EntityOrderBy | EntityOrderBy[]; }`
+
+**Returns:** `AsyncIterable&lt;IEntity[]&gt;`
+
+#### `iterateFacts()`
+
+Generic async iterator over facts matching `query`. Like
+`iterateEntitiesByFilter`, the caller MUST pass `orderBy` (FactOrderBy
+accepts `observedAt | createdAt | confidence`) to ensure deterministic
+iteration across stores.
+
+```typescript
+async *iterateFacts(
+    query: FactFilter,
+    scope: ScopeFilter,
+    opts:
+```
+
+**Parameters:**
+- `query`: `FactFilter`
+- `scope`: `ScopeFilter`
+- `opts`: `{ batchSize?: number | undefined; startAfter?: string | undefined; orderBy: FactOrderBy; }`
+
+**Returns:** `AsyncIterable&lt;IFact[]&gt;`
+
 #### `getProfile()`
 
 Resolve the most-specific profile visible to the caller.
@@ -8353,6 +8546,148 @@ async deriveFactsFor(entityId: EntityId, scope: ScopeFilter): Promise&lt;IFact[]
 
 **Returns:** `Promise&lt;IFact[]&gt;`
 
+#### `createDocument()`
+
+Create a new document. When `slug` is provided, the document carries
+`{kind:'canonical', value:'doc:<slug>'}` so subsequent lookups via
+`getDocument(slug)` resolve deterministically. When `attachTo` is set, an
+idempotent `has_document` fact is written linking the parent to the new
+document.
+
+Returns the created entity. Content-embedding refresh is queued
+asynchronously — read `pendingEmbeddings()` / `flushEmbeddings()` to
+observe.
+
+```typescript
+async createDocument(input: CreateDocumentInput, scope: ScopeFilter): Promise&lt;Document&gt;
+```
+
+**Parameters:**
+- `input`: `CreateDocumentInput`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;Document&gt;`
+
+#### `updateDocument()`
+
+Update a document — body, role, format, summary, or extra metadata. All
+fields optional; only provided keys are touched (shallow overwrite over
+`metadata`). Queues a content-embedding refresh if `body` changed
+(gated by `metadataDeepEqual` short-circuit in `applyMetadataMerge`).
+
+`idOrSlug` accepts either a raw entity id or a bare slug (the `doc:`
+prefix is added automatically when the value isn't recognized as an id).
+
+```typescript
+async updateDocument(
+    idOrSlug: string,
+    patch: UpdateDocumentInput,
+    scope: ScopeFilter,
+  ): Promise&lt;Document&gt;
+```
+
+**Parameters:**
+- `idOrSlug`: `string`
+- `patch`: `UpdateDocumentInput`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;Document&gt;`
+
+#### `getDocument()`
+
+Fetch a document by id or slug. Returns the entity verbatim (including
+`metadata.body`). Returns `null` when not found / not visible.
+
+```typescript
+async getDocument(idOrSlug: string, scope: ScopeFilter): Promise&lt;Document | null&gt;
+```
+
+**Parameters:**
+- `idOrSlug`: `string`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;Document | null&gt;`
+
+#### `attachDocument()`
+
+Attach a document to a parent entity via the canonical `has_document`
+predicate. Idempotent — a no-op when an identical non-archived fact
+already exists in the caller's scope.
+
+```typescript
+async attachDocument(parentId: EntityId, docIdOrSlug: string, scope: ScopeFilter): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `parentId`: `string`
+- `docIdOrSlug`: `string`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `detachDocument()`
+
+Remove a `has_document` attachment between a parent entity and a document.
+Archives EVERY matching non-archived fact in scope (idempotent), so
+duplicate attachments — should they exist due to race conditions — are
+cleaned up in one call.
+
+Returns `{archived, skippedDueToPermissions}` so callers can distinguish
+"no matching facts" (both zero) from "had matches but couldn't write any"
+(archived=0, skipped>0).
+
+```typescript
+async detachDocument(
+    parentId: EntityId,
+    docIdOrSlug: string,
+    scope: ScopeFilter,
+  ): Promise&lt;DetachDocumentResult&gt;
+```
+
+**Parameters:**
+- `parentId`: `string`
+- `docIdOrSlug`: `string`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;DetachDocumentResult&gt;`
+
+#### `listDocuments()`
+
+List documents — optionally narrowed by `attachedTo`, `role`, `ownerId`.
+By default the response strips `metadata.body` (listing pages can be
+large); pass `includeBody: true` to keep it.
+
+```typescript
+async listDocuments(filter: ListDocumentsFilter, scope: ScopeFilter): Promise&lt;Document[]&gt;
+```
+
+**Parameters:**
+- `filter`: `ListDocumentsFilter`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;Document[]&gt;`
+
+#### `searchDocuments()`
+
+Search documents — `semantic` mode uses `contentEmbedding` (requires an
+embedder); `keyword` mode runs a case-insensitive substring match over
+`metadata.body` and `displayName` against a page of candidates. Both
+modes honor `attachedTo` / `role` filters and clamp `limit` to [1, 50].
+
+Score semantics: semantic returns 0..1 cosine similarity from the
+underlying `semanticSearchEntities`; keyword returns a coarse 0..1 hit
+score (1.0 for displayName match, 0.5 for body-only).
+
+```typescript
+async searchDocuments(input: SearchDocumentsInput, scope: ScopeFilter): Promise&lt;DocumentSearchHit[]&gt;
+```
+
+**Parameters:**
+- `input`: `SearchDocumentsInput`
+- `scope`: `ScopeFilter`
+
+**Returns:** `Promise&lt;DocumentSearchHit[]&gt;`
+
 #### `flushEmbeddings()`
 
 ```typescript
@@ -8418,7 +8753,7 @@ async shutdown(): Promise&lt;void&gt;
 
 ### MemoryWritePluginNextGen `class`
 
-📍 [`src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts:181`](src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts)
+📍 [`src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts:205`](src/core/context-nextgen/plugins/MemoryWritePluginNextGen.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -8559,7 +8894,7 @@ restoreState(_state: unknown): void
 
 ### MongoMemoryAdapter `class`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:128`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:194`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -8851,7 +9186,7 @@ async semanticSearchEntities(
 **Parameters:**
 - `queryVector`: `number[]`
 - `filter`: `EntitySemanticSearchFilter`
-- `opts`: `SemanticSearchOptions & { minScore?: number | undefined; }`
+- `opts`: `SemanticSearchOptions & { minScore?: number | undefined; embeddingField?: EntityEmbeddingField | undefined; }`
 - `scope`: `ScopeFilter`
 
 **Returns:** `Promise&lt;{ entity: IEntity; score: number; }[]&gt;`
@@ -8902,7 +9237,7 @@ async ensureVectorSearchIndexes(opts:
 ```
 
 **Parameters:**
-- `opts`: `{ dimensions: number; similarity?: "cosine" | "dotProduct" | "euclidean" | undefined; factsIndexName?: string | null | undefined; entitiesIndexName?: string | null | undefined; }`
+- `opts`: `{ dimensions: number; similarity?: "cosine" | "dotProduct" | "euclidean" | undefined; factsIndexName?: string | null | undefined; entitiesIndexName?: string | null | undefined; entitiesContentIndexName?: string | null | undefined; }`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -8931,9 +9266,12 @@ async shutdown(): Promise&lt;void&gt;
 |----------|------|-------------|
 | `entities` | `entities: IMongoCollectionLike&lt;IEntity&gt;` | - |
 | `facts` | `facts: IMongoCollectionLike&lt;IFact&gt;` | - |
+| `factsArchive?` | `factsArchive: IMongoCollectionLike&lt;IFact&gt; | undefined` | - |
+| `disableWorldVisibility` | `disableWorldVisibility: boolean` | - |
 | `useNativeGraphLookup` | `useNativeGraphLookup: boolean` | - |
 | `vectorIndexName?` | `vectorIndexName: string | undefined` | - |
 | `entityVectorIndexName?` | `entityVectorIndexName: string | undefined` | - |
+| `entityContentVectorIndexName?` | `entityContentVectorIndexName: string | undefined` | - |
 | `vectorCandidateMultiplier` | `vectorCandidateMultiplier: number` | - |
 | `factsCollectionName?` | `factsCollectionName: string | undefined` | - |
 | `defaultPageSize` | `defaultPageSize: number` | - |
@@ -10335,7 +10673,7 @@ getTotalSize(): Promise&lt;number&gt;;
 
 ### IMemoryStore `interface`
 
-📍 [`src/memory/types.ts:512`](src/memory/types.ts)
+📍 [`src/memory/types.ts:535`](src/memory/types.ts)
 
 Storage contract. Required methods are the minimum capability; optional
 methods (`traverse`, `semanticSearch`) are discovered by duck-typing.
@@ -10610,10 +10948,13 @@ semanticSearch?(
 
 #### `semanticSearchEntities()?`
 
-Entity-level semantic search over `identityEmbedding`. Consumed by
-`EntityResolver`'s semantic tier (Tier 4) when
-`EntityResolutionConfig.enableSemanticResolution` is on. Adapters that
-don't implement this are skipped — the resolver falls back to Tiers 1-3.
+Entity-level semantic search. Default field is `identityEmbedding`,
+consumed by `EntityResolver`'s semantic tier (Tier 4) when
+`EntityResolutionConfig.enableSemanticResolution` is on. With
+`opts.embeddingField:'content'`, the same method searches
+`contentEmbedding` — used by `MemorySystem.searchDocuments`. Adapters
+that don't implement this are skipped — the resolver falls back to
+Tiers 1-3.
 
 Contract:
  - `filter.type` / `filter.types` narrow by `IEntity.type`. At least one
@@ -10621,6 +10962,9 @@ Contract:
  - `opts.topK` clamped by the caller (resolver passes small values, ~10).
  - `opts.minScore` optional noise floor (adapter MAY pre-filter; resolver
    post-filters regardless, so implementations can ignore it).
+ - `opts.embeddingField` selects which entity embedding to search; defaults
+   to `'identity'` for backward compatibility. Adapters MUST NOT silently
+   fall back to the other field on misses — return an empty result.
  - Results ordered by descending `score` (cosine similarity, 0..1).
  - Archived entities MUST be excluded.
  - `scope` enforcement identical to every other read.
@@ -10629,7 +10973,7 @@ Contract:
 semanticSearchEntities?(
     queryVector: number[],
     filter: EntitySemanticSearchFilter,
-    opts: SemanticSearchOptions & { minScore?: number },
+    opts: SemanticSearchOptions & { minScore?: number; embeddingField?: EntityEmbeddingField },
     scope: ScopeFilter,
   ): Promise&lt;Array&lt;{ entity: IEntity; score: number }&gt;&gt;;
 ```
@@ -10637,7 +10981,7 @@ semanticSearchEntities?(
 **Parameters:**
 - `queryVector`: `number[]`
 - `filter`: `EntitySemanticSearchFilter`
-- `opts`: `SemanticSearchOptions & { minScore?: number | undefined; }`
+- `opts`: `SemanticSearchOptions & { minScore?: number | undefined; embeddingField?: EntityEmbeddingField | undefined; }`
 - `scope`: `ScopeFilter`
 
 **Returns:** `Promise&lt;{ entity: IEntity; score: number; }[]&gt;`
@@ -10683,7 +11027,7 @@ shutdown?(): Promise&lt;void&gt;;
 
 ### InMemoryAdapterOptions `interface`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:40`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:42`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10803,7 +11147,7 @@ findByWebhookId(webhookId: string): Promise&lt;{ plan: Plan; task: Task } | unde
 
 ### IScopedMemoryView `interface`
 
-📍 [`src/memory/types.ts:644`](src/memory/types.ts)
+📍 [`src/memory/types.ts:673`](src/memory/types.ts)
 
 Read-only view scoped to a specific caller, passed to the rule engine.
 Rules CANNOT write through this view — they return partial IFact specs
@@ -11078,7 +11422,7 @@ to disable. |
 
 ### MemorySystemConfig `interface`
 
-📍 [`src/memory/types.ts:859`](src/memory/types.ts)
+📍 [`src/memory/types.ts:900`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11211,7 +11555,7 @@ those tokens return "not available". |
 
 ### MongoMemoryAdapterOptions `interface`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:70`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:72`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11220,6 +11564,48 @@ those tokens return "not available". |
 |----------|------|-------------|
 | `entities` | `entities: IMongoCollectionLike&lt;IEntity&gt;;` | - |
 | `facts` | `facts: IMongoCollectionLike&lt;IFact&gt;;` | - |
+| `factsArchive?` | `factsArchive?: IMongoCollectionLike&lt;IFact&gt;;` | Optional archive collection for facts. When provided, the adapter
+switches to **move-on-archive** semantics:
+
+  - `updateFact(id, {archived: true}, scope)` moves the doc from
+    `facts` to `factsArchive` (stamping `archivedAt`) instead of
+    setting `archived: true` in place.
+  - `updateFact(id, {archived: false}, scope)` (restoreFact) moves
+    the doc back from `factsArchive` to `facts`.
+  - `getFact(id)` falls back to `factsArchive` when the id isn't in
+    `facts` — supersession-chain walks and audit reads of archived
+    facts keep working.
+  - `findFacts(filter)` with `filter.archived === true` queries
+    `factsArchive`; otherwise queries `facts` (which stays live-only).
+  - `countFacts(...)` uses the same routing.
+
+Benefits at scale: the live (primary) collection stays small even when
+archive history is large; indexes don't carry archived rows; the
+`archived: false / $exists: false` read filter becomes redundant on the
+primary collection (every doc there is live by construction) and can be
+dropped by callers.
+
+When omitted, behaviour is unchanged — archived docs stay in the
+primary collection with `archived: true` (legacy mode). |
+| `disableWorldVisibility?` | `disableWorldVisibility?: boolean;` | When true, `scopeToFilter` omits the "world" branch
+(`groupId: {$ne: caller.groupId} ∧ permissions.world !== 'none'`) from
+the produced read filter. Use this in deployments where cross-tenant
+world-readable visibility is not used — the `$ne` predicate is
+fundamentally not sargable and forces a wide collection scan on every
+branch-equipped query (subject lookups, identifier lookups, traversal),
+dwarfing any potential benefit when no docs actually carry
+`permissions.world: 'read'`. Default false (backwards-compatible).
+
+**Security note:** enabling this changes the visibility contract. Any
+record carrying `permissions.world: 'read'` becomes invisible to
+cross-group callers — silently from the caller's perspective. The
+adapter emits a one-time `console.warn` at construction so the
+trade-off isn't fully silent operationally; pass a `logger` to route
+the warning through your own infrastructure instead. |
+| `logger?` | `logger?: { warn(msg: string): void };` | Optional logger used for boot-time advisories (currently: the
+`disableWorldVisibility` security trade-off warning). Defaults to
+`console.warn`. Pass your app's logger to redirect into structured
+logging. |
 | `useNativeGraphLookup?` | `useNativeGraphLookup?: boolean;` | When true AND `facts.aggregate` is present, `traverse()` uses a single
 native `$graphLookup` pipeline per direction instead of iterative BFS.
 Default: false. |
@@ -11234,6 +11620,12 @@ Index is NOT auto-created by `ensureIndexes()` (which only handles regular
 b-tree indexes). Create it via `ensureVectorSearchIndexes()` (programmatic,
 requires mongodb node driver v6.6+ + Atlas Server v6.0.11+) or via the
 Atlas UI / admin API. See `ensureVectorSearchIndexes` JSDoc for details. |
+| `entityContentVectorIndexName?` | `entityContentVectorIndexName?: string;` | Atlas Vector Search index for `entity.contentEmbedding` — used when
+`semanticSearchEntities` is called with `opts.embeddingField:'content'`
+(currently consumed by `MemorySystem.searchDocuments`). Distinct from
+`entityVectorIndexName` so identity matches never leak into content
+search and vice versa. Same auto-creation rules as the identity index:
+not built by `ensureIndexes()`; create via `ensureVectorSearchIndexes()`. |
 | `vectorCandidateMultiplier?` | `vectorCandidateMultiplier?: number;` | Number of vector candidates to ask Atlas Vector Search to consider before
 returning topK. Used by both `semanticSearch` (facts) and
 `semanticSearchEntities` when the corresponding index name is set.
@@ -11349,7 +11741,7 @@ PlanningAgent configuration
 
 ### RelatedTask `interface`
 
-📍 [`src/memory/types.ts:240`](src/memory/types.ts)
+📍 [`src/memory/types.ts:250`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11709,7 +12101,7 @@ Reference to a source value for control flow operations.
 
 ### TaskStateHistoryEntry `interface`
 
-📍 [`src/memory/MemorySystem.ts:179`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:248`](src/memory/MemorySystem.ts)
 
 Single entry appended to `task.metadata.stateHistory` on every transition.
 No cap — retention is the caller's problem (audit systems, GDPR, archival).
@@ -11731,7 +12123,7 @@ No cap — retention is the caller's problem (audit systems, GDPR, archival).
 
 ### TaskStatesConfig `interface`
 
-📍 [`src/memory/types.ts:852`](src/memory/types.ts)
+📍 [`src/memory/types.ts:893`](src/memory/types.ts)
 
 Task-state vocabulary configuration. Drives which states `getContext`
 surfaces as "open" in `relatedTasks`, and which are treated as "terminal"
@@ -11854,7 +12246,7 @@ Result of task validation (returned by LLM reflection)
 
 ### TransitionTaskStateOptions `interface`
 
-📍 [`src/memory/MemorySystem.ts:187`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:256`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11895,7 +12287,7 @@ pivot on `contextIds` (e.g. "everything about the Acme deal"). |
 
 ### TransitionTaskStateResult `interface`
 
-📍 [`src/memory/MemorySystem.ts:229`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:298`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12266,7 +12658,7 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createMemoryReadTools `function`
 
-📍 [`src/tools/memory/index.ts:128`](src/tools/memory/index.ts)
+📍 [`src/tools/memory/index.ts:131`](src/tools/memory/index.ts)
 
 Read-only retrieval tools — no memory writes performed.
 
@@ -12290,9 +12682,9 @@ export function createMemorySystemWithConnectors(
 
 ### createMemoryTools `function`
 
-📍 [`src/tools/memory/index.ts:157`](src/tools/memory/index.ts)
+📍 [`src/tools/memory/index.ts:161`](src/tools/memory/index.ts)
 
-All 11 memory tools (5 read + 6 write). Convenience factory — most callers
+All 12 memory tools (6 read + 6 write). Convenience factory — most callers
 should prefer `createMemoryReadTools` / `createMemoryWriteTools` separately
 so read agents don't carry the write-tool schema overhead.
 
@@ -12304,7 +12696,7 @@ export function createMemoryTools(args: CreateMemoryToolsArgs): ToolFunction[]
 
 ### createMemoryWriteTools `function`
 
-📍 [`src/tools/memory/index.ts:140`](src/tools/memory/index.ts)
+📍 [`src/tools/memory/index.ts:144`](src/tools/memory/index.ts)
 
 Write-side memory tools — mutate entities and facts.
 
@@ -20623,7 +21015,7 @@ export function createFindEntityTool(
 
 ### createFindMeetingSlotsTool `function`
 
-📍 [`src/tools/microsoft/findMeetingSlots.ts:35`](src/tools/microsoft/findMeetingSlots.ts)
+📍 [`src/tools/microsoft/findMeetingSlots.ts:36`](src/tools/microsoft/findMeetingSlots.ts)
 
 Create a Microsoft Graph find_meeting_slots tool
 
@@ -21290,7 +21682,7 @@ export function getAllBuiltInTools(): ToolFunction[]
 
 ### getConnectorTools `function`
 
-📍 [`src/connectors/vendors/helpers.ts:458`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:461`](src/connectors/vendors/helpers.ts)
 
 Get all tools for a connector (delegates to ConnectorTools)
 
@@ -26151,6 +26543,10 @@ even when the operator overrides `scope` (e.g. Microsoft `.default`). |
   string (not `expires_in` seconds). |
 | `tokenLifetimeSeconds?` | `tokenLifetimeSeconds?: number;` | JWT `exp` lifetime, in seconds. Default 3600. GitHub rejects JWTs with
 `exp` more than 10 minutes in the future; set to 540 for GitHub Apps. |
+| `subject?` | `subject?: string;` | JWT `sub` claim override. For Google Workspace domain-wide delegation
+this is the email of the user being impersonated; the resulting access
+token acts as that user. When unset, `sub` defaults to `clientId`
+(RFC 7523 convention for service-account self-auth). |
 | `staticToken?` | `staticToken?: string;` | - |
 | `authorizationParams?` | `authorizationParams?: Record&lt;string, string&gt;;` | Extra query parameters appended to the authorization URL.
  Used for vendor-specific requirements, e.g. Google's `access_type: 'offline'`
@@ -26265,7 +26661,7 @@ Simple Icons icon data structure
 
 ### StoredToken `interface`
 
-📍 [`src/connectors/oauth/types.ts:79`](src/connectors/oauth/types.ts)
+📍 [`src/connectors/oauth/types.ts:86`](src/connectors/oauth/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -26308,7 +26704,7 @@ All implementations must encrypt tokens at rest
 
 ### VendorInfo `interface`
 
-📍 [`src/connectors/vendors/helpers.ts:465`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:468`](src/connectors/vendors/helpers.ts)
 
 Get vendor template information for display
 
@@ -26568,7 +26964,7 @@ const personalEmails = await personalFetch('/me/messages');
 
 ### createConnectorFromTemplate `function`
 
-📍 [`src/connectors/vendors/helpers.ts:397`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:400`](src/connectors/vendors/helpers.ts)
 
 Create a Connector from a vendor template
 
@@ -26597,7 +26993,7 @@ const connector = createConnectorFromTemplate(
 
 ### extractNonSecretCredentials `function`
 
-📍 [`src/connectors/vendors/helpers.ts:338`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:341`](src/connectors/vendors/helpers.ts)
 
 Extract non-secret credentials from a raw credentials dict.
 Used by ConnectorConfigStore.saveFromTemplate() to preserve
@@ -26651,7 +27047,7 @@ export function getAllVendorTemplates(): VendorTemplate[]
 
 ### getCredentialsSetupURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:548`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:551`](src/connectors/vendors/helpers.ts)
 
 Get credentials setup URL for a vendor
 
@@ -26663,7 +27059,7 @@ export function getCredentialsSetupURL(vendorId: string): string | undefined
 
 ### getDocsURL `function`
 
-📍 [`src/connectors/vendors/helpers.ts:556`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:559`](src/connectors/vendors/helpers.ts)
 
 Get docs URL for a vendor
 
@@ -26702,7 +27098,7 @@ export function getVendorColor(vendorId: string): string | undefined
 
 ### getVendorInfo `function`
 
-📍 [`src/connectors/vendors/helpers.ts:485`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:488`](src/connectors/vendors/helpers.ts)
 
 Get vendor information suitable for display
 
@@ -26796,7 +27192,7 @@ export function listVendorIds(): string[]
 
 ### listVendors `function`
 
-📍 [`src/connectors/vendors/helpers.ts:510`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:513`](src/connectors/vendors/helpers.ts)
 
 List all vendors with basic info
 
@@ -26808,7 +27204,7 @@ export function listVendors(): VendorInfo[]
 
 ### listVendorsByAuthType `function`
 
-📍 [`src/connectors/vendors/helpers.ts:539`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:542`](src/connectors/vendors/helpers.ts)
 
 List vendors that support a specific auth type
 
@@ -26820,7 +27216,7 @@ export function listVendorsByAuthType(authType: 'api_key' | 'oauth'): VendorInfo
 
 ### listVendorsByCategory `function`
 
-📍 [`src/connectors/vendors/helpers.ts:532`](src/connectors/vendors/helpers.ts)
+📍 [`src/connectors/vendors/helpers.ts:535`](src/connectors/vendors/helpers.ts)
 
 List vendors by category
 
@@ -28316,7 +28712,7 @@ getConfig(): Readonly&lt;Required&lt;ErrorHandlerConfig&gt;&gt;
 
 ### FactSupersededError `class`
 
-📍 [`src/memory/MemorySystem.ts:160`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:229`](src/memory/MemorySystem.ts)
 
 F1 — thrown by `restoreFact` when the target fact was superseded by a later
 non-archived fact. Un-archiving the predecessor without first handling the
@@ -28544,7 +28940,7 @@ constructor(
 
 ### MongoOptimisticConcurrencyError `class`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:59`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:61`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28564,7 +28960,7 @@ constructor(message: string)
 
 ### OptimisticConcurrencyError `class`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:503`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:512`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28639,7 +29035,7 @@ constructor(
 
 ### ProfileGeneratorMissingError `class`
 
-📍 [`src/memory/MemorySystem.ts:119`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:188`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28816,7 +29212,7 @@ constructor(
 
 ### ScopeInvariantError `class`
 
-📍 [`src/memory/MemorySystem.ts:112`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:181`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28836,7 +29232,7 @@ constructor(message: string)
 
 ### ScopeViolationError `class`
 
-📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:510`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
+📍 [`src/memory/adapters/inmemory/InMemoryAdapter.ts:519`](src/memory/adapters/inmemory/InMemoryAdapter.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28856,7 +29252,7 @@ constructor(message: string)
 
 ### SemanticSearchUnavailableError `class`
 
-📍 [`src/memory/MemorySystem.ts:126`](src/memory/MemorySystem.ts)
+📍 [`src/memory/MemorySystem.ts:195`](src/memory/MemorySystem.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -29060,7 +29456,7 @@ Events emitted by ErrorHandler
 
 ### IngestionError `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:85`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:135`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -34656,7 +35052,7 @@ getSummary()
 
 ### ExtractionResolver `class`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:160`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:256`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -34697,6 +35093,17 @@ async resolveAndIngest(
 - `opts`: `ExtractionResolverOptions | undefined` *(optional)*
 
 **Returns:** `Promise&lt;IngestionResult&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `warnedNoSourceObservedAt` | `warnedNoSourceObservedAt: boolean` | Latched after the first `sourceObservedAt`-missing warning so callers
+don't drown logs on steady-state ingest. The first warning is the
+actionable one; the next 10k aren't. |
 
 </details>
 
@@ -37841,7 +38248,7 @@ appendLog(author: string, message: string): void
 
 ### SignalIngestor `class`
 
-📍 [`src/memory/integration/signals/SignalIngestor.ts:115`](src/memory/integration/signals/SignalIngestor.ts)
+📍 [`src/memory/integration/signals/SignalIngestor.ts:133`](src/memory/integration/signals/SignalIngestor.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -39589,7 +39996,7 @@ Agent configuration (needed for resume)
 
 ### AgentContextNextGenConfig `interface`
 
-📍 [`src/core/context-nextgen/types.ts:807`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:826`](src/core/context-nextgen/types.ts)
 
 AgentContextNextGen configuration
 
@@ -39884,6 +40291,11 @@ For services like OpenAI, Anthropic, many SaaS APIs
 | `apiKey` | `apiKey: string;` | - |
 | `headerName?` | `headerName?: string;` | - |
 | `headerPrefix?` | `headerPrefix?: string;` | - |
+| `queryParamName?` | `queryParamName?: string;` | Send the API key as a URL query parameter instead of an HTTP header.
+When set, `connector.fetch()` injects `?<queryParamName>=<apiKey>` into
+the request URL and does NOT add an auth header. `headerName` and
+`headerPrefix` are ignored in that case. Used by vendors like ipapi.co
+that authenticate via `?key=...`. |
 | `extra?` | `extra?: Record&lt;string, string&gt;;` | Vendor-specific extra credentials beyond the primary API key.
 E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' } |
 
@@ -40272,7 +40684,7 @@ Options for the default SentenceChunkingStrategy
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:991`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1010`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -40374,7 +40786,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:958`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:977`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -40394,7 +40806,7 @@ Result of compact() operation.
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:128`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:137`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -40464,7 +40876,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:228`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:237`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -40545,7 +40957,7 @@ truncate profile generation. See feedback_no_output_limits.md. |
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:975`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:994`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -40564,7 +40976,7 @@ Result of consolidate() operation.
 
 ### ContextBudget `interface`
 
-📍 [`src/core/context-nextgen/types.ts:614`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:633`](src/core/context-nextgen/types.ts)
 
 Token budget breakdown - clear and simple
 
@@ -40598,7 +41010,7 @@ Token budget breakdown - clear and simple
 
 ### ContextEvents `interface`
 
-📍 [`src/core/context-nextgen/types.ts:908`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:927`](src/core/context-nextgen/types.ts)
 
 Events emitted by AgentContextNextGen
 
@@ -40647,7 +41059,7 @@ Same opt-in semantics as `openTasks`. |
 
 ### ContextOptions `interface`
 
-📍 [`src/memory/types.ts:285`](src/memory/types.ts)
+📍 [`src/memory/types.ts:295`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41479,7 +41891,7 @@ list; pass a custom list to override entirely (not extend). Case-insensitive. |
 
 ### EmbeddingQueueConfig `interface`
 
-📍 [`src/memory/types.ts:722`](src/memory/types.ts)
+📍 [`src/memory/types.ts:763`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41543,6 +41955,12 @@ Configuration for the default energy-based VAD
 |----------|------|-------------|
 | `entities` | `entities: IMongoCollectionLike&lt;IEntity&gt;;` | - |
 | `facts` | `facts: IMongoCollectionLike&lt;IFact&gt;;` | - |
+| `factsArchive?` | `factsArchive?: IMongoCollectionLike&lt;IFact&gt;;` | Optional archive collection (move-on-archive deployments). When provided,
+the same subject/object/context/predicate-led indexes are built on the
+archive so `findFacts({archived: true})`, `countFacts({archived: true})`,
+and the `getFact(id)` archive-fallback don't degrade to collection scans
+as the archive grows. Legacy `groupId+ownerId`-led compounds are NOT
+mirrored — the archive isn't on the hot path for admin tooling. |
 
 </details>
 
@@ -41550,7 +41968,7 @@ Configuration for the default energy-based VAD
 
 ### EntityCandidate `interface`
 
-📍 [`src/memory/types.ts:731`](src/memory/types.ts)
+📍 [`src/memory/types.ts:772`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41567,7 +41985,7 @@ Configuration for the default energy-based VAD
 
 ### EntityListFilter `interface`
 
-📍 [`src/memory/types.ts:391`](src/memory/types.ts)
+📍 [`src/memory/types.ts:401`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41599,9 +42017,36 @@ Example:
 
 ---
 
+### EntityReconciliationPromptContext `interface`
+
+📍 [`src/memory/integration/entityReconciliationPrompt.ts:19`](src/memory/integration/entityReconciliationPrompt.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `entity` | `entity: IEntity;` | The entity whose facts we are reconciling. |
+| `facts` | `facts: Array&lt;
+    IFact & {
+      /** Human-readable source description (e.g. "email from anton on 2026-05-15"). */
+      sourceSignalDescription?: string;
+    }
+  &gt;;` | All non-archived facts on this entity for the calling user. No
+truncation, no cap — the caller is responsible for scope.
+
+Each fact MUST carry an `id` that the LLM can reference in op
+`factId`. Caller should pre-decorate `evidenceQuote` and any
+`sourceSignalDescription` it wants the LLM to see for ranking. |
+| `referenceDate?` | `referenceDate?: Date;` | Reference date for interpreting "most recent". Defaults to today. |
+
+</details>
+
+---
+
 ### EntityResolutionConfig `interface`
 
-📍 [`src/memory/types.ts:811`](src/memory/types.ts)
+📍 [`src/memory/types.ts:852`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41637,7 +42082,7 @@ and decides. Lower `autoResolveThreshold` only if you trust the mapping. |
 
 ### EntitySearchOptions `interface`
 
-📍 [`src/memory/types.ts:427`](src/memory/types.ts)
+📍 [`src/memory/types.ts:437`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41654,7 +42099,7 @@ and decides. Lower `autoResolveThreshold` only if you trust the mapping. |
 
 ### EntityView `interface`
 
-📍 [`src/memory/types.ts:262`](src/memory/types.ts)
+📍 [`src/memory/types.ts:272`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41727,6 +42172,19 @@ The agent is NOT destroyed after execution — caller manages its lifecycle. |
 | `model?` | `model?: string;` | Model ID — required when `agent` is not provided |
 | `tools?` | `tools?: ToolFunction[];` | Additional tools — only used when creating a new agent (no `agent` provided) |
 | `inputs?` | `inputs?: Record&lt;string, unknown&gt;;` | Input parameter values for parameterized routines |
+| `disableToolScoping?` | `disableToolScoping?: boolean;` | When `true`, skip the `scopedTo(requiredTools)` step in Mode 2.
+The agent keeps its full tool surface during the routine, so preSteps /
+postSteps may use any tool registered on the agent — not only those
+listed in `definition.requiredTools`.
+
+`requiredTools` is still validated as a "must be present" gate; this
+flag only disables the *restriction* of the agent's runtime toolset.
+
+Use when the routine's preSteps invoke tools the LLM tasks don't need,
+and listing every such tool in `requiredTools` would be misleading
+(e.g. internal context-loading tools the LLM should not see directly).
+
+Defaults to `false` — scoping ON is the safer default. |
 | `initialUserMessage?` | `initialUserMessage?: string;` | Optional verbatim user message used in place of the FIRST executable
 task's prompt. Subsequent tasks still go through the normal
 `prompts.task` (or default) builder.
@@ -41862,6 +42320,15 @@ entities are resolved. Useful when the relationship is guaranteed by the
 source (e.g. calendar organizer/attendee) and shouldn't depend on the
 LLM extracting it. Unresolved role references produce `IngestionError`
 entries; the rest still write. Optional. |
+| `observedAt?` | `observedAt?: Date;` | Authoritative source timestamp for THIS signal's content — the email
+`Date` header, the transcript `createdDateTime`, the calendar event's
+`startTime`, the doc's `createdAt`. NOT the time the adapter ran.
+
+When set, the `SignalIngestor` propagates it to the extraction prompt as
+`referenceDate` (so the LLM resolves "Wednesday" against the right week)
+and to the resolver as `sourceObservedAt` (so every written fact's
+`observedAt` and `validUntil` anchor on the content date, not extraction
+time). Strongly recommended for any adapter whose source has a date. |
 
 </details>
 
@@ -41869,7 +42336,7 @@ entries; the rest still write. Optional. |
 
 ### ExtractionFactSpec `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:50`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:52`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41900,7 +42367,7 @@ written fact as `IFact.evidenceQuote`. |
 
 ### ExtractionMention `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:36`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:38`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41922,7 +42389,7 @@ on resolve, conservative `fillMissing` merge (never overwrites existing). |
 
 ### ExtractionOutput `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:73`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:121`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -41931,6 +42398,7 @@ on resolve, conservative `fillMissing` merge (never overwrites existing). |
 |----------|------|-------------|
 | `mentions` | `mentions: Record&lt;string, ExtractionMention&gt;;` | - |
 | `facts` | `facts: ExtractionFactSpec[];` | - |
+| `operations?` | `operations?: ReconciliationOp[];` | Reconciliation ops — populated when LLM ran in reconciliation mode. |
 
 </details>
 
@@ -41938,14 +42406,22 @@ on resolve, conservative `fillMissing` merge (never overwrites existing). |
 
 ### ExtractionPromptContext `interface`
 
-📍 [`src/memory/integration/defaultExtractionPrompt.ts:59`](src/memory/integration/defaultExtractionPrompt.ts)
+📍 [`src/memory/integration/defaultExtractionPrompt.ts:77`](src/memory/integration/defaultExtractionPrompt.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `signalText` | `signalText: string;` | Raw text of the signal (email body, transcript, doc content, …). |
+| `signalText?` | `signalText?: string;` | Raw text of the signal (email body, transcript, doc content, …).
+
+Required when `signalThread` is not provided. When `signalThread` is set
+(per-conversation reconciliation mode), this field is ignored — the
+thread rendering replaces the single-signal block. |
+| `signalThread?` | `signalThread?: SignalThreadMessage[];` | Multi-signal conversation input. When set, the prompt renders these
+messages chronologically in place of `signalText`. Use this for
+per-conversation reconciliation; leave undefined for single-signal
+extraction (current behavior, unchanged for backward compat). |
 | `signalSourceDescription?` | `signalSourceDescription?: string;` | Optional hint describing where this came from, e.g. "email from john@acme.com". |
 | `targetScope?` | `targetScope?: ScopeFields;` | Scope the extractor should treat as target — guides the LLM's privacy judgment. |
 | `knownEntities?` | `knownEntities?: IEntity[];` | Optional pre-loaded entity candidates the extractor can reference by name. |
@@ -41990,7 +42466,24 @@ same sentence doesn't appear repeatedly across nested replies.
 Pair with the existing canonical-id rule for tasks: a commitment seen
 in the delta that was already extracted from a prior message MUST yield
 the SAME canonical id, so the resolver merges into the existing entity
-instead of creating a duplicate. |
+instead of creating a duplicate.
+
+Superseded by `signalThread` + `priorFacts` (reconciliation mode); kept
+for backward compat with callers that still use single-signal extraction
+with thread background. |
+| `priorFacts?` | `priorFacts?: IFact[];` | Facts already extracted from PRIOR signals on this same conversation/thread,
+surfaced so the LLM can RECONCILE them against new content. When non-empty,
+the prompt renders a "Prior facts to reconcile" block and instructs the
+LLM to emit `operations` (create / update / archive) in addition to the
+usual `facts` array.
+
+Use this for per-conversation reconciliation: the LLM sees what's already
+known and decides what the new messages imply (status changed → update,
+reply needed → archive, brand-new commitment → create) without leaving
+tombstone-chain churn behind.
+
+Each fact MUST be referenceable by `id` — the output `operations` array
+cites these ids. Hallucinated ids are rejected at resolve time. |
 
 </details>
 
@@ -41998,7 +42491,7 @@ instead of creating a duplicate. |
 
 ### ExtractionResolverOptions `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:108`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:163`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42016,6 +42509,38 @@ the LLM.
 If the LLM output also contains a mention with the same label (e.g. it
 ignored the prompt instruction not to redeclare), the pre-resolved binding
 wins and the mention is skipped silently. |
+| `priorFacts?` | `priorFacts?: IFact[];` | Prior facts that were rendered into the prompt for reconciliation. When
+set, the resolver:
+  - validates every `update`/`archive` op's `factId` against this set
+    (rejecting hallucinated ids);
+  - dispatches the surviving ops through `memory.updateFact`;
+  - passes `dedup: true` to every `create` op so retries don't duplicate.
+
+Leave undefined when calling extraction in fresh (non-reconciliation)
+mode — the resolver then ignores any `operations` the LLM may have
+emitted erroneously. |
+| `skepticFilter?` | `skepticFilter?: (op: ReconciliationOp) =&gt; boolean;` | Optional skeptic-pass hook. When set, the resolver passes every
+reconciliation op through this callback before dispatch. Return `true`
+to accept, `false` to drop (counted as `rejectedSkeptic`). The host
+normally implements skeptic-pass at a higher level — this hook lets the
+library route ops through the same gate. |
+| `sourceObservedAt?` | `sourceObservedAt?: Date;` | Authoritative observation timestamp for every fact written from this
+extraction. Set to the SIGNAL'S source date — email `Date` header,
+calendar event `startTime`, meeting transcript `createdDateTime`, doc
+`createdAt`. NOT `Date.now()`.
+
+When set, this wins over any `observedAt` the LLM may emit and over the
+`MemorySystem.addFact` `?? now` fallback. It's also used to anchor
+`validUntil` for ephemeral predicates (`committed_to`, `expressed_concern`,
+etc.) so commitments observed in historical content expire on the right
+schedule instead of looking fresh for 90 more days.
+
+Strongly recommended whenever extracting from a signal that has a known
+source timestamp. When undefined, the resolver logs a warning (once per
+resolver instance) and falls back to the legacy behavior (LLM-emitted
+observedAt, then `Date.now()`). For reconciliation `update` ops the
+fallback is `Date.now()` only — `ReconciliationOp` of kind `update`
+doesn't carry an `observedAt` field, so there's nothing to honor. |
 
 </details>
 
@@ -42023,7 +42548,7 @@ wins and the mention is skipped silently. |
 
 ### FactFilter `interface`
 
-📍 [`src/memory/types.ts:331`](src/memory/types.ts)
+📍 [`src/memory/types.ts:341`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42065,7 +42590,7 @@ needed). |
 
 ### FactOrderBy `interface`
 
-📍 [`src/memory/types.ts:377`](src/memory/types.ts)
+📍 [`src/memory/types.ts:387`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42081,7 +42606,7 @@ needed). |
 
 ### FactQueryOptions `interface`
 
-📍 [`src/memory/types.ts:453`](src/memory/types.ts)
+📍 [`src/memory/types.ts:463`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42621,7 +43146,7 @@ reset(): void;
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:1053`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1072`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -42917,6 +43442,28 @@ compact(targetTokensToFree: number): Promise&lt;number&gt;;
 - `targetTokensToFree`: `number`
 
 **Returns:** `Promise&lt;number&gt;`
+
+#### `prepare()?`
+
+Force any lazy initialization to complete.
+
+Called by the routine runner before deterministic pre-steps execute, so
+tools the plugin contributes can rely on the plugin's bootstrapped state
+(e.g. `MemoryPluginNextGen.userEntityId`, which resolves the `me` subject
+token). Without this, pre-steps that invoke a plugin's tools BEFORE the
+first `getContent()` call would see uninitialised state.
+
+Implementations must be idempotent — `prepare()` may be called multiple
+times across an agent's lifetime; each call after the first should be a
+no-op (or return the same in-flight promise).
+
+Optional: plugins with no lazy state need not implement it.
+
+```typescript
+prepare?(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
 
 #### `getTools()`
 
@@ -43261,7 +43808,7 @@ transform(pieces: DocumentPiece[], context: TransformerContext): Promise&lt;Docu
 
 ### IEmbedder `interface`
 
-📍 [`src/memory/types.ts:591`](src/memory/types.ts)
+📍 [`src/memory/types.ts:620`](src/memory/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -43325,6 +43872,13 @@ See `AccessControl.ts` for semantics. Owner always has full access. |
 | `identityEmbedding?` | `identityEmbedding?: number[];` | Lightweight embedding over `displayName + top aliases + primary identifier
 values`, used by EntityResolver for semantic fallback when string matching
 fails. Populated async by the embedding queue when enabled. |
+| `contentEmbedding?` | `contentEmbedding?: number[];` | Embedding over the entity's primary long-form content — currently used
+exclusively by documents (type='document') over `displayName + summary
+(or truncated body)`. Distinct from `identityEmbedding` so semantic
+matching on content never bleeds into EntityResolver's identity
+resolution tier. Populated async by the embedding queue when the entity
+is a document with a body. Adapters honor it via
+`semanticSearchEntities({ embeddingField: 'content' })`. |
 | `version` | `version: number;` | Optimistic concurrency token — incremented on every write. |
 | `createdAt` | `createdAt: Date;` | - |
 | `updatedAt` | `updatedAt: Date;` | - |
@@ -43335,7 +43889,7 @@ fails. Populated async by the embedding queue when enabled. |
 
 ### IExtractor `interface`
 
-📍 [`src/memory/integration/signals/types.ts:132`](src/memory/integration/signals/types.ts)
+📍 [`src/memory/integration/signals/types.ts:144`](src/memory/integration/signals/types.ts)
 
 LLM extractor contract. `prompt` is the fully-rendered extraction prompt;
 returns the parsed JSON output. Implementations are responsible for calling
@@ -43361,7 +43915,7 @@ extract(prompt: string): Promise&lt;ExtractionOutput&gt;;
 
 ### IFact `interface`
 
-📍 [`src/memory/types.ts:153`](src/memory/types.ts)
+📍 [`src/memory/types.ts:163`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43700,7 +44254,7 @@ The adapter maps provider-specific data to this structure.
 
 ### IngestExtractedInput `interface`
 
-📍 [`src/memory/integration/signals/SignalIngestor.ts:107`](src/memory/integration/signals/SignalIngestor.ts)
+📍 [`src/memory/integration/signals/SignalIngestor.ts:118`](src/memory/integration/signals/SignalIngestor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43712,6 +44266,10 @@ The adapter maps provider-specific data to this structure.
 | `scope` | `scope: ScopeFilter;` | - |
 | `autoResolveThreshold?` | `autoResolveThreshold?: number;` | - |
 | `knownEntities?` | `knownEntities?: IEntity[];` | - |
+| `sourceObservedAt?` | `sourceObservedAt?: Date;` | Overrides {@link ExtractedSignal.observedAt} when both are present.
+Useful when the caller has a more authoritative timestamp than the
+adapter (e.g. a pipeline-level signal-receipt time vs. the adapter's
+parse of a body-embedded date). |
 
 </details>
 
@@ -43719,7 +44277,7 @@ The adapter maps provider-specific data to this structure.
 
 ### IngestionResolvedEntity `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:78`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:128`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43737,7 +44295,7 @@ The adapter maps provider-specific data to this structure.
 
 ### IngestionResult `interface`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:91`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:141`](src/memory/integration/ExtractionResolver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43753,6 +44311,8 @@ system's predicate registry. Useful for detecting vocabulary drift —
 periodically review and either promote to the registry or refine the
 prompt. Empty when no registry is configured.
 Deduped. |
+| `operationsApplied?` | `operationsApplied?: OperationOutcome;` | Op-level counts from reconciliation dispatch. Populated when the caller
+passed `priorFacts` AND the LLM emitted `operations`. Undefined otherwise. |
 
 </details>
 
@@ -43775,6 +44335,12 @@ Deduped. |
 | `knownEntities?` | `knownEntities?: IEntity[];` | Known entities to hint to the LLM (appears as "Known entities" block).
 Useful when the caller has pre-fetched likely candidates (e.g. by thread
 participants) but doesn't want to seed them as hard bindings. |
+| `sourceObservedAt?` | `sourceObservedAt?: Date;` | Authoritative source timestamp for this signal. Used as
+`referenceDate` in the extraction prompt (so the LLM resolves relative
+dates against the right week) and as `sourceObservedAt` on the resolver
+(so facts inherit the source date, not extraction time). If undefined,
+the adapter's `ExtractedSignal.observedAt` is consulted next, then the
+resolver falls back to legacy behavior. |
 
 </details>
 
@@ -43782,7 +44348,7 @@ participants) but doesn't want to seed them as hard bindings. |
 
 ### IngestTextInput `interface`
 
-📍 [`src/memory/integration/signals/SignalIngestor.ts:97`](src/memory/integration/signals/SignalIngestor.ts)
+📍 [`src/memory/integration/signals/SignalIngestor.ts:106`](src/memory/integration/signals/SignalIngestor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -43796,6 +44362,7 @@ participants) but doesn't want to seed them as hard bindings. |
 | `scope` | `scope: ScopeFilter;` | - |
 | `autoResolveThreshold?` | `autoResolveThreshold?: number;` | - |
 | `knownEntities?` | `knownEntities?: IEntity[];` | - |
+| `sourceObservedAt?` | `sourceObservedAt?: Date;` | See {@link IngestSignalInput.sourceObservedAt}. |
 
 </details>
 
@@ -43948,7 +44515,7 @@ Snapshot of a single plugin's state.
 
 ### IProfileGenerator `interface`
 
-📍 [`src/memory/types.ts:633`](src/memory/types.ts)
+📍 [`src/memory/types.ts:662`](src/memory/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -44050,7 +44617,7 @@ getCapabilities?(): SourceCapabilities;
 
 ### IRuleEngine `interface`
 
-📍 [`src/memory/types.ts:649`](src/memory/types.ts)
+📍 [`src/memory/types.ts:678`](src/memory/types.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -44188,7 +44755,7 @@ Used to track where information came from and when it was last verified
 
 ### IStoreHandler `interface`
 
-📍 [`src/core/context-nextgen/types.ts:569`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:588`](src/core/context-nextgen/types.ts)
 
 Interface for plugins that provide CRUD storage.
 
@@ -44809,7 +45376,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:109`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:118`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -44836,7 +45403,7 @@ For service accounts (Google, Salesforce)
 
 ### KnownContextFeatures `interface`
 
-📍 [`src/core/context-nextgen/types.ts:713`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:732`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins
 
@@ -44860,7 +45427,7 @@ Feature flags for enabling/disabling plugins
 
 ### KnownPluginConfigs `interface`
 
-📍 [`src/core/context-nextgen/types.ts:778`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:797`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 When features are enabled, plugins are created with these configs.
@@ -44886,7 +45453,7 @@ The config shapes match each plugin's constructor parameter.
 
 ### ListOptions `interface`
 
-📍 [`src/memory/types.ts:433`](src/memory/types.ts)
+📍 [`src/memory/types.ts:443`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45234,7 +45801,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MeetingSlotSuggestion `interface`
 
-📍 [`src/tools/google/types.ts:488`](src/tools/google/types.ts)
+📍 [`src/tools/google/types.ts:509`](src/tools/google/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45252,7 +45819,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### MeetingSlotSuggestion `interface`
 
-📍 [`src/tools/microsoft/types.ts:494`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:577`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45414,7 +45981,7 @@ rawCollection(): {
 
 ### MicrosoftCreateMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:424`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:507`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45433,7 +46000,7 @@ rawCollection(): {
 
 ### MicrosoftDraftEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:412`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:495`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45451,7 +46018,7 @@ rawCollection(): {
 
 ### MicrosoftEditMeetingResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:432`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:515`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45469,7 +46036,7 @@ rawCollection(): {
 
 ### MicrosoftFindSlotsResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:487`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:570`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45487,7 +46054,7 @@ rawCollection(): {
 
 ### MicrosoftGetTranscriptResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:439`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:522`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45505,7 +46072,7 @@ rawCollection(): {
 
 ### MicrosoftListFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:629`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:712`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45534,7 +46101,7 @@ rawCollection(): {
 
 ### MicrosoftReadFileResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:619`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:702`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45555,7 +46122,7 @@ rawCollection(): {
 
 ### MicrosoftSearchFilesResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:647`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:730`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45584,7 +46151,7 @@ rawCollection(): {
 
 ### MicrosoftSendEmailResult `interface`
 
-📍 [`src/tools/microsoft/types.ts:419`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:502`](src/tools/microsoft/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45650,7 +46217,7 @@ rawCollection(): {
 
 ### Neighborhood `interface`
 
-📍 [`src/memory/types.ts:308`](src/memory/types.ts)
+📍 [`src/memory/types.ts:318`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45682,6 +46249,27 @@ toHexString(): string;
 ```
 
 **Returns:** `string`
+
+</details>
+
+---
+
+### OperationOutcome `interface`
+
+📍 [`src/memory/integration/ExtractionResolver.ts:113`](src/memory/integration/ExtractionResolver.ts)
+
+Counts of operations applied/rejected by the resolver.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `creates` | `creates: number;` | - |
+| `updates` | `updates: number;` | - |
+| `archives` | `archives: number;` | - |
+| `rejectedHallucinated` | `rejectedHallucinated: number;` | - |
+| `rejectedSkeptic` | `rejectedSkeptic: number;` | - |
 
 </details>
 
@@ -45759,7 +46347,7 @@ Configuration for initiating an outbound call.
 
 ### OversizedInputResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:682`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:701`](src/core/context-nextgen/types.ts)
 
 Result of handling oversized current input
 
@@ -45781,7 +46369,7 @@ Result of handling oversized current input
 
 ### Page `interface`
 
-📍 [`src/memory/types.ts:382`](src/memory/types.ts)
+📍 [`src/memory/types.ts:392`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -45810,6 +46398,11 @@ Rich parse result. `rawExcerpt` is the first ~500 chars of the raw input
 | `status` | `status: ParseStatus;` | - |
 | `mentions` | `mentions: ExtractionOutput['mentions'];` | - |
 | `facts` | `facts: ExtractionOutput['facts'];` | - |
+| `operations?` | `operations?: ReconciliationOp[];` | Reconciliation operations emitted against `priorFacts` (per-conversation
+reconciliation mode). Captured opportunistically — always populated when
+the LLM output contained an `operations` array, regardless of whether the
+prompt was in reconciliation mode. The resolver decides what to do with
+it (apply if reconciliation mode, log+ignore otherwise). |
 | `whyActionable?` | `whyActionable?: string;` | One-sentence justification for emitting non-empty output, when the prompt
 required it (`EagernessProfile.requireJustification = true`). Always
 captured when present in the LLM output, even under chatty profiles —
@@ -46321,7 +46914,7 @@ source metadata aggregation rather than re-extracted into facts. |
 
 ### PreparedContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:661`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:680`](src/core/context-nextgen/types.ts)
 
 Result of prepare() - ready for LLM call
 
@@ -46381,7 +46974,7 @@ Options for process/processSync.
 
 ### ProfileGeneratorInput `interface`
 
-📍 [`src/memory/types.ts:611`](src/memory/types.ts)
+📍 [`src/memory/types.ts:640`](src/memory/types.ts)
 
 Input passed to `IProfileGenerator.generate`. Regeneration is **incremental**:
 the generator receives the prior profile (if any) as its starting point and
@@ -46420,7 +47013,7 @@ cannot reference them in the updated profile, only remove existing mentions. |
 
 ### RankingConfig `interface`
 
-📍 [`src/memory/types.ts:712`](src/memory/types.ts)
+📍 [`src/memory/types.ts:753`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46734,7 +47327,7 @@ callers iterate scopes themselves to match their tenant model. |
 
 ### RelatedEvent `interface`
 
-📍 [`src/memory/types.ts:247`](src/memory/types.ts)
+📍 [`src/memory/types.ts:257`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46751,7 +47344,7 @@ callers iterate scopes themselves to match their tenant model. |
 
 ### RelatedItemsResult `interface`
 
-📍 [`src/memory/types.ts:257`](src/memory/types.ts)
+📍 [`src/memory/types.ts:267`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46863,7 +47456,7 @@ Research execution result
 
 ### ResolveEntityOptions `interface`
 
-📍 [`src/memory/types.ts:752`](src/memory/types.ts)
+📍 [`src/memory/types.ts:793`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46879,7 +47472,7 @@ Research execution result
 
 ### ResolveEntityQuery `interface`
 
-📍 [`src/memory/types.ts:738`](src/memory/types.ts)
+📍 [`src/memory/types.ts:779`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47514,7 +48107,7 @@ an `IngestionError` entry rather than silently failing.
 
 ### SemanticSearchOptions `interface`
 
-📍 [`src/memory/types.ts:459`](src/memory/types.ts)
+📍 [`src/memory/types.ts:469`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47644,7 +48237,7 @@ Complete service definition - single source of truth
 
 ### ServiceInfo `interface`
 
-📍 [`src/domain/entities/Services.ts:488`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:498`](src/domain/entities/Services.ts)
 
 Service info lookup (derived from SERVICE_DEFINITIONS)
 
@@ -47735,7 +48328,7 @@ guardrail. Enable per-scope when ingesting a stream of related signals. |
 
 ### SignalSourceAdapter `interface`
 
-📍 [`src/memory/integration/signals/types.ts:121`](src/memory/integration/signals/types.ts)
+📍 [`src/memory/integration/signals/types.ts:133`](src/memory/integration/signals/types.ts)
 
 Adapter contract. Implementations are pure: `raw → ExtractedSignal` with no
 I/O. Side effects (fetching attachments, querying a thread index) should be
@@ -47764,6 +48357,30 @@ extract(raw: TRaw): ExtractedSignal;
 | Property | Type | Description |
 |----------|------|-------------|
 | `kind` | `readonly kind: string;` | Unique kind string, e.g. `'email'`, `'text'`, `'slack'`. |
+
+</details>
+
+---
+
+### SignalThreadMessage `interface`
+
+📍 [`src/memory/integration/defaultExtractionPrompt.ts:66`](src/memory/integration/defaultExtractionPrompt.ts)
+
+One message inside a multi-signal conversation thread. When the caller passes
+a `signalThread`, the prompt renders the messages chronologically in a single
+nonce-wrapped block — replacing the single `signalText` path entirely for
+that call. Used by per-conversation reconciliation (V25 Jarvis pipeline) so
+the LLM sees the whole conversation, not one message at a time.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | Stable signal id — referenced back in `evidenceQuote`/op `reason` fields. |
+| `observedAt` | `observedAt: Date;` | When this message was observed (rendered as the per-message header). |
+| `sender?` | `sender?: string;` | Optional sender label ("From: ..."). |
+| `body` | `body: string;` | Message body. Caller is expected to have already stripped quoted replies. |
 
 </details>
 
@@ -48229,7 +48846,7 @@ Context for resolving templates in deterministic step arguments.
 | Property | Type | Description |
 |----------|------|-------------|
 | `inputs` | `inputs: Record&lt;string, unknown&gt;;` | Routine input parameters ({{param.NAME}}) |
-| `taskResults?` | `taskResults?: Map&lt;string, unknown&gt;;` | Task results map: task name → output ({{result.TASK_NAME}}, post-steps only) |
+| `taskResults?` | `taskResults?: Map&lt;string, unknown&gt;;` | Task results map: task id OR name → output ({{result.<id-or-name>}}, post-steps only) |
 | `stepResults?` | `stepResults?: Map&lt;string, unknown&gt;;` | Prior step results map: step name → output ({{step.STEP_NAME}}) |
 
 </details>
@@ -48271,7 +48888,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreActionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:515`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:534`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48287,7 +48904,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreDeleteResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:505`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:524`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48303,7 +48920,7 @@ StorageContext for multi-tenant scenarios) and return a storage instance.
 
 ### StoreEntrySchema `interface`
 
-📍 [`src/core/context-nextgen/types.ts:447`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:466`](src/core/context-nextgen/types.ts)
 
 Describes a store's schema for dynamic tool description generation.
 The `descriptionFactory` on each store tool uses this to build
@@ -48338,7 +48955,7 @@ If undefined or empty, this store has no actions. |
 
 ### StoreGetResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:489`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:508`](src/core/context-nextgen/types.ts)
 
 Result types for store operations.
 These are intentionally loose (Record-based) to accommodate
@@ -48360,7 +48977,7 @@ store-specific fields in responses.
 
 ### StoreListResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:510`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:529`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48376,7 +48993,7 @@ store-specific fields in responses.
 
 ### StoreSetResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:498`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:517`](src/core/context-nextgen/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48883,7 +49500,7 @@ Emitted by pipelines for UI display and logging.
 
 ### TraversalOptions `interface`
 
-📍 [`src/memory/types.ts:313`](src/memory/types.ts)
+📍 [`src/memory/types.ts:323`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49009,7 +49626,7 @@ Example: 'https://myserver.com' or 'https://abc123.ngrok.io' |
 
 ### UpsertBySurfaceInput `interface`
 
-📍 [`src/memory/types.ts:758`](src/memory/types.ts)
+📍 [`src/memory/types.ts:799`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49042,7 +49659,7 @@ On create (no match), all keys are set verbatim. |
 
 ### UpsertBySurfaceOptions `interface`
 
-📍 [`src/memory/types.ts:784`](src/memory/types.ts)
+📍 [`src/memory/types.ts:825`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49066,7 +49683,7 @@ Irrelevant on create — all keys are set. |
 
 ### UpsertBySurfaceResult `interface`
 
-📍 [`src/memory/types.ts:803`](src/memory/types.ts)
+📍 [`src/memory/types.ts:844`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49083,7 +49700,7 @@ Irrelevant on create — all keys are set. |
 
 ### UpsertEntityResult `interface`
 
-📍 [`src/memory/types.ts:322`](src/memory/types.ts)
+📍 [`src/memory/types.ts:332`](src/memory/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49249,7 +49866,7 @@ If empty/omitted, rule applies to ALL calls of this tool (blanket rule). |
 
 ### ValidationContext `interface`
 
-📍 [`src/core/routineRunner.ts:167`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:184`](src/core/routineRunner.ts)
 
 Context snapshot passed to the validation prompt builder.
 Contains everything the validator needs to evaluate task completion
@@ -49629,7 +50246,7 @@ type CallEndReason = 'caller_hangup' | 'agent_hangup' | 'timeout' | 'error' | 'r
 
 ### ChangeEvent `type`
 
-📍 [`src/memory/types.ts:661`](src/memory/types.ts)
+📍 [`src/memory/types.ts:690`](src/memory/types.ts)
 
 ```typescript
 type ChangeEvent = | { type: 'entity.upsert'; entity: IEntity; created: boolean }
@@ -49677,6 +50294,18 @@ type ChangeEvent = | { type: 'entity.upsert'; entity: IEntity; created: boolean 
       attempts: number;
       reason: string;
     }
+  /**
+   * Emitted when a reconciliation op (Pillar 1 thread or Pillar 2 entity-anchored)
+   * is rejected — either because the LLM hallucinated a factId not in priorFacts,
+   * or because Pillar 2 emitted a `create` op (it only resolves). Lets observers
+   * surface LLM-drift in the audit log without grepping logger output.
+   */
+  | {
+      type: 'fact.reconcile.rejected';
+      /** Null when the op had no factId (e.g. a stray create in Pillar 2). */
+      factId: FactId | null;
+      reason: string;
+    }
 ```
 
 ---
@@ -49715,7 +50344,7 @@ type Content = | InputTextContent
 
 ### ContextFeatures `type`
 
-📍 [`src/core/context-nextgen/types.ts:744`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:763`](src/core/context-nextgen/types.ts)
 
 Feature flags for enabling/disabling plugins.
 Known keys provide autocomplete; arbitrary string keys are also accepted
@@ -49729,7 +50358,7 @@ type ContextFeatures = KnownContextFeatures & { [key: string]: boolean | undefin
 
 ### ContextTier `type`
 
-📍 [`src/memory/types.ts:283`](src/memory/types.ts)
+📍 [`src/memory/types.ts:293`](src/memory/types.ts)
 
 Tiers that callers can explicitly include; relatedTasks + relatedEvents are
 included BY DEFAULT unless the caller passes { tiers: 'minimal' }.
@@ -49770,6 +50399,18 @@ type DocumentFormat = | 'docx' | 'pptx' | 'odt' | 'odp' | 'ods' | 'rtf'
   | 'html'
   | 'txt' | 'md' | 'json' | 'xml' | 'yaml' | 'yml'
   | 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp' | 'svg'
+```
+
+---
+
+### DocumentFormat `type`
+
+📍 [`src/memory/documents/types.ts:93`](src/memory/documents/types.ts)
+
+Suggested format values stored under `metadata.format`. Default is `'markdown'`.
+
+```typescript
+type DocumentFormat = 'markdown' | 'plain' | 'json' | (string & {})
 ```
 
 ---
@@ -49864,7 +50505,7 @@ type EvictionStrategy = 'lru' | 'size'
 
 ### FactId `type`
 
-📍 [`src/memory/types.ts:145`](src/memory/types.ts)
+📍 [`src/memory/types.ts:155`](src/memory/types.ts)
 
 ```typescript
 type FactId = string
@@ -49874,7 +50515,7 @@ type FactId = string
 
 ### FactKind `type`
 
-📍 [`src/memory/types.ts:151`](src/memory/types.ts)
+📍 [`src/memory/types.ts:161`](src/memory/types.ts)
 
 - 'atomic'   → short triple: (subject, predicate, objectId | value), optional short `details`.
 - 'document' → long-form narrative in `details` (profiles, memos, notes, bios).
@@ -50063,7 +50704,7 @@ type MouseButton = 'left' | 'right' | 'middle'
 
 ### NewEntity `type`
 
-📍 [`src/memory/types.ts:480`](src/memory/types.ts)
+📍 [`src/memory/types.ts:503`](src/memory/types.ts)
 
 Input type for creating a new entity. `id`, `version`, `createdAt`, and
 `updatedAt` are assigned by the storage layer (adapter) — callers never
@@ -50077,7 +50718,7 @@ type NewEntity = Omit&lt;IEntity, 'id' | 'version' | 'createdAt' | 'updatedAt'&g
 
 ### NewFact `type`
 
-📍 [`src/memory/types.ts:486`](src/memory/types.ts)
+📍 [`src/memory/types.ts:509`](src/memory/types.ts)
 
 Input type for creating a new fact. `id` and `createdAt` are assigned by
 the storage layer.
@@ -50195,7 +50836,7 @@ type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig
 
 ### PluginConfigs `type`
 
-📍 [`src/core/context-nextgen/types.ts:802`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:821`](src/core/context-nextgen/types.ts)
 
 Plugin configurations for auto-initialization.
 Known keys provide autocomplete; arbitrary string keys accepted
@@ -50249,9 +50890,52 @@ type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra'
 
 ---
 
+### ReconciliationOp `type`
+
+📍 [`src/memory/integration/ExtractionResolver.ts:82`](src/memory/integration/ExtractionResolver.ts)
+
+Reconciliation operations emitted by the LLM in per-conversation
+reconciliation mode (when `priorFacts` is passed to the prompt). Each op is
+dispatched against the existing fact graph: `create` adds, `update` mutates
+in place, `archive` flips `archived: true`. The factId on `update`/`archive`
+MUST be one of the priorFact ids; hallucinated ids are rejected.
+
+```typescript
+type ReconciliationOp = | {
+      op: 'create';
+      subject: string;
+      predicate: string;
+      kind: FactKind;
+      object?: string;
+      objectId?: string;
+      value?: unknown;
+      details?: string;
+      contextIds?: string[];
+      evidenceQuote?: string;
+      importance?: number;
+      confidence?: number;
+    }
+  | {
+      op: 'update';
+      factId: FactId;
+      newValue?: unknown;
+      details?: string;
+      evidenceQuote?: string;
+      reason?: string;
+    }
+  | {
+      op: 'archive';
+      factId: FactId;
+      evidenceQuote?: string;
+      reason?: string;
+    }
+```
+
+---
+
 ### RelatedItemHit `type`
 
-📍 [`src/memory/types.ts:255`](src/memory/types.ts)
+📍 [`src/memory/types.ts:265`](src/memory/types.ts)
 
 A related-task / related-event hit augmented with the input entity that produced the match.
 
@@ -50263,7 +50947,7 @@ type RelatedItemHit = T & { matchedEntityId: EntityId }
 
 ### ResolvedContextFeatures `type`
 
-📍 [`src/core/context-nextgen/types.ts:750`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:769`](src/core/context-nextgen/types.ts)
 
 Resolved features — all known keys guaranteed present, plus any extras.
 Used internally after merging with DEFAULT_FEATURES.
@@ -50450,7 +51134,7 @@ type ServiceCategory = | 'major-vendors'
 
 ### ServiceType `type`
 
-📍 [`src/domain/entities/Services.ts:459`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:469`](src/domain/entities/Services.ts)
 
 Service type - union of all service IDs
 
@@ -50915,7 +51599,7 @@ export function createRoutineExecutionRecord(
 
 ### defaultExtractionPrompt `function`
 
-📍 [`src/memory/integration/defaultExtractionPrompt.ts:136`](src/memory/integration/defaultExtractionPrompt.ts)
+📍 [`src/memory/integration/defaultExtractionPrompt.ts:188`](src/memory/integration/defaultExtractionPrompt.ts)
 
 ```typescript
 export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string
@@ -50945,7 +51629,7 @@ export function defaultSkepticPrompt(ctx: SkepticPromptContext): string
 
 ### detectServiceFromURL `function`
 
-📍 [`src/domain/entities/Services.ts:537`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:547`](src/domain/entities/Services.ts)
 
 Detect service type from a URL
 
@@ -51017,7 +51701,7 @@ export function emitRestraintEvent(
 
 ### encodeSharingUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:711`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:794`](src/tools/microsoft/types.ts)
 
 Encode a sharing URL into the Graph API sharing token format.
 
@@ -51033,10 +51717,20 @@ export function encodeSharingUrl(webUrl: string): string
 
 ### ensureIndexes `function`
 
-📍 [`src/memory/adapters/mongo/indexes.ts:46`](src/memory/adapters/mongo/indexes.ts)
+📍 [`src/memory/adapters/mongo/indexes.ts:55`](src/memory/adapters/mongo/indexes.ts)
 
 ```typescript
 export async function ensureIndexes(args: EnsureIndexesArgs): Promise&lt;void&gt;
+```
+
+---
+
+### entityReconciliationPrompt `function`
+
+📍 [`src/memory/integration/entityReconciliationPrompt.ts:40`](src/memory/integration/entityReconciliationPrompt.ts)
+
+```typescript
+export function entityReconciliationPrompt(ctx: EntityReconciliationPromptContext): string
 ```
 
 ---
@@ -51066,7 +51760,7 @@ export async function excelToMarkdownKV(
 
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:858`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:875`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 
@@ -51111,13 +51805,19 @@ initialUserMessage: 'Execute the selected action: Send reply.',
 
 ### factFilterToMongo `function`
 
-📍 [`src/memory/adapters/mongo/queries.ts:14`](src/memory/adapters/mongo/queries.ts)
+📍 [`src/memory/adapters/mongo/queries.ts:17`](src/memory/adapters/mongo/queries.ts)
 
 Build a Mongo filter from a FactFilter + ScopeFilter.
 Pushes archived and asOf into the DB so the app never scans hidden docs.
 
+`scopeOpts` propagates to `scopeToFilter` — used by the adapter to honor
+its `disableWorldVisibility` option uniformly across read paths.
+
 ```typescript
-export function factFilterToMongo(filter: FactFilter, scope: ScopeFilter): MongoFilter
+export function factFilterToMongo(
+  filter: FactFilter,
+  scope: ScopeFilter,
+  scopeOpts: ScopeToFilterOptions =
 ```
 
 ---
@@ -51166,7 +51866,7 @@ export function formatAttendees(emails: unknown[]):
 
 ### formatFileSize `function`
 
-📍 [`src/tools/google/types.ts:351`](src/tools/google/types.ts)
+📍 [`src/tools/google/types.ts:372`](src/tools/google/types.ts)
 
 Format a file size in bytes to a human-readable string.
 
@@ -51178,7 +51878,7 @@ export function formatFileSize(bytes: number): string
 
 ### formatFileSize `function`
 
-📍 [`src/tools/microsoft/types.ts:815`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:898`](src/tools/microsoft/types.ts)
 
 Format a file size in bytes to a human-readable string.
 
@@ -51258,7 +51958,7 @@ export function getAccountSid(connector: Connector): string
 
 ### getAllServiceIds `function`
 
-📍 [`src/domain/entities/Services.ts:573`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:583`](src/domain/entities/Services.ts)
 
 Get all service IDs
 
@@ -51324,7 +52024,7 @@ export async function getDesktopDriver(config?: DesktopToolConfig): Promise&lt;I
 
 ### getDrivePrefix `function`
 
-📍 [`src/tools/microsoft/types.ts:759`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:842`](src/tools/microsoft/types.ts)
 
 Determine the drive prefix for Graph API calls.
 
@@ -51392,7 +52092,7 @@ export function getRoutineProgress(execution: RoutineExecution): number
 
 ### getServiceDefinition `function`
 
-📍 [`src/domain/entities/Services.ts:559`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:569`](src/domain/entities/Services.ts)
 
 Get service definition by service type
 
@@ -51404,7 +52104,7 @@ export function getServiceDefinition(serviceType: string): ServiceDefinition | u
 
 ### getServiceInfo `function`
 
-📍 [`src/domain/entities/Services.ts:552`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:562`](src/domain/entities/Services.ts)
 
 Get service info by service type
 
@@ -51416,7 +52116,7 @@ export function getServiceInfo(serviceType: string): ServiceInfo | undefined
 
 ### getServicesByCategory `function`
 
-📍 [`src/domain/entities/Services.ts:566`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:576`](src/domain/entities/Services.ts)
 
 Get all services in a category
 
@@ -51523,7 +52223,7 @@ export function isExcludedExtension(
 
 ### isKnownService `function`
 
-📍 [`src/domain/entities/Services.ts:580`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:590`](src/domain/entities/Services.ts)
 
 Check if a service ID is known
 
@@ -51535,7 +52235,7 @@ export function isKnownService(serviceId: string): boolean
 
 ### isMicrosoftFileUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:736`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:819`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a OneDrive/SharePoint web URL.
 
@@ -51553,7 +52253,7 @@ export function isMicrosoftFileUrl(source: string): boolean
 
 ### isStoreHandler `function`
 
-📍 [`src/core/context-nextgen/types.ts:592`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:611`](src/core/context-nextgen/types.ts)
 
 Type guard to check if a plugin implements IStoreHandler.
 
@@ -51585,7 +52285,7 @@ export function isTeamsMeetingUrl(input: string): boolean
 
 ### isWebUrl `function`
 
-📍 [`src/tools/microsoft/types.ts:723`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:806`](src/tools/microsoft/types.ts)
 
 Check if a string looks like a web URL (http/https).
 
@@ -51661,7 +52361,7 @@ export function maybeCoerceToDate(value: unknown): unknown
 
 ### mergeFilters `function`
 
-📍 [`src/memory/adapters/mongo/scopeFilter.ts:62`](src/memory/adapters/mongo/scopeFilter.ts)
+📍 [`src/memory/adapters/mongo/scopeFilter.ts:86`](src/memory/adapters/mongo/scopeFilter.ts)
 
 ```typescript
 export function mergeFilters(...filters: Array&lt;MongoFilter | null | undefined&gt;): MongoFilter
@@ -51715,7 +52415,7 @@ export function mulawToPcm(mulaw: Buffer): Buffer
 
 ### normalizeEmails `function`
 
-📍 [`src/tools/google/types.ts:258`](src/tools/google/types.ts)
+📍 [`src/tools/google/types.ts:279`](src/tools/google/types.ts)
 
 Normalize an email array from any format the LLM might send into plain strings.
 Same logic as Microsoft tools for consistency.
@@ -51794,7 +52494,7 @@ export function normalizeSurface(s: string): string
 
 ### orderByToSort `function`
 
-📍 [`src/memory/adapters/mongo/queries.ts:101`](src/memory/adapters/mongo/queries.ts)
+📍 [`src/memory/adapters/mongo/queries.ts:108`](src/memory/adapters/mongo/queries.ts)
 
 ```typescript
 export function orderByToSort(orderBy?: FactOrderBy): MongoSort | undefined
@@ -51804,7 +52504,7 @@ export function orderByToSort(orderBy?: FactOrderBy): MongoSort | undefined
 
 ### parseExtractionResponse `function`
 
-📍 [`src/memory/integration/parseExtraction.ts:143`](src/memory/integration/parseExtraction.ts)
+📍 [`src/memory/integration/parseExtraction.ts:214`](src/memory/integration/parseExtraction.ts)
 
 Resilient to code fences + leading/trailing prose. Returns an empty shape
 rather than throwing so ingest pipelines can continue.
@@ -51820,7 +52520,7 @@ export function parseExtractionResponse(raw: string): ExtractionOutput
 
 ### parseExtractionWithStatus `function`
 
-📍 [`src/memory/integration/parseExtraction.ts:63`](src/memory/integration/parseExtraction.ts)
+📍 [`src/memory/integration/parseExtraction.ts:71`](src/memory/integration/parseExtraction.ts)
 
 Rich parser. Never throws — failures surface as non-ok status.
 
@@ -52032,7 +52732,7 @@ export function resolveEagerness(
 
 ### resolveFileEndpoints `function`
 
-📍 [`src/tools/microsoft/types.ts:778`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:861`](src/tools/microsoft/types.ts)
 
 Build the Graph API endpoint and metadata endpoint for a file source.
 
@@ -52052,7 +52752,7 @@ export function resolveFileEndpoints(
 
 ### resolveFlowSource `function`
 
-📍 [`src/core/routineControlFlow.ts:547`](src/core/routineControlFlow.ts)
+📍 [`src/core/routineControlFlow.ts:549`](src/core/routineControlFlow.ts)
 
 Resolve the source array for a map/fold control flow using layered resolution:
 1. Determine lookup key(s) from source config
@@ -52086,7 +52786,7 @@ export function resolveMaxContextTokens(
 
 ### resolveMeetingId `function`
 
-📍 [`src/tools/microsoft/types.ts:367`](src/tools/microsoft/types.ts)
+📍 [`src/tools/microsoft/types.ts:450`](src/tools/microsoft/types.ts)
 
 Resolve a meeting input (ID or Teams URL) to a Graph API online meeting ID.
 
@@ -52126,13 +52826,15 @@ export function resolveRepository(
 
 ### resolveStepArgs `function`
 
-📍 [`src/core/routineControlFlow.ts:191`](src/core/routineControlFlow.ts)
+📍 [`src/core/routineControlFlow.ts:193`](src/core/routineControlFlow.ts)
 
 Resolve template placeholders in deterministic step arguments (deep).
 
 Walks the argument object recursively. For string values, resolves:
 - {{param.NAME}} — from inputs
-- {{result.TASK_NAME}} — from task outputs (post-steps)
+- {{result.TASK_ID_OR_NAME}} — from task outputs (post-steps); accepts
+  either the task's canonical `id` or its `name` (both are indexed in
+  `taskResults`, lookup is a literal key match)
 - {{step.STEP_NAME}} — from prior step results
 
 Non-string values pass through unchanged. Unresolved templates are left as-is.
@@ -52171,10 +52873,12 @@ export function resolveTemplates(
 
 ### scopeToFilter `function`
 
-📍 [`src/memory/adapters/mongo/scopeFilter.ts:37`](src/memory/adapters/mongo/scopeFilter.ts)
+📍 [`src/memory/adapters/mongo/scopeFilter.ts:50`](src/memory/adapters/mongo/scopeFilter.ts)
 
 ```typescript
-export function scopeToFilter(scope: ScopeFilter): MongoFilter
+export function scopeToFilter(
+  scope: ScopeFilter,
+  opts: ScopeToFilterOptions =
 ```
 
 ---
@@ -52336,7 +53040,7 @@ export function toDate(value: unknown): Date | undefined
 
 ### toDate `function`
 
-📍 [`src/memory/integration/ExtractionResolver.ts:570`](src/memory/integration/ExtractionResolver.ts)
+📍 [`src/memory/integration/ExtractionResolver.ts:918`](src/memory/integration/ExtractionResolver.ts)
 
 ```typescript
 function toDate(v: string | Date | undefined): Date | undefined
@@ -52346,7 +53050,7 @@ function toDate(v: string | Date | undefined): Date | undefined
 
 ### toDate `function`
 
-📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:954`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
+📍 [`src/memory/adapters/mongo/MongoMemoryAdapter.ts:1225`](src/memory/adapters/mongo/MongoMemoryAdapter.ts)
 
 ```typescript
 function toDate(v: unknown): Date
@@ -52441,7 +53145,7 @@ export function validatePath(path: string): boolean
 
 ### DEFAULT_CONFIG `const`
 
-📍 [`src/core/context-nextgen/types.ts:881`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:900`](src/core/context-nextgen/types.ts)
 
 Default configuration values
 
@@ -52511,7 +53215,7 @@ Default configuration values
 
 ### DEFAULT_FEATURES `const`
 
-📍 [`src/core/context-nextgen/types.ts:755`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:774`](src/core/context-nextgen/types.ts)
 
 Default feature configuration for built-in plugins.
 

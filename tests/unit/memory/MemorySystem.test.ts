@@ -1141,6 +1141,51 @@ describe('MemorySystem', () => {
       expect(events.some((e) => e.type === 'profile.regenerate')).toBe(true);
       await m.shutdown();
     });
+
+    it('single-flights concurrent calls for the same entity+scope', async () => {
+      // Hold the generator open until we've fired both calls so they're
+      // genuinely concurrent — otherwise the first would resolve before the
+      // second ever entered the method.
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const generate = vi.fn(async () => {
+        await gate;
+        return { details: 'shared', summaryForEmbedding: 'shared' };
+      });
+      const m = new MemorySystem({ store, profileGenerator: { generate } });
+      const subj = await seedEntity(m, {
+        identifiers: [{ kind: 'email', value: 'rp-singleflight@x.com' }],
+      });
+      const p1 = m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
+      const p2 = m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
+      release();
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(r1.id).toBe(r2.id);
+      await m.shutdown();
+    });
+
+    it('clears in-flight entry on failure so a retry can proceed', async () => {
+      let attempt = 0;
+      const generate = vi.fn(async () => {
+        attempt += 1;
+        if (attempt === 1) throw new Error('first attempt fails');
+        return { details: 'second', summaryForEmbedding: 'second' };
+      });
+      const m = new MemorySystem({ store, profileGenerator: { generate } });
+      const subj = await seedEntity(m, {
+        identifiers: [{ kind: 'email', value: 'rp-retry@x.com' }],
+      });
+      await expect(m.regenerateProfile(subj, TEST_SCOPE_FIELDS)).rejects.toThrow(
+        'first attempt fails',
+      );
+      const ok = await m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
+      expect(ok.details).toBe('second');
+      expect(generate).toHaveBeenCalledTimes(2);
+      await m.shutdown();
+    });
   });
 
   describe('auto-regen on addFact', () => {

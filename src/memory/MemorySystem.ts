@@ -328,8 +328,14 @@ export class MemorySystem implements IDisposable {
   private readonly _stateHistoryCap: number;
   private readonly visibilityPolicy?: VisibilityPolicy;
 
-  /** Tracks pending profile regenerations per (entityId + scopeKey) to prevent overlap. */
-  private readonly regenInFlight = new Set<string>();
+  /**
+   * Single-flight registry for profile regenerations, keyed by entityId+scope.
+   * Concurrent callers for the same key SHARE the in-flight promise — both
+   * the explicit `regenerateProfile()` path and the threshold-driven
+   * `maybeRegenerateProfile()` path dedup through this map, so racing agent
+   * runs or pipeline ticks against a hot entity collapse to one LLM call.
+   */
+  private readonly regenInFlight = new Map<string, Promise<IFact>>();
 
   private destroyed = false;
 
@@ -2797,6 +2803,32 @@ export class MemorySystem implements IDisposable {
     assertNotDestroyed(this, 'regenerateProfile');
     if (!this.profileGenerator) throw new ProfileGeneratorMissingError();
 
+    // Single-flight: if another caller is already regenerating this entity's
+    // profile at the same scope, share the in-flight promise. Without this,
+    // two concurrent calls (e.g. an explicit `regenerateProfile` racing with
+    // a threshold-driven one on the same hot entity) each fire a full LLM
+    // call — wasted spend and doubled wall-clock for a single cacheable output.
+    const inflightKey = regenKey(entityId, targetScope);
+    const existing = this.regenInFlight.get(inflightKey);
+    if (existing) return existing;
+
+    const work = this.runRegenerateProfile(entityId, targetScope);
+    this.regenInFlight.set(inflightKey, work);
+    try {
+      return await work;
+    } finally {
+      this.regenInFlight.delete(inflightKey);
+    }
+  }
+
+  private async runRegenerateProfile(
+    entityId: EntityId,
+    targetScope: ScopeFields,
+  ): Promise<IFact> {
+    // Caller (regenerateProfile) has already asserted not destroyed and
+    // confirmed profileGenerator is set.
+    const profileGenerator = this.profileGenerator!;
+
     const readScope: ScopeFilter = {
       groupId: targetScope.groupId,
       userId: targetScope.ownerId,
@@ -2894,7 +2926,7 @@ export class MemorySystem implements IDisposable {
       );
     }
 
-    const { details, summaryForEmbedding } = await this.profileGenerator.generate({
+    const { details, summaryForEmbedding } = await profileGenerator.generate({
       entity,
       newFacts,
       priorProfile,
@@ -2934,6 +2966,10 @@ export class MemorySystem implements IDisposable {
   private async maybeRegenerateProfile(entityId: EntityId, scope: ScopeFields): Promise<void> {
     if (!this.profileGenerator) return;
     const key = regenKey(entityId, scope);
+    // Skip the threshold/count work entirely when a regen is already running
+    // for this key — `regenerateProfile` itself single-flights the LLM call,
+    // but doing the prior-profile/count queries here is also pointless work
+    // when the answer is "someone else has it".
     if (this.regenInFlight.has(key)) return;
 
     const readScope: ScopeFilter = { groupId: scope.groupId, userId: scope.ownerId };
@@ -2964,17 +3000,13 @@ export class MemorySystem implements IDisposable {
       const threshold = this.profileThreshold;
       if (newFactCount < threshold) return;
 
-      this.regenInFlight.add(key);
-      try {
-        await this.regenerateProfile(entityId, scope, 'threshold');
-      } finally {
-        this.regenInFlight.delete(key);
-      }
+      // `regenerateProfile` handles in-flight registration; if a race got
+      // here first the call below returns the shared in-flight promise.
+      await this.regenerateProfile(entityId, scope, 'threshold');
     } catch (err) {
       // Background regen failures must not impact the write path — but they
       // must never be silent. Surface via console.warn (same pattern as
       // reportWarning / onChange listener failures elsewhere in this file).
-      this.regenInFlight.delete(key);
       // eslint-disable-next-line no-console
       console.warn(
         '[MemorySystem.maybeRegenerateProfile] background profile regeneration failed',
