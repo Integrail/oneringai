@@ -1,5 +1,8 @@
 /**
- * transitionTaskState — state machine helper + LLM auto-routing.
+ * transitionTaskState — state machine helper.
+ *
+ * The library no longer writes an audit fact on transition (the `state_changed`
+ * predicate was removed); `metadata.stateHistory` is the audit trail.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -8,7 +11,6 @@ import {
   InvalidTaskTransitionError,
 } from '@/memory/MemorySystem.js';
 import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
-import { ExtractionResolver } from '@/memory/integration/ExtractionResolver.js';
 import type {
   ScopeFilter,
   TaskStateHistoryEntry,
@@ -45,7 +47,7 @@ describe('transitionTaskState', () => {
     if (!mem.isDestroyed) await mem.shutdown();
   });
 
-  it('happy path: updates state, appends history, writes state_changed fact', async () => {
+  it('happy path: updates state and appends history', async () => {
     const task = await seedTask(mem, 'Review budget', 'in_progress');
     const result = await mem.transitionTaskState(
       task.id,
@@ -60,10 +62,6 @@ describe('transitionTaskState', () => {
     expect(history[0]!.to).toBe('done');
     expect(history[0]!.signalId).toBe('sig-1');
     expect(history[0]!.reason).toBe('Completed ahead of schedule');
-    expect(result.fact).not.toBeNull();
-    expect(result.fact!.predicate).toBe('state_changed');
-    expect(result.fact!.value).toEqual({ from: 'in_progress', to: 'done' });
-    expect(result.fact!.sourceSignalId).toBe('sig-1');
   });
 
   it('transition to terminal state sets completedAt (when unset)', async () => {
@@ -92,7 +90,6 @@ describe('transitionTaskState', () => {
   it('no-op when from === to (same state)', async () => {
     const task = await seedTask(mem, 'D', 'in_progress');
     const result = await mem.transitionTaskState(task.id, 'in_progress', {}, scope);
-    expect(result.fact).toBeNull();
     expect(result.task.version).toBe(task.version); // no write
   });
 
@@ -113,11 +110,11 @@ describe('transitionTaskState', () => {
     expect(fresh!.metadata?.state).toBe('done');
   });
 
-  it("validate='warn' routes invalid transition through onError and proceeds", async () => {
+  it("validate='warn' proceeds even on out-of-matrix transitions", async () => {
     const onError = vi.fn();
     const memWithHook = new MemorySystem({
       store: new InMemoryAdapter(),
-      onError: () => {}, // noop real hook — custom testing hook below via reportWarning path
+      onError: () => {},
     });
     const t = await memWithHook.upsertEntity(
       {
@@ -128,7 +125,6 @@ describe('transitionTaskState', () => {
       },
       scope,
     );
-    // Warn path: no throw, writes proceed.
     const result = await memWithHook.transitionTaskState(
       t.entity.id,
       'in_progress',
@@ -136,7 +132,6 @@ describe('transitionTaskState', () => {
       scope,
     );
     expect(result.task.metadata?.state).toBe('in_progress');
-    expect(result.fact).not.toBeNull();
     await memWithHook.shutdown();
     void onError;
   });
@@ -178,194 +173,5 @@ describe('transitionTaskState', () => {
     const result = await memCustom.transitionTaskState(t.entity.id, 'shipped', {}, scope);
     expect(result.task.metadata?.completedAt).toBeInstanceOf(Date);
     await memCustom.shutdown();
-  });
-});
-
-describe('ExtractionResolver — auto-routing state_changed facts on tasks', () => {
-  let mem: MemorySystem;
-
-  beforeEach(() => {
-    mem = new MemorySystem({ store: new InMemoryAdapter() });
-  });
-
-  afterEach(async () => {
-    if (!mem.isDestroyed) await mem.shutdown();
-  });
-
-  it('routes state_changed on a task subject through transitionTaskState', async () => {
-    const task = await seedTask(mem, 'Route me', 'in_progress');
-
-    const resolver = new ExtractionResolver(mem);
-    const out = await resolver.resolveAndIngest(
-      {
-        mentions: {},
-        facts: [
-          {
-            subject: 't',
-            predicate: 'state_changed',
-            kind: 'atomic',
-            value: { from: 'in_progress', to: 'done' },
-            details: 'Finished in review meeting',
-          },
-        ],
-      },
-      'sig-extract',
-      scope,
-      { preResolved: { t: task.id } },
-    );
-
-    expect(out.facts).toHaveLength(1);
-    expect(out.facts[0]!.predicate).toBe('state_changed');
-
-    // Side effects should be applied — this is the point of auto-routing.
-    const fresh = await mem.getEntity(task.id, scope);
-    expect(fresh!.metadata?.state).toBe('done');
-    const history = fresh!.metadata?.stateHistory as TaskStateHistoryEntry[];
-    expect(history).toHaveLength(1);
-    expect(history[0]!.to).toBe('done');
-    expect(fresh!.metadata?.completedAt).toBeInstanceOf(Date);
-  });
-
-  it('accepts plain-string value shape (not wrapped in {from,to})', async () => {
-    const task = await seedTask(mem, 'Plain string', 'in_progress');
-    const resolver = new ExtractionResolver(mem);
-    await resolver.resolveAndIngest(
-      {
-        mentions: {},
-        facts: [{ subject: 't', predicate: 'state_changed', kind: 'atomic', value: 'blocked' }],
-      },
-      'sig-plain',
-      scope,
-      { preResolved: { t: task.id } },
-    );
-    const fresh = await mem.getEntity(task.id, scope);
-    expect(fresh!.metadata?.state).toBe('blocked');
-  });
-
-  it('flag off: state_changed on a task is written as a plain fact, no side effects', async () => {
-    const memNoRoute = new MemorySystem({
-      store: new InMemoryAdapter(),
-      autoApplyTaskTransitions: false,
-    });
-    const t = await memNoRoute.upsertEntity(
-      {
-        type: 'task',
-        displayName: 'No-route',
-        identifiers: [{ kind: 'canonical', value: 'task:no-route' }],
-        metadata: { state: 'in_progress' },
-      },
-      scope,
-    );
-
-    const resolver = new ExtractionResolver(memNoRoute);
-    await resolver.resolveAndIngest(
-      {
-        mentions: {},
-        facts: [
-          { subject: 't', predicate: 'state_changed', kind: 'atomic', value: { from: 'in_progress', to: 'done' } },
-        ],
-      },
-      'sig-no-route',
-      scope,
-      { preResolved: { t: t.entity.id } },
-    );
-
-    const fresh = await memNoRoute.getEntity(t.entity.id, scope);
-    expect(fresh!.metadata?.state).toBe('in_progress'); // unchanged
-    expect(fresh!.metadata?.stateHistory).toBeUndefined();
-    await memNoRoute.shutdown();
-  });
-
-  it('non-task subject: state_changed lands as a plain fact', async () => {
-    const person = await mem.upsertEntity(
-      {
-        type: 'person',
-        displayName: 'P',
-        identifiers: [{ kind: 'email', value: 'p@x.com' }],
-      },
-      scope,
-    );
-    const resolver = new ExtractionResolver(mem);
-    const out = await resolver.resolveAndIngest(
-      {
-        mentions: {},
-        facts: [
-          { subject: 'p', predicate: 'state_changed', kind: 'atomic', value: { from: 'a', to: 'b' } },
-        ],
-      },
-      'sig-person',
-      scope,
-      { preResolved: { p: person.entity.id } },
-    );
-    // Fact lands because addFact doesn't gate on subject type — auto-routing
-    // short-circuits and falls through.
-    expect(out.facts).toHaveLength(1);
-    expect(out.facts[0]!.subjectId).toBe(person.entity.id);
-  });
-
-  it('preserves LLM-supplied importance / confidence / contextIds / validity on the audit fact', async () => {
-    const task = await seedTask(mem, 'Preserves', 'in_progress');
-    // Make a deal entity for contextIds.
-    const deal = await mem.upsertEntity(
-      {
-        type: 'project',
-        displayName: 'Acme Deal',
-        identifiers: [{ kind: 'canonical', value: 'project:acme' }],
-      },
-      scope,
-    );
-
-    const resolver = new ExtractionResolver(mem);
-    const out = await resolver.resolveAndIngest(
-      {
-        mentions: {},
-        facts: [
-          {
-            subject: 't',
-            predicate: 'state_changed',
-            kind: 'atomic',
-            value: { from: 'in_progress', to: 'done' },
-            details: 'Closed as part of Acme deal review',
-            importance: 0.95,
-            confidence: 0.88,
-            contextIds: ['deal'],
-            validUntil: '2027-01-01T00:00:00Z',
-          },
-        ],
-      },
-      'sig-preserve',
-      scope,
-      { preResolved: { t: task.id, deal: deal.entity.id } },
-    );
-
-    expect(out.facts).toHaveLength(1);
-    const f = out.facts[0]!;
-    expect(f.predicate).toBe('state_changed');
-    expect(f.importance).toBe(0.95);
-    expect(f.confidence).toBe(0.88);
-    expect(f.contextIds).toEqual([deal.entity.id]);
-    expect(f.validUntil).toEqual(new Date('2027-01-01T00:00:00Z'));
-    // Side effect still fired.
-    const fresh = await mem.getEntity(task.id, scope);
-    expect(fresh!.metadata?.state).toBe('done');
-  });
-
-  it('malformed value (no `to`): state_changed falls through to plain fact', async () => {
-    const task = await seedTask(mem, 'Mal', 'in_progress');
-    const resolver = new ExtractionResolver(mem);
-    const out = await resolver.resolveAndIngest(
-      {
-        mentions: {},
-        facts: [
-          { subject: 't', predicate: 'state_changed', kind: 'atomic', value: { from: 'x' } },
-        ],
-      },
-      'sig-mal',
-      scope,
-      { preResolved: { t: task.id } },
-    );
-    expect(out.facts).toHaveLength(1);
-    const fresh = await mem.getEntity(task.id, scope);
-    expect(fresh!.metadata?.state).toBe('in_progress'); // unchanged — no routing happened
   });
 });

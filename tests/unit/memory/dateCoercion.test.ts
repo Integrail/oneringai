@@ -240,16 +240,15 @@ describe('coerceFactTemporalFields', () => {
         };
         expect(coerceFactTemporalFields(input)).toBe(input);
     });
-    it('coerces ISO strings inside `value` (e.g. state_changed shape)', () => {
+    it('coerces ISO strings inside `value` (structured shape with embedded date)', () => {
         const out = coerceFactTemporalFields({
             subjectId: 'task_1',
-            predicate: 'state_changed',
-            value: { from: 'pending', to: 'in_progress', at: '2026-04-30T13:00:00Z' },
+            predicate: 'scheduled_for',
+            value: { window: 'this-week', at: '2026-04-30T13:00:00Z' },
             observedAt: '2026-04-30T13:00:00Z',
         });
         const value = out.value as Record<string, unknown>;
-        expect(value.from).toBe('pending');
-        expect(value.to).toBe('in_progress');
+        expect(value.window).toBe('this-week');
         expect(value.at).toBeInstanceOf(Date);
         expect((value.at as Date).toISOString()).toBe('2026-04-30T13:00:00.000Z');
         expect(out.observedAt).toBeInstanceOf(Date);
@@ -257,7 +256,7 @@ describe('coerceFactTemporalFields', () => {
     it('leaves non-date strings inside `value` alone (regex-guarded)', () => {
         const out = coerceFactTemporalFields({
             subjectId: 'e1',
-            predicate: 'has_status',
+            predicate: 'has_priority',
             value: { status: 'active', label: 'never' },
         });
         const value = out.value as Record<string, unknown>;

@@ -65,7 +65,7 @@ interface IEntity extends ScopeFields {
 interface IFact extends ScopeFields {
   id: FactId;
   subjectId: EntityId;
-  predicate: string;            // e.g. 'works_at', 'assigned_task', 'profile'
+  predicate: string;            // e.g. 'works_at', 'committed_to', 'profile'
   kind: 'atomic' | 'document';
 
   // Payload — atomic uses (objectId XOR value), document uses details.
@@ -1125,21 +1125,25 @@ class PredicateRegistry {
 
 ### Standard library
 
-`PredicateRegistry.standard()` returns a fresh registry with 54 predicates across 9 categories:
+`PredicateRegistry.standard()` returns a fresh registry with 54 predicates across 11 categories:
 
 | Category | Predicates |
 |---|---|
 | identity | works_at, reports_to, current_title, current_role, located_in, is_member_of, founded |
 | organizational | part_of, subsidiary_of, manages, owns, acquired, merged_with |
-| task | assigned_task, committed_to, completed, created, reviewed, approved, blocked_by, depends_on, has_due_date, has_priority, prepares_for, delegated_to, cancelled_due_to |
-| state | state_changed, has_status, current_status |
+| task | committed_to, completed, created, reviewed, blocked_by, depends_on, has_due_date, has_priority, prepares_for, cancelled_due_to |
+| decision | decision_made |
 | communication | emailed, called, messaged, met_with, mentioned, cc_ed, responded_to, interaction_count *(aggregate)* |
 | observation | observed_topic, expressed_concern, expressed_interest, acknowledged, noted |
 | temporal | occurred_on, scheduled_for, started_on, ended_on |
-| document | profile, biography, memo, meeting_notes, research_note |
+| event | attended, hosted |
+| priority | tracks_priority, priority_affects |
+| document | profile, biography, memo, meeting_notes, research_note, has_document |
 | social | knows, works_with, colleague_of |
 
-`singleValued`: `current_title`, `current_role`, `has_due_date`, `has_priority`, `has_status`, `current_status`, `started_on`, `ended_on`. `isAggregate`: `interaction_count`.
+`singleValued`: `current_title`, `current_role`, `has_due_date`, `has_priority`, `started_on`, `ended_on`. `isAggregate`: `interaction_count`.
+
+> **Task state is metadata, not a fact.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). There is no `state_changed` / `has_status` / `current_status` predicate — transitions are host-driven; `metadata.stateHistory` is the only audit trail. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
 
 **Note:** `profile` is consumed by `MemorySystem.getContext` (document fact with predicate=`profile` is the canonical per-entity profile). Do not rename.
 

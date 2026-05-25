@@ -62,10 +62,11 @@ describe('prompt v2', () => {
     expect(p).toContain('Do NOT restate them as separate facts');
   });
 
-  it('guideline #4 points at state_changed for routing', () => {
+  it('guideline #4 directs task state to metadata, not facts', () => {
     const p = defaultExtractionPrompt({ signalText: 'x' });
-    expect(p).toContain('state_changed');
-    expect(p).toContain('routes it through the task-state machine');
+    expect(p).toContain('Task state lives on');
+    expect(p).toContain('metadata.state');
+    expect(p).not.toContain('state_changed');
   });
 
   it('renders type-aware detail for tasks in knownEntities (state + dueAt)', () => {

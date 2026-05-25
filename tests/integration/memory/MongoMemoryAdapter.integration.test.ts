@@ -321,19 +321,19 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     expect(hits.items.map((e) => e.displayName)).toContain('Deep nested target');
   });
 
-  it('coerces ISO-string fact value fields ($ex: state_changed at:<iso>)', async () => {
+  it('coerces ISO-string fact value fields (structured value with embedded date)', async () => {
     const task = await adapter.createEntity({
       type: 'task',
       displayName: 'Range fact target',
       identifiers: [{ kind: 'canonical', value: 'task:user-1:range' }],
     });
-    // Common state_changed shape — the `at` ISO string must be coerced or
+    // Structured-value shape with an embedded ISO `at` — must be coerced or
     // a range query on `value.at` silently misses it.
     await adapter.createFact({
       subjectId: task.id,
-      predicate: 'state_changed',
+      predicate: 'scheduled_for',
       kind: 'atomic',
-      value: { from: 'pending', to: 'in_progress', at: '2026-05-15T09:00:00Z' },
+      value: { window: 'sprint-5', at: '2026-05-15T09:00:00Z' },
     });
 
     // Read back; verify the BSON type. Driver-level Date → JS Date round trip.

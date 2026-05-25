@@ -21,7 +21,7 @@
  * - 'stateful'  — current-value snapshot, expected to be replaced by a newer
  *                  one over time. Typically `singleValued: true`. No
  *                  `defaultValidityDays` — supersession handles obsolescence.
- *                  Examples: current_title, has_status, has_due_date.
+ *                  Examples: current_title, current_role, has_due_date.
  *
  * - 'ephemeral' — time-bounded assertion (a commitment, a scheduled event,
  *                  an expressed concern). `defaultValidityDays` should be set

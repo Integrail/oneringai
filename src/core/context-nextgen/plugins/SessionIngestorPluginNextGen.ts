@@ -1028,7 +1028,7 @@ When in doubt, OMIT \`validUntil\` — too-early expiry silently hides facts fro
 
 Every date that appears in \`value\`, \`details\`, or \`validUntil\` MUST be an absolute ISO date (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:MM:SSZ\`). Never write a **time anchor** (\`today\`, \`tomorrow\`, \`tonight\`, \`EOD\`, \`this week\`, \`next month\`, \`Friday\`, \`next Tuesday\`, \`in 3 days\`, etc.) into a fact — those are unresolved references to "now" and decay the moment they're written.
 
-**Status descriptors** like \`overdue\` / \`past due\` are different — they describe a state at a moment in time, not a time anchor. Re-encode them as a structured status fact backed by primary evidence: \`{predicate: 'has_status', value: 'overdue'}\` (or \`metadata.state\` on a task entity). Then supersession handles the state change cleanly. Do NOT inline the word \`overdue\` into \`value\`/\`details\` of an unrelated fact, and do NOT emit \`overdue\` at all without primary evidence backing the status.
+**Status descriptors** like \`overdue\` / \`past due\` are different — they describe a state at a moment in time, not a time anchor. Re-encode them on the entity itself: set \`metadata.state\` on a task mention, or surface the state as part of a decision/observation fact backed by primary evidence (e.g. \`completed\` for a finished task). Do NOT inline the word \`overdue\` into \`value\`/\`details\` of an unrelated fact, and do NOT emit \`overdue\` at all without primary evidence backing the status.
 
 When the source text uses a relative anchor, you must resolve it against PRIMARY EVIDENCE in this transcript:
 - a \`[tool_result]\` block's date/time fields,
@@ -1076,7 +1076,7 @@ This rule has nothing to do with truth. A fact may be true and still fail this r
 
 Bucket by fact category; downgrade further when grounding is weak. (Class B facts without primary evidence are already SKIPPED by the rule above — they never reach this section.)
 
-- **0.7–1.0** — Identity / structural facts with strong primary evidence (full_name, email, role, has_status, has_deadline) backed by a direct user statement or a clear tool_result field.
+- **0.7–1.0** — Identity / structural facts with strong primary evidence (full_name, email, role, has_due_date) backed by a direct user statement or a clear tool_result field.
 - **0.4–0.6** — Specific observations from primary evidence (a durable preference the user expressed, a commitment they stated, an event on the calendar).
 - **0.1–0.3** — Class A exploratory / interactional facts ("user is interested in X", "user is exploring Y"), tentative inferences with confidence \`<\` 0.7, and any fact whose support is indirect (synthesized across multiple sources rather than stated outright).
 

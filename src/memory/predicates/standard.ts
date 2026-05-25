@@ -1,5 +1,5 @@
 /**
- * Standard predicate library — 54 predicates across 9 categories.
+ * Standard predicate library — 54 predicates across 11 categories.
  *
  * Shipped with the memory layer; opt-in via `PredicateRegistry.standard()`.
  * Users can extend (`.register(...)`), override, or replace entirely with
@@ -25,6 +25,21 @@
  * default extraction prompt no longer advertises them to the LLM. This is
  * deliberate: per-message metadata belongs in aggregation, not in the
  * extracted-fact stream.
+ *
+ * **Predicate consolidation (2026-05-25, breaking).** Six predicates were
+ * deleted outright — their information lives more naturally on entity metadata
+ * or in the new first-class `decision_made` predicate:
+ *   - `approved` → use `decision_made` (approvals are decisions).
+ *   - `assigned_task`, `delegated_to` → assignment lives on `task.metadata.assigneeId`;
+ *     use `committed_to(person, task)` for lineage + verbatim evidence.
+ *   - `state_changed` → task state lives on `task.metadata.state`; transitions
+ *     are host-driven via `MemorySystem.transitionTaskState`. LLM extraction no
+ *     longer transitions task state from facts.
+ *   - `has_status`, `current_status` → status narrative belongs on entity
+ *     metadata (e.g. `metadata.jarvis.narrative`), not as facts.
+ * Callers persisting these names in legacy data must migrate or accept that
+ * canonicalization will no longer match — `PredicateRegistry.canonicalize`
+ * returns the raw string when the predicate isn't registered.
  */
 
 import type { PredicateDefinition } from './types.js';
@@ -195,19 +210,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
   // task
   // ---------------------------------------------------------------------------
   {
-    name: 'assigned_task',
-    description: 'Person is assigned to a task.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['person'],
-    objectTypes: ['task'],
-    inverse: 'assignee_of',
-    defaultImportance: 0.8,
-    rankingWeight: 1.3,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 90,
-  },
-  {
     name: 'committed_to',
     description: 'Person made an explicit commitment to complete a task.',
     category: 'task',
@@ -258,18 +260,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     rankingWeight: 0.9,
     lifecycle: 'ephemeral',
     defaultValidityDays: 90,
-  },
-  {
-    name: 'approved',
-    description: 'Person approved a decision, document, or task.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['person'],
-    inverse: 'approved_by',
-    defaultImportance: 0.7,
-    rankingWeight: 1.0,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 180,
   },
   {
     name: 'blocked_by',
@@ -335,24 +325,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultValidityDays: 90,
   },
   {
-    name: 'delegated_to',
-    description:
-      'Task was handed off to a person to execute. Distinct from `assigned_task` (which records ' +
-      'the resulting assignment as person→task): delegation captures the act, the delegator, and ' +
-      'the source signal that effected it.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['task'],
-    objectTypes: ['person'],
-    inverse: 'delegate_of',
-    aliases: ['handed_off_to'],
-    defaultImportance: 0.9,
-    rankingWeight: 1.3,
-    examples: ['(task_123, delegated_to, person_alice) — "do this by Friday"'],
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 90,
-  },
-  {
     name: 'cancelled_due_to',
     description:
       'Task or event was cancelled because of another item — typically the cancellation of an ' +
@@ -370,38 +342,33 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // state
+  // decision
+  //
+  // First-class capture of decisions — choices, approvals, vendor selections,
+  // scope cuts, strategy resolutions, multi-party agreements. The verbatim
+  // decision text lives in `value`; what was decided about can be the `object`
+  // (a vendor, deal, task) or appear in `contextIds`. Subsumes the prior
+  // narrower `approved` predicate (now deprecated).
   // ---------------------------------------------------------------------------
   {
-    name: 'state_changed',
-    description: 'State transition event — value is { from, to }.',
-    category: 'state',
+    name: 'decision_made',
+    description:
+      'A decision was made — by a person, in a meeting/event, or about a topic. Captures choices, ' +
+      'approvals, vendor selections, scope cuts, strategy resolutions, and multi-party agreements. ' +
+      'Subject = the decider (person) OR the venue (event/topic). Value = the verbatim decision. ' +
+      'Optional object = the entity decided about. Use `contextIds` to link related deals/projects.',
+    category: 'decision',
     payloadKind: 'attribute',
-    defaultImportance: 0.7,
-    rankingWeight: 1.0,
-    examples: ['(task_123, state_changed, { from: "open", to: "in_progress" })'],
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 90,
-  },
-  {
-    name: 'has_status',
-    description: 'Current status snapshot.',
-    category: 'state',
-    payloadKind: 'attribute',
-    defaultImportance: 0.8,
-    rankingWeight: 1.1,
-    singleValued: true,
-    lifecycle: 'stateful',
-  },
-  {
-    name: 'current_status',
-    description: 'Most recent status (supersedes prior on write).',
-    category: 'state',
-    payloadKind: 'attribute',
-    defaultImportance: 0.9,
-    rankingWeight: 1.3,
-    singleValued: true,
-    lifecycle: 'stateful',
+    subjectTypes: ['person', 'event', 'topic'],
+    aliases: ['decided', 'chose', 'agreed_on', 'agreed_to'],
+    defaultImportance: 0.85,
+    rankingWeight: 1.4,
+    examples: [
+      '(meeting_2026_05_25, decision_made, "Go with Oracle for ERP renewal")',
+      '(anton, decision_made, "Approve $15k purchase of icas.ai domain")',
+      '(deal_acme, decision_made, "Cut scope to Phase 1 only")',
+    ],
+    lifecycle: 'stable',
   },
 
   // ---------------------------------------------------------------------------

@@ -259,7 +259,7 @@ describe('expireFacts', () => {
       {
         subjectId: personId,
         objectId: taskB,
-        predicate: 'assigned_task',
+        predicate: 'blocked_by',
         kind: 'atomic',
         validUntil: new Date('2026-01-01'),
       },

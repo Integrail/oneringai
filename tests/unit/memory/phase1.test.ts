@@ -45,7 +45,7 @@ describe('Phase 1 — IFact.contextIds', () => {
     await mem.addFact(
       {
         subjectId: john,
-        predicate: 'assigned_task',
+        predicate: 'committed_to',
         kind: 'atomic',
         details: 'Build powerpoint',
         contextIds: [deal],
@@ -55,7 +55,7 @@ describe('Phase 1 — IFact.contextIds', () => {
 
     const page = await store.findFacts({ contextId: deal }, {}, scope);
     expect(page.items).toHaveLength(1);
-    expect(page.items[0]!.predicate).toBe('assigned_task');
+    expect(page.items[0]!.predicate).toBe('committed_to');
   });
 
   it('rejects fact whose contextId entity is not visible to caller', async () => {

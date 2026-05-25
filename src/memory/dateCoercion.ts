@@ -166,11 +166,11 @@ const FACT_TEMPORAL_FIELDS = ['observedAt', 'validFrom', 'validUntil'] as const;
 /**
  * Coerce the temporal fields on an `IFact` write input or patch. Operates on
  * a copy when changes are made, original ref when not. Also coerces nested
- * `metadata` AND `value` — common patterns put dates inside `value` (e.g.
- * `state_changed` facts shaped like `{from, to, at}`), and leaving those
- * uncoerced reintroduces the BSON range-query bug we exist to prevent.
- * `value` recursion uses the same conservative ISO-regex guard as metadata,
- * so business strings like `'never'` or `'soon'` stay strings.
+ * `metadata` AND `value` — callers that stash dates inside `value` (e.g.
+ * adapter-emitted facts with `{at: '<iso>'}`) would otherwise reintroduce the
+ * BSON range-query bug we exist to prevent. `value` recursion uses the same
+ * conservative ISO-regex guard as metadata, so business strings like
+ * `'never'` or `'soon'` stay strings.
  */
 export function coerceFactTemporalFields<T extends Record<string, unknown>>(input: T): T {
     if (!input || typeof input !== 'object') return input;

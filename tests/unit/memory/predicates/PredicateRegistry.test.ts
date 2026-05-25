@@ -328,7 +328,6 @@ describe('PredicateRegistry — standard() factory', () => {
     expect(cats).toContain('identity');
     expect(cats).toContain('organizational');
     expect(cats).toContain('task');
-    expect(cats).toContain('state');
     expect(cats).toContain('communication');
     expect(cats).toContain('observation');
     expect(cats).toContain('temporal');
@@ -336,6 +335,7 @@ describe('PredicateRegistry — standard() factory', () => {
     expect(cats).toContain('priority');
     expect(cats).toContain('document');
     expect(cats).toContain('social');
+    expect(cats).toContain('decision');
     expect(cats).toHaveLength(11);
   });
 

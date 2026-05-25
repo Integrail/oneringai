@@ -263,7 +263,7 @@ export interface TransitionTaskStateOptions {
   /**
    * Validation mode.
    * - `'warn'` (default): any transition allowed; out-of-matrix transitions route through `onError` and proceed.
-   * - `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError` — metadata + fact writes are skipped.
+   * - `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError` — the metadata write is skipped.
    * - `'none'`: no validation, no warnings.
    */
   validate?: 'strict' | 'warn' | 'none';
@@ -273,31 +273,10 @@ export interface TransitionTaskStateOptions {
    * Keys include `'__initial'` for transitions into a first-time state.
    */
   transitions?: Record<string, string[]>;
-  /**
-   * Optional overrides applied to the written `state_changed` audit fact.
-   * Unset fields fall back to the method's defaults (`importance: 0.7`,
-   * `confidence: undefined`, no `contextIds`, etc.).
-   *
-   * The LLM extraction pipeline populates this when it routes a
-   * `state_changed` fact through `transitionTaskState` — without it, the
-   * caller's `importance` / `confidence` / `contextIds` would be silently
-   * dropped and the audit fact would not surface on retrieval queries that
-   * pivot on `contextIds` (e.g. "everything about the Acme deal").
-   */
-  factOverrides?: {
-    importance?: number;
-    confidence?: number;
-    contextIds?: EntityId[];
-    validFrom?: Date;
-    validUntil?: Date;
-    summaryForEmbedding?: string;
-    evidenceQuote?: string;
-  };
 }
 
 export interface TransitionTaskStateResult {
   task: IEntity;
-  fact: IFact | null;
   /** Set when `validate='strict'` rejected the transition. */
   rejected?: string;
 }
@@ -324,7 +303,6 @@ export class MemorySystem implements IDisposable {
   private readonly unknownPredicatePolicy: 'fuzzy_map' | 'keep' | 'drop';
   private readonly unknownPredicateFuzzyMaxDistance: number | undefined;
   private readonly _taskStates: TaskStatesConfig;
-  private readonly _autoApplyTaskTransitions: boolean;
   private readonly _stateHistoryCap: number;
   private readonly visibilityPolicy?: VisibilityPolicy;
 
@@ -369,7 +347,6 @@ export class MemorySystem implements IDisposable {
       );
     }
     this._taskStates = validateTaskStates(config.taskStates);
-    this._autoApplyTaskTransitions = config.autoApplyTaskTransitions ?? true;
     this._stateHistoryCap = validateStateHistoryCap(config.stateHistoryCap);
     this.visibilityPolicy = config.visibilityPolicy;
     // Fold registry ranking weights into the base ranking config. Caller-supplied
@@ -743,11 +720,6 @@ export class MemorySystem implements IDisposable {
    */
   get taskStates(): TaskStatesConfig {
     return { active: [...this._taskStates.active], terminal: [...this._taskStates.terminal] };
-  }
-
-  /** True when the extraction pipeline should route `state_changed` facts through `transitionTaskState`. */
-  get autoApplyTaskTransitions(): boolean {
-    return this._autoApplyTaskTransitions;
   }
 
   searchEntities(
@@ -2349,39 +2321,25 @@ export class MemorySystem implements IDisposable {
    * Transition a task entity to a new state — the canonical way to mutate
    * `task.metadata.state` after creation.
    *
-   * Side effects (atomic from the caller's perspective, but read-modify-write
-   * at the MemorySystem layer — adapters with native transactions may promote):
+   * Side effects (read-modify-write at the MemorySystem layer; adapters with
+   * native transactions may promote to atomic):
    *   - Sets `metadata.state = newState`.
    *   - Appends `metadata.stateHistory: TaskStateHistoryEntry[]`, keeping only
    *     the most-recent `stateHistoryCap` entries (default 200). Older entries
-   *     drop in FIFO order — full audit history is still recoverable from the
-   *     `state_changed` facts themselves.
+   *     drop in FIFO order. `stateHistory` is the only audit trail — no
+   *     separate audit fact is written.
    *   - When `newState` is in `taskStates.terminal` AND `metadata.completedAt`
    *     is unset, sets `metadata.completedAt = at`.
-   *   - Writes a `state_changed` fact with `value: { from, to }`, the provided
-   *     `signalId` as `sourceSignalId`, and `importance: 0.7` (override via
-   *     `opts.factOverrides`).
    *
    * **Validate modes:**
    *  - `'warn'` (default): any transition allowed; out-of-matrix transitions
    *    log to `console.warn` and still proceed.
    *  - `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError`
-   *    and NO writes happen.
+   *    and the metadata write is skipped.
    *  - `'none'`: silent.
    *
-   * **Crash-safety:** the metadata update and the audit fact write are NOT
-   * atomic — this method commits the metadata mutation first, then calls
-   * `addFact`. If the process dies between the two writes (or `addFact`
-   * throws after validation), the task's `state` + `stateHistory` are
-   * persisted but the audit fact is missing. The metadata is authoritative
-   * and `stateHistory` preserves the transition record, so queries keep
-   * working; only the fact-level provenance (ranking, retrieval via
-   * `state_changed` predicate) is lost for that specific transition.
-   * Callers that need transactional audit should wrap the call at their
-   * adapter layer.
-   *
-   * Subject must be a `type: 'task'` entity. For non-task subjects, call
-   * `addFact` + `updateEntityMetadata` directly.
+   * Subject must be a `type: 'task'` entity. For non-task subjects, update
+   * metadata directly via `updateEntityMetadata`.
    */
   async transitionTaskState(
     taskId: EntityId,
@@ -2411,7 +2369,7 @@ export class MemorySystem implements IDisposable {
 
     // Short-circuit no-op — same state, no side effects.
     if (from === newState) {
-      return { task, fact: null };
+      return { task };
     }
 
     // Transition-matrix validation.
@@ -2441,7 +2399,8 @@ export class MemorySystem implements IDisposable {
       ? (md.stateHistory as TaskStateHistoryEntry[])
       : [];
     // Cap retained entries so chatty tasks can't grow the entity document
-    // unbounded. Full audit history lives on the `state_changed` facts.
+    // unbounded. Older entries past the cap are lost — callers that need
+    // unbounded audit history should maintain it externally.
     const cap = this._stateHistoryCap;
     const retainedPrior =
       priorHistory.length >= cap ? priorHistory.slice(priorHistory.length - (cap - 1)) : priorHistory;
@@ -2465,39 +2424,7 @@ export class MemorySystem implements IDisposable {
     await this.store.updateEntity(nextTask);
     this.emit({ type: 'entity.upsert', entity: nextTask, created: false });
 
-    // Audit fact — separate from metadata history so ranking + provenance work.
-    // factOverrides lets callers (notably ExtractionResolver auto-routing)
-    // preserve the LLM-supplied importance / confidence / contextIds / validity
-    // that would otherwise be dropped.
-    const o = opts.factOverrides ?? {};
-    let fact: IFact | null = null;
-    try {
-      fact = await this.addFact(
-        {
-          subjectId: taskId,
-          predicate: 'state_changed',
-          kind: 'atomic',
-          value: { from, to: newState },
-          details: opts.reason,
-          sourceSignalId: opts.signalId,
-          observedAt: at,
-          importance: o.importance ?? 0.7,
-          confidence: o.confidence,
-          contextIds: o.contextIds,
-          validFrom: o.validFrom,
-          validUntil: o.validUntil,
-          summaryForEmbedding: o.summaryForEmbedding,
-          evidenceQuote: o.evidenceQuote,
-        },
-        scope,
-      );
-    } catch (err) {
-      // Don't fail the transition if the fact write fails — metadata is the
-      // authoritative state. Surface to onError for observability.
-      this.reportWarning(err);
-    }
-
-    return { task: nextTask, fact };
+    return { task: nextTask };
   }
 
   /**

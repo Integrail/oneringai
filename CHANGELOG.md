@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Predicate consolidation (BREAKING)
+
+Six standard predicates were deleted outright — their information lives more naturally on entity metadata or on the new first-class `decision_made` predicate. `state_changed`'s LLM auto-routing through `transitionTaskState` is gone with it; task state transitions are now host-driven via `MemorySystem.transitionTaskState`.
+
+- **Deleted predicates** (`src/memory/predicates/standard.ts`): `approved`, `assigned_task`, `delegated_to`, `state_changed`, `has_status`, `current_status`. The `state` category is removed (now empty). Standard set: **54 predicates across 11 categories**.
+- **New `decision_made` predicate** (`decision` category) — first-class capture of decisions, approvals, vendor selections, scope cuts, multi-party agreements. Subject = decider (person) OR venue (event/topic); value = verbatim decision. Subsumes the deleted `approved`.
+- **Removed `state_changed` LLM auto-routing** (`src/memory/integration/ExtractionResolver.ts`) — the `tryRouteTaskTransition` branch and `MemorySystemConfig.autoApplyTaskTransitions` config are gone. Hosts that want LLM-observed state changes must read mention `metadata.state` (on creation) or call `MemorySystem.transitionTaskState` themselves.
+- **`transitionTaskState` no longer writes an audit fact** (`src/memory/MemorySystem.ts`) — `metadata.stateHistory` is the only audit trail. `TransitionTaskStateResult.fact` and `TransitionTaskStateOptions.factOverrides` are removed.
+- **Migration**: callers persisting deleted predicate names in legacy data must either migrate or accept that `PredicateRegistry.canonicalize` returns the raw string when the predicate isn't registered (no validation failure, just no metadata folding). Default extraction prompt bumped to version 7 — see `defaultExtractionPrompt.ts` header for the predicate-by-predicate replacement guidance.
+
 ### Connectors — `ipinfo.io` geolocation connector + query-param API-key flow
 
 Replaces the never-shipped `ipapi.co` template with `ipinfo.io` (Bearer-token auth on the `/lite/{ip}` and `/{ip}` endpoints). The supporting infrastructure for query-param API-key auth landed at the same time so future "key in `?key=...`" vendors get first-class treatment.

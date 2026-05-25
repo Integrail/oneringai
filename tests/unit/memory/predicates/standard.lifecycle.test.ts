@@ -15,7 +15,7 @@ import {
 describe('STANDARD_PREDICATES — lifecycle additions', () => {
   const reg = PredicateRegistry.standard();
 
-  it.each(['prepares_for', 'delegated_to', 'cancelled_due_to'] as const)(
+  it.each(['prepares_for', 'cancelled_due_to'] as const)(
     'has %s registered',
     (name) => {
       const def = STANDARD_PREDICATES.find((p) => p.name === name);
@@ -30,13 +30,6 @@ describe('STANDARD_PREDICATES — lifecycle additions', () => {
     expect(def.subjectTypes).toEqual(['task']);
     expect(def.objectTypes).toEqual(['event']);
     expect(def.inverse).toBe('prepared_by');
-    expect(def.payloadKind).toBe('relational');
-  });
-
-  it('delegated_to is task→person', () => {
-    const def = STANDARD_PREDICATES.find((p) => p.name === 'delegated_to')!;
-    expect(def.subjectTypes).toEqual(['task']);
-    expect(def.objectTypes).toEqual(['person']);
     expect(def.payloadKind).toBe('relational');
   });
 

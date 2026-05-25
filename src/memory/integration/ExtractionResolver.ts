@@ -555,50 +555,6 @@ export class ExtractionResolver {
           });
         }
 
-        // Auto-route `state_changed` facts on task-type subjects through
-        // transitionTaskState so the side effects (metadata state update,
-        // stateHistory append, completedAt for terminal states) fire as part
-        // of ingestion. Falls back to plain addFact when:
-        //  - memory.autoApplyTaskTransitions is false,
-        //  - subject isn't a task,
-        //  - value shape doesn't have a `to: string` field,
-        //  - routing throws (we still want the fact written).
-        if (
-          predicate === 'state_changed' &&
-          this.memory.autoApplyTaskTransitions
-        ) {
-          const observedAt = opts?.sourceObservedAt ?? toDate(spec.observedAt);
-          const routedFact = await this.tryRouteTaskTransition(
-            subjectId,
-            spec.value,
-            {
-              signalId: sourceSignalId,
-              at: observedAt,
-              reason: spec.details,
-              // Preserve LLM-supplied fact fields through the state-machine
-              // write — without these, the audit fact loses importance /
-              // confidence / contextIds / validity that matter for ranking
-              // and retrieval.
-              factOverrides: {
-                importance: spec.importance,
-                confidence: spec.confidence,
-                contextIds,
-                validFrom: toDate(spec.validFrom),
-                validUntil: toDate(spec.validUntil),
-                summaryForEmbedding: spec.summaryForEmbedding,
-                evidenceQuote: spec.evidenceQuote,
-              },
-            },
-            scope,
-          );
-          if (routedFact !== 'not_task') {
-            if (routedFact) writtenFacts.push(routedFact);
-            continue;
-          }
-          // else: subject isn't a task or value malformed — fall through to
-          // normal addFact path so the fact still lands.
-        }
-
         const fact = await this.memory.addFact(
           {
             subjectId,
@@ -859,56 +815,6 @@ export class ExtractionResolver {
     return outcome;
   }
 
-  /**
-   * Route a `state_changed` fact through `MemorySystem.transitionTaskState`
-   * when the subject is a task entity. Returns:
-   *   - The written audit fact on success.
-   *   - `null` on success when the transition was a no-op (same state).
-   *   - `'not_task'` when routing doesn't apply (subject type != task OR
-   *     value shape doesn't carry a `to: string` field) — caller should fall
-   *     through to plain `addFact`.
-   */
-  private async tryRouteTaskTransition(
-    subjectId: EntityId,
-    value: unknown,
-    opts: {
-      signalId: string;
-      at?: Date;
-      reason?: string;
-      factOverrides?: {
-        importance?: number;
-        confidence?: number;
-        contextIds?: EntityId[];
-        validFrom?: Date;
-        validUntil?: Date;
-        summaryForEmbedding?: string;
-        evidenceQuote?: string;
-      };
-    },
-    scope: ScopeFilter,
-  ): Promise<IFact | null | 'not_task'> {
-    const subject = await this.memory.getEntity(subjectId, scope);
-    if (!subject || subject.type !== 'task') return 'not_task';
-
-    // Expect `{ to: string }` at minimum. The standard predicate example uses
-    // `{ from, to }` but we only need `to`.
-    const to = extractTo(value);
-    if (!to) return 'not_task';
-
-    const result = await this.memory.transitionTaskState(
-      subjectId,
-      to,
-      {
-        signalId: opts.signalId,
-        at: opts.at,
-        reason: opts.reason,
-        validate: 'warn',
-        factOverrides: opts.factOverrides,
-      },
-      scope,
-    );
-    return result.fact;
-  }
 }
 
 // -------------------------------------------------------------------------
@@ -920,15 +826,6 @@ function toDate(v: string | Date | undefined): Date | undefined {
   if (v instanceof Date) return v;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? undefined : d;
-}
-
-function extractTo(value: unknown): string | null {
-  if (typeof value === 'string' && value.trim().length > 0) return value.trim();
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const to = (value as Record<string, unknown>).to;
-    if (typeof to === 'string' && to.trim().length > 0) return to.trim();
-  }
-  return null;
 }
 
 /**

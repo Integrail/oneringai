@@ -1,8 +1,14 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 6** — bump this number whenever the prompt surface changes
+ * **Prompt version: 7** — bump this number whenever the prompt surface changes
  * materially so callers pinning snapshots notice.
+ *   - v7: removed `state_changed` / `has_status` / `current_status` guidance.
+ *         Task state lives on `task.metadata.state` (set at mention creation);
+ *         transitions are host-driven via `MemorySystem.transitionTaskState`.
+ *         Removed `approved` (use `decision_made`) and the
+ *         `assigned_task` / `delegated_to` predicates (assignment lives on
+ *         `task.metadata.assigneeId`; use `committed_to` for lineage).
  *   - v6: explicit "Do NOT emit per-message communication noise" rule in
  *         Parsimony; lifecycle-aware Validity period note (system auto-stamps
  *         validUntil for ephemeral/episodic predicates from registry). Paired
@@ -15,8 +21,7 @@
  *   - v4: nonce-wrapped `<signal_content_*>` delimiters (prompt-injection defense).
  *   - v3: closed predicate vocabulary warning when a registry is present.
  *   - v2: "## Parsimony" section (zero-fact is valid, expected fact counts, neg/pos example);
- *         metadata-on-mentions for task/event structural fields;
- *         state-change routing guidance (single `state_changed` fact; no separate attrs).
+ *         metadata-on-mentions for task/event structural fields.
  *
  * The LLM is instructed to return JSON with:
  *   - `mentions`: map of local labels → entity surface forms (+ optional metadata)
@@ -25,9 +30,7 @@
  *     justification — only present when output is non-empty
  *
  * The memory layer's `ExtractionResolver` then translates mention labels into
- * entity IDs (via `upsertEntityBySurface`) and writes the facts. When an
- * extracted fact is `state_changed` on a task subject, routing fires the
- * task state machine automatically.
+ * entity IDs (via `upsertEntityBySurface`) and writes the facts.
  *
  * Override via `ExtractionResolverOptions.promptTemplate` for custom behavior
  * (domain-specific predicate vocabularies, extra metadata, etc.).
@@ -400,7 +403,7 @@ Facts carry time-boxed relevance. Set \`validUntil\` when the fact stops being t
 
 Calibration:
 - **Ephemeral** (today-only, session-bounded): \`validUntil\` = end of today. Examples: "working from home today", "out of office until 5pm".
-- **Task-bounded**: \`validUntil\` = expected completion / due date. Examples: "assigned_task", "owns" (for a time-boxed project role).
+- **Task-bounded**: \`validUntil\` = expected completion / due date. Examples: "committed_to", "owns" (for a time-boxed project role).
 - **Project/quarter-bounded**: \`validUntil\` = project or quarter end. Examples: "rotating_oncall", "Q3 priority".
 - **Identity / employment / long-lived**: leave \`validUntil\` undefined. Examples: "works_at", "employee_count", "prefers" (unless the user qualified it).
 - **Superseded by a later fact** (role change, preference change): leave \`validUntil\` undefined here — use \`supersedes\` in the new fact.
@@ -419,7 +422,9 @@ Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral
    - **Event**: \`{ type: "event", surface: "Q3 Planning", metadata: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] } }\`
    The commitment itself is still a fact: \`{ subject: "john_label", predicate: "committed_to", object: "task_label" }\`. But "this task is due 2026-04-30" is metadata, not a separate \`has_due_date\` fact.
 
-   **State changes** use a single \`state_changed\` fact — the system routes it through the task-state machine automatically. Emit \`{ subject: "task_label", predicate: "state_changed", value: { "from": "in_progress", "to": "done" } }\` — the task's metadata, history, and completedAt all update as a side effect.
+   **Task state lives on \`metadata.state\`.** Set it on the mention at creation time (\`"state": "proposed" | "in_progress" | "blocked" | ...\`). Do NOT emit a state-transition fact for a task — transitions are host-driven via \`MemorySystem.transitionTaskState\`. Re-extractions of the same task do not overwrite an existing state (the metadata merge is conservative \`fillMissing\`).
+
+   Relational facts about what a person did with a task — \`committed_to\` (made a promise), \`completed\` (finished it), \`blocked_by\`, \`cancelled_due_to\` — remain the right shape. Those describe an action, not an abstract state event, and the host can decide whether and when to translate them into a state transition.
 
    **REQUIRED canonical identifier on every task mention.** Tasks have no natural strong identifier (unlike a person's email or a domain). Without a canonical id, the same commitment seen across multiple signals (thread replies, transcripts, follow-ups) creates duplicate task entities — a known production bug pattern. So every \`type: "task"\` mention MUST include:
 

@@ -147,9 +147,9 @@ Do NOT use \`name\` (use \`full_name\` or \`preferred_name\`), \`employer\` (use
   2. Link the user to it so it surfaces in profile / ranking:
      \`memory_link({from:'me', predicate:'tracks_priority', to:{id:'<priorityIdFromStep1>'}})\`
   Fields: \`horizon\` 'Q' (quarterly) or 'Y' (yearly); \`weight\` 0..1 drives ordering (heavier = more central, default 0.5); \`status\` starts at 'active'.
-  Status transitions ('met' / 'dropped') — record the transition as an explicit \`state_changed\` fact on the priority entity. The host routes this to the priority's metadata:
-  \`memory_remember({subject:{id:'<priorityId>'}, predicate:'state_changed', value:{from:'active', to:'met'}, observedAt:'<iso>'})\` (or \`to:'dropped'\`).
-  Do NOT re-upsert the priority entity to change its status — the metadata merge is shallow and would corrupt the priority's other fields.
+  Status transitions ('met' / 'dropped') are host-driven — surface the observation as a \`decision_made\` fact on the user with the priority in \`contextIds\`:
+  \`memory_remember({subject:'me', predicate:'decision_made', value:'Met priority: Ship NA launch', contextIds:['<priorityId>'], observedAt:'<iso>'})\` (or value 'Dropped priority: …').
+  The host watches for these and updates the priority's metadata. Do NOT re-upsert the priority entity to change its status — the metadata merge is shallow and would corrupt the priority's other fields.
 - **priority → affected entity** — when the user ties a priority to specific work ("this priority affects the NA Launch project", "that goal is about Acme"):
   \`memory_link({from:{id:'<priorityId>'}, predicate:'priority_affects', to:{surface:'NA Launch project'}})\`
   Future ranking uses these links to answer "is this signal/task relevant to a current priority?". Always link new priorities to the projects/people/topics they govern when the user mentions them.

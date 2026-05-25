@@ -214,8 +214,8 @@ export interface IFact extends ScopeFields {
   // Multi-entity binding
   /**
    * Additional entities this fact is "about" beyond subject/object.
-   * Example: (John, assigned_task, PowerPoint) with contextIds=[AcmeDeal]
-   * lets the deal view surface this action without the deal being subject
+   * Example: (John, committed_to, "Build deck") with contextIds=[AcmeDeal]
+   * lets the deal view surface this commitment without the deal being subject
    * or object. `getContext` queries subject OR object OR contextIds.
    */
   contextIds?: EntityId[];
@@ -910,26 +910,15 @@ export interface MemorySystemConfig {
    */
   taskStates?: TaskStatesConfig;
   /**
-   * When true (default), the LLM extraction pipeline auto-routes `state_changed`
-   * facts on task-type subjects through `MemorySystem.transitionTaskState` so
-   * the side effects (metadata update, history append, `completedAt` for
-   * terminal states) happen as part of ingestion. Set false to skip the
-   * routing — facts still land but `transitionTaskState` must be called
-   * explicitly by the host.
-   */
-  autoApplyTaskTransitions?: boolean;
-  /**
    * Maximum number of entries retained in `task.metadata.stateHistory`.
    * `transitionTaskState` keeps the most-recent N entries (older entries are
    * dropped in FIFO order). Guards against unbounded metadata growth on chatty
    * tasks — a task that cycles through states thousands of times could
-   * otherwise push the entity document past Mongo's 16 MB cap. Full audit
-   * history is still recoverable via the `state_changed` facts themselves,
-   * which carry `sourceSignalId` + `observedAt`.
+   * otherwise push the entity document past Mongo's 16 MB cap. Entries past
+   * the cap are lost; callers that need unbounded audit must maintain it
+   * externally.
    *
-   * Default: 200. Must be >= 1. Set to a larger value only if full in-document
-   * history matters for your queries and you've sized the document budget
-   * accordingly.
+   * Default: 200. Must be >= 1.
    */
   stateHistoryCap?: number;
   /** Number of new atomic facts since last profile regen that triggers auto-regeneration. */

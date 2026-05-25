@@ -62,7 +62,7 @@ PRIORITIES — long-term goals the user is tracking ("my Q2 priority is the NA l
 
 Fields: \`horizon\` 'Q' (quarterly) or 'Y' (yearly); \`weight\` 0..1 drives ordering (heavier = more central, default 0.5); \`status\` starts 'active'.
 
-To transition status to 'met' or 'dropped', emit a \`state_changed\` fact on the priority entity: subject = priority entity, predicate = 'state_changed', value = {from, to}. The host routes this to the priority's metadata. Do NOT re-upsert the priority entity to change its status — the metadata merge is shallow and would corrupt the priority's other fields.
+Status transitions ('met' / 'dropped') are host-driven — surface the observation as a \`decision_made\` fact on the user (subject = the person, value = the verbatim decision, priority entity in \`contextIds\`). Example: \`{subject:'me', predicate:'decision_made', value:'Met priority: Ship NA launch', contextIds:['<priorityId>']}\`. The host watches these and updates the priority's metadata. Do NOT re-upsert the priority entity to change its status — the metadata merge is shallow and would corrupt the priority's other fields.
 
 When the user ties a priority to specific work ("this priority is about the NA Launch project"), also emit \`priority_affects\` (subject = priority entity, object = the affected project / person / topic) — future ranking uses these links to answer "is this signal/task relevant to a current priority?".
 

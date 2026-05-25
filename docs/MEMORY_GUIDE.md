@@ -41,7 +41,7 @@ Everything is append-only with supersession (state changes create new facts that
 **Design goals:**
 - LLMs never see entity IDs — they emit surface forms ("Microsoft", "Q3 Planning"), and the system resolves to IDs.
 - Same code path for tasks, events, people, projects — all are entities with type-specific metadata.
-- Multi-entity binding via `contextIds` — "John assigned_task X in the context of Acme-Deal" without polluting the triple.
+- Multi-entity binding via `contextIds` — "John committed_to X in the context of Acme-Deal" without polluting the triple.
 - Pluggable storage — InMemory for dev, Mongo for production (works with raw driver or Meteor collections).
 - Pluggable LLM — embedders + profile generators use any oneringai Connector.
 
@@ -696,25 +696,18 @@ await memory.addFact(
 );
 ```
 
-Later, when John completes it:
+Later, when John completes it, transition the task — one call updates `metadata.state`, appends to `metadata.stateHistory`, and sets `completedAt` on terminal states:
 
 ```ts
-// Record the state change as a fact (for history)
-await memory.addFact(
-  {
-    subjectId: task.id,
-    predicate: 'state_changed',
-    kind: 'atomic',
-    value: { from: 'in_progress', to: 'done' },
-    details: 'Completed ahead of schedule',
-    sourceSignalId: 'signal_xyz',
-  },
+await memory.transitionTaskState(
+  task.id,
+  'done',
+  { signalId: 'signal_xyz', reason: 'Completed ahead of schedule' },
   scope,
 );
-
-// Update current state on the entity (for fast query)
-await memory.updateEntityMetadata(task.id, { state: 'done', completedAt: new Date() }, scope);
 ```
+
+The audit trail lives on `metadata.stateHistory` (capped via `stateHistoryCap`, default 200). The library does not write a separate audit fact — state changes are entity-level, not knowledge-level.
 
 **Do not** archive completed tasks — filter them by state in queries instead:
 
@@ -847,24 +840,23 @@ await memory.transitionTaskState(
 );
 ```
 
-Side effects (atomic from the caller's perspective):
+Side effects:
 - Sets `metadata.state = newState`.
-- Appends to `metadata.stateHistory: { from, to, at, signalId?, reason? }[]`. No library cap — retention is your problem.
+- Appends to `metadata.stateHistory: { from, to, at, signalId?, reason? }[]`. Capped at `stateHistoryCap` (default 200) — older entries drop FIFO. This array is the only audit trail.
 - When `newState` is in `taskStates.terminal` AND `metadata.completedAt` is unset, sets `metadata.completedAt`.
-- Writes a `state_changed` atomic fact with `value: { from, to }`, `sourceSignalId`, `importance: 0.7` for audit + retrieval.
+
+**No audit fact.** `transitionTaskState` does not emit a separate fact (this changed in the 2026-05 predicate consolidation — the `state_changed` predicate was deleted). State is entity metadata; if you need decision-level provenance, capture the decision separately as a `decision_made` fact.
 
 **Validate modes:**
 - `'warn'` (default): out-of-matrix transitions route through your `onError` hook and still apply.
-- `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError` — metadata + fact writes are skipped.
+- `'strict'`: out-of-matrix transitions throw `InvalidTaskTransitionError` — the metadata write is skipped.
 - `'none'`: silent.
 
-**No-op short-circuit:** `from === to` returns without writing anything (no history entry, no fact, no version bump).
+**No-op short-circuit:** `from === to` returns without writing anything (no history entry, no version bump).
 
-#### LLM auto-routing of state changes
+#### LLM and task transitions
 
-When the LLM extractor emits a `state_changed` fact on a task entity, the `ExtractionResolver` routes it through `transitionTaskState` automatically — so the metadata update, history append, and `completedAt` for terminal states all fire as part of ingestion. The audit fact still lands.
-
-Tolerant value shapes the extractor can emit: `{ from, to }`, `{ to }`, or a plain string. Non-task subjects and malformed values fall through to plain `addFact` — nothing breaks. Opt out globally via `new MemorySystem({ ..., autoApplyTaskTransitions: false })`.
+Task transitions are **host-driven only**. The extraction pipeline does not route LLM-emitted facts into `transitionTaskState`, and the default extraction prompt instructs the LLM not to emit transition facts. To capture an observed completion, emit a relational fact about what the person did (`committed_to`, `completed`) — not a state-event fact — and let host code decide whether and when to call `transitionTaskState`.
 
 #### Fetching open tasks + recent topics for prompt injection
 
@@ -1073,11 +1065,11 @@ Ranking formula: `confidence × recency × predicateWeight × importance_multipl
 Use `contextIds` to link a fact to entities that aren't subject or object. The classic case: an action taken in the context of a deal/project.
 
 ```ts
-// John assigned a task (creating a new task entity) in the context of the Acme deal.
+// John committed to a task (creating a new task entity) in the context of the Acme deal.
 await memory.addFact(
   {
     subjectId: john.id,
-    predicate: 'assigned_task',
+    predicate: 'committed_to',
     kind: 'atomic',
     objectId: task.id,                   // the task entity
     contextIds: [acmeDeal.id, sarah.id], // the deal; also Sarah since she'll review
@@ -1240,7 +1232,7 @@ const projects = await store.listEntities(
 
 ## Controlling the predicate vocabulary
 
-Facts have predicates — strings like `works_at`, `assigned_task`, `has_status`. Left unconstrained, an LLM will drift: `worksAt`, `works-at`, `employed_by`, `works_for` all describe the same relationship but won't aggregate, rank, or query as one. The **predicate registry** is the fix.
+Facts have predicates — strings like `works_at`, `committed_to`, `has_due_date`. Left unconstrained, an LLM will drift: `worksAt`, `works-at`, `employed_by`, `works_for` all describe the same relationship but won't aggregate, rank, or query as one. The **predicate registry** is the fix.
 
 > For a dedicated walkthrough with copy-paste recipes, see [MEMORY_PREDICATES.md](./MEMORY_PREDICATES.md).
 
@@ -1527,7 +1519,7 @@ Well-prompted, the LLM produces:
       "contextIds": ["m5"]
     },
     {
-      "subject": "m2", "predicate": "assigned_task",
+      "subject": "m2", "predicate": "committed_to",
       "object": "m3", "confidence": 0.95,
       "contextIds": ["m5"]
     },
@@ -2466,9 +2458,9 @@ await memory.addFacts(
     },
     {
       subjectId: alice.id,
-      predicate: 'approved',
+      predicate: 'decision_made',
       kind: 'atomic',
-      value: 'Postgres migration',
+      value: 'Approved: Postgres migration',
       contextIds: [meeting.id],
       importance: 1.0,
     },
@@ -2478,7 +2470,7 @@ await memory.addFacts(
 
 // Later: "what happened at that meeting?"
 const meetingContext = await memory.getContext(meeting.id, {}, scope);
-// → profile + topFacts (proposed + approved + attendance) + relatedTasks (follow-ups)
+// → profile + topFacts (proposed + decision_made + attendance) + relatedTasks (follow-ups)
 ```
 
 ### Reactive UI (Meteor)
