@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-26
+
 ### Memory — Phase B: merge correctness + dedup tooling + extraction richness
 
 Three-PR series following Phase A (0.8.0). Builds the host-facing tools v25 needs to enumerate, score, and clean up the duplicate-entity backlog Phase A's normalized-name + atomic-upsert work surfaced.
