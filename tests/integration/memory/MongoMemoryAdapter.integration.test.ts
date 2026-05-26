@@ -342,6 +342,77 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     expect(v?.at).toBeInstanceOf(Date);
     expect((v?.at as Date).toISOString()).toBe('2026-05-15T09:00:00.000Z');
   });
+
+  // ==========================================================================
+  // Phase A — entity-duplication repros (Step 0).
+  //
+  // These exercise the Mongo-specific paths the InMemory tests can't reach:
+  //   - R1 concurrency through MemorySystem.upsertEntityBySurface against real
+  //     Mongo (driver-level race window between resolver read + createEntity).
+  //   - R3 substring-cap exposure (>500 prefix matches; Mongo's
+  //     `oversamplePool = max(500, skip + limit*5)` truncates the candidate
+  //     set, so an exact match can fall outside the ranked top-50).
+  // ==========================================================================
+  it('R1 — concurrent upsertEntityBySurface for same surface creates duplicates on Mongo', async () => {
+    // Inline import to avoid cross-file restructuring of the adapter setup.
+    const { MemorySystem } = await import('@/memory/MemorySystem.js');
+    const mem = new MemorySystem({ store: adapter });
+    const scope = { userId: 'dup-r1-user', groupId: 'dup-r1-group' };
+
+    const [a, b] = await Promise.all([
+      mem.upsertEntityBySurface(
+        { surface: 'ICOS-r1', type: 'project', identifiers: [] },
+        scope,
+      ),
+      mem.upsertEntityBySurface(
+        { surface: 'ICOS-r1', type: 'project', identifiers: [] },
+        scope,
+      ),
+    ]);
+    const page = await mem.listEntities({ type: 'project' }, {}, scope);
+    const matching = page.items.filter((e) => e.displayName === 'ICOS-r1');
+    // Documented current behavior: race past the resolver read → two rows.
+    expect(matching.length).toBe(2);
+    expect(a.entity.id).not.toBe(b.entity.id);
+    mem.destroy();
+  });
+
+  it('R3 — 1 bare + 600 prefixed entities; resolver finds the bare one (or not)', async () => {
+    const { MemorySystem } = await import('@/memory/MemorySystem.js');
+    const mem = new MemorySystem({ store: adapter });
+    const scope = { userId: 'dup-r3-user', groupId: 'dup-r3-group' };
+
+    // Seed the bare entity first.
+    const bare = await mem.upsertEntityBySurface(
+      { surface: 'ICOS-r3', type: 'project', identifiers: [] },
+      scope,
+    );
+
+    // Add 600 prefixed entities. Direct adapter writes (not MemorySystem) to
+    // skip resolver round-trips; we're staging the substring-rich fixture.
+    for (let i = 0; i < 600; i++) {
+      await adapter.createEntity({
+        type: 'project',
+        displayName: `ICOS-r3 suffix ${i}`,
+        identifiers: [],
+        groupId: scope.groupId,
+        ownerId: scope.userId,
+      });
+    }
+
+    // Resolver pass: must surface the bare entity at confidence ≥ 0.90.
+    // Documented question: does the oversamplePool cap let the bare row slip
+    // out of the candidate set? If yes, resolver returns 0 (or wrong) and the
+    // assertion fails → Mongo-side R3 is real.
+    const candidates = await mem.resolveEntity(
+      { surface: 'ICOS-r3', type: 'project' },
+      scope,
+    );
+    const found = candidates.find((c) => c.entity.id === bare.entity.id);
+    expect(found).toBeDefined();
+    expect(found!.confidence).toBeGreaterThanOrEqual(0.9);
+    mem.destroy();
+  }, 90_000);
 });
 
 if (!available) {
