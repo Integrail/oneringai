@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Three-PR series following Phase A (0.8.0). Builds the host-facing tools v25 needs to enumerate, score, and clean up the duplicate-entity backlog Phase A's normalized-name + atomic-upsert work surfaced.
 
+### Memory — Phase B PR 2: extraction richness (subject-of hints)
+
+Production data on one tenant: organizations average **0 atomic facts per entity**, projects 2.5%-with-≥3-facts, events 5%. The structural bottleneck for non-person-subject profile coverage is the extraction prompt itself — the default `(person, predicate, otherEntity)` shape starves non-person entities of self-descriptive content. Closing the per-type-profile-threshold gap with a config knob would treat the symptom; this PR fixes the cause.
+
+- **`PredicateRegistry.renderForPrompt({ groupBy: 'subjectType' })`** — new bucketing dimension. Predicates render under a `### When the subject is a \`X\`` header for each entry in their `subjectTypes`. Predicates without `subjectTypes` go to a `generic` bucket rendered last. Original `groupBy: 'category'` remains the default — every existing caller stays bit-identical.
+- **`ExtractionPromptContext.subjectOfHintsEnabled?: boolean`** — opt-in flag. When `true`:
+  - Predicate registry renders with `groupBy: 'subjectType'` so the LLM sees vocabulary organized by who can be the subject.
+  - A new `## Subjects beyond persons` guidance section explains when to emit subject-of facts, with explicit restraint language ("casual mention does NOT warrant a fact").
+  - A positive example demonstrates project-as-subject extraction with the narrative carried in `value`/`details`, not decomposed into per-attribute facts.
+- **`DEFAULT_EXTRACTION_PROMPT_VERSION` bumped 8 → 9**.
+
+Hosts whose registries lack `subjectTypes` annotations should leave the flag off — the grouping degrades to a single `generic` bucket and just costs prompt tokens. Tag the registry first, then opt in.
+
+12 new tests across `PredicateRegistry.subjectTypeGrouping.test.ts` + `defaultExtractionPrompt.subjectOfHints.test.ts`. Full memory suite: 1147 passing.
+
 ### Memory — Phase B PR 1: merge correctness
 
 Three closed bugs in `MemorySystem.mergeEntities`. Hosts working around (1) with a `mergeEntitiesWithContextRewrite` wrapper can drop it. The fixes are silent corrections — no API surface change — but observable behavior shifts for callers that exercise the merge path.

@@ -219,6 +219,19 @@ export class PredicateRegistry {
     maxPerCategory?: number;
     /** When true, include `excludeFromExtractionPrompt` predicates. */
     includeExcluded?: boolean;
+    /**
+     * Bucketing dimension for the rendered vocabulary.
+     *
+     * - `'category'` (default) — groups by `def.category`. Original behavior.
+     * - `'subjectType'` — groups by the `subjectTypes` hint, with predicates
+     *   appearing under EACH of their listed types. Predicates without
+     *   `subjectTypes` land in a `### generic` bucket. Used by hosts that
+     *   want the LLM to extract subject-of facts for non-person subjects
+     *   (projects, organizations, events) without a person being the actor.
+     *   Pair with `ExtractionPromptContext.subjectOfHintsEnabled` to render
+     *   the matching narrative section in `defaultExtractionPrompt`.
+     */
+    groupBy?: 'category' | 'subjectType';
   }): string {
     const max = opts?.maxPerCategory ?? 5;
     const filter = { categories: opts?.categories, subjectType: opts?.subjectType };
@@ -228,30 +241,62 @@ export class PredicateRegistry {
     );
     if (defs.length === 0) return '';
 
-    const byCategory = new Map<string, PredicateDefinition[]>();
-    for (const def of defs) {
-      const bucket = byCategory.get(def.category) ?? [];
+    const groupBy = opts?.groupBy ?? 'category';
+    const buckets = new Map<string, PredicateDefinition[]>();
+    const pushTo = (key: string, def: PredicateDefinition): void => {
+      const bucket = buckets.get(key) ?? [];
       bucket.push(def);
-      byCategory.set(def.category, bucket);
+      buckets.set(key, bucket);
+    };
+    for (const def of defs) {
+      if (groupBy === 'subjectType') {
+        const subjectTypes = def.subjectTypes ?? [];
+        if (subjectTypes.length === 0) {
+          pushTo('generic', def);
+        } else {
+          for (const t of subjectTypes) pushTo(t, def);
+        }
+      } else {
+        pushTo(def.category, def);
+      }
     }
 
     const lines: string[] = [];
     lines.push('## Predicate vocabulary');
-    lines.push(
-      'Use these predicate names where applicable. If none fits, invent a snake_case one.',
-    );
+    if (groupBy === 'subjectType') {
+      lines.push(
+        'Use these predicate names where applicable, organized by the subject type they describe. ' +
+          'Predicates listed under `generic` accept any subject. ' +
+          'Most facts have a person as the subject, but the non-person buckets exist for facts whose subject is a project, organization, event, etc.',
+      );
+    } else {
+      lines.push(
+        'Use these predicate names where applicable. If none fits, invent a snake_case one.',
+      );
+    }
     lines.push('');
 
-    const categories = Array.from(byCategory.keys()).sort();
-    for (const category of categories) {
-      lines.push(`### ${category}`);
-      // Sort each category by (defaultImportance desc, name asc) so the
-      // most-important predicates surface within the `max`-per-category cap.
+    // Header order: alphabetical when grouping by category; subjectType
+    // grouping puts the special `generic` bucket last so type-specific
+    // buckets surface first and the LLM sees them as the primary mental model.
+    const keys = Array.from(buckets.keys()).sort((a, b) => {
+      if (groupBy === 'subjectType') {
+        if (a === 'generic') return 1;
+        if (b === 'generic') return -1;
+      }
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+
+    for (const key of keys) {
+      const header = groupBy === 'subjectType' ? `When the subject is a \`${key}\`` : key;
+      lines.push(`### ${header}`);
+      // Sort each bucket by (defaultImportance desc, name asc) so the
+      // most-important predicates surface within the `max`-per-bucket cap.
       // Without this, `.slice(0, max)` keeps whatever order the predicates
       // were registered in (Map insertion order via `byName.values()`),
       // silently dropping high-importance predicates registered later.
       // Stable tie-break by name keeps the prompt output deterministic.
-      const sorted = byCategory.get(category)!.slice().sort((a, b) => {
+      const sorted = buckets.get(key)!.slice().sort((a, b) => {
         const ia = a.defaultImportance ?? 0;
         const ib = b.defaultImportance ?? 0;
         if (ia !== ib) return ib - ia; // desc

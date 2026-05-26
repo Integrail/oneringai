@@ -42,7 +42,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 8;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 9;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, IFact, ScopeFields } from '../types.js';
@@ -192,6 +192,31 @@ export interface ExtractionPromptContext {
    * cites these ids. Hallucinated ids are rejected at resolve time.
    */
   priorFacts?: IFact[];
+
+  /**
+   * Opt into non-person-subject extraction guidance. Default false.
+   *
+   * Production data shows the default extraction style is heavily
+   * person-biased: most facts emerge as `(person, predicate, otherEntity)`,
+   * which starves projects, organizations, and events of descriptive content
+   * about themselves. With ~zero atomic facts per organization in a real
+   * tenant, the profile-regen threshold can never fire — extraction is the
+   * structural bottleneck, not the threshold.
+   *
+   * When `true`:
+   *  - The predicate registry renders grouped by `subjectTypes` (so the LLM
+   *    sees a "When the subject is a `project`" bucket).
+   *  - A "Subjects beyond persons" guidance section appears explaining when
+   *    to emit a subject-of fact, with restraint still mandatory.
+   *  - A positive example shows project-as-subject extraction.
+   *
+   * The registry MUST tag its predicates with `subjectTypes` for the grouping
+   * to be useful — predicates without `subjectTypes` fall into a `generic`
+   * bucket. Hosts that haven't tagged their registry yet should leave this
+   * flag off; turning it on with a flat registry costs prompt tokens for
+   * no extraction-quality gain.
+   */
+  subjectOfHintsEnabled?: boolean;
 }
 
 export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
@@ -210,6 +235,7 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
     negativeExamples,
     priorThreadContext,
     priorFacts,
+    subjectOfHintsEnabled,
   } = ctx;
 
   const source = signalSourceDescription ? `Source: ${signalSourceDescription}\n` : '';
@@ -256,11 +282,50 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
   // reaching the resolver.
   const predicateSection = predicateRegistry
     ? '\n\n' +
-      predicateRegistry.renderForPrompt({ maxPerCategory: maxPredicatesPerCategory }) +
+      predicateRegistry.renderForPrompt({
+        maxPerCategory: maxPredicatesPerCategory,
+        groupBy: subjectOfHintsEnabled ? 'subjectType' : 'category',
+      }) +
       '\n\n**Use ONLY the predicates listed above. Do NOT invent new ones.** ' +
       'If no listed predicate is a perfect fit, pick the closest match and put ' +
       'the nuance in `details`. Unknown predicates are either auto-mapped to the ' +
       'nearest known name (possibly incorrectly) or dropped.'
+    : '';
+
+  const subjectOfHintsSection = subjectOfHintsEnabled
+    ? `
+
+## Subjects beyond persons
+
+The default extraction style is \`(person, predicate, otherEntity)\`. That covers most work but starves projects, organizations, and events of descriptive content about THEMSELVES. When the signal contains durable information ABOUT the entity itself — its status, scope, character, evolving narrative — emit facts where that entity is the subject.
+
+The predicate vocabulary above is grouped by subject type so you can see which predicates apply when (e.g. \`status_summary\` for projects, \`employee_count\` for organizations). Predicates under \`generic\` accept any subject.
+
+Restraint still applies. A casual mention of "ICOS" in passing does NOT warrant a fact whose subject is ICOS. Emit a subject-of fact only when the signal carries decision-relevant content ABOUT the entity itself — a status shift, a scope change, a capability statement, a learned characteristic. The bar is the same as for person-subject facts: durable knowledge, not chatter.
+
+### Positive example — project as subject
+
+Signal: "The ICOS launch slipped to Q3 because we couldn't get the Microsoft connector through compliance review."
+
+Correct extraction (one fact, project as subject):
+\`\`\`json
+{
+  "mentions": {},
+  "facts": [
+    {
+      "subject": "m_icos",
+      "predicate": "status_summary",
+      "value": "Launch slipped to Q3 due to Microsoft connector compliance review",
+      "contextIds": ["m_microsoft"],
+      "importance": 0.8,
+      "confidence": 0.9,
+      "kind": "atomic"
+    }
+  ]
+}
+\`\`\`
+
+NOT — do not decompose into separate attribute facts (\`delayed_to: Q3\`, \`blocked_by: microsoft_connector\`, etc.). One subject-of fact with the narrative in \`value\`/\`details\`.`
     : '';
 
   return `You are extracting structured memory from a signal (email, message, document excerpt, etc.).
@@ -388,7 +453,7 @@ Same signal. CORRECT output:
 }
 \`\`\`
 
-One fact. The narrative (concern + proposal + scheduling) lives in \`details\`. The task is an entity with metadata carrying its state + due date. The proposed meeting with Sarah surfaces on queries about the deal via \`contextIds\`.
+One fact. The narrative (concern + proposal + scheduling) lives in \`details\`. The task is an entity with metadata carrying its state + due date. The proposed meeting with Sarah surfaces on queries about the deal via \`contextIds\`.${subjectOfHintsSection}
 
 ## Fact kinds
 Every fact must set \`kind\` to **exactly one** of these two values — no others are accepted by the storage layer:
