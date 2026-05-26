@@ -187,6 +187,27 @@ export type {
 export { diffEntityMetadata } from './metadataDiff.js';
 export type { MetadataChange } from './metadataDiff.js';
 
+// Deduplication tooling — generic primitives for finding, scoring, and
+// surveying duplicate clusters. Type-agnostic by design. See `dedup.ts`
+// header for the full scorer rule set.
+export {
+  scoreEntityPair,
+  findDuplicateCandidates,
+  findDuplicateClusters,
+  sweepDuplicates,
+  DEFAULT_WEIGHTS,
+} from './dedup.js';
+export type {
+  DedupDecision,
+  SignalBreakdown,
+  SignalWeights,
+  ScoreThresholds,
+  FindCandidatesOptions,
+  FindClustersOptions,
+  DuplicateCluster,
+  SweepOptions,
+} from './dedup.js';
+
 // Date coercion helpers — apply at write boundaries where date-shaped values
 // arrive as ISO strings (LLM extraction, REST sync) but must land in MongoDB
 // as `Date` for `$gte/$lt` range queries to work. Library write paths apply

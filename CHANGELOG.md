@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Three-PR series following Phase A (0.8.0). Builds the host-facing tools v25 needs to enumerate, score, and clean up the duplicate-entity backlog Phase A's normalized-name + atomic-upsert work surfaced.
 
+### Memory — Phase B PR 3: dedup tooling
+
+Generic, type-agnostic primitives for finding, scoring, and surveying duplicate entity clusters. Lets hosts (v25 in particular) build operator queues, sweepers, and audit tooling on a stable library API rather than reinventing scoring in app code. Production data motivating this work: a single tenant carries 41 ICOS-project variants, 32 Pavel-person variants, 35 "Prep" event variants, and 51 distinct event-name dup clusters (`memory/project_prod_dedup_audit_2026_05_26`).
+
+**Single new module: `src/memory/dedup.ts`.** Top-level re-exports surface every public symbol.
+
+- **`scoreEntityPair({ a, b, factsA?, factsB? }, thresholds?) → DedupDecision`** — six-signal scorer:
+  - **Hard zero (action: 'skip', score: 0):** type mismatch; identifier conflict (same kind, different values); event-time conflict (both entities carry `metadata.startTime` and the absolute delta exceeds `eventStartTimeDeltaMinutes`, default 60). The event-time rule is non-negotiable for recurring series — Mon vs Tue standups MUST NOT collapse.
+  - **Auto-merge short-circuit (action: 'auto-merge', score: 1):** any (kind, value) identifier exact match. Case-insensitive for kinds the library marks case-insensitive (email, domain, phone, url_host).
+  - **Weighted sum (default thresholds: auto 0.92, review 0.75):** normalized displayName equality (0.55), pooled-alias Jaccard (0.30), token-set Jaccard over normalized name (0.20), identity-embedding cosine via linear ramp 0.70 → 0.95 (0.30), contextIds-overlap from caller-supplied facts (0.15), same-`sourceSignalId` proximity boost (0.10).
+  - **Single-token-name guard:** when both names are a single token < 5 chars (e.g. "John", "ICOS"), final score is clamped to ≤ 0.85. Production-driven — these surfaces need an identifier or embedding to push past the guard.
+  - **Weights are config:** `ScoreThresholds.weights: Partial<SignalWeights>` overrides on a per-key basis. `DEFAULT_WEIGHTS` re-exported for hosts that want to introspect.
+  - **Winner selection (deterministic):** more identifiers → more atomic facts → has profile fact → older `createdAt` → lexicographic id (final stable fallback).
+- **`findDuplicateCandidates(memory, entity, scope, opts?) → IEntity[]`** — per-entity finder. Fuses identifier matches, `findEntitiesByNormalizedName` (with `matchAliases: true`), and optional `semanticSearchEntities` via `identityEmbedding`. Dedupes, excludes self + archived. `opts.includeSemantic: false` skips the vector pass for cheap structural scans.
+- **`findDuplicateClusters(memory, scope, opts?) → DuplicateCluster[]`** — admin snapshot of `(type, normalizedDisplayName)` groups with `count >= minClusterSize` (default 2). Sorted by cluster size desc. Paginates through `listEntities` and groups client-side — fast for tenants ≤ 10k entities. Adapters wanting native aggregation can override.
+- **`sweepDuplicates(memory, scope, opts?) → AsyncIterable<DedupDecision>`** — generator wrapping cluster enumeration + pair-scoring. Yields decisions largest-cluster-first, score-desc within a cluster, so callers can `break` early once high-value merges are consumed. Deliberately does NOT call `mergeEntities` — separation of concerns. Hosts route each decision (auto-merge / queue / skip) per their policy.
+
+**Not included:** `bulkMergeEntities` (a single-line for-loop in caller code; YAGNI). `EntityUpsertEvent.resolvedTier` annotation (deferred — threading through eight emit sites is significant code surface for ambiguous value; the existing `entity.upsert.ambiguous` event already covers the highest-signal "dedup-needed" case).
+
+27 new tests in `tests/unit/memory/dedup.test.ts`. Full memory suite: 1174 passing.
+
 ### Memory — Phase B PR 2: extraction richness (subject-of hints)
 
 Production data on one tenant: organizations average **0 atomic facts per entity**, projects 2.5%-with-≥3-facts, events 5%. The structural bottleneck for non-person-subject profile coverage is the extraction prompt itself — the default `(person, predicate, otherEntity)` shape starves non-person entities of self-descriptive content. Closing the per-type-profile-threshold gap with a config knob would treat the symptom; this PR fixes the cause.

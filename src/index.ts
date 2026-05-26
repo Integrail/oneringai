@@ -1561,6 +1561,12 @@ export {
   // Pillar 2 — entity-anchored cross-source reconciliation
   entityReconciliationPrompt,
   ENTITY_RECONCILIATION_PROMPT_VERSION,
+  // Dedup tooling
+  scoreEntityPair,
+  findDuplicateCandidates,
+  findDuplicateClusters,
+  sweepDuplicates,
+  DEFAULT_WEIGHTS,
 } from './memory/index.js';
 export type {
   // Adapter options
@@ -1709,6 +1715,15 @@ export type {
   TaskStateHistoryEntry,
   TransitionTaskStateOptions,
   TransitionTaskStateResult,
+  // Dedup tooling types
+  DedupDecision,
+  SignalBreakdown,
+  SignalWeights,
+  ScoreThresholds,
+  FindCandidatesOptions,
+  FindClustersOptions,
+  DuplicateCluster,
+  SweepOptions,
 } from './memory/index.js';
 
 // ============ Integration Testing ============
