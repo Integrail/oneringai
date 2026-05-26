@@ -1045,6 +1045,26 @@ export class MemorySystem implements IDisposable {
     winnerId: EntityId,
     loserId: EntityId,
     scope: ScopeFilter,
+    options?: {
+      /**
+       * Allow merging entities owned by different users within the same
+       * group/tenant. Default `false`.
+       *
+       * When `true`: the per-entity `assertCanAccess(write)` check is
+       * skipped (both winner and loser may be owned by users other than
+       * `scope.userId`), AND the same bypass is applied while rewriting
+       * fact references so the graph stays coherent post-merge.
+       *
+       * Tenancy invariant is preserved: the call refuses if
+       * `winner.groupId !== loser.groupId`. The host is responsible for
+       * gating which callers may pass the flag (typically a group/super
+       * admin running a legitimate consolidation pass).
+       *
+       * The owner of the surviving winner is unchanged either way — only
+       * the loser is archived, so its ownerId becomes irrelevant after.
+       */
+      allowCrossOwner?: boolean;
+    },
   ): Promise<IEntity> {
     assertNotDestroyed(this, 'mergeEntities');
     if (winnerId === loserId) throw new Error('mergeEntities: winner and loser must differ');
@@ -1061,10 +1081,36 @@ export class MemorySystem implements IDisposable {
         `mergeEntities: loser ${loserId} not found or not visible in caller scope`,
       );
     }
-    // Write access required on both: winner is updated (identifiers + aliases +
-    // version bump), loser is archived. Either being read-only denies the merge.
-    assertCanAccess(winner, scope, 'write', 'entity');
-    assertCanAccess(loser, scope, 'write', 'entity');
+
+    // Permission model:
+    //   - Default: caller must have write access to BOTH winner and loser
+    //     (matches the rest of the write surface — assertCanAccess uses
+    //     ownerId / explicit permissions / group `write` level).
+    //   - `allowCrossOwner: true`: callers running a legitimate consolidation
+    //     of group-visible types (e.g., Person/Organization records that the
+    //     host's pipeline duplicated across multiple users in the same group)
+    //     can merge without re-owning each loser first. The tenancy invariant
+    //     is preserved — both entities MUST share `groupId` — so this never
+    //     enables cross-tenant data movement. The host is responsible for
+    //     gating which callers may pass the flag.
+    //
+    // The owner of the surviving WINNER is unchanged either way — only the
+    // loser is archived, so its ownerId becomes irrelevant after the call.
+    if (options?.allowCrossOwner) {
+      const winnerGroup = (winner as IEntity & { groupId?: string }).groupId;
+      const loserGroup = (loser as IEntity & { groupId?: string }).groupId;
+      if (winnerGroup !== loserGroup) {
+        throw new Error(
+          `mergeEntities: allowCrossOwner refuses cross-tenant merge ` +
+            `(winner.groupId=${winnerGroup ?? 'null'} loser.groupId=${loserGroup ?? 'null'})`,
+        );
+      }
+    } else {
+      // Write access required on both: winner is updated (identifiers + aliases +
+      // version bump), loser is archived. Either being read-only denies the merge.
+      assertCanAccess(winner, scope, 'write', 'entity');
+      assertCanAccess(loser, scope, 'write', 'entity');
+    }
 
     // Merge identifiers + aliases into winner
     const merged = mergeIdentifiersAndAliases(winner, {
@@ -1084,8 +1130,13 @@ export class MemorySystem implements IDisposable {
     };
     await this.store.updateEntity(nextWinner);
 
-    // Rewrite facts: subjectId, objectId, or contextIds entry === loserId → winnerId
-    await this.rewriteFactReferences(loserId, winnerId, scope);
+    // Rewrite facts: subjectId, objectId, or contextIds entry === loserId → winnerId.
+    // In cross-owner mode the same authorization bypass applies — otherwise
+    // facts owned by other users in the group would keep their dangling
+    // pointers to the archived loser entity, leaving the graph incoherent.
+    await this.rewriteFactReferences(loserId, winnerId, scope, {
+      allowCrossOwner: !!options?.allowCrossOwner,
+    });
 
     // Archive loser
     await this.store.archiveEntity(loserId, scope);
@@ -1113,11 +1164,18 @@ export class MemorySystem implements IDisposable {
     fromId: EntityId,
     toId: EntityId,
     scope: ScopeFilter,
+    options?: { allowCrossOwner?: boolean },
   ): Promise<void> {
     // Permission-window caveat (composes with scope-window caveat on mergeEntities):
-    // we skip facts the caller can see but cannot write. Those facts keep their
-    // old reference — the merge is incomplete for that subset. Document on
-    // mergeEntities; no warning here to avoid log spam.
+    // by default we skip facts the caller can see but cannot write. Those
+    // facts keep their old reference — the merge is incomplete for that
+    // subset. Documented on mergeEntities; no warning here to avoid log spam.
+    //
+    // With `allowCrossOwner: true` (host running a legitimate cross-owner
+    // consolidation), per-fact authorization is bypassed too — otherwise
+    // facts owned by other users in the same group would dangle pointing
+    // at the archived loser entity, leaving the graph incoherent.
+    const allowCrossOwner = options?.allowCrossOwner === true;
     //
     // orderBy is required by the adapter pagination contract (see
     // adapters/orderByWarning.ts). `createdAt asc` is the right choice for
@@ -1136,7 +1194,7 @@ export class MemorySystem implements IDisposable {
         scope,
       );
       for (const f of page.items) {
-        if (!canAccess(f, scope, 'write')) continue;
+        if (!allowCrossOwner && !canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { subjectId: toId }, scope);
       }
       cursor = page.nextCursor;
@@ -1151,7 +1209,7 @@ export class MemorySystem implements IDisposable {
         scope,
       );
       for (const f of page.items) {
-        if (!canAccess(f, scope, 'write')) continue;
+        if (!allowCrossOwner && !canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { objectId: toId }, scope);
       }
       cursor = page.nextCursor;
@@ -1181,7 +1239,7 @@ export class MemorySystem implements IDisposable {
         scope,
       );
       for (const f of page.items) {
-        if (!canAccess(f, scope, 'write')) continue;
+        if (!allowCrossOwner && !canAccess(f, scope, 'write')) continue;
         const filtered = (f.contextIds ?? []).filter((id) => id !== fromId);
         if (toId !== f.subjectId && toId !== f.objectId && !filtered.includes(toId)) {
           filtered.push(toId);
