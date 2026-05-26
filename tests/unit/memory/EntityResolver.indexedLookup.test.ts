@@ -117,6 +117,21 @@ describe('EntityResolver Tier 2/3 indexed lookup', () => {
     expect(candidates).toEqual([]);
   });
 
+  it('type-less query (no query.type) still resolves via the index — preserves resolveEntity({surface}) contract', async () => {
+    const mem = makeMem();
+    const ent = await mem.upsertEntity(
+      { type: 'person', displayName: 'Bob Smith', identifiers: [] },
+      SCOPE,
+    );
+    const candidates = await mem.resolveEntity(
+      { surface: 'Bob Smith' },
+      SCOPE,
+    );
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates[0]!.entity.id).toBe(ent.entity.id);
+    expect(candidates[0]!.confidence).toBe(0.9);
+  });
+
   it('legacy entities (no normalizedDisplayName) are skipped (needs backfill)', async () => {
     const store = new InMemoryAdapter();
     const mem = new MemorySystem({ store });

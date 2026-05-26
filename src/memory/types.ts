@@ -593,11 +593,47 @@ export interface IMemoryStore {
    *    Default is `false` (displayName only).
    */
   findEntitiesByNormalizedName(
-    type: string,
+    type: string | undefined,
     normalized: string,
     scope: ScopeFilter,
     opts?: { matchAliases?: boolean; limit?: number },
   ): Promise<IEntity[]>;
+  /**
+   * Atomically find-or-create an entity by `(type, normalizedDisplayName,
+   * scope)`. The load-bearing primitive for eliminating concurrent-insert
+   * duplicates — two callers racing the same surface converge on a single row.
+   *
+   * Returns:
+   *  - `{ entity, created: true }` — no prior row existed; the adapter inserted
+   *    `input` and returned the fresh entity.
+   *  - `{ entity, created: false }` — a row was already present (or another
+   *    writer beat us to insert); the adapter returned the winner unchanged.
+   *    Callers are responsible for accumulating aliases/identifiers/metadata
+   *    onto the winner after the fact (see
+   *    `MemorySystem.tryAtomicCreateOrResolve`).
+   *
+   * Atomicity guarantees:
+   *  - InMemory: enforced by the JS event-loop (no `await` between read and
+   *    write inside the method body) — single-process only.
+   *  - Mongo: enforced by a unique partial index on
+   *    `{groupId, ownerId, type, normalizedDisplayName}`. **Hosts must install
+   *    this index via `ensureNormalizedNameUniqueIndex` (exported from the
+   *    library) — otherwise the method degrades to a non-atomic
+   *    find-then-create that still races.** Adding a unique index to a
+   *    collection containing duplicates fails hard, so the library refuses to
+   *    auto-create it; run after `backfillNormalizedFields` + a dedup pass.
+   *
+   * Degraded path:
+   *  - When `normalizeSurface(input.displayName)` collapses to empty (pure
+   *    punctuation / whitespace), the adapter cannot index a stable key.
+   *    Falls back to plain `createEntity` — guaranteed `created: true`. The
+   *    caller will see a duplicate in the rare case of two concurrent writes
+   *    of pure-punctuation displayNames.
+   */
+  atomicCreateOrFindByNormalizedName(
+    input: NewEntity,
+    scope: ScopeFilter,
+  ): Promise<{ entity: IEntity; created: boolean }>;
   searchEntities(query: string, opts: EntitySearchOptions, scope: ScopeFilter): Promise<Page<IEntity>>;
   listEntities(filter: EntityListFilter, opts: ListOptions, scope: ScopeFilter): Promise<Page<IEntity>>;
   archiveEntity(id: EntityId, scope: ScopeFilter): Promise<void>;

@@ -4,7 +4,7 @@ export { RawMongoCollection } from './RawMongoCollection.js';
 export type { RawMongoDriverCollection, RawMongoClientLike } from './RawMongoCollection.js';
 export { MeteorMongoCollection } from './MeteorMongoCollection.js';
 export type { MeteorCollectionLike } from './MeteorMongoCollection.js';
-export { ensureIndexes } from './indexes.js';
+export { ensureIndexes, ensureNormalizedNameUniqueIndex } from './indexes.js';
 export type { EnsureIndexesArgs } from './indexes.js';
 export { scopeToFilter, mergeFilters } from './scopeFilter.js';
 export type { ScopeToFilterOptions } from './scopeFilter.js';

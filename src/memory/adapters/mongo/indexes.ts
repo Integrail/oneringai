@@ -222,3 +222,46 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
     );
   }
 }
+
+/**
+ * Install the unique partial index on `{groupId, ownerId, type,
+ * normalizedDisplayName}` that makes `IMemoryStore.atomicCreateOrFindByNormalizedName`
+ * cross-process-safe. Host-controlled, never auto-installed.
+ *
+ * **Why host-controlled:** adding a unique index to a collection that already
+ * contains duplicates fails immediately with E11000. The library cannot
+ * safely do this for you. The correct sequence on a live deployment:
+ *   1. Bump library to >=0.8.0; ship Commit 1 (adds the normalized fields to
+ *      every new/updated row).
+ *   2. Run `MemorySystem.backfillNormalizedFields(...)` (Commit 6) so every
+ *      existing entity has the field populated.
+ *   3. Run a deduplication pass (your tooling — `findDuplicateClusters` lands
+ *      separately in Phase C).
+ *   4. Call this helper from a migration to enforce uniqueness going forward.
+ *
+ * **Why partial:** archived entities don't participate in the dedup contract;
+ * neither do legacy entities lacking `normalizedDisplayName`. The
+ * `partialFilterExpression` restricts the index to documents where the field
+ * matters, keeping the index small and avoiding spurious E11000s on archived
+ * rows that share a normalized name with a live row.
+ *
+ * Idempotent — `createIndex` with the same `{spec, opts}` is a no-op.
+ */
+export async function ensureNormalizedNameUniqueIndex(
+  entities: IMongoCollectionLike<IEntity>,
+  opts?: { name?: string },
+): Promise<void> {
+  if (!entities.createIndex) return;
+  await entities.createIndex(
+    { groupId: 1, ownerId: 1, type: 1, normalizedDisplayName: 1 },
+    {
+      unique: true,
+      background: true,
+      name: opts?.name ?? 'memory_ent_norm_name_unique',
+      partialFilterExpression: {
+        archived: { $ne: true },
+        normalizedDisplayName: { $exists: true, $ne: '' },
+      },
+    },
+  );
+}

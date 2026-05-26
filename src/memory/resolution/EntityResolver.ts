@@ -81,6 +81,24 @@ export interface ResolverMemoryHooks {
     scope: ScopeFilter,
   ) => Promise<{ entity: IEntity; created: boolean }>;
   /**
+   * Atomically create OR resolve by `(type, normalizedDisplayName, scope)`,
+   * applying alias accumulation when an existing row is returned. Used by
+   * `upsertBySurface` when resolver Tier 1-3 didn't match — replaces the
+   * naive `upsertEntity` call that raced past concurrent inserts of the
+   * same surface. See `MemorySystem.tryAtomicCreateOrResolve` for the wiring.
+   */
+  atomicCreateOrResolve: (
+    input: Partial<IEntity> & {
+      identifiers: Identifier[];
+      displayName: string;
+      type: string;
+      /** Surface + any caller-supplied aliases (used for alias accumulation on race-loss). */
+      aliasesForMerge?: string[];
+      metadataMerge?: 'fillMissing' | 'overwrite';
+    },
+    scope: ScopeFilter,
+  ) => Promise<{ entity: IEntity; created: boolean }>;
+  /**
    * Patches an existing entity with additional aliases/identifiers (no-op if already present).
    * When `opts.metadata` is supplied, merges per `opts.metadataMerge`:
    *  - `'fillMissing'` (default): only keys absent from stored metadata are set.
@@ -157,12 +175,11 @@ export class EntityResolver {
     //       was a candidate, then filtered down via `normalizeSurface(...) === ...`
     //       in process. Wasted bandwidth + memory at scale.
     //
-    // The indexed path needs a `type`. Type-less queries skip Tier 2/3 (Tier 4
-    // semantic still runs if enabled). All in-tree callers pass `type`; the
-    // public `MemorySystem.resolveEntity` documents the field as a "hint" but
-    // production paths (`UpsertBySurfaceInput.type` is required) always set it.
+    // `query.type` flows through to the adapter — when undefined, the adapter
+    // matches across all types (less selective, but preserves the type-less
+    // resolveEntity contract used by `createSubjectResolver`).
     const surface = query.surface.trim();
-    if (surface.length > 0 && query.type) {
+    if (surface.length > 0) {
       const normalized = normalizeSurface(surface);
       if (normalized.length > 0) {
         // Single call covers both Tier 2 (displayName) and Tier 3 (alias) —
@@ -177,6 +194,7 @@ export class EntityResolver {
           { matchAliases: true, limit: 50 },
         );
         for (const entity of hits) {
+          if (query.type && entity.type !== query.type) continue;
           const tier = exactMatchTier(entity, surface);
           if (tier === null) continue;
           const candidate: EntityCandidate = {
@@ -335,18 +353,34 @@ export class EntityResolver {
       return { entity, resolved: true, mergeCandidates };
     }
 
-    // Create new entity — metadata set verbatim.
-    const { entity } = await this.hooks.upsertEntity(
+    // No candidate cleared the threshold. Use the atomic create-or-resolve
+    // primitive — guards against two concurrent extractions of the same
+    // surface both reaching here on an empty DB and each inserting. The
+    // primitive returns `created: false` when a racer (or a now-visible
+    // entity that resolve() missed for some adapter-specific reason) wins;
+    // in that case the helper has already accumulated our aliases /
+    // identifiers / metadata onto the winner.
+    const aliasesForMerge = [input.surface, ...(input.aliases ?? [])];
+    const { entity, created } = await this.hooks.atomicCreateOrResolve(
       {
         type: input.type,
         displayName: input.surface,
         aliases: input.aliases,
         identifiers: input.identifiers ?? [],
         metadata: input.metadata,
+        aliasesForMerge,
+        metadataMerge: opts?.metadataMerge ?? 'fillMissing',
       },
       scope,
     );
-    return { entity, resolved: false, mergeCandidates: candidates };
+    // `resolved: false` only when we genuinely created. A race-loss returns
+    // `created: false` — semantically the same as a resolver hit, so signal
+    // `resolved: true` to callers (ExtractionResolver, etc) that branch on it.
+    return {
+      entity,
+      resolved: !created,
+      mergeCandidates: candidates,
+    };
   }
 }
 

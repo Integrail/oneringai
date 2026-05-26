@@ -138,6 +138,7 @@ export {
   RawMongoCollection,
   MeteorMongoCollection,
   ensureIndexes,
+  ensureNormalizedNameUniqueIndex,
   scopeToFilter,
   mergeFilters,
   factFilterToMongo,

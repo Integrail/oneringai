@@ -397,9 +397,21 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     expect(new Set(both.map((e) => e.id))).toEqual(new Set([bare.id, aliased.id]));
   });
 
-  it('R1 — concurrent upsertEntityBySurface for same surface creates duplicates on Mongo', async () => {
+  it('R1 — concurrent upsertEntityBySurface for same surface converges on ONE entity (post-Commit 3, unique index installed)', async () => {
     // Inline import to avoid cross-file restructuring of the adapter setup.
     const { MemorySystem } = await import('@/memory/MemorySystem.js');
+    const { ensureNormalizedNameUniqueIndex } = await import(
+      '@/memory/adapters/mongo/indexes.js'
+    );
+
+    // Install the unique partial index BEFORE the race. Without it, two
+    // separate Node-driver round-trips can both succeed; with it, E11000
+    // catches the loser, which then re-queries and merges. The test
+    // exercises the dup-key recovery path explicitly.
+    await ensureNormalizedNameUniqueIndex(
+      (adapter as unknown as { entities: typeof adapter['entities'] }).entities,
+    );
+
     const mem = new MemorySystem({ store: adapter });
     const scope = { userId: 'dup-r1-user', groupId: 'dup-r1-group' };
 
@@ -415,9 +427,9 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     ]);
     const page = await mem.listEntities({ type: 'project' }, {}, scope);
     const matching = page.items.filter((e) => e.displayName === 'ICOS-r1');
-    // Documented current behavior: race past the resolver read → two rows.
-    expect(matching.length).toBe(2);
-    expect(a.entity.id).not.toBe(b.entity.id);
+    // Post-Commit 3: converges on a single row.
+    expect(matching.length).toBe(1);
+    expect(a.entity.id).toBe(b.entity.id);
     mem.destroy();
   });
 

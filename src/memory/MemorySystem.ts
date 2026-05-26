@@ -388,12 +388,94 @@ export class MemorySystem implements IDisposable {
           const res = await this.upsertEntity(input, scope);
           return { entity: res.entity, created: res.created };
         },
+        atomicCreateOrResolve: async (input, scope) => {
+          return this.tryAtomicCreateOrResolve(input, scope);
+        },
         appendAliasesAndIdentifiers: async (id, aliases, identifiers, scope, opts) => {
           return this.appendAliasesAndIdentifiers(id, aliases, identifiers, scope, opts);
         },
       },
       this.resolutionConfig,
     );
+  }
+
+  /**
+   * Atomic create-or-resolve by `(type, normalizedDisplayName, scope)`.
+   * Used by `EntityResolver.upsertBySurface` when Tier 1-3 returned no
+   * candidate at-or-above `autoResolveThreshold`. Single point of contact
+   * with `IMemoryStore.atomicCreateOrFindByNormalizedName`.
+   *
+   * On `created: true` — emits `entity.upsert` and returns the fresh entity.
+   * On `created: false` — a racer or a now-visible row owns the normalized
+   * name. Merges the caller's incoming aliases / identifiers / metadata
+   * onto the winner via `appendAliasesAndIdentifiers` (same path as a
+   * resolver hit would have used), so re-extractions across concurrent
+   * writers converge on a single entity with the union of seen surfaces.
+   */
+  private async tryAtomicCreateOrResolve(
+    input: Partial<IEntity> & {
+      identifiers: Identifier[];
+      displayName: string;
+      type: string;
+      aliasesForMerge?: string[];
+      metadataMerge?: 'fillMissing' | 'overwrite';
+    },
+    scope: ScopeFilter,
+  ): Promise<{ entity: IEntity; created: boolean }> {
+    assertNotDestroyed(this, 'tryAtomicCreateOrResolve');
+    // Owner invariant lives in createEntity, not here — but the adapter's
+    // atomic primitive ultimately calls createEntity which enforces it.
+    // We just pre-compute the resolved owner so the find-side filter and
+    // the eventual insert use the same scope key.
+    const ownerId = input.ownerId ?? scope.userId;
+    if (!ownerId) {
+      throw new OwnerRequiredError('entity');
+    }
+    if (input.metadata) {
+      input = { ...input, metadata: coerceMetadataDates(input.metadata) };
+    }
+    const newEntity: NewEntity = {
+      type: input.type,
+      displayName: input.displayName,
+      aliases: input.aliases ? [...input.aliases] : undefined,
+      identifiers: input.identifiers.map((i) => ({
+        ...i,
+        addedAt: i.addedAt ?? new Date(),
+      })),
+      groupId: input.groupId ?? scope.groupId,
+      ownerId,
+      metadata: input.metadata,
+      permissions: this.resolvePermissions(input.permissions, {
+        kind: 'entity',
+        entityType: input.type,
+      }),
+    };
+    const res = await this.store.atomicCreateOrFindByNormalizedName(newEntity, scope);
+    if (res.created) {
+      this.queueIdentityEmbedding(res.entity, scope);
+      this.emit({ type: 'entity.upsert', entity: res.entity, created: true });
+      return { entity: res.entity, created: true };
+    }
+    // Race-loss path — winner exists. Merge any aliases/identifiers/metadata
+    // the caller passed into it so the union of seen surfaces converges on
+    // a single entity. Identical semantics to a resolver-hit accumulation.
+    const aliasesForMerge = input.aliasesForMerge ?? [
+      input.displayName,
+      ...(input.aliases ?? []),
+    ];
+    const merged = await this.appendAliasesAndIdentifiers(
+      res.entity.id,
+      aliasesForMerge,
+      newEntity.identifiers,
+      scope,
+      input.metadata
+        ? {
+            metadata: input.metadata,
+            metadataMerge: input.metadataMerge ?? 'fillMissing',
+          }
+        : undefined,
+    );
+    return { entity: merged, created: false };
   }
 
   // ==========================================================================

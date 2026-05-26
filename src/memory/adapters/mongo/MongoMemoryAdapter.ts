@@ -354,8 +354,52 @@ export class MongoMemoryAdapter implements IMemoryStore {
     return docs.map(reviveEntity);
   }
 
+  /**
+   * Atomic find-or-create by `(type, normalizedDisplayName, scope)`. See the
+   * interface contract.
+   *
+   * Implementation: optimistic find-then-insert with duplicate-key recovery.
+   * Cross-process atomicity depends on the unique partial index on
+   * `{groupId, ownerId, type, normalizedDisplayName}` being installed —
+   * without it, a racing insert succeeds and produces duplicates. The library
+   * exports `ensureNormalizedNameUniqueIndex` for hosts to install in their
+   * migration (not auto-installed because adding a unique index to a
+   * collection containing duplicates fails).
+   */
+  async atomicCreateOrFindByNormalizedName(
+    input: NewEntity,
+    scope: ScopeFilter,
+  ): Promise<{ entity: IEntity; created: boolean }> {
+    this.assertLive();
+    const norm = computeNormalizedFields({
+      displayName: input.displayName,
+      aliases: input.aliases,
+    });
+    if (!norm.normalizedDisplayName) {
+      return { entity: await this.createEntity(input), created: true };
+    }
+    const filter = mergeFilters(this.scope(scope), ARCHIVED_HIDDEN, {
+      type: input.type,
+      normalizedDisplayName: norm.normalizedDisplayName,
+    });
+    // Optimistic path — most calls find an existing entity, no insert needed.
+    const found = await this.entities.findOne(filter);
+    if (found) return { entity: reviveEntity(found), created: false };
+    try {
+      const entity = await this.createEntity(input);
+      return { entity, created: true };
+    } catch (err) {
+      // E11000 — unique partial index rejected our insert because a racer
+      // inserted first. Refetch the winner.
+      if (!isDuplicateKeyError(err)) throw err;
+      const winner = await this.entities.findOne(filter);
+      if (!winner) throw err;
+      return { entity: reviveEntity(winner), created: false };
+    }
+  }
+
   async findEntitiesByNormalizedName(
-    type: string,
+    type: string | undefined,
     normalized: string,
     scope: ScopeFilter,
     opts?: { matchAliases?: boolean; limit?: number },
@@ -375,12 +419,15 @@ export class MongoMemoryAdapter implements IMemoryStore {
           ],
         }
       : { normalizedDisplayName: normalized };
-    const filter = mergeFilters(
-      this.scope(scope),
-      ARCHIVED_HIDDEN,
-      { type },
-      nameClause,
-    );
+    // Type-less queries (e.g. `MemorySystem.resolveEntity({surface})` without
+    // a hint) drop the `type` clause and lean on the normalized-name index
+    // prefix. Less selective than the typed path but materially cheaper than
+    // the legacy substring scan, and avoids surprising callers who passed
+    // no type.
+    const filter =
+      type !== undefined
+        ? mergeFilters(this.scope(scope), ARCHIVED_HIDDEN, { type }, nameClause)
+        : mergeFilters(this.scope(scope), ARCHIVED_HIDDEN, nameClause);
     const docs = await this.entities.find(filter, { limit });
     return docs.map(reviveEntity);
   }
@@ -1166,6 +1213,25 @@ export class MongoMemoryAdapter implements IMemoryStore {
   private assertLive(): void {
     if (this.destroyed) throw new Error('MongoMemoryAdapter: instance has been destroyed');
   }
+}
+
+// =============================================================================
+// Duplicate-key detection
+// =============================================================================
+
+/**
+ * Detect a Mongo dup-key (E11000) error. Tolerant of driver-version variance:
+ * `err.code === 11000` is the stable, decade-old contract. Some wrappers
+ * (Meteor's, certain Atlas Edge versions) attach the code on a nested object;
+ * we walk a couple of common shapes.
+ */
+function isDuplicateKeyError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; errorResponse?: { code?: unknown }; result?: { code?: unknown } };
+  if (e.code === 11000) return true;
+  if (e.errorResponse?.code === 11000) return true;
+  if (e.result?.code === 11000) return true;
+  return false;
 }
 
 // =============================================================================

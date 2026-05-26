@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Phase A Commit 3: atomic upsert + unique partial index (LOAD-BEARING)
+
+The core dup-stopping change. Concurrent `upsertEntityBySurface` calls for the same surface now converge on a single entity instead of racing past the resolver read and each inserting (R1 from Step 0).
+
+- **New `IMemoryStore.atomicCreateOrFindByNormalizedName(input, scope)`** — atomic find-or-create keyed on `(type, normalizedDisplayName, scope)`. Returns `{entity, created}`. Both adapters implement.
+  - **InMemory** — the find-phase scan runs synchronously over the in-memory map; the only `await` is the createEntity call inside which is also synchronous internally. Two concurrent invocations of `Promise.all(...)` can't both pass the find without one observing the other's insert.
+  - **Mongo** — optimistic find-then-insert with E11000 duplicate-key recovery. Cross-process atomicity depends on the host installing the new unique partial index via `ensureNormalizedNameUniqueIndex`. The `isDuplicateKeyError` helper catches the race-loss; the loser re-queries and returns the winner.
+- **New `MemorySystem.tryAtomicCreateOrResolve`** (private) — owner-required, coerces metadata dates, calls the adapter primitive, then on race-loss merges incoming aliases/identifiers/metadata onto the winner via `appendAliasesAndIdentifiers` (fillMissing default). Emits `entity.upsert` on the create path.
+- **`EntityResolver.upsertBySurface`** swaps its create branch from `hooks.upsertEntity` to a new `hooks.atomicCreateOrResolve`. `UpsertBySurfaceResult.resolved` is now `true` for race-loss too — semantically equivalent to a resolver hit, and ExtractionResolver branches the same way for both.
+- **New exported helper `ensureNormalizedNameUniqueIndex(entities, opts?)`** — host-controlled unique partial index on `{groupId, ownerId, type, normalizedDisplayName}` filtered by `{archived: {$ne: true}, normalizedDisplayName: {$exists: true, $ne: ''}}`. Re-exported from `@everworker/oneringai` and the memory barrel. **Not auto-installed** — see CHANGELOG body for the migration sequence (Commit 1 → Commit 6 backfill → dedup pass → install the unique index).
+- **Resolver type-less queries** — `findEntitiesByNormalizedName(type, ...)` now accepts `type: string | undefined`. When undefined, the adapter matches across all types so `resolveEntity({surface})` without a type hint continues to work (used by `createSubjectResolver`).
+- **Tests** — `tests/unit/memory/MemorySystem.atomicUpsert.test.ts` (10 tests including 20-way Promise.all convergence + race-loss alias/identifier/metadata merging). The R1 repro in `Dup.repro.test.ts` flips to assert convergence (was 2 entities pre-fix, now 1). 1201 memory + tool tests pass, 5666 total unit tests pass.
+
 ### Memory — Phase A Commit 2: EntityResolver Tier 2/3 indexed lookup
 
 Replaces the substring-then-filter `searchEntities(q, {limit:50})` path in `EntityResolver.resolve()` with a single `findEntitiesByNormalizedName(type, normalized, scope, {matchAliases:true, limit:50})` call. Behavior-equivalent for well-typed callers; structurally immune to the Mongo `oversamplePool` cap that could drop an exact match outside the ranked top-50 under heavy substring fan-out.

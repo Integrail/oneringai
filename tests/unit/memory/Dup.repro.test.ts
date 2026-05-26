@@ -28,8 +28,8 @@ function makeMem(): MemorySystem {
   return new MemorySystem({ store: new InMemoryAdapter() });
 }
 
-describe('R1 — concurrent upsertEntityBySurface for same surface', () => {
-  it('InMemory: two concurrent calls create TWO entities (current behavior; should be ONE post-fix)', async () => {
+describe('R1 — concurrent upsertEntityBySurface for same surface (post-Commit 3)', () => {
+  it('InMemory: two concurrent calls converge on ONE entity (atomic primitive)', async () => {
     const mem = makeMem();
     const [a, b] = await Promise.all([
       mem.upsertEntityBySurface(
@@ -42,10 +42,9 @@ describe('R1 — concurrent upsertEntityBySurface for same surface', () => {
       ),
     ]);
     const page = await mem.listEntities({ type: 'project' }, {}, SCOPE);
-    // Documented expectation under CURRENT main: the two calls race past the
-    // resolver's read (both see empty DB) and both createEntity.
-    expect(page.items.length).toBe(2);
-    expect(a.entity.id).not.toBe(b.entity.id);
+    // Post-Commit 3: atomicCreateOrFindByNormalizedName converges races.
+    expect(page.items.length).toBe(1);
+    expect(a.entity.id).toBe(b.entity.id);
   });
 });
 

@@ -185,8 +185,43 @@ export class InMemoryAdapter implements IMemoryStore {
     return results;
   }
 
+  /**
+   * Atomic find-or-create by `(type, normalizedDisplayName, scope)`. See the
+   * interface contract. JS event-loop atomicity: the body has a single
+   * `await` (the createEntity call); the find-by-normalized phase runs
+   * synchronously over the in-memory map, so two concurrent invocations
+   * cannot both pass the find without one observing the other's insert.
+   */
+  async atomicCreateOrFindByNormalizedName(
+    input: NewEntity,
+    scope: ScopeFilter,
+  ): Promise<{ entity: IEntity; created: boolean }> {
+    this.assertLive();
+    const norm = computeNormalizedFields({
+      displayName: input.displayName,
+      aliases: input.aliases,
+    });
+    if (!norm.normalizedDisplayName) {
+      const entity = await this.createEntity(input);
+      return { entity, created: true };
+    }
+    // Synchronous scan — no `await` between this scan and the createEntity
+    // below means another Promise.all-scheduled invocation cannot interleave
+    // its scan in our gap. Both queue their createEntity awaits behind ours.
+    for (const e of this.entitiesById.values()) {
+      if (e.archived) continue;
+      if (e.type !== input.type) continue;
+      if (!isVisible(e, scope)) continue;
+      if (e.normalizedDisplayName === norm.normalizedDisplayName) {
+        return { entity: clone(e), created: false };
+      }
+    }
+    const entity = await this.createEntity(input);
+    return { entity, created: true };
+  }
+
   async findEntitiesByNormalizedName(
-    type: string,
+    type: string | undefined,
     normalized: string,
     scope: ScopeFilter,
     opts?: { matchAliases?: boolean; limit?: number },
@@ -201,7 +236,7 @@ export class InMemoryAdapter implements IMemoryStore {
     const out: IEntity[] = [];
     for (const e of this.entitiesById.values()) {
       if (e.archived) continue;
-      if (e.type !== type) continue;
+      if (type !== undefined && e.type !== type) continue;
       if (!isVisible(e, scope)) continue;
       // Legacy entities (no normalized fields stored) are skipped — see the
       // interface contract. Backfill via MemorySystem.backfillNormalizedFields.
