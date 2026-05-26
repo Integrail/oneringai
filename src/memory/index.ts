@@ -50,6 +50,7 @@ export {
   ConnectorExtractor,
   parseExtractionResponse,
   parseExtractionWithStatus,
+  parseReconciliationOpsWithStatus,
   PlainTextAdapter,
   EmailSignalAdapter,
   CalendarSignalAdapter,
@@ -106,6 +107,7 @@ export type {
   CalendarSignal,
   CalendarSignalAdapterOptions,
   ParseExtractionResult,
+  ParseReconciliationOpsResult,
   ParseStatus,
   // v5+ restraint posture types
   EagernessLevel,

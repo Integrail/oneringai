@@ -48,8 +48,12 @@ export {
 export type { EntityReconciliationPromptContext } from './entityReconciliationPrompt.js';
 
 // Extraction-output parser (rich + back-compat forms).
-export { parseExtractionWithStatus } from './parseExtraction.js';
-export type { ParseExtractionResult, ParseStatus } from './parseExtraction.js';
+export { parseExtractionWithStatus, parseReconciliationOpsWithStatus } from './parseExtraction.js';
+export type {
+  ParseExtractionResult,
+  ParseReconciliationOpsResult,
+  ParseStatus,
+} from './parseExtraction.js';
 
 // Restraint posture — tunable LLM-eagerness controls (v5+).
 export {

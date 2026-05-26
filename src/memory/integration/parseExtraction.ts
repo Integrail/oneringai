@@ -216,3 +216,67 @@ export function parseExtractionResponse(raw: string): ExtractionOutput {
   return { mentions, facts };
 }
 
+/** Outcome of a reconciliation-ops parse. Mirrors `ParseExtractionResult`
+ *  but only validates the `operations` field — `mentions`/`facts` are not
+ *  expected from reconciliation prompts. */
+export interface ParseReconciliationOpsResult {
+  status: ParseStatus;
+  operations: ReconciliationOp[];
+  reason?: string;
+  rawExcerpt?: string;
+}
+
+/**
+ * Parser for entity-reconciliation prompt output. The reconciliation prompt
+ * (`entityReconciliationPrompt`) returns ONLY `{"operations": [...]}` — no
+ * `mentions`, no `facts`. Using `parseExtractionWithStatus` here trips a
+ * spurious `mentions is not an object` shape_error on every call.
+ *
+ * - `status: 'parse_error'` — input wasn't valid JSON.
+ * - `status: 'shape_error'` — JSON parsed but `operations` wasn't an array.
+ * - `status: 'ok'` — `operations` parsed; may be empty (silence is valid).
+ */
+export function parseReconciliationOpsWithStatus(raw: string): ParseReconciliationOpsResult {
+  const rawExcerpt = raw.length > RAW_EXCERPT_MAX ? raw.slice(0, RAW_EXCERPT_MAX) + '…' : raw;
+
+  if (!raw || raw.trim().length === 0) {
+    return {
+      status: 'parse_error',
+      operations: [],
+      reason: 'LLM returned empty output',
+      rawExcerpt,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseJsonPermissive(raw);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      status: 'parse_error',
+      operations: [],
+      reason: 'could not parse JSON from LLM output',
+      rawExcerpt,
+    };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  // `operations` may be omitted entirely — that's the "no conflicts" signal
+  // per the reconciliation prompt (`{"operations": []}` or just `{}`).
+  const operationsRaw = obj.operations;
+  if (operationsRaw !== undefined && !Array.isArray(operationsRaw)) {
+    return {
+      status: 'shape_error',
+      operations: [],
+      reason: 'operations is not an array',
+      rawExcerpt,
+    };
+  }
+
+  const operations = Array.isArray(operationsRaw) ? filterValidOperations(operationsRaw) : [];
+  return { status: 'ok', operations };
+}
+

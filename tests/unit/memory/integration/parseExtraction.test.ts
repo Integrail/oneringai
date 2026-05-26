@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseExtractionWithStatus,
   parseExtractionResponse,
+  parseReconciliationOpsWithStatus,
 } from '@/memory/integration/parseExtraction.js';
 
 describe('parseExtractionWithStatus', () => {
@@ -159,5 +160,79 @@ describe('parseExtractionResponse (back-compat)', () => {
   it('returns empty shape on parse failure (tolerant behaviour preserved)', () => {
     const r = parseExtractionResponse('garbage');
     expect(r).toEqual({ mentions: {}, facts: [] });
+  });
+});
+
+describe('parseReconciliationOpsWithStatus', () => {
+  it('returns ok + parsed operations on valid input', () => {
+    const raw = JSON.stringify({
+      operations: [
+        { op: 'archive', factId: 'f1', evidenceQuote: 'q', reason: 'older' },
+        { op: 'update', factId: 'f2', newValue: 'new', evidenceQuote: 'q', reason: 'r' },
+      ],
+    });
+    const r = parseReconciliationOpsWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.operations).toHaveLength(2);
+    expect(r.operations[0]).toMatchObject({ op: 'archive', factId: 'f1' });
+    expect(r.operations[1]).toMatchObject({ op: 'update', factId: 'f2' });
+  });
+
+  it('returns ok with empty array when LLM emits {"operations":[]} (silence)', () => {
+    const r = parseReconciliationOpsWithStatus('{"operations":[]}');
+    expect(r.status).toBe('ok');
+    expect(r.operations).toEqual([]);
+  });
+
+  it('returns ok with empty array when LLM emits {} (no operations key)', () => {
+    // Defensive: prompt asks for `operations: []` but `{}` is harmless.
+    const r = parseReconciliationOpsWithStatus('{}');
+    expect(r.status).toBe('ok');
+    expect(r.operations).toEqual([]);
+  });
+
+  it('does NOT trip a "mentions is not an object" shape_error', () => {
+    // The whole point of this parser — reconciliation prompts have no mentions.
+    const r = parseReconciliationOpsWithStatus('{"operations":[]}');
+    expect(r.status).toBe('ok');
+    expect(r.reason).toBeUndefined();
+  });
+
+  it('returns shape_error when operations is not an array', () => {
+    const r = parseReconciliationOpsWithStatus('{"operations":"oops"}');
+    expect(r.status).toBe('shape_error');
+    expect(r.reason).toMatch(/operations is not an array/);
+    expect(r.operations).toEqual([]);
+  });
+
+  it('returns parse_error on empty input', () => {
+    const r = parseReconciliationOpsWithStatus('');
+    expect(r.status).toBe('parse_error');
+    expect(r.reason).toMatch(/empty/);
+  });
+
+  it('returns parse_error on non-JSON garbage', () => {
+    const r = parseReconciliationOpsWithStatus('totally not json');
+    expect(r.status).toBe('parse_error');
+    expect(r.operations).toEqual([]);
+  });
+
+  it('strips code fences', () => {
+    const raw = '```json\n{"operations":[]}\n```';
+    expect(parseReconciliationOpsWithStatus(raw).status).toBe('ok');
+  });
+
+  it('filters invalid ops (e.g. archive with missing factId)', () => {
+    const raw = JSON.stringify({
+      operations: [
+        { op: 'archive', factId: 'f1', evidenceQuote: 'q' },
+        { op: 'archive' }, // missing factId
+        { op: 'unknown', factId: 'f3' }, // unknown op
+      ],
+    });
+    const r = parseReconciliationOpsWithStatus(raw);
+    expect(r.status).toBe('ok');
+    expect(r.operations).toHaveLength(1);
+    expect(r.operations[0]).toMatchObject({ op: 'archive', factId: 'f1' });
   });
 });
