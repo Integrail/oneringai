@@ -1118,12 +1118,21 @@ export class MemorySystem implements IDisposable {
     // we skip facts the caller can see but cannot write. Those facts keep their
     // old reference — the merge is incomplete for that subset. Document on
     // mergeEntities; no warning here to avoid log spam.
+    //
+    // orderBy is required by the adapter pagination contract (see
+    // adapters/orderByWarning.ts). `createdAt asc` is the right choice for
+    // these walks: stable, monotonic, and unaffected by the mutations the
+    // loop performs (we only set subjectId/objectId/contextIds, never
+    // createdAt). The page filter (subjectId/objectId/contextId === fromId)
+    // also ensures already-rewritten facts cannot reappear on later pages.
+    const REWRITE_ORDER: FactOrderBy = { field: 'createdAt', direction: 'asc' };
+
     // Subjects
     let cursor: string | undefined;
     do {
       const page = await this.store.findFacts(
         { subjectId: fromId },
-        { limit: 200, cursor },
+        { limit: 200, cursor, orderBy: REWRITE_ORDER },
         scope,
       );
       for (const f of page.items) {
@@ -1138,7 +1147,7 @@ export class MemorySystem implements IDisposable {
     do {
       const page = await this.store.findFacts(
         { objectId: fromId },
-        { limit: 200, cursor },
+        { limit: 200, cursor, orderBy: REWRITE_ORDER },
         scope,
       );
       for (const f of page.items) {
@@ -1168,7 +1177,7 @@ export class MemorySystem implements IDisposable {
     do {
       const page = await this.store.findFacts(
         { contextId: fromId },
-        { limit: 200, cursor },
+        { limit: 200, cursor, orderBy: REWRITE_ORDER },
         scope,
       );
       for (const f of page.items) {
