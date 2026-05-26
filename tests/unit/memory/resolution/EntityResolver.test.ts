@@ -434,13 +434,19 @@ describe('EntityResolver — tier 4: semantic match', () => {
     };
   }
 
-  it('opt-out by default — typos still miss even with an embedder configured', async () => {
+  it('explicit opt-out — passing enableSemanticResolution:false disables the tier', async () => {
+    // 0.9.1 changed the default to ON. This test now verifies that an explicit
+    // opt-out still works for hosts that want Tier 1-3 exact-only behavior.
     const embedder = buildKeyedEmbedder({
       microsoft: [1, 0, 0, 0],
       microsft: [0.98, 0.05, 0.05, 0], // very close cosine
     });
     const store = new InMemoryAdapter();
-    const mem = new MemorySystem({ store, embedder });
+    const mem = new MemorySystem({
+      store,
+      embedder,
+      entityResolution: { enableSemanticResolution: false },
+    });
 
     await mem.upsertEntity(
       { type: 'organization', displayName: 'Microsoft', identifiers: [] },
@@ -456,17 +462,13 @@ describe('EntityResolver — tier 4: semantic match', () => {
     await mem.shutdown();
   });
 
-  it('opt-in resolves typos via semantic match (matchedOn: embedding)', async () => {
+  it('semantic match works on by default (0.9.1), capped per type', async () => {
     const embedder = buildKeyedEmbedder({
       microsoft: [1, 0, 0, 0],
       microsft: [0.98, 0.05, 0.05, 0],
     });
     const store = new InMemoryAdapter();
-    const mem = new MemorySystem({
-      store,
-      embedder,
-      entityResolution: { enableSemanticResolution: true },
-    });
+    const mem = new MemorySystem({ store, embedder }); // no explicit opt-in — uses 0.9.1 default
 
     await mem.upsertEntity(
       { type: 'organization', displayName: 'Microsoft', identifiers: [] },
@@ -481,25 +483,55 @@ describe('EntityResolver — tier 4: semantic match', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0]!.matchedOn).toBe('embedding');
     expect(candidates[0]!.entity.displayName).toBe('Microsoft');
-    // Confidence capped at 0.89 — strictly below default auto-resolve (0.9).
-    expect(candidates[0]!.confidence).toBeLessThanOrEqual(0.89);
+    // organization is in semanticAutoResolveTypes → cap raised to 0.95 in 0.9.1.
+    expect(candidates[0]!.confidence).toBeLessThanOrEqual(0.95);
     expect(candidates[0]!.confidence).toBeGreaterThanOrEqual(0.75);
+    // Raw cosine is preserved separately so audit logs see the un-capped value.
+    expect(candidates[0]!.rawSemanticScore).toBeGreaterThan(0.95);
     await mem.shutdown();
   });
 
-  it('confidence cap (0.89) prevents semantic tier alone from auto-merging', async () => {
-    // Near-perfect cosine (0.99) — but we still cap at 0.89, so
-    // upsertEntityBySurface (default threshold 0.9) won't merge.
+  it('persons keep advisory cap (0.89) — semantic alone never auto-merges different humans', async () => {
+    // Single-token person surface "Akme"… err, "Pavel". Per 0.9.1 person rule,
+    // Tier 2 (displayName equal) is skipped for single-token person surfaces.
+    // Tier 4 fires but stays capped at 0.89 → below 0.90 auto-resolve threshold
+    // → no auto-merge. The candidate surfaces in mergeCandidates for review.
+    const embedder = buildKeyedEmbedder({
+      pavel: [1, 0, 0, 0],
+    });
+    const store = new InMemoryAdapter();
+    const mem = new MemorySystem({ store, embedder });
+
+    const seeded = await mem.upsertEntity(
+      { type: 'person', displayName: 'Pavel', identifiers: [{ kind: 'email', value: 'a@x.com' }] },
+      scope,
+    );
+    await mem.flushEmbeddings();
+
+    const result = await mem.upsertEntityBySurface(
+      { surface: 'Pavel', type: 'person' },
+      scope,
+    );
+    expect(result.resolved).toBe(false);
+    expect(result.entity.id).not.toBe(seeded.entity.id);
+    // The semantic match still surfaced as a candidate (capped 0.89).
+    expect(result.mergeCandidates.some((c) => c.matchedOn === 'embedding')).toBe(true);
+    const semanticCandidate = result.mergeCandidates.find((c) => c.matchedOn === 'embedding');
+    expect(semanticCandidate!.confidence).toBeLessThanOrEqual(0.89);
+    await mem.shutdown();
+  });
+
+  it('non-person types AUTO-MERGE on high semantic cosine (0.9.1 behavior)', async () => {
+    // The headline change: cosine 0.995 for organization type → confidence
+    // capped at 0.95 (above 0.90 auto-resolve threshold) → SILENT MERGE.
+    // The library warning-logs and emits a `entity.upsert.semantic_automerge`
+    // ChangeEvent so the host can audit, but no caller intervention required.
     const embedder = buildKeyedEmbedder({
       acme: [1, 0, 0, 0],
       akme: [0.995, 0.01, 0, 0],
     });
     const store = new InMemoryAdapter();
-    const mem = new MemorySystem({
-      store,
-      embedder,
-      entityResolution: { enableSemanticResolution: true },
-    });
+    const mem = new MemorySystem({ store, embedder });
 
     const seeded = await mem.upsertEntity(
       { type: 'organization', displayName: 'Acme', identifiers: [] },
@@ -511,11 +543,10 @@ describe('EntityResolver — tier 4: semantic match', () => {
       { surface: 'Akme', type: 'organization' },
       scope,
     );
-    // Created new entity instead of merging — semantic cap kept confidence below 0.9.
-    expect(result.resolved).toBe(false);
-    expect(result.entity.id).not.toBe(seeded.entity.id);
-    // But the semantic match WAS surfaced as a merge candidate.
-    expect(result.mergeCandidates.some((c) => c.matchedOn === 'embedding')).toBe(true);
+    expect(result.resolved).toBe(true);
+    expect(result.entity.id).toBe(seeded.entity.id);
+    expect(result.matchedOn).toBe('embedding');
+    expect(result.rawSemanticScore).toBeGreaterThan(0.99);
     await mem.shutdown();
   });
 

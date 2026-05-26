@@ -46,6 +46,7 @@ import { rankFacts } from './Ranking.js';
 import type { PredicateRegistry } from './predicates/PredicateRegistry.js';
 import type { PredicateDefinition } from './predicates/types.js';
 import { EntityResolver, buildIdentityString } from './resolution/EntityResolver.js';
+import { normalizeSurface } from './resolution/fuzzy.js';
 import type {
   OperationOutcome,
   ReconciliationOp,
@@ -450,6 +451,21 @@ export class MemorySystem implements IDisposable {
         entityType: input.type,
       }),
     };
+    // 0.9.1 person rule: single-token person displayName with NO identifier
+    // is structurally too weak to dedupe by name — "Pavel" / "John" / "Vlad"
+    // identify a class of humans, not a unique person. Bypass the atomic
+    // find-or-create primitive (which would merge by normalizedDisplayName)
+    // and create a new row directly. Concurrent identical-name inserts will
+    // produce separate rows — the operator dedup queue handles the rest.
+    // Identifier-bearing persons (email, slack_id) hit Tier 1 upstream and
+    // never reach this path; multi-token persons ("Pavel Khasanov") DO dedupe
+    // by normalized name as before.
+    if (shouldBypassNameDedup(input.type, input.identifiers, input.displayName)) {
+      const created = await this.store.createEntity(newEntity);
+      this.queueIdentityEmbedding(created, scope);
+      this.emit({ type: 'entity.upsert', entity: created, created: true });
+      return { entity: created, created: true };
+    }
     const res = await this.store.atomicCreateOrFindByNormalizedName(newEntity, scope);
     if (res.created) {
       this.queueIdentityEmbedding(res.entity, scope);
@@ -991,13 +1007,26 @@ export class MemorySystem implements IDisposable {
    * Otherwise creates a new entity and reports near-matches as
    * `mergeCandidates` for deferred human review.
    */
-  upsertEntityBySurface(
+  async upsertEntityBySurface(
     input: UpsertBySurfaceInput,
     scope: ScopeFilter,
     opts?: UpsertBySurfaceOptions,
   ): Promise<UpsertBySurfaceResult> {
     assertNotDestroyed(this, 'upsertEntityBySurface');
-    return this.resolver.upsertBySurface(input, scope, opts);
+    const result = await this.resolver.upsertBySurface(input, scope, opts);
+    // 0.9.1: structured event for Tier-4 auto-merges. Resolver also logs at
+    // warn level for operator visibility; this event lets hosts route to an
+    // activity log (e.g. jarvis_activity_log on v25) without scraping logs.
+    if (result.resolved && result.matchedOn === 'embedding') {
+      this.emit({
+        type: 'entity.upsert.semantic_automerge',
+        entityId: result.entity.id,
+        mergedSurface: input.surface,
+        cosine: result.rawSemanticScore ?? 0,
+        mergeCandidateIds: result.mergeCandidates.map((c) => c.entity.id),
+      });
+    }
+    return result;
   }
 
   /**
@@ -4013,6 +4042,28 @@ function stableEqual(a: unknown, b: unknown): boolean {
     }
   }
   return true;
+}
+
+/**
+ * 0.9.1 person-rule: detect single-token person displayNames with no
+ * identifier. These never auto-dedupe by name — the atomic find-or-create
+ * primitive is bypassed and a new row is created instead.
+ *
+ * Multi-token person names ("Pavel Khasanov") and any non-person type fall
+ * through unchanged. Persons WITH an identifier (email, slack_id, …) hit
+ * Tier 1 upstream and never reach this check; even if they did, the rule
+ * here requires `identifiers.length === 0` so they'd still dedupe normally.
+ */
+function shouldBypassNameDedup(
+  type: string,
+  identifiers: Identifier[],
+  displayName: string,
+): boolean {
+  if (type !== 'person') return false;
+  if (identifiers.length > 0) return false;
+  const normalized = normalizeSurface(displayName);
+  const tokens = normalized.split(' ').filter((t) => t.length > 0);
+  return tokens.length < 2;
 }
 
 function deriveFactScope(

@@ -842,6 +842,26 @@ export type ChangeEvent =
       normalizedDisplayName: string;
       candidates: EntityId[];
       createdId: EntityId;
+    }
+  /**
+   * Emitted when `EntityResolver.upsertBySurface` auto-resolves to an existing
+   * entity via the semantic tier (Tier 4) — i.e. no identifier or exact-name
+   * hit, but cosine similarity over `identityEmbedding` cleared the
+   * type-scoped auto-resolve threshold. Lets hosts write to an activity log
+   * without parsing console warnings, and lets observability count silent
+   * merges happening at write time.
+   *
+   * `cosine` is the raw similarity (BEFORE the confidence cap). `mergeCandidateIds`
+   * lists OTHER candidates that also scored above the semantic threshold but
+   * lost the top-ranked spot — useful for surfacing "maybe this should have
+   * merged into B instead" cases for review.
+   */
+  | {
+      type: 'entity.upsert.semantic_automerge';
+      entityId: EntityId;
+      mergedSurface: string;
+      cosine: number;
+      mergeCandidateIds: EntityId[];
     };
 
 // ---------------------------------------------------------------------------
@@ -872,6 +892,14 @@ export interface EntityCandidate {
   /** 0..1 — 1.0 is an identifier-exact match; decreases through fuzzy/semantic. */
   confidence: number;
   matchedOn: 'identifier' | 'displayName' | 'alias' | 'fuzzy' | 'embedding';
+  /**
+   * Raw cosine score from Tier 4 (semantic) — set ONLY when `matchedOn ===
+   * 'embedding'`. Differs from `confidence` because semantic candidates have
+   * the cosine capped per type (default 0.95 for auto-merge-eligible types,
+   * 0.89 for advisory types like person). Hosts auditing semantic decisions
+   * want the raw cosine; ranking against other tiers wants the capped value.
+   */
+  rawSemanticScore?: number;
 }
 
 export interface ResolveEntityQuery {
@@ -945,6 +973,22 @@ export interface UpsertBySurfaceResult {
   resolved: boolean;
   /** Other near-matches that didn't win — surfaced for human review / deferred merges. */
   mergeCandidates: EntityCandidate[];
+  /**
+   * Which tier produced the auto-resolve winner. Undefined when `resolved`
+   * is false (we created a new entity) OR when resolved via the
+   * atomic-create-or-resolve race-loss path (the racer's tier is opaque).
+   *
+   * Hosts use this to audit semantic auto-merges specifically — the
+   * `entity.upsert.semantic_automerge` ChangeEvent fires whenever
+   * `matchedOn === 'embedding'` and `resolved === true`.
+   */
+  matchedOn?: 'identifier' | 'displayName' | 'alias' | 'fuzzy' | 'embedding';
+  /**
+   * Raw cosine that drove a Tier-4 auto-resolve. Set ONLY when `matchedOn ===
+   * 'embedding'`. Useful for audit logs / activity feeds — `confidence` on
+   * the winning candidate is the type-capped value, not the raw score.
+   */
+  rawSemanticScore?: number;
 }
 
 export interface EntityResolutionConfig {
@@ -967,16 +1011,64 @@ export interface EntityResolutionConfig {
    * `semanticSearchEntities` (currently `InMemoryAdapter` and
    * `MongoMemoryAdapter`).
    *
-   * Default: false. Opt-in because any confidence calibration mistake could
-   * silently merge different entities; existing deployments keep Tier 1-3
-   * exact-only behavior until they flip this on.
+   * **Default changed to `true` in 0.9.1.** Calibrated against production
+   * data showing a clean separation between within-cluster cosines (median
+   * 0.95-1.00 for known dups) and cross-cluster cosines (max 0.86 for the
+   * noisiest type). Semantic auto-resolve now catches the structural dup
+   * pattern that exact-tier matching misses on pre-0.8.0 data (rows without
+   * `normalizedDisplayName`) — without it, every LLM re-mention of an
+   * existing entity creates a new row.
    *
-   * Semantic candidates are capped at confidence 0.89 — strictly below the
-   * default `autoResolveThreshold` (0.90) — so enabling this flag alone will
-   * NOT auto-merge. The LLM sees semantic candidates as "merge candidates"
-   * and decides. Lower `autoResolveThreshold` only if you trust the mapping.
+   * Auto-resolve eligibility is type-scoped via `semanticAutoResolveTypes`.
+   * Persons are EXCLUDED by default — same-first-name collisions in a tenant
+   * make semantic-alone unsafe. Persons fall back to Tier 1 (identifier) /
+   * Tier 2-3 (multi-token name equality) only.
    */
   enableSemanticResolution?: boolean;
+
+  /**
+   * Entity types where Tier 4 (semantic match) can drive auto-resolve.
+   *
+   * **Default:** `['organization', 'project', 'event', 'topic', 'task', 'cluster']`.
+   *
+   * Types in this list get the full `semanticConfidenceCap` (default 0.95)
+   * so a strong semantic match clears the auto-resolve threshold (default
+   * 0.90). Types NOT in the list have their semantic confidence capped at
+   * 0.89 — the candidate appears in `mergeCandidates` for operator review
+   * but never auto-merges.
+   *
+   * **Persons are intentionally excluded.** "Pavel" matching another "Pavel"
+   * with cosine 1.0 is NOT a same-person signal in a multi-Pavel tenant —
+   * persons require either an identifier match or multi-token name equality
+   * (first + last). Tier 2-3 enforce the multi-token rule for type=person.
+   *
+   * Set to an empty array to disable semantic auto-resolve entirely (every
+   * type goes through the operator review queue).
+   */
+  semanticAutoResolveTypes?: string[];
+
+  /**
+   * Maximum confidence assigned to a Tier-4 (semantic) match for types in
+   * `semanticAutoResolveTypes`. Default `0.95`. The capped value lets cosine
+   * matches clear the default `autoResolveThreshold` (0.90) so dup-extraction
+   * actually converges at write time.
+   *
+   * Picked to leave headroom below identifier-match confidence (1.0) so a
+   * Tier-1 hit still wins ranking ties against semantic candidates. Lower
+   * this if you want stricter auto-resolve gating; raise toward 1.0 only if
+   * you've validated your embedder produces clean cross-entity separation.
+   */
+  semanticConfidenceCap?: number;
+
+  /**
+   * Minimum cosine score for a semantic candidate to be considered at all.
+   * Default `0.75`. Calibrated against production data: cross-entity-cluster
+   * cosines top out around 0.86; within-cluster cosines have a long tail to
+   * 0.59-0.70 for loose clusters. Lowering this floor surfaces more
+   * candidates (some real dups, some noise); raising it filters more
+   * aggressively. Most callers should leave it at the default.
+   */
+  semanticMinScore?: number;
   /**
    * Confidence assigned to a Tier-2 exact normalized-displayName match.
    * Default 0.90 — equal to the default `autoResolveThreshold`, so a Tier-2

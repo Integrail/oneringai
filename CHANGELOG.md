@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-05-26
+
+### Memory — semantic auto-resolve at creation (BEHAVIOR CHANGE)
+
+**Closes the root cause of the production duplicate-entity backlog.** Prior to 0.9.1 the resolver's Tier 4 (semantic match) existed but was:
+(a) **opt-in** (`enableSemanticResolution: false` by default) and
+(b) **capped at confidence 0.89** — strictly below the 0.90 auto-resolve threshold.
+Even with the flag flipped on, semantic candidates only ever became advisory `mergeCandidates`; the LLM-driven extraction path then unconditionally created a new entity. This is exactly the failure mode that produced 41 "ICOS" project rows, 32 "Pavel" person rows, and 51 distinct event-name dup clusters in a single production tenant.
+
+0.9.1 fixes the wiring at three layers:
+
+- **`enableSemanticResolution` defaults to `true`.** Existing deployments that explicitly set it to `false` keep their behavior; deployments that never set it now get semantic Tier 4 active out of the box.
+- **`semanticConfidenceCap` raised to 0.95** for types in `semanticAutoResolveTypes` (default `['organization', 'project', 'event', 'topic', 'task', 'cluster']`). This is **above** the 0.90 auto-resolve threshold, so a strong cosine hit silently auto-merges into the existing entity instead of producing a new row. Calibrated against production cosine data: within-cluster medians 0.89-1.00, cross-cluster maxes 0.77-0.86 — 0.95 sits well above every observed cross-cluster ceiling.
+- **Persons are intentionally excluded** from semantic auto-resolve. Same-first-name collisions are common ("Pavel" matches another "Pavel" at cosine 1.0 in any multi-Pavel tenant). For type=person the cap stays at the legacy 0.89 — Tier 4 surfaces the candidate in `mergeCandidates` for review but never silently merges. Plus a structural **person rule**: Tier 2 (displayName equality) and Tier 3 (alias equality) skip the lookup entirely for single-token person surfaces ("Pavel" / "John" / "Vlad" alone), AND single-token-no-identifier person upserts bypass the atomic `(type, normalizedDisplayName)` find-or-create primitive. Persons only auto-merge on:
+  - Tier 1 identifier match (email, slack_id, github, …), OR
+  - Multi-token normalized name equality ("Pavel Khasanov" === "Pavel Khasanov").
+
+**New config knobs (`EntityResolutionConfig`):**
+- `semanticAutoResolveTypes?: string[]` — which entity types get the full cap (and thus auto-resolve eligibility). Default per above; empty array disables semantic auto-resolve entirely.
+- `semanticConfidenceCap?: number` — default 0.95. Lower if you want stricter gating.
+- `semanticMinScore?: number` — default 0.75 (unchanged from previous hardcoded value). Cosine floor for semantic candidacy.
+
+**New `ChangeEvent` variant:**
+- `entity.upsert.semantic_automerge` — fires whenever Tier 4 drives an auto-resolve. Carries `{entityId, mergedSurface, cosine, mergeCandidateIds}`. Lets hosts route silent merges to an activity log without scraping console warnings. The resolver also `logger.warn`s every semantic auto-merge with the same payload (per CLAUDE.md no-silent-decisions policy).
+
+**Extended public types:**
+- `EntityCandidate.rawSemanticScore?: number` — un-capped cosine, set only when `matchedOn === 'embedding'`. Useful for audit logs that want the raw signal rather than the type-capped confidence.
+- `UpsertBySurfaceResult.matchedOn?: 'identifier' | 'displayName' | 'alias' | 'fuzzy' | 'embedding'` — which tier drove the auto-resolve winner. Undefined when `resolved: false` or when resolved via the atomic-create-or-resolve race-loss path.
+- `UpsertBySurfaceResult.rawSemanticScore?: number` — same un-capped cosine as on the candidate. Surfaces on the result so v25 host can write to its `jarvis_activity_log` without re-querying.
+
+**Tier priority bug fixed alongside.** Prior to 0.9.1 the same-entity tier ranking in `EntityResolver.resolve` was a numeric `confidence` comparison that happened to give the right answer only because Tier 4 cap (0.89) sat below Tier 2 (0.90). With the cap raised, the numeric check would silently overwrite a `displayName` match with an `embedding` one — and `matchedOn` would lie. Tier priority now checks `matchedOn` explicitly: Tier 4 NEVER replaces an exact-tier hit on the same entity.
+
+**Test status:** 9 new tests in `EntityResolver.semanticAutoMerge.test.ts`. Existing tests updated where they asserted legacy 0.89 cap / opt-out default. Full memory suite: 1187 passing.
+
+**Operational impact:** Once this version is deployed, NEW LLM extractions of existing surfaces ("ICOS", "Pavel Khasanov", "Acme Solutions") will resolve to the best existing entity via Tier 4 instead of creating a new row. Existing duplicates (41 ICOS, 32 Pavel, etc.) need a one-shot migration to consolidate — see migration instructions in the release notes.
+
 ## [0.9.0] — 2026-05-26
 
 ### Memory — Phase B: merge correctness + dedup tooling + extraction richness

@@ -53,19 +53,38 @@ const DEFAULT_DISPLAY_NAME_CONFIDENCE = 0.9;
 const DEFAULT_ALIAS_CONFIDENCE = 0.9;
 
 /**
- * Semantic tier parameters — intentionally NOT exposed on the config surface
- * to keep the knob count minimal. These are safe defaults calibrated against
- * OpenAI text-embedding-3-small / Cohere embed-english-v3 identity embeddings:
- *   - `MIN_SCORE` = 0.75 cosine — below this, cosine becomes too noisy to
- *     act on. A dimension-matched random pair typically scores ~0.0-0.5.
- *   - `CONFIDENCE_CAP` = 0.89 — strictly below the default auto-resolve
- *     threshold (0.9). Enabling semantic will never auto-merge by itself.
- *   - `TOP_K` = 10 — small enough to stay cheap, large enough to survive
- *     context-disambiguation tiebreaks.
+ * Semantic tier parameters.
+ *
+ * **0.9.1 calibration** — was: `MIN_SCORE=0.75, CONFIDENCE_CAP=0.89` (cap
+ * strictly below auto-resolve threshold → semantic was advisory-only). New
+ * default cap = `0.95` for types in `semanticAutoResolveTypes` so cosine can
+ * actually clear `autoResolveThreshold` (0.90) → auto-merge at write time.
+ *
+ * Production-data calibration (one tenant, text-embedding-3-small, 1536d):
+ *   - Within-cluster (known dups): median cosine 0.89–1.00 across all types.
+ *   - Cross-cluster (distinct entities, same type): max 0.86 (projects, the
+ *     noisiest); persons max 0.81; orgs max 0.77.
+ *   - Threshold 0.88 lives in the clean gap between cross-cluster max and
+ *     within-cluster median for every type.
+ *   - Persons EXCLUDED from auto-resolve by default — first-name collisions
+ *     are common in real tenants. Persons stay capped at the legacy 0.89
+ *     (below auto-resolve threshold) so semantic remains advisory.
+ *
+ * `SEMANTIC_TOP_K`: small enough to stay cheap, large enough to survive
+ * context-disambiguation tiebreaks. Kept at 10 across calibrations.
  */
-const SEMANTIC_MIN_SCORE = 0.75;
-const SEMANTIC_CONFIDENCE_CAP = 0.89;
+const DEFAULT_SEMANTIC_MIN_SCORE = 0.75;
+const DEFAULT_SEMANTIC_CONFIDENCE_CAP = 0.95;
+const PERSON_ADVISORY_CONFIDENCE_CAP = 0.89;
 const SEMANTIC_TOP_K = 10;
+const DEFAULT_SEMANTIC_AUTO_RESOLVE_TYPES: readonly string[] = Object.freeze([
+  'organization',
+  'project',
+  'event',
+  'topic',
+  'task',
+  'cluster',
+]);
 
 /**
  * Narrow hook used by EntityResolver — lets it query + upsert without pulling
@@ -123,16 +142,43 @@ export class EntityResolver {
   private readonly semanticEnabled: boolean;
   private readonly displayNameConfidence: number;
   private readonly aliasConfidence: number;
+  private readonly semanticAutoResolveTypes: ReadonlySet<string>;
+  private readonly semanticConfidenceCap: number;
+  private readonly semanticMinScore: number;
 
   constructor(
     private readonly hooks: ResolverMemoryHooks,
     config?: EntityResolutionConfig,
   ) {
     this.autoResolveThreshold = config?.autoResolveThreshold ?? DEFAULT_AUTO_RESOLVE_THRESHOLD;
-    this.semanticEnabled = config?.enableSemanticResolution === true;
+    // Default flipped to true in 0.9.1 — see types.ts:EntityResolutionConfig.enableSemanticResolution.
+    this.semanticEnabled = config?.enableSemanticResolution !== false;
     this.displayNameConfidence =
       config?.displayNameMatchConfidence ?? DEFAULT_DISPLAY_NAME_CONFIDENCE;
     this.aliasConfidence = config?.aliasMatchConfidence ?? DEFAULT_ALIAS_CONFIDENCE;
+    this.semanticAutoResolveTypes = new Set(
+      config?.semanticAutoResolveTypes ?? DEFAULT_SEMANTIC_AUTO_RESOLVE_TYPES,
+    );
+    this.semanticConfidenceCap =
+      config?.semanticConfidenceCap ?? DEFAULT_SEMANTIC_CONFIDENCE_CAP;
+    this.semanticMinScore = config?.semanticMinScore ?? DEFAULT_SEMANTIC_MIN_SCORE;
+  }
+
+  /**
+   * Per-type confidence cap for the semantic tier.
+   *
+   * Types in `semanticAutoResolveTypes` get the full cap (default 0.95) — high
+   * enough to clear `autoResolveThreshold` (0.90) → auto-merge at write time.
+   * Other types (notably `person`) stay at 0.89 — strictly below auto-resolve,
+   * so semantic remains advisory: candidates surface in `mergeCandidates` but
+   * never silently merge. Enforces the "people only merge by name + identifier
+   * equality" rule structurally.
+   */
+  private semanticCapFor(type: string | undefined): number {
+    if (type && this.semanticAutoResolveTypes.has(type)) {
+      return this.semanticConfidenceCap;
+    }
+    return PERSON_ADVISORY_CONFIDENCE_CAP;
   }
 
   /**
@@ -188,7 +234,19 @@ export class EntityResolver {
     const surface = query.surface.trim();
     if (surface.length > 0) {
       const normalized = normalizeSurface(surface);
-      if (normalized.length > 0) {
+      // Person-specific rule: Tier 2 (displayName) and Tier 3 (alias) ONLY
+      // auto-resolve when the normalized surface carries ≥2 tokens. Single-
+      // token first-name-only surfaces like "Pavel" / "John" / "Vlad" do NOT
+      // identify a unique person inside a tenant — multiple humans share each.
+      // Skipping the exact-tier lookup entirely lets the request fall through
+      // to Tier 4 (semantic, capped at 0.89 advisory for persons) or, if no
+      // semantic candidate clears 0.5, to a new-entity create. Operators can
+      // still merge later via the dedup tooling; the resolver refuses to do
+      // it silently. Enforces the "people only merge by first+last name
+      // equality or identifier equality" rule structurally.
+      const isSingleTokenPersonSurface =
+        query.type === 'person' && normalized.split(' ').filter((t) => t.length > 0).length < 2;
+      if (normalized.length > 0 && !isSingleTokenPersonSurface) {
         // Single call covers both Tier 2 (displayName) and Tier 3 (alias) —
         // `exactMatchTier` decides which one fired per entity. We still
         // recompute the tier per candidate because the adapter returns
@@ -246,19 +304,32 @@ export class EntityResolver {
           const results = await this.hooks.store.semanticSearchEntities(
             queryVec,
             query.type ? { type: query.type } : {},
-            { topK: SEMANTIC_TOP_K, minScore: SEMANTIC_MIN_SCORE },
+            { topK: SEMANTIC_TOP_K, minScore: this.semanticMinScore },
             scope,
           );
           for (const { entity, score } of results) {
             if (query.type && entity.type !== query.type) continue;
-            const confidence = Math.min(score, SEMANTIC_CONFIDENCE_CAP);
+            // Per-type cap: types in `semanticAutoResolveTypes` reach the full
+            // semantic cap (default 0.95, clears 0.90 auto-resolve). Other
+            // types (notably `person`) stay capped below auto-resolve so the
+            // candidate surfaces in `mergeCandidates` for review.
+            const cap = this.semanticCapFor(entity.type);
+            const confidence = Math.min(score, cap);
             const candidate: EntityCandidate = {
               entity,
               confidence,
               matchedOn: 'embedding',
+              rawSemanticScore: score,
             };
             const existing = seen.get(entity.id);
-            // Never downgrade a higher-tier match (exact/identifier beats semantic).
+            // Strict tier priority — Tier 4 (semantic) NEVER replaces an
+            // exact-tier hit (identifier/displayName/alias) on the same entity
+            // regardless of capped confidence. Pre-0.9.1 this fell out of the
+            // numeric comparison because the semantic cap (0.89) sat below
+            // Tier 2/3 confidence (0.90). With the cap raised to 0.95 in 0.9.1,
+            // the numeric check would silently let semantic overwrite a
+            // displayName match — and `matchedOn` would lie to the audit log.
+            if (existing && existing.matchedOn !== 'embedding') continue;
             if (!existing || existing.confidence < candidate.confidence) {
               seen.set(entity.id, candidate);
             }
@@ -360,7 +431,39 @@ export class EntityResolver {
           : undefined,
       );
       const mergeCandidates = candidates.slice(1);
-      return { entity, resolved: true, mergeCandidates };
+
+      // Audit hook for Tier-4-driven auto-merges. The library historically
+      // produced a NEW entity in this code path (semantic cap was 0.89 <
+      // 0.90 threshold). Now that 0.9.1 allows semantic auto-resolve for
+      // non-person types, hosts need visibility into silent merges that
+      // would have produced duplicate rows under the old behavior.
+      //
+      // Log at warn level (per CLAUDE.md: no silent decisions). MemorySystem
+      // also emits a structured `entity.upsert.semantic_automerge` event so
+      // hosts can route to an activity log without parsing console output.
+      if (top.matchedOn === 'embedding') {
+        logger.warn(
+          {
+            component: 'EntityResolver',
+            event: 'semantic_automerge',
+            entityId: top.entity.id,
+            entityType: top.entity.type,
+            surface: input.surface,
+            cosine: top.rawSemanticScore,
+            confidence: top.confidence,
+            otherCandidates: mergeCandidates.length,
+          },
+          'auto-resolved via Tier-4 semantic match — caller did not need to create a new entity',
+        );
+      }
+
+      return {
+        entity,
+        resolved: true,
+        mergeCandidates,
+        matchedOn: top.matchedOn,
+        rawSemanticScore: top.rawSemanticScore,
+      };
     }
 
     // No candidate cleared the threshold. Use the atomic create-or-resolve

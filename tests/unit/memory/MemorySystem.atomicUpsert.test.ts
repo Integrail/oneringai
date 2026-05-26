@@ -131,7 +131,30 @@ describe('upsertEntityBySurface — concurrency convergence', () => {
     expect(page.items.length).toBe(1);
   });
 
-  it('Promise.all of 20 concurrent upserts → 1 entity', async () => {
+  it('Promise.all of 20 concurrent project upserts (single-token) → 1 entity', async () => {
+    // Projects are in semanticAutoResolveTypes and don't have the
+    // single-token-no-identifier bypass. Concurrent identical-surface
+    // upserts still converge via the atomic primitive.
+    const { mem } = makeMem();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        mem.upsertEntityBySurface(
+          { surface: 'ICOS', type: 'project', identifiers: [] },
+          SCOPE,
+        ),
+      ),
+    );
+    const ids = new Set(results.map((r) => r.entity.id));
+    expect(ids.size).toBe(1);
+    const page = await mem.listEntities({ type: 'project' }, {}, SCOPE);
+    expect(page.items.length).toBe(1);
+  });
+
+  it('0.9.1 person-rule: 20 concurrent single-token Pavel upserts → 20 entities (NOT merged)', async () => {
+    // Per the 0.9.1 person-rule, single-token person surfaces with no
+    // identifier intentionally produce separate rows on concurrent inserts —
+    // "Pavel" alone could be any of multiple humans. Identifier-bearing
+    // upserts still converge via Tier 1 (next test).
     const { mem } = makeMem();
     const results = await Promise.all(
       Array.from({ length: 20 }, () =>
@@ -142,9 +165,43 @@ describe('upsertEntityBySurface — concurrency convergence', () => {
       ),
     );
     const ids = new Set(results.map((r) => r.entity.id));
+    expect(ids.size).toBe(20);
+  });
+
+  it('0.9.1 person-rule: 20 concurrent Pavel upserts with same email → 1 entity (Tier 1 identifier match)', async () => {
+    // Identifier presence overrides the person-rule. Tier 1 fires upstream
+    // and the atomic primitive converges concurrent inserts as before.
+    const { mem } = makeMem();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        mem.upsertEntityBySurface(
+          {
+            surface: 'Pavel',
+            type: 'person',
+            identifiers: [{ kind: 'email', value: 'pavel@everworker.ai' }],
+          },
+          SCOPE,
+        ),
+      ),
+    );
+    const ids = new Set(results.map((r) => r.entity.id));
     expect(ids.size).toBe(1);
-    const page = await mem.listEntities({ type: 'person' }, {}, SCOPE);
-    expect(page.items.length).toBe(1);
+  });
+
+  it('0.9.1 person-rule: 20 concurrent multi-token Pavel Khasanov upserts → 1 entity (multi-token bypass does not apply)', async () => {
+    // Multi-token person names skip the bypass — first+last name is a strong
+    // enough signal to dedupe by normalized name.
+    const { mem } = makeMem();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        mem.upsertEntityBySurface(
+          { surface: 'Pavel Khasanov', type: 'person', identifiers: [] },
+          SCOPE,
+        ),
+      ),
+    );
+    const ids = new Set(results.map((r) => r.entity.id));
+    expect(ids.size).toBe(1);
   });
 
   it('race-loss merges aliases onto the winner (union of seen surfaces)', async () => {
