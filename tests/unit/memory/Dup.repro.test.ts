@@ -79,7 +79,7 @@ describe('R2 — alias-tier match (0.85) is below default autoResolveThreshold (
   });
 });
 
-describe('R3 — search-result substring cap (InMemory has no oversample cap)', () => {
+describe('R3 — search-result substring cap (post-Commit 2: indexed lookup)', () => {
   it('1 bare + 600 prefixed entities — resolver returns the bare one (InMemory)', async () => {
     const mem = makeMem();
     // Seed the bare ICOS first so it's not at the end.

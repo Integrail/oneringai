@@ -146,32 +146,37 @@ export class EntityResolver {
       }
     }
 
-    // ---- Tier 2 + 3: exact displayName + alias match ----
-    // searchEntities substring-matches; we then re-check with normalized
-    // equality to distinguish exact matches from mere substring hits.
+    // ---- Tier 2 + 3: exact normalized displayName / alias match ----
+    // Indexed exact-match via `findEntitiesByNormalizedName`. Replaces the
+    // legacy `searchEntities(q, {limit:50})` substring-then-filter path,
+    // which had two structural defects:
+    //   (1) Order-sensitive — Mongo's `oversamplePool = max(500, skip + limit*5)`
+    //       could truncate the candidate set when a surface had >500 substring
+    //       siblings, dropping an exact match outside the ranked top-50.
+    //   (2) Substring noise — every entity containing the surface as a substring
+    //       was a candidate, then filtered down via `normalizeSurface(...) === ...`
+    //       in process. Wasted bandwidth + memory at scale.
     //
-    // We search both the raw surface AND the normalized surface so that
-    // forms like "Microsoft Inc." (which substring-misses "Microsoft") still
-    // find the entity — normalizeSurface strips corporate suffixes, so the
-    // normalized query becomes "microsoft" and the underlying case-insensitive
-    // substring index hits.
+    // The indexed path needs a `type`. Type-less queries skip Tier 2/3 (Tier 4
+    // semantic still runs if enabled). All in-tree callers pass `type`; the
+    // public `MemorySystem.resolveEntity` documents the field as a "hint" but
+    // production paths (`UpsertBySurfaceInput.type` is required) always set it.
     const surface = query.surface.trim();
-    if (surface.length > 0) {
+    if (surface.length > 0 && query.type) {
       const normalized = normalizeSurface(surface);
-      const seenPages = new Set<string>();
-      const queries = normalized && normalized !== surface.toLowerCase()
-        ? [surface, normalized]
-        : [surface];
-
-      for (const q of queries) {
-        const page = await this.hooks.store.searchEntities(
-          q,
-          { types: query.type ? [query.type] : undefined, limit: 50 },
+      if (normalized.length > 0) {
+        // Single call covers both Tier 2 (displayName) and Tier 3 (alias) —
+        // `exactMatchTier` decides which one fired per entity. We still
+        // recompute the tier per candidate because the adapter returns
+        // matches via EITHER field when `matchAliases:true`, and the
+        // resolver needs the confidence distinction.
+        const hits = await this.hooks.store.findEntitiesByNormalizedName(
+          query.type,
+          normalized,
           scope,
+          { matchAliases: true, limit: 50 },
         );
-        for (const entity of page.items) {
-          if (seenPages.has(entity.id)) continue;
-          seenPages.add(entity.id);
+        for (const entity of hits) {
           const tier = exactMatchTier(entity, surface);
           if (tier === null) continue;
           const candidate: EntityCandidate = {

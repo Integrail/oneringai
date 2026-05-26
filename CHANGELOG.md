@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Phase A Commit 2: EntityResolver Tier 2/3 indexed lookup
+
+Replaces the substring-then-filter `searchEntities(q, {limit:50})` path in `EntityResolver.resolve()` with a single `findEntitiesByNormalizedName(type, normalized, scope, {matchAliases:true, limit:50})` call. Behavior-equivalent for well-typed callers; structurally immune to the Mongo `oversamplePool` cap that could drop an exact match outside the ranked top-50 under heavy substring fan-out.
+
+- **`src/memory/resolution/EntityResolver.ts`** — Tier 2 + Tier 3 now resolve via the indexed adapter method. Tier confidences unchanged (0.90 displayName / 0.85 alias) — Commit 4 makes those configurable.
+- **Type requirement** — the indexed path requires `query.type`. Type-less `resolveEntity` calls now skip Tier 2/3 (Tier 4 semantic still runs if enabled). All in-tree callers pass `type`; `UpsertBySurfaceInput.type` is already required.
+- **Empty / pure-punctuation surfaces** — when `normalizeSurface(surface)` collapses to empty, Tier 2/3 is skipped (was already a no-op via `exactMatchTier`, but now we skip the adapter round-trip too).
+- **Legacy data behavior** — entities written before 0.8.0 have no `normalizedDisplayName` and are NOT returned by the new lookup until `MemorySystem.backfillNormalizedFields` (Commit 6) runs. Documented in interface + new test.
+- **Tests** — `tests/unit/memory/EntityResolver.indexedLookup.test.ts` (7 tests) including the bug-B repro (1 bare + 600 prefixed → bare resolves at 0.90). The pre-existing R3 repro in `Dup.repro.test.ts` continues to pass.
+
 ### Memory — Phase A Commit 1: normalized-name fields + adapter API (foundation)
 
 Foundation for eliminating intra-user entity duplicates (R1 concurrency / R2 alias-tier / R3 substring-cap / R4 bare-upsertEntity). This commit is **additive only** — zero caller-observable behavior change in resolver or upsert paths. Lib-2 (resolver swap) + lib-3 (atomic upsert + unique index) build on this.
