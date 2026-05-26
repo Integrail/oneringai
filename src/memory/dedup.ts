@@ -548,7 +548,14 @@ export async function findDuplicateClusters(
   const groups = new Map<string, IEntity[]>();
   let cursor: string | undefined;
   do {
-    const page = await store.listEntities(filter, { limit: pageSize, cursor }, scope);
+    const page = await store.listEntities(
+      filter,
+      // Stable `_id asc` so cluster enumeration doesn't drop items between
+      // pages and to silence the listEntities order-warning. Order doesn't
+      // affect grouping output but the warning makes ops logs noisy.
+      { limit: pageSize, cursor, orderBy: { field: '_id', direction: 'asc' } },
+      scope,
+    );
     for (const e of page.items) {
       if (e.archived === true) continue;
       const n = e.normalizedDisplayName;
@@ -614,7 +621,13 @@ export async function findIdentifierClusters(
   const groups = new Map<string, IEntity[]>();
   let cursor: string | undefined;
   do {
-    const page = await store.listEntities(filter, { limit: pageSize, cursor }, scope);
+    const page = await store.listEntities(
+      filter,
+      // Stable `_id asc` for cluster enumeration + silences listEntities
+      // order-warning. See `findDuplicateClusters` for the same pattern.
+      { limit: pageSize, cursor, orderBy: { field: '_id', direction: 'asc' } },
+      scope,
+    );
     for (const e of page.items) {
       if (e.archived === true) continue;
       const idents = e.identifiers ?? [];

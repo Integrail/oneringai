@@ -1352,7 +1352,11 @@ export class MemorySystem implements IDisposable {
     do {
       const page = await this.store.listEntities(
         {},
-        { limit: batchSize, cursor },
+        // Explicit `_id asc` for stable pagination — backfill must touch every
+        // row exactly once, and natural-order pagination loses items when the
+        // cursor's anchor moves. Also silences the listEntities order-warning
+        // when run against MongoMemoryAdapter.
+        { limit: batchSize, cursor, orderBy: { field: '_id', direction: 'asc' } },
         scope,
       );
       for (const entity of page.items) {
