@@ -194,6 +194,7 @@ export {
   scoreEntityPair,
   findDuplicateCandidates,
   findDuplicateClusters,
+  findIdentifierClusters,
   sweepDuplicates,
   DEFAULT_WEIGHTS,
 } from './dedup.js';
@@ -205,6 +206,8 @@ export type {
   FindCandidatesOptions,
   FindClustersOptions,
   DuplicateCluster,
+  FindIdentifierClustersOptions,
+  IdentifierCluster,
   SweepOptions,
 } from './dedup.js';
 

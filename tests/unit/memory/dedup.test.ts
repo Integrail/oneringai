@@ -18,6 +18,7 @@ import {
   scoreEntityPair,
   findDuplicateCandidates,
   findDuplicateClusters,
+  findIdentifierClusters,
   sweepDuplicates,
   DEFAULT_WEIGHTS,
 } from '@/memory/dedup.js';
@@ -148,19 +149,22 @@ describe('scoreEntityPair — hard-zero rules', () => {
 });
 
 describe('scoreEntityPair — weighted-sum bands', () => {
-  it('normalized name equal + alias overlap on short single-token names → review (single-token guard)', () => {
-    // "ICOS" is a single 4-char token — the guard caps at 0.85 to prevent
-    // auto-merge on weak surface alone. In production this case would have
-    // canonical identifiers attached, pushing it to Tier 1 auto-merge.
+  it('single-token short PERSON names → review (guard fires by default for persons)', () => {
+    // "Pavel" is a single 5-char token — guard caps at 0.85 because multiple
+    // humans named "Pavel" can exist in a tenant. In production these pairs
+    // also surface a semantic-tier mergeCandidate (cap 0.89), but the dedup
+    // scorer alone routes them to 'review' for human judgment.
+    // (See atomicUpsert test for the symmetric write-side rule: single-token
+    // person with no identifier never auto-dedupes at create time either.)
     const a = ent({
-      displayName: 'ICOS',
-      type: 'project',
-      aliases: ['icos-platform'],
+      displayName: 'John',
+      type: 'person',
+      aliases: ['johnny'],
     });
     const b = ent({
-      displayName: 'icos',
-      type: 'project',
-      aliases: ['ICOS-Platform', 'icos-platform'],
+      displayName: 'john',
+      type: 'person',
+      aliases: ['Johnny'],
     });
     const d = scoreEntityPair({ a, b });
     expect(d.signals.displayNameNormalizedEqual).toBe(true);
@@ -255,6 +259,41 @@ describe('scoreEntityPair — single-token-name guard', () => {
     const b = ent({ displayName: 'John Smith', type: 'person' });
     const d = scoreEntityPair({ a, b });
     expect(d.signals.singleTokenNameTooShort).toBe(false);
+  });
+
+  it('0.9.2 type-scope: single-token PROJECT names AUTO-MERGE by default (production ICOS case)', () => {
+    // 41 ICOS-project rows in prod — same single-token short name, no
+    // identifier. Default `singleTokenGuardTypes: ['person']` so projects
+    // bypass the guard and reach auto-merge on name + alias-pool + token
+    // signals alone.
+    const a = ent({ displayName: 'ICOS', type: 'project' });
+    const b = ent({ displayName: 'ICOS', type: 'project' });
+    const d = scoreEntityPair({ a, b });
+    expect(d.signals.singleTokenNameTooShort).toBe(false);
+    expect(d.action).toBe('auto-merge');
+  });
+
+  it('0.9.2 type-scope: same for ORGANIZATION', () => {
+    const a = ent({ displayName: 'EW', type: 'organization' });
+    const b = ent({ displayName: 'EW', type: 'organization' });
+    const d = scoreEntityPair({ a, b });
+    expect(d.action).toBe('auto-merge');
+  });
+
+  it('0.9.2 type-scope: caller can include project to keep guard active for projects', () => {
+    const a = ent({ displayName: 'ICOS', type: 'project' });
+    const b = ent({ displayName: 'ICOS', type: 'project' });
+    const d = scoreEntityPair({ a, b }, { singleTokenGuardTypes: ['person', 'project'] });
+    expect(d.signals.singleTokenNameTooShort).toBe(true);
+    expect(d.action).not.toBe('auto-merge');
+  });
+
+  it('0.9.2 type-scope: empty array disables guard for ALL types', () => {
+    const a = ent({ displayName: 'John', type: 'person' });
+    const b = ent({ displayName: 'John', type: 'person' });
+    const d = scoreEntityPair({ a, b }, { singleTokenGuardTypes: [] });
+    expect(d.signals.singleTokenNameTooShort).toBe(false);
+    expect(d.action).toBe('auto-merge');
   });
 });
 
@@ -530,6 +569,193 @@ describe('findDuplicateClusters', () => {
     }
     const limited = await findDuplicateClusters(mem, SCOPE, { limit: 2 });
     expect(limited.length).toBe(2);
+  });
+});
+
+// ===========================================================================
+// findIdentifierClusters (0.9.2)
+// ===========================================================================
+
+describe('findIdentifierClusters', () => {
+  let store: InMemoryAdapter;
+  let mem: MemorySystem;
+
+  beforeEach(() => {
+    store = new InMemoryAdapter();
+    mem = new MemorySystem({ store });
+  });
+
+  afterEach(async () => {
+    if (!mem.isDestroyed) await mem.shutdown();
+  });
+
+  it('finds entities sharing an identifier with different displayNames (production Pavel case)', async () => {
+    // Pavel + Pavel Khasanov sharing email = same human, but findDuplicateClusters
+    // misses because displayNames normalize differently. findIdentifierClusters
+    // catches it.
+    for (const surface of ['Pavel', 'Pavel Khasanov', 'P. Khasanov']) {
+      await store.createEntity({
+        type: 'person',
+        displayName: surface,
+        normalizedDisplayName: surface.toLowerCase(),
+        identifiers: [{ kind: 'email', value: 'pavel@everworker.ai' }],
+        ownerId: SCOPE.userId!,
+        version: 1,
+      } as unknown as Parameters<typeof store.createEntity>[0]);
+    }
+    // Unrelated entity — different email, should NOT cluster.
+    await mem.upsertEntity(
+      {
+        type: 'person',
+        displayName: 'Sarah',
+        identifiers: [{ kind: 'email', value: 'sarah@x.com' }],
+      },
+      SCOPE,
+    );
+
+    const clusters = await findIdentifierClusters(mem, SCOPE);
+    expect(clusters.length).toBe(1);
+    expect(clusters[0]!.kind).toBe('email');
+    expect(clusters[0]!.value).toBe('pavel@everworker.ai');
+    expect(clusters[0]!.entities.length).toBe(3);
+  });
+
+  it('case-folds the value for case-insensitive kinds (email)', async () => {
+    // Two entities with same email differing in case → still one cluster.
+    for (const value of ['Pavel@Everworker.ai', 'pavel@everworker.ai']) {
+      await store.createEntity({
+        type: 'person',
+        displayName: `P-${value}`,
+        normalizedDisplayName: `p-${value}`.toLowerCase(),
+        identifiers: [{ kind: 'email', value }],
+        ownerId: SCOPE.userId!,
+        version: 1,
+      } as unknown as Parameters<typeof store.createEntity>[0]);
+    }
+
+    const clusters = await findIdentifierClusters(mem, SCOPE);
+    expect(clusters.length).toBe(1);
+    expect(clusters[0]!.entities.length).toBe(2);
+  });
+
+  it('does NOT case-fold for case-sensitive kinds (github)', async () => {
+    for (const value of ['Anton-A', 'anton-a']) {
+      await store.createEntity({
+        type: 'person',
+        displayName: `P-${value}`,
+        normalizedDisplayName: `p-${value}`.toLowerCase(),
+        identifiers: [{ kind: 'github', value }],
+        ownerId: SCOPE.userId!,
+        version: 1,
+      } as unknown as Parameters<typeof store.createEntity>[0]);
+    }
+    const clusters = await findIdentifierClusters(mem, SCOPE);
+    // Two distinct values → no cluster.
+    expect(clusters.length).toBe(0);
+  });
+
+  it('respects kinds filter', async () => {
+    await store.createEntity({
+      type: 'person',
+      displayName: 'A',
+      normalizedDisplayName: 'a',
+      identifiers: [
+        { kind: 'email', value: 'shared@x.com' },
+        { kind: 'github', value: 'shared-gh' },
+      ],
+      ownerId: SCOPE.userId!,
+      version: 1,
+    } as unknown as Parameters<typeof store.createEntity>[0]);
+    await store.createEntity({
+      type: 'person',
+      displayName: 'B',
+      normalizedDisplayName: 'b',
+      identifiers: [
+        { kind: 'email', value: 'shared@x.com' },
+        { kind: 'github', value: 'shared-gh' },
+      ],
+      ownerId: SCOPE.userId!,
+      version: 1,
+    } as unknown as Parameters<typeof store.createEntity>[0]);
+
+    const emailOnly = await findIdentifierClusters(mem, SCOPE, { kinds: ['email'] });
+    expect(emailOnly.length).toBe(1);
+    expect(emailOnly[0]!.kind).toBe('email');
+  });
+
+  it('excludes singletons (minClusterSize default 2)', async () => {
+    await mem.upsertEntity(
+      {
+        type: 'person',
+        displayName: 'Alone',
+        identifiers: [{ kind: 'email', value: 'alone@x.com' }],
+      },
+      SCOPE,
+    );
+    const clusters = await findIdentifierClusters(mem, SCOPE);
+    expect(clusters.length).toBe(0);
+  });
+
+  it('excludes archived entities', async () => {
+    // Create two distinct entities sharing an email by bypassing the resolver
+    // (which would dedupe them via Tier 1). store.createEntity is the
+    // straight-to-adapter path used to simulate legacy data state.
+    const a = await store.createEntity({
+      type: 'person',
+      displayName: 'A',
+      normalizedDisplayName: 'a',
+      identifiers: [{ kind: 'email', value: 'x@x.com' }],
+      ownerId: SCOPE.userId!,
+      version: 1,
+    } as unknown as Parameters<typeof store.createEntity>[0]);
+    const b = await store.createEntity({
+      type: 'person',
+      displayName: 'B',
+      normalizedDisplayName: 'b',
+      identifiers: [{ kind: 'email', value: 'x@x.com' }],
+      ownerId: SCOPE.userId!,
+      version: 1,
+    } as unknown as Parameters<typeof store.createEntity>[0]);
+    expect(a.id).not.toBe(b.id);
+
+    // Sanity: both visible → 1 cluster of 2.
+    const before = await findIdentifierClusters(mem, SCOPE);
+    expect(before.length).toBe(1);
+    expect(before[0]!.entities.length).toBe(2);
+
+    await mem.archiveEntity(b.id, SCOPE);
+
+    const after = await findIdentifierClusters(mem, SCOPE);
+    // Only `a` survives → no cluster.
+    expect(after.length).toBe(0);
+  });
+
+  it('sorts clusters by size desc', async () => {
+    // Large cluster (3) on github, small (2) on email.
+    for (let i = 0; i < 3; i++) {
+      await store.createEntity({
+        type: 'person',
+        displayName: `G${i}`,
+        normalizedDisplayName: `g${i}`,
+        identifiers: [{ kind: 'github', value: 'team-gh' }],
+        ownerId: SCOPE.userId!,
+        version: 1,
+      } as unknown as Parameters<typeof store.createEntity>[0]);
+    }
+    for (let i = 0; i < 2; i++) {
+      await store.createEntity({
+        type: 'person',
+        displayName: `E${i}`,
+        normalizedDisplayName: `e${i}`,
+        identifiers: [{ kind: 'email', value: 'team@x.com' }],
+        ownerId: SCOPE.userId!,
+        version: 1,
+      } as unknown as Parameters<typeof store.createEntity>[0]);
+    }
+    const clusters = await findIdentifierClusters(mem, SCOPE);
+    expect(clusters.length).toBe(2);
+    expect(clusters[0]!.entities.length).toBe(3);
+    expect(clusters[1]!.entities.length).toBe(2);
   });
 });
 

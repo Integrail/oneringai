@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-05-26
+
+### Memory — dedup migration enablers
+
+Two targeted fixes that unblock the v0.9.1 dedup migration path for hosts (v25) consolidating legacy duplicate-entity backlogs:
+
+- **`ScoreThresholds.singleTokenGuardTypes` (BEHAVIOR CHANGE).** The single-token-name guard in `scoreEntityPair` previously fired for ANY pair of entities sharing a single-token short normalized name — capping score at 0.85 and routing to `'review'`. In production this blocked 41 ICOS-project rows from auto-merging (same single-token name, no identifier; landed at 0.85 in the review band).
+
+  The guard is now scoped to specific entity types via `singleTokenGuardTypes` on `ScoreThresholds`. **Default: `['person']`** — only persons get the cap. Projects / organizations / events with names like "ICOS" / "EW" / "Prep" are tenant-unique by convention and now auto-merge on name + alias + token signals. Callers can include other types via override or pass `[]` to disable entirely.
+
+  Behavior change in scope: tests that asserted single-token-short-name short-circuit-to-review for non-person types now auto-merge. Existing test `normalized name equal + alias overlap on short single-token names → review` rewritten to use type=person (where the guard still applies).
+
+- **`findIdentifierClusters(memory, scope, opts?)` (new public API).** Companion to `findDuplicateClusters` — enumerates `(identifier.kind, identifier.value)` groups where `≥ minClusterSize` entities share an identifier. Catches the dup pattern where two entities share an email/slack_id/github but have different displayNames ("Pavel" + "Pavel Khasanov" both with `email: pavel@everworker.ai`) — invisible to the name-keyed snapshot. Case-folds via `normalizeIdentifierValue` so `email: A@X.COM` and `email: a@x.com` cluster together; `github: Anton` and `github: anton` stay separate (per `identifierValuesEqual` contract).
+
+  Returns `IdentifierCluster[]` sorted by cluster size desc. Options: `kinds` filter, `type` filter, `minClusterSize` (default 2), `limit` (default 100), `pageSize` (default 500). Same client-side aggregation model as `findDuplicateClusters` — fast under ~10k entities.
+
+**Test status:** 11 new tests across `dedup.test.ts` (5 type-scoped guard cases + 6 identifier-cluster cases). Full memory suite: 1198 passing.
+
+**Migration impact:** This release is REQUIRED for the v0.9.1 dedup migration. Without these fixes, the migration's `scoreEntityPair`-driven auto-merge step would skip the 41-ICOS / 18-Jarvis / 15-EW / etc. clusters that motivated the work.
+
 ## [0.9.1] — 2026-05-26
 
 ### Memory — semantic auto-resolve at creation (BEHAVIOR CHANGE)

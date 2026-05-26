@@ -82,7 +82,7 @@
 import type { MemorySystem } from './MemorySystem.js';
 import type { EntityId, IEntity, IFact, ScopeFilter } from './types.js';
 import { normalizeSurface } from './resolution/fuzzy.js';
-import { identifierValuesEqual } from './identifiers.js';
+import { identifierValuesEqual, normalizeIdentifierValue } from './identifiers.js';
 
 // ===========================================================================
 // Types
@@ -148,6 +148,23 @@ export interface ScoreThresholds {
   embeddingCosineFloor?: number;
   /** At this cosine value, embedding contribution is full weight. Default 0.95. */
   embeddingCosineCeiling?: number;
+  /**
+   * Entity types where the single-token-short-name guard applies. Default
+   * `['person']`. The guard caps a pair's final score at 0.85 (below the
+   * 0.92 auto-merge threshold) when BOTH entities have a single-token
+   * normalized name of length < 5 — reflecting that "John" / "Pavel" / "Vlad"
+   * alone do not uniquely identify a person inside a tenant.
+   *
+   * **Why type-scoped (0.9.2):** persons need the guard (multiple humans
+   * can share a first name). Projects / organizations / events with names
+   * like "ICOS" / "EW" / "Prep" are tenant-unique by convention — the guard
+   * was blocking 41 ICOS-project dups from auto-merging in production. Types
+   * NOT in this list bypass the guard, letting name + alias + embedding
+   * signals reach `auto-merge` on identical short names.
+   *
+   * Pass `[]` to disable the guard entirely.
+   */
+  singleTokenGuardTypes?: string[];
 }
 
 export interface DedupDecision {
@@ -186,6 +203,25 @@ export interface FindClustersOptions {
 export interface DuplicateCluster {
   type: string;
   normalizedDisplayName: string;
+  entities: IEntity[];
+}
+
+export interface FindIdentifierClustersOptions {
+  /** Restrict to specific identifier kinds. Default: all kinds. */
+  kinds?: string[];
+  /** Only return clusters of this entity type. Default: all types. */
+  type?: string;
+  /** Minimum cluster size to return. Default 2. */
+  minClusterSize?: number;
+  /** Maximum clusters returned. Default 100. */
+  limit?: number;
+  /** Pagination through `listEntities`. Default 500. */
+  pageSize?: number;
+}
+
+export interface IdentifierCluster {
+  kind: string;
+  value: string;
   entities: IEntity[];
 }
 
@@ -228,6 +264,7 @@ export function scoreEntityPair(
   const startTimeDeltaMin = thresholds?.eventStartTimeDeltaMinutes ?? 60;
   const cosFloor = thresholds?.embeddingCosineFloor ?? 0.7;
   const cosCeil = thresholds?.embeddingCosineCeiling ?? 0.95;
+  const singleTokenGuardTypes = new Set(thresholds?.singleTokenGuardTypes ?? ['person']);
 
   const signals: SignalBreakdown = {
     identifierExactMatch: false,
@@ -348,11 +385,19 @@ export function scoreEntityPair(
     signals.sameSignalWithin = sameSignalProximityMinutes(inputs.factsA, inputs.factsB);
   }
 
-  // Single-token weak-signal guard. "John" / "ICOS" / "Prep" alone are too
-  // ambiguous to auto-merge purely on name + Jaccard overlap.
+  // Single-token weak-signal guard. "John" / "Pavel" / "Vlad" alone are too
+  // ambiguous to auto-merge purely on name + Jaccard overlap because
+  // multiple humans share each. Type-scoped via `singleTokenGuardTypes` —
+  // default `['person']`. Projects / orgs / events with names like "ICOS" /
+  // "EW" / "Prep" are tenant-unique by convention so the guard would
+  // wrongly block their auto-merge (41 ICOS-project dups in production
+  // would all land at score 0.85 → 'review' otherwise).
+  //
+  // a.type === b.type already enforced by the type-mismatch hard-zero.
+  const guardAppliesToType = singleTokenGuardTypes.has(a.type);
   const singleTokenA = tokensA.size === 1 && nameA.length < 5;
   const singleTokenB = tokensB.size === 1 && nameB.length < 5;
-  signals.singleTokenNameTooShort = singleTokenA && singleTokenB;
+  signals.singleTokenNameTooShort = guardAppliesToType && singleTokenA && singleTokenB;
 
   // -------------------------------------------------------------------------
   // Score: weighted sum, capped at 1.
@@ -529,6 +574,77 @@ export async function findDuplicateClusters(
   }
 
   // Largest clusters first — that's where the most cleanup value lives.
+  clusters.sort((x, y) => y.entities.length - x.entities.length);
+  return clusters;
+}
+
+// ===========================================================================
+// findIdentifierClusters
+// ===========================================================================
+
+/**
+ * Enumerate `(identifier.kind, identifier.value)` clusters where ≥
+ * `minClusterSize` entities share an identifier. Complements
+ * `findDuplicateClusters` (which pivots on name) — catches the dup pattern
+ * where two entities share an email/slack_id/github handle but have
+ * different displayNames ("Pavel" + "Pavel Khasanov" sharing
+ * `email: pavel@everworker.ai`).
+ *
+ * Implementation: paginates `listEntities`, groups by `(kind,
+ * normalizedValue)` using `identifierValuesEqual`'s case-folding contract
+ * (email/domain/phone/url_host fold to lowercase; everything else exact).
+ * Same client-side scale envelope as `findDuplicateClusters` — fast under
+ * ~10k entities, slower beyond.
+ */
+export async function findIdentifierClusters(
+  memory: MemorySystem,
+  scope: ScopeFilter,
+  opts: FindIdentifierClustersOptions = {},
+): Promise<IdentifierCluster[]> {
+  const minClusterSize = opts.minClusterSize ?? 2;
+  const limit = opts.limit ?? 100;
+  const pageSize = opts.pageSize ?? 500;
+  const filter = opts.type ? { type: opts.type } : {};
+  const kindFilter = opts.kinds ? new Set(opts.kinds) : null;
+  const store = (memory as unknown as { store: import('./types.js').IMemoryStore }).store;
+
+  // Map<`${kind}\x00${normalizedValue}`, IEntity[]>. Normalization mirrors
+  // `identifierValuesEqual` — case-fold only the kinds the library marks
+  // case-insensitive; preserve case otherwise so `github:Anton` !== `github:anton`.
+  const groups = new Map<string, IEntity[]>();
+  let cursor: string | undefined;
+  do {
+    const page = await store.listEntities(filter, { limit: pageSize, cursor }, scope);
+    for (const e of page.items) {
+      if (e.archived === true) continue;
+      const idents = e.identifiers ?? [];
+      for (const id of idents) {
+        if (kindFilter && !kindFilter.has(id.kind)) continue;
+        const normalizedValue = normalizeIdentifierValue(id.kind, id.value);
+        const key = `${id.kind}\x00${normalizedValue}`;
+        const bucket = groups.get(key) ?? [];
+        // Dedupe by entity id — an entity with two same-kind identifiers of
+        // the same value (rare but legal) shouldn't appear twice in its own
+        // cluster.
+        if (!bucket.some((x) => x.id === e.id)) bucket.push(e);
+        groups.set(key, bucket);
+      }
+    }
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  const clusters: IdentifierCluster[] = [];
+  for (const [key, entities] of groups) {
+    if (entities.length < minClusterSize) continue;
+    const sep = key.indexOf('\x00');
+    clusters.push({
+      kind: key.slice(0, sep),
+      value: key.slice(sep + 1),
+      entities,
+    });
+    if (clusters.length >= limit) break;
+  }
+
   clusters.sort((x, y) => y.entities.length - x.entities.length);
   return clusters;
 }

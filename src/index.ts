@@ -1565,6 +1565,7 @@ export {
   scoreEntityPair,
   findDuplicateCandidates,
   findDuplicateClusters,
+  findIdentifierClusters,
   sweepDuplicates,
   DEFAULT_WEIGHTS,
 } from './memory/index.js';
@@ -1723,6 +1724,8 @@ export type {
   FindCandidatesOptions,
   FindClustersOptions,
   DuplicateCluster,
+  FindIdentifierClustersOptions,
+  IdentifierCluster,
   SweepOptions,
 } from './memory/index.js';
 
