@@ -827,6 +827,21 @@ export type ChangeEvent =
       /** Null when the op had no factId (e.g. a stray create in Pillar 2). */
       factId: FactId | null;
       reason: string;
+    }
+  /**
+   * Emitted when bare `MemorySystem.upsertEntity` (no identifier match) hits
+   * multiple entities sharing the incoming `normalizedDisplayName` in the
+   * caller's scope. The library cannot pick one safely — typically the
+   * legacy-data signature where prior dups exist — so it falls through to
+   * creating a NEW entity to avoid arbitrarily merging into a wrong row.
+   * Hosts should subscribe and run a dedup pass to consolidate.
+   */
+  | {
+      type: 'entity.upsert.ambiguous';
+      type_: string;
+      normalizedDisplayName: string;
+      candidates: EntityId[];
+      createdId: EntityId;
     };
 
 // ---------------------------------------------------------------------------

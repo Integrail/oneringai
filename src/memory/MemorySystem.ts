@@ -534,6 +534,96 @@ export class MemorySystem implements IDisposable {
     }
 
     if (matchCounts.size === 0) {
+      // **Truly-bare** form (R4): caller passed NO identifiers AND none
+      // matched an existing row → fall through to a normalized-name lookup
+      // so direct `upsertEntity` callers (LLM-extracted entities, projects
+      // with no natural strong key) get the same dedup the resolver enforces.
+      //
+      // When the caller DID supply identifiers but none matched, treat them
+      // as authoritative — the caller is expressing "this is a distinct
+      // entity even if it shares a displayName". Skip the normalized lookup
+      // and create a new row. This preserves the long-standing semantic where
+      // identifier-bearing upserts are independent.
+      const norm =
+        input.identifiers.length === 0
+          ? computeNormalizedFields({
+              displayName: input.displayName,
+              aliases: input.aliases,
+            })
+          : { normalizedDisplayName: '', normalizedAliases: [] as string[] };
+      if (norm.normalizedDisplayName) {
+        const matches = await this.store.findEntitiesByNormalizedName(
+          input.type,
+          norm.normalizedDisplayName,
+          scope,
+          { matchAliases: false, limit: 2 },
+        );
+        if (matches.length === 1) {
+          // Unambiguous existing entity. Route through the atomic primitive
+          // so any concurrent racer also converges here.
+          const res = await this.tryAtomicCreateOrResolve(
+            {
+              type: input.type,
+              displayName: input.displayName,
+              aliases: input.aliases,
+              identifiers: input.identifiers,
+              metadata: input.metadata,
+              groupId: input.groupId,
+              ownerId: input.ownerId,
+              permissions: input.permissions,
+              metadataMerge: input.metadataMerge,
+            },
+            scope,
+          );
+          return {
+            entity: res.entity,
+            created: res.created,
+            mergedIdentifiers: res.created ? res.entity.identifiers.length : 0,
+            mergeCandidates: [],
+          };
+        }
+        if (matches.length > 1) {
+          // Legacy data with pre-existing duplicates sharing this normalized
+          // name. The library refuses to pick one — falls through to a
+          // plain createEntity (yielding another row) and emits an
+          // `entity.upsert.ambiguous` event so observers can run a dedup pass.
+          const result = await this.createEntity(input, scope);
+          this.emit({
+            type: 'entity.upsert.ambiguous',
+            type_: input.type,
+            normalizedDisplayName: norm.normalizedDisplayName,
+            candidates: matches.map((m) => m.id),
+            createdId: result.entity.id,
+          });
+          return result;
+        }
+        // matches.length === 0 → use atomic primitive to guard against
+        // concurrent writers reaching here with the same surface.
+        const res = await this.tryAtomicCreateOrResolve(
+          {
+            type: input.type,
+            displayName: input.displayName,
+            aliases: input.aliases,
+            identifiers: input.identifiers,
+            metadata: input.metadata,
+            groupId: input.groupId,
+            ownerId: input.ownerId,
+            permissions: input.permissions,
+            metadataMerge: input.metadataMerge,
+          },
+          scope,
+        );
+        return {
+          entity: res.entity,
+          created: res.created,
+          mergedIdentifiers: res.created ? res.entity.identifiers.length : 0,
+          mergeCandidates: [],
+        };
+      }
+      // Either the caller supplied identifiers (handled above by skipping
+      // norm computation) OR the normalized form collapsed to empty (pure
+      // punctuation displayName). Either way, no atomic dedup is appropriate
+      // — fall back to plain createEntity.
       return this.createEntity(input, scope);
     }
 

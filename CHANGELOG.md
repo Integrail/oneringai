@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Phase A Commit 5: bare `upsertEntity` dedupes via normalized name (BEHAVIOR CHANGE)
+
+Closes R4 — direct callers of `MemorySystem.upsertEntity` that pass NO identifiers and the same displayName now converge on a single entity instead of accumulating duplicates.
+
+- **`MemorySystem.upsertEntity`** — when `input.identifiers.length === 0` AND no identifier-driven match was found, the method now runs `findEntitiesByNormalizedName(type, normalized, scope, {limit:2})`:
+  - 0 hits → route through `tryAtomicCreateOrResolve` (atomic primitive — concurrent-safe).
+  - 1 hit → route through `tryAtomicCreateOrResolve` (resolves to the existing entity, accumulates aliases/identifiers/metadata via `appendAliasesAndIdentifiers`).
+  - 2+ hits → emit new `entity.upsert.ambiguous` change event AND fall through to plain `createEntity`. The library refuses to arbitrarily merge into one of multiple legacy dups; hosts should subscribe to this event and run a dedup pass.
+  - Empty normalized form (pure-punctuation displayName) → plain `createEntity` (no key to dedup on).
+- **Carve-out preserved** — when `input.identifiers.length > 0`, identifiers remain authoritative: the caller is asserting "this is a distinct entity even if it shares a displayName with another". Existing test patterns (two `seedEntity()` calls with different emails but the same `displayName:'Test'`) continue to produce distinct rows.
+- **New `ChangeEvent` variant: `entity.upsert.ambiguous`** with `{type_, normalizedDisplayName, candidates: EntityId[], createdId}`. Observability for legacy-data dup clusters.
+- **Tests** — `tests/unit/memory/MemorySystem.bareUpsert.test.ts` (6 tests covering convergence, concurrency, the identifier carve-out, alias accumulation, pure-punctuation fallback, and the ambiguous emit). R4 repro flipped (was 2 entities, now 1). All 5671 unit tests pass.
+
 ### Memory — Phase A Commit 4: alias-tier confidence configurable, default 0.90 (BEHAVIOR CHANGE)
 
 The Tier-3 alias-match confidence now defaults to **0.90** (was hardcoded 0.85). Exact alias matches auto-resolve at the default `autoResolveThreshold` (0.90) — closes R2 from Step 0.

@@ -105,8 +105,8 @@ describe('R3 — search-result substring cap (post-Commit 2: indexed lookup)', (
   }, 30_000);
 });
 
-describe('R4 — bare upsertEntity (no identifiers) skips dedup', () => {
-  it('two bare upsertEntity calls with same displayName create TWO entities', async () => {
+describe('R4 — bare upsertEntity (no identifiers) dedupes via normalized name (post-Commit 5)', () => {
+  it('two bare upsertEntity calls with same displayName converge on ONE entity', async () => {
     const mem = makeMem();
     const a = await mem.upsertEntity(
       { type: 'project', displayName: 'ICOS', identifiers: [] },
@@ -116,8 +116,8 @@ describe('R4 — bare upsertEntity (no identifiers) skips dedup', () => {
       { type: 'project', displayName: 'ICOS', identifiers: [] },
       SCOPE,
     );
-    expect(a.entity.id).not.toBe(b.entity.id);
+    expect(a.entity.id).toBe(b.entity.id);
     const page = await mem.listEntities({ type: 'project' }, {}, SCOPE);
-    expect(page.items.length).toBe(2);
+    expect(page.items.length).toBe(1);
   });
 });

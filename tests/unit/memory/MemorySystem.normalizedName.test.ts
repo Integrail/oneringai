@@ -282,12 +282,17 @@ describe('IMemoryStore.findEntitiesByNormalizedName', () => {
   });
 
   it('honors the limit option', async () => {
-    const { mem, store } = makeMem();
+    const { store } = makeMem();
+    // Bypass MemorySystem (which post-Commit-5 dedupes bare same-name upserts)
+    // and seed five distinct rows via the adapter directly — needed to verify
+    // the limit clause.
     for (let i = 0; i < 5; i++) {
-      await mem.upsertEntity(
-        { type: 'project', displayName: 'ICOS', identifiers: [] },
-        SCOPE,
-      );
+      await store.createEntity({
+        type: 'project',
+        displayName: 'ICOS',
+        identifiers: [],
+        ownerId: 'u1',
+      });
     }
     const hits = await store.findEntitiesByNormalizedName(
       'project',
