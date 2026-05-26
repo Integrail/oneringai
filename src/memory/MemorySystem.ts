@@ -1055,13 +1055,28 @@ export class MemorySystem implements IDisposable {
     };
     await this.store.updateEntity(nextWinner);
 
-    // Rewrite facts: subjectId or objectId === loserId → winnerId
+    // Rewrite facts: subjectId, objectId, or contextIds entry === loserId → winnerId
     await this.rewriteFactReferences(loserId, winnerId, scope);
 
     // Archive loser
     await this.store.archiveEntity(loserId, scope);
 
     this.emit({ type: 'entity.merge', winnerId, loserId });
+
+    // Winner's identity surface (aliases ∪ identifiers) may have grown — re-embed
+    // if changed. Helper compares pre/post identity strings and no-ops on no-change.
+    this.queueIdentityEmbedding(nextWinner, scope, winner);
+
+    // Winner's effective atomic-fact count grew (loser's subject-facts now point at
+    // winner). Trigger a profile regen check on the winner's scope. Background; never
+    // blocks the merge return. Uses void to surface unhandled-rejection failures via
+    // maybeRegenerateProfile's own console.warn.
+    const winnerScope: ScopeFields = {
+      groupId: nextWinner.groupId,
+      ownerId: nextWinner.ownerId ?? scope.userId,
+    };
+    void this.maybeRegenerateProfile(winnerId, winnerScope);
+
     return nextWinner;
   }
 
@@ -1100,6 +1115,40 @@ export class MemorySystem implements IDisposable {
       for (const f of page.items) {
         if (!canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { objectId: toId }, scope);
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    // ContextIds. Previously this method left contextIds pointing at the archived
+    // loser, so any fact with `contextIds: [loser, ...]` would never surface for
+    // the winner via `getContext` traversal. Closes the v25 host wrapper gap
+    // documented in oneringai memory reference_oneringai_merge_contextids_gap.
+    //
+    // Dedupe rules when rewriting:
+    //   - Drop loser from the array (filter).
+    //   - Add winner if not already present.
+    //   - Drop winner if it equals the fact's own subject or object — a fact
+    //     "in the context of itself" is redundant noise; getContext already
+    //     surfaces via subject/object.
+    //   - If the resulting array is empty, write `[]` (not undefined) — the
+    //     Mongo driver coerces $set-undefined into a stored null which read
+    //     paths treat differently from a missing field; empty array is
+    //     observationally equivalent to undefined in all readers (truthy but
+    //     `.includes()` returns false).
+    cursor = undefined;
+    do {
+      const page = await this.store.findFacts(
+        { contextId: fromId },
+        { limit: 200, cursor },
+        scope,
+      );
+      for (const f of page.items) {
+        if (!canAccess(f, scope, 'write')) continue;
+        const filtered = (f.contextIds ?? []).filter((id) => id !== fromId);
+        if (toId !== f.subjectId && toId !== f.objectId && !filtered.includes(toId)) {
+          filtered.push(toId);
+        }
+        await this.store.updateFact(f.id, { contextIds: filtered }, scope);
       }
       cursor = page.nextCursor;
     } while (cursor);

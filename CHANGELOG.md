@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Phase B: merge correctness + dedup tooling + extraction richness
+
+Three-PR series following Phase A (0.8.0). Builds the host-facing tools v25 needs to enumerate, score, and clean up the duplicate-entity backlog Phase A's normalized-name + atomic-upsert work surfaced.
+
+### Memory — Phase B PR 1: merge correctness
+
+Three closed bugs in `MemorySystem.mergeEntities`. Hosts working around (1) with a `mergeEntitiesWithContextRewrite` wrapper can drop it. The fixes are silent corrections — no API surface change — but observable behavior shifts for callers that exercise the merge path.
+
+- **`contextIds` are now rewritten on merge.** Previously `mergeEntities` rewrote `subjectId` and `objectId` on facts but left every fact's `contextIds` array pointing at the archived loser. Queries via `getContext` / `touchesEntity` skipped the winner along that edge, hiding merged-in context bindings (deals, projects, meetings). The rewriter now scans facts where `contextId === loserId`, strips the loser, appends the winner (deduped, and dropped when it would duplicate the fact's own subject/object).
+- **Winner's profile is re-derived after merge.** The winner's effective atomic-fact count grew when the loser's subject-facts retargeted, but `maybeRegenerateProfile` was never invoked — so production profile narratives went stale immediately after a merge. Merge now triggers a background regen on the winner's scope (non-blocking, uses the same in-flight dedup map as on-write regens).
+- **Winner's identity embedding is refreshed when the union widens.** `mergeEntities` called `store.updateEntity` directly, bypassing the embed queue. Winner's `identityEmbedding` therefore reflected only the pre-merge surface, leaving semantic resolution under-matched on alias/identifier surfaces contributed by the loser. Merge now routes through `queueIdentityEmbedding`, which short-circuits when the combined identity string is identical to the pre-merge string — so merges that strictly add zero new surface incur no embedder cost.
+
+**Test coverage:** 7 new tests in `tests/unit/memory/MemorySystem.merge.correctness.test.ts`. Full memory suite 1135 tests pass.
+
 ## [0.8.0] — 2026-05-26
 
 ### Memory — Phase A: entity-duplication root cause fix
