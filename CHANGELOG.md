@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-26
+
+### Memory — Phase A: entity-duplication root cause fix
+
+Six-commit series eliminating the four structural causes of intra-user entity duplicates surfaced in production (40 ICOS / 32 Pavel / 35 "prep" event clusters). Commits land in dependency order; each is independently runnable but the dup-rate improvement materializes once Commits 3 + 4 are in. The Step-0 commit (test `Dup.repro.test.ts`) documents the four causes (R1 concurrency, R2 alias-tier, R3 substring-cap, R4 bare-upsertEntity) and ships repros that flip from "asserts buggy behavior" to "asserts fix" as the relevant commits land.
+
+**Migration path on a live Mongo deployment:**
+1. Deploy 0.8.0 — Commit 1 starts stamping `normalizedDisplayName` / `normalizedAliases` on every entity write. Existing rows are untouched.
+2. Run `MemorySystem.backfillNormalizedFields(scope)` (Commit 6) from your migration framework — populates the normalized fields on every legacy entity.
+3. Run a deduplication pass against the now-populated normalized field (host tooling — `findDuplicateClusters` admin API is Phase C work; for now use ad-hoc Mongo aggregations grouped by `(type, normalizedDisplayName, groupId, ownerId)` for clusters of >1).
+4. Install the unique partial index by calling `ensureNormalizedNameUniqueIndex(entitiesCollection)` (Commit 3) — fails if dups remain, succeeds once dedup is complete. After this point, cross-process concurrency cannot reintroduce dups.
+
+**Behavior changes worth flagging:**
+- Alias-tier confidence default is now `0.90` (was hardcoded `0.85`). Hosts that relied on alias-only matches surfacing as merge candidates must set `entityResolution.aliasMatchConfidence: 0.85` to restore the old behavior. (Commit 4)
+- Bare `upsertEntity` with empty identifiers now dedupes by normalized displayName. Callers with identifiers are unaffected (the identifier carve-out preserves the old "two emails, same name = two people" semantic). (Commit 5)
+- New `ChangeEvent` variant `entity.upsert.ambiguous` fires when bare `upsertEntity` hits multiple legacy dups. Subscribe to surface dirty data. (Commit 5)
+
+**Test status:** 5677 unit tests pass on InMemory. 4 new test files (`Dup.repro.test.ts`, `MemorySystem.normalizedName.test.ts`, `EntityResolver.indexedLookup.test.ts`, `EntityResolver.aliasConfidence.test.ts`, `MemorySystem.atomicUpsert.test.ts`, `MemorySystem.bareUpsert.test.ts`, `MemorySystem.backfillNormalized.test.ts`). Mongo integration tests gated on `mongodb-memory-server` cover R1 concurrency convergence + Commit 1 stamping + `ensureNormalizedNameUniqueIndex` E11000 recovery — run via `npm run test:integration` after `npm install --save-dev mongodb mongodb-memory-server`.
+
+### Memory — Phase A Commit 6: backfillNormalizedFields + 0.8.0 version bump
+
+- **New `MemorySystem.backfillNormalizedFields(scope, opts?)`** — paginated rewrite that populates `normalizedDisplayName` + `normalizedAliases` on entities written before 0.8.0 (or by adapter code that bypassed the boundary stamp). Returns `{scanned, updated, skipped}`. Idempotent — repeat calls are all-skipped. `opts.force: true` recomputes regardless of stored value (use after tweaking `normalizeSurface`). `opts.batchSize` default 500, clamped to `[1, 1000]`. Handles optimistic-concurrency conflict with a single re-read retry.
+- **Version bump 0.7.0 → 0.8.0** (semver minor) reflects the behavior changes in Commits 4 + 5. No package boundary breakage (all additions; the alias-confidence default change is gated on the new `aliasMatchConfidence` config knob).
+- 5 new backfill tests including idempotency, force-mode, scope filtering, and pagination. 5682 unit tests pass.
+
 ### Memory — Phase A Commit 5: bare `upsertEntity` dedupes via normalized name (BEHAVIOR CHANGE)
 
 Closes R4 — direct callers of `MemorySystem.upsertEntity` that pass NO identifiers and the same displayName now converge on a single entity instead of accumulating duplicates.

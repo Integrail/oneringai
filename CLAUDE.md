@@ -260,7 +260,8 @@ Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** 
 - **Incremental profile regen:** `IProfileGenerator.generate` takes a single `ProfileGeneratorInput` with `newFacts` (observed since prior), `priorProfile`, `invalidatedFactIds` (supersession + archivals). Generator evolves the prior profile from deltas rather than rewriting from all facts.
 
 **Resolution** (`src/memory/resolution/`):
-- `EntityResolver` translates surface forms ("Microsoft", "Q3 Planning") to entity IDs. Tiers: identifier (1.0) → exact displayName (0.9) → exact alias (0.85) → **semantic** via `identityEmbedding` (capped at 0.89, **opt-in** via `entityResolution.enableSemanticResolution`). Conservative default auto-resolve threshold 0.9; configurable via `entityResolution.autoResolveThreshold`. Semantic tier calls `IMemoryStore.semanticSearchEntities` (implemented by `InMemoryAdapter` + `MongoMemoryAdapter`); cap ensures enabling the flag alone never auto-merges — caller must also lower `autoResolveThreshold` (e.g. to 0.75) to trust semantic matches.
+- `EntityResolver` translates surface forms ("Microsoft", "Q3 Planning") to entity IDs. Tiers: identifier (1.0) → exact displayName (default 0.9) → exact alias (default **0.9 since 0.8.0**, was 0.85) → **semantic** via `identityEmbedding` (capped at 0.89, **opt-in** via `entityResolution.enableSemanticResolution`). All confidences configurable via `entityResolution.displayNameMatchConfidence` / `aliasMatchConfidence`. Conservative default auto-resolve threshold 0.9; configurable via `entityResolution.autoResolveThreshold`. **Tier 2/3 backed by `IMemoryStore.findEntitiesByNormalizedName` (O(1) indexed exact-match, 0.8.0+)** — replaces the legacy substring-then-filter path. Semantic tier calls `IMemoryStore.semanticSearchEntities`; cap ensures enabling the flag alone never auto-merges — caller must also lower `autoResolveThreshold` (e.g. to 0.75) to trust semantic matches.
+- **`IMemoryStore.atomicCreateOrFindByNormalizedName` (0.8.0+)** — load-bearing atomic find-or-create keyed on `(type, normalizedDisplayName, scope)`. Used by `upsertEntityBySurface` to converge concurrent inserts of the same surface. InMemory uses JS event-loop semantics; Mongo uses optimistic find-then-insert + E11000 recovery, gated on the host-installed unique partial index from `ensureNormalizedNameUniqueIndex(entities)`. Mongo deployment migration: backfill via `MemorySystem.backfillNormalizedFields(scope)` → dedup pass → install unique index.
 - `fuzzy.ts` — normalized Levenshtein (strips Inc/Corp/LLC, case-insensitive, punctuation-tolerant).
 
 **Entity type conventions** (see `types.ts` header):
@@ -298,4 +299,4 @@ Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** 
 
 ---
 
-**Version**: 0.5.1 | **Last Updated**: 2026-04-23 | **Architecture**: Connector-First + NextGen Context
+**Version**: 0.8.0 | **Last Updated**: 2026-05-26 | **Architecture**: Connector-First + NextGen Context

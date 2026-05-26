@@ -1224,6 +1224,105 @@ export class MemorySystem implements IDisposable {
     }
   }
 
+  /**
+   * Backfill `normalizedDisplayName` + `normalizedAliases` on entities written
+   * before v0.8.0 (or by adapter paths that bypassed the storage-boundary
+   * stamp). Iterates entities in `scope` in batches, recomputes the fields
+   * from each entity's current `displayName` / `aliases`, and writes when the
+   * stored value differs.
+   *
+   * Idempotent — running twice with the same data is a no-op. Run before
+   * `ensureNormalizedNameUniqueIndex` (the unique partial index would fail
+   * to build if pre-backfill dups exist).
+   *
+   * Returns `{ scanned, updated, skipped }` for caller observability:
+   *  - `scanned` — total entities visited.
+   *  - `updated` — wrote an entity because at least one field differed.
+   *  - `skipped` — entity already had both fields populated and consistent;
+   *    no write performed.
+   *
+   * **Concurrency caveat:** the backfill uses `updateEntity` (optimistic
+   * concurrency on `version`). Concurrent writers bumping the version
+   * between read and write trigger a retry once; further conflicts surface
+   * as `OptimisticConcurrencyError` on the helper.
+   *
+   * **Force mode:** pass `{ force: true }` to write every scanned entity
+   * regardless of whether the stored value differs. Useful when
+   * `normalizeSurface` has been tweaked and the entire population needs
+   * re-stamping. Default is the cheaper differ-only path.
+   */
+  async backfillNormalizedFields(
+    scope: ScopeFilter,
+    opts?: { batchSize?: number; force?: boolean },
+  ): Promise<{ scanned: number; updated: number; skipped: number }> {
+    assertNotDestroyed(this, 'backfillNormalizedFields');
+    const batchSize = Math.max(1, Math.min(opts?.batchSize ?? 500, 1000));
+    const force = opts?.force === true;
+    let scanned = 0;
+    let updated = 0;
+    let skipped = 0;
+    let cursor: string | undefined;
+    do {
+      const page = await this.store.listEntities(
+        {},
+        { limit: batchSize, cursor },
+        scope,
+      );
+      for (const entity of page.items) {
+        scanned++;
+        const norm = computeNormalizedFields({
+          displayName: entity.displayName,
+          aliases: entity.aliases,
+        });
+        const sameDisplay = entity.normalizedDisplayName === norm.normalizedDisplayName;
+        const storedAliases = entity.normalizedAliases ?? [];
+        const sameAliases =
+          storedAliases.length === norm.normalizedAliases.length &&
+          storedAliases.every((a, i) => a === norm.normalizedAliases[i]);
+        if (!force && sameDisplay && sameAliases) {
+          skipped++;
+          continue;
+        }
+        const next: IEntity = {
+          ...entity,
+          normalizedDisplayName: norm.normalizedDisplayName,
+          normalizedAliases: norm.normalizedAliases,
+          version: entity.version + 1,
+          updatedAt: new Date(),
+        };
+        try {
+          await this.store.updateEntity(next);
+          updated++;
+        } catch (err) {
+          // Re-read and retry once — adapter's optimistic-concurrency error
+          // means another writer bumped the version in the gap. Second pass
+          // gets the latest version; if that also conflicts, surface the
+          // error (caller can re-run the backfill).
+          const fresh = await this.store.getEntity(entity.id, scope);
+          if (!fresh) {
+            // Race-deleted between list + retry; skip silently.
+            skipped++;
+            continue;
+          }
+          const freshNorm = computeNormalizedFields({
+            displayName: fresh.displayName,
+            aliases: fresh.aliases,
+          });
+          await this.store.updateEntity({
+            ...fresh,
+            normalizedDisplayName: freshNorm.normalizedDisplayName,
+            normalizedAliases: freshNorm.normalizedAliases,
+            version: fresh.version + 1,
+            updatedAt: new Date(),
+          });
+          updated++;
+        }
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { scanned, updated, skipped };
+  }
+
   /** Lookup a predicate definition (by canonical name or alias). Null when no registry or unknown. */
   getPredicateDefinition(nameOrAlias: string): PredicateDefinition | null {
     return this.predicates?.get(nameOrAlias) ?? null;
