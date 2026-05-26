@@ -1,8 +1,14 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 7** — bump this number whenever the prompt surface changes
+ * **Prompt version: 8** — bump this number whenever the prompt surface changes
  * materially so callers pinning snapshots notice.
+ *   - v8: removed mention of `completed` from the "relational facts about a
+ *         task" guidance; entire `temporal` category (`occurred_on`,
+ *         `scheduled_for`, `started_on`, `ended_on`) removed in the round-2
+ *         predicate consolidation. Pure single-entity attributes — completion,
+ *         due date, priority, scheduling, creation — now route to entity
+ *         metadata; only relationships-between-two-entities remain as facts.
  *   - v7: removed `state_changed` / `has_status` / `current_status` guidance.
  *         Task state lives on `task.metadata.state` (set at mention creation);
  *         transitions are host-driven via `MemorySystem.transitionTaskState`.
@@ -36,7 +42,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 7;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 8;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, IFact, ScopeFields } from '../types.js';
@@ -420,11 +426,11 @@ Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral
    Mention-level \`metadata\` carries the structural fields. Do NOT restate them as separate facts.
    - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high" } }\`
    - **Event**: \`{ type: "event", surface: "Q3 Planning", metadata: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] } }\`
-   The commitment itself is still a fact: \`{ subject: "john_label", predicate: "committed_to", object: "task_label" }\`. But "this task is due 2026-04-30" is metadata, not a separate \`has_due_date\` fact.
+   The commitment itself is still a fact: \`{ subject: "john_label", predicate: "committed_to", object: "task_label" }\`. But "this task is due 2026-04-30" is metadata. The same goes for completion ("done" → \`metadata.state\`), priority (\`metadata.priority\`), creation (\`createdAt\` / \`createdBy\`), and scheduling (\`metadata.startTime\` / \`metadata.dueAt\`). NEVER emit parallel facts for any of these.
 
-   **Task state lives on \`metadata.state\`.** Set it on the mention at creation time (\`"state": "proposed" | "in_progress" | "blocked" | ...\`). Do NOT emit a state-transition fact for a task — transitions are host-driven via \`MemorySystem.transitionTaskState\`. Re-extractions of the same task do not overwrite an existing state (the metadata merge is conservative \`fillMissing\`).
+   **Task state lives on \`metadata.state\`.** Set it on the mention at creation time (\`"state": "proposed" | "in_progress" | "blocked" | "done" | "cancelled" | ...\`). Do NOT emit a state-transition fact for a task — transitions are host-driven via \`MemorySystem.transitionTaskState\`. Re-extractions of the same task do not overwrite an existing state (the metadata merge is conservative \`fillMissing\`).
 
-   Relational facts about what a person did with a task — \`committed_to\` (made a promise), \`completed\` (finished it), \`blocked_by\`, \`cancelled_due_to\` — remain the right shape. Those describe an action, not an abstract state event, and the host can decide whether and when to translate them into a state transition.
+   Relational facts about what a person did with another entity — \`committed_to\` (a promise, with verbatim evidence quote), \`blocked_by\` (task↔task), \`prepares_for\` (task↔event), \`cancelled_due_to\` (task↔event), \`depends_on\` (task↔task) — remain the right shape. Each encodes a relationship between TWO entities that cannot live on either entity's metadata alone. Single-entity attributes (state, due date, priority, creation, completion timestamp) belong on the entity, not as facts.
 
    **REQUIRED canonical identifier on every task mention.** Tasks have no natural strong identifier (unlike a person's email or a domain). Without a canonical id, the same commitment seen across multiple signals (thread replies, transcripts, follow-ups) creates duplicate task entities — a known production bug pattern. So every \`type: "task"\` mention MUST include:
 

@@ -243,7 +243,7 @@ describe('coerceFactTemporalFields', () => {
     it('coerces ISO strings inside `value` (structured shape with embedded date)', () => {
         const out = coerceFactTemporalFields({
             subjectId: 'task_1',
-            predicate: 'scheduled_for',
+            predicate: 'committed_to',
             value: { window: 'this-week', at: '2026-04-30T13:00:00Z' },
             observedAt: '2026-04-30T13:00:00Z',
         });
@@ -256,7 +256,7 @@ describe('coerceFactTemporalFields', () => {
     it('leaves non-date strings inside `value` alone (regex-guarded)', () => {
         const out = coerceFactTemporalFields({
             subjectId: 'e1',
-            predicate: 'has_priority',
+            predicate: 'committed_to',
             value: { status: 'active', label: 'never' },
         });
         const value = out.value as Record<string, unknown>;
@@ -267,7 +267,7 @@ describe('coerceFactTemporalFields', () => {
         // ISO-string value at the top level — coerced to Date (was a footgun before).
         const out1 = coerceFactTemporalFields({
             subjectId: 'e1',
-            predicate: 'occurred_on',
+            predicate: 'attended',
             value: '2026-04-30T13:00:00Z',
         });
         expect(out1.value).toBeInstanceOf(Date);

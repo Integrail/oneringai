@@ -121,7 +121,11 @@ describe('prompt v2', () => {
       knownEntities: [makeEntity({ type: 'task', displayName: 'Plain task' })],
     });
     expect(p).toContain('task: "Plain task"');
-    expect(p).not.toContain('(state');
+    // Per-entity rendering must NOT add `(state: X)` suffix when state is
+    // unset. (Tightened from `(state` to `(state:` in 2026-05-26 so the
+    // assertion doesn't false-fire on general prose mentioning "(state,
+    // due date, priority, ...)" in the predicate-routing guidance.)
+    expect(p).not.toContain('(state:');
   });
 
   it('known-entities block mentions the resolver will converge', () => {

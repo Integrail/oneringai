@@ -1204,7 +1204,7 @@ export class MemorySystem implements IDisposable {
     }
     assertScopeInvariant(subject, factScope);
 
-    // Auto-supersede for singleValued predicates (e.g. current_title, has_due_date).
+    // Auto-supersede for singleValued predicates (e.g. current_title, current_role).
     // Only fires when: registry knows the predicate, it's marked singleValued,
     // auto-supersede is enabled, and the caller did not set `supersedes` already.
     //

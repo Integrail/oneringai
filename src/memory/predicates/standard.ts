@@ -1,5 +1,5 @@
 /**
- * Standard predicate library — 54 predicates across 11 categories.
+ * Standard predicate library — 45 predicates across 10 categories.
  *
  * Shipped with the memory layer; opt-in via `PredicateRegistry.standard()`.
  * Users can extend (`.register(...)`), override, or replace entirely with
@@ -37,7 +37,23 @@
  *     longer transitions task state from facts.
  *   - `has_status`, `current_status` → status narrative belongs on entity
  *     metadata (e.g. `metadata.jarvis.narrative`), not as facts.
- * Callers persisting these names in legacy data must migrate or accept that
+ *
+ * **Round 2 consolidation (2026-05-26, breaking).** Nine more predicates
+ * deleted — pure duplicates of entity metadata that survived round 1:
+ *   - `completed` → `task.metadata.state='done'` + `completedAt` + `stateHistory`.
+ *   - `created` → `entity.createdBy` + `createdAt`.
+ *   - `reviewed` → when review IS the task, `task.metadata.state='done'`; otherwise
+ *     entity metadata on the artifact reviewed.
+ *   - `has_due_date` → `task.metadata.dueAt`.
+ *   - `has_priority` → `task.metadata.priority`.
+ *   - `occurred_on` → `event.metadata.startTime`.
+ *   - `scheduled_for` → `event.metadata.startTime` / `task.metadata.dueAt`.
+ *   - `started_on` → entity metadata.
+ *   - `ended_on` → entity metadata.
+ * The entire `temporal` category is gone — time facts on an entity are now
+ * carried by the entity itself, never re-emitted as parallel facts.
+ *
+ * Callers persisting any of these 15 names in legacy data must migrate or accept that
  * canonicalization will no longer match — `PredicateRegistry.canonicalize`
  * returns the raw string when the predicate isn't registered.
  */
@@ -225,43 +241,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultValidityDays: 90,
   },
   {
-    name: 'completed',
-    description: 'Person completed a task.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['person'],
-    objectTypes: ['task'],
-    inverse: 'completed_by',
-    defaultImportance: 0.7,
-    rankingWeight: 1.2,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 180,
-  },
-  {
-    name: 'created',
-    description: 'Person created an artifact, task, or document.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['person'],
-    inverse: 'created_by',
-    defaultImportance: 0.6,
-    rankingWeight: 0.9,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 180,
-  },
-  {
-    name: 'reviewed',
-    description: 'Person reviewed an artifact.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['person'],
-    inverse: 'reviewed_by',
-    defaultImportance: 0.6,
-    rankingWeight: 0.9,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 90,
-  },
-  {
     name: 'blocked_by',
     description: 'Task or item is blocked by another task or condition.',
     category: 'task',
@@ -283,29 +262,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     rankingWeight: 1.2,
     lifecycle: 'ephemeral',
     defaultValidityDays: 90,
-  },
-  {
-    name: 'has_due_date',
-    description: 'Task has a scheduled due date.',
-    category: 'task',
-    payloadKind: 'attribute',
-    subjectTypes: ['task'],
-    defaultImportance: 0.9,
-    rankingWeight: 1.4,
-    singleValued: true,
-    examples: ['(task_123, has_due_date, "2026-04-30")'],
-    lifecycle: 'stateful',
-  },
-  {
-    name: 'has_priority',
-    description: 'Task priority.',
-    category: 'task',
-    payloadKind: 'attribute',
-    subjectTypes: ['task'],
-    defaultImportance: 0.8,
-    rankingWeight: 1.2,
-    singleValued: true,
-    lifecycle: 'stateful',
   },
   {
     name: 'prepares_for',
@@ -543,49 +499,19 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // temporal
+  // temporal — REMOVED 2026-05-26
+  //
+  // The four predicates that lived here (`occurred_on`, `scheduled_for`,
+  // `started_on`, `ended_on`) were pure duplicates of entity metadata:
+  //   - Event time → `event.metadata.startTime` / `endTime`.
+  //   - Task due date → `task.metadata.dueAt`.
+  //   - Project / engagement spans → entity metadata.
+  // Storing the same instant as both an entity field AND a fact created
+  // two query paths for one piece of information, both of which had to be
+  // kept in sync. Empirically the LLM also misused `scheduled_for` with
+  // `person` subjects ("Anna is scheduled for ..."). The category is gone
+  // entirely; LLM extraction routes time information to entity metadata.
   // ---------------------------------------------------------------------------
-  {
-    name: 'occurred_on',
-    description: 'Event occurred on a specific date/time. Value is a Date.',
-    category: 'temporal',
-    payloadKind: 'attribute',
-    subjectTypes: ['event'],
-    defaultImportance: 0.7,
-    rankingWeight: 1.0,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 180,
-  },
-  {
-    name: 'scheduled_for',
-    description: 'Entity is scheduled for a future date/time. Value is a Date.',
-    category: 'temporal',
-    payloadKind: 'attribute',
-    defaultImportance: 0.8,
-    rankingWeight: 1.1,
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 90,
-  },
-  {
-    name: 'started_on',
-    description: 'Subject started on a date. Value is a Date.',
-    category: 'temporal',
-    payloadKind: 'attribute',
-    defaultImportance: 0.7,
-    rankingWeight: 0.9,
-    singleValued: true,
-    lifecycle: 'stateful',
-  },
-  {
-    name: 'ended_on',
-    description: 'Subject ended on a date. Value is a Date.',
-    category: 'temporal',
-    payloadKind: 'attribute',
-    defaultImportance: 0.7,
-    rankingWeight: 0.9,
-    singleValued: true,
-    lifecycle: 'stateful',
-  },
 
   // ---------------------------------------------------------------------------
   // event  (attendance relationships — seeded by CalendarSignalAdapter)

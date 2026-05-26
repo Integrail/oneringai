@@ -7,15 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Memory — Predicate consolidation (BREAKING)
+### Memory — Predicate consolidation round 2 (BREAKING)
+
+Nine more predicates deleted — pure duplicates of entity metadata that survived round 1. The entire `temporal` category is removed.
+
+- **Deleted predicates** (`src/memory/predicates/standard.ts`): `completed`, `created`, `reviewed`, `has_due_date`, `has_priority` (from `task` category — single-entity attributes already on `task.metadata`), `occurred_on`, `scheduled_for`, `started_on`, `ended_on` (entire `temporal` category — duplicates of `event.metadata.startTime` / `task.metadata.dueAt` / entity metadata). Standard set: **45 predicates across 10 categories** (down from 54/11).
+- **Routing rule (now in prompt v8)**: every single-entity attribute lives on the entity. Completion → `task.metadata.state='done'`. Due date → `task.metadata.dueAt`. Priority → `task.metadata.priority`. Creation → `entity.createdBy` + `createdAt`. Scheduling → `event.metadata.startTime` / `task.metadata.dueAt`. Only **relationships between two entities** remain as task-category facts: `committed_to`, `prepares_for`, `blocked_by`, `depends_on`, `cancelled_due_to`.
+- **Default extraction prompt bumped to v8** (`src/memory/integration/defaultExtractionPrompt.ts`). The "Tasks and events are entities with metadata" guidance now lists every duplicate-attribute case and the surviving relational task predicates.
+- **Migration**: callers persisting any of these 9 names in legacy data must either migrate or accept that `PredicateRegistry.canonicalize` returns the raw string when the predicate isn't registered. Combined with round 1, that's **15 deleted predicates** to be aware of.
+
+### Memory — Predicate consolidation round 1 (BREAKING)
 
 Six standard predicates were deleted outright — their information lives more naturally on entity metadata or on the new first-class `decision_made` predicate. `state_changed`'s LLM auto-routing through `transitionTaskState` is gone with it; task state transitions are now host-driven via `MemorySystem.transitionTaskState`.
 
-- **Deleted predicates** (`src/memory/predicates/standard.ts`): `approved`, `assigned_task`, `delegated_to`, `state_changed`, `has_status`, `current_status`. The `state` category is removed (now empty). Standard set: **54 predicates across 11 categories**.
+- **Deleted predicates** (`src/memory/predicates/standard.ts`): `approved`, `assigned_task`, `delegated_to`, `state_changed`, `has_status`, `current_status`.
 - **New `decision_made` predicate** (`decision` category) — first-class capture of decisions, approvals, vendor selections, scope cuts, multi-party agreements. Subject = decider (person) OR venue (event/topic); value = verbatim decision. Subsumes the deleted `approved`.
 - **Removed `state_changed` LLM auto-routing** (`src/memory/integration/ExtractionResolver.ts`) — the `tryRouteTaskTransition` branch and `MemorySystemConfig.autoApplyTaskTransitions` config are gone. Hosts that want LLM-observed state changes must read mention `metadata.state` (on creation) or call `MemorySystem.transitionTaskState` themselves.
 - **`transitionTaskState` no longer writes an audit fact** (`src/memory/MemorySystem.ts`) — `metadata.stateHistory` is the only audit trail. `TransitionTaskStateResult.fact` and `TransitionTaskStateOptions.factOverrides` are removed.
-- **Migration**: callers persisting deleted predicate names in legacy data must either migrate or accept that `PredicateRegistry.canonicalize` returns the raw string when the predicate isn't registered (no validation failure, just no metadata folding). Default extraction prompt bumped to version 7 — see `defaultExtractionPrompt.ts` header for the predicate-by-predicate replacement guidance.
+- **Migration**: callers persisting deleted predicate names in legacy data must either migrate or accept that `PredicateRegistry.canonicalize` returns the raw string when the predicate isn't registered.
 
 ### Connectors — `ipinfo.io` geolocation connector + query-param API-key flow
 

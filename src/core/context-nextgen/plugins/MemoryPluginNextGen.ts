@@ -118,7 +118,7 @@ export interface MemoryPluginInjectionConfig {
     limit?: number;
     /** Lookback window in days. Default 7. */
     windowDays?: number;
-    /** Optional predicate allowlist — e.g. `['completed','attended','responded_to']`. */
+    /** Optional predicate allowlist — e.g. `['committed_to','attended','decision_made']`. */
     predicates?: string[];
   };
 }

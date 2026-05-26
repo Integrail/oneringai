@@ -30,7 +30,7 @@ This guide covers the recipes. For the API reference, see [MEMORY_API.md § Pred
 Use a registry when any of these matter:
 
 - **LLM vocabulary drift.** Without one, the model will emit `worksAt`, `works_at`, `works-at`, `employed_by`, `works_for` for the same concept across different extractions. Ranking, aggregation, and querying won't unify them.
-- **Single-valued attributes.** Facts like `current_title` or `has_due_date` should supersede on new writes, not accumulate. The registry handles this automatically.
+- **Single-valued attributes.** Facts like `current_title` or `current_role` should supersede on new writes, not accumulate. The registry handles this automatically.
 - **Importance defaults.** `works_at` is identity-level (importance 1.0); `mentioned` is ephemeral (0.3). Centralizing these defaults avoids every caller passing `importance` manually.
 - **Ranking weights.** Some predicates should outrank others in top-facts ranking regardless of recency. The registry lets you set these once.
 - **LLM prompt hygiene.** Dumping a list of canonical names into the extraction prompt dramatically improves model consistency.
@@ -108,17 +108,16 @@ const memory = new MemorySystem({
 PredicateRegistry.standard()
 ```
 
-Returns a fresh instance (safe to mutate). 54 predicates in 11 categories:
+Returns a fresh instance (safe to mutate). 45 predicates in 10 categories:
 
 | Category | Predicates |
 |---|---|
 | **identity** | `works_at`, `reports_to`, `current_title`, `current_role`, `located_in`, `is_member_of`, `founded` |
 | **organizational** | `part_of`, `subsidiary_of`, `manages`, `owns`, `acquired`, `merged_with` |
-| **task** | `committed_to`, `completed`, `created`, `reviewed`, `blocked_by`, `depends_on`, `has_due_date`, `has_priority`, `prepares_for`, `cancelled_due_to` |
+| **task** | `committed_to`, `blocked_by`, `depends_on`, `prepares_for`, `cancelled_due_to` |
 | **decision** | `decision_made` |
 | **communication** | `emailed`, `called`, `messaged`, `met_with`, `mentioned`, `cc_ed`, `responded_to`, `interaction_count` *(aggregate)* |
 | **observation** | `observed_topic`, `expressed_concern`, `expressed_interest`, `acknowledged`, `noted` |
-| **temporal** | `occurred_on`, `scheduled_for`, `started_on`, `ended_on` |
 | **event** | `attended`, `hosted` |
 | **priority** | `tracks_priority`, `priority_affects` |
 | **document** | `profile`, `biography`, `memo`, `meeting_notes`, `research_note`, `has_document` |
@@ -126,11 +125,11 @@ Returns a fresh instance (safe to mutate). 54 predicates in 11 categories:
 
 Special predicates with auto-behavior:
 
-- **`singleValued`** (writes supersede prior): `current_title`, `current_role`, `has_due_date`, `has_priority`, `started_on`, `ended_on`.
+- **`singleValued`** (writes supersede prior): `current_title`, `current_role`.
 - **`isAggregate`** (updates in place): `interaction_count`.
 - **`profile`**: consumed by `MemorySystem.getContext` as the canonical per-entity profile. Don't rename.
 
-> **Task state is metadata, not a fact.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). There is no `state_changed` predicate — transitions are host-driven; the library writes `metadata.stateHistory` as the audit trail and does not emit an audit fact. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
+> **Single-entity attributes are metadata, not facts.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). Same for `dueAt`, `priority`, `completedAt`, `createdBy`, `createdAt` — and for event/task time on `metadata.startTime`/`endTime`/`scheduledAt`. No `state_changed` / `completed` / `created` / `reviewed` / `has_due_date` / `has_priority` / `occurred_on` / `scheduled_for` / `started_on` / `ended_on` predicates exist — the entity carries that information itself. Only **relationships between two entities** (`committed_to`, `prepares_for`, `blocked_by`, `depends_on`, `cancelled_due_to`) live as facts. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
 
 ---
 

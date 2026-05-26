@@ -856,7 +856,7 @@ Side effects:
 
 #### LLM and task transitions
 
-Task transitions are **host-driven only**. The extraction pipeline does not route LLM-emitted facts into `transitionTaskState`, and the default extraction prompt instructs the LLM not to emit transition facts. To capture an observed completion, emit a relational fact about what the person did (`committed_to`, `completed`) — not a state-event fact — and let host code decide whether and when to call `transitionTaskState`.
+Task transitions are **host-driven only**. The extraction pipeline does not route LLM-emitted facts into `transitionTaskState`, and the default extraction prompt instructs the LLM not to emit transition facts. To capture an observed promise to do something, emit `committed_to(person, task)` with the verbatim evidence quote. Completion itself is NOT a fact — set `metadata.state: 'done'` on the task mention; the host decides whether to fire `transitionTaskState` based on what the live entity looks like.
 
 #### Fetching open tasks + recent topics for prompt injection
 
@@ -1232,7 +1232,7 @@ const projects = await store.listEntities(
 
 ## Controlling the predicate vocabulary
 
-Facts have predicates — strings like `works_at`, `committed_to`, `has_due_date`. Left unconstrained, an LLM will drift: `worksAt`, `works-at`, `employed_by`, `works_for` all describe the same relationship but won't aggregate, rank, or query as one. The **predicate registry** is the fix.
+Facts have predicates — strings like `works_at`, `committed_to`, `prepares_for`. Left unconstrained, an LLM will drift: `worksAt`, `works-at`, `employed_by`, `works_for` all describe the same relationship but won't aggregate, rank, or query as one. The **predicate registry** is the fix.
 
 > For a dedicated walkthrough with copy-paste recipes, see [MEMORY_PREDICATES.md](./MEMORY_PREDICATES.md).
 

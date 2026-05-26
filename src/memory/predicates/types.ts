@@ -21,12 +21,12 @@
  * - 'stateful'  — current-value snapshot, expected to be replaced by a newer
  *                  one over time. Typically `singleValued: true`. No
  *                  `defaultValidityDays` — supersession handles obsolescence.
- *                  Examples: current_title, current_role, has_due_date.
+ *                  Examples: current_title, current_role.
  *
  * - 'ephemeral' — time-bounded assertion (a commitment, a scheduled event,
  *                  an expressed concern). `defaultValidityDays` should be set
  *                  so the fact auto-expires when the window passes.
- *                  Examples: committed_to, scheduled_for, expressed_concern.
+ *                  Examples: committed_to, cancelled_due_to, expressed_concern.
  *
  * - 'episodic'  — transient observation about a moment (per-message comms,
  *                  passing mentions). Cheap to capture, cheap to lose.

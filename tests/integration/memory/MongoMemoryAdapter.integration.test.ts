@@ -331,7 +331,7 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
     // a range query on `value.at` silently misses it.
     await adapter.createFact({
       subjectId: task.id,
-      predicate: 'scheduled_for',
+      predicate: 'committed_to',
       kind: 'atomic',
       value: { window: 'sprint-5', at: '2026-05-15T09:00:00Z' },
     });

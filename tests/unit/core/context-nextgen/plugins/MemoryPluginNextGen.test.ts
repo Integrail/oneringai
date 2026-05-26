@@ -560,7 +560,7 @@ describe('MemoryPluginNextGen — recentActivity injection', () => {
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
     await seedUserFacts(userEntityId!, [
-      { predicate: 'completed', value: 'Task Alpha', daysAgo: 1 },
+      { predicate: 'committed_to', value: 'Task Alpha', daysAgo: 1 },
       { predicate: 'responded_to', value: 'thread-1', daysAgo: 2 },
     ]);
     const out = await plugin.getContent();
@@ -581,8 +581,8 @@ describe('MemoryPluginNextGen — recentActivity injection', () => {
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
     await seedUserFacts(userEntityId!, [
-      { predicate: 'completed', value: 'Recent thing', daysAgo: 1 },
-      { predicate: 'completed', value: 'Old thing', daysAgo: 10 },
+      { predicate: 'committed_to', value: 'Recent thing', daysAgo: 1 },
+      { predicate: 'committed_to', value: 'Old thing', daysAgo: 10 },
     ]);
     const out = await plugin.getContent();
     expect(out).toMatch(/Recent thing/);
@@ -599,10 +599,10 @@ describe('MemoryPluginNextGen — recentActivity injection', () => {
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
     await seedUserFacts(userEntityId!, [
-      { predicate: 'completed', value: 'A', daysAgo: 0 },
-      { predicate: 'completed', value: 'B', daysAgo: 1 },
-      { predicate: 'completed', value: 'C', daysAgo: 2 },
-      { predicate: 'completed', value: 'D', daysAgo: 3 },
+      { predicate: 'committed_to', value: 'A', daysAgo: 0 },
+      { predicate: 'committed_to', value: 'B', daysAgo: 1 },
+      { predicate: 'committed_to', value: 'C', daysAgo: 2 },
+      { predicate: 'committed_to', value: 'D', daysAgo: 3 },
     ]);
     const out = await plugin.getContent();
     // Newest first: A, B expected; C, D excluded by limit.
@@ -619,13 +619,13 @@ describe('MemoryPluginNextGen — recentActivity injection', () => {
       userId: USER_ID,
       userProfileInjection: {
         topFacts: 0,
-        recentActivity: { limit: 20, windowDays: 30, predicates: ['completed'] },
+        recentActivity: { limit: 20, windowDays: 30, predicates: ['committed_to'] },
       },
     });
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
     await seedUserFacts(userEntityId!, [
-      { predicate: 'completed', value: 'task-x', daysAgo: 0 },
+      { predicate: 'committed_to', value: 'task-x', daysAgo: 0 },
       { predicate: 'noise_predicate', value: 'chit-chat', daysAgo: 0 },
     ]);
     const out = await plugin.getContent();
@@ -643,7 +643,7 @@ describe('MemoryPluginNextGen — recentActivity injection', () => {
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
     await seedUserFacts(userEntityId!, [
-      { predicate: 'completed', value: 'present-but-hidden', daysAgo: 0 },
+      { predicate: 'committed_to', value: 'present-but-hidden', daysAgo: 0 },
     ]);
     const out = await plugin.getContent();
     expect(out).not.toMatch(/### Recent activity/);
@@ -670,9 +670,9 @@ describe('MemoryPluginNextGen — recentActivity injection', () => {
     await plugin.getContent();
     const { userEntityId } = plugin.getBootstrappedIds();
     await seedUserFacts(userEntityId!, [
-      { predicate: 'completed', value: 'first', daysAgo: 5 },
-      { predicate: 'completed', value: 'middle', daysAgo: 3 },
-      { predicate: 'completed', value: 'latest', daysAgo: 1 },
+      { predicate: 'committed_to', value: 'first', daysAgo: 5 },
+      { predicate: 'committed_to', value: 'middle', daysAgo: 3 },
+      { predicate: 'committed_to', value: 'latest', daysAgo: 1 },
     ]);
     const out = await plugin.getContent();
     const iLatest = out!.indexOf('latest');

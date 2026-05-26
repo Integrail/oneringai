@@ -1125,25 +1125,24 @@ class PredicateRegistry {
 
 ### Standard library
 
-`PredicateRegistry.standard()` returns a fresh registry with 54 predicates across 11 categories:
+`PredicateRegistry.standard()` returns a fresh registry with 45 predicates across 10 categories:
 
 | Category | Predicates |
 |---|---|
 | identity | works_at, reports_to, current_title, current_role, located_in, is_member_of, founded |
 | organizational | part_of, subsidiary_of, manages, owns, acquired, merged_with |
-| task | committed_to, completed, created, reviewed, blocked_by, depends_on, has_due_date, has_priority, prepares_for, cancelled_due_to |
+| task | committed_to, blocked_by, depends_on, prepares_for, cancelled_due_to |
 | decision | decision_made |
 | communication | emailed, called, messaged, met_with, mentioned, cc_ed, responded_to, interaction_count *(aggregate)* |
 | observation | observed_topic, expressed_concern, expressed_interest, acknowledged, noted |
-| temporal | occurred_on, scheduled_for, started_on, ended_on |
 | event | attended, hosted |
 | priority | tracks_priority, priority_affects |
 | document | profile, biography, memo, meeting_notes, research_note, has_document |
 | social | knows, works_with, colleague_of |
 
-`singleValued`: `current_title`, `current_role`, `has_due_date`, `has_priority`, `started_on`, `ended_on`. `isAggregate`: `interaction_count`.
+`singleValued`: `current_title`, `current_role`. `isAggregate`: `interaction_count`.
 
-> **Task state is metadata, not a fact.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). There is no `state_changed` / `has_status` / `current_status` predicate — transitions are host-driven; `metadata.stateHistory` is the only audit trail. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
+> **Single-entity attributes are metadata, not facts.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). The same applies to `dueAt`, `priority`, `completedAt`, `createdBy`/`createdAt`, and event/task scheduling on `metadata.startTime`/`endTime`. No `state_changed` / `has_status` / `current_status` / `completed` / `created` / `reviewed` / `has_due_date` / `has_priority` / `occurred_on` / `scheduled_for` / `started_on` / `ended_on` predicates exist — these were all deleted in 2026-05 consolidation passes. Only **relationships between two entities** (`committed_to`, `prepares_for`, `blocked_by`, `depends_on`, `cancelled_due_to`) live as facts. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
 
 **Note:** `profile` is consumed by `MemorySystem.getContext` (document fact with predicate=`profile` is the canonical per-entity profile). Do not rename.
 

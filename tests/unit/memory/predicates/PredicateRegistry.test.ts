@@ -29,25 +29,25 @@ describe('PredicateRegistry — canonicalize', () => {
     const r = new PredicateRegistry();
     expect(r.canonicalize('worksAt')).toBe('works_at');
     expect(r.canonicalize('currentTitle')).toBe('current_title');
-    expect(r.canonicalize('hasStatus')).toBe('has_status');
+    expect(r.canonicalize('hasDocument')).toBe('has_document');
   });
 
   it('dashed input converts to snake_case', () => {
     const r = new PredicateRegistry();
     expect(r.canonicalize('works-at')).toBe('works_at');
-    expect(r.canonicalize('has-due-date')).toBe('has_due_date');
+    expect(r.canonicalize('meeting-notes')).toBe('meeting_notes');
   });
 
   it('whitespace converts to snake_case', () => {
     const r = new PredicateRegistry();
     expect(r.canonicalize('Works At')).toBe('works_at');
-    expect(r.canonicalize('  has   status ')).toBe('has_status');
+    expect(r.canonicalize('  meeting   notes ')).toBe('meeting_notes');
   });
 
   it('mixed case + mixed separators', () => {
     const r = new PredicateRegistry();
     expect(r.canonicalize('Works-At')).toBe('works_at');
-    expect(r.canonicalize('Has Due-Date')).toBe('has_due_date');
+    expect(r.canonicalize('Has Document')).toBe('has_document');
   });
 
   it('aliases resolve to canonical name', () => {
@@ -202,8 +202,10 @@ describe('PredicateRegistry — list / categories', () => {
   it('list({categories}) filters by category', () => {
     const taskOnly = r.list({ categories: ['task'] });
     // Floor — adding more task-category predicates is fine; this asserts the
-    // existing-at-test-time set still appears.
-    expect(taskOnly.length).toBeGreaterThanOrEqual(10);
+    // existing-at-test-time set still appears. Round-2 consolidation
+    // (2026-05-26) trimmed the task category to relationships only:
+    // committed_to, blocked_by, depends_on, prepares_for, cancelled_due_to.
+    expect(taskOnly.length).toBeGreaterThanOrEqual(5);
     expect(taskOnly.every((d) => d.category === 'task')).toBe(true);
   });
 
@@ -330,13 +332,15 @@ describe('PredicateRegistry — standard() factory', () => {
     expect(cats).toContain('task');
     expect(cats).toContain('communication');
     expect(cats).toContain('observation');
-    expect(cats).toContain('temporal');
+    // `temporal` category removed in 2026-05-26 round-2 consolidation (every
+    // predicate that lived there was a duplicate of entity time metadata).
+    expect(cats).not.toContain('temporal');
     expect(cats).toContain('event');
     expect(cats).toContain('priority');
     expect(cats).toContain('document');
     expect(cats).toContain('social');
     expect(cats).toContain('decision');
-    expect(cats).toHaveLength(11);
+    expect(cats).toHaveLength(10);
   });
 
   it('contains the canonical `profile` predicate (consumed by getContext)', () => {

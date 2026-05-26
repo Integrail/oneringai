@@ -39,11 +39,27 @@ describe('STANDARD_PREDICATES — lifecycle additions', () => {
     expect(def.payloadKind).toBe('relational');
   });
 
-  it('does not reuse `completed_by` as a top-level predicate (already covered by `completed` inverse)', () => {
-    const def = STANDARD_PREDICATES.find((p) => p.name === 'completed_by');
-    expect(def, 'completed_by should not be registered separately — it is `completed` reversed').toBeUndefined();
-    // The `completed` predicate exposes it as inverse, which is enough for retrieval.
-    const completed = STANDARD_PREDICATES.find((p) => p.name === 'completed')!;
-    expect(completed.inverse).toBe('completed_by');
+  it('does not register predicates removed in 2026-05-26 round-2 consolidation', () => {
+    // `completed`, `has_due_date`, `has_priority`, `created`, `reviewed` were
+    // duplicates of task entity metadata; `occurred_on`, `scheduled_for`,
+    // `started_on`, `ended_on` were duplicates of event/task time metadata.
+    // The entire `temporal` category was removed; surviving time information
+    // lives on entity metadata only.
+    for (const name of [
+      'completed',
+      'created',
+      'reviewed',
+      'has_due_date',
+      'has_priority',
+      'occurred_on',
+      'scheduled_for',
+      'started_on',
+      'ended_on',
+    ]) {
+      expect(
+        STANDARD_PREDICATES.find((p) => p.name === name),
+        `${name} should NOT be registered (round-2 consolidation)`,
+      ).toBeUndefined();
+    }
   });
 });
