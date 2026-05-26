@@ -243,9 +243,21 @@ describe('ExtractionResolver', () => {
     expect(result.unresolved[0]!.reason).toMatch(/hallucinated_label/);
   });
 
-  it('surfaces mergeCandidates when alias-tier match is below autoResolveThreshold', async () => {
+  it('surfaces mergeCandidates when alias-tier match is below autoResolveThreshold (host-configured)', async () => {
+    // Phase A Commit 4 raised the default alias-tier confidence from 0.85 to
+    // 0.90. To preserve the original behavior — alias-only matches surface as
+    // merge candidates rather than auto-resolving — a host can opt into the
+    // pre-0.8.0 confidence via `aliasMatchConfidence: 0.85`. This test
+    // verifies the configurable knob works.
+    const store2 = new InMemoryAdapter();
+    const mem2 = new MemorySystem({
+      store: store2,
+      entityResolution: { aliasMatchConfidence: 0.85 },
+    });
+    const resolver2 = new ExtractionResolver(mem2);
+
     // Pre-seed Microsoft with an alias "MSFT".
-    await mem.upsertEntityBySurface(
+    await mem2.upsertEntityBySurface(
       {
         surface: 'Microsoft',
         type: 'organization',
@@ -255,17 +267,18 @@ describe('ExtractionResolver', () => {
       scope,
     );
 
-    // Extract "MSFT" — alias tier returns confidence 0.85, which is below
-    // the default 0.9 autoResolveThreshold → new entity created, but the
-    // existing Microsoft surfaces as a merge candidate for human review.
+    // Extract "MSFT" — alias tier returns 0.85 (configured), below the
+    // default 0.90 autoResolveThreshold → new entity created, existing
+    // Microsoft surfaces as a merge candidate.
     const output: ExtractionOutput = {
       mentions: {
         m1: { surface: 'MSFT', type: 'organization' },
       },
       facts: [],
     };
-    const result = await resolver.resolveAndIngest(output, 'signal_merge', scope);
+    const result = await resolver2.resolveAndIngest(output, 'signal_merge', scope);
     expect(result.mergeCandidates.length).toBeGreaterThanOrEqual(1);
+    mem2.destroy();
   });
 
   it('empty mentions + empty facts → empty result', async () => {

@@ -36,7 +36,7 @@ describe('EntityResolver Tier 2/3 indexed lookup', () => {
     expect(candidates[0]!.matchedOn).toBe('displayName');
   });
 
-  it('Tier 3: exact alias match returns confidence 0.85', async () => {
+  it('Tier 3: exact alias match returns default confidence 0.90 (post-Commit 4)', async () => {
     const mem = makeMem();
     await mem.upsertEntity(
       {
@@ -52,7 +52,7 @@ describe('EntityResolver Tier 2/3 indexed lookup', () => {
       SCOPE,
     );
     expect(candidates).toHaveLength(1);
-    expect(candidates[0]!.confidence).toBe(0.85);
+    expect(candidates[0]!.confidence).toBe(0.9);
     expect(candidates[0]!.matchedOn).toBe('alias');
   });
 

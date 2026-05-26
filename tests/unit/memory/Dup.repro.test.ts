@@ -48,10 +48,9 @@ describe('R1 — concurrent upsertEntityBySurface for same surface (post-Commit 
   });
 });
 
-describe('R2 — alias-tier match (0.85) is below default autoResolveThreshold (0.90)', () => {
-  it('alias-only match creates a NEW entity (current behavior; should resolve post-fix)', async () => {
+describe('R2 — alias-tier match resolves (post-Commit 4: alias confidence 0.90)', () => {
+  it('alias-only match RESOLVES to the existing entity (was bug: created a new one)', async () => {
     const mem = makeMem();
-    // Seed an entity with displayName "ICOS" + alias "ICOS launch".
     const seed = await mem.upsertEntityBySurface(
       {
         surface: 'ICOS',
@@ -62,19 +61,17 @@ describe('R2 — alias-tier match (0.85) is below default autoResolveThreshold (
       SCOPE,
     );
 
-    // A NEW mention with surface "ICOS launch" matches the alias only
-    // (Tier 3, confidence 0.85). 0.85 < default autoResolveThreshold 0.90,
-    // so resolver does NOT auto-resolve → creates a new entity.
+    // Tier 3 (alias) is now 0.90 by default — equal to autoResolveThreshold,
+    // so this resolves rather than creating.
     const result = await mem.upsertEntityBySurface(
       { surface: 'ICOS launch', type: 'project', identifiers: [] },
       SCOPE,
     );
     const page = await mem.listEntities({ type: 'project' }, {}, SCOPE);
 
-    // Documented current behavior: two distinct entities.
-    expect(result.entity.id).not.toBe(seed.entity.id);
-    expect(page.items.length).toBe(2);
-    expect(result.resolved).toBe(false);
+    expect(result.entity.id).toBe(seed.entity.id);
+    expect(page.items.length).toBe(1);
+    expect(result.resolved).toBe(true);
   });
 });
 

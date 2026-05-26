@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Phase A Commit 4: alias-tier confidence configurable, default 0.90 (BEHAVIOR CHANGE)
+
+The Tier-3 alias-match confidence now defaults to **0.90** (was hardcoded 0.85). Exact alias matches auto-resolve at the default `autoResolveThreshold` (0.90) — closes R2 from Step 0.
+
+- **`EntityResolutionConfig.aliasMatchConfidence`** — new optional field, default 0.90. Hosts that want the pre-0.8.0 advisory-only semantics for aliases can pin this to 0.85.
+- **`EntityResolutionConfig.displayNameMatchConfidence`** — new optional field, default 0.90. Symmetry with the alias knob; lets hosts lift displayName above semantic-cap (0.89) if they want a clean separation.
+- **`EntityResolver.exactMatchTier`** reads the configured confidences instead of hardcoded constants. Defaults preserved for both — the only behavior change is the alias-tier value going from 0.85 to 0.90.
+- **Why it's safe with normalized aliases indexed (Commit 1+2):** the alias hit comes from the same O(1) lookup as displayName, against deduped + normalized storage. There's no structural difference in match strength — the old 0.85 was an artifact of the substring-matching era when aliases were a noisier signal.
+- **Migration impact:** any host that *relied on* alias-only matches falling below threshold (to keep entities separate that share an alias) will start seeing them merge. Fix: configure `aliasMatchConfidence: 0.85`. The existing `ExtractionResolver.test.ts` "surfaces mergeCandidates when alias-tier match is below autoResolveThreshold" test now opts into this explicitly.
+- **Tests** — `tests/unit/memory/EntityResolver.aliasConfidence.test.ts` (4 tests covering both knobs + their combination). R2 repro in `Dup.repro.test.ts` flipped (was 2 entities, now 1). 5671 unit tests pass.
+
 ### Memory — Phase A Commit 3: atomic upsert + unique partial index (LOAD-BEARING)
 
 The core dup-stopping change. Concurrent `upsertEntityBySurface` calls for the same surface now converge on a single entity instead of racing past the resolver read and each inserting (R1 from Step 0).

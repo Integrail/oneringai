@@ -57,14 +57,14 @@ describe('EntityResolver.resolve — via MemorySystem.resolveEntity', () => {
     expect(candidates[0]!.matchedOn).toBe('displayName');
   });
 
-  it('tier 3: exact alias match → confidence 0.85', async () => {
+  it('tier 3: exact alias match → confidence 0.90 (raised from 0.85 in 0.8.0)', async () => {
     await seedOrg('Microsoft', ['MSFT'], [{ kind: 'domain', value: 'microsoft.com' }]);
 
     const candidates = await mem.resolveEntity(
       { surface: 'MSFT', type: 'organization' },
       scope,
     );
-    expect(candidates[0]!.confidence).toBe(0.85);
+    expect(candidates[0]!.confidence).toBe(0.9);
     expect(candidates[0]!.matchedOn).toBe('alias');
   });
 

@@ -49,6 +49,8 @@ import { logger } from '../../infrastructure/observability/Logger.js';
 const DEFAULT_AUTO_RESOLVE_THRESHOLD = 0.9;
 const DEFAULT_THRESHOLD = 0.5;
 const DEFAULT_LIMIT = 5;
+const DEFAULT_DISPLAY_NAME_CONFIDENCE = 0.9;
+const DEFAULT_ALIAS_CONFIDENCE = 0.9;
 
 /**
  * Semantic tier parameters — intentionally NOT exposed on the config surface
@@ -119,6 +121,8 @@ export interface ResolverMemoryHooks {
 export class EntityResolver {
   private readonly autoResolveThreshold: number;
   private readonly semanticEnabled: boolean;
+  private readonly displayNameConfidence: number;
+  private readonly aliasConfidence: number;
 
   constructor(
     private readonly hooks: ResolverMemoryHooks,
@@ -126,6 +130,9 @@ export class EntityResolver {
   ) {
     this.autoResolveThreshold = config?.autoResolveThreshold ?? DEFAULT_AUTO_RESOLVE_THRESHOLD;
     this.semanticEnabled = config?.enableSemanticResolution === true;
+    this.displayNameConfidence =
+      config?.displayNameMatchConfidence ?? DEFAULT_DISPLAY_NAME_CONFIDENCE;
+    this.aliasConfidence = config?.aliasMatchConfidence ?? DEFAULT_ALIAS_CONFIDENCE;
   }
 
   /**
@@ -195,7 +202,10 @@ export class EntityResolver {
         );
         for (const entity of hits) {
           if (query.type && entity.type !== query.type) continue;
-          const tier = exactMatchTier(entity, surface);
+          const tier = exactMatchTier(entity, surface, {
+            displayNameConfidence: this.displayNameConfidence,
+            aliasConfidence: this.aliasConfidence,
+          });
           if (tier === null) continue;
           const candidate: EntityCandidate = {
             entity,
@@ -391,16 +401,17 @@ export class EntityResolver {
 function exactMatchTier(
   entity: IEntity,
   surface: string,
+  confidences: { displayNameConfidence: number; aliasConfidence: number },
 ): { confidence: number; matchedOn: 'displayName' | 'alias' } | null {
   const normSurface = normalizeSurface(surface);
   if (!normSurface) return null;
   if (normalizeSurface(entity.displayName) === normSurface) {
-    return { confidence: 0.9, matchedOn: 'displayName' };
+    return { confidence: confidences.displayNameConfidence, matchedOn: 'displayName' };
   }
   if (entity.aliases) {
     for (const a of entity.aliases) {
       if (normalizeSurface(a) === normSurface) {
-        return { confidence: 0.85, matchedOn: 'alias' };
+        return { confidence: confidences.aliasConfidence, matchedOn: 'alias' };
       }
     }
   }

@@ -962,6 +962,29 @@ export interface EntityResolutionConfig {
    * and decides. Lower `autoResolveThreshold` only if you trust the mapping.
    */
   enableSemanticResolution?: boolean;
+  /**
+   * Confidence assigned to a Tier-2 exact normalized-displayName match.
+   * Default 0.90 — equal to the default `autoResolveThreshold`, so a Tier-2
+   * match auto-resolves on `upsertEntityBySurface`. Lower this to make
+   * displayName matches advisory rather than authoritative.
+   */
+  displayNameMatchConfidence?: number;
+  /**
+   * Confidence assigned to a Tier-3 exact normalized-alias match.
+   *
+   * **Default changed to 0.90 in 0.8.0** (previously hardcoded 0.85). Rationale:
+   * with `normalizedAliases` now indexed (Commit 1) + scoped via the
+   * type-aware `findEntitiesByNormalizedName` (Commit 2), an exact alias
+   * match is structurally as strong as a displayName match — both come from
+   * a single O(1) lookup against deduped storage. Keeping it at 0.85 meant
+   * alias-only matches fell below the default `autoResolveThreshold` (0.90)
+   * and the resolver created a new entity on every hit (R2 from Step 0).
+   *
+   * Hosts that want the old "alias = advisory" behavior can set this to
+   * 0.85 — the resolver returns the candidate but `upsertBySurface` will
+   * create a new entity unless `autoResolveThreshold` is also lowered.
+   */
+  aliasMatchConfidence?: number;
 }
 
 /**
