@@ -112,6 +112,25 @@ export interface IEntity extends ScopeFields {
   type: string;
   displayName: string;
   aliases?: string[];
+  /**
+   * Indexed normalized form of `displayName` (lowercase, corp-suffix-stripped,
+   * punctuation-stripped — see `resolution/fuzzy.ts/normalizeSurface`).
+   * Populated automatically by adapters on every create/update from v0.8.0+.
+   * Drives `IMemoryStore.findEntitiesByNormalizedName` — the O(1) lookup used
+   * by `EntityResolver` Tier 2 and the atomic-upsert path.
+   *
+   * Optional on the interface because pre-0.8.0 entities don't carry it;
+   * `findEntitiesByNormalizedName` skips entities where it is absent (treated
+   * as "needs backfill"). Run `MemorySystem.backfillNormalizedFields` to
+   * populate.
+   */
+  normalizedDisplayName?: string;
+  /**
+   * Indexed normalized form of each entry in `aliases`. Same normalization as
+   * `normalizedDisplayName`; empties dropped; deduped (first-seen wins).
+   * Populated automatically alongside `normalizedDisplayName`.
+   */
+  normalizedAliases?: string[];
   identifiers: Identifier[];
   /**
    * Type-specific fields. See file header for conventional fields per type
@@ -551,6 +570,34 @@ export interface IMemoryStore {
    */
   getEntities(ids: EntityId[], scope: ScopeFilter): Promise<Array<IEntity | null>>;
   findEntitiesByIdentifier(kind: string, value: string, scope: ScopeFilter): Promise<IEntity[]>;
+  /**
+   * O(1) indexed exact-match lookup for entities whose `normalizedDisplayName`
+   * (or, when `opts.matchAliases`, `normalizedAliases`) equals `normalized`.
+   * Used by `EntityResolver` Tier 2/3 in place of the legacy
+   * `searchEntities(q, {limit:50})` substring-then-filter path which was both
+   * order-sensitive (Mongo oversample cap could truncate exact matches under
+   * heavy substring fan-out) and non-atomic.
+   *
+   * Contract:
+   *  - Returns at most `opts.limit` entities (default 20).
+   *  - Equality is byte-for-byte against the stored normalized field — callers
+   *    must normalize the query string the same way (`normalizeSurface`).
+   *  - Archived entities excluded.
+   *  - Scope filter applied identically to other reads.
+   *  - Entities lacking `normalizedDisplayName` (legacy pre-0.8.0 data) are
+   *    treated as if the field doesn't match — they are NOT returned. Hosts
+   *    upgrading from <0.8.0 must run `MemorySystem.backfillNormalizedFields`
+   *    to populate.
+   *  - When `opts.matchAliases` is true, the method returns entities matching
+   *    EITHER `normalizedDisplayName === normalized` OR `normalized ∈ normalizedAliases`.
+   *    Default is `false` (displayName only).
+   */
+  findEntitiesByNormalizedName(
+    type: string,
+    normalized: string,
+    scope: ScopeFilter,
+    opts?: { matchAliases?: boolean; limit?: number },
+  ): Promise<IEntity[]>;
   searchEntities(query: string, opts: EntitySearchOptions, scope: ScopeFilter): Promise<Page<IEntity>>;
   listEntities(filter: EntityListFilter, opts: ListOptions, scope: ScopeFilter): Promise<Page<IEntity>>;
   archiveEntity(id: EntityId, scope: ScopeFilter): Promise<void>;

@@ -79,7 +79,32 @@ export interface IMongoCollectionLike<T extends { id: string }> {
    * Index management hook. Optional — the adapter's `ensureIndexes()` helper
    * calls this when available; otherwise users must create indexes themselves.
    */
-  createIndex?(spec: Record<string, 1 | -1>, opts?: { unique?: boolean; name?: string }): Promise<void>;
+  createIndex?(
+    spec: Record<string, 1 | -1>,
+    opts?: {
+      unique?: boolean;
+      name?: string;
+      /**
+       * Build the index in the background. Honored by `mongodb` driver +
+       * Meteor's `rawCollection().createIndex` wrappers. Important on
+       * production collections where a foreground build would lock writes.
+       */
+      background?: boolean;
+      /**
+       * Sparse index — entries are only indexed for documents that have the
+       * indexed field. Useful for fields populated on a subset of records
+       * (e.g. `normalizedAliases`, present only on entities with aliases).
+       */
+      sparse?: boolean;
+      /**
+       * Partial filter expression — restrict the index to documents matching
+       * the expression. Used for the normalized-name uniqueness index, which
+       * filters out archived rows and entities lacking the normalized field
+       * (legacy data pre-backfill).
+       */
+      partialFilterExpression?: Record<string, unknown>;
+    },
+  ): Promise<void>;
 
   /**
    * Atlas Search / Vector Search index management. Optional — available on

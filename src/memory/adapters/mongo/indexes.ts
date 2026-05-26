@@ -89,6 +89,22 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
       { ownerId: 1, 'identifiers.kind': 1, 'identifiers.value': 1 } as Record<string, 1 | -1>,
       { name: 'memory_ent_owner_ident' },
     );
+    // Normalized-name lookup — drives EntityResolver Tier 2/3 + the atomic
+    // upsert path. Lead with groupId (most selective for multi-tenant
+    // deployments), then type, then the normalized name. The Mongo planner
+    // can use a prefix (groupId+type) for grouped listings too.
+    // Background: true so index build doesn't lock the collection on big
+    // production datasets.
+    await entities.createIndex(
+      { groupId: 1, type: 1, normalizedDisplayName: 1 },
+      { name: 'memory_ent_norm_name', background: true },
+    );
+    // Alias-matching variant. Sparse: most entities have no aliases, so the
+    // partial-index footprint stays small.
+    await entities.createIndex(
+      { groupId: 1, type: 1, normalizedAliases: 1 },
+      { name: 'memory_ent_norm_aliases', background: true, sparse: true },
+    );
     // No explicit id index — Mongo's built-in unique `_id` index is the primary key.
   }
 

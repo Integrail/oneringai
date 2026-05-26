@@ -149,7 +149,13 @@ export class RawMongoCollection<T extends { id: string }> implements IMongoColle
 
   async createIndex(
     spec: Record<string, 1 | -1>,
-    opts?: { unique?: boolean; name?: string },
+    opts?: {
+      unique?: boolean;
+      name?: string;
+      background?: boolean;
+      sparse?: boolean;
+      partialFilterExpression?: Record<string, unknown>;
+    },
   ): Promise<void> {
     await this.col.createIndex(spec, opts);
   }

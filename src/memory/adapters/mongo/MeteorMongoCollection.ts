@@ -132,7 +132,13 @@ export class MeteorMongoCollection<T extends { id: string }> implements IMongoCo
 
   async createIndex(
     spec: Record<string, 1 | -1>,
-    opts?: { unique?: boolean; name?: string },
+    opts?: {
+      unique?: boolean;
+      name?: string;
+      background?: boolean;
+      sparse?: boolean;
+      partialFilterExpression?: Record<string, unknown>;
+    },
   ): Promise<void> {
     await this.col.rawCollection().createIndex(spec, opts);
   }

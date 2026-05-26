@@ -276,6 +276,107 @@ describe('InMemoryAdapter', () => {
     });
   });
 
+  describe('entities — findEntitiesByNormalizedName (Phase A)', () => {
+    it('exact-matches the normalized displayName', async () => {
+      const e = await store.createEntity(
+        entityInput({ type: 'project', displayName: 'ICOS Inc.' }),
+      );
+      const hits = await store.findEntitiesByNormalizedName('project', 'icos', {});
+      expect(hits.map((h) => h.id)).toEqual([e.id]);
+    });
+
+    it('matchAliases:false excludes alias-only hits', async () => {
+      await store.createEntity(
+        entityInput({
+          type: 'project',
+          displayName: 'Project ICOS',
+          aliases: ['ICOS'],
+        }),
+      );
+      const hits = await store.findEntitiesByNormalizedName('project', 'icos', {});
+      expect(hits).toEqual([]);
+    });
+
+    it('matchAliases:true returns alias hits too', async () => {
+      const a = await store.createEntity(
+        entityInput({
+          type: 'project',
+          displayName: 'Project ICOS',
+          aliases: ['ICOS'],
+        }),
+      );
+      const b = await store.createEntity(
+        entityInput({ type: 'project', displayName: 'ICOS' }),
+      );
+      const hits = await store.findEntitiesByNormalizedName(
+        'project',
+        'icos',
+        {},
+        { matchAliases: true },
+      );
+      expect(new Set(hits.map((h) => h.id))).toEqual(new Set([a.id, b.id]));
+    });
+
+    it('type-scoped — does not return entities of other types', async () => {
+      await store.createEntity(entityInput({ type: 'topic', displayName: 'ICOS' }));
+      const proj = await store.createEntity(
+        entityInput({ type: 'project', displayName: 'ICOS' }),
+      );
+      const hits = await store.findEntitiesByNormalizedName('project', 'icos', {});
+      expect(hits.map((h) => h.id)).toEqual([proj.id]);
+    });
+
+    it('respects archived flag (hidden by default)', async () => {
+      const e = await store.createEntity(
+        entityInput({ type: 'project', displayName: 'ICOS' }),
+      );
+      await store.archiveEntity(e.id, {});
+      const hits = await store.findEntitiesByNormalizedName('project', 'icos', {});
+      expect(hits).toEqual([]);
+    });
+
+    it('scope-filters per visibility rules', async () => {
+      const visible = await store.createEntity(
+        entityInput({
+          type: 'project',
+          displayName: 'ICOS',
+          groupId: 'g1',
+          permissions: PRIVATE_PERMS,
+        }),
+      );
+      await store.createEntity(
+        entityInput({
+          type: 'project',
+          displayName: 'ICOS',
+          groupId: 'g2',
+          permissions: PRIVATE_PERMS,
+        }),
+      );
+      const hits = await store.findEntitiesByNormalizedName('project', 'icos', {
+        groupId: 'g1',
+      });
+      expect(hits.map((h) => h.id)).toEqual([visible.id]);
+    });
+
+    it('empty query returns empty (avoids over-match against legacy data)', async () => {
+      await store.createEntity(entityInput({ type: 'project', displayName: 'ICOS' }));
+      const hits = await store.findEntitiesByNormalizedName('project', '', {});
+      expect(hits).toEqual([]);
+    });
+
+    it('honors limit (default 20)', async () => {
+      for (let i = 0; i < 25; i++) {
+        await store.createEntity(entityInput({ type: 'project', displayName: 'ICOS' }));
+      }
+      const hits = await store.findEntitiesByNormalizedName('project', 'icos', {});
+      expect(hits.length).toBe(20);
+      const more = await store.findEntitiesByNormalizedName('project', 'icos', {}, {
+        limit: 25,
+      });
+      expect(more.length).toBe(25);
+    });
+  });
+
   describe('entities — searchEntities', () => {
     let aliceId: string;
     let bobId: string;

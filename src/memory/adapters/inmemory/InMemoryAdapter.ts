@@ -38,6 +38,7 @@ import { coerceFactTemporalFields, coerceMetadataDates } from '../../dateCoercio
 import { warnIfLimitWithoutOrder } from '../orderByWarning.js';
 import { genericTraverse } from '../../GenericTraversal.js';
 import { normalizeIdentifierValue } from '../../identifiers.js';
+import { computeNormalizedFields } from '../../normalize.js';
 
 export interface InMemoryAdapterOptions {
   /** Seed data for tests. */
@@ -70,6 +71,13 @@ export class InMemoryAdapter implements IMemoryStore {
   async createEntity(input: NewEntity): Promise<IEntity> {
     this.assertLive();
     const now = new Date();
+    // Normalized name fields are stamped at the adapter boundary so no
+    // MemorySystem write path can forget them. Source of truth is the
+    // entity's `displayName` + `aliases` at write time — see normalize.ts.
+    const norm = computeNormalizedFields({
+      displayName: input.displayName,
+      aliases: input.aliases,
+    });
     const entity: IEntity = {
       ...input,
       id: newId(),
@@ -87,6 +95,8 @@ export class InMemoryAdapter implements IMemoryStore {
         ...i,
         value: normalizeIdentifierValue(i.kind, i.value),
       })),
+      normalizedDisplayName: norm.normalizedDisplayName,
+      normalizedAliases: norm.normalizedAliases,
     };
     this.indexEntity(entity);
     return clone(entity);
@@ -113,7 +123,15 @@ export class InMemoryAdapter implements IMemoryStore {
     }
     this.unindexEntityIdentifiers(existing);
     // Belt-and-suspenders: coerce metadata dates + normalize identifier values
-    // at the storage boundary, consistent with createEntity + Mongo adapter.
+    // + recompute normalized-name fields at the storage boundary, consistent
+    // with createEntity + Mongo adapter. Recomputing every time is cheap
+    // (two regex passes) and rules out drift if a caller spreads
+    // `{...existing, displayName: ...}` and forgets to update the normalized
+    // copies.
+    const norm = computeNormalizedFields({
+      displayName: entity.displayName,
+      aliases: entity.aliases,
+    });
     this.indexEntity({
       ...entity,
       metadata: coerceMetadataDates(entity.metadata),
@@ -121,6 +139,8 @@ export class InMemoryAdapter implements IMemoryStore {
         ...i,
         value: normalizeIdentifierValue(i.kind, i.value),
       })),
+      normalizedDisplayName: norm.normalizedDisplayName,
+      normalizedAliases: norm.normalizedAliases,
     });
   }
 
@@ -163,6 +183,38 @@ export class InMemoryAdapter implements IMemoryStore {
       results.push(clone(e));
     }
     return results;
+  }
+
+  async findEntitiesByNormalizedName(
+    type: string,
+    normalized: string,
+    scope: ScopeFilter,
+    opts?: { matchAliases?: boolean; limit?: number },
+  ): Promise<IEntity[]> {
+    this.assertLive();
+    const limit = opts?.limit ?? 20;
+    const matchAliases = opts?.matchAliases === true;
+    // Empty normalized string would over-match (every entity lacking the
+    // field would compare === ''). Return empty — there's no useful semantic
+    // for "exact match of the empty form".
+    if (!normalized) return [];
+    const out: IEntity[] = [];
+    for (const e of this.entitiesById.values()) {
+      if (e.archived) continue;
+      if (e.type !== type) continue;
+      if (!isVisible(e, scope)) continue;
+      // Legacy entities (no normalized fields stored) are skipped — see the
+      // interface contract. Backfill via MemorySystem.backfillNormalizedFields.
+      const hit =
+        e.normalizedDisplayName === normalized ||
+        (matchAliases &&
+          e.normalizedAliases !== undefined &&
+          e.normalizedAliases.includes(normalized));
+      if (!hit) continue;
+      out.push(clone(e));
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   async searchEntities(

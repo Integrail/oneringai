@@ -353,6 +353,50 @@ describeIfAvailable('MongoMemoryAdapter (real Mongo)', () => {
   //     `oversamplePool = max(500, skip + limit*5)` truncates the candidate
   //     set, so an exact match can fall outside the ranked top-50).
   // ==========================================================================
+  it('Commit 1 — Mongo stamps normalizedDisplayName + normalizedAliases on create/update', async () => {
+    const created = await adapter.createEntity({
+      type: 'project',
+      displayName: 'ICOS Inc.',
+      aliases: ['ICOS', 'ICOS Corp'],
+      identifiers: [],
+    });
+    expect(created.normalizedDisplayName).toBe('icos');
+    expect(created.normalizedAliases).toEqual(['icos']);
+    // updateEntity must recompute on displayName mutation.
+    await adapter.updateEntity({
+      ...created,
+      displayName: 'Beta Industries',
+      version: created.version + 1,
+    });
+    const after = await adapter.getEntity(created.id, {});
+    expect(after?.normalizedDisplayName).toBe('beta industries');
+  });
+
+  it('Commit 1 — Mongo findEntitiesByNormalizedName exact-match + matchAliases', async () => {
+    const bare = await adapter.createEntity({
+      type: 'topic',
+      displayName: 'ICOS-norm',
+      identifiers: [],
+    });
+    const aliased = await adapter.createEntity({
+      type: 'topic',
+      displayName: 'ICOS-norm Launch',
+      aliases: ['ICOS-norm'],
+      identifiers: [],
+    });
+    // matchAliases:false → only bare matches normalizedDisplayName.
+    const exact = await adapter.findEntitiesByNormalizedName('topic', 'icos norm', {});
+    expect(exact.map((e) => e.id)).toEqual([bare.id]);
+    // matchAliases:true → both match.
+    const both = await adapter.findEntitiesByNormalizedName(
+      'topic',
+      'icos norm',
+      {},
+      { matchAliases: true },
+    );
+    expect(new Set(both.map((e) => e.id))).toEqual(new Set([bare.id, aliased.id]));
+  });
+
   it('R1 — concurrent upsertEntityBySurface for same surface creates duplicates on Mongo', async () => {
     // Inline import to avoid cross-file restructuring of the adapter setup.
     const { MemorySystem } = await import('@/memory/MemorySystem.js');

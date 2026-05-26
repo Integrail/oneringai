@@ -91,6 +91,7 @@ import type {
   UpsertBySurfaceResult,
   UpsertEntityResult,
 } from './types.js';
+import { computeNormalizedFields } from './normalize.js';
 
 // Defaults --------------------------------------------------------------------
 
@@ -484,8 +485,17 @@ export class MemorySystem implements IDisposable {
     if (dirty) {
       // Dirty path mutates an existing entity — write access required.
       assertCanAccess(best, scope, 'write', 'entity');
+      // Stamp the normalized-name fields BEFORE the adapter call so the
+      // entity we emit + return to the caller is identical to what the
+      // adapter will store. Adapter re-stamps defensively.
+      const norm = computeNormalizedFields({
+        displayName: mergedWithMetadata.entity.displayName,
+        aliases: mergedWithMetadata.entity.aliases,
+      });
       const next: IEntity = {
         ...mergedWithMetadata.entity,
+        normalizedDisplayName: norm.normalizedDisplayName,
+        normalizedAliases: norm.normalizedAliases,
         version: best.version + 1,
         updatedAt: new Date(),
       };
@@ -635,11 +645,18 @@ export class MemorySystem implements IDisposable {
 
     if (!dirty) return current;
 
+    const nextAliases = aliases.length > 0 ? aliases : current.aliases;
+    const norm = computeNormalizedFields({
+      displayName: current.displayName,
+      aliases: nextAliases,
+    });
     const next: IEntity = {
       ...current,
-      aliases: aliases.length > 0 ? aliases : current.aliases,
+      aliases: nextAliases,
       identifiers,
       metadata: nextMetadata,
+      normalizedDisplayName: norm.normalizedDisplayName,
+      normalizedAliases: norm.normalizedAliases,
       version: current.version + 1,
       updatedAt: new Date(),
     };
@@ -853,8 +870,14 @@ export class MemorySystem implements IDisposable {
       identifiers: loser.identifiers,
       aliases: loser.aliases,
     });
+    const norm = computeNormalizedFields({
+      displayName: merged.entity.displayName,
+      aliases: merged.entity.aliases,
+    });
     const nextWinner: IEntity = {
       ...merged.entity,
+      normalizedDisplayName: norm.normalizedDisplayName,
+      normalizedAliases: norm.normalizedAliases,
       version: winner.version + 1,
       updatedAt: new Date(),
     };
@@ -3054,9 +3077,15 @@ export class MemorySystem implements IDisposable {
     // the caller passed a different title from what's stored, write that too.
     if (!res.created && doc.displayName !== input.title) {
       assertCanAccess(doc, scope, 'write', 'entity');
+      const norm = computeNormalizedFields({
+        displayName: input.title,
+        aliases: doc.aliases,
+      });
       const next: IEntity = {
         ...doc,
         displayName: input.title,
+        normalizedDisplayName: norm.normalizedDisplayName,
+        normalizedAliases: norm.normalizedAliases,
         version: doc.version + 1,
         updatedAt: new Date(),
       };
@@ -3109,11 +3138,18 @@ export class MemorySystem implements IDisposable {
       ? appendUniqueAliases(existing.aliases ?? [], patch.aliases)
       : existing.aliases;
 
+    const nextDisplayName = patch.title ?? existing.displayName;
+    const norm = computeNormalizedFields({
+      displayName: nextDisplayName,
+      aliases: nextAliases,
+    });
     const next: IEntity = {
       ...existing,
-      displayName: patch.title ?? existing.displayName,
+      displayName: nextDisplayName,
       aliases: nextAliases,
       metadata: incomingMetadata,
+      normalizedDisplayName: norm.normalizedDisplayName,
+      normalizedAliases: norm.normalizedAliases,
       version: existing.version + 1,
       updatedAt: new Date(),
     };

@@ -38,6 +38,7 @@ import type {
 import { coerceFactTemporalFields, coerceMetadataDates } from '../../dateCoercion.js';
 import { genericTraverse } from '../../GenericTraversal.js';
 import { normalizeIdentifierValue } from '../../identifiers.js';
+import { computeNormalizedFields } from '../../normalize.js';
 import type {
   IMongoCollectionLike,
   MongoFilter,
@@ -350,6 +351,37 @@ export class MongoMemoryAdapter implements IMemoryStore {
       },
     });
     const docs = await this.entities.find(filter, { limit: 50 });
+    return docs.map(reviveEntity);
+  }
+
+  async findEntitiesByNormalizedName(
+    type: string,
+    normalized: string,
+    scope: ScopeFilter,
+    opts?: { matchAliases?: boolean; limit?: number },
+  ): Promise<IEntity[]> {
+    this.assertLive();
+    // Empty normalized: same rationale as the InMemory implementation —
+    // matching `''` would over-match any entity lacking the field, so we
+    // shortcut to empty.
+    if (!normalized) return [];
+    const limit = opts?.limit ?? 20;
+    const matchAliases = opts?.matchAliases === true;
+    const nameClause: MongoFilter = matchAliases
+      ? {
+          $or: [
+            { normalizedDisplayName: normalized },
+            { normalizedAliases: normalized },
+          ],
+        }
+      : { normalizedDisplayName: normalized };
+    const filter = mergeFilters(
+      this.scope(scope),
+      ARCHIVED_HIDDEN,
+      { type },
+      nameClause,
+    );
+    const docs = await this.entities.find(filter, { limit });
     return docs.map(reviveEntity);
   }
 
@@ -1142,6 +1174,14 @@ export class MongoMemoryAdapter implements IMemoryStore {
 // =============================================================================
 
 function normalizeEntityForStorage(entity: IEntity): IEntity {
+  // Stamp normalized-name fields on every write — single source of truth lives
+  // in computeNormalizedFields (src/memory/normalize.ts). Recomputing every
+  // time is cheap and ensures `{...existing, displayName: 'new'}` spreads
+  // can't carry stale normalized values into storage.
+  const norm = computeNormalizedFields({
+    displayName: entity.displayName,
+    aliases: entity.aliases,
+  });
   return {
     ...entity,
     groupId: entity.groupId ?? (null as unknown as undefined),
@@ -1157,6 +1197,8 @@ function normalizeEntityForStorage(entity: IEntity): IEntity {
     // Belt-and-suspenders: re-coerce metadata at the storage boundary so
     // bypass paths (direct adapter use) can't smuggle ISO strings into BSON.
     metadata: coerceMetadataDates(entity.metadata),
+    normalizedDisplayName: norm.normalizedDisplayName,
+    normalizedAliases: norm.normalizedAliases,
   };
 }
 
@@ -1164,6 +1206,10 @@ function normalizeEntityForStorage(entity: IEntity): IEntity {
 function normalizeNewEntityForStorage(
   input: NewEntity & { version: number; createdAt: Date; updatedAt: Date },
 ): Omit<IEntity, 'id'> {
+  const norm = computeNormalizedFields({
+    displayName: input.displayName,
+    aliases: input.aliases,
+  });
   return {
     ...input,
     groupId: input.groupId ?? (null as unknown as undefined),
@@ -1173,6 +1219,8 @@ function normalizeNewEntityForStorage(
       value: normalizeIdentifierValue(i.kind, i.value),
     })),
     metadata: coerceMetadataDates(input.metadata),
+    normalizedDisplayName: norm.normalizedDisplayName,
+    normalizedAliases: norm.normalizedAliases,
   };
 }
 

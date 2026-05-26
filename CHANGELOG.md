@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — Phase A Commit 1: normalized-name fields + adapter API (foundation)
+
+Foundation for eliminating intra-user entity duplicates (R1 concurrency / R2 alias-tier / R3 substring-cap / R4 bare-upsertEntity). This commit is **additive only** — zero caller-observable behavior change in resolver or upsert paths. Lib-2 (resolver swap) + lib-3 (atomic upsert + unique index) build on this.
+
+- **New `IEntity.normalizedDisplayName?: string` + `IEntity.normalizedAliases?: string[]`** (`src/memory/types.ts`) — indexable normalized form of the entity's `displayName` / `aliases`, populated automatically by both adapters from this version on. Optional on the interface only because pre-0.8.0 entities don't carry them; the upcoming backfill helper (Commit 6) populates legacy data.
+- **New `computeNormalizedFields` helper** (`src/memory/normalize.ts`) — single source of truth, reuses `normalizeSurface` from `resolution/fuzzy.ts` so resolver matching and storage stay in lockstep. Empties dropped, normalized aliases deduped (first-seen wins).
+- **Adapter-layer stamping** — `InMemoryAdapter.createEntity` / `updateEntity` and `MongoMemoryAdapter`'s shared `normalizeEntityForStorage` / `normalizeNewEntityForStorage` call `computeNormalizedFields` on every write. Spreads like `{...existing, displayName: 'new'}` cannot smuggle a stale normalized value through.
+- **MemorySystem-layer stamping** — `createEntity`, the `upsertEntity` merge path, `appendAliasesAndIdentifiers`, `mergeEntities`, plus the two `createDocument` / `updateDocument` displayName-mutation paths recompute and attach normalized fields on the in-memory entity that is emitted to `entity.upsert` listeners and returned to callers. Belt-and-suspenders with the adapter stamping.
+- **New `IMemoryStore.findEntitiesByNormalizedName(type, normalized, scope, opts?)`** — O(1) indexed exact-match lookup, with optional `matchAliases` to widen to `normalizedAliases`. Empty `normalized` returns `[]` (avoids over-matching legacy data). Default `limit` 20. Both adapters implement.
+- **Mongo indexes** (`src/memory/adapters/mongo/indexes.ts`) — added `memory_ent_norm_name` (`{groupId,type,normalizedDisplayName}`) and `memory_ent_norm_aliases` (`{groupId,type,normalizedAliases}`, sparse), both `background: true`. The collection-like `createIndex` option type was widened to accept `background`, `sparse`, `partialFilterExpression` (RawMongoCollection + MeteorMongoCollection pass-throughs updated).
+- **Tests** — new `tests/unit/memory/MemorySystem.normalizedName.test.ts` (17 tests covering helper + every MemorySystem stamping path + every find-method contract). `InMemoryAdapter.test.ts` extended with adapter-level `findEntitiesByNormalizedName` cases. Mongo integration test extended with Commit 1 stamping + find checks.
+- **No CHANGELOG version bump yet** — released as 0.8.0 at the end of Phase A (Commit 6).
+
 ### Memory — Predicate consolidation round 2 (BREAKING)
 
 Nine more predicates deleted — pure duplicates of entity metadata that survived round 1. The entire `temporal` category is removed.
