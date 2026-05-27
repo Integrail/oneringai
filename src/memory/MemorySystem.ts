@@ -24,7 +24,6 @@ import {
 import { coerceFactTemporalFields, coerceMetadataDates } from './dateCoercion.js';
 import { makeEnvFlag } from './envFlag.js';
 import {
-  DEFAULT_EMBED_SOURCE_CHAR_LIMIT,
   DOCUMENT_SLUG_KIND,
   DOCUMENT_SLUG_PREFIX,
   DOCUMENT_TYPE,
@@ -48,6 +47,15 @@ import type { PredicateRegistry } from './predicates/PredicateRegistry.js';
 import type { PredicateDefinition } from './predicates/types.js';
 import { EntityResolver, buildIdentityString } from './resolution/EntityResolver.js';
 import { normalizeSurface } from './resolution/fuzzy.js';
+import {
+  CachedComposeContext,
+  DEFAULT_ENTITY_COMPOSERS,
+  defaultFactContentComposer,
+} from './composers/index.js';
+import type {
+  EntityContentComposer,
+  FactContentComposer,
+} from './composers/index.js';
 import type {
   OperationOutcome,
   ReconciliationOp,
@@ -61,6 +69,7 @@ import type {
   EntityListFilter,
   EntityOrderBy,
   EntityResolutionConfig,
+  EntitySemanticSearchFilter,
   EntityView,
   FactFilter,
   FactId,
@@ -154,8 +163,6 @@ const MILLIS_PER_DAY = 86_400_000;
 const PROFILE_GEN_WARN_CHARS = 200_000;
 const DEFAULT_EMBED_CONCURRENCY = 4;
 const DEFAULT_EMBED_RETRIES = 3;
-const SEMANTIC_MIN_DETAILS_LENGTH = 80;
-
 /** Legacy task-state vocabulary — used when caller doesn't override via config. */
 const DEFAULT_TASK_STATES = {
   active: ['pending', 'in_progress', 'blocked', 'deferred'],
@@ -308,6 +315,19 @@ export class MemorySystem implements IDisposable {
   private readonly _taskStates: TaskStatesConfig;
   private readonly _stateHistoryCap: number;
   private readonly visibilityPolicy?: VisibilityPolicy;
+  /**
+   * Per-type entity content-embedding composers. Built at construction from
+   * `DEFAULT_ENTITY_COMPOSERS` overlaid with `config.entityContentComposers`.
+   * Entries are looked up by `entity.type`; missing entries mean the type
+   * gets no content embedding.
+   */
+  private readonly contentComposers: ReadonlyMap<string, EntityContentComposer>;
+  /**
+   * Fact content-embedding composer. `config.factContentComposer` overrides
+   * the default; default ships meaningful surface-form composition for
+   * atomic facts plus details-verbatim for document facts.
+   */
+  private readonly factComposer: FactContentComposer;
 
   /**
    * Single-flight registry for profile regenerations, keyed by entityId+scope.
@@ -399,6 +419,17 @@ export class MemorySystem implements IDisposable {
       },
       this.resolutionConfig,
     );
+
+    // Build the content-composer map: defaults overlaid with caller overrides.
+    // Frozen ReadonlyMap so accidental late mutation can't leak into the queue.
+    const composers = new Map<string, EntityContentComposer>(DEFAULT_ENTITY_COMPOSERS);
+    if (config.entityContentComposers) {
+      for (const [type, composer] of Object.entries(config.entityContentComposers)) {
+        if (composer) composers.set(type, composer);
+      }
+    }
+    this.contentComposers = composers;
+    this.factComposer = config.factContentComposer ?? defaultFactContentComposer;
   }
 
   /**
@@ -475,12 +506,14 @@ export class MemorySystem implements IDisposable {
     if (shouldBypassNameDedup(input.type, input.identifiers, input.displayName)) {
       const created = await this.store.createEntity(newEntity);
       this.queueIdentityEmbedding(created, scope);
+      await this.queueContentEmbeddingIfChanged(created, scope);
       this.emit({ type: 'entity.upsert', entity: created, created: true });
       return { entity: created, created: true };
     }
     const res = await this.store.atomicCreateOrFindByNormalizedName(newEntity, scope);
     if (res.created) {
       this.queueIdentityEmbedding(res.entity, scope);
+      await this.queueContentEmbeddingIfChanged(res.entity, scope);
       this.emit({ type: 'entity.upsert', entity: res.entity, created: true });
       return { entity: res.entity, created: true };
     }
@@ -746,6 +779,7 @@ export class MemorySystem implements IDisposable {
       try {
         await this.store.updateEntity(next);
         this.queueIdentityEmbedding(next, scope, best);
+        await this.queueContentEmbeddingIfChanged(next, scope);
         this.emit({ type: 'entity.upsert', entity: next, created: false });
         finalChangedCount = changedCount;
         return {
@@ -834,6 +868,7 @@ export class MemorySystem implements IDisposable {
     };
     const entity = await this.store.createEntity(newEntity);
     this.queueIdentityEmbedding(entity, scope);
+    await this.queueContentEmbeddingIfChanged(entity, scope);
     this.emit({ type: 'entity.upsert', entity, created: true });
     return {
       entity,
@@ -1003,6 +1038,7 @@ export class MemorySystem implements IDisposable {
       try {
         await this.store.updateEntity(next);
         this.queueIdentityEmbedding(next, scope, current);
+        await this.queueContentEmbeddingIfChanged(next, scope);
         this.emit({ type: 'entity.upsert', entity: next, created: false });
         return next;
       } catch (err) {
@@ -1058,6 +1094,119 @@ export class MemorySystem implements IDisposable {
       if (priorText === text) return; // no identity change → no need to re-embed
     }
     this.queue.enqueueIdentity(entity.id, text, scope);
+  }
+
+  /**
+   * Queue a content-embedding refresh for any entity mutation. Composes the
+   * type-specific content text via the registered `EntityContentComposer`,
+   * diffs against the stored `contentEmbeddingText`, and enqueues only when
+   * the text actually changed.
+   *
+   * **Diff strategy:** the freshly-composed text is compared to
+   * `entity.contentEmbeddingText` (the text-of-record from the prior embed).
+   * This means:
+   *   - No composer registered for the type → no-op.
+   *   - Composer returns `''` → no embedding; clears any stale stored embedding.
+   *   - Composed text equals stored text → no-op (saves an embedder call).
+   *   - Composed text differs → enqueue. Queue worker writes both
+   *     `contentEmbedding` and `contentEmbeddingText` atomically on success.
+   *
+   * Async because composers resolve referenced entity ids
+   * (`assigneeId`, `projectId`, `contextIds`, ...) to displayNames. Cost is
+   * one batched `getEntities` round-trip per call site — bounded by the
+   * referenced-id count, typically ≤ 10.
+   *
+   * **Errors are surfaced via logger.warn, never thrown.** Embedding is a
+   * best-effort retrieval enhancement; a composer crash should never break
+   * the mutation that triggered it. The composed text is also logged on
+   * error so operators can reproduce the failure.
+   *
+   * **Cross-scope caveat:** the `CachedComposeContext` is bound to `scope`,
+   * so the composer sees only entities visible to the *writer*. If two
+   * writers with different visibility (e.g. one can see a referenced
+   * `assigneeId`, the other cannot) update the same entity in succession,
+   * each will compose different text and the stored `contentEmbedding` /
+   * `contentEmbeddingText` will flip back and forth between writes. This is
+   * a rare edge — in practice referenced entities are co-visible with their
+   * referent — but worth knowing if you build a host with split-visibility
+   * scopes that share write access on the same entity.
+   *
+   * **Composer removal caveat:** if the composer for `entity.type` is removed
+   * (e.g. operator changed `entityContentComposers` config without restarting
+   * a migration), this method short-circuits without clearing the prior
+   * embedding. Existing entities keep stale `contentEmbedding` /
+   * `contentEmbeddingText` forever. To converge, run
+   * `backfillContentEmbeddings(scope, {types: ['<type>']})` after the config
+   * change; the backfill skips entities whose composer no longer exists, so
+   * a follow-up pass that clears the field would be needed to fully drop the
+   * stale state (the library does not currently ship such a helper — open an
+   * issue if you hit this).
+   */
+  private async queueContentEmbeddingIfChanged(
+    entity: IEntity,
+    scope: ScopeFilter,
+  ): Promise<void> {
+    if (!this.embedder) return;
+    const composer = this.contentComposers.get(entity.type);
+    if (!composer) return;
+    let text: string;
+    try {
+      const ctx = new CachedComposeContext(this.store, scope);
+      text = await composer.compose(entity, ctx);
+    } catch (err) {
+      logger.warn(
+        {
+          component: 'MemorySystem.queueContentEmbeddingIfChanged',
+          entityId: entity.id,
+          entityType: entity.type,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'composer threw; skipping content embedding for this write',
+      );
+      return;
+    }
+    if (text.length === 0) return;
+    if (entity.contentEmbeddingText === text) return; // No change → no re-embed.
+    this.queue.enqueueContent(entity.id, text, scope);
+  }
+
+  /**
+   * Queue a fact's content-embedding refresh via the configured fact composer.
+   * Same model as `queueContentEmbeddingIfChanged` for entities: compose,
+   * diff against the prior embedded text (stored on the fact as
+   * `summaryForEmbedding`), enqueue when different. Empty composer output
+   * skips the embed.
+   *
+   * Per-fact errors are logged and swallowed.
+   */
+  private async queueFactContentEmbeddingIfChanged(
+    fact: IFact,
+    scope: ScopeFilter,
+  ): Promise<void> {
+    if (!this.embedder) return;
+    if (fact.isSemantic === false) return; // Caller explicitly opted out.
+    let text: string;
+    try {
+      const ctx = new CachedComposeContext(this.store, scope);
+      text = await this.factComposer.compose(fact, ctx);
+    } catch (err) {
+      logger.warn(
+        {
+          component: 'MemorySystem.queueFactContentEmbeddingIfChanged',
+          factId: fact.id,
+          predicate: fact.predicate,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'fact composer threw; skipping embedding for this write',
+      );
+      return;
+    }
+    if (text.length === 0) return;
+    // Diff against `embeddingText` (library-owned), NOT `summaryForEmbedding`
+    // (caller-owned). The queue writes `embeddingText` after every successful
+    // embed; callers manage `summaryForEmbedding` independently.
+    if ((fact.embeddingText ?? '') === text && fact.embedding) return;
+    this.queue.enqueueFact(fact.id, text, scope);
   }
 
   getEntity(id: EntityId, scope: ScopeFilter): Promise<IEntity | null> {
@@ -1329,6 +1478,9 @@ export class MemorySystem implements IDisposable {
     // Winner's identity surface (aliases ∪ identifiers) may have grown — re-embed
     // if changed. Helper compares pre/post identity strings and no-ops on no-change.
     this.queueIdentityEmbedding(nextWinner, scope, winner);
+    // Winner's content (aliases + identifiers + possibly referenced entities)
+    // may now compose to different text — re-run composer + diff to refresh.
+    await this.queueContentEmbeddingIfChanged(nextWinner, scope);
 
     // Winner's effective atomic-fact count grew (loser's subject-facts now point at
     // winner). Trigger a profile regen check on the winner's scope. Background; never
@@ -2274,12 +2426,16 @@ export class MemorySystem implements IDisposable {
     }
     this.emit({ type: 'fact.add', fact });
 
-    // Queue embedding if eligible.
-    if (fact.isSemantic && this.embedder && !fact.embedding) {
-      const text = fact.summaryForEmbedding ?? fact.details ?? '';
-      if (text.length > 0) {
-        this.queue.enqueue(fact.id, text, scope);
-      }
+    // Compose + queue content embedding via the fact composer. Composer
+    // produces meaningful surface text even for short atomic facts (replaces
+    // the legacy 80-char threshold). `queueFactContentEmbeddingIfChanged`
+    // handles all opt-outs:
+    //   - caller pre-supplied `fact.embedding` → trust it, skip
+    //   - `fact.isSemantic === false` → caller opted out
+    //   - composer returns '' → fact has no embeddable content
+    //   - composed text matches stored `summaryForEmbedding` → no re-embed
+    if (!fact.embedding) {
+      await this.queueFactContentEmbeddingIfChanged(fact, scope);
     }
 
     // Profile regen check for atomic facts only.
@@ -2473,29 +2629,23 @@ export class MemorySystem implements IDisposable {
     }
     assertCanAccess(fact, scope, 'write', 'fact');
 
-    const isSemantic = computeIsSemantic({ ...fact, details });
     const patch: Partial<IFact> = {
       details,
-      isSemantic,
+      // Clear stale embedding state — the queue will repopulate via composer.
+      // Caller-owned `summaryForEmbedding` is preserved (caller's override
+      // intent must survive a details-only update).
       embedding: undefined,
-      summaryForEmbedding: undefined,
+      embeddingText: undefined,
     };
     await this.store.updateFact(id, patch, scope);
 
-    if (isSemantic && this.embedder && details.length > 0) {
-      try {
-        const vec = await this.embedder.embed(details);
-        await this.store.updateFact(id, { embedding: vec }, scope);
-      } catch (err) {
-        // Embedding failure is non-fatal — the fact is still retrievable by
-        // id/filter, just not via semanticSearch until re-embedding succeeds.
-        this.emit({
-          type: 'fact.embedding.failed',
-          factId: id,
-          entityId: null,
-          attempts: 1,
-          reason: err instanceof Error ? err.message : String(err),
-        });
+    // Re-embed via composer through the queue. The queue handles retries +
+    // failure observability via the existing `fact.embedding.failed` event,
+    // so we drop the inline embed-and-write path used pre-composer.
+    if (this.embedder && details.length > 0) {
+      const refreshed = await this.store.getFact(id, scope);
+      if (refreshed) {
+        await this.queueFactContentEmbeddingIfChanged(refreshed, scope);
       }
     }
 
@@ -2654,37 +2804,31 @@ export class MemorySystem implements IDisposable {
     assertCanAccess(fact, scope, 'write', 'fact');
 
     const storePatch: Partial<IFact> = { ...patch };
-    let detailsChanged = false;
-    if ('details' in patch && patch.details !== fact.details) {
-      detailsChanged = true;
-      const isSemantic = computeIsSemantic({
-        ...fact,
-        details: patch.details,
-      });
-      storePatch.isSemantic = isSemantic;
+    // Detect any composer-input change that requires the embedding to be
+    // refreshed. Default atomic-fact composer reads `details` and `value`
+    // (subject/object surface forms are resolved at embed time, so subject/
+    // object id changes are out of scope here — and `updateFact`'s Pick
+    // doesn't allow patching `subjectId`/`objectId` anyway).
+    //
+    // Custom composers that read other fact fields can call
+    // `queueFactContentEmbeddingIfChanged` directly; the helper is idempotent.
+    const composerInputChanged =
+      ('details' in patch && patch.details !== fact.details) ||
+      ('value' in patch && !metadataDeepEqual(patch.value, fact.value));
+
+    if (composerInputChanged) {
+      // Clear the stale embedding + library-owned text. Caller-owned
+      // `summaryForEmbedding` is preserved (the composer may use it as an
+      // override on the next pass).
       storePatch.embedding = undefined;
-      storePatch.summaryForEmbedding = undefined;
+      storePatch.embeddingText = undefined;
     }
     await this.store.updateFact(id, storePatch, scope);
 
-    if (
-      detailsChanged &&
-      storePatch.isSemantic &&
-      this.embedder &&
-      typeof patch.details === 'string' &&
-      patch.details.length > 0
-    ) {
-      try {
-        const vec = await this.embedder.embed(patch.details);
-        await this.store.updateFact(id, { embedding: vec }, scope);
-      } catch (err) {
-        this.emit({
-          type: 'fact.embedding.failed',
-          factId: id,
-          entityId: null,
-          attempts: 1,
-          reason: err instanceof Error ? err.message : String(err),
-        });
+    if (composerInputChanged && this.embedder) {
+      const refreshed = await this.store.getFact(id, scope);
+      if (refreshed) {
+        await this.queueFactContentEmbeddingIfChanged(refreshed, scope);
       }
     }
 
@@ -2972,11 +3116,19 @@ export class MemorySystem implements IDisposable {
   }
 
   /**
-   * Semantic kNN over open task summaries. Embeds `queryText` and ranks active
-   * tasks by similarity against their identityEmbedding (which covers
-   * displayName + aliases + primary identifier values — typically the task
-   * summary). Used by the v25 reconciler to catch cross-channel mentions
-   * ("the JPM thing") that don't share a contextId with the new signal.
+   * Semantic kNN over open tasks. Embeds `queryText` and ranks active tasks
+   * by similarity against their **`contentEmbedding`** — the metadata-rich
+   * composed text (state, due date, assignee/project displayNames,
+   * description, contextIds — see `taskContentComposer` in
+   * `composers/defaults.ts`). This is what lets generic-title tasks like
+   * "Follow up" rank correctly when 50 tasks share a name but differ on
+   * assignee/project/dueAt.
+   *
+   * Pushes the task-state filter into the vector pipeline via
+   * `EntitySemanticSearchFilter.states` when configured filter paths support
+   * it (`metadata.state` in `ENTITIES_FILTER_PATHS` on Mongo Atlas). The
+   * post-filter loop is kept as belt-and-suspenders for adapters that
+   * silently ignore unknown filter fields.
    *
    * Returns empty array when no embedder/semantic adapter is configured —
    * callers should treat semantic similarity as opportunistic, not load-bearing.
@@ -2996,6 +3148,17 @@ export class MemorySystem implements IDisposable {
        * `ENTITIES_FILTER_PATHS` in MongoMemoryAdapter).
        */
       contextId?: EntityId;
+      /**
+       * Narrow by assignee entity id. Pushed into vector pipeline filter via
+       * `metadata.assigneeId` path. Useful for "tasks for Alice similar to X"
+       * scoped queries.
+       */
+      assigneeId?: EntityId;
+      /**
+       * Narrow by project entity id. Pushed into vector pipeline filter via
+       * `metadata.projectId` path.
+       */
+      projectId?: EntityId;
     },
   ): Promise<Array<{ task: IEntity; score: number }>> {
     assertNotDestroyed(this, 'findSimilarOpenTasks');
@@ -3021,29 +3184,51 @@ export class MemorySystem implements IDisposable {
       try {
         queryVector = await this.embedder.embed(queryOrVector);
       } catch (err) {
-        console.warn('[MemorySystem.findSimilarOpenTasks] embed failed:', err);
+        logger.warn(
+          {
+            component: 'MemorySystem.findSimilarOpenTasks',
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'embed failed; returning empty result',
+        );
         return [];
       }
     } else {
       queryVector = queryOrVector;
     }
 
+    // Push every available filter into the vector pipeline. Adapter +
+    // ENTITIES_FILTER_PATHS declare which fields are honored; unknown fields
+    // are silently dropped by the adapter (acceptable — post-filter catches
+    // the rest).
+    const semanticFilter: EntitySemanticSearchFilter = { type: 'task', states: activeStates };
+    if (opts?.contextId !== undefined) semanticFilter.contextId = opts.contextId;
+    if (opts?.assigneeId !== undefined) semanticFilter.assigneeId = opts.assigneeId;
+    if (opts?.projectId !== undefined) semanticFilter.projectId = opts.projectId;
+
     let candidates: Array<{ entity: IEntity; score: number }>;
     try {
       // Over-fetch with a real floor so small `topK` still survives the
-      // post-state-filter (e.g. topK=1 would otherwise pull only 3 rows; if all
-      // are terminal the result is empty when an active match existed at rank 4).
+      // post-state-filter (e.g. topK=1 would otherwise pull only 3 rows; if
+      // all happen to fail the post-filter the result is empty when an
+      // active match existed at rank 4). Once `metadata.state` is declared
+      // as a filter path everywhere, the over-fetch could shrink — leaving
+      // it as defence-in-depth.
       const overFetch = Math.min(Math.max(topK * 3, FIND_SIMILAR_OVER_FETCH_FLOOR), 300);
       candidates = await this.store.semanticSearchEntities(
         queryVector,
-        opts?.contextId !== undefined
-          ? { type: 'task', contextId: opts.contextId }
-          : { type: 'task' },
-        { topK: overFetch, minScore },
+        semanticFilter,
+        { topK: overFetch, minScore, embeddingField: 'content' },
         scope,
       );
     } catch (err) {
-      console.warn('[MemorySystem.findSimilarOpenTasks] semanticSearchEntities failed:', err);
+      logger.warn(
+        {
+          component: 'MemorySystem.findSimilarOpenTasks',
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'semanticSearchEntities failed; returning empty result',
+      );
       return [];
     }
 
@@ -3305,6 +3490,10 @@ export class MemorySystem implements IDisposable {
       updatedAt: new Date(),
     };
     await this.store.updateEntity(next);
+    // Metadata change → composed content text may have changed (task.state,
+    // event.location, etc.). Refresh content embedding so semantic search
+    // reflects the new state.
+    await this.queueContentEmbeddingIfChanged(next, scope);
     this.emit({ type: 'entity.upsert', entity: next, created: false });
     return next;
   }
@@ -3397,6 +3586,9 @@ export class MemorySystem implements IDisposable {
       };
       try {
         await this.store.updateEntity(next);
+        // contextIds changed → composer (task/event/topic) renders new
+        // anchor displayNames in its output → re-embed.
+        await this.queueContentEmbeddingIfChanged(next, scope);
         this.emit({ type: 'entity.upsert', entity: next, created: false });
         return { entity: next, added: toAdd.length };
       } catch (err) {
@@ -3529,6 +3721,11 @@ export class MemorySystem implements IDisposable {
       updatedAt: at,
     };
     await this.store.updateEntity(nextTask);
+    // State transition changes the composer output (state, completedAt
+    // appear in the embedded text), so refresh the content embedding —
+    // critical for "open tasks I should do next"-style semantic queries to
+    // stop matching terminal tasks.
+    await this.queueContentEmbeddingIfChanged(nextTask, scope);
     this.emit({ type: 'entity.upsert', entity: nextTask, created: false });
 
     return { task: nextTask };
@@ -4232,7 +4429,7 @@ export class MemorySystem implements IDisposable {
       this.emit({ type: 'entity.upsert', entity: next, created: false });
       doc = next as Document;
     }
-    this.queueContentEmbedding(doc, scope);
+    await this.queueContentEmbedding(doc, scope);
     if (input.attachTo) {
       await this.attachDocument(input.attachTo, doc.id, scope);
     }
@@ -4300,7 +4497,7 @@ export class MemorySystem implements IDisposable {
     await this.store.updateEntity(next);
     this.emit({ type: 'entity.upsert', entity: next, created: false });
     if (bodyChanged || titleChanged || summaryChanged) {
-      this.queueContentEmbedding(next as Document, scope);
+      await this.queueContentEmbedding(next as Document, scope);
     }
     return next as Document;
   }
@@ -4650,19 +4847,16 @@ export class MemorySystem implements IDisposable {
   }
 
   /**
-   * Queue the content-embedding refresh for a document. Source: `title + "\n\n"
-   * + (summary ?? body.slice(0, DEFAULT_EMBED_SOURCE_CHAR_LIMIT))`. No-op when
-   * no embedder is configured.
+   * Queue the content-embedding refresh for a document. Delegates to the
+   * `'document'`-keyed `EntityContentComposer` (default ships the legacy
+   * `title\n\nsummary|body[:limit]` shape — see `composers/defaults.ts`).
+   *
+   * Kept as a thin wrapper around `queueContentEmbeddingIfChanged` so the
+   * document-write call sites stay readable, and so the diff-on-stored-text
+   * optimization works identically to every other entity type.
    */
-  private queueContentEmbedding(doc: Document, scope: ScopeFilter): void {
-    if (!this.embedder) return;
-    const body = (doc.metadata?.body as string | undefined) ?? '';
-    const summary = doc.metadata?.summary as string | undefined;
-    const source = summary && summary.length > 0
-      ? `${doc.displayName}\n\n${summary}`
-      : `${doc.displayName}\n\n${body.slice(0, DEFAULT_EMBED_SOURCE_CHAR_LIMIT)}`;
-    if (source.trim().length === 0) return;
-    this.queue.enqueueContent(doc.id, source, scope);
+  private async queueContentEmbedding(doc: Document, scope: ScopeFilter): Promise<void> {
+    await this.queueContentEmbeddingIfChanged(doc, scope);
   }
 
   // ==========================================================================
@@ -4675,6 +4869,202 @@ export class MemorySystem implements IDisposable {
 
   pendingEmbeddings(): number {
     return this.queue.pending();
+  }
+
+  /**
+   * Backfill `contentEmbedding` / `contentEmbeddingText` for entities whose
+   * stored embedding doesn't match what the current composer would produce.
+   *
+   * Run-once migration helper. Use cases:
+   *  - Upgrading from a release where content embedding was document-only —
+   *    backfill makes every `task` / `event` / `person` / etc. searchable
+   *    semantically without waiting for each entity's next mutation.
+   *  - After overriding a composer in `MemorySystemConfig.entityContentComposers`
+   *    so the new composer's output applies to historical data immediately.
+   *  - After running `mergeEntities` / `archiveEntity` campaigns where
+   *    cascading content refresh would be desirable.
+   *
+   * **Idempotent.** Skips entities whose `contentEmbeddingText` already
+   * matches the composer output (no embed cost). Safe to re-run.
+   *
+   * **Resumable.** No transactional guarantees. Interrupting mid-run leaves a
+   * partially-converged population; re-running converges the remainder.
+   *
+   * **Scoping.** Bounded by `scope` (same visibility rules as every other
+   * read). Multi-tenant hosts iterate over scopes and call once per scope.
+   *
+   * **Concurrency.** Each enqueue goes through the standard `EmbeddingQueue`
+   * with bounded concurrency (`config.embeddingQueue.concurrency`). Caller
+   * should `await memorySystem.flushEmbeddings()` after the helper returns to
+   * wait for all in-flight embeds.
+   *
+   * @returns `{ scanned, queued, skipped }`. `queued` is the count of entities
+   *   whose composer output differed and were enqueued for re-embedding.
+   *   `skipped` includes entities with no registered composer + entities
+   *   whose composed text already matches the stored text.
+   */
+  async backfillContentEmbeddings(
+    scope: ScopeFilter,
+    opts?: {
+      /** Narrow to specific entity types. Empty/omitted = all types. */
+      types?: string[];
+      /** Page size for the streaming scan. Default 500, max 1000. */
+      batchSize?: number;
+      /** Progress callback invoked after each page. */
+      onProgress?: (scanned: number, queued: number) => void;
+    },
+  ): Promise<{ scanned: number; queued: number; skipped: number }> {
+    assertNotDestroyed(this, 'backfillContentEmbeddings');
+    if (!this.embedder) {
+      throw new Error(
+        'backfillContentEmbeddings: no embedder configured — nothing to backfill',
+      );
+    }
+    const batchSize = Math.max(1, Math.min(opts?.batchSize ?? 500, 1000));
+    const typeFilter = opts?.types && opts.types.length > 0 ? new Set(opts.types) : null;
+    let scanned = 0;
+    let queued = 0;
+    let skipped = 0;
+    let cursor: string | undefined;
+    do {
+      const page = await this.store.listEntities(
+        {},
+        {
+          limit: batchSize,
+          cursor,
+          orderBy: { field: '_id', direction: 'asc' },
+        },
+        scope,
+      );
+      for (const entity of page.items) {
+        if (typeFilter && !typeFilter.has(entity.type)) continue;
+        scanned++;
+        const composer = this.contentComposers.get(entity.type);
+        if (!composer) {
+          skipped++;
+          continue;
+        }
+        let text: string;
+        try {
+          const ctx = new CachedComposeContext(this.store, scope);
+          text = await composer.compose(entity, ctx);
+        } catch (err) {
+          logger.warn(
+            {
+              component: 'MemorySystem.backfillContentEmbeddings',
+              entityId: entity.id,
+              entityType: entity.type,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'composer threw; skipping entity',
+          );
+          skipped++;
+          continue;
+        }
+        if (text.length === 0) {
+          skipped++;
+          continue;
+        }
+        if (entity.contentEmbeddingText === text && entity.contentEmbedding) {
+          skipped++;
+          continue;
+        }
+        this.queue.enqueueContent(entity.id, text, scope);
+        queued++;
+      }
+      opts?.onProgress?.(scanned, queued);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { scanned, queued, skipped };
+  }
+
+  /**
+   * Backfill `embedding` / `summaryForEmbedding` for facts. Sister method to
+   * `backfillContentEmbeddings` — same idempotency, same scoping rules. Run
+   * once when upgrading to a release that removes the 80-char threshold gate,
+   * so short atomic facts (e.g. `(Sarah, works_at, Acme)`) become searchable
+   * semantically without waiting for each fact's next mutation.
+   *
+   * @returns `{ scanned, queued, skipped }`. `skipped` includes facts with
+   *   `isSemantic === false`, facts where the composer returned `''`, and
+   *   facts whose stored `summaryForEmbedding` already matches the composer
+   *   output (with a non-empty `embedding` present).
+   */
+  async backfillFactEmbeddings(
+    scope: ScopeFilter,
+    opts?: {
+      /** Narrow to specific fact predicates. Empty/omitted = all predicates. */
+      predicates?: string[];
+      /** Narrow to fact kind. Empty/omitted = both atomic + document. */
+      kind?: IFact['kind'];
+      /** Page size for the streaming scan. Default 500, max 1000. */
+      batchSize?: number;
+      /** Progress callback invoked after each page. */
+      onProgress?: (scanned: number, queued: number) => void;
+    },
+  ): Promise<{ scanned: number; queued: number; skipped: number }> {
+    assertNotDestroyed(this, 'backfillFactEmbeddings');
+    if (!this.embedder) {
+      throw new Error(
+        'backfillFactEmbeddings: no embedder configured — nothing to backfill',
+      );
+    }
+    const batchSize = Math.max(1, Math.min(opts?.batchSize ?? 500, 1000));
+    let scanned = 0;
+    let queued = 0;
+    let skipped = 0;
+    let cursor: string | undefined;
+    const filter: FactFilter = {};
+    if (opts?.predicates && opts.predicates.length > 0) filter.predicates = opts.predicates;
+    if (opts?.kind) filter.kind = opts.kind;
+    do {
+      const page = await this.store.findFacts(
+        filter,
+        { limit: batchSize, cursor },
+        scope,
+      );
+      for (const fact of page.items) {
+        scanned++;
+        if (fact.isSemantic === false) {
+          skipped++;
+          continue;
+        }
+        let text: string;
+        try {
+          const ctx = new CachedComposeContext(this.store, scope);
+          text = await this.factComposer.compose(fact, ctx);
+        } catch (err) {
+          logger.warn(
+            {
+              component: 'MemorySystem.backfillFactEmbeddings',
+              factId: fact.id,
+              predicate: fact.predicate,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'fact composer threw; skipping fact',
+          );
+          skipped++;
+          continue;
+        }
+        if (text.length === 0) {
+          skipped++;
+          continue;
+        }
+        if (
+          (fact.embeddingText ?? '') === text &&
+          fact.embedding &&
+          fact.embedding.length > 0
+        ) {
+          skipped++;
+          continue;
+        }
+        this.queue.enqueueFact(fact.id, text, scope);
+        queued++;
+      }
+      opts?.onProgress?.(scanned, queued);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { scanned, queued, skipped };
   }
 
   // ==========================================================================
@@ -4750,11 +5140,18 @@ class ScopedMemoryView implements IScopedMemoryView {
 // Pure helpers
 // =============================================================================
 
-function computeIsSemantic(input: Partial<IFact>): boolean {
-  if (input.kind === 'document') return true;
-  if (input.kind !== 'atomic') return false;
-  const text = input.details ?? '';
-  return text.length >= SEMANTIC_MIN_DETAILS_LENGTH;
+/**
+ * Default `isSemantic` value when the caller didn't supply one. Every fact is
+ * eligible for embedding by default — the composer decides whether there's
+ * meaningful content to embed (returns `''` to skip). Pre-composer behavior
+ * gated atomic-fact embedding on a hard-coded 80-char details threshold,
+ * which caused the bulk of structurally-meaningful triples (e.g. "Sarah
+ * works_at Acme") to never participate in semantic search.
+ *
+ * Callers retain explicit opt-out via `isSemantic: false` on the input.
+ */
+function computeIsSemantic(_input: Partial<IFact>): boolean {
+  return true;
 }
 
 /** Clamp to [0, 1]; preserve undefined (so registry defaults still apply). */
@@ -5206,8 +5603,18 @@ class EmbeddingQueue {
     this.onFinalFailure = onFinalFailure;
   }
 
-  /** Enqueue a fact's embedding — writes to IFact.embedding via updateFact. */
-  enqueue(factId: FactId, text: string, scope: ScopeFilter): void {
+  /**
+   * Enqueue a fact's content embedding — writes both `embedding` and
+   * `embeddingText` (the verbatim text fed to the embedder) on success so
+   * the next call-site diff can cheaply skip re-embeds when the composed
+   * text hasn't changed.
+   *
+   * Note: writes to `embeddingText`, NOT `summaryForEmbedding`. The latter
+   * is caller-owned (caller's optional override of the composer); the queue
+   * must never overwrite it or callers would lose their explicit
+   * embedding-text choice on the first re-embed.
+   */
+  enqueueFact(factId: FactId, text: string, scope: ScopeFilter): void {
     if (this.stopped || !this.embedder) return;
     this.queue.push({
       text,
@@ -5216,7 +5623,11 @@ class EmbeddingQueue {
       factId,
       entityId: null,
       onComplete: async (embedding) => {
-        await this.store.updateFact(factId, { embedding }, scope);
+        await this.store.updateFact(
+          factId,
+          { embedding, embeddingText: text },
+          scope,
+        );
       },
     });
     this.kick();
@@ -5255,9 +5666,16 @@ class EmbeddingQueue {
 
   /**
    * Enqueue an entity's content embedding — read/modify/write on
-   * `IEntity.contentEmbedding`. Used by document writes (title + body) for
-   * semantic search via `semanticSearchEntities({embeddingField:'content'})`.
-   * Mirrors `enqueueIdentity`'s no-op-on-equal optimization.
+   * `IEntity.contentEmbedding` AND `IEntity.contentEmbeddingText`. The text
+   * is stored alongside the vector so the next mutation's diff can skip the
+   * embed when the composed text hasn't changed (see
+   * `queueContentEmbeddingIfChanged`).
+   *
+   * Used by every entity mutation site for semantic search via
+   * `semanticSearchEntities({embeddingField:'content'})`. Skips the storage
+   * write when the resulting vector is already equal — avoids version churn
+   * on no-op embeds (the rare case of two slightly different texts producing
+   * an identical vector).
    */
   enqueueContent(entityId: EntityId, text: string, scope: ScopeFilter): void {
     if (this.stopped || !this.embedder) return;
@@ -5270,12 +5688,21 @@ class EmbeddingQueue {
       onComplete: async (embedding) => {
         const cur = await this.store.getEntity(entityId, scope);
         if (!cur) return;
-        if (cur.contentEmbedding && embeddingsEqual(cur.contentEmbedding, embedding)) {
+        // Skip the write when both vector and text are already correct. The
+        // vector check guards against re-embed cost; the text check guards
+        // against races where the text was updated by another writer but
+        // somehow produces the same vector (vanishingly rare in practice).
+        if (
+          cur.contentEmbedding &&
+          embeddingsEqual(cur.contentEmbedding, embedding) &&
+          cur.contentEmbeddingText === text
+        ) {
           return;
         }
         const next: IEntity = {
           ...cur,
           contentEmbedding: embedding,
+          contentEmbeddingText: text,
           version: cur.version + 1,
           updatedAt: new Date(),
         };

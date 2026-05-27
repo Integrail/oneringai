@@ -371,11 +371,12 @@ describe('mergeEntities — PR 1 correctness', () => {
     await m.mergeEntities(winner.entity.id, loser.entity.id, TEST_SCOPE);
     await new Promise((r) => setTimeout(r, 50));
 
-    // At most one new embedding (for the union that absorbed loser's github
-    // identifier). Crucially, NOT one per fact-update or one per merge step —
-    // proves the queueIdentityEmbedding is called exactly once and its
-    // prior-vs-next short-circuit is on the hot path.
-    expect(embedder.embed.mock.calls.length).toBeLessThanOrEqual(callsBeforeMerge + 1);
+    // At most two new embeddings (identity + content) for the union that
+    // absorbed loser's github identifier. Crucially, NOT one per fact-update
+    // or one per merge step — proves the queue is called once per axis and
+    // the prior-vs-next short-circuit is on the hot path. Pre-composer this
+    // capped at +1 (identity only); composer adds content as a second axis.
+    expect(embedder.embed.mock.calls.length).toBeLessThanOrEqual(callsBeforeMerge + 2);
 
     await m.shutdown();
   });

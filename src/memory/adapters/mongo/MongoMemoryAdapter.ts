@@ -1610,7 +1610,14 @@ function selectToProjection(
 // Entity semantic search helpers
 // =============================================================================
 
-/** Translate the narrow `EntitySemanticSearchFilter` into a Mongo filter clause. */
+/**
+ * Translate the narrow `EntitySemanticSearchFilter` into a Mongo filter clause.
+ *
+ * Every field that produces a clause MUST also be declared in
+ * `ENTITIES_FILTER_PATHS` — otherwise Atlas Vector Search silently drops the
+ * clause and the filter never narrows the result set. Keep these two in sync
+ * when adding new fields.
+ */
 function entitySemanticFilterToMongo(filter: EntitySemanticSearchFilter): MongoFilter {
   const clauses: MongoFilter[] = [];
   if (filter.type !== undefined) clauses.push({ type: filter.type });
@@ -1621,6 +1628,27 @@ function entitySemanticFilterToMongo(filter: EntitySemanticSearchFilter): MongoF
     // only when 'contextIds' is declared as `type:'filter'` on the index
     // — see ENTITIES_FILTER_PATHS above.
     clauses.push({ contextIds: filter.contextId });
+  }
+  if (filter.states && filter.states.length > 0) {
+    // task-state vocabulary narrow — `metadata.state ∈ {states}`.
+    clauses.push({ 'metadata.state': { $in: filter.states } });
+  }
+  if (filter.assigneeId !== undefined) {
+    clauses.push({ 'metadata.assigneeId': filter.assigneeId });
+  }
+  if (filter.reporterId !== undefined) {
+    clauses.push({ 'metadata.reporterId': filter.reporterId });
+  }
+  if (filter.projectId !== undefined) {
+    clauses.push({ 'metadata.projectId': filter.projectId });
+  }
+  if (filter.dueAtRange) {
+    const range: Record<string, Date> = {};
+    if (filter.dueAtRange.from instanceof Date) range.$gte = filter.dueAtRange.from;
+    if (filter.dueAtRange.to instanceof Date) range.$lte = filter.dueAtRange.to;
+    if (Object.keys(range).length > 0) {
+      clauses.push({ 'metadata.dueAt': range });
+    }
   }
   if (clauses.length === 0) return {};
   if (clauses.length === 1) return clauses[0]!;
@@ -1658,6 +1686,17 @@ const ENTITIES_FILTER_PATHS: readonly string[] = [
   // declared `type:'filter'`, which would let cross-context tasks leak into
   // scoped queries. Symmetric with the facts-side declaration.
   'contextIds',
+  // Task-specific metadata filter paths — required for `findSimilarOpenTasks`
+  // and any caller of `semanticSearchEntities` with task-state /
+  // assignee / project / due-date narrows. Pushing the state filter into the
+  // vector pipeline replaces the post-fetch JS filter loop (which becomes
+  // belt-and-suspenders) — meaningful win at scale, since the overFetch
+  // multiplier exists only because the post-filter can starve `topK`.
+  'metadata.state',
+  'metadata.assigneeId',
+  'metadata.reporterId',
+  'metadata.projectId',
+  'metadata.dueAt',
 ];
 
 /**

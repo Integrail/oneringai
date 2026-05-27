@@ -1,8 +1,21 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 11** — bump this number whenever the prompt surface
+ * **Prompt version: 12** — bump this number whenever the prompt surface
  * changes materially so callers pinning snapshots notice.
+ *   - v12: task mentions teach `reporterId` (library-native task metadata
+ *          field — see `MemorySystem.RELATIONAL_TASK_FIELDS`). Set when the
+ *          person who committed/assigned the task is DIFFERENT from the
+ *          assignee — e.g. transcript "Anton: Sarah will own the deck",
+ *          email "I'm asking John to follow up". Replaces the v10/11-era
+ *          `committed_to(committer, task)` fact for the third-party-
+ *          assignment case: the relationship now lives on the task entity
+ *          itself, making `resolveRelatedTasks(committerId)` return the
+ *          task natively without a fact-walk fallback. Self-commitments
+ *          ("I'll send the budget" — committer === assignee) leave
+ *          `reporterId` undefined; `assigneeId` alone is enough. Resolver
+ *          translates `reporterId` mention labels → entity ids via the
+ *          existing `TRANSLATABLE_METADATA_FIELDS.task.single` path.
  *   - v11: task/event/topic mentions can carry a top-level `contextIds: ["m_..."]`
  *          array referencing other mention labels. Translates to
  *          `IEntity.contextIds` (union merge) via ExtractionResolver Pass 1.6.
@@ -63,7 +76,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 11;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 12;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, IFact, ScopeFields } from '../types.js';
@@ -373,7 +386,7 @@ Return JSON with the following top-level keys:
       "metadata": {
         // Optional type-specific fields. ONLY set on first observation; the
         // resolver will NOT overwrite existing values on re-extraction.
-        // task:  { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "servesAnchorId": "<anchor_id>", "evidenceQuote": "<verbatim ≤200 char phrase from signal>" }
+        // task:  { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "reporterId": "<label-when-committer≠assignee>", "priority": "high", "servesAnchorId": "<anchor_id>", "evidenceQuote": "<verbatim ≤200 char phrase from signal>" }
         // event: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] }
         // NOTE: do NOT put \`contextIds\` here — it's a top-level field on the mention.
       }
@@ -511,12 +524,18 @@ Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral
 3. **Capture surface variants.** If the text uses "Microsoft" and "MSFT" for the same org, include both under the mention's \`aliases\`.
 4. **Tasks and events are entities with metadata — NOT a pile of facts.**
    Mention-level \`metadata\` carries the structural fields. Do NOT restate them as separate facts.
-   - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], contextIds: ["<deal_label>", "<project_label>"], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "evidenceQuote": "I'll get the budget over to you by Friday" } }\`
+   - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], contextIds: ["<deal_label>", "<project_label>"], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<assignee_label>", "reporterId": "<committer_label-only-when-different-from-assignee>", "priority": "high", "evidenceQuote": "I'll get the budget over to you by Friday" } }\`
    - **Event**: \`{ type: "event", surface: "Q3 Planning", contextIds: ["<project_label>"], metadata: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] } }\`
    - **Topic**: \`{ type: "topic", surface: "ERP Renewal", contextIds: ["<parent_topic_or_project_label>"] }\`
    A task entity is self-sufficient: WHO will execute (\`assigneeId\`), WHEN it's due (\`dueAt\`), what state (\`state\`), priority (\`priority\`), the verbatim grounding (\`evidenceQuote\`), AND the multi-entity binding (\`contextIds\`) all live on the task. The originating signal is stamped automatically by the host. Do NOT emit a separate \`committed_to(person, task)\` fact alongside an extracted task — the task entity IS the record.
 
    **Multi-entity binding via \`contextIds\` (task / event / topic):** when the task lives within a larger context — a deal, a project, a meeting, a parent topic — list those mention labels in the task's top-level \`contextIds\` array. The resolver translates labels to entity ids and unions them onto the task's persistent contextIds. Re-extraction of the same canonical task with new contextIds *adds* to the existing set (never overwrites). The task then surfaces on \`getContext\` queries about ANY of those anchors. Use this instead of fact-level contextIds for entity-to-entity "lives within" bindings — fact-level contextIds is reserved for binding a single FACT to multiple anchors (e.g. "approved Q3 budget" touching both the JPM and Microsoft deals).
+
+   **Third-party commitments via \`reporterId\`:** when the person who *committed* the task is DIFFERENT from the person who will *execute* it, set \`metadata.reporterId\` to the committer's mention label and \`metadata.assigneeId\` to the executor's. Examples:
+   - Transcript: "Anton: Sarah will own the launch deck." → \`assigneeId: m_sarah\`, \`reporterId: m_anton\`.
+   - Email from John: "I've asked Lily to draft the brief by Friday." → \`assigneeId: m_lily\`, \`reporterId: m_john\`.
+   - Self-commitment: "I'll send the budget tomorrow." → \`assigneeId: m_self\`, OMIT \`reporterId\`.
+   This makes \`resolveRelatedTasks(committerId)\` return the task natively (library queries both \`assigneeId\` and \`reporterId\`) — no separate \`committed_to(person, task)\` fact needed. Omit \`reporterId\` when committer === assignee.
 
    **Task state lives on \`metadata.state\`.** Set it on the mention at creation time (\`"state": "proposed" | "in_progress" | "blocked" | "done" | "cancelled" | ...\`). Do NOT emit a state-transition fact for a task — transitions are host-driven via \`MemorySystem.transitionTaskState\`. Re-extractions of the same task do not overwrite an existing state (the metadata merge is conservative \`fillMissing\`).
 

@@ -342,6 +342,9 @@ describe('Configurable entity resolution thresholds', () => {
 
   it('enableIdentityEmbedding: false disables identity embedding refresh', async () => {
     // Verifies that the queue doesn't receive identity jobs when disabled.
+    // Uses a type with no content composer so content embedding doesn't fire
+    // and inflate the count. (Person/task/etc. all have default composers
+    // that run independently of the identity-embedding flag.)
     let embedCalls = 0;
     const embedder = {
       dimensions: 3,
@@ -358,9 +361,9 @@ describe('Configurable entity resolution thresholds', () => {
     });
     await mem.upsertEntity(
       {
-        type: 'person',
+        type: 'thing', // no default composer → no content embed either
         displayName: 'X',
-        identifiers: [{ kind: 'email', value: 'x@y.com' }],
+        identifiers: [{ kind: 'canonical', value: 'thing:x' }],
       },
       scope,
     );

@@ -183,15 +183,30 @@ export interface IEntity extends ScopeFields {
    */
   identityEmbedding?: number[];
   /**
-   * Embedding over the entity's primary long-form content — currently used
-   * exclusively by documents (type='document') over `displayName + summary
-   * (or truncated body)`. Distinct from `identityEmbedding` so semantic
-   * matching on content never bleeds into EntityResolver's identity
-   * resolution tier. Populated async by the embedding queue when the entity
-   * is a document with a body. Adapters honor it via
-   * `semanticSearchEntities({ embeddingField: 'content' })`.
+   * Embedding over the entity's semantic content — produced by a per-type
+   * `EntityContentComposer` (see `composers/`). Used by `findSimilarOpenTasks`,
+   * `searchDocuments`, and any caller of
+   * `semanticSearchEntities({ embeddingField: 'content' })`. Distinct from
+   * `identityEmbedding` so semantic matching on content never bleeds into
+   * EntityResolver's identity resolution tier.
+   *
+   * Populated async by the embedding queue on every entity mutation that
+   * meaningfully changes the composed text (compared via
+   * `contentEmbeddingText`). Entity types without a registered composer never
+   * get this populated — they fall back to identity-only matching.
    */
   contentEmbedding?: number[];
+  /**
+   * Verbatim text that produced `contentEmbedding`. Stored so call sites can
+   * cheaply diff "did the composed text change?" without re-running the
+   * composer twice (once for the prior, once for the new). Whenever
+   * `contentEmbedding` is written, this is written alongside; whenever the
+   * composer produces a string identical to this, the embed is skipped.
+   *
+   * Operators inspecting `why did this entity match the query?` can read the
+   * field directly — composers produce deterministic, human-readable text.
+   */
+  contentEmbeddingText?: string;
   /** Optimistic concurrency token — incremented on every write. */
   version: number;
   createdAt: Date;
@@ -222,9 +237,29 @@ export interface IFact extends ScopeFields {
   details?: string;
 
   // Retrieval
-  /** Short gist used as the embedding input for document facts. */
+  /**
+   * Caller-supplied short gist. Document facts use it as the embedding input
+   * (preferred over `details`); atomic facts use it as an OPTIONAL caller
+   * override of the composed text (when set + non-empty, the atomic-fact
+   * composer returns it verbatim instead of composing
+   * `subject predicate object` from the surface forms).
+   *
+   * **Caller-owned**: the library never overwrites this field. To track what
+   * the embedder actually saw on the last embed, see `embeddingText` below.
+   */
   summaryForEmbedding?: string;
   embedding?: number[];
+  /**
+   * Verbatim text that produced the current `embedding`. Library-owned —
+   * the embedding queue writes this alongside the vector on every embed so
+   * `queueFactContentEmbeddingIfChanged` can cheaply skip re-embeds when the
+   * composed text hasn't changed. Distinct from `summaryForEmbedding`
+   * (which is caller-owned and used as an override of the composer).
+   *
+   * Operators inspecting "why did this fact match my query?" can read this
+   * field directly — it's the exact string the embedder consumed.
+   */
+  embeddingText?: string;
   /** Computed at write-time. Gates embedding eligibility. */
   isSemantic?: boolean;
 
@@ -561,6 +596,34 @@ export interface EntitySemanticSearchFilter {
    * clause; the library shipped path declares it so this works out of the box.
    */
   contextId?: EntityId;
+  /**
+   * Narrow by task-state vocabulary (`metadata.state ∈ {states}`). Atlas
+   * filter path: `metadata.state`. Use with `type: 'task'` to constrain
+   * semantic search to active tasks at the vector pipeline level rather than
+   * post-filtering client-side. Empty array → no constraint.
+   */
+  states?: string[];
+  /**
+   * Narrow by assignee entity id (`metadata.assigneeId === id`). Atlas filter
+   * path: `metadata.assigneeId`. Use with `type: 'task'`.
+   */
+  assigneeId?: EntityId;
+  /**
+   * Narrow by reporter entity id (`metadata.reporterId === id`). Atlas filter
+   * path: `metadata.reporterId`. Use with `type: 'task'`.
+   */
+  reporterId?: EntityId;
+  /**
+   * Narrow by project entity id (`metadata.projectId === id`). Atlas filter
+   * path: `metadata.projectId`. Use with `type: 'task'`.
+   */
+  projectId?: EntityId;
+  /**
+   * Narrow by due-date range (`metadata.dueAt` within window). At least one
+   * of `from`/`to` must be set. Atlas filter path: `metadata.dueAt`.
+   * Use with `type: 'task'`.
+   */
+  dueAtRange?: { from?: Date; to?: Date };
 }
 
 /**
@@ -1296,6 +1359,30 @@ export interface MemorySystemConfig {
    * Keep the function cheap — it runs on every entity / fact create.
    */
   visibilityPolicy?: VisibilityPolicy;
+  /**
+   * Per-type content-embedding composers. Library ships defaults for `task`,
+   * `event`, `person`, `organization`, `topic`, `project`, `document`,
+   * `cluster` — see `composers/defaults.ts`. Caller-supplied entries override
+   * the default for that type; unspecified types fall back to the default
+   * (or get no content embedding if there is no default).
+   *
+   * Composers run on every entity mutation site; `contentEmbedding` and
+   * `contentEmbeddingText` refresh whenever the composed text changes.
+   * Empty-string composer output skips the embed for that entity entirely.
+   */
+  entityContentComposers?: Record<
+    string,
+    import('./composers/types.js').EntityContentComposer
+  >;
+  /**
+   * Fact content-embedding composer. Library ships a default that composes
+   * atomic facts as `"<subject.displayName> <predicate> <object.displayName | value>"`
+   * (resolving entity ids to surface forms) and document facts as their
+   * `details`/`summaryForEmbedding` verbatim. Override to customize the
+   * embedded fact text or to skip embedding for specific predicates (return
+   * `''` from `compose`).
+   */
+  factContentComposer?: import('./composers/types.js').FactContentComposer;
 }
 
 // Re-export IDisposable so consumers can use the same symbol.

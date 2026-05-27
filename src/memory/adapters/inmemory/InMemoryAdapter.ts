@@ -468,6 +468,8 @@ export class InMemoryAdapter implements IMemoryStore {
         : filter.types && filter.types.length > 0
           ? new Set(filter.types)
           : null;
+    const stateSet =
+      filter.states && filter.states.length > 0 ? new Set(filter.states) : null;
     const minScore = opts.minScore;
     const field: EntityEmbeddingField = opts.embeddingField ?? 'identity';
     const scored: Array<{ entity: IEntity; score: number }> = [];
@@ -477,6 +479,20 @@ export class InMemoryAdapter implements IMemoryStore {
       if (typeSet && !typeSet.has(e.type)) continue;
       if (filter.contextId !== undefined) {
         if (!e.contextIds || !e.contextIds.includes(filter.contextId)) continue;
+      }
+      const md = e.metadata as Record<string, unknown> | undefined;
+      if (stateSet) {
+        const state = md?.state;
+        if (typeof state !== 'string' || !stateSet.has(state)) continue;
+      }
+      if (filter.assigneeId !== undefined && md?.assigneeId !== filter.assigneeId) continue;
+      if (filter.reporterId !== undefined && md?.reporterId !== filter.reporterId) continue;
+      if (filter.projectId !== undefined && md?.projectId !== filter.projectId) continue;
+      if (filter.dueAtRange) {
+        const due = md?.dueAt;
+        if (!(due instanceof Date)) continue;
+        if (filter.dueAtRange.from instanceof Date && due < filter.dueAtRange.from) continue;
+        if (filter.dueAtRange.to instanceof Date && due > filter.dueAtRange.to) continue;
       }
       // Strict field selection — no silent fallback to the other embedding,
       // per IMemoryStore contract. Mixing identity/content matches would

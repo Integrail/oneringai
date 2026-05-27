@@ -50,7 +50,13 @@ describe('EmbeddingQueue — fact.embedding.failed observability', () => {
     );
     await mem.flushEmbeddings();
 
-    const failed = events.find((e) => e.type === 'fact.embedding.failed');
+    // Narrow to fact-level failures specifically — content embedding for the
+    // person entity also fails (the broken embedder fails ALL jobs), so a
+    // generic find() may return the entity-content failure first. Tests that
+    // assert about fact failures must match on factId set.
+    const failed = events.find(
+      (e) => e.type === 'fact.embedding.failed' && e.factId !== null,
+    );
     expect(failed).toBeDefined();
     if (failed?.type === 'fact.embedding.failed') {
       expect(failed.factId).toBeTruthy();

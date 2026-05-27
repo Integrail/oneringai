@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — content-embedding composers + metadata-aware semantic search (2026-05-27)
+
+**The retrieval-quality fix.** Pre-this-PR, `findSimilarOpenTasks` searched `IEntity.identityEmbedding` (composed from `type + displayName + aliases + identifiers` only). Tasks with generic titles like "Follow up" — 50 of them differing only by `metadata.assigneeId` / `metadata.projectId` — all produced **identical embeddings** and were indistinguishable to semantic search. Metadata changes (`transitionTaskState`, `updateEntityMetadata`, `addEntityContextIds`) never refreshed embeddings.
+
+**Two-axis embedding model — never conflated:**
+- `IEntity.identityEmbedding` — **unchanged.** Narrow: `displayName + aliases + identifiers`. Drives `EntityResolver` Tier 4 semantic resolution. Must stay narrow or resolver would merge tasks that share metadata.
+- `IEntity.contentEmbedding` — **generalized.** Was document-only; now populated for every entity type with a registered composer. Drives `findSimilarOpenTasks`, `searchDocuments`, any `semanticSearchEntities({embeddingField:'content'})` retrieval flow.
+
+**Per-type `EntityContentComposer` + `FactContentComposer` (`src/memory/composers/`).** Pluggable strategies that produce deterministic embedding-input text:
+- **task:** `task: {name}\nState: {state}\nDue: {dueAt}\nPriority: {priority}\nAssignee: {resolved assignee displayName}\nReporter: ...\nProject: ...\nContext: {resolved contextIds}\nDescription: ...\nID: ...`
+- **event:** name + when (start→end) + where + kind + resolved attendee displayNames + context + description.
+- **person:** name + aliases + role + title + resolved org displayName + bio + identifiers.
+- **organization:** name + domain (from identifiers) + industry + description.
+- **topic / project / cluster:** name + type-specific metadata + resolved references.
+- **document:** preserves legacy `title\n\n(summary | body[:limit])` shape.
+- **atomic fact:** `"subject.displayName predicate (object.displayName | value)"` + optional details. Resolves entity ids to surface forms — e.g. `(Sarah, works_at, Acme)` now embeds as `"Sarah Chen works_at Acme Corp"` rather than disappearing entirely.
+
+References (`assigneeId`, `projectId`, `contextIds`, fact `objectId`) **resolve to displayNames at compose time** via a per-call cached `ComposeContext`. Missing / invisible refs silently omit (no dangling-id text). One batched `getEntities` round-trip per compose; bounded cost.
+
+Override per type via `MemorySystemConfig.entityContentComposers` / `factContentComposer`. Default registry shipped at `composers/defaults.ts`.
+
+**Re-embedding triggers (the gap closed):** every entity mutation site composes the new text, diffs against `IEntity.contentEmbeddingText` (stored alongside the vector), and enqueues only when different. Same model for facts. Wired into: `createEntity`, `upsertEntity`, `upsertEntityBySurface`, `appendAliasesAndIdentifiers`, `mergeEntities`, `updateEntityMetadata`, `transitionTaskState` (state appears in embedded text → terminal tasks naturally rank lower), `addEntityContextIds` (anchor displayNames flow into the embedding), document CRUD, `addFact`, `updateFact`, `updateFactDetails`.
+
+**`findSimilarOpenTasks` switched to `contentEmbedding`.** New `opts.assigneeId` / `opts.projectId` narrows pushed into the Atlas vector pipeline. State filter pushed into the pipeline via `EntitySemanticSearchFilter.states` — eliminates the post-filter starvation that forced over-fetching.
+
+**80-char threshold for atomic-fact embedding is gone.** Pre-this-PR: `computeIsSemantic` gated atomic facts on `details.length >= 80`, so the bulk of structural relationships (`works_at`, `reports_to`, etc.) were invisible to semantic search. Post: composer produces meaningful surface text for every fact; eligibility driven by `isSemantic` (default `true` for new facts, callers opt out with `isSemantic: false`).
+
+**Atlas filter paths expanded.** `ENTITIES_FILTER_PATHS` now declares `metadata.{state, assigneeId, reporterId, projectId, dueAt}`. `entitySemanticFilterToMongo` translates the new `EntitySemanticSearchFilter` fields. Without this, Atlas would silently drop the filter clauses (scope-bypass risk + post-filter starvation).
+
+**Cascade-on-rename is intentionally NOT implemented.** When entity X is renamed, dependent embeddings (tasks where X is assignee, etc.) go stale until those entities are next mutated. Eventual consistency. Run `MemorySystem.backfillContentEmbeddings(scope)` after a rename campaign if you need immediate convergence.
+
+**Migration helpers:**
+- `MemorySystem.backfillContentEmbeddings(scope, {types?, batchSize?, onProgress?})` — entities. Idempotent (skips when stored text matches composer output).
+- `MemorySystem.backfillFactEmbeddings(scope, {predicates?, kind?, batchSize?, onProgress?})` — facts.
+
+**Schema additions:**
+- `IEntity.contentEmbeddingText?: string` — verbatim text that produced `contentEmbedding`. Diff target for the call-site dedup check, debug-readable for operators.
+- `EntitySemanticSearchFilter.{states, assigneeId, reporterId, projectId, dueAtRange}` — task-aware narrows for semantic search.
+- `MemorySystemConfig.entityContentComposers?: Record<string, EntityContentComposer>` + `MemorySystemConfig.factContentComposer?: FactContentComposer`.
+
+**Mongo deployment notes:**
+- Hosts that have already created the entity vector indexes need to recreate them once for the new filter paths to take effect (or filter clauses on the new paths will silently drop). `ensureVectorSearchIndexes()` will recreate as needed if you delete the existing index; otherwise reuse the existing index — content-embedding still works, just without push-down on the new metadata paths.
+- For new content-embedding retrieval, pass `entitiesContentIndexName: 'entities_content_vector'` to `ensureVectorSearchIndexes()` (or set `entityContentVectorIndexName` on the adapter). Adapter falls back to cursor-scan cosine when the content index isn't present — slower but correct.
+
+**Tests:** 1277 memory tests pass (was 1256). New tests cover every composer, re-embedding at every mutation path, metadata-aware ranking ("two tasks with identical titles, different assignees, query mentions one assignee → that one wins"), and the backfill helpers.
+
 ### Memory — entity-level `contextIds` (backwards-compatible addition)
 
 `IEntity.contextIds?: EntityId[]` lands as a top-level field on entities, mirroring `IFact.contextIds`. It expresses the multi-valued "lives within" edge — a task in `[projectA, dealQ3]` surfaces on `getContext.relatedTasks` queries for either anchor. Designed for `task` / `event` / `topic` entities; field is open to any type.

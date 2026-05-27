@@ -326,7 +326,11 @@ describe('dedup — case-insensitive + whitespace-normalised string values (H4)'
 });
 
 describe('updateFactDetails', () => {
-  it('updates details in place and recomputes isSemantic', async () => {
+  it('updates details in place; isSemantic stays true (composer drives eligibility)', async () => {
+    // Pre-composer: short-details facts had isSemantic=false; updating with
+    // long details flipped it to true. Post-composer: every atomic fact is
+    // semantic by default (composer produces meaningful text regardless of
+    // details length), so isSemantic stays true throughout.
     const mem = makeMem();
     const subjectId = await bootstrap(mem);
     const fact = await mem.addFact(
@@ -339,10 +343,9 @@ describe('updateFactDetails', () => {
       },
       { userId: USER },
     );
-    // short details → isSemantic false
-    expect(fact.isSemantic).toBe(false);
+    expect(fact.isSemantic).toBe(true);
     const long =
-      'A long enough narrative that should cross the 80-character semantic threshold and thus flip isSemantic to true when applied via updateFactDetails — well past 80 chars.';
+      'A long enough narrative that exercises the details-update path end-to-end via updateFactDetails — well past 80 chars.';
     const updated = await mem.updateFactDetails(fact.id, long, { userId: USER });
     expect(updated.details).toBe(long);
     expect(updated.isSemantic).toBe(true);

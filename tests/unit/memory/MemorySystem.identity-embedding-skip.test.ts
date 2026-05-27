@@ -31,7 +31,10 @@ describe('MemorySystem — identity embedding dedup', () => {
     if (!mem.isDestroyed) await mem.shutdown();
   });
 
-  it('embeds once for a new entity', async () => {
+  it('embeds twice for a new entity (identity + content)', async () => {
+    // Person now also gets a content embedding (composer covers person type),
+    // so the new-entity path embeds twice: once for `identityEmbedding`,
+    // once for `contentEmbedding`. Both are independent and load-bearing.
     await mem.upsertEntity(
       {
         type: 'person',
@@ -41,10 +44,10 @@ describe('MemorySystem — identity embedding dedup', () => {
       { userId: 'u1' },
     );
     await mem.flushEmbeddings();
-    expect(embedder.embed).toHaveBeenCalledTimes(1);
+    expect(embedder.embed).toHaveBeenCalledTimes(2);
   });
 
-  it('does NOT re-embed when upsert produces no identity change', async () => {
+  it('does NOT re-embed when upsert produces no identity or content change', async () => {
     await mem.upsertEntity(
       {
         type: 'person',
@@ -54,9 +57,10 @@ describe('MemorySystem — identity embedding dedup', () => {
       { userId: 'u1' },
     );
     await mem.flushEmbeddings();
-    expect(embedder.embed).toHaveBeenCalledTimes(1);
+    expect(embedder.embed).toHaveBeenCalledTimes(2);
 
-    // Repeated upsert — same identifier, same displayName. Should be no-op.
+    // Repeated upsert — same identifier, same displayName. Should be no-op
+    // for both identity and content embedding.
     await mem.upsertEntity(
       {
         type: 'person',
@@ -66,8 +70,9 @@ describe('MemorySystem — identity embedding dedup', () => {
       { userId: 'u1' },
     );
     await mem.flushEmbeddings();
-    // Still exactly 1 — second upsert is a no-op (mergedIdentifiers=0, dirty=false).
-    expect(embedder.embed).toHaveBeenCalledTimes(1);
+    // Still 2 — second upsert is a no-op (mergedIdentifiers=0, dirty=false,
+    // composed text identical).
+    expect(embedder.embed).toHaveBeenCalledTimes(2);
   });
 
   it('re-embeds when displayName changes via alias addition', async () => {

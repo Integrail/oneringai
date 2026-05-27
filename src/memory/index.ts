@@ -228,6 +228,28 @@ export {
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
 export type { PredicateDefinition, PredicateLifecycle } from './predicates/index.js';
 
+// Content embedding composers — per-type strategies that produce the text
+// fed into IEntity.contentEmbedding / IFact.embedding. Hosts can override
+// defaults via MemorySystemConfig.entityContentComposers / factContentComposer.
+export {
+  CachedComposeContext,
+  taskContentComposer,
+  eventContentComposer,
+  personContentComposer,
+  organizationContentComposer,
+  topicContentComposer,
+  projectContentComposer,
+  documentContentComposer,
+  clusterContentComposer,
+  defaultFactContentComposer,
+  DEFAULT_ENTITY_COMPOSERS,
+} from './composers/index.js';
+export type {
+  EntityContentComposer,
+  FactContentComposer,
+  ComposeContext,
+} from './composers/index.js';
+
 // Documents — entities with type='document' carrying long-form content.
 // Pure convention over IEntity/IFact; CRUD lives on MemorySystem as
 // create/update/get/attach/detach/list/searchDocument(s).

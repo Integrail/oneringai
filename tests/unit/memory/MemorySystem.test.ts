@@ -277,9 +277,28 @@ describe('MemorySystem', () => {
       expect(fact.isSemantic).toBe(true);
     });
 
-    it('computes isSemantic=false for atomic facts with short details', async () => {
+    it('default isSemantic=true (composer drives eligibility, not 80-char gate)', async () => {
+      // Pre-composer behavior: short atomic facts (<80 chars details) had
+      // isSemantic=false and were never embedded. Post-composer: composer
+      // produces meaningful surface text ("subject predicate object") even for
+      // empty-details facts, so every atomic fact is semantic by default.
+      // Callers opt out explicitly via `isSemantic: false`.
       const fact = await mem.addFact(
         { subjectId, predicate: 'note', kind: 'atomic', details: 'short' },
+        TEST_SCOPE,
+      );
+      expect(fact.isSemantic).toBe(true);
+    });
+
+    it('explicit isSemantic=false still suppresses embedding eligibility', async () => {
+      const fact = await mem.addFact(
+        {
+          subjectId,
+          predicate: 'observed_at',
+          kind: 'atomic',
+          value: 'transient',
+          isSemantic: false,
+        },
         TEST_SCOPE,
       );
       expect(fact.isSemantic).toBe(false);
@@ -1413,17 +1432,29 @@ describe('MemorySystem', () => {
           throw new Error('embed failed');
         }),
       };
-      // Disable identity embedding so we only test fact-embedding retry behavior
-      // in isolation (identity embedding would contribute its own retries).
+      // Disable identity embedding so we only test fact-embedding retry
+      // behavior in isolation. Use an entity type with no content composer
+      // (`'thing'`) so content embedding doesn't fire and contribute its own
+      // retry attempts (which would inflate the count beyond initial+retries).
       const m = new MemorySystem({
         store,
         embedder,
         embeddingQueue: { retries: 2, concurrency: 1 },
         entityResolution: { enableIdentityEmbedding: false },
       });
-      const subj = await seedEntity(m, {
-        identifiers: [{ kind: 'email', value: 'rt@x.com' }],
-      });
+      const seeded = await m.upsertEntity(
+        {
+          type: 'thing', // no default composer → no content embed attempts
+          displayName: 'rt',
+          identifiers: [{ kind: 'email', value: 'rt@x.com' }],
+        },
+        TEST_SCOPE,
+      );
+      const subj = seeded.entity.id;
+      // Disable fact embedding via isSemantic-free fact path? No — we WANT
+      // the fact's embed retries. Use `details` long enough to trigger via
+      // composer (any non-empty details composes to non-empty text).
+      // Also set isSemantic: true on the fact so the path engages.
       await m.addFact(
         {
           subjectId: subj,

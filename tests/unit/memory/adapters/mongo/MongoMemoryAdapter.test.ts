@@ -1170,7 +1170,12 @@ describe('MongoMemoryAdapter', () => {
           'archived',
           'contextIds',
           'groupId',
+          'metadata.assigneeId',
+          'metadata.dueAt',
+          'metadata.projectId',
+          'metadata.reporterId',
           'metadata.role',
+          'metadata.state',
           'ownerId',
           'permissions.group',
           'permissions.world',
@@ -1195,7 +1200,10 @@ describe('MongoMemoryAdapter', () => {
         numDimensions: 1536,
         similarity: 'cosine',
       });
-      // Same filter-path set as the identity index (incl. metadata.role).
+      // Same filter-path set as the identity index — now includes task-metadata
+      // filter paths (state, assigneeId, reporterId, projectId, dueAt) so
+      // findSimilarOpenTasks can push state/assignee/project filters into the
+      // vector pipeline instead of post-filtering client-side.
       const contentFilterPaths = fields
         .filter((f): f is { type: 'filter'; path: string } => f.type === 'filter')
         .map((f) => f.path)
@@ -1205,7 +1213,12 @@ describe('MongoMemoryAdapter', () => {
           'archived',
           'contextIds',
           'groupId',
+          'metadata.assigneeId',
+          'metadata.dueAt',
+          'metadata.projectId',
+          'metadata.reporterId',
           'metadata.role',
+          'metadata.state',
           'ownerId',
           'permissions.group',
           'permissions.world',

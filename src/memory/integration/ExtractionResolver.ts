@@ -242,7 +242,8 @@ export interface ExtractionResolverOptions {
 //
 // The default extraction prompt instructs the LLM to reference other mentions
 // by local label inside type-specific metadata fields (e.g. event.attendeeIds,
-// task.assigneeId, task.servesAnchorId — see `defaultExtractionPrompt.ts`).
+// task.assigneeId, task.reporterId, task.servesAnchorId — see
+// `defaultExtractionPrompt.ts`).
 // `upsertEntityBySurface` writes those labels through verbatim, so without
 // post-translation entity metadata ends up containing prompt placeholders like
 // `'m_self'` / `'m1'` instead of real entity ids — and readers that query by
@@ -262,7 +263,7 @@ interface MetadataLabelFields {
 }
 
 const TRANSLATABLE_METADATA_FIELDS: Readonly<Record<string, MetadataLabelFields>> = {
-  task: { single: ['assigneeId', 'servesAnchorId'], arrays: [] },
+  task: { single: ['assigneeId', 'reporterId', 'servesAnchorId'], arrays: [] },
   event: { single: [], arrays: ['attendeeIds'] },
 };
 
