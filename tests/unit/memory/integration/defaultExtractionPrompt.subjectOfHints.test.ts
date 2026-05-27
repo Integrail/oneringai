@@ -35,9 +35,12 @@ const baseRegistry = PredicateRegistry.empty().registerAll([
 
 describe('defaultExtractionPrompt — subject-of hints (opt-in)', () => {
   it('exports current prompt version', () => {
-    // v10: dropped committed_to-alongside-task emission rule; strict-mode no
-    // longer suppresses task extraction; anchor metadata rendered inline.
-    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(10);
+    // v11: task/event/topic mentions carry top-level `contextIds` array
+    // referencing other mention labels (entity-graph "lives within" edge).
+    // Resolver Pass 1.6 translates labels → entity ids and unions onto the
+    // entity's persistent `contextIds`. Replaces v10-era pattern of stuffing
+    // multi-entity binding into fact contextIds for the task/event/topic case.
+    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(11);
   });
 
   it('default (no flag) does NOT include the subject-of section', () => {

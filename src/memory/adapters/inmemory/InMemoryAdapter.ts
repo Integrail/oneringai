@@ -299,6 +299,10 @@ export class InMemoryAdapter implements IMemoryStore {
       if (wantArchived !== isArchived) continue;
       if (filter.type && e.type !== filter.type) continue;
       if (!isVisible(e, scope)) continue;
+      if (filter.contextId !== undefined) {
+        // Top-level `contextIds` membership — symmetric with FactFilter.contextId.
+        if (!e.contextIds || !e.contextIds.includes(filter.contextId)) continue;
+      }
       if (filter.metadataFilter && !matchesMetadataFilter(e.metadata, filter.metadataFilter)) continue;
       results.push(e);
     }
@@ -471,6 +475,9 @@ export class InMemoryAdapter implements IMemoryStore {
       if (e.archived) continue;
       if (!isVisible(e, scope)) continue;
       if (typeSet && !typeSet.has(e.type)) continue;
+      if (filter.contextId !== undefined) {
+        if (!e.contextIds || !e.contextIds.includes(filter.contextId)) continue;
+      }
       // Strict field selection — no silent fallback to the other embedding,
       // per IMemoryStore contract. Mixing identity/content matches would
       // leak document content into EntityResolver's identity tier.

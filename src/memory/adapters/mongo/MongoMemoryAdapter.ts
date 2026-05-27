@@ -504,6 +504,14 @@ export class MongoMemoryAdapter implements IMemoryStore {
     else clauses.push(ARCHIVED_HIDDEN);
     if (filter.type) clauses.push({ type: filter.type });
     if (filter.ids && filter.ids.length > 0) clauses.push({ id: { $in: filter.ids } });
+    if (filter.contextId !== undefined) {
+      // Top-level `contextIds` array — entity "lives within" the given anchor.
+      // Mongo's implicit array-element match: `{contextIds: x}` matches docs
+      // where contextIds includes x. Backed by the
+      // `{groupId, type, contextIds}` and `{ownerId, type, contextIds}`
+      // indexes installed by `ensureIndexes`.
+      clauses.push({ contextIds: filter.contextId });
+    }
     if (filter.metadataFilter) {
       clauses.push(metadataFilterToMongo(filter.metadataFilter));
     }
@@ -1604,9 +1612,19 @@ function selectToProjection(
 
 /** Translate the narrow `EntitySemanticSearchFilter` into a Mongo filter clause. */
 function entitySemanticFilterToMongo(filter: EntitySemanticSearchFilter): MongoFilter {
-  if (filter.type !== undefined) return { type: filter.type };
-  if (filter.types && filter.types.length > 0) return { type: { $in: filter.types } };
-  return {};
+  const clauses: MongoFilter[] = [];
+  if (filter.type !== undefined) clauses.push({ type: filter.type });
+  else if (filter.types && filter.types.length > 0) clauses.push({ type: { $in: filter.types } });
+  if (filter.contextId !== undefined) {
+    // Mongo's implicit array-element-match: `{contextIds: x}` matches docs
+    // where contextIds includes x. Atlas Vector Search honors this clause
+    // only when 'contextIds' is declared as `type:'filter'` on the index
+    // — see ENTITIES_FILTER_PATHS above.
+    clauses.push({ contextIds: filter.contextId });
+  }
+  if (clauses.length === 0) return {};
+  if (clauses.length === 1) return clauses[0]!;
+  return { $and: clauses };
 }
 
 // =============================================================================
@@ -1633,6 +1651,13 @@ const ENTITIES_FILTER_PATHS: readonly string[] = [
   // Atlas Vector Search actually honours role-scoped queries instead of
   // silently ignoring them.
   'metadata.role',
+  // Top-level entity-graph edge. Required for `findSimilarOpenTasks({contextId})`
+  // and any future `semanticSearchEntities` call that narrows by the entity's
+  // contextIds anchor. Same hard-earned rule as `contextIds` in FACTS_FILTER_PATHS
+  // below: Atlas silently drops `$vectorSearch.filter` clauses for paths not
+  // declared `type:'filter'`, which would let cross-context tasks leak into
+  // scoped queries. Symmetric with the facts-side declaration.
+  'contextIds',
 ];
 
 /**

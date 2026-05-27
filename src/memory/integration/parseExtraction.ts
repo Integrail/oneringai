@@ -113,7 +113,9 @@ export function parseExtractionWithStatus(raw: string): ParseExtractionResult {
   const factsOk = obj.facts === undefined || Array.isArray(obj.facts);
   const operationsOk = obj.operations === undefined || Array.isArray(obj.operations);
 
-  const mentions = mentionsOk ? (obj.mentions as ExtractionOutput['mentions']) : {};
+  const mentions = mentionsOk
+    ? sanitizeMentions(obj.mentions as Record<string, unknown>)
+    : {};
   const facts = factsOk && Array.isArray(obj.facts) ? (obj.facts as ExtractionOutput['facts']) : [];
   const operations = operationsOk && Array.isArray(obj.operations)
     ? filterValidOperations(obj.operations)
@@ -146,6 +148,50 @@ export function parseExtractionWithStatus(raw: string): ParseExtractionResult {
     ...(operations !== undefined ? { operations } : {}),
     ...(whyActionable !== undefined ? { whyActionable } : {}),
   };
+}
+
+/**
+ * Validate the shape of each mention object. `contextIds`, if present, MUST be
+ * an array of strings — anything else is dropped (would otherwise persist
+ * label placeholders or arbitrary junk into the entity's contextIds union
+ * helper, which is strictly opt-in to receive label strings).
+ *
+ * Everything else passes through opaquely — `metadata` is free-form, and
+ * adapter-level coercion handles type discipline downstream.
+ */
+function sanitizeMentions(
+  raw: Record<string, unknown>,
+): ExtractionOutput['mentions'] {
+  const out: ExtractionOutput['mentions'] = {};
+  for (const [label, mentionRaw] of Object.entries(raw)) {
+    if (!mentionRaw || typeof mentionRaw !== 'object' || Array.isArray(mentionRaw)) {
+      continue;
+    }
+    const m = mentionRaw as Record<string, unknown>;
+    if (typeof m.surface !== 'string' || typeof m.type !== 'string') {
+      continue;
+    }
+    const sanitized: Record<string, unknown> = { surface: m.surface, type: m.type };
+    if (Array.isArray(m.identifiers)) sanitized.identifiers = m.identifiers;
+    if (Array.isArray(m.aliases)) {
+      sanitized.aliases = m.aliases.filter((a): a is string => typeof a === 'string');
+    }
+    if (m.metadata !== undefined && typeof m.metadata === 'object' && m.metadata !== null && !Array.isArray(m.metadata)) {
+      sanitized.metadata = m.metadata;
+    }
+    if (Array.isArray(m.contextIds)) {
+      const filtered = m.contextIds.filter(
+        (cid): cid is string => typeof cid === 'string' && cid.length > 0,
+      );
+      // Omit the field when the filtered list is empty — keeps the parsed
+      // shape free of meaningless `contextIds: []` entries. Downstream code
+      // in `ExtractionResolver` checks `!labels || labels.length === 0` so
+      // undefined and empty array are observationally equivalent there.
+      if (filtered.length > 0) sanitized.contextIds = filtered;
+    }
+    out[label] = sanitized as unknown as ExtractionOutput['mentions'][string];
+  }
+  return out;
 }
 
 /**

@@ -12,6 +12,7 @@
 
 import { assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import type { IDisposable } from '../domain/interfaces/IDisposable.js';
+import { logger } from '../infrastructure/observability/Logger.js';
 import {
   assertCanAccess,
   canAccess,
@@ -420,6 +421,12 @@ export class MemorySystem implements IDisposable {
       type: string;
       aliasesForMerge?: string[];
       metadataMerge?: 'fillMissing' | 'overwrite';
+      /**
+       * Caller-supplied contextIds. On create: stored verbatim (post visibility-
+       * validation). On race-loss: unioned into the winner via the existing
+       * `appendAliasesAndIdentifiers` call below (extended to handle contextIds).
+       */
+      contextIds?: EntityId[];
     },
     scope: ScopeFilter,
   ): Promise<{ entity: IEntity; created: boolean }> {
@@ -435,6 +442,10 @@ export class MemorySystem implements IDisposable {
     if (input.metadata) {
       input = { ...input, metadata: coerceMetadataDates(input.metadata) };
     }
+    const sanitizedContextIds = await this.sanitizeContextIdsForCreate(
+      input.contextIds,
+      scope,
+    );
     const newEntity: NewEntity = {
       type: input.type,
       displayName: input.displayName,
@@ -446,6 +457,7 @@ export class MemorySystem implements IDisposable {
       groupId: input.groupId ?? scope.groupId,
       ownerId,
       metadata: input.metadata,
+      contextIds: sanitizedContextIds,
       permissions: this.resolvePermissions(input.permissions, {
         kind: 'entity',
         entityType: input.type,
@@ -484,10 +496,13 @@ export class MemorySystem implements IDisposable {
       aliasesForMerge,
       newEntity.identifiers,
       scope,
-      input.metadata
+      input.metadata || sanitizedContextIds
         ? {
             metadata: input.metadata,
             metadataMerge: input.metadataMerge ?? 'fillMissing',
+            // Race-loss: union-merge the caller's contextIds onto the winner.
+            // Already visibility-validated by sanitizeContextIdsForCreate above.
+            contextIdsToUnion: sanitizedContextIds,
           }
         : undefined,
     );
@@ -584,6 +599,7 @@ export class MemorySystem implements IDisposable {
               aliases: input.aliases,
               identifiers: input.identifiers,
               metadata: input.metadata,
+              contextIds: input.contextIds,
               groupId: input.groupId,
               ownerId: input.ownerId,
               permissions: input.permissions,
@@ -622,6 +638,7 @@ export class MemorySystem implements IDisposable {
             aliases: input.aliases,
             identifiers: input.identifiers,
             metadata: input.metadata,
+            contextIds: input.contextIds,
             groupId: input.groupId,
             ownerId: input.ownerId,
             permissions: input.permissions,
@@ -646,64 +663,117 @@ export class MemorySystem implements IDisposable {
     // Pick best match (most identifier hits). Tiebreak: most recently updated.
     const sortedIds = [...matchCounts.entries()].sort((a, b) => b[1] - a[1]);
     const bestId = sortedIds[0]![0];
-    const best = await this.store.getEntity(bestId, scope);
-    if (!best) {
-      return this.createEntity(input, scope);
-    }
 
     const mergeCandidates = sortedIds
       .slice(1)
       .map(([id]) => id)
       .filter((id) => id !== bestId);
 
-    const merged = mergeIdentifiersAndAliases(best, input);
-    const changedCount = merged.entity.identifiers.length - best.identifiers.length;
+    // Sanitize contextIds (visibility-validate + dedupe) ONCE before the
+    // retry loop. Visibility is stable across retries, so paying the
+    // round-trip per attempt would be wasteful.
+    const sanitizedContextIds = input.contextIds && input.contextIds.length > 0
+      ? await this.sanitizeContextIdsForCreate(input.contextIds, scope)
+      : undefined;
 
-    // Optional metadata merge. Mirrors the contract on appendAliasesAndIdentifiers
-    // and UpsertBySurfaceOptions; default is no-op so existing callers are
-    // unaffected.
-    const mergedWithMetadata = applyMetadataMerge(
-      merged.entity,
-      input.metadata,
-      input.metadataMerge,
-      input.metadataMergeKeys,
-    );
-    const dirty = merged.dirty || mergedWithMetadata.changed;
+    // RMW retry loop — two concurrent identifier-match resolves of the same
+    // entity must converge instead of one failing on version mismatch.
+    // Re-reads `best` on each attempt so the merge is computed against fresh
+    // state. Side effects (queueIdentityEmbedding, emit) fire only on
+    // successful write.
+    const maxAttempts = 3;
+    let finalChangedCount = 0;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const best = await this.store.getEntity(bestId, scope);
+      if (!best) {
+        return this.createEntity(input, scope);
+      }
 
-    if (dirty) {
+      const merged = mergeIdentifiersAndAliases(best, input);
+      const changedCount = merged.entity.identifiers.length - best.identifiers.length;
+
+      const mergedWithMetadata = applyMetadataMerge(
+        merged.entity,
+        input.metadata,
+        input.metadataMerge,
+        input.metadataMergeKeys,
+      );
+
+      // contextIds union — dedupe + filter self-references against the
+      // current state. Visibility was validated above the retry loop.
+      let mergedContextIds: EntityId[] | undefined = mergedWithMetadata.entity.contextIds;
+      let contextIdsChanged = false;
+      if (sanitizedContextIds && sanitizedContextIds.length > 0) {
+        const existing = new Set(mergedContextIds ?? []);
+        const toAdd: EntityId[] = [];
+        for (const cid of sanitizedContextIds) {
+          if (cid === best.id) continue;
+          if (existing.has(cid)) continue;
+          toAdd.push(cid);
+          existing.add(cid);
+        }
+        if (toAdd.length > 0) {
+          mergedContextIds = [...(mergedContextIds ?? []), ...toAdd];
+          contextIdsChanged = true;
+        }
+      }
+
+      const dirty = merged.dirty || mergedWithMetadata.changed || contextIdsChanged;
+
+      if (!dirty) {
+        return {
+          entity: best,
+          created: false,
+          mergedIdentifiers: 0,
+          mergeCandidates,
+        };
+      }
+
       // Dirty path mutates an existing entity — write access required.
       assertCanAccess(best, scope, 'write', 'entity');
-      // Stamp the normalized-name fields BEFORE the adapter call so the
-      // entity we emit + return to the caller is identical to what the
-      // adapter will store. Adapter re-stamps defensively.
       const norm = computeNormalizedFields({
         displayName: mergedWithMetadata.entity.displayName,
         aliases: mergedWithMetadata.entity.aliases,
       });
       const next: IEntity = {
         ...mergedWithMetadata.entity,
+        contextIds: mergedContextIds,
         normalizedDisplayName: norm.normalizedDisplayName,
         normalizedAliases: norm.normalizedAliases,
         version: best.version + 1,
         updatedAt: new Date(),
       };
-      await this.store.updateEntity(next);
-      this.queueIdentityEmbedding(next, scope, best);
-      this.emit({ type: 'entity.upsert', entity: next, created: false });
-      return {
-        entity: next,
-        created: false,
-        mergedIdentifiers: changedCount,
-        mergeCandidates,
-      };
+      try {
+        await this.store.updateEntity(next);
+        this.queueIdentityEmbedding(next, scope, best);
+        this.emit({ type: 'entity.upsert', entity: next, created: false });
+        finalChangedCount = changedCount;
+        return {
+          entity: next,
+          created: false,
+          mergedIdentifiers: finalChangedCount,
+          mergeCandidates,
+        };
+      } catch (err) {
+        const name = err instanceof Error ? err.name : '';
+        const isContention = /ConcurrencyError/i.test(name);
+        if (!isContention || attempt === maxAttempts) throw err;
+        logger.info(
+          {
+            component: 'MemorySystem.upsertEntity',
+            entityId: bestId,
+            attempt,
+            maxAttempts,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'retrying after version-mismatch',
+        );
+      }
     }
-
-    return {
-      entity: best,
-      created: false,
-      mergedIdentifiers: 0,
-      mergeCandidates,
-    };
+    // Unreachable — last iteration's catch re-throws on `attempt === maxAttempts`.
+    throw new Error(
+      `upsertEntity: exhausted ${maxAttempts} attempts for ${bestId}`,
+    );
   }
 
   /**
@@ -739,6 +809,14 @@ export class MemorySystem implements IDisposable {
     if (!ownerId) {
       throw new OwnerRequiredError('entity');
     }
+    // Validate any caller-supplied `contextIds`: visibility, dedupe, drop
+    // self-references. New entity has no id yet so the self-reference filter
+    // is moot here — but downstream union helpers rely on the invariant
+    // "contextIds never contains the entity's own id", so apply it cheaply.
+    const sanitizedContextIds = await this.sanitizeContextIdsForCreate(
+      input.contextIds,
+      scope,
+    );
     // Build the NewEntity input (no id, version, createdAt, updatedAt).
     const newEntity: NewEntity = {
       type: input.type,
@@ -748,6 +826,7 @@ export class MemorySystem implements IDisposable {
       groupId: input.groupId ?? scope.groupId,
       ownerId,
       metadata: input.metadata,
+      contextIds: sanitizedContextIds,
       permissions: this.resolvePermissions(input.permissions, {
         kind: 'entity',
         entityType: input.type,
@@ -765,6 +844,33 @@ export class MemorySystem implements IDisposable {
   }
 
   /**
+   * Sanitize a caller-supplied `contextIds` array before write — visibility
+   * check, dedupe, drop empties. Returns `undefined` when the resulting
+   * array would be empty so we don't store an empty field on the entity.
+   *
+   * Self-reference filtering on CREATE is moot (no id yet), but the union
+   * path (`addEntityContextIds`) repeats the filter against the now-known
+   * entity id.
+   */
+  private async sanitizeContextIdsForCreate(
+    raw: EntityId[] | undefined,
+    scope: ScopeFilter,
+  ): Promise<EntityId[] | undefined> {
+    if (!raw || raw.length === 0) return undefined;
+    const deduped = [...new Set(raw.filter((id) => !!id))];
+    if (deduped.length === 0) return undefined;
+    for (const cid of deduped) {
+      const ent = await this.store.getEntity(cid, scope);
+      if (!ent) {
+        throw new Error(
+          `createEntity: context entity ${cid} not visible or not found`,
+        );
+      }
+    }
+    return deduped;
+  }
+
+  /**
    * Merge new aliases + identifiers into an existing entity (no-op if all are
    * already present). Bumps version, writes, emits event, and triggers identity
    * embedding refresh. Used by EntityResolver when it matches a surface to an
@@ -778,80 +884,147 @@ export class MemorySystem implements IDisposable {
     opts?: {
       metadata?: Record<string, unknown>;
       metadataMerge?: 'fillMissing' | 'overwrite';
+      /**
+       * Pre-validated contextIds to union into the entity's existing list.
+       * Caller is responsible for visibility-validating these — this helper
+       * does the dedupe + self-reference filter + single-write merge.
+       */
+      contextIdsToUnion?: EntityId[];
     },
   ): Promise<IEntity> {
-    const current = await this.store.getEntity(id, scope);
-    if (!current) throw new Error(`appendAliasesAndIdentifiers: entity ${id} not found`);
-    assertCanAccess(current, scope, 'write', 'entity');
-
-    const aliases = [...(current.aliases ?? [])];
-    let dirty = false;
-    for (const a of newAliases) {
-      if (!a || a.trim().length === 0) continue;
-      const exists =
-        aliases.some((x) => x.toLowerCase() === a.toLowerCase()) ||
-        current.displayName.toLowerCase() === a.toLowerCase();
-      if (!exists) {
-        aliases.push(a);
-        dirty = true;
+    // Visibility-check contextIds candidates ONCE before the retry loop.
+    // Visibility is stable across retries (an entity doesn't become
+    // visible/invisible mid-RMW under realistic deployments), so paying the
+    // round-trip per attempt is wasteful and would risk inconsistent errors
+    // between retries.
+    if (opts?.contextIdsToUnion && opts.contextIdsToUnion.length > 0) {
+      for (const cid of opts.contextIdsToUnion) {
+        if (!cid || cid === id) continue;
+        const ent = await this.store.getEntity(cid, scope);
+        if (!ent) {
+          throw new Error(
+            `appendAliasesAndIdentifiers: context entity ${cid} not visible or not found`,
+          );
+        }
       }
     }
-
-    const identifiers = [...current.identifiers];
-    for (const ident of newIdentifiers) {
-      // Kind-aware equality: case-insensitive only for email/domain/phone/url_host;
-      // case-preserving for system_user_id, canonical, slack_id, etc.
-      const present = identifiers.some((i) =>
-        identifierValuesEqual(i.kind, i.value, ident.kind, ident.value),
-      );
-      if (!present) {
-        identifiers.push({ ...ident, addedAt: ident.addedAt ?? new Date() });
-        dirty = true;
-      }
-    }
-
-    // Metadata merge — fillMissing (default) never overwrites existing keys;
-    // overwrite is a shallow merge where incoming wins. No-op if no incoming.
-    // Coerce incoming ISO-string dates to `Date` before merge so stored
-    // metadata is type-consistent and survives Mongo range queries.
-    let nextMetadata: Record<string, unknown> | undefined = current.metadata;
+    // Coerce incoming ISO-string dates to `Date` ONCE before the retry loop.
     const incomingMetadata = coerceMetadataDates(opts?.metadata);
-    if (incomingMetadata && Object.keys(incomingMetadata).length > 0) {
-      const existing = (current.metadata ?? {}) as Record<string, unknown>;
-      const mode = opts?.metadataMerge ?? 'fillMissing';
-      const merged: Record<string, unknown> = { ...existing };
-      for (const [k, v] of Object.entries(incomingMetadata)) {
-        if (v === undefined) continue;
-        if (mode === 'fillMissing' && k in existing) continue;
-        if (!metadataDeepEqual(merged[k], v)) {
-          merged[k] = v;
+    const incomingMetadataKind = opts?.metadataMerge ?? 'fillMissing';
+
+    // RMW retry loop — two concurrent resolves of the same entity must
+    // converge instead of one failing on version mismatch. Cap at 3 attempts;
+    // beyond that, the contention is real and the caller should know.
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const current = await this.store.getEntity(id, scope);
+      if (!current) throw new Error(`appendAliasesAndIdentifiers: entity ${id} not found`);
+      assertCanAccess(current, scope, 'write', 'entity');
+
+      const aliases = [...(current.aliases ?? [])];
+      let dirty = false;
+      for (const a of newAliases) {
+        if (!a || a.trim().length === 0) continue;
+        const exists =
+          aliases.some((x) => x.toLowerCase() === a.toLowerCase()) ||
+          current.displayName.toLowerCase() === a.toLowerCase();
+        if (!exists) {
+          aliases.push(a);
           dirty = true;
         }
       }
-      nextMetadata = merged;
+
+      const identifiers = [...current.identifiers];
+      for (const ident of newIdentifiers) {
+        // Kind-aware equality: case-insensitive only for email/domain/phone/url_host;
+        // case-preserving for system_user_id, canonical, slack_id, etc.
+        const present = identifiers.some((i) =>
+          identifierValuesEqual(i.kind, i.value, ident.kind, ident.value),
+        );
+        if (!present) {
+          identifiers.push({ ...ident, addedAt: ident.addedAt ?? new Date() });
+          dirty = true;
+        }
+      }
+
+      // Metadata merge — fillMissing (default) never overwrites existing keys;
+      // overwrite is a shallow merge where incoming wins. No-op if no incoming.
+      let nextMetadata: Record<string, unknown> | undefined = current.metadata;
+      if (incomingMetadata && Object.keys(incomingMetadata).length > 0) {
+        const existing = (current.metadata ?? {}) as Record<string, unknown>;
+        const merged: Record<string, unknown> = { ...existing };
+        for (const [k, v] of Object.entries(incomingMetadata)) {
+          if (v === undefined) continue;
+          if (incomingMetadataKind === 'fillMissing' && k in existing) continue;
+          if (!metadataDeepEqual(merged[k], v)) {
+            merged[k] = v;
+            dirty = true;
+          }
+        }
+        nextMetadata = merged;
+      }
+
+      // contextIds union — dedupe against existing, drop self-references.
+      // Visibility was checked above the retry loop.
+      let nextContextIds: EntityId[] | undefined = current.contextIds;
+      if (opts?.contextIdsToUnion && opts.contextIdsToUnion.length > 0) {
+        const existing = new Set(current.contextIds ?? []);
+        const toAdd: EntityId[] = [];
+        for (const cid of opts.contextIdsToUnion) {
+          if (!cid || cid === id) continue;
+          if (existing.has(cid)) continue;
+          toAdd.push(cid);
+          existing.add(cid);
+        }
+        if (toAdd.length > 0) {
+          nextContextIds = [...(current.contextIds ?? []), ...toAdd];
+          dirty = true;
+        }
+      }
+
+      if (!dirty) return current;
+
+      const nextAliases = aliases.length > 0 ? aliases : current.aliases;
+      const norm = computeNormalizedFields({
+        displayName: current.displayName,
+        aliases: nextAliases,
+      });
+      const next: IEntity = {
+        ...current,
+        aliases: nextAliases,
+        identifiers,
+        metadata: nextMetadata,
+        contextIds: nextContextIds,
+        normalizedDisplayName: norm.normalizedDisplayName,
+        normalizedAliases: norm.normalizedAliases,
+        version: current.version + 1,
+        updatedAt: new Date(),
+      };
+      try {
+        await this.store.updateEntity(next);
+        this.queueIdentityEmbedding(next, scope, current);
+        this.emit({ type: 'entity.upsert', entity: next, created: false });
+        return next;
+      } catch (err) {
+        const name = err instanceof Error ? err.name : '';
+        const isContention = /ConcurrencyError/i.test(name);
+        if (!isContention || attempt === maxAttempts) throw err;
+        logger.info(
+          {
+            component: 'MemorySystem.appendAliasesAndIdentifiers',
+            entityId: id,
+            attempt,
+            maxAttempts,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'retrying after version-mismatch',
+        );
+      }
     }
-
-    if (!dirty) return current;
-
-    const nextAliases = aliases.length > 0 ? aliases : current.aliases;
-    const norm = computeNormalizedFields({
-      displayName: current.displayName,
-      aliases: nextAliases,
-    });
-    const next: IEntity = {
-      ...current,
-      aliases: nextAliases,
-      identifiers,
-      metadata: nextMetadata,
-      normalizedDisplayName: norm.normalizedDisplayName,
-      normalizedAliases: norm.normalizedAliases,
-      version: current.version + 1,
-      updatedAt: new Date(),
-    };
-    await this.store.updateEntity(next);
-    this.queueIdentityEmbedding(next, scope, current);
-    this.emit({ type: 'entity.upsert', entity: next, created: false });
-    return next;
+    // Unreachable — last iteration's catch re-throws on `attempt === maxAttempts`.
+    throw new Error(
+      `appendAliasesAndIdentifiers: exhausted ${maxAttempts} attempts for ${id}`,
+    );
   }
 
   /**
@@ -1138,6 +1311,16 @@ export class MemorySystem implements IDisposable {
       allowCrossOwner: !!options?.allowCrossOwner,
     });
 
+    // Rewrite entity-level contextIds — entities whose contextIds array
+    // contains loserId get the reference replaced with winnerId (deduped,
+    // self-reference suppressed). Mirrors the fact-side rewrite above. Without
+    // this step, the first entity merge after entity-contextIds shipped would
+    // leave permanent dangling pointers — the same v25 wrapper gap the fact
+    // path closed.
+    await this.rewriteEntityContextIdReferences(loserId, winnerId, scope, {
+      allowCrossOwner: !!options?.allowCrossOwner,
+    });
+
     // Archive loser
     await this.store.archiveEntity(loserId, scope);
 
@@ -1177,43 +1360,61 @@ export class MemorySystem implements IDisposable {
     // at the archived loser entity, leaving the graph incoherent.
     const allowCrossOwner = options?.allowCrossOwner === true;
     //
+    // **Pagination shape — load-bearing (was previously buggy).** Loops
+    // re-query from offset 0 each iteration with NO cursor. Each rewrite
+    // removes the fact from its current filter set (e.g. `subjectId: fromId`
+    // no longer matches after subject is set to `toId`), so the next pass
+    // picks up the remainder without advancing an offset. Cursor-based
+    // pagination would silently leak unrewritten facts past 200: after page 1
+    // rewrites N items, the filtered result has shrunk by N, and `skip:N`
+    // lands past the remaining matches → empty page → loop exits with N
+    // unwritten facts still holding the loser reference. Verified bug on
+    // both InMemoryAdapter (offset-slice in `paginate`) and MongoMemoryAdapter
+    // (offset via `parseCursor` → Mongo `skip`).
+    //
+    // Termination: "no writes this round" exits the loop in case every
+    // remaining item is write-denied (caller lacks write on those facts).
+    // Without the guard the loop would spin forever — the filter still
+    // matches them, the cursor-free re-query keeps returning them.
+    //
     // orderBy is required by the adapter pagination contract (see
-    // adapters/orderByWarning.ts). `createdAt asc` is the right choice for
-    // these walks: stable, monotonic, and unaffected by the mutations the
-    // loop performs (we only set subjectId/objectId/contextIds, never
-    // createdAt). The page filter (subjectId/objectId/contextId === fromId)
-    // also ensures already-rewritten facts cannot reappear on later pages.
+    // adapters/orderByWarning.ts). `createdAt asc` is stable, monotonic, and
+    // unaffected by the mutations the loop performs.
     const REWRITE_ORDER: FactOrderBy = { field: 'createdAt', direction: 'asc' };
 
     // Subjects
-    let cursor: string | undefined;
-    do {
+    while (true) {
       const page = await this.store.findFacts(
         { subjectId: fromId },
-        { limit: 200, cursor, orderBy: REWRITE_ORDER },
+        { limit: 200, orderBy: REWRITE_ORDER },
         scope,
       );
+      if (page.items.length === 0) break;
+      let writtenThisRound = 0;
       for (const f of page.items) {
         if (!allowCrossOwner && !canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { subjectId: toId }, scope);
+        writtenThisRound++;
       }
-      cursor = page.nextCursor;
-    } while (cursor);
+      if (writtenThisRound === 0) break;
+    }
 
     // Objects
-    cursor = undefined;
-    do {
+    while (true) {
       const page = await this.store.findFacts(
         { objectId: fromId },
-        { limit: 200, cursor, orderBy: REWRITE_ORDER },
+        { limit: 200, orderBy: REWRITE_ORDER },
         scope,
       );
+      if (page.items.length === 0) break;
+      let writtenThisRound = 0;
       for (const f of page.items) {
         if (!allowCrossOwner && !canAccess(f, scope, 'write')) continue;
         await this.store.updateFact(f.id, { objectId: toId }, scope);
+        writtenThisRound++;
       }
-      cursor = page.nextCursor;
-    } while (cursor);
+      if (writtenThisRound === 0) break;
+    }
 
     // ContextIds. Previously this method left contextIds pointing at the archived
     // loser, so any fact with `contextIds: [loser, ...]` would never surface for
@@ -1231,13 +1432,14 @@ export class MemorySystem implements IDisposable {
     //     paths treat differently from a missing field; empty array is
     //     observationally equivalent to undefined in all readers (truthy but
     //     `.includes()` returns false).
-    cursor = undefined;
-    do {
+    while (true) {
       const page = await this.store.findFacts(
         { contextId: fromId },
-        { limit: 200, cursor, orderBy: REWRITE_ORDER },
+        { limit: 200, orderBy: REWRITE_ORDER },
         scope,
       );
+      if (page.items.length === 0) break;
+      let writtenThisRound = 0;
       for (const f of page.items) {
         if (!allowCrossOwner && !canAccess(f, scope, 'write')) continue;
         const filtered = (f.contextIds ?? []).filter((id) => id !== fromId);
@@ -1245,11 +1447,100 @@ export class MemorySystem implements IDisposable {
           filtered.push(toId);
         }
         await this.store.updateFact(f.id, { contextIds: filtered }, scope);
+        writtenThisRound++;
       }
-      cursor = page.nextCursor;
-    } while (cursor);
+      if (writtenThisRound === 0) break;
+    }
   }
 
+  /**
+   * Rewrite entity-level `contextIds` references — same shape as
+   * `rewriteFactReferences`' contextIds pass, applied to entities instead of
+   * facts. Walks entities whose `contextIds` array contains `fromId` and
+   * patches each to point at `toId` (dedup + self-reference filter).
+   *
+   * Authorization mirrors the fact rewrite: by default skips entities the
+   * caller can't write (entity stays pointing at the archived loser — a known
+   * scope-window cost, documented on `mergeEntities`). `allowCrossOwner`
+   * bypasses per-record write for legitimate consolidation passes.
+   *
+   * Empty results array is written as `undefined` rather than `[]` so the
+   * stored shape matches "no contextIds" — symmetric with how this method
+   * treats facts (`[]` for facts because the index path tolerates either;
+   * for entities we prefer omitting the field entirely for cleaner reads).
+   *
+   * **Pagination shape — load-bearing.** Loops with NO cursor — re-queries
+   * from offset 0 each iteration. The rewrite removes each item from the
+   * filter set (`contextIds: fromId` no longer matches after the write), so
+   * the next iteration naturally picks up the remaining matches without
+   * needing to advance an offset. Using cursor-based pagination here would
+   * silently leak unrewritten items: page 1 rewrites N items and advances
+   * cursor to N, but the filter result has shrunk by N, so cursor:N lands
+   * past the remaining matches → empty page → loop exits with items still
+   * holding the loser reference. The "no writes this round" termination
+   * guard handles the case where every remaining item is write-denied
+   * (preventing an infinite loop).
+   */
+  private async rewriteEntityContextIdReferences(
+    fromId: EntityId,
+    toId: EntityId,
+    scope: ScopeFilter,
+    options?: { allowCrossOwner?: boolean },
+  ): Promise<void> {
+    const allowCrossOwner = options?.allowCrossOwner === true;
+    while (true) {
+      const page = await this.store.listEntities(
+        { contextId: fromId },
+        {
+          limit: 200,
+          orderBy: [
+            { field: 'updatedAt', direction: 'asc' },
+            { field: 'id', direction: 'asc' },
+          ],
+        },
+        scope,
+      );
+      if (page.items.length === 0) break;
+      let writtenThisRound = 0;
+      for (const e of page.items) {
+        if (!allowCrossOwner && !canAccess(e, scope, 'write')) continue;
+        // Drop fromId; add toId unless it's the entity itself (self-reference
+        // suppression) or already present.
+        const filtered = (e.contextIds ?? []).filter((id) => id !== fromId);
+        if (toId !== e.id && !filtered.includes(toId)) {
+          filtered.push(toId);
+        }
+        const next: IEntity = {
+          ...e,
+          contextIds: filtered.length > 0 ? filtered : undefined,
+          version: e.version + 1,
+          updatedAt: new Date(),
+        };
+        await this.store.updateEntity(next);
+        this.emit({ type: 'entity.upsert', entity: next, created: false });
+        writtenThisRound++;
+      }
+      // Fixed-point: every item in this page was write-denied. Stop —
+      // continuing would loop forever (filter still matches them).
+      if (writtenThisRound === 0) break;
+    }
+  }
+
+  /**
+   * Archive an entity (soft delete). Cascades to facts where the entity is
+   * `subjectId` or `objectId` — those get archived too.
+   *
+   * **Tombstone semantics for `contextIds` (NO cascade):** facts whose
+   * `contextIds` array references this entity, and other entities whose
+   * top-level `contextIds` references this one, are LEFT UNCHANGED. The
+   * reference becomes a dangling pointer — readers resolving the id see
+   * `null` (archived), the referencing record stays live. Symmetric across
+   * fact-contextIds (long-standing behavior) and entity-contextIds.
+   * Rationale: contextIds is a soft multi-anchor binding, not a hard
+   * structural edge; force-removing it on archive would destructively
+   * mutate consumer records the caller may not even own. Hosts that want
+   * a stronger semantic should run a sweep after archive.
+   */
   async archiveEntity(id: EntityId, scope: ScopeFilter): Promise<void> {
     assertNotDestroyed(this, 'archiveEntity');
     const entity = await this.store.getEntity(id, scope);
@@ -1259,11 +1550,21 @@ export class MemorySystem implements IDisposable {
     assertCanAccess(entity, scope, 'write', 'entity');
     // Cascade: archive facts referencing this entity first so consumers never
     // see active edges pointing at an archived (null on getEntity) node.
+    // NOTE: `archiveFactsReferencing` cascades only via subjectId/objectId —
+    // contextIds references (both fact-level and entity-level) follow the
+    // tombstone rule documented above.
     await this.archiveFactsReferencing(id, scope);
     await this.store.archiveEntity(id, scope);
     this.emit({ type: 'entity.archive', entityId: id });
   }
 
+  /**
+   * Delete an entity. Soft (default): same cascade rules as `archiveEntity`.
+   * Hard (`opts.hard: true`): the entity row is removed; facts where it's
+   * subject/object are archived. **Same tombstone rule for `contextIds`:**
+   * contextIds references — fact-level and entity-level — are left as dangling
+   * pointers. See `archiveEntity` JSDoc for rationale.
+   */
   async deleteEntity(
     id: EntityId,
     scope: ScopeFilter,
@@ -1276,11 +1577,13 @@ export class MemorySystem implements IDisposable {
     }
     assertCanAccess(entity, scope, 'write', 'entity');
     if (opts.hard) {
-      // Hard delete: remove entity + every fact referencing it.
+      // Hard delete: remove entity + archive every fact referencing it via
+      // subject/object. contextIds references untouched (tombstone rule).
       await this.rewriteFactsForDeletion(id, scope);
       await this.store.deleteEntity(id, scope);
     } else {
-      // Soft delete: archive entity + archive facts referencing it.
+      // Soft delete: archive entity + archive facts referencing it via
+      // subject/object. contextIds references untouched (tombstone rule).
       await this.archiveFactsReferencing(id, scope);
       await this.store.archiveEntity(id, scope);
     }
@@ -1470,6 +1773,187 @@ export class MemorySystem implements IDisposable {
       cursor = page.nextCursor;
     } while (cursor);
     return { scanned, updated, skipped };
+  }
+
+  /**
+   * Migration helper — for every fact with the given `predicate`, hoist the
+   * fact's `contextIds` array onto the target entity's `contextIds` (union
+   * merge). Target entity is the fact's `subject` or `object` depending on
+   * `entitySide`.
+   *
+   * Reference recipe — hoist legacy `committed_to(person, task)` linkage onto
+   * task entities (the v10-era pattern that v11+ writes natively as
+   * `task.contextIds`):
+   *
+   * ```ts
+   * await memory.hoistContextIdsFromFactsToEntities({
+   *   predicate: 'committed_to',
+   *   entitySide: 'object',
+   *   entityType: 'task',
+   *   archiveSource: false, // keep originals as provenance until host confirms
+   * }, scope);
+   * ```
+   *
+   * Idempotent — `addEntityContextIds` deduplicates against existing values.
+   * Safe to re-run. Skips facts with empty `contextIds`, missing target id,
+   * or where the target entity type doesn't match `entityType`.
+   *
+   * **Performance.** O(facts-with-this-predicate). Pass `batchSize` to tune
+   * memory pressure vs round-trips (default 200, hard ceiling 1000).
+   *
+   * **Source archival.** When `archiveSource: true`, the source fact is
+   * archived after the hoist succeeds for that fact. Defaults to `false`
+   * because hosts often want to keep the original fact for provenance — the
+   * migration is informational, not destructive.
+   */
+  async hoistContextIdsFromFactsToEntities(
+    opts: {
+      predicate: string;
+      entitySide: 'subject' | 'object';
+      entityType?: string;
+      batchSize?: number;
+      dryRun?: boolean;
+      archiveSource?: boolean;
+    },
+    scope: ScopeFilter,
+  ): Promise<{
+    scannedFacts: number;
+    /** Facts that triggered a real entity write (added >= 1 new contextId). */
+    hoistedEntities: number;
+    /**
+     * Facts where the target entity already had every contextId — no write
+     * performed. Important for migration planning: re-runs of an idempotent
+     * migration are expected to land entirely in this bucket. Also bumped on
+     * dry-run when the simulated hoist would have been a no-op.
+     */
+    skippedAlreadyHoisted: number;
+    skippedNoContextIds: number;
+    skippedWrongType: number;
+    skippedNoTarget: number;
+    archivedFacts: number;
+    errors: number;
+  }> {
+    assertNotDestroyed(this, 'hoistContextIdsFromFactsToEntities');
+    const batchSize = Math.max(1, Math.min(opts.batchSize ?? 200, 1000));
+    const archiveSource = opts.archiveSource === true;
+    const dryRun = opts.dryRun === true;
+    const predicate = this.predicates
+      ? this.predicates.canonicalize(opts.predicate)
+      : opts.predicate;
+    const result = {
+      scannedFacts: 0,
+      hoistedEntities: 0,
+      skippedAlreadyHoisted: 0,
+      skippedNoContextIds: 0,
+      skippedWrongType: 0,
+      skippedNoTarget: 0,
+      archivedFacts: 0,
+      errors: 0,
+    };
+    // Pagination shape mirrors `rewriteFactReferences` / `rewriteEntityContextIdReferences`:
+    // when `archiveSource: true`, archiving the source fact removes it from
+    // the `archived:false` filter — cursor offsets advance past unhoisted
+    // facts. We track `seenIds` across iterations so a non-archiving run
+    // (dryRun OR archiveSource=false) doesn't reprocess the same fact
+    // forever. `seenIds` plus the "no progress this round" exit handles both
+    // modes uniformly.
+    const seenIds = new Set<FactId>();
+    while (true) {
+      const page = await this.store.findFacts(
+        { predicate, archived: false },
+        {
+          limit: batchSize,
+          orderBy: { field: 'createdAt', direction: 'asc' },
+        },
+        scope,
+      );
+      if (page.items.length === 0) break;
+      let progressedThisRound = 0;
+      for (const f of page.items) {
+        if (seenIds.has(f.id)) continue;
+        seenIds.add(f.id);
+        result.scannedFacts++;
+        progressedThisRound++;
+        if (!f.contextIds || f.contextIds.length === 0) {
+          result.skippedNoContextIds++;
+          continue;
+        }
+        const targetId = opts.entitySide === 'object' ? f.objectId : f.subjectId;
+        if (!targetId) {
+          result.skippedNoTarget++;
+          continue;
+        }
+        // Resolve the target entity. Needed for both entityType filtering
+        // AND (for accurate counters / dry-run) for the pre-check of how
+        // many additions would actually take effect. Done once per fact.
+        const target = await this.store.getEntity(targetId, scope);
+        if (!target) {
+          result.skippedNoTarget++;
+          continue;
+        }
+        if (opts.entityType !== undefined && target.type !== opts.entityType) {
+          result.skippedWrongType++;
+          continue;
+        }
+        // Pre-compute how many of the fact's contextIds would be NEW on the
+        // target. Mirrors the dedupe + self-reference logic in
+        // `addEntityContextIds` (deliberately duplicated rather than read
+        // back from the helper's return so dry-run gets the same answer
+        // without writing). Visibility is NOT checked here — that's
+        // `addEntityContextIds`'s job on the real-run path. For dry-run we
+        // accept that a visibility-rejected addition would inflate the
+        // "would-hoist" count slightly; this is an acceptable estimate
+        // because dry-run is for planning, not strict accounting.
+        const existingCtx = new Set(target.contextIds ?? []);
+        let wouldAdd = 0;
+        for (const cid of f.contextIds) {
+          if (!cid || cid === target.id) continue;
+          if (existingCtx.has(cid)) continue;
+          wouldAdd++;
+          existingCtx.add(cid);
+        }
+        if (wouldAdd === 0) {
+          result.skippedAlreadyHoisted++;
+          continue;
+        }
+        if (dryRun) {
+          // Would have hoisted ≥1 new contextId — counted.
+          result.hoistedEntities++;
+          continue;
+        }
+        try {
+          const hoist = await this.addEntityContextIds(targetId, f.contextIds, scope);
+          if (hoist.added > 0) {
+            result.hoistedEntities++;
+          } else {
+            // Race: another writer landed the same additions between our
+            // pre-check and the addEntityContextIds call. Reflect what
+            // actually happened.
+            result.skippedAlreadyHoisted++;
+          }
+          if (archiveSource) {
+            await this.archiveFact(f.id, scope);
+            result.archivedFacts++;
+          }
+        } catch (err) {
+          result.errors++;
+          logger.warn(
+            {
+              component: 'MemorySystem.hoistContextIdsFromFactsToEntities',
+              factId: f.id,
+              targetId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'hoist failed for fact — continuing',
+          );
+        }
+      }
+      // Termination: every fact in this page was already seen (re-query
+      // returned the same docs we've already processed). Happens when
+      // archiveSource=false — facts stay in the filter forever otherwise.
+      if (progressedThisRound === 0) break;
+    }
+    return result;
   }
 
   /** Lookup a predicate definition (by canonical name or alias). Null when no registry or unknown. */
@@ -2504,6 +2988,14 @@ export class MemorySystem implements IDisposable {
       topK?: number;
       minScore?: number;
       taskStates?: string[];
+      /**
+       * Narrow the search to tasks whose top-level `contextIds` includes this
+       * entity id. Pushed into the underlying `semanticSearchEntities` filter
+       * → Atlas `$vectorSearch.filter` clause. Requires `'contextIds'` in the
+       * entities vector index's filter paths (declared by default — see
+       * `ENTITIES_FILTER_PATHS` in MongoMemoryAdapter).
+       */
+      contextId?: EntityId;
     },
   ): Promise<Array<{ task: IEntity; score: number }>> {
     assertNotDestroyed(this, 'findSimilarOpenTasks');
@@ -2544,7 +3036,9 @@ export class MemorySystem implements IDisposable {
       const overFetch = Math.min(Math.max(topK * 3, FIND_SIMILAR_OVER_FETCH_FLOOR), 300);
       candidates = await this.store.semanticSearchEntities(
         queryVector,
-        { type: 'task' },
+        opts?.contextId !== undefined
+          ? { type: 'task', contextId: opts.contextId }
+          : { type: 'task' },
         { topK: overFetch, minScore },
         scope,
       );
@@ -2594,9 +3088,32 @@ export class MemorySystem implements IDisposable {
       }
     }
 
-    // Also include tasks where `entityId` appears in contextIds of any fact
-    // whose subject is a task entity. Most-recent facts win when the cap
-    // is reached, so freshly-relevant tasks aren't dropped behind ancient ones.
+    // Tier 1.5: tasks whose top-level `contextIds` includes the subject.
+    // First-class O(index-seek) path — backed by the `{groupId, type,
+    // contextIds}` and `{ownerId, type, contextIds}` indexes installed by
+    // `ensureIndexes`. Runs before the fact-walk tier below because direct
+    // entity-edge bindings are stronger signals than fact-mediated ones.
+    if (acc.size < limit) {
+      const page = await this.store.listEntities(
+        {
+          type: 'task',
+          contextId: entityId,
+          metadataFilter: { state: { $in: activeStates } },
+        },
+        { limit: limit - acc.size, orderBy: [...OPEN_TASK_ORDER_BY] },
+        scope,
+      );
+      for (const t of page.items) {
+        if (!acc.has(t.id)) acc.set(t.id, { task: t, role: 'context_of' });
+      }
+    }
+
+    // Tier 2: tasks where `entityId` appears in contextIds of any fact whose
+    // subject is a task entity. Retained as the legacy / fallback path —
+    // pre-Phase-4 data lacks entity-level contextIds, so the fact-walk is
+    // still the only signal for older rows. Most-recent facts win when the
+    // cap is reached, so freshly-relevant tasks aren't dropped behind
+    // ancient ones.
     if (acc.size < limit) {
       const contextFacts = await this.store.findFacts(
         { contextId: entityId, kind: 'atomic', asOf: opts.asOf },
@@ -2677,8 +3194,34 @@ export class MemorySystem implements IDisposable {
       acc.set(ev.id, { event: ev, role, when: startTime });
     }
 
-    // Also include events where entity appears in contextIds of facts whose
-    // subject or object is an event entity.
+    // Tier 1.5: events whose top-level `contextIds` includes the subject.
+    // First-class O(index-seek) path — same shape as the parallel tier in
+    // `resolveRelatedTasks`. Most-recent events first so the window filter
+    // survives the truncation. Backed by the entity contextIds indexes.
+    if (acc.size < limit) {
+      const page = await this.store.listEntities(
+        { type: 'event', contextId: entityId },
+        {
+          limit: limit - acc.size,
+          orderBy: [
+            { field: 'metadata.startTime', direction: 'desc' },
+            { field: 'id', direction: 'asc' },
+          ],
+        },
+        scope,
+      );
+      for (const ev of page.items) {
+        if (acc.has(ev.id)) continue;
+        const md = (ev.metadata ?? {}) as Record<string, unknown>;
+        const startTime = toDateMaybe(md.startTime);
+        if (startTime && startTime < windowStart) continue;
+        acc.set(ev.id, { event: ev, role: 'context_of', when: startTime });
+      }
+    }
+
+    // Tier 2: legacy / fallback — events surfacing via fact-level contextIds.
+    // Retained for pre-Phase-4 data without entity-level contextIds. Events
+    // appear in contextIds of facts whose subject or object is an event entity.
     if (acc.size < limit) {
       const contextFacts = await this.store.findFacts(
         { contextId: entityId, kind: 'atomic', asOf: opts.asOf },
@@ -2764,6 +3307,121 @@ export class MemorySystem implements IDisposable {
     await this.store.updateEntity(next);
     this.emit({ type: 'entity.upsert', entity: next, created: false });
     return next;
+  }
+
+  /**
+   * Union-merge new entity ids into `entity.contextIds`. The canonical way to
+   * mutate the top-level multi-entity binding after creation.
+   *
+   * Semantics:
+   *  - Visibility-validate every addition (each must be visible to the caller;
+   *    invisible ids throw — mirrors `addFact`'s context-visibility rule).
+   *  - Filter self-references silently (id === entityId).
+   *  - Dedupe against existing `contextIds`.
+   *  - No-op fast path when every addition is already present.
+   *
+   * **Return shape:** `{ entity, added }` — `added` is the count of new
+   * contextIds actually persisted (post dedupe + self-reference filter).
+   * `added === 0` means the call was a no-op (everything was already there or
+   * filtered out); the returned entity is unchanged from storage. Migration /
+   * audit callers branch on `added > 0` to count real mutations.
+   *
+   * Concurrency: read-modify-write with optimistic-version retry. Two callers
+   * unioning different additions onto the same entity converge because the
+   * losing-retry observes the winner's write and computes a fresh union.
+   * `maxAttempts` caps at 3 — the last attempt's
+   * `OptimisticConcurrencyError` bubbles on exhaustion (caller's choice to
+   * surface or further-retry at a higher level).
+   */
+  async addEntityContextIds(
+    entityId: EntityId,
+    additions: EntityId[],
+    scope: ScopeFilter,
+    opts?: { maxAttempts?: number },
+  ): Promise<{ entity: IEntity; added: number }> {
+    assertNotDestroyed(this, 'addEntityContextIds');
+    if (additions.length === 0) {
+      const current = await this.store.getEntity(entityId, scope);
+      if (!current) {
+        throw new Error(
+          `addEntityContextIds: entity ${entityId} not found or not visible`,
+        );
+      }
+      return { entity: current, added: 0 };
+    }
+    // De-dupe + drop self-references before the visibility round-trips.
+    const candidateSet = new Set<EntityId>();
+    for (const id of additions) {
+      if (!id || id === entityId) continue;
+      candidateSet.add(id);
+    }
+    if (candidateSet.size === 0) {
+      const current = await this.store.getEntity(entityId, scope);
+      if (!current) {
+        throw new Error(
+          `addEntityContextIds: entity ${entityId} not found or not visible`,
+        );
+      }
+      return { entity: current, added: 0 };
+    }
+    // Visibility check — refuse to write a contextId for an entity the caller
+    // can't see. Once before the retry loop because invisibility is stable.
+    const candidates = [...candidateSet];
+    for (const cid of candidates) {
+      const ent = await this.store.getEntity(cid, scope);
+      if (!ent) {
+        throw new Error(
+          `addEntityContextIds: context entity ${cid} not visible or not found`,
+        );
+      }
+    }
+    const maxAttempts = Math.max(1, Math.min(opts?.maxAttempts ?? 3, 10));
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const current = await this.store.getEntity(entityId, scope);
+      if (!current) {
+        throw new Error(
+          `addEntityContextIds: entity ${entityId} not found or not visible`,
+        );
+      }
+      assertCanAccess(current, scope, 'write', 'entity');
+      const existing = new Set(current.contextIds ?? []);
+      const toAdd = candidates.filter((id) => !existing.has(id));
+      if (toAdd.length === 0) {
+        return { entity: current, added: 0 };
+      }
+      const next: IEntity = {
+        ...current,
+        contextIds: [...(current.contextIds ?? []), ...toAdd],
+        version: current.version + 1,
+        updatedAt: new Date(),
+      };
+      try {
+        await this.store.updateEntity(next);
+        this.emit({ type: 'entity.upsert', entity: next, created: false });
+        return { entity: next, added: toAdd.length };
+      } catch (err) {
+        const name = err instanceof Error ? err.name : '';
+        const isContention = /ConcurrencyError/i.test(name);
+        if (!isContention || attempt === maxAttempts) throw err;
+        // Log every retry except the last (which would either succeed or
+        // bubble up). Operators want to see contention without log spam.
+        logger.info(
+          {
+            component: 'MemorySystem.addEntityContextIds',
+            entityId,
+            attempt,
+            maxAttempts,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'retrying after version-mismatch',
+        );
+      }
+    }
+    // Unreachable — `maxAttempts >= 1` guarantees the final iteration's
+    // catch re-throws. TypeScript can't see that, hence this fallback throw.
+    throw new Error(
+      `addEntityContextIds: exhausted ${maxAttempts} attempts for ${entityId}`,
+    );
   }
 
   /**
@@ -2902,7 +3560,17 @@ export class MemorySystem implements IDisposable {
    */
   async listOpenTasks(
     scope: ScopeFilter,
-    opts: { assigneeId?: EntityId; projectId?: EntityId; limit?: number } = {},
+    opts: {
+      assigneeId?: EntityId;
+      projectId?: EntityId;
+      /**
+       * Narrow to tasks whose top-level `contextIds` array includes this
+       * anchor (project, deal, meeting, etc.). First-class filter — does NOT
+       * go through `metadataFilter` (which would query the wrong path).
+       */
+      contextId?: EntityId;
+      limit?: number;
+    } = {},
   ): Promise<IEntity[]> {
     assertNotDestroyed(this, 'listOpenTasks');
     const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
@@ -2912,7 +3580,11 @@ export class MemorySystem implements IDisposable {
     if (opts.assigneeId) metadataFilter.assigneeId = opts.assigneeId;
     if (opts.projectId) metadataFilter.projectId = opts.projectId;
     const page = await this.store.listEntities(
-      { type: 'task', metadataFilter },
+      {
+        type: 'task',
+        metadataFilter,
+        ...(opts.contextId !== undefined ? { contextId: opts.contextId } : {}),
+      },
       { limit, orderBy: [...OPEN_TASK_ORDER_BY] },
       scope,
     );
@@ -2995,6 +3667,8 @@ export class MemorySystem implements IDisposable {
     opts: {
       assigneeId?: EntityId;
       projectId?: EntityId;
+      /** Narrow to tasks whose top-level `contextIds` includes this anchor. */
+      contextId?: EntityId;
       batchSize?: number;
       /** Resume from a cursor returned by a prior interrupted iteration. */
       startAfter?: string;
@@ -3010,7 +3684,11 @@ export class MemorySystem implements IDisposable {
     let cursor = opts.startAfter;
     while (true) {
       const page = await this.store.listEntities(
-        { type: 'task', metadataFilter },
+        {
+          type: 'task',
+          metadataFilter,
+          ...(opts.contextId !== undefined ? { contextId: opts.contextId } : {}),
+        },
         { limit: batchSize, cursor, orderBy: [...OPEN_TASK_ORDER_BY] },
         scope,
       );

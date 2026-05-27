@@ -47,6 +47,23 @@ export interface ExtractionMention {
    * on resolve, conservative `fillMissing` merge (never overwrites existing).
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Multi-entity binding labels — local mention labels (e.g. `["m_acme",
+   * "t_q3_meeting"]`) the entity "lives within". Translated to entity ids in
+   * Pass 1.6 of `resolveAndIngest` (after all mentions have been resolved so
+   * forward references work) and **unioned** into the entity's
+   * `IEntity.contextIds` field via `MemorySystem.addEntityContextIds`.
+   *
+   * Conventional consumers: task/event/topic mentions. The LLM emits at the
+   * top level of the mention object, NOT inside `metadata` (which would
+   * collide with the `metadata.contextIds` path the older prompt suggested
+   * and persist label placeholders).
+   *
+   * Unresolved labels are silently dropped (logged in `unresolved[]`).
+   * Self-references and duplicates are filtered. Visibility is enforced
+   * downstream by `addEntityContextIds`.
+   */
+  contextIds?: string[];
 }
 
 export interface ExtractionFactSpec {
@@ -313,7 +330,7 @@ export class ExtractionResolver {
     }
 
     // ----- Pass 1: mentions → entities -----
-    // Resolve in two sub-phases so contextEntityIds can include already-
+    // Resolve in two sub-phases so disambiguationEntityIds can include already-
     // resolved sibling labels (improves disambiguation).
     const mentionEntries = Object.entries(output.mentions ?? {});
 
@@ -323,14 +340,14 @@ export class ExtractionResolver {
         continue;
       }
       try {
-        const contextEntityIds = [...labelToEntityId.values()];
+        const disambiguationEntityIds = [...labelToEntityId.values()];
         const result = await this.memory.upsertEntityBySurface(
           {
             surface: mention.surface,
             type: mention.type,
             identifiers: mention.identifiers ?? [],
             aliases: mention.aliases ?? [],
-            contextEntityIds,
+            disambiguationEntityIds,
             metadata: mention.metadata,
           },
           scope,
@@ -456,6 +473,94 @@ export class ExtractionResolver {
         unresolved.push({
           where: `mention:${resolved.label}.metadata`,
           reason: `metadata-label patch failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+
+    // ----- Pass 1.6: union mention-level contextIds onto entities -----
+    // The LLM emits `mention.contextIds` as a list of LOCAL labels. Pass 1
+    // created/resolved every mention; Pass 1.5 translated metadata labels.
+    // Now we know every label's entity id and can translate the contextIds
+    // labels. Calls `addEntityContextIds`, which:
+    //   - skips empty / self-reference / already-present additions,
+    //   - visibility-validates each addition,
+    //   - retries on optimistic-concurrency mismatch (two extractions
+    //     unioning different anchors onto the same canonical task converge).
+    //
+    // Unresolved labels are silently dropped (logged in `unresolved[]`).
+    // Two-pass design: a forward reference (mention.contextIds → label that
+    // appears later in the mentions list) is resolved here even though
+    // upsertEntityBySurface couldn't see it during Pass 1.
+    //
+    // Pre-resolved mentions are handled too — the LLM may emit `contextIds`
+    // on a redeclaration of a pre-bound label. The mention itself is skipped
+    // in Pass 1 (pre-resolved binding wins), but its contextIds are still
+    // valid intent and need to be unioned onto the pre-bound entity.
+    interface ContextIdsJob {
+      entityId: EntityId;
+      labels: readonly string[];
+      mentionLabel: string;
+      // Index into `entities[]` so we can write the updated entity back;
+      // undefined for pre-resolved mentions that aren't in entities[].
+      entitiesIndex?: number;
+    }
+    const contextIdJobs: ContextIdsJob[] = [];
+    // Jobs from regular upserts.
+    for (let i = 0; i < entities.length; i++) {
+      const resolvedEntity = entities[i]!;
+      const mention = output.mentions[resolvedEntity.label];
+      const labels = mention?.contextIds;
+      if (!labels || labels.length === 0) continue;
+      contextIdJobs.push({
+        entityId: resolvedEntity.entity.id,
+        labels,
+        mentionLabel: resolvedEntity.label,
+        entitiesIndex: i,
+      });
+    }
+    // Jobs from pre-resolved mentions the LLM redeclared with contextIds.
+    if (opts?.preResolved) {
+      const coveredByEntities = new Set(entities.map((e) => e.label));
+      for (const [label, entityId] of Object.entries(opts.preResolved)) {
+        if (coveredByEntities.has(label)) continue; // covered by upsert path
+        const mention = output.mentions[label];
+        const labels = mention?.contextIds;
+        if (!labels || labels.length === 0) continue;
+        contextIdJobs.push({ entityId, labels, mentionLabel: label });
+      }
+    }
+    for (const job of contextIdJobs) {
+      const translated: EntityId[] = [];
+      for (const cidLabel of job.labels) {
+        const id = labelToEntityId.get(cidLabel);
+        if (!id) {
+          unresolved.push({
+            where: `mention:${job.mentionLabel}.contextIds`,
+            reason: `contextId label "${cidLabel}" not found in mentions (dropped)`,
+          });
+          continue;
+        }
+        if (id === job.entityId) {
+          // Self-reference — silently drop. Not surfaced in `unresolved`
+          // because it's an LLM benign mistake, not actionable.
+          continue;
+        }
+        translated.push(id);
+      }
+      if (translated.length === 0) continue;
+      try {
+        const result = await this.memory.addEntityContextIds(
+          job.entityId,
+          translated,
+          scope,
+        );
+        if (job.entitiesIndex !== undefined) {
+          entities[job.entitiesIndex]!.entity = result.entity;
+        }
+      } catch (err) {
+        unresolved.push({
+          where: `mention:${job.mentionLabel}.contextIds`,
+          reason: `addEntityContextIds failed: ${err instanceof Error ? err.message : String(err)}`,
         });
       }
     }

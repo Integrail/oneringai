@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory — entity-level `contextIds` (backwards-compatible addition)
+
+`IEntity.contextIds?: EntityId[]` lands as a top-level field on entities, mirroring `IFact.contextIds`. It expresses the multi-valued "lives within" edge — a task in `[projectA, dealQ3]` surfaces on `getContext.relatedTasks` queries for either anchor. Designed for `task` / `event` / `topic` entities; field is open to any type.
+
+**Why now.** Prompt v10 (2026-05) made tasks self-sufficient by removing the parallel `committed_to(person, task)` fact, but left no replacement for the multi-entity binding (a task lives in a project AND a deal AND a meeting). The single-valued `metadata.projectId` couldn't carry it; fact-level `contextIds` belongs to *one fact about multiple entities*, not *one entity within multiple contexts*. Entity-level `contextIds` closes the gap.
+
+- **Schema (types.ts).** `IEntity.contextIds` (top-level) + `EntityListFilter.contextId` (first-class filter; does NOT go through `metadataFilter`).
+
+- **Write API.** New `MemorySystem.addEntityContextIds(entityId, additions, scope)` — visibility-validates each addition, drops self-references, dedupes, RMW with optimistic-concurrency retry (cap 3). `upsertEntity` / `upsertEntityBySurface` / `tryAtomicCreateOrResolve` all thread `contextIds`. **Union merge on resolve** — never overwrites, never fills-missing.
+
+- **Read API.** `resolveRelatedTasks` / `resolveRelatedEvents` gain a tier-1.5 path that hits the new index directly (`listEntities({type, contextId, …})`). Fact-walk tier retained as the legacy fallback. `listOpenTasks` / `iterateOpenTasks` accept `opts.contextId`. `findSimilarOpenTasks` accepts `opts.contextId` (pushed into `$vectorSearch.filter`).
+
+- **Mongo indexes.** New b-tree indexes `{groupId, type, contextIds}` and `{ownerId, type, contextIds}` (sparse) installed by `ensureIndexes`.
+
+- **Atlas vector-search.** `'contextIds'` added to `ENTITIES_FILTER_PATHS` so the new `findSimilarOpenTasks({contextId})` filter clause is honored by `$vectorSearch` (same hard-earned rule the recent FACTS_FILTER_PATHS work codified for facts). **Existing deployments will see one drop+recreate cycle on the entities vector index on next `ensureVectorSearchIndexes()` run** — 30-60s typical, queries fall back to cursor-scan cosine during the rebuild. No action required.
+
+- **Merge integrity.** `mergeEntities` rewrites entity-level `contextIds` (loser → winner, deduped, self-reference suppressed). Without this step every entity merge would leave permanent dangling pointers — the same v25 wrapper gap the fact path closed.
+
+- **Archive/delete semantics.** `archiveEntity` and `deleteEntity` follow the **tombstone rule** for `contextIds` — references to the archived/deleted entity are left in other records as dangling pointers (readers resolve to `null`). Symmetric with long-standing fact-`contextIds` behavior, codified in JSDoc.
+
+- **Extraction (prompt v11, parser, resolver).** Mention schema gains a top-level `contextIds: ["m_..."]` array (NOT inside `metadata`). `parseExtractionWithStatus` validates as `string[]`. `ExtractionResolver` adds Pass 1.6 — after all mentions resolve, walks `mention.contextIds`, translates labels → entity ids, calls `addEntityContextIds`. **Two-pass design means forward references work** (a task can reference a deal that appears later in the mentions list).
+
+- **Resolver API rename.** `ResolveEntityQuery.contextEntityIds` → `disambiguationEntityIds`. Old name kept as `@deprecated` alias; resolver accepts both, new name wins on collision. Same rename on `UpsertBySurfaceInput`. The rename avoids collision with the new persistent `IEntity.contextIds` field — one is a resolution-time hint, the other is a persistent edge.
+
+- **Migration helper.** `MemorySystem.hoistContextIdsFromFactsToEntities({predicate, entitySide, entityType?, dryRun?, archiveSource?, …}, scope)` — generic, idempotent. Reference recipe: `{predicate: 'committed_to', entitySide: 'object', entityType: 'task'}` hoists legacy v10-era deal/project linkage onto task entities.
+
 ### Memory (Mongo) — vector-search index auto-reconcile
 
 - **`FACTS_FILTER_PATHS` adds `contextIds` (correctness).** Without this filter path declared on the Atlas vector-search index, `FactFilter.touchesEntity` (which OR's `subjectId`/`objectId`/`contextIds` in `queries.ts`) and `FactFilter.contextId` were silently scope-bypassing on the `$vectorSearch` fast path — modern Atlas errors with `"Path 'contextIds' needs to be indexed as filter"`, older versions silently dropped the clause and returned cross-context matches. Existing deployments will pick up the new path automatically via drift-recreate (below).

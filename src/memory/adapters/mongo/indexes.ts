@@ -190,6 +190,20 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
       { groupId: 1, type: 1, 'metadata.startTime': -1 } as Record<string, 1 | -1>,
       { name: 'memory_ent_events' },
     );
+    // Entity-level contextIds — drives the tier-1.5 path in
+    // `resolveRelatedTasks` / `resolveRelatedEvents` and the
+    // `EntityListFilter.contextId` query (e.g. "all tasks living within
+    // project X"). Group-leading variant for multi-tenant lookups.
+    await entities.createIndex(
+      { groupId: 1, type: 1, contextIds: 1 },
+      { name: 'memory_ent_context', sparse: true },
+    );
+    // Owner-leading variant for personal-records hot path (mirrors the
+    // owner-leading identifier index above).
+    await entities.createIndex(
+      { ownerId: 1, type: 1, contextIds: 1 },
+      { name: 'memory_ent_owner_context', sparse: true },
+    );
   }
 
   // ── ARCHIVE COLLECTION (move-on-archive deployments) ──────────────────────

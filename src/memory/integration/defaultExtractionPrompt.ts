@@ -1,8 +1,16 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 10** — bump this number whenever the prompt surface
+ * **Prompt version: 11** — bump this number whenever the prompt surface
  * changes materially so callers pinning snapshots notice.
+ *   - v11: task/event/topic mentions can carry a top-level `contextIds: ["m_..."]`
+ *          array referencing other mention labels. Translates to
+ *          `IEntity.contextIds` (union merge) via ExtractionResolver Pass 1.6.
+ *          Replaces the v10-era pattern of stuffing the same multi-entity
+ *          binding into fact-level `contextIds` (which now only covers
+ *          per-fact context — e.g. a decision touching multiple deals).
+ *          Surfaces on `getContext.relatedTasks` / `.relatedEvents` via the
+ *          tier-1.5 entity-contextIds path, indexed in Mongo.
  *   - v10: dropped `committed_to(person, task)` as a parallel emission alongside
  *          extracted task mentions — a task entity is self-sufficient
  *          (`assigneeId` carries who-executes, mention-level `evidenceQuote`
@@ -55,7 +63,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 10;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 11;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, IFact, ScopeFields } from '../types.js';
@@ -361,11 +369,13 @@ Return JSON with the following top-level keys:
       "type": "<person | organization | project | task | event | topic | cluster>",
       "identifiers": [{ "kind": "<email|domain|slack_id|phone|github|canonical|...>", "value": "..." }],
       "aliases": ["<alternate form nearby in text>"],
+      "contextIds": ["<local_label>"],   // for task/event/topic: project / deal / meeting anchors — see rule 4
       "metadata": {
         // Optional type-specific fields. ONLY set on first observation; the
         // resolver will NOT overwrite existing values on re-extraction.
         // task:  { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "servesAnchorId": "<anchor_id>", "evidenceQuote": "<verbatim ≤200 char phrase from signal>" }
         // event: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] }
+        // NOTE: do NOT put \`contextIds\` here — it's a top-level field on the mention.
       }
     }
   },
@@ -447,6 +457,7 @@ Same signal. CORRECT output:
       "surface": "Meet Sarah about ERP renewal",
       "type": "task",
       "identifiers": [{ "kind": "canonical", "value": "task:meet-sarah-erp-renewal-2026-THU" }],
+      "contextIds": ["m_sarah", "topic_erp_renewal_label"],
       "metadata": { "state": "proposed", "assigneeId": "m_john", "dueAt": "2026-THU" }
     }
   },
@@ -455,7 +466,6 @@ Same signal. CORRECT output:
       "subject": "m_john",
       "predicate": "discussed_topic",
       "object": "topic_erp_renewal_label",
-      "contextIds": ["m_sarah", "t1"],
       "details": "Worried that Oracle's pricing for ERP renewal won't work; proposed meeting Sarah Thursday to discuss.",
       "importance": 0.7,
       "confidence": 0.85,
@@ -465,7 +475,7 @@ Same signal. CORRECT output:
 }
 \`\`\`
 
-One fact. The narrative (concern + proposal + scheduling) lives in \`details\`. The task is an entity with metadata carrying its state + due date. The proposed meeting with Sarah surfaces on queries about the deal via \`contextIds\`.${subjectOfHintsSection}
+One fact. The narrative (concern + proposal + scheduling) lives in \`details\`. The task is an entity with metadata carrying its state + due date AND a \`contextIds\` array binding it to Sarah and the ERP-renewal topic — so the task surfaces on queries about either anchor. Fact-level \`contextIds\` is reserved for binding a single fact to multiple anchors (e.g. a decision touching three deals); single-entity bindings belong on the entity.${subjectOfHintsSection}
 
 ## Fact kinds
 Every fact must set \`kind\` to **exactly one** of these two values — no others are accepted by the storage layer:
@@ -501,9 +511,12 @@ Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral
 3. **Capture surface variants.** If the text uses "Microsoft" and "MSFT" for the same org, include both under the mention's \`aliases\`.
 4. **Tasks and events are entities with metadata — NOT a pile of facts.**
    Mention-level \`metadata\` carries the structural fields. Do NOT restate them as separate facts.
-   - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "evidenceQuote": "I'll get the budget over to you by Friday" } }\`
-   - **Event**: \`{ type: "event", surface: "Q3 Planning", metadata: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] } }\`
-   A task entity is self-sufficient: WHO will execute (\`assigneeId\`), WHEN it's due (\`dueAt\`), what state (\`state\`), priority (\`priority\`), and the verbatim grounding (\`evidenceQuote\`) all live on the task. The originating signal is stamped automatically by the host. Do NOT emit a separate \`committed_to(person, task)\` fact alongside an extracted task — the task entity IS the record.
+   - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], contextIds: ["<deal_label>", "<project_label>"], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "evidenceQuote": "I'll get the budget over to you by Friday" } }\`
+   - **Event**: \`{ type: "event", surface: "Q3 Planning", contextIds: ["<project_label>"], metadata: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] } }\`
+   - **Topic**: \`{ type: "topic", surface: "ERP Renewal", contextIds: ["<parent_topic_or_project_label>"] }\`
+   A task entity is self-sufficient: WHO will execute (\`assigneeId\`), WHEN it's due (\`dueAt\`), what state (\`state\`), priority (\`priority\`), the verbatim grounding (\`evidenceQuote\`), AND the multi-entity binding (\`contextIds\`) all live on the task. The originating signal is stamped automatically by the host. Do NOT emit a separate \`committed_to(person, task)\` fact alongside an extracted task — the task entity IS the record.
+
+   **Multi-entity binding via \`contextIds\` (task / event / topic):** when the task lives within a larger context — a deal, a project, a meeting, a parent topic — list those mention labels in the task's top-level \`contextIds\` array. The resolver translates labels to entity ids and unions them onto the task's persistent contextIds. Re-extraction of the same canonical task with new contextIds *adds* to the existing set (never overwrites). The task then surfaces on \`getContext\` queries about ANY of those anchors. Use this instead of fact-level contextIds for entity-to-entity "lives within" bindings — fact-level contextIds is reserved for binding a single FACT to multiple anchors (e.g. "approved Q3 budget" touching both the JPM and Microsoft deals).
 
    **Task state lives on \`metadata.state\`.** Set it on the mention at creation time (\`"state": "proposed" | "in_progress" | "blocked" | "done" | "cancelled" | ...\`). Do NOT emit a state-transition fact for a task — transitions are host-driven via \`MemorySystem.transitionTaskState\`. Re-extractions of the same task do not overwrite an existing state (the metadata merge is conservative \`fillMissing\`).
 
@@ -525,7 +538,10 @@ Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral
    - "Merge Jovan's PRs for EKE demo" (made 2026-05-06) → \`task:merge-jovan-prs-2026-05-06\`
 
    Same commitment surfaced across multiple signals MUST yield the SAME canonical id — that's how the resolver dedupes. If the second signal merely re-references an existing commitment (a thread reply, a meeting follow-up), produce the SAME canonical id you'd produce from the original; the system will merge into the existing task entity.
-5. **Use contextIds for deal/project/meeting binding.** If John's commitment happens in the context of an Acme deal, add the deal's label to the fact's \`contextIds\`. The deal is not subject or object but the activity should be surfaced when querying the deal.
+5. **Fact-level \`contextIds\` vs. entity-level \`contextIds\` — pick the right level.**
+   - **Entity-level** (\`mention.contextIds\`, top of the mention object): the *entity itself* lives within these anchors. Set on task/event/topic mentions when they have a parent deal/project/meeting/topic. Example: a task created during a deal's negotiation gets the deal's label on \`mention.contextIds\`. **This is the default for binding a task to its surrounding work.**
+   - **Fact-level** (\`fact.contextIds\`, on a fact): a *single fact* is about multiple entities at once — e.g. "(Anton, approved, Q3 Budget)" with \`contextIds: ["jpm_deal", "ms_deal"]\` because the approval is materially about both deals. Rare; usually only when one decision/observation legitimately spans multiple anchors that aren't subject or object.
+   When in doubt, prefer entity-level. The task entity surfaces on a deal's view either way; doubling up adds noise.
 6. **Importance calibration.**
    - 1.0: identity-level facts ("X is CEO", "X works at Y")
    - 0.7: significant decisions, commitments, state changes

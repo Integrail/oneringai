@@ -23,14 +23,25 @@
  *   'project'       — metadata: { status, stakeholderIds }
  *   'task'          — metadata: { state, dueAt, priority, assigneeId,
  *                                  reporterId, projectId, completedAt }
+ *                     contextIds: [projectIds, dealIds, meetingIds, …]
  *   'event'         — metadata: { startTime, endTime, location, kind, attendeeIds }
+ *                     contextIds: [projectIds, dealIds, topicIds, …]
  *   'topic'         — free-form topical anchor
+ *                     contextIds: [projectIds, parentTopicIds, …]
  *   'cluster'       — metadata: { anchorEntityIds, firstSeen, lastSeen }
  *
  * Tasks and events are entities (not facts). Their state, due dates, and
  * attendees are a mix of entity.metadata (for fast query) and relationship
  * facts (for history + provenance). See `getContext` which auto-surfaces
  * `relatedTasks` and `relatedEvents` for any subject entity.
+ *
+ * `contextIds` on entities is the multi-valued "lives within" edge — analogous
+ * to (but distinct from) `IFact.contextIds`. A task with `contextIds: [proj,
+ * deal]` surfaces on getContext queries for either anchor. Surfaces through
+ * `EntityListFilter.contextId`, `resolveRelatedTasks` / `resolveRelatedEvents`,
+ * and `findSimilarOpenTasks`. Does NOT participate in `traverse` / `neighbors`
+ * graph walks (those are fact-edge only — entity contextIds carries no
+ * predicate so it has no place in a predicate-keyed walk).
  */
 
 import type { IDisposable } from '../domain/interfaces/IDisposable.js';
@@ -138,6 +149,26 @@ export interface IEntity extends ScopeFields {
    * Free-form — adapters support equality filtering via EntityListFilter.metadataFilter.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Multi-valued "lives within" edge — other entities this one is *about* or
+   * *contained within*. Mirrors `IFact.contextIds` semantically: a task in
+   * `[projectA, dealQ3]` surfaces when querying either anchor.
+   *
+   * Conventional consumers: `task`, `event`, `topic` (entities that exist
+   * within larger contexts). `project`, `organization`, `person`, `document`,
+   * `cluster` typically do NOT carry contextIds — they ARE contexts, not
+   * in-context things. The type is open: callers may use it for any type.
+   *
+   * Surfaced via `EntityListFilter.contextId`, the tier-1.5 path in
+   * `resolveRelatedTasks` / `resolveRelatedEvents`, and the `opts.contextId`
+   * filter on `findSimilarOpenTasks`. NOT participated in by `traverse`
+   * (predicate-keyed graph walks).
+   *
+   * Merge semantics on resolve: **union** — re-extracting the same canonical
+   * task with new contextIds adds them to the existing set rather than
+   * filling-missing or overwriting. See `MemorySystem.addEntityContextIds`.
+   */
+  contextIds?: EntityId[];
   archived?: boolean;
   /**
    * Access-control block governing non-owner reads/writes. Undefined → library
@@ -422,6 +453,13 @@ export interface EntityListFilter {
   ids?: EntityId[];
   archived?: boolean;
   /**
+   * Match entities whose top-level `contextIds` array includes this entity id.
+   * Symmetric to `FactFilter.contextId`. Adapter maps directly to
+   * `{contextIds: filter.contextId}` — does NOT use `metadataFilter` (which
+   * would query the wrong path: `metadata.contextIds`).
+   */
+  contextId?: EntityId;
+  /**
    * Filter on entity.metadata fields. Keys may use dot-notation to reach
    * nested paths (e.g. `'jarvis.importance'` → `metadata.jarvis.importance`).
    * Keys whose path segments begin with `$` are rejected — no operator
@@ -504,14 +542,25 @@ export type EntityEmbeddingField = 'identity' | 'content';
 
 /**
  * Narrow filter for `IMemoryStore.semanticSearchEntities`. Type narrowing is
- * the only supported pre-filter — resolver tier-4 always knows (or guesses)
- * the type. Scope still flows through `scope: ScopeFilter` separately.
+ * the primary pre-filter — resolver tier-4 always knows (or guesses) the type.
+ * `contextId` is the second narrow, pushed into the underlying vector-search
+ * pipeline as a `filter: {contextIds: …}` clause so the search returns only
+ * entities whose top-level `contextIds` contains the given anchor.
+ * Scope still flows through `scope: ScopeFilter` separately.
  */
 export interface EntitySemanticSearchFilter {
   /** Single-type narrow — preferred when known. */
   type?: string;
   /** Multi-type narrow — union. Ignored when `type` is set. */
   types?: string[];
+  /**
+   * Narrow to entities whose top-level `contextIds` array includes this id.
+   * On Mongo Atlas, the filter must be declared on the entities vector index
+   * (`'contextIds'` in `ENTITIES_FILTER_PATHS` — see MongoMemoryAdapter).
+   * Adapters that lack the filter path declaration would silently drop the
+   * clause; the library shipped path declares it so this works out of the box.
+   */
+  contextId?: EntityId;
 }
 
 /**
@@ -912,6 +961,15 @@ export interface ResolveEntityQuery {
   /**
    * Other entities already resolved in the same extraction — used to
    * disambiguate among multiple fuzzy candidates by shared context.
+   * Resolution-time hint only; does NOT persist on the resolved entity.
+   * (For the persistent multi-entity binding, see `IEntity.contextIds`.)
+   */
+  disambiguationEntityIds?: EntityId[];
+  /**
+   * @deprecated Renamed to `disambiguationEntityIds` to avoid collision with
+   * the persistent `IEntity.contextIds` field. Will be removed in a future
+   * release. The resolver accepts both; `disambiguationEntityIds` wins on
+   * collision.
    */
   contextEntityIds?: EntityId[];
 }
@@ -928,7 +986,27 @@ export interface UpsertBySurfaceInput {
   identifiers?: Identifier[];
   /** Alternate forms spotted alongside the primary surface (e.g. "MSFT" next to "Microsoft"). */
   aliases?: string[];
+  /**
+   * Other entities resolved earlier in the same extraction — disambiguation
+   * hint for the resolver. Does NOT persist. See `ResolveEntityQuery.disambiguationEntityIds`.
+   */
+  disambiguationEntityIds?: EntityId[];
+  /**
+   * @deprecated Renamed to `disambiguationEntityIds`. The library accepts both;
+   * `disambiguationEntityIds` wins on collision.
+   */
   contextEntityIds?: EntityId[];
+  /**
+   * Persistent multi-entity binding for the resolved entity — written to
+   * `IEntity.contextIds`. Re-extraction with new ids **unions** into the
+   * existing set (never overwrites, never fills-missing). Self-references
+   * and ids invisible to the caller are silently dropped.
+   *
+   * Convention: set on `task`, `event`, `topic` mentions to bind them to
+   * the project/deal/meeting they live within. Empty / omitted means no
+   * change to existing contextIds on resolve, no contextIds on create.
+   */
+  contextIds?: EntityId[];
   /**
    * Type-specific fields (task.state, event.startTime, etc.). See the file
    * header for conventional fields per entity type.

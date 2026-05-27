@@ -19,9 +19,11 @@
  * (default true) — turning this flag on is a drop-in change.
  *
  * Context-aware disambiguation: when multiple candidates pass threshold,
- * prefer the one that shares the most `contextEntityIds` with already-
- * resolved mentions in the same signal. Runs on top of all tiers, including
- * semantic.
+ * prefer the one that shares the most `disambiguationEntityIds` (formerly
+ * `contextEntityIds` — alias kept for back-compat) with already-resolved
+ * mentions in the same signal. Distinct from the persistent
+ * `IEntity.contextIds` field — disambiguation is resolution-time only.
+ * Runs on top of all tiers, including semantic.
  *
  * Alias accumulation: `upsertBySurface` records the incoming surface + any
  * supplied identifiers on the matched entity, so the system gets better with
@@ -116,6 +118,8 @@ export interface ResolverMemoryHooks {
       /** Surface + any caller-supplied aliases (used for alias accumulation on race-loss). */
       aliasesForMerge?: string[];
       metadataMerge?: 'fillMissing' | 'overwrite';
+      /** Persistent multi-entity binding — written to `IEntity.contextIds`. */
+      contextIds?: EntityId[];
     },
     scope: ScopeFilter,
   ) => Promise<{ entity: IEntity; created: boolean }>;
@@ -124,6 +128,9 @@ export interface ResolverMemoryHooks {
    * When `opts.metadata` is supplied, merges per `opts.metadataMerge`:
    *  - `'fillMissing'` (default): only keys absent from stored metadata are set.
    *  - `'overwrite'`: shallow-merge (incoming keys win).
+   * When `opts.contextIdsToUnion` is supplied, the helper unions those entity
+   * ids into `IEntity.contextIds` (dedupe + self-reference filter). Caller is
+   * responsible for visibility-validating the additions.
    */
   appendAliasesAndIdentifiers: (
     id: EntityId,
@@ -133,6 +140,7 @@ export interface ResolverMemoryHooks {
     opts?: {
       metadata?: Record<string, unknown>;
       metadataMerge?: 'fillMissing' | 'overwrite';
+      contextIdsToUnion?: EntityId[];
     },
   ) => Promise<IEntity>;
 }
@@ -354,8 +362,15 @@ export class EntityResolver {
     }
 
     // ---- Context-aware disambiguation ----
-    if (query.contextEntityIds && query.contextEntityIds.length > 0 && seen.size > 1) {
-      const contextSet = new Set(query.contextEntityIds);
+    // Accept both `disambiguationEntityIds` (the new name) and `contextEntityIds`
+    // (the deprecated alias). New name wins on collision; deprecation removal
+    // will be a future major.
+    const disambiguationIds =
+      query.disambiguationEntityIds && query.disambiguationEntityIds.length > 0
+        ? query.disambiguationEntityIds
+        : query.contextEntityIds;
+    if (disambiguationIds && disambiguationIds.length > 0 && seen.size > 1) {
+      const contextSet = new Set(disambiguationIds);
       const topConfidence = Math.max(...[...seen.values()].map((c) => c.confidence));
       if (topConfidence < 1.0) {
         // Only disambiguate when top is not already a perfect identifier match.
@@ -405,7 +420,8 @@ export class EntityResolver {
         surface: input.surface,
         type: input.type,
         identifiers: input.identifiers,
-        contextEntityIds: input.contextEntityIds,
+        disambiguationEntityIds:
+          input.disambiguationEntityIds ?? input.contextEntityIds,
       },
       scope,
       { limit: 5, threshold: 0.5 },
@@ -417,16 +433,22 @@ export class EntityResolver {
       // defaults to fillMissing merge — re-upsert should never overwrite an
       // existing task.state, event.startTime, etc. Callers who want to mutate
       // deliberately should use updateEntityMetadata / transitionTaskState.
+      //
+      // contextIds, by contrast, ALWAYS unions — the multi-entity binding is
+      // strictly additive over time as new signals reveal more anchors. The
+      // helper visibility-checks each addition before writing.
       const newAliases = [input.surface, ...(input.aliases ?? [])];
+      const hasContextIds = !!input.contextIds && input.contextIds.length > 0;
       const entity = await this.hooks.appendAliasesAndIdentifiers(
         top.entity.id,
         newAliases,
         input.identifiers ?? [],
         scope,
-        input.metadata
+        input.metadata || hasContextIds
           ? {
               metadata: input.metadata,
               metadataMerge: opts?.metadataMerge ?? 'fillMissing',
+              contextIdsToUnion: input.contextIds,
             }
           : undefined,
       );
@@ -481,6 +503,7 @@ export class EntityResolver {
         aliases: input.aliases,
         identifiers: input.identifiers ?? [],
         metadata: input.metadata,
+        contextIds: input.contextIds,
         aliasesForMerge,
         metadataMerge: opts?.metadataMerge ?? 'fillMissing',
       },

@@ -1168,6 +1168,7 @@ describe('MongoMemoryAdapter', () => {
       expect(entFilterPaths).toEqual(
         [
           'archived',
+          'contextIds',
           'groupId',
           'metadata.role',
           'ownerId',
@@ -1202,6 +1203,7 @@ describe('MongoMemoryAdapter', () => {
       expect(contentFilterPaths).toEqual(
         [
           'archived',
+          'contextIds',
           'groupId',
           'metadata.role',
           'ownerId',
