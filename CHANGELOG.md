@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Memory (Mongo) — vector-search index auto-reconcile
+
+- **`FACTS_FILTER_PATHS` adds `contextIds` (correctness).** Without this filter path declared on the Atlas vector-search index, `FactFilter.touchesEntity` (which OR's `subjectId`/`objectId`/`contextIds` in `queries.ts`) and `FactFilter.contextId` were silently scope-bypassing on the `$vectorSearch` fast path — modern Atlas errors with `"Path 'contextIds' needs to be indexed as filter"`, older versions silently dropped the clause and returned cross-context matches. Existing deployments will pick up the new path automatically via drift-recreate (below).
+
+- **`MongoMemoryAdapter.ensureVectorSearchIndexes()` now reconciles drift.** Compares the stored Atlas index definition (vector path/dims/similarity + filter-path set) against the library's desired definition. On mismatch — typical scenario: library version bump added a filter path — drops + recreates so the new fields take effect (Atlas does not support in-place edits to vector-search index definitions). Tolerates concurrent-drop and post-drop-draining races; surfaces "stale definition but cannot reconcile" if the wrapper does not implement `dropSearchIndex`. Logs a `console.warn` when reconciling: queries fall back to cursor-scan cosine for ~30–60s while Atlas rebuilds.
+
+- **New requirement on collection wrappers: `dropSearchIndex`.** Added to `IMongoCollectionLike` as optional. Implemented for `RawMongoCollection` and `MeteorMongoCollection` (both delegate to the mongodb node driver v6.6+ method). Custom wrappers that don't implement it will hit a clear error if drift is ever detected; up-to-date wrappers are unaffected.
+
+- **Operator impact on upgrade.** Existing deployments that use the facts vector-search fast path will see one drop+recreate cycle on first startup after upgrading; vector queries fall back to cursor-scan cosine (~30–60s typical) during the Atlas rebuild. No action required.
+
 ## [0.9.2] — 2026-05-26
 
 ### Memory — dedup migration enablers

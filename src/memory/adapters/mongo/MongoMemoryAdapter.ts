@@ -1639,9 +1639,17 @@ const ENTITIES_FILTER_PATHS: readonly string[] = [
  * Filter paths declared as `type:'filter'` in the facts vector-search index.
  * Derived from `scopeToFilter`, `ARCHIVED_HIDDEN`, and the subset of
  * `factFilterToMongo` paths commonly passed to `$vectorSearch.filter`
- * (subject, object, predicate, kind). Temporal filters (`createdAt`,
- * `validFrom`, `validUntil`) are post-filtered by MemorySystem rather than
- * pushed into the vector pipeline, so they're omitted here.
+ * (subject, object, contextIds, predicate, kind). Temporal filters
+ * (`createdAt`, `validFrom`, `validUntil`) are post-filtered by MemorySystem
+ * rather than pushed into the vector pipeline, so they're omitted here.
+ *
+ * `contextIds` is required for `FactFilter.touchesEntity` and
+ * `FactFilter.contextId` to work on the `$vectorSearch` fast path.
+ * `touchesEntity` expands to `$or: [subjectId, objectId, contextIds]` in
+ * `factFilterToMongo`; without `contextIds` declared here, Atlas errors with
+ * `"Path 'contextIds' needs to be indexed as filter"` (modern Atlas) or
+ * silently drops the contextIds clause (older versions), causing a scope
+ * bypass for any caller doing semantic search anchored on an entity.
  */
 const FACTS_FILTER_PATHS: readonly string[] = [
   'groupId',
@@ -1651,6 +1659,7 @@ const FACTS_FILTER_PATHS: readonly string[] = [
   'archived',
   'subjectId',
   'objectId',
+  'contextIds',
   'predicate',
   'kind',
 ];
@@ -1687,32 +1696,143 @@ async function ensureOneVectorSearchIndex(args: EnsureVectorIndexArgs): Promise<
         `Atlas Vector Search requires mongodb node driver v6.6+ and Atlas Server v6.0.11+.`,
     );
   }
+  const desiredFields: SearchIndexFieldArray = [
+    {
+      type: 'vector',
+      path: args.path,
+      numDimensions: args.dimensions,
+      similarity: args.similarity,
+    },
+    ...args.filterPaths.map((path) => ({ type: 'filter' as const, path })),
+  ];
   const definition: SearchIndexDefinition = {
     name,
     type: 'vectorSearch',
-    definition: {
-      fields: [
-        {
-          type: 'vector',
-          path: args.path,
-          numDimensions: args.dimensions,
-          similarity: args.similarity,
-        },
-        ...args.filterPaths.map((path) => ({ type: 'filter' as const, path })),
-      ],
-    },
+    definition: { fields: desiredFields },
   };
 
   const existing = await collection.listSearchIndexes(name);
-  if (existing.some((i) => i.name === name)) return;
+  const current = existing.find((i) => i.name === name);
+  if (current) {
+    // Drift check: Atlas does not support in-place edits to vector-search
+    // index definitions. If our desired definition differs from what's
+    // currently stored (e.g. the library added a new filter path in a
+    // subsequent version), we must drop + recreate. Compare field-set
+    // structurally — vector field by (type, path, numDimensions,
+    // similarity); filter fields by set of paths.
+    if (!searchIndexDefinitionsMatch(current.latestDefinition, desiredFields)) {
+      if (!collection.dropSearchIndex) {
+        throw new Error(
+          `ensureVectorSearchIndexes: existing index "${name}" has stale definition ` +
+            `but collection wrapper does not implement dropSearchIndex — cannot reconcile. ` +
+            `Drop the index manually and restart, or upgrade the wrapper.`,
+        );
+      }
+      console.warn(
+        `[oneringai] ensureVectorSearchIndexes: search index "${name}" has a stale ` +
+          `definition — dropping and recreating with current spec. Queries will fall ` +
+          `back to cursor-scan cosine until Atlas finishes rebuilding (~30s typical).`,
+      );
+      // Concurrent-drop race: two processes detecting drift simultaneously
+      // will both call dropSearchIndex; the second one races Atlas's
+      // accept/ack window and may throw "index not found." Re-list to
+      // confirm the index is gone (or already in DELETING) before treating
+      // the drop as fatal.
+      try {
+        await collection.dropSearchIndex(name);
+      } catch (dropErr) {
+        const afterDrop = await collection.listSearchIndexes(name);
+        const stillThere = afterDrop.find(
+          (i) => i.name === name && i.status !== 'DELETING',
+        );
+        if (stillThere) throw dropErr;
+      }
+      // After drop, Atlas removes the index asynchronously. listSearchIndexes
+      // may still return it for some seconds with `status: 'DELETING'`. The
+      // catch block on createSearchIndex below distinguishes "old still
+      // draining" from "peer created the new definition" by comparing the
+      // retry's latestDefinition against ours.
+    } else {
+      return;
+    }
+  }
 
   try {
     await collection.createSearchIndex(definition);
   } catch (err) {
-    // Concurrent-create race: another process may have created this index
-    // in the gap between our listSearchIndexes and createSearchIndex calls.
-    // Re-check — if it's there, absorb the error. Otherwise rethrow.
+    // Two distinct races can land us here:
+    //   (a) Concurrent-create — another process created the index with the
+    //       same desired definition in the gap between our listSearchIndexes
+    //       and createSearchIndex calls. Absorb.
+    //   (b) Post-drop draining — we just dropped a stale index, Atlas hasn't
+    //       finished draining, and createSearchIndex rejected the new spec
+    //       because the old one is still present. Surface it so the next
+    //       startup retries; otherwise we'd silently linger with the OLD
+    //       definition for this process's lifetime.
+    // Distinguish by checking whether the retry sees the DESIRED definition,
+    // not just "an index with that name."
     const retry = await collection.listSearchIndexes(name);
-    if (!retry.some((i) => i.name === name)) throw err;
+    const found = retry.find((i) => i.name === name);
+    if (!found || !searchIndexDefinitionsMatch(found.latestDefinition, desiredFields)) {
+      throw err;
+    }
   }
+}
+
+/** Field-array shape used inside SearchIndexDefinition.definition.fields. */
+type SearchIndexFieldArray = NonNullable<SearchIndexDefinition['definition']['fields']>;
+
+/**
+ * Compare a stored Atlas index definition (echoed from `listSearchIndexes`)
+ * against the desired field array. Returns true when they describe the same
+ * vector + filter shape, false on any structural drift.
+ *
+ * Stored shape from Atlas (`SearchIndexInfo.latestDefinition`) is a loose
+ * `Record<string, unknown>` — we navigate defensively. Any unexpected shape
+ * is treated as "doesn't match" (safe: triggers drop + recreate, which
+ * Atlas re-validates).
+ */
+function searchIndexDefinitionsMatch(
+  stored: Record<string, unknown> | undefined,
+  desired: SearchIndexFieldArray,
+): boolean {
+  if (!stored) return false;
+  const fields = stored.fields;
+  if (!Array.isArray(fields)) return false;
+
+  // Vector field: there must be exactly one with type 'vector' and matching
+  // path/dims/similarity.
+  const desiredVector = desired.find((f) => f.type === 'vector');
+  const storedVector = fields.find(
+    (f): f is { type: 'vector'; path: string; numDimensions: number; similarity: string } =>
+      typeof f === 'object' && f !== null && (f as { type?: unknown }).type === 'vector',
+  );
+  if (!desiredVector || desiredVector.type !== 'vector') return false;
+  if (!storedVector) return false;
+  if (
+    storedVector.path !== desiredVector.path ||
+    storedVector.numDimensions !== desiredVector.numDimensions ||
+    storedVector.similarity !== desiredVector.similarity
+  ) {
+    return false;
+  }
+
+  // Filter fields: set of paths must match exactly. Order-insensitive — Atlas
+  // doesn't guarantee echo order.
+  const desiredFilterPaths = new Set(
+    desired.filter((f) => f.type === 'filter').map((f) => (f as { path: string }).path),
+  );
+  const storedFilterPaths = new Set(
+    fields
+      .filter(
+        (f): f is { type: 'filter'; path: string } =>
+          typeof f === 'object' && f !== null && (f as { type?: unknown }).type === 'filter',
+      )
+      .map((f) => f.path),
+  );
+  if (desiredFilterPaths.size !== storedFilterPaths.size) return false;
+  for (const p of desiredFilterPaths) {
+    if (!storedFilterPaths.has(p)) return false;
+  }
+  return true;
 }

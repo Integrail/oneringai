@@ -120,6 +120,20 @@ export interface IMongoCollectionLike<T extends { id: string }> {
   createSearchIndex?(definition: SearchIndexDefinition): Promise<string>;
   /** Returns all search indexes (or one named index) with lifecycle status. */
   listSearchIndexes?(name?: string): Promise<SearchIndexInfo[]>;
+  /**
+   * Drop a search index by name. Atlas processes the drop asynchronously —
+   * `listSearchIndexes` may still return the index for some seconds after
+   * the call resolves, with `status: 'DELETING'` or similar. Callers that
+   * recreate immediately should be tolerant of that lag (re-list until
+   * absent or use a different index name).
+   *
+   * Required by `ensureVectorSearchIndexes`'s drift-recreate path: when a
+   * stored index's `latestDefinition.fields` don't match the desired filter
+   * paths (e.g. after a library upgrade adds a new filter path), the only
+   * way to apply the new definition is drop + recreate. Atlas does not
+   * support in-place edits to vector-search index definitions.
+   */
+  dropSearchIndex?(name: string): Promise<void>;
 
   /**
    * Transaction hook — present on raw-driver wrappers when a client is

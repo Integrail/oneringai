@@ -37,6 +37,22 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
   /** For verifying search-index calls. */
   public createSearchIndexCalls: SearchIndexDefinition[] = [];
   public listSearchIndexCalls = 0;
+  /** For verifying drop calls (drift-detection path). */
+  public dropSearchIndexCalls: string[] = [];
+
+  /**
+   * Pre-seed a search index with the given definition. Lets tests stage a
+   * "stale" index from a previous library version so we can exercise the
+   * drift detect → drop → recreate path.
+   */
+  seedSearchIndex(definition: SearchIndexDefinition): void {
+    this.searchIndexes.push({
+      name: definition.name,
+      status: 'READY',
+      queryable: true,
+      latestDefinition: definition.definition as Record<string, unknown>,
+    });
+  }
 
   constructor(private readonly name: string = 'fake') {}
 
@@ -176,6 +192,11 @@ export class FakeMongoCollection<T extends { id: string }> implements IMongoColl
     this.listSearchIndexCalls++;
     const all = this.searchIndexes;
     return name ? all.filter((i) => i.name === name) : [...all];
+  }
+
+  async dropSearchIndex(name: string): Promise<void> {
+    this.dropSearchIndexCalls.push(name);
+    this.searchIndexes = this.searchIndexes.filter((i) => i.name !== name);
   }
 
   get createdIndexes(): Array<{ spec: Record<string, 1 | -1>; name?: string }> {

@@ -1137,6 +1137,12 @@ describe('MongoMemoryAdapter', () => {
       expect(factFilterPaths).toEqual(
         [
           'archived',
+          // `contextIds` is required for `FactFilter.touchesEntity` to work on
+          // the `$vectorSearch` fast path — its Mongo translation OR's
+          // contextIds in. Without this filter path declared, Atlas errors
+          // ("Path 'contextIds' needs to be indexed as filter") or silently
+          // drops the contextIds clause.
+          'contextIds',
           'groupId',
           'kind',
           'objectId',
@@ -1232,6 +1238,91 @@ describe('MongoMemoryAdapter', () => {
       await adapter.ensureVectorSearchIndexes({ dimensions: 8 });
       expect(factColl.createSearchIndexCalls).toHaveLength(1);
       expect(entColl.createSearchIndexCalls).toHaveLength(1);
+    });
+
+    // ── Drift detection (drop + recreate) ────────────────────────────────
+    // Atlas does not support in-place edits to vector-search index
+    // definitions. When the library's desired definition changes between
+    // versions (e.g. a new filter path is added), the adapter must drop the
+    // stored index and recreate it so the new fields take effect.
+    it('drops + recreates when stored index has stale filter paths', async () => {
+      // Seed a stale index — missing the contextIds filter path that 0.9.4
+      // requires for `touchesEntity` to work on the $vectorSearch fast path.
+      factColl.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 8, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+            { type: 'filter', path: 'ownerId' },
+            { type: 'filter', path: 'permissions.group' },
+            { type: 'filter', path: 'permissions.world' },
+            { type: 'filter', path: 'archived' },
+            { type: 'filter', path: 'subjectId' },
+            { type: 'filter', path: 'objectId' },
+            { type: 'filter', path: 'predicate' },
+            { type: 'filter', path: 'kind' },
+            // ← contextIds missing — pre-0.9.4 shape
+          ],
+        },
+      });
+
+      await adapter.ensureVectorSearchIndexes({ dimensions: 8 });
+
+      // Drop must fire for the stale index, then recreate with the new spec.
+      expect(factColl.dropSearchIndexCalls).toEqual(['facts_vector']);
+      expect(factColl.createSearchIndexCalls).toHaveLength(1);
+      const created = factColl.createSearchIndexCalls[0]!;
+      const filterPaths = (created.definition.fields ?? [])
+        .filter((f): f is { type: 'filter'; path: string } => f.type === 'filter')
+        .map((f) => f.path);
+      expect(filterPaths).toContain('contextIds');
+    });
+
+    it('drops + recreates when stored vector dimensions differ', async () => {
+      factColl.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            // Wrong dimensions — e.g. host upgraded embedder.
+            { type: 'vector', path: 'embedding', numDimensions: 768, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+            { type: 'filter', path: 'ownerId' },
+            { type: 'filter', path: 'permissions.group' },
+            { type: 'filter', path: 'permissions.world' },
+            { type: 'filter', path: 'archived' },
+            { type: 'filter', path: 'subjectId' },
+            { type: 'filter', path: 'objectId' },
+            { type: 'filter', path: 'contextIds' },
+            { type: 'filter', path: 'predicate' },
+            { type: 'filter', path: 'kind' },
+          ],
+        },
+      });
+
+      await adapter.ensureVectorSearchIndexes({ dimensions: 1536 });
+
+      expect(factColl.dropSearchIndexCalls).toEqual(['facts_vector']);
+      expect(factColl.createSearchIndexCalls).toHaveLength(1);
+      const v = factColl.createSearchIndexCalls[0]!.definition.fields![0] as {
+        type: string;
+        numDimensions: number;
+      };
+      expect(v.numDimensions).toBe(1536);
+    });
+
+    it('no-op when stored index matches desired definition exactly', async () => {
+      // First call creates.
+      await adapter.ensureVectorSearchIndexes({ dimensions: 8 });
+      expect(factColl.createSearchIndexCalls).toHaveLength(1);
+      expect(factColl.dropSearchIndexCalls).toHaveLength(0);
+
+      // Second call: same spec → no drop, no recreate.
+      await adapter.ensureVectorSearchIndexes({ dimensions: 8 });
+      expect(factColl.createSearchIndexCalls).toHaveLength(1);
+      expect(factColl.dropSearchIndexCalls).toHaveLength(0);
     });
 
     it('honors explicit custom index names', async () => {
@@ -1341,6 +1432,167 @@ describe('MongoMemoryAdapter', () => {
           entitiesContentIndexName: null,
         }),
       ).rejects.toThrow(/Atlas cluster unreachable/);
+    });
+
+    // ── Drift-recreate sad paths ─────────────────────────────────────────
+    // Covers Issues 1, 2 from the review: post-drop-draining must be
+    // distinguished from peer-recreated-with-desired-spec, and concurrent
+    // drops must not crash startup.
+
+    it('throws when stale definition exists but wrapper lacks dropSearchIndex', async () => {
+      // Use a wrapper-like collection that exposes create/list but not drop.
+      // Simulates a downstream consumer on an older custom wrapper after
+      // the library starts requiring drift reconciliation.
+      const facts = new FakeMongoCollection<IFact>('facts');
+      const ents = new FakeMongoCollection<IEntity>('entities');
+      // Stale: missing contextIds.
+      facts.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 8, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+          ],
+        },
+      });
+      // Strip dropSearchIndex off the wrapper.
+      (facts as unknown as { dropSearchIndex?: unknown }).dropSearchIndex = undefined;
+      const a = new MongoMemoryAdapter({ entities: ents, facts });
+      try {
+        await expect(
+          a.ensureVectorSearchIndexes({
+            dimensions: 8,
+            entitiesIndexName: null,
+            entitiesContentIndexName: null,
+          }),
+        ).rejects.toThrow(/stale definition.*does not implement dropSearchIndex/);
+      } finally {
+        a.destroy();
+      }
+    });
+
+    it('rethrows when createSearchIndex fails after drop AND retry shows the OLD definition (post-drop draining)', async () => {
+      // Seed a stale index, override dropSearchIndex to NO-OP (Atlas drop
+      // accepted but still draining), then make createSearchIndex throw.
+      // The post-throw retry sees the old definition — must rethrow so the
+      // next startup retries instead of silently lingering with stale spec.
+      factColl.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 8, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+            // ← stale: missing the other filter paths the library now wants
+          ],
+        },
+      });
+      // No-op drop — simulates Atlas accepting drop but not yet draining.
+      factColl.dropSearchIndex = async (name) => {
+        factColl.dropSearchIndexCalls.push(name);
+      };
+      factColl.createSearchIndex = async () => {
+        throw new Error('Duplicate index name (still draining)');
+      };
+      await expect(
+        adapter.ensureVectorSearchIndexes({
+          dimensions: 8,
+          entitiesIndexName: null,
+          entitiesContentIndexName: null,
+        }),
+      ).rejects.toThrow(/Duplicate index name/);
+    });
+
+    it('absorbs createSearchIndex failure when retry shows the DESIRED definition (peer-recreated race after drop)', async () => {
+      // Seed stale → drop completes → createSearchIndex throws (race with
+      // a peer that recreated it with the new spec) → retry shows the
+      // peer's NEW definition → absorb, do not rethrow.
+      factColl.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 8, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+          ],
+        },
+      });
+      const originalCreate = factColl.createSearchIndex.bind(factColl);
+      factColl.createSearchIndex = async (def) => {
+        // Simulate peer process having already recreated with the desired
+        // spec. We populate with our desired definition then throw a
+        // duplicate-name error to drive the catch path.
+        await originalCreate(def);
+        throw new Error('Duplicate index name (race)');
+      };
+      await expect(
+        adapter.ensureVectorSearchIndexes({
+          dimensions: 8,
+          entitiesIndexName: null,
+          entitiesContentIndexName: null,
+        }),
+      ).resolves.toBeUndefined();
+      // Drop happened, then create attempted (and was absorbed because the
+      // retry saw the desired spec).
+      expect(factColl.dropSearchIndexCalls).toEqual(['facts_vector']);
+    });
+
+    it('absorbs concurrent-drop race when dropSearchIndex throws but the index is already gone', async () => {
+      // Seed stale, then have dropSearchIndex REMOVE the entry but throw
+      // anyway (peer dropped between our list and our drop). The retry
+      // sees no index → absorb the drop error → create proceeds normally.
+      factColl.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 8, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+          ],
+        },
+      });
+      const originalDrop = factColl.dropSearchIndex.bind(factColl);
+      factColl.dropSearchIndex = async (name) => {
+        await originalDrop(name);
+        throw new Error('Index not found (peer raced)');
+      };
+      await expect(
+        adapter.ensureVectorSearchIndexes({
+          dimensions: 8,
+          entitiesIndexName: null,
+          entitiesContentIndexName: null,
+        }),
+      ).resolves.toBeUndefined();
+      expect(factColl.createSearchIndexCalls).toHaveLength(1);
+    });
+
+    it('rethrows dropSearchIndex failure when the stale index is still present', async () => {
+      // Seed stale, drop throws WITHOUT removing — surface the failure so
+      // startup can crash loud instead of silently leaving the stale index.
+      factColl.seedSearchIndex({
+        name: 'facts_vector',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 8, similarity: 'cosine' },
+            { type: 'filter', path: 'groupId' },
+          ],
+        },
+      });
+      factColl.dropSearchIndex = async (name) => {
+        factColl.dropSearchIndexCalls.push(name);
+        throw new Error('Atlas drop authorization failed');
+      };
+      await expect(
+        adapter.ensureVectorSearchIndexes({
+          dimensions: 8,
+          entitiesIndexName: null,
+          entitiesContentIndexName: null,
+        }),
+      ).rejects.toThrow(/Atlas drop authorization failed/);
+      // Did NOT proceed to createSearchIndex.
+      expect(factColl.createSearchIndexCalls).toHaveLength(0);
     });
   });
 

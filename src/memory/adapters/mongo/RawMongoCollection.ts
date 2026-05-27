@@ -63,6 +63,7 @@ export interface RawMongoDriverCollection<T> {
     definition: Record<string, unknown>;
   }): Promise<string>;
   listSearchIndexes?(name?: string): { toArray(): Promise<Array<Record<string, unknown>>> };
+  dropSearchIndex?(name: string): Promise<void>;
 }
 
 /** Optional client surface for sessions/transactions. */
@@ -183,6 +184,16 @@ export class RawMongoCollection<T extends { id: string }> implements IMongoColle
     }
     const rows = await this.col.listSearchIndexes(name).toArray();
     return rows.map(reviveSearchIndexInfo);
+  }
+
+  async dropSearchIndex(name: string): Promise<void> {
+    if (!this.col.dropSearchIndex) {
+      throw new Error(
+        'RawMongoCollection.dropSearchIndex: underlying driver does not expose dropSearchIndex. ' +
+          'Atlas Search index management requires mongodb-node-driver v6.6+.',
+      );
+    }
+    await this.col.dropSearchIndex(name);
   }
 
   async withTransaction<R>(fn: () => Promise<R>): Promise<R> {

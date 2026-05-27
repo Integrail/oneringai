@@ -56,6 +56,7 @@ export interface MeteorCollectionLike<T> {
       definition: Record<string, unknown>;
     }): Promise<string>;
     listSearchIndexes?(name?: string): { toArray(): Promise<Array<Record<string, unknown>>> };
+    dropSearchIndex?(name: string): Promise<void>;
   };
 }
 
@@ -168,6 +169,17 @@ export class MeteorMongoCollection<T extends { id: string }> implements IMongoCo
     }
     const rows = await raw.listSearchIndexes(name).toArray();
     return rows.map(reviveSearchIndexInfo);
+  }
+
+  async dropSearchIndex(name: string): Promise<void> {
+    const raw = this.col.rawCollection();
+    if (!raw.dropSearchIndex) {
+      throw new Error(
+        'MeteorMongoCollection.dropSearchIndex: Meteor raw collection does not expose dropSearchIndex. ' +
+          'Requires mongodb node driver v6.6+.',
+      );
+    }
+    await raw.dropSearchIndex(name);
   }
 
   // No withTransaction — Meteor + transactions is fragile; callers that need
