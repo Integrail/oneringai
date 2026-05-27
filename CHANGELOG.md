@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-27
+
 ### Memory — content-embedding composers + metadata-aware semantic search (2026-05-27)
 
 **The retrieval-quality fix.** Pre-this-PR, `findSimilarOpenTasks` searched `IEntity.identityEmbedding` (composed from `type + displayName + aliases + identifiers` only). Tasks with generic titles like "Follow up" — 50 of them differing only by `metadata.assigneeId` / `metadata.projectId` — all produced **identical embeddings** and were indistinguishable to semantic search. Metadata changes (`transitionTaskState`, `updateEntityMetadata`, `addEntityContextIds`) never refreshed embeddings.
@@ -88,6 +90,48 @@ Override per type via `MemorySystemConfig.entityContentComposers` / `factContent
 - **New requirement on collection wrappers: `dropSearchIndex`.** Added to `IMongoCollectionLike` as optional. Implemented for `RawMongoCollection` and `MeteorMongoCollection` (both delegate to the mongodb node driver v6.6+ method). Custom wrappers that don't implement it will hit a clear error if drift is ever detected; up-to-date wrappers are unaffected.
 
 - **Operator impact on upgrade.** Existing deployments that use the facts vector-search fast path will see one drop+recreate cycle on first startup after upgrading; vector queries fall back to cursor-scan cosine (~30–60s typical) during the Atlas rebuild. No action required.
+
+### Memory — `embedQuery` + precomputed-vector overloads on semantic search
+
+Avoids re-embedding the same query when fanning out searches with different filters (multi-predicate searches, RAG with per-tenant filters, etc.). The embed cost is now paid once and reused across N filter variants.
+
+- **New `MemorySystem.embedQuery(query): Promise<number[]>`** — embeds a query once. Throws `SemanticSearchUnavailableError` when no embedder is configured, mirroring `semanticSearch`'s error contract.
+- **`MemorySystem.semanticSearch(queryOrVector, ...)`** — accepts `string | number[]`. With `string`, behavior is unchanged (one embed per call). With `number[]`, no embedder is required (the vector is already available); only the store-capability check applies.
+- **`MemorySystem.findSimilarOpenTasks(queryOrVector, ...)`** — same widening. With a vector, the embedder check is skipped.
+
+Backward-compatible — all string-form callsites work identically.
+
+### Memory — `mergeEntities({allowCrossOwner: true})` (opt-in)
+
+New optional option on `MemorySystem.mergeEntities(winnerId, loserId, scope, options?)`. Lets a group/super admin consolidate group-visible duplicates (Person/Organization records the host's pipeline created across multiple owners in the same tenant) without first re-owning every loser.
+
+- **Default behavior unchanged.** Without the flag, both `winner` and `loser` still need `write` access under the caller's scope.
+- **Cross-owner merge.** With `allowCrossOwner: true`, the per-entity `assertCanAccess(write)` is skipped on both winner and loser, AND the same bypass is applied while rewriting fact references via `rewriteFactReferences` so the graph stays coherent post-merge.
+- **Tenancy invariant preserved.** The call refuses if `winner.groupId !== loser.groupId` — this option never enables cross-tenant data movement. Host is responsible for gating which callers may pass the flag (typically a group admin).
+
+### Memory — `RestrainedExtractionContract` no longer drops task mentions (BEHAVIOR CHANGE)
+
+Pre-this-release, `requirePriorityBinding: 'strict'` dropped task mentions that lacked a valid `metadata.servesAnchorId`, or all task mentions if no anchors were active. This silently hid genuine commitments from users whose priorities weren't yet set, and produced "orphan" task-shaped facts upstream when downstream entities referenced the dropped mentions.
+
+- **Tasks ALWAYS extract regardless of mode.** Binding state is annotated via emitted `RestraintEvent`s so the host can score unbound tasks lower (typically FYI) without losing them from the knowledge graph.
+- **New `reasonCode` values on `kept` events:**
+  - `priority_bound` — valid `servesAnchorId`
+  - `priority_unbound` — missing binding, strict mode (still kept)
+  - `priority_unbound_soft` — missing binding, soft mode (still kept)
+  - `priority_stale` — stale/unknown binding, strict mode
+  - `priority_stale_soft` — stale/unknown binding, soft mode
+  - `no_anchors` — no active anchors, informational (still kept)
+- **Pre-v10 strict-mode-drops behavior is gone.** Downstream scoring decides Decision Queue visibility on the surfaced `reasonCode` — the contract surfaces, it never withholds.
+
+### Memory — explicit pagination order on internal walks (correctness)
+
+Several internal pagination loops were relying on adapter natural-order (`_id asc` on Mongo, `Map.values()` on InMemory), which trips the recently-introduced order-warning on bounded list calls and risks dropping items when a cursor's anchor moves under concurrent writes.
+
+- `MemorySystem.rewriteFactReferences` (subject / object / context walks during `mergeEntities`) — explicit `orderBy: { field: 'createdAt', direction: 'asc' }`. Stable, monotonic, unaffected by the loop's writes.
+- `MemorySystem.backfillContentEmbeddings` listEntities walk — explicit `orderBy: { field: '_id', direction: 'asc' }`.
+- `findDuplicateClusters` / `findIdentifierClusters` in `dedup.ts` — explicit `orderBy: { field: '_id', direction: 'asc' }`.
+
+Behavior-equivalent for any host that wasn't seeing order-warning noise; the change is purely about making the contract explicit.
 
 ## [0.9.2] — 2026-05-26
 
