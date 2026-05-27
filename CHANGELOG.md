@@ -30,7 +30,7 @@ Override per type via `MemorySystemConfig.entityContentComposers` / `factContent
 
 **Re-embedding triggers (the gap closed):** every entity mutation site composes the new text, diffs against `IEntity.contentEmbeddingText` (stored alongside the vector), and enqueues only when different. Same model for facts. Wired into: `createEntity`, `upsertEntity`, `upsertEntityBySurface`, `appendAliasesAndIdentifiers`, `mergeEntities`, `updateEntityMetadata`, `transitionTaskState` (state appears in embedded text → terminal tasks naturally rank lower), `addEntityContextIds` (anchor displayNames flow into the embedding), document CRUD, `addFact`, `updateFact`, `updateFactDetails`.
 
-**`findSimilarOpenTasks` switched to `contentEmbedding`.** New `opts.assigneeId` / `opts.projectId` narrows pushed into the Atlas vector pipeline. State filter pushed into the pipeline via `EntitySemanticSearchFilter.states` — eliminates the post-filter starvation that forced over-fetching.
+**`findSimilarOpenTasks` switched to `contentEmbedding`.** New `opts.assigneeId` / `opts.reporterId` / `opts.projectId` / `opts.touchesEntity` narrows pushed into the Atlas vector pipeline. `touchesEntity` is the OR-wildcard equivalent — matches tasks where the given entity appears in any of `metadata.{assigneeId, reporterId, projectId}` or top-level `contextIds`, pushed as one compound `$or` into `$vectorSearch.filter` (so vector ranking sees the participant-touching candidates together instead of competing across role-specific top-K cuts). State filter pushed into the pipeline via `EntitySemanticSearchFilter.states` — eliminates the post-filter starvation that forced over-fetching.
 
 **80-char threshold for atomic-fact embedding is gone.** Pre-this-PR: `computeIsSemantic` gated atomic facts on `details.length >= 80`, so the bulk of structural relationships (`works_at`, `reports_to`, etc.) were invisible to semantic search. Post: composer produces meaningful surface text for every fact; eligibility driven by `isSemantic` (default `true` for new facts, callers opt out with `isSemantic: false`).
 
@@ -44,7 +44,7 @@ Override per type via `MemorySystemConfig.entityContentComposers` / `factContent
 
 **Schema additions:**
 - `IEntity.contentEmbeddingText?: string` — verbatim text that produced `contentEmbedding`. Diff target for the call-site dedup check, debug-readable for operators.
-- `EntitySemanticSearchFilter.{states, assigneeId, reporterId, projectId, dueAtRange}` — task-aware narrows for semantic search.
+- `EntitySemanticSearchFilter.{states, assigneeId, reporterId, projectId, dueAtRange, touchesEntity}` — task-aware narrows for semantic search. `touchesEntity` is a type-keyed OR-wildcard: for `type:'task'` (or `types:['task']`) expands to `$or` over the three role paths + `contextIds`; for any other type, falls back to `contextIds`-only (the one universal relational anchor).
 - `MemorySystemConfig.entityContentComposers?: Record<string, EntityContentComposer>` + `MemorySystemConfig.factContentComposer?: FactContentComposer`.
 
 **Mongo deployment notes:**

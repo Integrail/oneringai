@@ -624,6 +624,26 @@ export interface EntitySemanticSearchFilter {
    * Use with `type: 'task'`.
    */
   dueAtRange?: { from?: Date; to?: Date };
+  /**
+   * OR-wildcard role match — returns entities where this id appears in any
+   * relational role for the filter's entity type. The entity-side analog of
+   * `FactFilter.touchesEntity`.
+   *
+   * Expansion is keyed by `filter.type`:
+   *   - `'task'` → `$or` over `metadata.assigneeId`, `metadata.reporterId`,
+   *     `metadata.projectId`, and top-level `contextIds`.
+   *   - Any other type, or when `type` is unset → `$or` over `contextIds` only
+   *     (the one relational anchor universal across all entity types).
+   *
+   * Pushed into the Atlas `$vectorSearch.filter` clause. All referenced paths
+   * are declared in `ENTITIES_FILTER_PATHS`, so the union is honoured rather
+   * than silently dropped.
+   *
+   * When combined with a per-role narrow (e.g. `assigneeId`), both clauses
+   * apply and are ANDed — the per-role narrow further filters within the
+   * touched set.
+   */
+  touchesEntity?: EntityId;
 }
 
 /**

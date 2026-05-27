@@ -3159,6 +3159,25 @@ export class MemorySystem implements IDisposable {
        * `metadata.projectId` path.
        */
       projectId?: EntityId;
+      /**
+       * Narrow by reporter entity id. Pushed into vector pipeline filter via
+       * `metadata.reporterId` path. Mirrors `assigneeId`. Useful for surgical
+       * "tasks where X is reporter" queries — e.g. "what did I ask Y to do?".
+       */
+      reporterId?: EntityId;
+      /**
+       * OR-wildcard role match — narrows to tasks where this entity appears
+       * in any of `metadata.assigneeId`, `metadata.reporterId`,
+       * `metadata.projectId`, or top-level `contextIds`. The entity-side
+       * analog of `FactFilter.touchesEntity`.
+       *
+       * Prefer this over fanning out N separate role-narrowed searches and
+       * unioning client-side: the union is pushed into Atlas
+       * `$vectorSearch.filter` as one compound `$or`, so vector ranking sees
+       * the participant-touching candidates together rather than competing
+       * across role-specific top-K cuts.
+       */
+      touchesEntity?: EntityId;
     },
   ): Promise<Array<{ task: IEntity; score: number }>> {
     assertNotDestroyed(this, 'findSimilarOpenTasks');
@@ -3204,7 +3223,9 @@ export class MemorySystem implements IDisposable {
     const semanticFilter: EntitySemanticSearchFilter = { type: 'task', states: activeStates };
     if (opts?.contextId !== undefined) semanticFilter.contextId = opts.contextId;
     if (opts?.assigneeId !== undefined) semanticFilter.assigneeId = opts.assigneeId;
+    if (opts?.reporterId !== undefined) semanticFilter.reporterId = opts.reporterId;
     if (opts?.projectId !== undefined) semanticFilter.projectId = opts.projectId;
+    if (opts?.touchesEntity !== undefined) semanticFilter.touchesEntity = opts.touchesEntity;
 
     let candidates: Array<{ entity: IEntity; score: number }>;
     try {

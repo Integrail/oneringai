@@ -1650,6 +1650,38 @@ function entitySemanticFilterToMongo(filter: EntitySemanticSearchFilter): MongoF
       clauses.push({ 'metadata.dueAt': range });
     }
   }
+  if (filter.touchesEntity !== undefined) {
+    // Type-keyed OR-wildcard. Symmetric with FactFilter.touchesEntity but the
+    // expansion is per-type because relational role fields are per-type.
+    // Keep this switch in sync with the library's per-type role enumerations
+    // (`RELATIONAL_TASK_FIELDS` in MemorySystem.ts and the parallel concepts
+    // for events). Every path referenced here MUST be declared in
+    // `ENTITIES_FILTER_PATHS` — otherwise Atlas silently drops the clause.
+    //
+    // The "is this task-scoped?" check accepts BOTH the singular `type: 'task'`
+    // form and the single-element `types: ['task']` array form. Without the
+    // array form, a caller using `semanticSearchEntities({types:['task'], touchesEntity})`
+    // would silently collapse to `contextIds`-only — Atlas returns a strict
+    // subset with no error, and the caller never sees that role-touching
+    // matches were dropped. Footgun-prone enough to handle here.
+    const id = filter.touchesEntity;
+    const isTaskScoped =
+      filter.type === 'task' ||
+      (filter.types !== undefined &&
+        filter.types.length === 1 &&
+        filter.types[0] === 'task');
+    const orPaths: MongoFilter[] = isTaskScoped
+      ? [
+          { 'metadata.assigneeId': id },
+          { 'metadata.reporterId': id },
+          { 'metadata.projectId': id },
+          { contextIds: id },
+        ]
+      : [{ contextIds: id }];
+    // Single-arm $or is unnecessary syntactic noise; emit the bare clause
+    // when only one path applies (currently the non-task fallback).
+    clauses.push(orPaths.length === 1 ? orPaths[0]! : { $or: orPaths });
+  }
   if (clauses.length === 0) return {};
   if (clauses.length === 1) return clauses[0]!;
   return { $and: clauses };
