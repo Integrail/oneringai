@@ -30,10 +30,6 @@ export type RestraintEventKind =
   | 'skeptic_error'
   /** Item dropped because evidenceQuote was missing under strict mode. */
   | 'evidence_missing'
-  /** Item dropped because servesAnchorId didn't match an active anchor. */
-  | 'priority_unbound'
-  /** No active anchors available; under strict requirePriorityBinding everything was dropped. */
-  | 'no_anchors'
   /** Output non-empty but `whyActionable` missing under requireJustification. */
   | 'justification_missing'
   /** Item kept by RestrainedExtractionContract (passed all refinements). */

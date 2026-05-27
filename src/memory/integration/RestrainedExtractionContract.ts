@@ -9,13 +9,22 @@
  *   - **evidenceQuote**: under `requireEvidenceQuote = 'strict'`, every fact must
  *     carry a verbatim quote. Facts missing it are dropped + logged as
  *     `evidence_missing`. Under `'soft'`, missing quotes pass through silently.
- *   - **priority binding**: under `requirePriorityBinding = 'strict'`, every task
- *     mention must carry a `metadata.servesAnchorId` matching an active anchor.
- *     Tasks without a valid binding are dropped + logged as `priority_unbound`.
- *     If no anchors are active at all, ALL task mentions are dropped + logged as
- *     `no_anchors`.
+ *   - **priority binding**: tasks ALWAYS extract regardless of mode. Binding
+ *     status is annotated via emitted events so the host can score unbound
+ *     tasks lower (typically FYI) without losing them from the knowledge
+ *     graph. Event reason codes by case:
+ *       - valid `servesAnchorId` → `priority_bound`
+ *       - missing binding, strict mode → `priority_unbound` (still kept)
+ *       - missing binding, soft mode → `priority_unbound_soft` (still kept)
+ *       - stale/unknown binding, strict mode → `priority_stale`
+ *       - stale/unknown binding, soft mode → `priority_stale_soft`
+ *       - no active anchors → `no_anchors` (informational; still kept)
  *
- * **Every drop emits a `RestraintEvent`** — no silent disappearance. Events
+ *     Pre-v10 behavior dropped task mentions in strict mode. v10 dropped that
+ *     gate — extraction must surface what was said; downstream scoring decides
+ *     visibility on the Decision Queue.
+ *
+ * **Every decision emits a `RestraintEvent`** — no silent disappearance. Events
  * are returned in the result and (if `onDecision` is provided) streamed live.
  *
  * The contract does NOT call any LLM — pure refinement. For LLM-based veto
@@ -78,8 +87,10 @@ export interface RestrainedExtractionResult extends ExtractionOutput {
  * Returns a NEW `ExtractionOutput` plus the decision log. The input is not
  * mutated. Mentions that were referenced only by dropped facts ARE retained —
  * the LLM may have introduced them for entity resolution alone, and dropping
- * them here would lose entity merge candidates. Tasks dropped for priority
- * reasons ARE removed entirely (mention + any facts referencing them).
+ * them here would lose entity merge candidates. Tasks are never dropped by
+ * this contract for priority reasons (v10+) — binding state is surfaced via
+ * `reasonCode` on emitted `kept` events so downstream scoring can demote
+ * unbound tasks without losing them from the graph.
  */
 export function applyRestrainedExtractionContract(
   input: RestrainedExtractionInput,
@@ -122,124 +133,91 @@ export function applyRestrainedExtractionContract(
   }
 
   // --- Priority binding on task mentions --------------------------------------
-  const droppedTaskLabels = new Set<string>();
+  // v10+: tasks ALWAYS extract. Binding state is annotated via emitted events
+  // so the host can score unbound tasks at lower priority (typically FYI)
+  // without losing them from the knowledge graph. Pre-v10 strict mode dropped
+  // unbound tasks here; that produced "orphan" task-shaped facts upstream and
+  // hid genuine commitments from users whose priorities weren't yet set.
   const keptMentions: Record<string, ExtractionMention> = {};
+  for (const [label, mention] of inputMentionsEntries) {
+    keptMentions[label] = mention;
+  }
   if (profile.requirePriorityBinding !== 'off') {
     const anchors = opts.anchors ?? [];
     const activeIds = new Set(anchors.map((a) => a.id));
     const isStrict = profile.requirePriorityBinding === 'strict';
 
-    if (isStrict && anchors.length === 0) {
-      // No active anchors — drop every task mention, with a single pass-level event.
-      for (const [label, mention] of inputMentionsEntries) {
-        if (mention.type === 'task') {
-          droppedTaskLabels.add(label);
-          emitRestraintEvent(events, opts.onDecision, {
-            kind: 'no_anchors',
-            stage,
-            itemRef: `mention:${label}`,
-            reasonCode: 'no_anchors',
-            reasonText:
-              'No active anchors for this user; task mention dropped under strict priority binding.',
-            meta: { surface: mention.surface },
-          });
-        } else {
-          keptMentions[label] = mention;
-        }
-      }
-    } else {
-      for (const [label, mention] of inputMentionsEntries) {
-        if (mention.type !== 'task') {
-          keptMentions[label] = mention;
-          continue;
-        }
-        const md = (mention.metadata ?? {}) as Record<string, unknown>;
-        const servesId = typeof md.servesAnchorId === 'string' ? md.servesAnchorId : undefined;
-        if (servesId && activeIds.has(servesId)) {
-          keptMentions[label] = mention;
-          emitRestraintEvent(events, opts.onDecision, {
-            kind: 'kept',
-            stage,
-            itemRef: `mention:${label}`,
-            reasonCode: 'priority_bound',
-            reasonText: `Task bound to anchor ${servesId}.`,
-            meta: { servesAnchorId: servesId },
-          });
-        } else if (isStrict) {
-          droppedTaskLabels.add(label);
-          emitRestraintEvent(events, opts.onDecision, {
-            kind: 'priority_unbound',
-            stage,
-            itemRef: `mention:${label}`,
-            reasonCode: 'priority_unbound',
-            reasonText: servesId
-              ? `Task references unknown anchor "${servesId}"; not in active set.`
-              : 'Task missing servesAnchorId under strict priority binding.',
-            meta: {
-              surface: mention.surface,
-              servesAnchorIdProvided: servesId,
-              activeAnchorIds: [...activeIds],
-            },
-          });
-        } else {
-          // Soft binding — keep the task even without (or with stale)
-          // anchor binding. Distinguish the two cases in the event so
-          // operators tuning presets can see how often the LLM is
-          // producing servesAnchorIds that point to inactive priorities
-          // (a different signal than "didn't try to bind at all").
-          keptMentions[label] = mention;
-          const isStale = servesId !== undefined;
-          emitRestraintEvent(events, opts.onDecision, {
-            kind: 'kept',
-            stage,
-            itemRef: `mention:${label}`,
-            reasonCode: isStale ? 'priority_stale_soft' : 'priority_unbound_soft',
-            reasonText: isStale
-              ? `Task references unknown anchor "${servesId}" (not in active set); kept under soft binding.`
-              : 'Task kept without anchor binding (soft mode).',
-            meta: {
-              surface: mention.surface,
-              ...(isStale ? { servesAnchorIdProvided: servesId } : {}),
-            },
-          });
-        }
-      }
-    }
-  } else {
     for (const [label, mention] of inputMentionsEntries) {
-      keptMentions[label] = mention;
+      if (mention.type !== 'task') continue;
+      const md = (mention.metadata ?? {}) as Record<string, unknown>;
+      const servesId = typeof md.servesAnchorId === 'string' ? md.servesAnchorId : undefined;
+
+      if (anchors.length === 0) {
+        // No active anchors at all. Informational event only — task is kept.
+        emitRestraintEvent(events, opts.onDecision, {
+          kind: 'kept',
+          stage,
+          itemRef: `mention:${label}`,
+          reasonCode: 'no_anchors',
+          reasonText:
+            'No active anchors for this user; task kept without binding for downstream FYI scoring.',
+          meta: { surface: mention.surface },
+        });
+        continue;
+      }
+
+      if (servesId && activeIds.has(servesId)) {
+        emitRestraintEvent(events, opts.onDecision, {
+          kind: 'kept',
+          stage,
+          itemRef: `mention:${label}`,
+          reasonCode: 'priority_bound',
+          reasonText: `Task bound to anchor ${servesId}.`,
+          meta: { servesAnchorId: servesId },
+        });
+        continue;
+      }
+
+      // Either no binding attempted or binding points to an inactive anchor.
+      // Same outcome (task kept) in both modes; the reason code distinguishes
+      // them so downstream scoring + operator dashboards can tell stale
+      // bindings from missing bindings.
+      const isStale = servesId !== undefined;
+      const reasonCode = isStrict
+        ? isStale
+          ? 'priority_stale'
+          : 'priority_unbound'
+        : isStale
+          ? 'priority_stale_soft'
+          : 'priority_unbound_soft';
+      const reasonText = isStale
+        ? `Task references unknown anchor "${servesId}" (not in active set); kept for FYI scoring.`
+        : 'Task kept without anchor binding — host will score as FYI / lower priority.';
+      emitRestraintEvent(events, opts.onDecision, {
+        kind: 'kept',
+        stage,
+        itemRef: `mention:${label}`,
+        reasonCode,
+        reasonText,
+        meta: {
+          surface: mention.surface,
+          ...(isStale ? { servesAnchorIdProvided: servesId } : {}),
+          activeAnchorIds: [...activeIds],
+        },
+      });
     }
   }
 
-  // --- Evidence quote on facts + drop facts referencing dropped task labels ----
+  // --- Evidence quote on facts ------------------------------------------------
+  // v10+: tasks are no longer dropped by priority binding, so there are no
+  // "orphan" facts to scrub — the prior `droppedTaskLabels` filter became a
+  // no-op and is removed.
   const keptFacts: ExtractionFactSpec[] = [];
   let factsDropped = 0;
 
   for (let i = 0; i < inputFacts.length; i++) {
     const spec = inputFacts[i]!;
     const itemRef = `fact:${i}`;
-
-    // Drop facts whose subject/object/contextIds reference dropped task labels.
-    if (droppedTaskLabels.size > 0) {
-      const refs = [
-        spec.subject,
-        spec.object,
-        ...(spec.contextIds ?? []),
-      ].filter((x): x is string => typeof x === 'string');
-      const orphanedBy = refs.find((r) => droppedTaskLabels.has(r));
-      if (orphanedBy) {
-        factsDropped++;
-        emitRestraintEvent(events, opts.onDecision, {
-          kind: 'priority_unbound',
-          stage,
-          itemRef,
-          reasonCode: 'orphaned_by_dropped_task',
-          reasonText: `Fact references dropped task mention "${orphanedBy}"; dropped to keep graph consistent.`,
-          meta: { predicate: spec.predicate, orphanedBy },
-        });
-        continue;
-      }
-    }
 
     // Evidence-quote check.
     if (profile.requireEvidenceQuote === 'strict') {

@@ -35,7 +35,11 @@ describe('prompt v5 — backward compat (no eagerness)', () => {
     const p = defaultExtractionPrompt({ signalText: 'x' });
     expect(p).not.toContain('## Restraint posture');
     expect(p).not.toContain('whyActionable');
-    expect(p).not.toContain('evidenceQuote');
+    // v10+: `evidenceQuote` appears in the task-metadata schema example
+    // unconditionally (mention-level grounding for tasks). The per-FACT
+    // evidenceQuote schema-suffix is what's gated by eagerness — assert that
+    // specifically.
+    expect(p).not.toContain('"evidenceQuote": "<verbatim phrase from the signal');
   });
 
   it('still includes the Parsimony section (v2 behavior unchanged)', () => {
@@ -45,13 +49,15 @@ describe('prompt v5 — backward compat (no eagerness)', () => {
 });
 
 describe('prompt v5 — chatty preset is essentially the v4 path', () => {
-  it('chatty produces no whyActionable, no evidenceQuote, no anchors, no Restraint preamble', () => {
+  it('chatty produces no whyActionable, no fact-level evidenceQuote, no anchors, no Restraint preamble', () => {
     const p = defaultExtractionPrompt({
       signalText: 'x',
       eagerness: EAGERNESS_PRESETS.chatty,
     });
     expect(p).not.toContain('whyActionable');
-    expect(p).not.toContain('evidenceQuote');
+    // v10+: see comment in the omitting-eagerness test — task-metadata
+    // schema example mentions evidenceQuote unconditionally.
+    expect(p).not.toContain('"evidenceQuote": "<verbatim phrase from the signal');
     expect(p).not.toContain('Priority binding');
     // Chatty has every flag off — the preamble would burn tokens for nothing.
     expect(p).not.toContain('## Restraint posture');
@@ -107,14 +113,18 @@ describe('prompt v5 — strict preset', () => {
     expect(p).toContain('servesAnchorId');
   });
 
-  it('emits the no-active-priorities clause when strict + zero anchors', () => {
+  it('emits the no-active-priorities clause when strict + zero anchors — but tasks still extract', () => {
+    // v10+: strict + zero anchors no longer suppresses extraction. The clause
+    // tells the LLM to extract normally and omit servesAnchorId; the host
+    // scores unbound tasks at lower priority downstream.
     const p = defaultExtractionPrompt({
       signalText: 'x',
       eagerness: EAGERNESS_PRESETS.strict,
       anchors: [],
     });
     expect(p).toContain('No active priorities');
-    expect(p).toContain('do NOT emit any `task` mentions');
+    expect(p).toContain('Extract tasks normally');
+    expect(p).not.toContain('do NOT emit any `task` mentions');
   });
 });
 

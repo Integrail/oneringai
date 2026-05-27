@@ -154,7 +154,10 @@ describe('applyRestrainedExtractionContract — evidence quote', () => {
 });
 
 describe('applyRestrainedExtractionContract — priority binding', () => {
-  it('strict drops task mentions without servesAnchorId', () => {
+  it('strict keeps all task mentions; reasonCode distinguishes bound / unbound / stale', () => {
+    // v10+: tasks ALWAYS extract regardless of binding state. The reasonCode
+    // on each emitted event lets downstream score them differently (FYI for
+    // unbound, full Decision Queue rendering for bound).
     const profile = buildEagernessProfile('strict', { requireEvidenceQuote: 'off' });
     const r = applyRestrainedExtractionContract(
       {
@@ -169,13 +172,21 @@ describe('applyRestrainedExtractionContract — priority binding', () => {
       },
       { profile, anchors: ANCHORS },
     );
-    expect(Object.keys(r.mentions).sort()).toEqual(['m1', 'tA']);
-    const drops = r.events.filter((e) => e.kind === 'priority_unbound');
-    expect(drops).toHaveLength(2);
-    expect(drops.map((d) => d.itemRef).sort()).toEqual(['mention:tB', 'mention:tC']);
+    expect(Object.keys(r.mentions).sort()).toEqual(['m1', 'tA', 'tB', 'tC']);
+    const reasonByLabel = new Map<string, string>();
+    for (const e of r.events) {
+      if (e.kind === 'kept' && e.itemRef.startsWith('mention:t')) {
+        reasonByLabel.set(e.itemRef, e.reasonCode);
+      }
+    }
+    expect(reasonByLabel.get('mention:tA')).toBe('priority_bound');
+    expect(reasonByLabel.get('mention:tB')).toBe('priority_unbound');
+    expect(reasonByLabel.get('mention:tC')).toBe('priority_stale');
   });
 
-  it('strict + zero anchors emits no_anchors per task and drops them all', () => {
+  it('strict + zero anchors keeps all task mentions; emits no_anchors as reasonCode', () => {
+    // v10+: no active anchors no longer suppresses extraction. Tasks land in
+    // the graph and the host scores them via the no_anchors reasonCode.
     const profile = buildEagernessProfile('strict', { requireEvidenceQuote: 'off' });
     const r = applyRestrainedExtractionContract(
       {
@@ -189,9 +200,12 @@ describe('applyRestrainedExtractionContract — priority binding', () => {
       },
       { profile, anchors: [] },
     );
-    expect(Object.keys(r.mentions)).toEqual(['p1']);
-    const noAnchors = r.events.filter((e) => e.kind === 'no_anchors');
-    expect(noAnchors).toHaveLength(2);
+    expect(Object.keys(r.mentions).sort()).toEqual(['p1', 'tA', 'tB']);
+    const noAnchorsKept = r.events.filter(
+      (e) => e.kind === 'kept' && e.reasonCode === 'no_anchors',
+    );
+    expect(noAnchorsKept).toHaveLength(2);
+    expect(noAnchorsKept.map((e) => e.itemRef).sort()).toEqual(['mention:tA', 'mention:tB']);
   });
 
   it('soft mode keeps unbound tasks but logs them as soft-kept', () => {
@@ -243,32 +257,38 @@ describe('applyRestrainedExtractionContract — priority binding', () => {
     expect(stale!.reasonText).toContain('pri-decommissioned');
   });
 
-  it('drops facts that reference dropped task labels', () => {
+  it('keeps facts referencing unbound tasks (v10+: no orphan drops since no tasks dropped)', () => {
+    // Pre-v10 this test asserted that facts pointing at dropped tasks were
+    // also dropped. v10 no longer drops tasks, so the "orphaned_by_dropped_task"
+    // code is no longer emitted — the graph stays consistent because every
+    // referenced mention is kept.
     const profile = buildEagernessProfile('strict', { requireEvidenceQuote: 'off' });
     const r = applyRestrainedExtractionContract(
       {
         mentions: {
-          tBad: taskMention(), // dropped
+          tUnbound: taskMention(), // kept (unbound)
           m1: { surface: 'Alice', type: 'person' },
         },
         facts: [
-          // References dropped task as subject
-          f({ subject: 'tBad', predicate: 'committed_to' }),
-          // References dropped task in contextIds
-          f({ subject: 'm1', predicate: 'discussed_topic', contextIds: ['tBad'] }),
-          // Standalone, should survive
+          f({ subject: 'tUnbound', predicate: 'blocked_by' }),
+          f({ subject: 'm1', predicate: 'discussed_topic', contextIds: ['tUnbound'] }),
           f({ subject: 'm1', predicate: 'said_hi' }),
         ],
         whyActionable: 'why',
       },
       { profile, anchors: ANCHORS },
     );
-    expect(r.facts).toHaveLength(1);
-    expect(r.facts[0]!.predicate).toBe('said_hi');
+    // All three facts survive (no task dropped → no orphans).
+    expect(r.facts).toHaveLength(3);
     const orphanEvents = r.events.filter(
       (e) => e.reasonCode === 'orphaned_by_dropped_task',
     );
-    expect(orphanEvents).toHaveLength(2);
+    expect(orphanEvents).toHaveLength(0);
+    // The unbound task is kept with the priority_unbound reasonCode.
+    const unboundEvent = r.events.find(
+      (e) => e.itemRef === 'mention:tUnbound' && e.kind === 'kept',
+    );
+    expect(unboundEvent?.reasonCode).toBe('priority_unbound');
   });
 });
 

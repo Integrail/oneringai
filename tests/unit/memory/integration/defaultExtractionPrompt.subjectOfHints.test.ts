@@ -34,8 +34,10 @@ const baseRegistry = PredicateRegistry.empty().registerAll([
 ]);
 
 describe('defaultExtractionPrompt — subject-of hints (opt-in)', () => {
-  it('exports prompt version 9', () => {
-    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(9);
+  it('exports current prompt version', () => {
+    // v10: dropped committed_to-alongside-task emission rule; strict-mode no
+    // longer suppresses task extraction; anchor metadata rendered inline.
+    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(10);
   });
 
   it('default (no flag) does NOT include the subject-of section', () => {

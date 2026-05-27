@@ -1,8 +1,21 @@
 /**
  * Default prompt template for signal → memory extraction.
  *
- * **Prompt version: 8** — bump this number whenever the prompt surface changes
- * materially so callers pinning snapshots notice.
+ * **Prompt version: 10** — bump this number whenever the prompt surface
+ * changes materially so callers pinning snapshots notice.
+ *   - v10: dropped `committed_to(person, task)` as a parallel emission alongside
+ *          extracted task mentions — a task entity is self-sufficient
+ *          (`assigneeId` carries who-executes, mention-level `evidenceQuote`
+ *          carries the verbatim grounding). `committed_to` retained in the
+ *          predicate registry for backward compat but flagged
+ *          `excludeFromExtractionPrompt`. Strict-no-priorities branch no
+ *          longer suppresses task extraction — priority binding is a scoring
+ *          input, not an extraction gate. Anchor metadata (weight / horizon /
+ *          deadline) rendered alongside the id in the priority-binding block.
+ *          Added "semantic, not lexical" alignment sentence to priority
+ *          binding so hosts no longer have to append the equivalent paragraph.
+ *   - v9: anchor binding hardened — strict-mode contract rejects task mentions
+ *         lacking `servesAnchorId`; constant exported as 9.
  *   - v8: removed mention of `completed` from the "relational facts about a
  *         task" guidance; entire `temporal` category (`occurred_on`,
  *         `scheduled_for`, `started_on`, `ended_on`) removed in the round-2
@@ -42,7 +55,7 @@
  * (domain-specific predicate vocabularies, extra metadata, etc.).
  */
 
-export const DEFAULT_EXTRACTION_PROMPT_VERSION = 9;
+export const DEFAULT_EXTRACTION_PROMPT_VERSION = 10;
 
 import type { PredicateRegistry } from '../predicates/PredicateRegistry.js';
 import type { IEntity, IFact, ScopeFields } from '../types.js';
@@ -351,7 +364,7 @@ Return JSON with the following top-level keys:
       "metadata": {
         // Optional type-specific fields. ONLY set on first observation; the
         // resolver will NOT overwrite existing values on re-extraction.
-        // task:  { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "servesAnchorId": "<anchor_id>" }
+        // task:  { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "servesAnchorId": "<anchor_id>", "evidenceQuote": "<verbatim ≤200 char phrase from signal>" }
         // event: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] }
       }
     }
@@ -399,7 +412,7 @@ A single commitment, decision, or unblock-request becomes a SINGLE task — even
 - "Grant Ekaterina access so she can configure the integrations" → ONE task ("Grant Ekaterina access to test/staging"), not three (one per integration + one for access + one for verification).
 - "Merge Jovan's PRs and run the EKE demo" → if both fall under the same person/timeline, ONE task ("Prepare EKE demo: merge PRs and run"). Two genuinely independent commitments → two tasks.
 
-The narrative or evidence quote captures the sub-actions inside the task body; the task surface names the decision. Sub-action lists belong in the \`details\` field of the COMMITMENT FACT (e.g. the \`committed_to\` fact pointing at the task), NOT in additional task mentions.
+The narrative or evidence quote captures the sub-actions inside the task body; the task surface names the decision. Sub-action detail belongs in the task mention's \`metadata.evidenceQuote\` (verbatim grounding) and the downstream narrative — NOT in additional task mentions or parallel facts.
 
 ### Negative example — TASK OVER-DECOMPOSITION (frequent failure mode)
 Signal (single email): "Ekaterina will set up Microsoft, Google, Slack, and Zoom integrations on test and staging as soon as Vitaly grants her access."
@@ -419,10 +432,9 @@ The thing the EXEC can act on is granting access. The integrations are downstrea
 ### Negative example — DO NOT DO THIS
 Signal: "Hi Sarah, we need to discuss ERP renewal. Worried Oracle's pricing won't work. Can we meet Thursday? – John"
 
-BAD output (5 facts for a single-topic email):
+BAD output (4 facts for a single-topic email):
 - \`(john, discussed_topic, erp_renewal)\`
 - \`(john, proposed_meeting_with, sarah)\`
-- \`(john, committed_to, task:meet_sarah)\`
 - \`(john, expressed_concern, "Oracle pricing")\`
 - \`(topic:erp_renewal, discussed_in, signal:X)\`
 
@@ -474,7 +486,7 @@ Facts carry time-boxed relevance. Set \`validUntil\` when the fact stops being t
 
 Calibration:
 - **Ephemeral** (today-only, session-bounded): \`validUntil\` = end of today. Examples: "working from home today", "out of office until 5pm".
-- **Task-bounded**: \`validUntil\` = expected completion / due date. Examples: "committed_to", "owns" (for a time-boxed project role).
+- **Task-bounded**: \`validUntil\` = expected completion / due date. Examples: "owns" (for a time-boxed project role), "blocked_by" (clears when the blocking task completes).
 - **Project/quarter-bounded**: \`validUntil\` = project or quarter end. Examples: "rotating_oncall", "Q3 priority".
 - **Identity / employment / long-lived**: leave \`validUntil\` undefined. Examples: "works_at", "employee_count", "prefers" (unless the user qualified it).
 - **Superseded by a later fact** (role change, preference change): leave \`validUntil\` undefined here — use \`supersedes\` in the new fact.
@@ -489,13 +501,13 @@ Note: the storage layer auto-stamps a default \`validUntil\` for known ephemeral
 3. **Capture surface variants.** If the text uses "Microsoft" and "MSFT" for the same org, include both under the mention's \`aliases\`.
 4. **Tasks and events are entities with metadata — NOT a pile of facts.**
    Mention-level \`metadata\` carries the structural fields. Do NOT restate them as separate facts.
-   - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high" } }\`
+   - **Task**: \`{ type: "task", surface: "Send budget", identifiers: [{ "kind": "canonical", "value": "task:send-budget-2026-04-30" }], metadata: { "state": "proposed", "dueAt": "2026-04-30", "assigneeId": "<label>", "priority": "high", "evidenceQuote": "I'll get the budget over to you by Friday" } }\`
    - **Event**: \`{ type: "event", surface: "Q3 Planning", metadata: { "startTime": "2026-05-01T10:00:00Z", "endTime": "...", "location": "...", "attendeeIds": ["<label>"] } }\`
-   The commitment itself is still a fact: \`{ subject: "john_label", predicate: "committed_to", object: "task_label" }\`. But "this task is due 2026-04-30" is metadata. The same goes for completion ("done" → \`metadata.state\`), priority (\`metadata.priority\`), creation (\`createdAt\` / \`createdBy\`), and scheduling (\`metadata.startTime\` / \`metadata.dueAt\`). NEVER emit parallel facts for any of these.
+   A task entity is self-sufficient: WHO will execute (\`assigneeId\`), WHEN it's due (\`dueAt\`), what state (\`state\`), priority (\`priority\`), and the verbatim grounding (\`evidenceQuote\`) all live on the task. The originating signal is stamped automatically by the host. Do NOT emit a separate \`committed_to(person, task)\` fact alongside an extracted task — the task entity IS the record.
 
    **Task state lives on \`metadata.state\`.** Set it on the mention at creation time (\`"state": "proposed" | "in_progress" | "blocked" | "done" | "cancelled" | ...\`). Do NOT emit a state-transition fact for a task — transitions are host-driven via \`MemorySystem.transitionTaskState\`. Re-extractions of the same task do not overwrite an existing state (the metadata merge is conservative \`fillMissing\`).
 
-   Relational facts about what a person did with another entity — \`committed_to\` (a promise, with verbatim evidence quote), \`blocked_by\` (task↔task), \`prepares_for\` (task↔event), \`cancelled_due_to\` (task↔event), \`depends_on\` (task↔task) — remain the right shape. Each encodes a relationship between TWO entities that cannot live on either entity's metadata alone. Single-entity attributes (state, due date, priority, creation, completion timestamp) belong on the entity, not as facts.
+   Inter-entity relational facts — \`blocked_by\` (task↔task), \`prepares_for\` (task↔event), \`cancelled_due_to\` (task↔event), \`depends_on\` (task↔task) — remain the right shape because they relate TWO entities and cannot live on either side's metadata alone. Single-entity attributes (state, due date, priority, creation, completion timestamp, evidence quote, assignee) belong on the entity, not as facts.
 
    **REQUIRED canonical identifier on every task mention.** Tasks have no natural strong identifier (unlike a person's email or a domain). Without a canonical id, the same commitment seen across multiple signals (thread replies, transcripts, follow-ups) creates duplicate task entities — a known production bug pattern. So every \`type: "task"\` mention MUST include:
 
@@ -719,16 +731,21 @@ function renderRestraintSection(
     );
     for (const a of anchors) {
       const kind = a.kind ? ` [${sanitizeInlineString(a.kind)}]` : '';
+      const meta = renderAnchorMetadata(a.metadata);
       // Anchor labels often originate from user-editable settings or free
       // text. Sanitize to defang headings/code-fences that could prematurely
       // close the prompt structure or inject pseudo-instructions.
       lines.push(
-        `- \`${sanitizeInlineString(a.id)}\`${kind} — ${sanitizeInlineString(a.label)}`,
+        `- \`${sanitizeInlineString(a.id)}\`${kind} — ${sanitizeInlineString(a.label)}${meta}`,
       );
     }
+    lines.push('');
+    lines.push(
+      'Bind by SEMANTIC alignment: completing the task must MATERIALLY ADVANCE the priority\'s stated outcome. Sharing a person, organization, topic, deal, project, domain, or keyword with a priority is NOT alignment.',
+    );
     if (eagerness.requirePriorityBinding === 'strict') {
       lines.push(
-        "If a candidate task does NOT serve any of these priorities, OMIT it. The Decision Queue is for priority-aligned work only — context-only items belong in facts (with `kind: \"document\"`) or are dropped.",
+        'When a task semantically advances a priority, set `servesAnchorId`. When it does not, OMIT the field — the host will score the task as FYI but keep it in the knowledge graph.',
       );
     } else {
       lines.push(
@@ -736,11 +753,15 @@ function renderRestraintSection(
       );
     }
   } else if (eagerness.requirePriorityBinding === 'strict') {
-    // Strict binding requested but no anchors available — instruct LLM to emit nothing taskish.
+    // Strict binding requested but no anchors available. Priority binding is
+    // a SCORING input downstream, not an extraction gate — tasks always
+    // extract. The host renders unbound tasks at lower urgency/importance
+    // (typically FYI quadrant) but keeps them in the knowledge graph so
+    // they're available when priorities later land.
     lines.push('');
     lines.push('### No active priorities');
     lines.push(
-      "The user has no active priorities right now. Under strict priority binding, do NOT emit any `task` mentions. Facts about people/orgs/events are still useful as context.",
+      'The user has no active priorities right now. Extract tasks normally — omit `metadata.servesAnchorId` since there are no priorities to bind to. Unbound tasks still belong in the knowledge graph; the host scores them at lower priority.',
     );
   }
 
@@ -793,6 +814,34 @@ function sanitizeInlineString(s: string): string {
   const noFences = noBreaks.replace(/`/g, "'");
   const noHeading = noFences.replace(/^[\s>#]+/, '').trimStart();
   return noHeading.trim();
+}
+
+/**
+ * Render anchor metadata (weight / horizon / deadline) as a parenthesized
+ * fragment for inline appending to the anchor's prompt line. Returns an empty
+ * string when no recognized fields are present. Defangs string values through
+ * `sanitizeInlineString` because anchor labels and metadata trace back to
+ * user-controlled settings text.
+ *
+ * Schema (loose — anchor metadata is `Record<string, unknown>`):
+ *   weight:   number, finite — rendered as `weight=0.85`
+ *   horizon:  string         — rendered as `horizon=Q` (capped 8 chars)
+ *   deadline: ISO date string — rendered as `deadline=2026-06-30` (capped 30 chars)
+ */
+function renderAnchorMetadata(md: Record<string, unknown> | undefined): string {
+  if (!md) return '';
+  const parts: string[] = [];
+  if (typeof md.weight === 'number' && Number.isFinite(md.weight)) {
+    parts.push(`weight=${md.weight.toFixed(2)}`);
+  }
+  if (md.horizon !== undefined && md.horizon !== null) {
+    parts.push(`horizon=${sanitizeInlineString(String(md.horizon)).slice(0, 8)}`);
+  }
+  if (md.deadline !== undefined && md.deadline !== null) {
+    parts.push(`deadline=${sanitizeInlineString(String(md.deadline)).slice(0, 30)}`);
+  }
+  if (parts.length === 0) return '';
+  return `  (${parts.join(', ')})`;
 }
 
 /**

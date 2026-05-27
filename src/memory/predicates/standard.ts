@@ -30,8 +30,11 @@
  * deleted outright — their information lives more naturally on entity metadata
  * or in the new first-class `decision_made` predicate:
  *   - `approved` → use `decision_made` (approvals are decisions).
- *   - `assigned_task`, `delegated_to` → assignment lives on `task.metadata.assigneeId`;
- *     use `committed_to(person, task)` for lineage + verbatim evidence.
+ *   - `assigned_task`, `delegated_to` → assignment lives on `task.metadata.assigneeId`.
+ *     (Round-2 update: `committed_to` is *also* deprecated as a parallel emission
+ *     alongside extracted tasks — `metadata.evidenceQuote` on the task carries
+ *     the verbatim grounding directly. The predicate is kept in the registry
+ *     for back-compat fact queries but hidden from the extraction prompt.)
  *   - `state_changed` → task state lives on `task.metadata.state`; transitions
  *     are host-driven via `MemorySystem.transitionTaskState`. LLM extraction no
  *     longer transitions task state from facts.
@@ -227,7 +230,12 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
   // ---------------------------------------------------------------------------
   {
     name: 'committed_to',
-    description: 'Person made an explicit commitment to complete a task.',
+    description:
+      'DEPRECATED as a parallel fact alongside extracted tasks. The task entity ' +
+      'itself carries WHO (`metadata.assigneeId`) + verbatim grounding ' +
+      '(`metadata.evidenceQuote`). Predicate retained for backward-compat fact ' +
+      'queries and for the strict-no-priorities migration path; hidden from the ' +
+      'extraction prompt so the LLM no longer emits it.',
     category: 'task',
     payloadKind: 'relational',
     subjectTypes: ['person'],
@@ -239,6 +247,7 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     examples: ['(John, committed_to, "Send budget by Friday")'],
     lifecycle: 'ephemeral',
     defaultValidityDays: 90,
+    excludeFromExtractionPrompt: true,
   },
   {
     name: 'blocked_by',

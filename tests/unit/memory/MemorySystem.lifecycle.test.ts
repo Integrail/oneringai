@@ -330,8 +330,11 @@ describe('PredicateRegistry.renderForPrompt — excludeFromExtractionPrompt', ()
     expect(out).not.toContain('`cc_ed`');
     expect(out).not.toContain('`mentioned`');
     expect(out).not.toContain('`responded_to`');
-    // Substantive predicates remain visible
-    expect(out).toContain('`committed_to`');
+    // v10+: committed_to deprecated as a parallel emission alongside extracted
+    // tasks — also tagged excludeFromExtractionPrompt: true. Predicate stays
+    // in the registry for backward-compat fact queries.
+    expect(out).not.toContain('`committed_to`');
+    // Substantive non-deprecated predicates remain visible
     expect(out).toContain('`works_at`');
   });
 
