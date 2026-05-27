@@ -2498,7 +2498,7 @@ export class MemorySystem implements IDisposable {
    * callers should treat semantic similarity as opportunistic, not load-bearing.
    */
   async findSimilarOpenTasks(
-    queryText: string,
+    queryOrVector: string | number[],
     scope: ScopeFilter,
     opts?: {
       topK?: number;
@@ -2519,15 +2519,21 @@ export class MemorySystem implements IDisposable {
         ? opts.taskStates
         : this._taskStates.active;
 
-    if (!this.embedder) return [];
     if (typeof this.store.semanticSearchEntities !== 'function') return [];
 
+    // Accept a pre-computed vector (from `embedQuery`) to skip the per-call
+    // embed round-trip when fanning out searches with the same query.
     let queryVector: number[];
-    try {
-      queryVector = await this.embedder.embed(queryText);
-    } catch (err) {
-      console.warn('[MemorySystem.findSimilarOpenTasks] embed failed:', err);
-      return [];
+    if (typeof queryOrVector === 'string') {
+      if (!this.embedder) return [];
+      try {
+        queryVector = await this.embedder.embed(queryOrVector);
+      } catch (err) {
+        console.warn('[MemorySystem.findSimilarOpenTasks] embed failed:', err);
+        return [];
+      }
+    } else {
+      queryVector = queryOrVector;
     }
 
     let candidates: Array<{ entity: IEntity; score: number }>;
@@ -3144,20 +3150,52 @@ export class MemorySystem implements IDisposable {
     return genericTraverse(this.store, entityId, opts, scope);
   }
 
+  /**
+   * Embed a query string once so the resulting vector can be reused across
+   * multiple `semanticSearch` / `findSimilarOpenTasks` calls with different
+   * filters. Avoids re-embedding the same query in fan-out workloads
+   * (multi-predicate searches, RAG with per-tenant filters, etc.).
+   *
+   * Throws `SemanticSearchUnavailableError` when no embedder is configured —
+   * mirroring `semanticSearch`'s error contract so callers can rely on
+   * `embedQuery` succeeding wherever `semanticSearch(string, ...)` would.
+   */
+  async embedQuery(query: string): Promise<number[]> {
+    assertNotDestroyed(this, 'embedQuery');
+    if (!this.embedder) {
+      throw new SemanticSearchUnavailableError('no embedder configured');
+    }
+    return this.embedder.embed(query);
+  }
+
+  /**
+   * Semantic kNN over facts. Accepts either:
+   *   - `string` — embeds internally (one round-trip per call), OR
+   *   - `number[]` — a pre-computed vector from `embedQuery`, reused across
+   *     fan-out calls so the embed cost is paid once.
+   *
+   * The `number[]` form throws only on the store-capability check; no
+   * embedder is required (the vector is already available).
+   */
   async semanticSearch(
-    query: string,
+    queryOrVector: string | number[],
     filter: FactFilter,
     scope: ScopeFilter,
     topK: number = DEFAULT_SEMANTIC_TOP_K,
   ): Promise<Array<{ fact: IFact; score: number }>> {
     assertNotDestroyed(this, 'semanticSearch');
-    if (!this.embedder) {
-      throw new SemanticSearchUnavailableError('no embedder configured');
-    }
     if (!this.store.semanticSearch) {
       throw new SemanticSearchUnavailableError('store does not support semantic search');
     }
-    const vector = await this.embedder.embed(query);
+    let vector: number[];
+    if (typeof queryOrVector === 'string') {
+      if (!this.embedder) {
+        throw new SemanticSearchUnavailableError('no embedder configured');
+      }
+      vector = await this.embedder.embed(queryOrVector);
+    } else {
+      vector = queryOrVector;
+    }
     return this.store.semanticSearch(vector, filter, { topK }, scope);
   }
 

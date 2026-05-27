@@ -228,6 +228,25 @@ describe('findSimilarOpenTasks', () => {
     expect(res[0]!.task.displayName.toLowerCase()).toContain('jp morgan');
   });
 
+  // Embed-once / search-many seam — when a pre-computed vector is passed,
+  // the embedder is not consulted. Lets fan-out callers pay one embed across
+  // many filtered searches.
+  it('accepts a pre-computed vector and skips the embedder', async () => {
+    await task('Prepare slides for JP Morgan meeting');
+    await task('Buy flowers');
+    await mem.flushEmbeddings();
+
+    // Pre-embed once via the public seam, then clear the spy.
+    const vec = await mem.embedQuery('JP Morgan slides preparation');
+    const embedSpy = (mem as unknown as { embedder: { embed: ReturnType<typeof vi.fn> } })
+      .embedder.embed;
+    embedSpy.mockClear();
+
+    const res = await mem.findSimilarOpenTasks(vec, scope, { topK: 3 });
+    expect(embedSpy).not.toHaveBeenCalled();
+    expect(res.length).toBeGreaterThan(0);
+  });
+
   it('filters out non-active tasks', async () => {
     const closed = await task('Old prep task', 'done');
     await task('New prep task', 'pending');

@@ -1015,6 +1015,49 @@ describe('MemorySystem', () => {
       expect(Array.isArray(results)).toBe(true);
       await m.shutdown();
     });
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Embed-once / search-many seam. `embedQuery` returns the raw vector so
+    // callers can fan out across multiple filters without paying the embed
+    // round-trip per call.
+    // ──────────────────────────────────────────────────────────────────────
+    it('accepts a pre-computed vector and skips the embedder', async () => {
+      const embedder = makeEmbedder();
+      const m = new MemorySystem({ store, embedder });
+      const subj = await seedEntity(m, { identifiers: [{ kind: 'email', value: 'sv@x.com' }] });
+      await m.addFact(
+        { subjectId: subj, predicate: 'note', kind: 'atomic', details: 'a'.repeat(100) },
+        TEST_SCOPE,
+      );
+      await m.flushEmbeddings();
+
+      // Pre-embed once, then call semanticSearch with the vector.
+      const vec = await m.embedQuery('something');
+      embedder.embed.mockClear();
+
+      const results = await m.semanticSearch(vec, TEST_SCOPE, {}, 3);
+      // Embedder must not have been called by the vector-path search.
+      expect(embedder.embed).not.toHaveBeenCalled();
+      expect(Array.isArray(results)).toBe(true);
+      await m.shutdown();
+    });
+  });
+
+  describe('embedQuery', () => {
+    it('returns the embedder vector', async () => {
+      const embedder = makeEmbedder();
+      const m = new MemorySystem({ store, embedder });
+      const vec = await m.embedQuery('hello world');
+      expect(Array.isArray(vec)).toBe(true);
+      expect(vec.length).toBe(embedder.dimensions);
+      expect(embedder.embed).toHaveBeenCalledWith('hello world');
+      await m.shutdown();
+    });
+
+    it('throws SemanticSearchUnavailableError when no embedder is configured', async () => {
+      // `mem` from the suite-wide beforeEach is built without an embedder.
+      await expect(mem.embedQuery('x')).rejects.toThrow(SemanticSearchUnavailableError);
+    });
   });
 
   // ==========================================================================
