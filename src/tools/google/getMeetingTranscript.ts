@@ -29,6 +29,13 @@ interface GetMeetingTranscriptArgs {
   fileId?: string;
   /** ISO date string. Restricts search to files modified on/after this date. */
   since?: string;
+  /**
+   * ISO date string. Restricts search to files modified strictly BEFORE this
+   * date. Combined with `since`, gives a precise time window — needed for
+   * per-occurrence attribution in recurring meetings (the same series produces
+   * one transcript per occurrence, all sharing the meeting title).
+   */
+  before?: string;
   targetUser?: string;
 }
 
@@ -61,7 +68,7 @@ This tool searches for either and returns its text content.
 - meetingCode: Google Meet code (e.g., "abc-defg-hij") — searches Drive for matching artifact
 - meetingTitle: Calendar event title — searches Drive for an artifact matching this name
 
-Optional: \`since\` (ISO date) to restrict to recent files — helps disambiguate recurring meetings.
+Optional: \`since\` (ISO date) restricts to files modified on/after that date. Combine with \`before\` (ISO date, exclusive) to pin a precise window — needed for per-occurrence attribution in recurring meetings.
 
 **Note:** Transcription and/or Gemini notes must be enabled in Workspace admin settings. The file must be accessible to the authenticated user.`,
         parameters: {
@@ -82,6 +89,10 @@ Optional: \`since\` (ISO date) to restrict to recent files — helps disambiguat
             since: {
               type: 'string',
               description: 'ISO date (e.g., "2026-05-27"). Restricts search to files modified on/after this date.',
+            },
+            before: {
+              type: 'string',
+              description: 'ISO date (e.g., "2026-05-28"). Restricts search to files modified strictly before this date. Combine with `since` to pin a precise window for recurring meetings.',
             },
             targetUser: {
               type: 'string',
@@ -152,6 +163,10 @@ Optional: \`since\` (ISO date) to restrict to recent files — helps disambiguat
           if (args.since) {
             const since = args.since.replace(/'/g, '');
             searchQuery += ` and modifiedTime > '${since}'`;
+          }
+          if (args.before) {
+            const before = args.before.replace(/'/g, '');
+            searchQuery += ` and modifiedTime < '${before}'`;
           }
 
           searchQuery += ' and trashed = false';

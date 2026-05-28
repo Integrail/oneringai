@@ -503,7 +503,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    * Merges with existing ToolContext to preserve other fields (memory, signal, taskId).
    *
    * Connector registry resolution order:
-   * 1. If `identities` is set → filtered view showing only identity connectors
+   * 1. If `identities` OR `connectorAccounts` is non-empty → filtered view
+   *    showing union of identity connectors + connectorAccounts keys
    * 2. If access policy + userId → scoped view via Connector.scoped()
    * 3. Otherwise → full global registry
    */
@@ -547,50 +548,96 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /**
    * Build the connector registry appropriate for this agent's config.
+   *
+   * The filtered view's `allowed` set is computed at CALL time (not snapshot at
+   * build time) so it stays correct when host apps add single-account bindings
+   * via `mergeToolContext({ connectorAccounts })` AFTER agent construction.
+   * v25's `OneRingAgentExecutor` does exactly that: `Agent.create({ identities })`
+   * first, then `agent.tools.mergeToolContext({ connectorAccounts })`. Snapshotting
+   * at build time would freeze `allowed` to identities-only and reject any
+   * connector that's only bound via connectorAccounts — even though the agent
+   * legitimately has access to it.
    */
   private buildConnectorRegistry(): IConnectorRegistry {
-    // 1. Identities set → filter global registry by unique connector names from identities
-    if (this._identities?.length) {
-      const allowedSet = new Set(this._identities.map(id => id.connector));
-      const base = this._userId && Connector.getAccessPolicy()
+    // Compute the allowed-connector set on every call so late-bound
+    // connectorAccounts entries (added via mergeToolContext after construction)
+    // are honored. A connector is reachable from this agent if it is named in
+    // identities OR in connectorAccounts.
+    const computeAllowed = (): Set<string> | null => {
+      const ctx = this._tools.getToolContext();
+      const fromIdentities = (this._identities ?? []).map(id => id.connector);
+      const fromAccounts = Object.keys(ctx?.connectorAccounts ?? {});
+      if (fromIdentities.length === 0 && fromAccounts.length === 0) return null;
+      return new Set<string>([...fromIdentities, ...fromAccounts]);
+    };
+
+    // Resolve the base registry on each call too — host apps (e.g. v25) install
+    // their own custom registry whose visibility depends on ambient context, so
+    // we can't snapshot it at construction time either.
+    const resolveBase = (): IConnectorRegistry =>
+      this._userId && Connector.getAccessPolicy()
         ? Connector.scoped({ userId: this._userId })
         : Connector.asRegistry();
 
-      // Return a filtered view that only exposes connectors from identities
-      return {
-        get: (name) => {
-          if (!allowedSet.has(name)) {
-            const available = [...allowedSet].filter(n => base.has(n)).join(', ') || 'none';
-            throw new Error(`Connector '${name}' not found. Available: ${available}`);
-          }
-          return base.get(name);
-        },
-        has: (name) => allowedSet.has(name) && base.has(name),
-        list: () => base.list().filter(n => allowedSet.has(n)),
-        listAll: () => base.listAll().filter(c => allowedSet.has(c.name)),
-        size: () => base.listAll().filter(c => allowedSet.has(c.name)).length,
-        getDescriptionsForTools: () => {
-          const connectors = base.listAll().filter(c => allowedSet.has(c.name));
-          if (connectors.length === 0) return 'No connectors registered yet.';
-          return connectors.map(c => `  - "${c.name}": ${c.displayName} - ${c.config.description || 'No description'}`).join('\n');
-        },
-        getInfo: () => {
-          const info: Record<string, { displayName: string; description: string; baseURL: string }> = {};
-          for (const c of base.listAll().filter(c => allowedSet.has(c.name))) {
-            info[c.name] = { displayName: c.displayName, description: c.config.description || '', baseURL: c.baseURL };
-          }
-          return info;
-        },
-      };
-    }
-
-    // 2. Access policy + userId — scoped view
-    if (this._userId && Connector.getAccessPolicy()) {
-      return Connector.scoped({ userId: this._userId });
-    }
-
-    // 3. Full global registry
-    return Connector.asRegistry();
+    return {
+      get: (name) => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        if (!allowed) return base.get(name);
+        if (!allowed.has(name)) {
+          const available = [...allowed].filter(n => base.has(n)).join(', ') || 'none';
+          throw new Error(`Connector '${name}' not found. Available: ${available}`);
+        }
+        return base.get(name);
+      },
+      has: (name) => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        if (!allowed) return base.has(name);
+        return allowed.has(name) && base.has(name);
+      },
+      list: () => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        if (!allowed) return base.list();
+        return base.list().filter(n => allowed.has(n));
+      },
+      listAll: () => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        if (!allowed) return base.listAll();
+        return base.listAll().filter(c => allowed.has(c.name));
+      },
+      size: () => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        if (!allowed) return base.size();
+        return base.listAll().filter(c => allowed.has(c.name)).length;
+      },
+      getDescriptionsForTools: () => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        const connectors = allowed ? base.listAll().filter(c => allowed.has(c.name)) : base.listAll();
+        if (connectors.length === 0) return 'No connectors registered yet.';
+        return connectors
+          .map(c => `  - "${c.name}": ${c.displayName} - ${c.config.description || 'No description'}`)
+          .join('\n');
+      },
+      getInfo: () => {
+        const base = resolveBase();
+        const allowed = computeAllowed();
+        const connectors = allowed ? base.listAll().filter(c => allowed.has(c.name)) : base.listAll();
+        const info: Record<string, { displayName: string; description: string; baseURL: string }> = {};
+        for (const c of connectors) {
+          info[c.name] = {
+            displayName: c.displayName,
+            description: c.config.description || '',
+            baseURL: c.baseURL,
+          };
+        }
+        return info;
+      },
+    };
   }
 
   // ============================================================================

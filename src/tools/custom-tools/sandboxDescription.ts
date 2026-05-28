@@ -31,24 +31,53 @@ function formatConnectorEntry(c: Connector, accountId?: string): string {
 
 /**
  * Build the connector/identity list section from current ToolContext.
- * If identities are set, list each identity entry. Otherwise list all connectors.
+ *
+ * Surfaces every connector the agent can reach:
+ *   - identities[] entries (with optional accountId labels for multi-account)
+ *   - connectorAccounts entries (single-account bindings — these have NO entry
+ *     in identities by design, so without this they'd be invisible to the LLM
+ *     even though the registry exposes them)
+ *
+ * Falls back to `registry.listAll()` when both are empty.
+ * Entries are deduped on (connector, accountId).
  */
 export function buildConnectorList(context: ToolContext | undefined): string {
-  const identities = context?.identities;
+  const identities = context?.identities ?? [];
+  const connectorAccounts = context?.connectorAccounts ?? {};
   const registry = context?.connectorRegistry ?? Connector.asRegistry();
 
-  if (identities?.length) {
-    const entries: string[] = [];
-    for (const id of identities) {
-      try {
-        const connector = registry.get(id.connector);
-        entries.push(formatConnectorEntry(connector, id.accountId));
-      } catch {
-        entries.push(`   • "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ''} — not available`);
-      }
+  const seen = new Set<string>();
+  const entries: string[] = [];
+  const key = (name: string, accountId?: string) => `${name}::${accountId ?? ''}`;
+
+  for (const id of identities) {
+    const k = key(id.connector, id.accountId);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    try {
+      const connector = registry.get(id.connector);
+      entries.push(formatConnectorEntry(connector, id.accountId));
+    } catch {
+      entries.push(
+        `   • "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ''} — not available`,
+      );
     }
-    return entries.length > 0 ? entries.join('\n\n') : '   No connectors registered.';
   }
+
+  for (const [name, accountId] of Object.entries(connectorAccounts)) {
+    const k = key(name, accountId);
+    if (seen.has(k)) continue;
+    if (seen.has(key(name, undefined))) continue;
+    seen.add(k);
+    try {
+      const connector = registry.get(name);
+      entries.push(formatConnectorEntry(connector, accountId));
+    } catch {
+      entries.push(`   • "${name}" account "${accountId}" — not available`);
+    }
+  }
+
+  if (entries.length > 0) return entries.join('\n\n');
 
   const connectors = registry.listAll();
   if (connectors.length === 0) {

@@ -80,27 +80,62 @@ function formatConnectorEntry(c: Connector, accountId?: string): string {
 
 /**
  * Build the connector/identity list for the description.
- * If identities are set, list each identity entry (connector + accountId).
- * Otherwise fall back to listing all connectors from the registry.
+ *
+ * Surfaces every connector the agent can reach:
+ *   - identities[] entries (with optional accountId labels for multi-account)
+ *   - connectorAccounts entries (single-account bindings — these have NO entry
+ *     in identities by design, so without this they'd be invisible to the LLM
+ *     even though the registry has been fixed to expose them)
+ *
+ * Falls back to `registry.listAll()` when both are empty (e.g. agents created
+ * without scoping — the registry returns the full visible set).
+ *
+ * Entries are deduped on (connector, accountId).
  */
 function buildIdentityList(context: ToolContext | undefined): string {
-  const identities = context?.identities;
+  const identities = context?.identities ?? [];
+  const connectorAccounts = context?.connectorAccounts ?? {};
   const registry = context?.connectorRegistry ?? Connector.asRegistry();
 
-  if (identities?.length) {
-    const entries: string[] = [];
-    for (const id of identities) {
-      try {
-        const connector = registry.get(id.connector);
-        entries.push(formatConnectorEntry(connector, id.accountId));
-      } catch {
-        entries.push(`   • "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ''} — not available`);
-      }
+  const seen = new Set<string>();
+  const entries: string[] = [];
+  const key = (name: string, accountId?: string) => `${name}::${accountId ?? ''}`;
+
+  // Identity-listed connectors first (preserves explicit account labels).
+  for (const id of identities) {
+    const k = key(id.connector, id.accountId);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    try {
+      const connector = registry.get(id.connector);
+      entries.push(formatConnectorEntry(connector, id.accountId));
+    } catch {
+      entries.push(
+        `   • "${id.connector}"${id.accountId ? ` account "${id.accountId}"` : ''} — not available`,
+      );
     }
-    return entries.length > 0 ? entries.join('\n\n') : '   No connectors registered.';
   }
 
-  // Fallback: list all connectors from registry
+  // Single-account bindings — connectors reachable via connectorAccounts only.
+  for (const [name, accountId] of Object.entries(connectorAccounts)) {
+    const k = key(name, accountId);
+    if (seen.has(k)) continue;
+    // Also skip if we already listed this connector without an accountId; the
+    // identities entry above takes precedence.
+    if (seen.has(key(name, undefined))) continue;
+    seen.add(k);
+    try {
+      const connector = registry.get(name);
+      entries.push(formatConnectorEntry(connector, accountId));
+    } catch {
+      entries.push(`   • "${name}" account "${accountId}" — not available`);
+    }
+  }
+
+  if (entries.length > 0) return entries.join('\n\n');
+
+  // Fallback: no identities, no single-account bindings → list everything
+  // visible in the registry. Typical for unscoped agent constructions.
   const connectors = registry.listAll();
   return connectors.length > 0
     ? connectors.map(c => formatConnectorEntry(c)).join('\n\n')
@@ -108,10 +143,14 @@ function buildIdentityList(context: ToolContext | undefined): string {
 }
 
 /**
- * Check if any identity has an accountId (to decide whether to document the 4th param).
+ * Check if any identity OR single-account binding has an accountId
+ * (decides whether to document the 4th `accountId` param in the description).
  */
 function hasAccountIds(context: ToolContext | undefined): boolean {
-  return !!context?.identities?.some(id => id.accountId);
+  if (context?.identities?.some(id => id.accountId)) return true;
+  // Any connectorAccounts entry implies a per-connector accountId binding.
+  // The 4th param lets the LLM override the default if it really needs to.
+  return Object.keys(context?.connectorAccounts ?? {}).length > 0;
 }
 
 /**
