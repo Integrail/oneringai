@@ -255,6 +255,50 @@ describe('MemorySystem — write-path authorization', () => {
       ),
     ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
+
+  // Regression for the prior data-integrity hole: updateEntityMetadata used
+  // to skip the write-authz check. The entity is read-visible to the
+  // intruder (default `world: 'read'`), so the read inside
+  // updateEntityMetadata succeeded and the mutation went through. Now it
+  // throws. The companion case below proves the owner can still mutate.
+  it('updateEntityMetadata throws PermissionDeniedError when caller can read but not write', async () => {
+    const ent = await seedEntity(); // default world=read → intruder can read, not write
+    await expect(
+      mem.updateEntityMetadata(ent.id, { foo: 'attacker-set' }, intruderScope),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
+    // Belt-and-suspenders: the entity's metadata must NOT have been mutated.
+    const fresh = await mem.getEntity(ent.id, ownerScope);
+    expect(fresh?.metadata?.foo).toBeUndefined();
+  });
+
+  it('updateEntityMetadata still allows the owner to mutate', async () => {
+    const ent = await seedEntity();
+    const updated = await mem.updateEntityMetadata(
+      ent.id,
+      { foo: 'owner-set' },
+      ownerScope,
+    );
+    expect(updated.metadata?.foo).toBe('owner-set');
+  });
+
+  it('updateEntityMetadata respects group=write for non-owner group members', async () => {
+    const ent = await mem.upsertEntity(
+      {
+        type: 'person',
+        displayName: 'Shared',
+        identifiers: [{ kind: 'email', value: 's-meta@s.com' }],
+        groupId: 'team-a',
+        permissions: { group: 'write' },
+      },
+      { userId: 'owner', groupId: 'team-a' },
+    );
+    const updated = await mem.updateEntityMetadata(
+      ent.entity.id,
+      { quarter: 'Q2' },
+      { userId: 'other', groupId: 'team-a' },
+    );
+    expect(updated.metadata?.quarter).toBe('Q2');
+  });
 });
 
 // -----------------------------------------------------------------------------

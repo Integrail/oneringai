@@ -18,6 +18,7 @@ import { MemoryWritePluginNextGen } from '@/core/context-nextgen/plugins/MemoryW
 import { MemoryPluginNextGen } from '@/core/context-nextgen/plugins/MemoryPluginNextGen.js';
 import { MemorySystem } from '@/memory/MemorySystem.js';
 import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
+import { PredicateRegistry } from '@/memory/predicates/PredicateRegistry.js';
 
 const USER_ID = 'test-user';
 const AGENT_ID = 'test-agent';
@@ -179,18 +180,48 @@ describe('MemoryWritePluginNextGen — instructions + content', () => {
     expect(text).toMatch(/best-effort|continue answering/i);
   });
 
-  it('documents the standard predicate vocabulary (aligned with the ingestor)', () => {
+  it('renders predicate vocabulary from MemorySystem.getPredicateRegistry()', () => {
+    // When the MemorySystem has a PredicateRegistry, the plugin's
+    // instructions block embeds the registry's `renderForPrompt()` output —
+    // not a hand-maintained list. That keeps the LLM-facing vocabulary in
+    // lockstep with what `addFact` actually validates and ranks.
+    const mem = new MemorySystem({
+      store: new InMemoryAdapter(),
+      predicates: PredicateRegistry.standard(),
+    });
+    const plugin = new MemoryWritePluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
+    const text = plugin.getInstructions() ?? '';
+    // Standard predicates that the registry actually ships AND that aren't
+    // tagged `excludeFromExtractionPrompt`. (Predicates tagged that way —
+    // like `committed_to`, `emailed`, `mentioned` — are deliberately hidden
+    // from this section by `renderForPrompt`.)
+    expect(text).toMatch(/works_at/);
+    expect(text).toMatch(/decision_made/);
+    expect(text).toMatch(/has_document/);
+    expect(text).toMatch(/blocked_by/);
+    // Registry-driven section header replaces the old "Standard predicates" prose.
+    expect(text).toMatch(/Predicate vocabulary/);
+    // The ingestor-alignment narrative still ships so the agent knows why
+    // matching registry names matters.
+    expect(text).toMatch(/background ingestor/i);
+    // Excluded-from-prompt predicates are NOT advertised here even though
+    // they're in the registry — keeps the LLM's vocabulary clean.
+    expect(text).not.toMatch(/^- `committed_to`/m);
+    expect(text).not.toMatch(/^- `emailed`/m);
+  });
+
+  it('falls back to a generic predicate stub when no PredicateRegistry is configured', () => {
+    // Registry-less MemorySystem (the `makeMem` helper) → the plugin emits
+    // a short generic instruction instead of rendering nothing. Without
+    // this fallback agents on bare setups lose all predicate-naming guidance.
     const mem = makeMem();
     const plugin = new MemoryWritePluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
     const text = plugin.getInstructions() ?? '';
-    // Key preferred predicates.
-    expect(text).toMatch(/full_name/);
-    expect(text).toMatch(/preferred_name/);
-    expect(text).toMatch(/works_at/);
-    expect(text).toMatch(/prefers/);
-    // Explicit anti-patterns — the failures we saw in the wild.
-    expect(text).toMatch(/Do NOT use `name`/);
-    expect(text).toMatch(/mentioned_by/);
+    expect(text).toMatch(/Predicate naming/);
+    expect(text).toMatch(/snake_case/);
+    // Names a few of the most common predicates so the LLM has something
+    // concrete to anchor on even without a registry.
+    expect(text).toMatch(/works_at|decision_made|committed_to/);
   });
 
   it('instructs the agent to never ask about privacy / visibility (host-decided)', () => {

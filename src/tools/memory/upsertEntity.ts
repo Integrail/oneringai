@@ -16,8 +16,14 @@ export interface UpsertEntityArgs {
   type: string;
   /** Display name (required). */
   displayName: string;
-  /** Identifiers to attach. Must be non-empty. Existing entities merge extras. */
-  identifiers: Identifier[];
+  /**
+   * Optional identifiers to attach. When omitted (or empty), dedup falls
+   * back to normalized-displayName lookup within the caller's scope — the
+   * same path entities like projects, topics, and clusters take when they
+   * have no natural strong key. Existing entities merge any extra
+   * identifiers passed in.
+   */
+  identifiers?: Identifier[];
   /** Alias names (display hints, not identifiers). */
   aliases?: string[];
   /** Free-form metadata. */
@@ -34,7 +40,9 @@ export interface UpsertEntityArgs {
   visibility?: Visibility;
 }
 
-const DESCRIPTION = `Create or merge an entity by identifier. If any supplied identifier matches an existing entity, the remaining identifiers are merged onto it (multi-ID enrichment).
+const DESCRIPTION = `Create or merge an entity. \`identifiers\` is OPTIONAL — supply them when the entity has a natural strong key (email, domain, slack_user_id, canonical slug); omit them for entities that don't (projects, topics, clusters, ad-hoc anchors), in which case dedup falls back to normalized-displayName lookup within scope. If any supplied identifier matches an existing entity, the remaining identifiers are merged onto it (multi-ID enrichment).
+
+Prefer real identifiers over invented canonical slugs — a weak canonical id (e.g. \`task:user:do-thing\` with no further context) creates false precision and makes future merges harder. When no natural key exists, omit \`identifiers\` entirely.
 
 Set {kind, value, exclusive:true} on canonical identifiers (email, phone) to mark them one-to-one — prevents the same identifier being attached to two entities.
 
@@ -104,7 +112,7 @@ export function createUpsertEntityTool(
                 "Merge mode for `metadata` when an existing entity is matched. Default 'fillMissing' (only writes absent keys). Pass 'overwrite' for partial updates that must replace existing values — e.g. status transitions on priority/task entities.",
             },
           },
-          required: ['type', 'displayName', 'identifiers'],
+          required: ['type', 'displayName'],
         },
       },
     },
@@ -117,9 +125,6 @@ export function createUpsertEntityTool(
       try {
         if (!args.type) return { error: 'upsert: type is required' };
         if (!args.displayName) return { error: 'upsert: displayName is required' };
-        if (!args.identifiers?.length) {
-          return { error: 'upsert: identifiers must be non-empty' };
-        }
 
         // Explicit visibility (programmatic callers) → map to permissions and
         // pass through. Absent → pass `permissions: undefined` so the host's
@@ -134,7 +139,9 @@ export function createUpsertEntityTool(
           {
             type: args.type,
             displayName: args.displayName,
-            identifiers: args.identifiers,
+            // Pass through whatever the LLM emitted — empty/missing is fine,
+            // `upsertEntity` falls back to normalized-displayName lookup.
+            identifiers: args.identifiers ?? [],
             aliases: args.aliases,
             metadata: args.metadata,
             metadataMerge: args.metadataMerge,

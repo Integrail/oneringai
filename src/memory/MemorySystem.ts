@@ -880,29 +880,58 @@ export class MemorySystem implements IDisposable {
 
   /**
    * Sanitize a caller-supplied `contextIds` array before write — visibility
-   * check, dedupe, drop empties. Returns `undefined` when the resulting
-   * array would be empty so we don't store an empty field on the entity.
+   * check, dedupe, drop empties, drop any id present in `selfReferenceIds`.
+   * Returns `undefined` when the resulting array would be empty so we don't
+   * store an empty field on the record.
    *
-   * Self-reference filtering on CREATE is moot (no id yet), but the union
-   * path (`addEntityContextIds`) repeats the filter against the now-known
-   * entity id.
+   * Used by both the entity-create path (`createEntity` / `upsertEntity`)
+   * and the fact-create path (`addFact`). For facts, `selfReferenceIds`
+   * carries `[subjectId, objectId]` — LLM extractions frequently include
+   * the subject or object redundantly in `contextIds`, adding graph noise
+   * (`memory_list_facts({contextId: subjectId})` would surface every fact
+   * about that subject). For entity create the array is moot (no id yet);
+   * for entity-update the union path (`addEntityContextIds`) re-filters
+   * against the now-known id.
+   *
+   * @param raw caller-supplied contextIds (possibly undefined / empty)
+   * @param scope visibility scope to validate each id against
+   * @param opts.selfReferenceIds ids to drop silently (subject/object on facts)
+   * @param opts.callerLabel string used in the not-visible error message
    */
-  private async sanitizeContextIdsForCreate(
+  private async sanitizeContextIds(
     raw: EntityId[] | undefined,
     scope: ScopeFilter,
+    opts: {
+      selfReferenceIds?: ReadonlyArray<EntityId | undefined>;
+      callerLabel: string;
+    },
   ): Promise<EntityId[] | undefined> {
     if (!raw || raw.length === 0) return undefined;
-    const deduped = [...new Set(raw.filter((id) => !!id))];
+    const blocked = new Set<EntityId>(
+      (opts.selfReferenceIds ?? []).filter((id): id is EntityId => !!id),
+    );
+    const deduped = [...new Set(raw.filter((id) => !!id && !blocked.has(id)))];
     if (deduped.length === 0) return undefined;
     for (const cid of deduped) {
       const ent = await this.store.getEntity(cid, scope);
       if (!ent) {
         throw new Error(
-          `createEntity: context entity ${cid} not visible or not found`,
+          `${opts.callerLabel}: context entity ${cid} not visible or not found`,
         );
       }
     }
     return deduped;
+  }
+
+  /**
+   * @deprecated Backwards-compat alias for the entity-create path. Prefer
+   * `sanitizeContextIds` directly with `callerLabel: 'createEntity'`.
+   */
+  private async sanitizeContextIdsForCreate(
+    raw: EntityId[] | undefined,
+    scope: ScopeFilter,
+  ): Promise<EntityId[] | undefined> {
+    return this.sanitizeContextIds(raw, scope, { callerLabel: 'createEntity' });
   }
 
   /**
@@ -1797,6 +1826,17 @@ export class MemorySystem implements IDisposable {
   }
 
   /**
+   * Return the configured predicate registry, or `undefined` when none is
+   * set. Exposed so prompt-rendering layers (e.g. `MemoryWritePluginNextGen`)
+   * can generate LLM-facing predicate vocabulary from the same source of
+   * truth — avoids hand-maintained predicate lists drifting out of sync
+   * with what the storage layer actually accepts and ranks.
+   */
+  getPredicateRegistry(): PredicateRegistry | undefined {
+    return this.predicates;
+  }
+
+  /**
    * H7: ensure the configured adapter has all recommended indexes. No-op for
    * adapters that don't expose `ensureIndexes` (InMemoryAdapter has nothing
    * to index). Delegates to the adapter's own method — typically
@@ -1822,6 +1862,155 @@ export class MemorySystem implements IDisposable {
     if (typeof withIndexes.ensureIndexes === 'function') {
       await withIndexes.ensureIndexes();
     }
+  }
+
+  /**
+   * Surface configuration drift that would make this MemorySystem unsafe for
+   * enterprise multi-tenant deployment. Returns a list of human-readable
+   * failings rather than throwing — hosts gate startup on `findings.length`.
+   *
+   * **Two readiness tiers — `ok` is not "fully enterprise ready":**
+   *
+   *  - **`ok === true`** → the MINIMUM-SAFETY tier passed: **data integrity
+   *    invariants are held + tenant isolation is enforceable**. No
+   *    `severity: 'error'` findings remain. The host can boot without
+   *    risking cross-tenant data leaks, owner-required violations, or
+   *    permission-denial bypasses, but the LLM-writer ergonomics may still
+   *    be lax.
+   *  - **`ok === true` AND `findings.every(f => f.severity !== 'warn')`** →
+   *    the FULL enterprise-readiness tier. Adds the strict-vocabulary
+   *    guarantee (LLM writers can't invent predicates), enables Mongo's
+   *    fast paths for vector search, and confirms the adapter is fully
+   *    tuned. This is what production deployments should actually gate on.
+   *
+   * Operators who want the stricter gate:
+   * ```ts
+   * const { ok, findings } = memory.assertEnterpriseReady();
+   * const enterpriseReady = ok && findings.every((f) => f.severity !== 'warn');
+   * if (!enterpriseReady) throw new Error(`Memory not fully ready: ${JSON.stringify(findings)}`);
+   * ```
+   *
+   * **Severity rationale:**
+   *  - `'error'` is reserved for invariant violations — config that lets
+   *    bad data into the store or leaks across tenants (no
+   *    `visibilityPolicy`, no `PredicateRegistry` at all).
+   *  - `'warn'` covers quality / ergonomics — config that hurts retrieval,
+   *    consistency, or LLM-write hygiene but doesn't compromise integrity
+   *    (permissive predicate mode, missing vector index names).
+   *
+   * **What's checked:**
+   *  - **error** — `PredicateRegistry` is configured. Without one,
+   *    predicates remain free-form strings; fragmentation is guaranteed
+   *    under any LLM-driven write path.
+   *  - **error** — `visibilityPolicy` is set. Library defaults grant
+   *    world-read to every entity/fact (`644`-style) — unsafe by default
+   *    for enterprise. A policy that returns `{ world: 'none' }` (private)
+   *    or `{ world: 'none', group: 'read' }` (group-readable) is the
+   *    typical enterprise baseline.
+   *  - **warn** — `predicateMode === 'strict'`. Permissive mode + LLM
+   *    writers fragments the predicate vocabulary over time (`prefers` vs
+   *    `prefer` vs `preference`), eroding dedup and ranking quality. Not
+   *    an error because the data still has owners + permissions; only the
+   *    vocabulary hygiene is at risk.
+   *  - **warn** — Mongo adapter: `vectorIndexName` is set (drives Atlas
+   *    Vector Search fast paths). Skipped for InMemoryAdapter.
+   *  - **warn** — Mongo adapter + embedder present: `entityContentVectorIndexName`
+   *    is set. Without it `findSimilarOpenTasks`, document search, and any
+   *    composer-driven retrieval fall back to the slow path.
+   *
+   * **What's NOT checked** (require side effects the library shouldn't
+   * trigger from a readonly probe):
+   *  - Whether the Mongo unique partial index on
+   *    `{identifiers.kind, identifiers.value}` actually exists. Run a
+   *    migration-side probe (`db.entities.getIndexes()`).
+   *  - Whether the unique normalized-name partial index from
+   *    `ensureNormalizedNameUniqueIndex` exists. Same — migration-side.
+   *  - Whether `ensureVectorSearchIndexes()` has been called against Atlas.
+   *    Idempotent to call again from your migration; that's the supported path.
+   *
+   * @returns `{ ok, findings }` where `findings[i] = { severity, code, message }`.
+   *          `ok === findings.every(f => f.severity !== 'error')` — the
+   *          MINIMUM-SAFETY tier. See JSDoc for the full enterprise gate.
+   */
+  assertEnterpriseReady(): {
+    ok: boolean;
+    findings: Array<{ severity: 'error' | 'warn'; code: string; message: string }>;
+  } {
+    assertNotDestroyed(this, 'assertEnterpriseReady');
+    const findings: Array<{ severity: 'error' | 'warn'; code: string; message: string }> = [];
+
+    // 1. Predicate mode + registry.
+    if (this.predicateMode !== 'strict') {
+      findings.push({
+        severity: 'warn',
+        code: 'predicate-mode-permissive',
+        message:
+          "predicateMode is 'permissive' — LLM writers can invent predicates that " +
+          "bypass the registry's canonicalization, dedup, and ranking weights. " +
+          "Set predicateMode='strict' + supply `predicates: PredicateRegistry.standard()` " +
+          'for enterprise deployments.',
+      });
+    }
+    if (!this.predicates) {
+      findings.push({
+        severity: 'error',
+        code: 'no-predicate-registry',
+        message:
+          'No PredicateRegistry configured. Without one, predicates remain ' +
+          'free-form strings — fragmentation is guaranteed under any LLM-driven write path. ' +
+          'Supply `predicates: PredicateRegistry.standard()` on MemorySystem construction.',
+      });
+    }
+
+    // 2. Visibility policy.
+    if (!this.visibilityPolicy) {
+      findings.push({
+        severity: 'error',
+        code: 'no-visibility-policy',
+        message:
+          'No `visibilityPolicy` configured. Library defaults grant world-read ' +
+          "on every entity and fact (UNIX `644`-style) — unsafe for multi-tenant " +
+          'deployment. Supply a policy that returns `{ world: \'none\' }` (or ' +
+          "`{ world: 'none', group: 'read' }` for group-shared records).",
+      });
+    }
+
+    // 3. Mongo-adapter specifics. Probe via duck-typing — the library doesn't
+    // depend on `mongodb` directly here so we avoid `instanceof`.
+    const mongoLike = this.store as unknown as {
+      vectorIndexName?: string;
+      entityVectorIndexName?: string;
+      entityContentVectorIndexName?: string;
+      ensureVectorSearchIndexes?: unknown;
+    };
+    const isMongoLike = typeof mongoLike.ensureVectorSearchIndexes === 'function';
+    if (isMongoLike) {
+      if (!mongoLike.vectorIndexName) {
+        findings.push({
+          severity: 'warn',
+          code: 'mongo-no-fact-vector-index',
+          message:
+            "Mongo adapter has no `vectorIndexName` — semantic fact search " +
+            'will fall back to the slow path. Configure on adapter construction ' +
+            "AND call `adapter.ensureVectorSearchIndexes({ dimensions })` from " +
+            'your migration.',
+        });
+      }
+      if (this.embedder && !mongoLike.entityContentVectorIndexName) {
+        findings.push({
+          severity: 'warn',
+          code: 'mongo-no-entity-content-vector-index',
+          message:
+            'Embedder is configured but Mongo adapter has no ' +
+            '`entityContentVectorIndexName` — `findSimilarOpenTasks`, document ' +
+            'semantic search, and any `semanticSearchEntities({embeddingField:\'content\'})` ' +
+            'caller will fall back to the slow path.',
+        });
+      }
+    }
+
+    const ok = findings.every((f) => f.severity !== 'error');
+    return { ok, findings };
   }
 
   /**
@@ -2260,18 +2449,20 @@ export class MemorySystem implements IDisposable {
       }
     }
 
-    // Context visibility check — same reasoning as object. Every entity listed
-    // in contextIds must be visible to the caller.
-    if (input.contextIds && input.contextIds.length > 0) {
-      for (const cid of input.contextIds) {
-        const ent = await this.store.getEntity(cid, scope);
-        if (!ent) {
-          throw new Error(
-            `addFact: context entity ${cid} not visible or not found`,
-          );
-        }
-      }
-    }
+    // Sanitize contextIds: visibility-check + dedupe + drop empties + drop
+    // self-references (subjectId/objectId). LLM extractions frequently emit
+    // the subject or object redundantly in contextIds, which adds graph
+    // noise (`memory_list_facts({contextId: subjectId})` would surface every
+    // fact about that subject) and inflates retrieval ranking via duplicate
+    // context-binding boosts. Mirrors the entity-create path's sanitation.
+    const sanitizedFactContextIds = await this.sanitizeContextIds(
+      input.contextIds,
+      scope,
+      {
+        selfReferenceIds: [input.subjectId, input.objectId],
+        callerLabel: 'addFact',
+      },
+    );
 
     const factScope = deriveFactScope(input, subject, scope);
     if (!factScope.ownerId) {
@@ -2370,7 +2561,7 @@ export class MemorySystem implements IDisposable {
       sourceSignalId: input.sourceSignalId,
       derivedBy: input.derivedBy,
       importance: clampUnit01(input.importance) ?? def?.defaultImportance,
-      contextIds: input.contextIds && input.contextIds.length > 0 ? input.contextIds : undefined,
+      contextIds: sanitizedFactContextIds,
       supersedes,
       archived: input.archived,
       isAggregate: input.isAggregate ?? def?.isAggregate,
@@ -2804,6 +2995,16 @@ export class MemorySystem implements IDisposable {
     assertCanAccess(fact, scope, 'write', 'fact');
 
     const storePatch: Partial<IFact> = { ...patch };
+    // Clamp ranking inputs at the boundary — mirrors `addFact:confidence/
+    // importance` so a reconciliation pass that emits e.g. `importance: 99`
+    // (LLM hallucination) can't distort retrieval. Only clamps when the
+    // caller actually provided the field; missing keys stay missing.
+    if (patch.confidence !== undefined) {
+      storePatch.confidence = clampUnit01(patch.confidence) ?? 1.0;
+    }
+    if (patch.importance !== undefined) {
+      storePatch.importance = clampUnit01(patch.importance);
+    }
     // Detect any composer-input change that requires the embedding to be
     // refreshed. Default atomic-fact composer reads `details` and `value`
     // (subject/object surface forms are resolved at embed time, so subject/
@@ -2875,15 +3076,28 @@ export class MemorySystem implements IDisposable {
    * an invisible outer "current" value.
    *
    * Only invoked on the narrow singleValued-predicate auto-supersede branch
-   * when the caller's own scope has no prior; the widened admin scope adds
-   * one extra read per such write, not a general overhead.
+   * when the caller's own scope has no prior; the extra read is scoped to
+   * that hot path, not a general overhead.
+   *
+   * **Detection caveat (BOTH adapters).** The empty `ScopeFilter` passed
+   * here is NOT a true admin view — it's a world-readable view. Both Mongo
+   * (`scopeFilter.ts`) and InMemory (`AccessControl.canAccess`) translate
+   * `{}` into "owner shortcut off, group shortcut off, world permission
+   * gate applies", which means private (`permissions.world: 'none'`) or
+   * group-only outer facts WILL be missed here and the corresponding
+   * `supersede_skipped_outer_scope` event won't fire for them. The
+   * resulting per-caller "current" is still correct for the caller's
+   * read view — only the cross-scope observability signal is partial.
+   * A true admin-bypass scope flag would close this gap but is invasive;
+   * tracked separately.
    */
   private async findOuterScopePrior(
     subjectId: EntityId,
     predicate: string,
     callerScope: ScopeFilter,
   ): Promise<IFact | null> {
-    // Admin scope: no userId, no groupId → sees everything.
+    // Empty scope = world-readable view (see JSDoc caveat). NOT a true
+    // admin bypass — private/group-only outer facts are skipped.
     const all = await this.store.findFacts(
       { subjectId, predicate, archived: false },
       { limit: 10, orderBy: { field: 'createdAt', direction: 'desc' } },
@@ -3501,6 +3715,11 @@ export class MemorySystem implements IDisposable {
     assertNotDestroyed(this, 'updateEntityMetadata');
     const current = await this.store.getEntity(id, scope);
     if (!current) throw new Error(`updateEntityMetadata: entity ${id} not found`);
+    // Write-authz: reads pass scope-visibility (group/world readable records
+    // surface here), but mutating metadata requires write access. Without
+    // this any caller who can READ an entity could overwrite its metadata
+    // through this API — a real cross-tenant data integrity hole.
+    assertCanAccess(current, scope, 'write', 'entity');
     // Coerce ISO-string date values in the patch before merging so stored
     // metadata stays Date-typed for Mongo range queries.
     const coercedPatch = coerceMetadataDates(patch);

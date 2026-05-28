@@ -21,6 +21,7 @@
 import type { IContextPluginNextGen, ITokenEstimator } from '../types.js';
 import type { ToolFunction } from '../../../domain/entities/Tool.js';
 import type { MemorySystem } from '../../../memory/index.js';
+import type { PredicateRegistry } from '../../../memory/predicates/PredicateRegistry.js';
 import { simpleTokenEstimator } from '../BasePluginNextGen.js';
 import { createMemoryWriteTools, type Visibility } from '../../../tools/memory/index.js';
 
@@ -33,6 +34,15 @@ export interface MemoryWritePluginConfig {
   userId: string;
   /** Trusted group id from host auth. Matches `MemoryPluginNextGen.groupId`. */
   groupId?: string;
+  /**
+   * Optional explicit predicate registry override for prompt rendering.
+   * When unset, the plugin uses `memory.getPredicateRegistry()` — that's
+   * almost always what you want, since the same registry governs
+   * canonicalization, validation, and ranking on writes. Override only when
+   * you intentionally want the LLM's advertised vocabulary to differ from
+   * the storage-enforced one (rare; mostly testing).
+   */
+  predicates?: PredicateRegistry;
   /** Default visibility for remember/link. Matches MemoryPlugin defaults. */
   defaultVisibility?: {
     forUser?: Visibility;
@@ -56,7 +66,54 @@ export interface MemoryWritePluginConfig {
   setAgentRuleRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };
 }
 
-const WRITE_INSTRUCTIONS = `## Memory writes
+/**
+ * Static fallback used when no `PredicateRegistry` is reachable (the host
+ * configured `MemorySystem` without one, OR did not pass `predicates` to
+ * the plugin config). Short, deliberately generic — agents on registry-less
+ * setups still need *some* shape guidance.
+ *
+ * When a registry IS available, `renderPredicateSection` replaces this with
+ * the registry's own `renderForPrompt()` output so the LLM-facing vocabulary
+ * stays in lockstep with what `addFact` actually validates and ranks.
+ */
+const PREDICATE_SECTION_FALLBACK = `### Predicate naming
+
+Use snake_case predicate names. The library ships a standard vocabulary (\`works_at\`, \`reports_to\`, \`attended\`, \`hosted\`, \`decision_made\`, \`committed_to\`, \`blocked_by\`, \`depends_on\`, \`tracks_priority\`, \`has_document\`, etc.) — when one fits, use the exact name. If none fits, invent a snake_case predicate; the registry's dedup layer will still merge identical (subject, predicate, value/object) writes from this agent and any ambient ingestor.`;
+
+/** Build the predicate-vocabulary section from a live registry. */
+function renderPredicateSection(registry: PredicateRegistry | undefined): string {
+  if (!registry) return PREDICATE_SECTION_FALLBACK;
+  const rendered = registry.renderForPrompt({ maxPerCategory: 8 });
+  if (!rendered || rendered.trim().length === 0) {
+    return PREDICATE_SECTION_FALLBACK;
+  }
+  // `renderForPrompt` emits its own `## Predicate vocabulary` header; demote
+  // that to `### Predicate vocabulary` so it sits at the same depth as the
+  // surrounding `### …` sections in the write instructions block.
+  const demoted = rendered.replace(/^## Predicate vocabulary/, '### Predicate vocabulary');
+  return [
+    demoted,
+    '',
+    'The background ingestor uses this same vocabulary; matching predicates lets the dedup layer merge your writes with ambient observations. Prefer exact registry names over coinages — invent a new snake_case predicate only when nothing in the list fits.',
+  ].join('\n');
+}
+
+const PREDICATE_SECTION_MARKER = '__PREDICATE_SECTION__';
+
+/**
+ * Assemble the full write-instructions block, replacing the predicate-section
+ * placeholder with either the live registry's rendered vocabulary or a
+ * static fallback. Called per agent at construction time + once when
+ * `getInstructions()` first fires, so the cost is negligible.
+ */
+function buildWriteInstructions(registry: PredicateRegistry | undefined): string {
+  return WRITE_INSTRUCTIONS_TEMPLATE.replace(
+    PREDICATE_SECTION_MARKER,
+    renderPredicateSection(registry),
+  );
+}
+
+const WRITE_INSTRUCTIONS_TEMPLATE = `## Memory writes
 
 ### Memory is SUBCONSCIOUS — never discuss it with the user
 
@@ -117,18 +174,7 @@ Memory is the WRONG tool when:
 
 When the user's intent truly requires disambiguation (e.g. "remind me to X" and both a calendar connector and a task connector are available), ask the user ONE short non-memory question — phrased around the REAL-WORLD tool choice ("Should I put that on your Google Calendar or add it to Todoist?"), NOT around memory internals. Never ask five questions.
 
-### Standard predicates — use these consistently
-
-The background ingestor uses this vocabulary too; matching predicates lets the dedup layer merge your writes with ambient observations. Prefer these exact snake_case forms:
-
-- **Identity**: \`full_name\`, \`preferred_name\`, \`display_name\`, \`nickname\`, \`pronouns\`, \`email\`, \`phone\`.
-- **Affiliation**: \`works_at\`, \`works_on\`, \`member_of\`, \`owns\`, \`manages\`, \`reports_to\`.
-- **Opinion / preference**: \`prefers\`, \`dislikes\`, \`avoids\`, \`believes\`, \`values\`.
-- **Activity / relation**: \`attended\`, \`hosted\`, \`assigned_to\`, \`blocked_by\`, \`depends_on\`, \`related_to\`.
-- **Goal / priority** (Chief-of-Staff deployments only): \`tracks_priority\` (Person → Priority entity — multi-valued, the user tracks many priorities), \`priority_affects\` (Priority → project / deal / person / topic / goal it governs).
-- **Narrative note** (when the user says "remember this": use \`note\` with \`kind:"document"\`).
-
-Do NOT use \`name\` (use \`full_name\` or \`preferred_name\`), \`employer\` (use \`works_at\` with an organization object), \`job\` (use \`role\` or \`title\`), \`mentioned_by\` (transcript artifact, not knowledge).
+__PREDICATE_SECTION__
 
 ### When memory IS the right tool — pick the right shape
 
@@ -153,10 +199,10 @@ Do NOT use \`name\` (use \`full_name\` or \`preferred_name\`), \`employer\` (use
 - **priority → affected entity** — when the user ties a priority to specific work ("this priority affects the NA Launch project", "that goal is about Acme"):
   \`memory_link({from:{id:'<priorityId>'}, predicate:'priority_affects', to:{surface:'NA Launch project'}})\`
   Future ranking uses these links to answer "is this signal/task relevant to a current priority?". Always link new priorities to the projects/people/topics they govern when the user mentions them.
-- **Fact on the user** — "remember that I prefer tea":
-  \`memory_remember({subject:'me', predicate:'prefers', value:'tea'})\`
+- **Fact on the user** — pick a predicate from the vocabulary section above that fits the assertion. Coining unregistered names (\`prefers\`, \`likes\`, \`tracks\`) works under permissive mode but is rejected outright under strict mode; the registry-rendered list is the safe surface.
 - **Long-form note** — "remember this for future reference: <prose>":
-  \`memory_remember({subject:'me', predicate:'note', kind:'document', details:'<prose>'})\`
+  \`memory_remember({subject:'me', predicate:'memo', kind:'document', details:'<prose>'})\`
+  Other document predicates from the registry: \`meeting_notes\`, \`research_note\`, \`biography\`. Match the predicate to the genre of prose; default to \`memo\` when nothing more specific fits.
 - **Relation between entities** — "Alice works at Acme":
   \`memory_link({from:{surface:'Alice'}, predicate:'works_at', to:{surface:'Acme'}})\`
   If the target entity doesn't exist yet, \`memory_upsert_entity\` it first (silently — don't ask the user), then retry the link.
@@ -221,6 +267,14 @@ export class MemoryWritePluginNextGen implements IContextPluginNextGen {
   };
   private readonly forgetRateLimit: MemoryWritePluginConfig['forgetRateLimit'];
   private readonly setAgentRuleRateLimit: MemoryWritePluginConfig['setAgentRuleRateLimit'];
+  /**
+   * Pre-rendered write-instructions block — built once at construction time
+   * from the configured (or `memory`-derived) predicate registry. Storing
+   * the string avoids re-rendering the registry on every system-message
+   * assembly, AND makes the token-size cache trivially correct (instructions
+   * never change for a given plugin instance).
+   */
+  private readonly instructions: string;
 
   private readonly estimator: ITokenEstimator = simpleTokenEstimator;
   private instructionsTokenCache: number | null = null;
@@ -253,10 +307,16 @@ export class MemoryWritePluginNextGen implements IContextPluginNextGen {
     this.getOwnSubjectIds = config.getOwnSubjectIds ?? (() => ({}));
     this.forgetRateLimit = config.forgetRateLimit;
     this.setAgentRuleRateLimit = config.setAgentRuleRateLimit;
+    // Derive predicate vocabulary from the live MemorySystem's registry by
+    // default — keeps the LLM-facing list in lockstep with what `addFact`
+    // actually canonicalizes, validates, and ranks. Hand-maintained lists
+    // drift; this doesn't.
+    const registry = config.predicates ?? this.memory.getPredicateRegistry();
+    this.instructions = buildWriteInstructions(registry);
   }
 
   getInstructions(): string | null {
-    return WRITE_INSTRUCTIONS;
+    return this.instructions;
   }
 
   async getContent(): Promise<string | null> {
@@ -278,7 +338,7 @@ export class MemoryWritePluginNextGen implements IContextPluginNextGen {
 
   getInstructionsTokenSize(): number {
     if (this.instructionsTokenCache === null) {
-      this.instructionsTokenCache = this.estimator.estimateTokens(WRITE_INSTRUCTIONS);
+      this.instructionsTokenCache = this.estimator.estimateTokens(this.instructions);
     }
     return this.instructionsTokenCache;
   }

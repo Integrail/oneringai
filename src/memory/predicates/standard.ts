@@ -311,9 +311,10 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
   //
   // First-class capture of decisions — choices, approvals, vendor selections,
   // scope cuts, strategy resolutions, multi-party agreements. The verbatim
-  // decision text lives in `value`; what was decided about can be the `object`
-  // (a vendor, deal, task) or appear in `contextIds`. Subsumes the prior
-  // narrower `approved` predicate (now deprecated).
+  // decision text lives in `value` (this is an attribute predicate — fact
+  // storage forbids `value` + `objectId` together). Entities the decision
+  // is ABOUT (the deal, vendor, project, task) belong in `contextIds`.
+  // Subsumes the prior narrower `approved` predicate (now deprecated).
   // ---------------------------------------------------------------------------
   {
     name: 'decision_made',
@@ -321,7 +322,8 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
       'A decision was made — by a person, in a meeting/event, or about a topic. Captures choices, ' +
       'approvals, vendor selections, scope cuts, strategy resolutions, and multi-party agreements. ' +
       'Subject = the decider (person) OR the venue (event/topic). Value = the verbatim decision. ' +
-      'Optional object = the entity decided about. Use `contextIds` to link related deals/projects.',
+      'This is an attribute predicate — do NOT set `objectId`; use `contextIds` to link the entities ' +
+      'the decision is about (deals, vendors, projects, tasks).',
     category: 'decision',
     payloadKind: 'attribute',
     subjectTypes: ['person', 'event', 'topic'],
@@ -329,9 +331,9 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     defaultImportance: 0.85,
     rankingWeight: 1.4,
     examples: [
-      '(meeting_2026_05_25, decision_made, "Go with Oracle for ERP renewal")',
-      '(anton, decision_made, "Approve $15k purchase of icas.ai domain")',
-      '(deal_acme, decision_made, "Cut scope to Phase 1 only")',
+      '(meeting_2026_05_25, decision_made, "Go with Oracle for ERP renewal", contextIds:[vendor_oracle])',
+      '(anton, decision_made, "Approve $15k purchase of icas.ai domain", contextIds:[domain_icas])',
+      '(anton, decision_made, "Cut scope to Phase 1 only", contextIds:[deal_acme])',
     ],
     lifecycle: 'stable',
   },

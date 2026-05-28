@@ -216,6 +216,7 @@ Optional: \`since\` (ISO date) restricts to files modified on/after that date. C
         if (!transcriptText || (typeof transcriptText === 'string' && transcriptText.trim().length === 0)) {
           return {
             success: true,
+            isEmpty: true,
             transcript: '*(empty transcript — no content found)*',
             meetingTitle,
           };

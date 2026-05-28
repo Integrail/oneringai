@@ -463,6 +463,15 @@ export interface GoogleGetTranscriptResult {
   success: boolean;
   transcript?: string;
   meetingTitle?: string;
+  /**
+   * True when the matched Drive file exists and was exported successfully but
+   * has no body content (Meet/Gemini occasionally creates an empty doc when
+   * the meeting was too short, joined late, or transcription was toggled off
+   * mid-call). When set, `transcript` carries a human-readable placeholder —
+   * machine consumers must branch on this flag rather than the placeholder
+   * text, which is not part of the API contract.
+   */
+  isEmpty?: boolean;
   error?: string;
 }
 

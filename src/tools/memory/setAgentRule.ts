@@ -1,8 +1,9 @@
 /**
  * memory_set_agent_rule — record a user-specific behavior rule for this agent.
  *
- * Purpose-built, narrow-trigger tool. The main agent is instructed (see
- * `MemoryWritePluginNextGen.WRITE_INSTRUCTIONS`) to call this — and only this —
+ * Purpose-built, narrow-trigger tool. The main agent is instructed (see the
+ * write-instructions block built by `MemoryWritePluginNextGen`) to call this —
+ * and only this —
  * when the user gives a directive about HOW the agent itself should write,
  * speak, format, or behave in future turns.
  *

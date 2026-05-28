@@ -435,7 +435,7 @@ describe('memory_find_entity / memory_upsert_entity', () => {
     });
   });
 
-  it('upsert requires type + displayName + identifiers', async () => {
+  it('upsert requires type + displayName but accepts missing/empty identifiers', async () => {
     const mem = makeMem();
     const ids = await bootstrap(mem);
     const upsert = toolByName(tools(mem, ids), 'memory_upsert_entity');
@@ -449,11 +449,24 @@ describe('memory_find_entity / memory_upsert_entity', () => {
       { userId: USER_ID },
     );
     expect(r2.error).toMatch(/displayName/);
+    // Empty identifiers used to be rejected — now falls back to normalized
+    // displayName lookup (matches the core upsertEntity contract). Entities
+    // like projects, topics, and clusters genuinely have no natural strong
+    // key; forcing the LLM to invent one creates false precision.
     const r3: any = await upsert.execute(
-      { type: 'topic', displayName: 'X', identifiers: [] } as any,
+      { type: 'topic', displayName: 'Standalone Topic', identifiers: [] } as any,
       { userId: USER_ID },
     );
-    expect(r3.error).toMatch(/identifiers/);
+    expect(r3.error).toBeUndefined();
+    expect(r3.entity).toBeDefined();
+    expect(r3.entity.type).toBe('topic');
+    // Identifiers omitted entirely also works.
+    const r4: any = await upsert.execute(
+      { type: 'topic', displayName: 'Bare Topic' } as any,
+      { userId: USER_ID },
+    );
+    expect(r4.error).toBeUndefined();
+    expect(r4.entity).toBeDefined();
   });
 
   it('upsert with visibility "group" stamps group:read,world:none', async () => {

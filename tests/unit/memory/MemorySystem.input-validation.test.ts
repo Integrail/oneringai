@@ -111,3 +111,73 @@ describe('MemorySystem.addFact — input validation', () => {
     expect(fact.contextIds).toEqual([b]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateFact ranking-input clamping — regression for the prior gap where
+// addFact clamped confidence/importance to [0,1] but updateFact let any
+// caller-supplied value through unmodified. LLM reconciliation passes that
+// emitted `importance: 99` would silently distort retrieval ranking.
+// ---------------------------------------------------------------------------
+
+describe('MemorySystem.updateFact — clamps ranking inputs', () => {
+  let mem: MemorySystem;
+  beforeEach(() => {
+    mem = new MemorySystem({ store: new InMemoryAdapter() });
+  });
+  afterEach(async () => {
+    if (!mem.isDestroyed) await mem.shutdown();
+  });
+
+  async function seedFact(opts?: { confidence?: number; importance?: number }) {
+    const id = await seedPerson(mem);
+    const fact = await mem.addFact(
+      {
+        subjectId: id,
+        predicate: 'note',
+        kind: 'atomic',
+        value: 'x',
+        confidence: opts?.confidence,
+        importance: opts?.importance,
+      },
+      TEST_SCOPE,
+    );
+    return fact;
+  }
+
+  it('clamps out-of-range confidence patches to [0, 1]', async () => {
+    const fact = await seedFact({ confidence: 0.5 });
+    // LLM-hallucinated 99 → clamped to 1.0.
+    const high = await mem.updateFact(fact.id, { confidence: 99 }, TEST_SCOPE);
+    expect(high.confidence).toBe(1);
+    // Negative → clamped to 0.
+    const low = await mem.updateFact(fact.id, { confidence: -5 }, TEST_SCOPE);
+    expect(low.confidence).toBe(0);
+  });
+
+  it('clamps out-of-range importance patches to [0, 1]', async () => {
+    const fact = await seedFact({ importance: 0.5 });
+    const high = await mem.updateFact(fact.id, { importance: 12 }, TEST_SCOPE);
+    expect(high.importance).toBe(1);
+    const low = await mem.updateFact(fact.id, { importance: -0.3 }, TEST_SCOPE);
+    expect(low.importance).toBe(0);
+  });
+
+  it('passes through in-range values without modification', async () => {
+    const fact = await seedFact({ confidence: 0.5, importance: 0.5 });
+    const updated = await mem.updateFact(
+      fact.id,
+      { confidence: 0.73, importance: 0.21 },
+      TEST_SCOPE,
+    );
+    expect(updated.confidence).toBe(0.73);
+    expect(updated.importance).toBe(0.21);
+  });
+
+  it('does not touch confidence/importance when the patch omits them', async () => {
+    const fact = await seedFact({ confidence: 0.42, importance: 0.13 });
+    // Patch only `details` — ranking fields must stay untouched.
+    const updated = await mem.updateFact(fact.id, { details: 'new prose' }, TEST_SCOPE);
+    expect(updated.confidence).toBe(0.42);
+    expect(updated.importance).toBe(0.13);
+  });
+});
