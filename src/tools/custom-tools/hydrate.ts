@@ -60,6 +60,7 @@ export function hydrateCustomTool(
         logs,
         context?.userId,
         registry,
+        context?.connectorAccounts,
       );
 
       return result;

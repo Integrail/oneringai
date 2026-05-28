@@ -337,10 +337,15 @@ export function createExecuteJavaScriptTool(
           }
         }
 
-        // Execute in VM with userId and scoped registry
+        // Execute in VM with userId, scoped registry, and per-connector
+        // account bindings. `connectorAccounts` lets `authenticatedFetch`
+        // auto-resolve `accountId` for single-account OAuth connectors when
+        // the LLM omits the 4th argument — without it, calls land at
+        // `getToken(userId, undefined)` and miss tokens stored under
+        // `userId:<accountId>`.
         const result = await executeInVM(
           args.code, resolvedInput, timeout, logs,
-          context?.userId, registry,
+          context?.userId, registry, context?.connectorAccounts,
         );
 
         return {
@@ -372,6 +377,13 @@ export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = c
 
 /**
  * Execute code in Node.js vm module with userId-scoped connector access.
+ *
+ * @param connectorAccounts - Per-connector default account bindings from
+ *   ToolContext. Used by the sandbox's `authenticatedFetch` to auto-resolve
+ *   `accountId` when the caller omits it. Single-account OAuth connectors
+ *   store tokens keyed by `userId:<accountId>`, so a fetch with `accountId
+ *   = undefined` would miss the token. The host app populates this map
+ *   (in v25: from `buildIdentities` single-account branch).
  */
 export async function executeInVM(
   code: string,
@@ -380,6 +392,7 @@ export async function executeInVM(
   logs: string[],
   userId: string | undefined,
   registry: IConnectorRegistry,
+  connectorAccounts?: Record<string, string>,
 ): Promise<any> {
   // Create sandbox context
   const sandbox: any = {
@@ -396,11 +409,18 @@ export async function executeInVM(
 
     // Authenticated fetch — userId auto-injected from ToolContext.
     // Only connectors visible in the scoped registry are accessible.
-    // Optional 4th param accountId for multi-account OAuth identities.
+    //
+    // Account resolution (matches `ConnectorTools.withAccountBinding`):
+    //   1. explicit 4th-arg `accountId` from the caller (highest priority)
+    //   2. `connectorAccounts[connectorName]` — host-app per-connector default
+    //   3. undefined — legacy single-user-mode fetch
+    // Without step 2, calls to single-account OAuth connectors (where the
+    // token is keyed `userId:<email>`) fail in `getToken(userId, undefined)`.
     authenticatedFetch: (url: string | URL, options: RequestInit | undefined, connectorName: string, accountId?: string) => {
       // Verify the connector is accessible in the (possibly scoped) registry
       registry.get(connectorName);
-      return rawAuthenticatedFetch(url, options, connectorName, userId, accountId);
+      const resolvedAccountId = accountId ?? connectorAccounts?.[connectorName];
+      return rawAuthenticatedFetch(url, options, connectorName, userId, resolvedAccountId);
     },
 
     // Standard fetch (no auth)

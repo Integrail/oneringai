@@ -83,6 +83,7 @@ export function createCustomToolTest(): ToolFunction<TestArgs, TestResult> {
           logs,
           context?.userId,
           registry,
+          context?.connectorAccounts,
         );
 
         return {
