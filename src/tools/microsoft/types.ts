@@ -6,6 +6,7 @@
  */
 
 import type { Connector } from '../../core/Connector.js';
+export { calendarDateTimeToUtcIso as graphDateTimeToUtcIso } from '../calendar/dateTime.js';
 
 // ============================================================================
 // Delegated / Application Mode
@@ -348,89 +349,6 @@ export function isTeamsMeetingUrl(input: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Compute the UTC-offset (in ms) that the given IANA timezone has at the given
- * instant. Positive when the zone is ahead of UTC (e.g. Europe/Berlin in CEST
- * → +7_200_000). Uses Intl.DateTimeFormat so it is DST-correct for any date.
- */
-function getTimeZoneOffsetMs(instant: Date, timeZone: string): number {
-  const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const parts = dtf.formatToParts(instant);
-  const lookup: Record<string, string> = {};
-  for (const p of parts) lookup[p.type] = p.value;
-  const asUtcMs = Date.UTC(
-    Number(lookup.year),
-    Number(lookup.month) - 1,
-    Number(lookup.day),
-    Number(lookup.hour),
-    Number(lookup.minute),
-    Number(lookup.second),
-  );
-  return asUtcMs - instant.getTime();
-}
-
-/**
- * Convert a Microsoft Graph `{ dateTime, timeZone }` pair into an unambiguous
- * UTC ISO 8601 string ending with `Z`.
- *
- * Microsoft Graph's calendar APIs return wall-clock datetimes as a NAÏVE string
- * (e.g. `"2026-05-22T11:00:00.0000000"`) with the IANA zone in a *separate*
- * `timeZone` field — they never include an offset suffix on the dateTime
- * itself. Downstream consumers that blindly assume "no Z = UTC" then misread
- * the value, producing a timezone-shifted display bug (e.g. an 11:00 Berlin
- * meeting rendering at 13:00 because the client treated 11:00 as UTC and then
- * converted to Berlin local time again).
- *
- * This helper resolves the ambiguity at the source so every consumer gets a
- * single canonical form. Behavior:
- *   - Empty `dateTime` → returns `''`.
- *   - `dateTime` already carries `Z` or a `±HH:MM` offset → normalize via
- *     `new Date(...).toISOString()` (preserves the instant, returns Z form).
- *   - Otherwise → treat `dateTime` as wall-clock time in the given IANA zone
- *     (default `'UTC'`) and shift it to true UTC using the zone's offset at
- *     that instant. Returns UTC ISO with `Z`.
- *
- * @param dateTime  Naïve datetime string from Graph (no trailing Z/offset).
- * @param timeZone  IANA zone name from Graph's parallel `timeZone` field.
- */
-export function graphDateTimeToUtcIso(
-  dateTime: string | undefined,
-  timeZone: string | undefined,
-): string {
-  if (!dateTime) return '';
-  // If the string already carries a timezone marker, normalize and return.
-  if (/[Zz]|[+-]\d{2}:?\d{2}$/.test(dateTime)) {
-    const d = new Date(dateTime);
-    return Number.isNaN(d.getTime()) ? dateTime : d.toISOString();
-  }
-  const zone = timeZone && timeZone.length > 0 ? timeZone : 'UTC';
-  if (zone === 'UTC') {
-    const d = new Date(dateTime + 'Z');
-    return Number.isNaN(d.getTime()) ? dateTime : d.toISOString();
-  }
-  // Naïve datetime + IANA zone → shift wall-clock to true UTC.
-  const guess = new Date(dateTime + 'Z'); // first guess: treat as UTC
-  if (Number.isNaN(guess.getTime())) return dateTime;
-  let offset: number;
-  try {
-    offset = getTimeZoneOffsetMs(guess, zone);
-  } catch {
-    // Unknown IANA zone — fall back to the naïve-as-UTC interpretation rather
-    // than throwing. Caller still gets a Z form, which is the contract.
-    return guess.toISOString();
-  }
-  return new Date(guess.getTime() - offset).toISOString();
 }
 
 /** @internal Graph API response for onlineMeetings filter query */

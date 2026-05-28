@@ -754,10 +754,67 @@ describe('Google API Tools', () => {
       expect(result.success).toBe(true);
       expect(result.meetings).toHaveLength(2);
       expect(result.meetings![0]!.summary).toBe('Sprint Review');
+      expect(result.meetings![0]!.start).toBe('2025-01-15T19:00:00.000Z');
+      expect(result.meetings![0]!.end).toBe('2025-01-15T20:00:00.000Z');
       expect(result.meetings![0]!.meetLink).toBe('https://meet.google.com/abc-defg-hij');
       expect(result.meetings![0]!.isOnlineMeeting).toBe(true);
       // Resource attendees should be filtered out
       expect(result.meetings![0]!.attendees).toEqual(['alice@example.com', 'bob@example.com']);
+      fetchSpy.mockRestore();
+    });
+
+    it('should normalize naive Google event times using the event timezone', async () => {
+      const connector = createMockConnector('google-list-naive-tz');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      fetchSpy.mockResolvedValueOnce(mockResponse({
+        items: [
+          {
+            id: 'event-zurich',
+            summary: 'Zurich Planning',
+            start: { dateTime: '2026-05-28T10:00:00', timeZone: 'Europe/Zurich' },
+            end: { dateTime: '2026-05-28T11:00:00', timeZone: 'Europe/Zurich' },
+          },
+        ],
+      }));
+
+      const tool = createGoogleListMeetingsTool(connector);
+      const result = await tool.execute({
+        startDateTime: '2026-05-28T00:00:00Z',
+        endDateTime: '2026-05-29T00:00:00Z',
+        timeZone: 'Europe/Zurich',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.meetings).toHaveLength(1);
+      expect(result.meetings![0]!.start).toBe('2026-05-28T08:00:00.000Z');
+      expect(result.meetings![0]!.end).toBe('2026-05-28T09:00:00.000Z');
+      expect(result.meetings![0]!.timeZone).toBe('Europe/Zurich');
+      fetchSpy.mockRestore();
+    });
+
+    it('should preserve all-day Google event dates as UTC midnights', async () => {
+      const connector = createMockConnector('google-list-all-day-tz');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      fetchSpy.mockResolvedValueOnce(mockResponse({
+        items: [
+          {
+            id: 'event-all-day',
+            summary: 'Board Offsite',
+            start: { date: '2026-05-28', timeZone: 'Europe/Zurich' },
+            end: { date: '2026-05-29', timeZone: 'Europe/Zurich' },
+          },
+        ],
+      }));
+
+      const tool = createGoogleListMeetingsTool(connector);
+      const result = await tool.execute({
+        startDateTime: '2026-05-28T00:00:00Z',
+        endDateTime: '2026-05-30T00:00:00Z',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.meetings![0]!.start).toBe('2026-05-28T00:00:00.000Z');
+      expect(result.meetings![0]!.end).toBe('2026-05-29T00:00:00.000Z');
       fetchSpy.mockRestore();
     });
 
@@ -836,11 +893,33 @@ describe('Google API Tools', () => {
       expect(result.success).toBe(true);
       expect(result.summary).toBe('Team Standup');
       expect(result.description).toBe('Daily standup meeting');
+      expect(result.start).toBe('2025-01-15T14:00:00.000Z');
+      expect(result.end).toBe('2025-01-15T14:15:00.000Z');
       expect(result.organizer).toBe('alice@example.com');
       expect(result.attendees).toEqual(['alice@example.com', 'bob@example.com']);
       expect(result.meetLink).toBe('https://meet.google.com/xyz');
       expect(result.location).toBe('Room 42');
       expect(result.isOnlineMeeting).toBe(true);
+      fetchSpy.mockRestore();
+    });
+
+    it('should normalize naive Google meeting details using the event timezone', async () => {
+      const connector = createMockConnector('google-get-naive-tz');
+      const fetchSpy = vi.spyOn(connector, 'fetch');
+      fetchSpy.mockResolvedValueOnce(mockResponse({
+        id: 'event-zurich',
+        summary: 'Zurich 1:1',
+        start: { dateTime: '2026-05-28T16:30:00', timeZone: 'Europe/Zurich' },
+        end: { dateTime: '2026-05-28T17:00:00', timeZone: 'Europe/Zurich' },
+      }));
+
+      const tool = createGoogleGetMeetingTool(connector);
+      const result = await tool.execute({ eventId: 'event-zurich' });
+
+      expect(result.success).toBe(true);
+      expect(result.start).toBe('2026-05-28T14:30:00.000Z');
+      expect(result.end).toBe('2026-05-28T15:00:00.000Z');
+      expect(result.timeZone).toBe('Europe/Zurich');
       fetchSpy.mockRestore();
     });
 

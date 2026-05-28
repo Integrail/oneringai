@@ -6,6 +6,7 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
+import { calendarDateTimeToUtcIso } from '../calendar/dateTime.js';
 import {
   type GoogleListMeetingsResult,
   type GoogleMeetingListEntry,
@@ -42,9 +43,8 @@ function extractMeetLink(event: GoogleCalendarEvent): string | undefined {
  */
 function toMeetingEntry(event: GoogleCalendarEvent): GoogleMeetingListEntry {
   const meetLink = extractMeetLink(event);
-  const start = event.start?.dateTime ?? event.start?.date ?? '';
-  const end = event.end?.dateTime ?? event.end?.date ?? '';
   const tz = event.start?.timeZone ?? 'UTC';
+  const endTz = event.end?.timeZone ?? tz;
 
   // Filter out resource attendees
   const attendees = (event.attendees ?? [])
@@ -54,8 +54,8 @@ function toMeetingEntry(event: GoogleCalendarEvent): GoogleMeetingListEntry {
   return {
     eventId: event.id,
     summary: event.summary ?? '(No title)',
-    start,
-    end,
+    start: calendarDateTimeToUtcIso(event.start?.dateTime ?? event.start?.date, tz),
+    end: calendarDateTimeToUtcIso(event.end?.dateTime ?? event.end?.date, endTz),
     timeZone: tz,
     organizer: event.organizer?.email,
     attendees: attendees.length > 0 ? attendees : undefined,
@@ -112,6 +112,9 @@ PARAMETER FORMATS:
 - startDateTime/endDateTime: ISO 8601 string with timezone offset or Z suffix. Example: "2025-01-15T08:00:00Z" or "2025-01-15T08:00:00-05:00"
 - timeZone: IANA timezone. Example: "America/New_York". Default: "UTC"
 - maxResults: integer, max 100. Default: 50
+
+RESPONSE FORMAT:
+Each meeting's "start" and "end" are returned as UTC ISO 8601 strings ending with "Z", regardless of the timeZone you requested. The separate "timeZone" field carries the IANA zone for display only. When passing times to show_calendar or scheduling tools, use "start"/"end" verbatim and never reconstruct them from wall-clock digits.
 
 EXAMPLE:
 { "startDateTime": "2025-01-15T00:00:00Z", "endDateTime": "2025-01-16T00:00:00Z", "timeZone": "America/New_York" }`,

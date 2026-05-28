@@ -6,6 +6,7 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
+import { calendarDateTimeToUtcIso } from '../calendar/dateTime.js';
 import {
   type GoogleGetMeetingResult,
   type GoogleCalendarEvent,
@@ -63,6 +64,9 @@ export function createGoogleGetMeetingTool(
 
 Returns the complete event including description, attendees with response status, Meet link, and location.
 
+RESPONSE FORMAT:
+"start" and "end" are returned as UTC ISO 8601 strings ending with "Z". The "timeZone" field carries the IANA zone for display only; never reconstruct an ISO string from a wall-clock value when passing times to other tools.
+
 EXAMPLE:
 { "eventId": "abc123def456" }`,
         parameters: {
@@ -103,9 +107,8 @@ EXAMPLE:
         );
 
         const meetLink = extractMeetLink(event);
-        const start = event.start?.dateTime ?? event.start?.date ?? '';
-        const end = event.end?.dateTime ?? event.end?.date ?? '';
         const tz = event.start?.timeZone ?? 'UTC';
+        const endTz = event.end?.timeZone ?? tz;
 
         // Filter out resource attendees
         const attendees = (event.attendees ?? [])
@@ -122,8 +125,8 @@ EXAMPLE:
           success: true,
           eventId: event.id,
           summary: event.summary,
-          start,
-          end,
+          start: calendarDateTimeToUtcIso(event.start?.dateTime ?? event.start?.date, tz),
+          end: calendarDateTimeToUtcIso(event.end?.dateTime ?? event.end?.date, endTz),
           timeZone: tz,
           organizer: event.organizer?.email,
           attendees: attendees.length > 0 ? attendees : undefined,
