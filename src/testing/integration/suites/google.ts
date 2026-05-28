@@ -50,9 +50,9 @@ const googleWorkspaceSuite: IntegrationTestSuite = {
       default: 'test',
     },
     {
-      key: 'testMeetingId',
-      label: 'Existing Meeting ID',
-      description: 'Google Calendar event ID for transcript test (optional)',
+      key: 'testTranscriptTitle',
+      label: 'Existing Transcript/Notes Title',
+      description: 'Meeting title to search for in transcript/Gemini-notes test (optional)',
       type: 'string',
       required: false,
     },
@@ -242,22 +242,22 @@ const googleWorkspaceSuite: IntegrationTestSuite = {
     {
       name: 'Get meeting transcript',
       toolName: 'get_meeting_transcript',
-      description: 'Retrieves a meeting transcript (requires recorded meeting)',
-      requiredParams: ['testMeetingId'],
+      description: 'Retrieves a Meet transcript or Gemini notes Doc from Drive',
+      requiredParams: ['testTranscriptTitle'],
       critical: false,
       execute: async (tools, ctx) => {
         const tool = tools.get('get_meeting_transcript')!;
         const result = await tool.execute(withTargetUser(ctx, {
-          meetingId: ctx.params.testMeetingId,
+          meetingTitle: ctx.params.testTranscriptTitle,
         }));
-        // Transcript may not exist — that's OK, we just verify the API call works
-        if (!result.success && result.error?.includes('not found')) {
-          return { success: true, message: 'API call succeeded (no transcript found)', data: result };
+        // Transcript/notes may not exist — that's OK, we just verify the API call works
+        if (!result.success && /not found|No transcript/i.test(result.error ?? '')) {
+          return { success: true, message: 'API call succeeded (no transcript/notes found)', data: result };
         }
         if (!result.success) {
           return { success: false, message: result.error || 'Get transcript failed', data: result };
         }
-        return { success: true, message: 'Transcript retrieved', data: result };
+        return { success: true, message: 'Transcript/notes retrieved', data: result };
       },
     },
 

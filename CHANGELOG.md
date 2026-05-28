@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Google `get_meeting_transcript` now finds Gemini "Take notes for me" Docs.** The Drive search query was hard-coded to `name contains 'transcript'`, which excluded Google's newer Gemini-generated meeting notes (filename suffix `- Notes by Gemini`, folder `Meet Notes`). Query now ORs both name patterns (`Transcript` ∪ `Notes by Gemini`) and matches the meeting title against the filename (not just `fullText`) — Gemini puts the title in the filename. New optional `since` arg (ISO date) restricts to recently modified files, useful for disambiguating recurring meetings. Tool description and not-found error updated to reflect both artifact types. Integration-test param renamed `testMeetingId` → `testTranscriptTitle` (the old param wasn't a tool argument and the test was effectively a no-op).
+
 ## [0.10.0] — 2026-05-27
 
 ### Memory — content-embedding composers + metadata-aware semantic search (2026-05-27)

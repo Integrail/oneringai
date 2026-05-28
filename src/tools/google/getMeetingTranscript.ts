@@ -1,9 +1,15 @@
 /**
  * Google Meet - Get Meeting Transcript Tool
  *
- * Retrieves a meeting transcript from Google Meet.
- * Google Meet transcripts are saved as Google Docs in the meeting organizer's Drive.
- * This tool searches for the transcript doc and extracts its text content.
+ * Retrieves a meeting transcript or AI-generated meeting notes from Google Meet.
+ * Google Meet saves two distinct artifact types as Google Docs in the organizer's Drive:
+ *   1. Classic Meet transcripts — `<Meeting Name> (YYYY-MM-DD at HH:MM TZ) - Transcript`
+ *      in folder "Meet Recordings" (when transcription is enabled in Workspace admin).
+ *   2. Gemini "Take notes for me" output — `<Meeting Name> - YYYY/MM/DD HH:MM TZ - Notes by Gemini`
+ *      in folder "Meet Notes" (when Gemini note-taking is enabled).
+ *
+ * This tool searches for either artifact via the Drive API and returns its text content.
+ * Drive's `name contains` operator is case-insensitive, so suffix casing is irrelevant.
  */
 
 import type { Connector } from '../../core/Connector.js';
@@ -21,6 +27,8 @@ interface GetMeetingTranscriptArgs {
   meetingTitle?: string;
   meetingCode?: string;
   fileId?: string;
+  /** ISO date string. Restricts search to files modified on/after this date. */
+  since?: string;
   targetUser?: string;
 }
 
@@ -40,32 +48,40 @@ export function createGoogleGetMeetingTranscriptTool(
       type: 'function',
       function: {
         name: 'get_meeting_transcript',
-        description: `Retrieve a Google Meet meeting transcript.
+        description: `Retrieve a Google Meet meeting transcript or AI-generated meeting notes.
 
-Google Meet saves transcripts as Google Docs in the organizer's Google Drive. This tool finds the transcript document and returns its text content.
+Google Meet saves two artifact types as Google Docs in the organizer's Drive:
+- **Classic transcripts**: "<Meeting Name> (YYYY-MM-DD at HH:MM TZ) - Transcript" (folder "Meet Recordings")
+- **Gemini notes** ("Take notes for me"): "<Meeting Name> - YYYY/MM/DD HH:MM TZ - Notes by Gemini" (folder "Meet Notes")
 
-**Finding the transcript:** Provide one of:
-- fileId: Direct Google Drive file ID of the transcript document (most reliable)
-- meetingCode: The Google Meet code (e.g., "abc-defg-hij") — searches Drive for matching transcript
-- meetingTitle: The calendar event title — searches Drive for a transcript file matching this name
+This tool searches for either and returns its text content.
 
-The transcript document is typically named like "Meeting transcript - <meeting title> (<date>)".
+**Finding the file:** Provide one of:
+- fileId: Direct Google Drive file ID (most reliable)
+- meetingCode: Google Meet code (e.g., "abc-defg-hij") — searches Drive for matching artifact
+- meetingTitle: Calendar event title — searches Drive for an artifact matching this name
 
-**Note:** Transcripts must be enabled in Google Workspace admin settings. The transcript doc must be accessible to the authenticated user.`,
+Optional: \`since\` (ISO date) to restrict to recent files — helps disambiguate recurring meetings.
+
+**Note:** Transcription and/or Gemini notes must be enabled in Workspace admin settings. The file must be accessible to the authenticated user.`,
         parameters: {
           type: 'object',
           properties: {
             meetingTitle: {
               type: 'string',
-              description: 'Calendar event title to search for in transcript filenames.',
+              description: 'Calendar event title to match against the artifact filename.',
             },
             meetingCode: {
               type: 'string',
-              description: 'Google Meet code (e.g., "abc-defg-hij"). Searches Drive for matching transcript.',
+              description: 'Google Meet code (e.g., "abc-defg-hij"). Searches Drive for matching artifact.',
             },
             fileId: {
               type: 'string',
-              description: 'Direct Google Drive file ID of the transcript document (most reliable).',
+              description: 'Direct Google Drive file ID of the transcript or notes document (most reliable).',
+            },
+            since: {
+              type: 'string',
+              description: 'ISO date (e.g., "2026-05-27"). Restricts search to files modified on/after this date.',
             },
             targetUser: {
               type: 'string',
@@ -109,19 +125,33 @@ The transcript document is typically named like "Meeting transcript - <meeting t
         let transcriptFileId = args.fileId;
         let meetingTitle = args.meetingTitle;
 
-        // If no fileId, search Drive for the transcript
+        // If no fileId, search Drive for the transcript or Gemini notes.
+        // Meet artifact filename conventions (verified May 2026):
+        //   - Classic transcript: "<title> (YYYY-MM-DD at HH:MM TZ) - Transcript"
+        //   - Gemini "Take notes for me": "<title> - YYYY/MM/DD HH:MM TZ - Notes by Gemini"
+        // `name contains` is case-insensitive in Drive's q syntax.
         if (!transcriptFileId) {
-          // Build search query for transcript files
-          // Google Meet transcripts are Google Docs with names like:
-          // "Meeting transcript - <title> (<date>)" or containing the meet code
-          let searchQuery = "mimeType='application/vnd.google-apps.document'";
+          const artifactNamePatterns = [
+            "name contains 'Transcript'",
+            "name contains 'Notes by Gemini'",
+          ].join(' or ');
+
+          let searchQuery = `mimeType='application/vnd.google-apps.document' and (${artifactNamePatterns})`;
 
           if (args.meetingCode) {
             const code = args.meetingCode.replace(/'/g, '');
-            searchQuery += ` and fullText contains '${code}'`;
+            // Code may appear in name (rare) or body (common — Meet link is embedded).
+            searchQuery += ` and (fullText contains '${code}' or name contains '${code}')`;
           } else if (args.meetingTitle) {
             const title = args.meetingTitle.replace(/'/g, '');
-            searchQuery += ` and name contains 'transcript' and fullText contains '${title}'`;
+            // Gemini puts the title in the filename; classic transcripts also do.
+            // Fall back to fullText so legacy/edge cases still resolve.
+            searchQuery += ` and (name contains '${title}' or fullText contains '${title}')`;
+          }
+
+          if (args.since) {
+            const since = args.since.replace(/'/g, '');
+            searchQuery += ` and modifiedTime > '${since}'`;
           }
 
           searchQuery += ' and trashed = false';
@@ -142,11 +172,12 @@ The transcript document is typically named like "Meeting transcript - <meeting t
           );
 
           if (!searchResult.files || searchResult.files.length === 0) {
+            const subject = args.meetingCode
+              ? `meeting code "${args.meetingCode}"`
+              : `"${args.meetingTitle}"`;
             return {
               success: false,
-              error: args.meetingCode
-                ? `No transcript found for meeting code "${args.meetingCode}". Ensure transcription was enabled and the transcript is in your Drive.`
-                : `No transcript found for "${args.meetingTitle}". Ensure transcription was enabled and the transcript is in your Drive.`,
+              error: `No transcript or Gemini notes found for ${subject}. Ensure either Meet transcription or "Take notes for me" was enabled, and the resulting Doc lives in the authenticated user's Drive (folder "Meet Recordings" or "Meet Notes").`,
             };
           }
 
