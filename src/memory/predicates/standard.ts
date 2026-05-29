@@ -289,22 +289,6 @@ export const STANDARD_PREDICATES: PredicateDefinition[] = [
     lifecycle: 'ephemeral',
     defaultValidityDays: 90,
   },
-  {
-    name: 'cancelled_due_to',
-    description:
-      'Task or event was cancelled because of another item — typically the cancellation of an ' +
-      'underlying event (meeting cancelled → prep task cancelled) or supersession by a newer signal.',
-    category: 'task',
-    payloadKind: 'relational',
-    subjectTypes: ['task', 'event'],
-    inverse: 'cancellation_cause_for',
-    aliases: ['cancelled_because_of'],
-    defaultImportance: 0.9,
-    rankingWeight: 1.3,
-    examples: ['(task_456, cancelled_due_to, event_789) — meeting was cancelled'],
-    lifecycle: 'ephemeral',
-    defaultValidityDays: 180,
-  },
 
   // ---------------------------------------------------------------------------
   // decision

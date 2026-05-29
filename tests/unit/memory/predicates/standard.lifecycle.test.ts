@@ -15,27 +15,18 @@ import {
 describe('STANDARD_PREDICATES — lifecycle additions', () => {
   const reg = PredicateRegistry.standard();
 
-  it.each(['prepares_for', 'cancelled_due_to'] as const)(
-    'has %s registered',
-    (name) => {
-      const def = STANDARD_PREDICATES.find((p) => p.name === name);
-      expect(def, `${name} missing from STANDARD_PREDICATES`).toBeDefined();
-      expect(def!.description.length).toBeGreaterThan(0);
-      expect(reg.get(name)).toBeDefined();
-    },
-  );
+  it.each(['prepares_for'] as const)('has %s registered', (name) => {
+    const def = STANDARD_PREDICATES.find((p) => p.name === name);
+    expect(def, `${name} missing from STANDARD_PREDICATES`).toBeDefined();
+    expect(def!.description.length).toBeGreaterThan(0);
+    expect(reg.get(name)).toBeDefined();
+  });
 
   it('prepares_for is task→event with correct inverse', () => {
     const def = STANDARD_PREDICATES.find((p) => p.name === 'prepares_for')!;
     expect(def.subjectTypes).toEqual(['task']);
     expect(def.objectTypes).toEqual(['event']);
     expect(def.inverse).toBe('prepared_by');
-    expect(def.payloadKind).toBe('relational');
-  });
-
-  it('cancelled_due_to allows task or event subjects', () => {
-    const def = STANDARD_PREDICATES.find((p) => p.name === 'cancelled_due_to')!;
-    expect(def.subjectTypes).toEqual(['task', 'event']);
     expect(def.payloadKind).toBe('relational');
   });
 
@@ -55,10 +46,13 @@ describe('STANDARD_PREDICATES — lifecycle additions', () => {
       'scheduled_for',
       'started_on',
       'ended_on',
+      // Removed 2026-05-29: cancellation cause is deterministic pipeline state
+      // (recorded on the cancelled task's metadata), not an LLM-extracted fact.
+      'cancelled_due_to',
     ]) {
       expect(
         STANDARD_PREDICATES.find((p) => p.name === name),
-        `${name} should NOT be registered (round-2 consolidation)`,
+        `${name} should NOT be registered`,
       ).toBeUndefined();
     }
   });

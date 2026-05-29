@@ -202,10 +202,11 @@ describe('PredicateRegistry — list / categories', () => {
   it('list({categories}) filters by category', () => {
     const taskOnly = r.list({ categories: ['task'] });
     // Floor — adding more task-category predicates is fine; this asserts the
-    // existing-at-test-time set still appears. Round-2 consolidation
-    // (2026-05-26) trimmed the task category to relationships only:
-    // committed_to, blocked_by, depends_on, prepares_for, cancelled_due_to.
-    expect(taskOnly.length).toBeGreaterThanOrEqual(5);
+    // existing-at-test-time set still appears. Consolidation trimmed the task
+    // category to relationships only: committed_to, blocked_by, depends_on,
+    // prepares_for. (`cancelled_due_to` removed 2026-05-29 — cancellation cause
+    // is deterministic pipeline state on task metadata, not an extracted fact.)
+    expect(taskOnly.length).toBeGreaterThanOrEqual(4);
     expect(taskOnly.every((d) => d.category === 'task')).toBe(true);
   });
 

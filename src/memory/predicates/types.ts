@@ -26,7 +26,7 @@
  * - 'ephemeral' — time-bounded assertion (a commitment, a scheduled event,
  *                  an expressed concern). `defaultValidityDays` should be set
  *                  so the fact auto-expires when the window passes.
- *                  Examples: committed_to, cancelled_due_to, expressed_concern.
+ *                  Examples: committed_to, prepares_for, expressed_concern.
  *
  * - 'episodic'  — transient observation about a moment (per-message comms,
  *                  passing mentions). Cheap to capture, cheap to lose.
