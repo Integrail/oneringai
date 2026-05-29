@@ -1568,6 +1568,19 @@ export {
   findIdentifierClusters,
   sweepDuplicates,
   DEFAULT_WEIGHTS,
+  // Per-type content composers — exported so hosts can WRAP a type's default
+  // (compose the base text, then append host-specific fields) instead of
+  // reimplementing it. Registered via MemorySystemConfig.entityContentComposers.
+  taskContentComposer,
+  eventContentComposer,
+  personContentComposer,
+  organizationContentComposer,
+  topicContentComposer,
+  projectContentComposer,
+  documentContentComposer,
+  clusterContentComposer,
+  defaultFactContentComposer,
+  DEFAULT_ENTITY_COMPOSERS,
 } from './memory/index.js';
 export type {
   // Adapter options

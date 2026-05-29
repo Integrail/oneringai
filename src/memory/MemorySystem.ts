@@ -576,6 +576,26 @@ export class MemorySystem implements IDisposable {
       metadataMergeKeys?: string[];
     },
     scope: ScopeFilter,
+    options?: {
+      /**
+       * Allow a resolve-and-update to mutate an existing entity owned by a
+       * different user WITHIN THE SAME GROUP/TENANT. Default `false`.
+       *
+       * When `true`: if the best-match entity shares `scope.groupId`, the
+       * per-owner `assertCanAccess(write)` check is skipped — so trusted
+       * server-side consolidation (e.g. the signal pipeline converging a
+       * group-visible Person/Organization that another user in the same group
+       * created) can enrich it without re-owning it first. Mirrors the
+       * `allowCrossOwner` option on `mergeEntities`.
+       *
+       * Tenancy invariant is preserved: a cross-tenant best-match (different
+       * `groupId`) still goes through `assertCanAccess`, which denies it — the
+       * flag never enables cross-tenant writes. The host is responsible for
+       * gating which callers may pass it (server pipeline code only — never an
+       * agent/tool surface).
+       */
+      allowCrossOwner?: boolean;
+    },
   ): Promise<UpsertEntityResult> {
     assertNotDestroyed(this, 'upsertEntity');
     // Coerce ISO-string date values in metadata to `Date` instances. Callers
@@ -764,7 +784,18 @@ export class MemorySystem implements IDisposable {
       }
 
       // Dirty path mutates an existing entity — write access required.
-      assertCanAccess(best, scope, 'write', 'entity');
+      // `allowCrossOwner` lets trusted server-side consolidation update a
+      // group-visible entity owned by another user within the SAME group
+      // (mirrors `mergeEntities`). The tenancy invariant holds: a cross-tenant
+      // best-match still goes through `assertCanAccess`, which denies it.
+      const bestGroup = (best as IEntity & { groupId?: string }).groupId;
+      const sameGroupTrustedConsolidation =
+        options?.allowCrossOwner === true &&
+        bestGroup !== undefined &&
+        bestGroup === scope.groupId;
+      if (!sameGroupTrustedConsolidation) {
+        assertCanAccess(best, scope, 'write', 'entity');
+      }
       const norm = computeNormalizedFields({
         displayName: mergedWithMetadata.entity.displayName,
         aliases: mergedWithMetadata.entity.aliases,
