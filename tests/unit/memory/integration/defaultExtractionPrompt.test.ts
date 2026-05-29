@@ -103,4 +103,55 @@ describe('defaultExtractionPrompt', () => {
     expect(p).toContain('1.0');
     expect(p).toContain('0.5');
   });
+
+  describe('reconciliation section — non-string fact fields', () => {
+    const now = new Date();
+    const makeFact = (overrides: Record<string, unknown>) =>
+      ({
+        id: 'F1',
+        subjectId: 'e1',
+        predicate: 'rescheduled',
+        kind: 'atomic',
+        observedAt: now,
+        ...overrides,
+      }) as never;
+
+    it('does not throw when a prior fact carries an object `details` (regression)', () => {
+      // Deterministic v25 writers (event-change diffs) store structured
+      // `details` objects. `sanitizeInlineString` previously called
+      // String.prototype.replace directly → "e.replace is not a function".
+      const objectDetails = makeFact({
+        details: {
+          startTime: { before: now, after: now },
+          temporal: { before: 'upcoming', after: 'past' },
+        },
+      });
+      expect(() =>
+        defaultExtractionPrompt({ signalText: 'x', priorFacts: [objectDetails] }),
+      ).not.toThrow();
+    });
+
+    it('serializes object `details` into the rendered prior-fact line', () => {
+      const p = defaultExtractionPrompt({
+        signalText: 'x',
+        priorFacts: [makeFact({ details: { temporal: { before: 'upcoming', after: 'past' } } })],
+      });
+      expect(p).toContain('F[F1]');
+      expect(p).toContain('details=');
+      // The object is JSON-stringified rather than crashing.
+      expect(p).toContain('temporal');
+    });
+
+    it('tolerates undefined / null details and value', () => {
+      expect(() =>
+        defaultExtractionPrompt({
+          signalText: 'x',
+          priorFacts: [
+            makeFact({ details: undefined, value: undefined }),
+            makeFact({ id: 'F2', details: null }),
+          ],
+        }),
+      ).not.toThrow();
+    });
+  });
 });
