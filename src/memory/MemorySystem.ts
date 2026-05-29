@@ -65,6 +65,7 @@ import type {
   ContextOptions,
   EmbeddingQueueConfig,
   EntityCandidate,
+  EntityEmbeddingField,
   EntityId,
   EntityListFilter,
   EntityOrderBy,
@@ -3392,6 +3393,15 @@ export class MemorySystem implements IDisposable {
        * across role-specific top-K cuts.
        */
       touchesEntity?: EntityId;
+      /**
+       * Multi-anchor variant of `touchesEntity` — narrows to tasks touched by
+       * ANY id in this array (any of `assigneeId`/`reporterId`/`projectId`/
+       * `contextIds`). Use for participant fan-out: pass every participant +
+       * context-anchor entity id and let ONE ranked vector query surface the
+       * tasks relevant to the whole signal, instead of N per-anchor searches
+       * unioned client-side. ANDs with `touchesEntity` when both are set.
+       */
+      touchesAnyOf?: EntityId[];
     },
   ): Promise<Array<{ task: IEntity; score: number }>> {
     assertNotDestroyed(this, 'findSimilarOpenTasks');
@@ -3440,6 +3450,9 @@ export class MemorySystem implements IDisposable {
     if (opts?.reporterId !== undefined) semanticFilter.reporterId = opts.reporterId;
     if (opts?.projectId !== undefined) semanticFilter.projectId = opts.projectId;
     if (opts?.touchesEntity !== undefined) semanticFilter.touchesEntity = opts.touchesEntity;
+    if (opts?.touchesAnyOf !== undefined && opts.touchesAnyOf.length > 0) {
+      semanticFilter.touchesAnyOf = opts.touchesAnyOf;
+    }
 
     let candidates: Array<{ entity: IEntity; score: number }>;
     try {
@@ -3476,6 +3489,91 @@ export class MemorySystem implements IDisposable {
       if (out.length >= topK) break;
     }
     return out;
+  }
+
+  /**
+   * General-purpose entity-level semantic search over the content embedding
+   * (`IEntity.contentEmbedding`, populated by the registered per-type content
+   * composers). The type-agnostic analog of `findSimilarOpenTasks` (task-only)
+   * and `searchDocuments` (document-only): rank ANY entity type by semantic
+   * similarity to a query, narrowed by the full `EntitySemanticSearchFilter`
+   * set (type(s), contextId, task-role fields, and the single/multi
+   * `touchesEntity` / `touchesAnyOf` OR-wildcards).
+   *
+   * Why it exists: hosts building signal-time retrieval ("which entities is
+   * this email about?") previously had to fall back to fact-level
+   * `semanticSearch` + manual subject/object/contextIds aggregation. This
+   * exposes the entity content vector directly, so the composed entity text
+   * (display name, identifiers, narrative, contextIds, host-specific fields)
+   * is what gets matched — strictly better recall than re-deriving entities
+   * from fact hits.
+   *
+   * Accepts a precomputed vector (from `embedQuery`) to skip the per-call
+   * embed round-trip when fanning out several searches over one query.
+   *
+   * Error contract mirrors `findSimilarOpenTasks`: returns `[]` when the store
+   * lacks a semantic-entity capability, when a string query is passed but no
+   * embedder is configured, or when the underlying search throws. Semantic
+   * similarity is opportunistic, never load-bearing.
+   *
+   * `embeddingField` defaults to `'content'` (the composer-backed vector). Pass
+   * `'identity'` to search the name/identifier vector used by entity
+   * resolution. Adapters MUST NOT silently fall back to the other field —
+   * entities lacking the selected vector are simply absent from results.
+   */
+  async semanticSearchEntities(
+    queryOrVector: string | number[],
+    filter: EntitySemanticSearchFilter,
+    scope: ScopeFilter,
+    opts?: { topK?: number; minScore?: number; embeddingField?: EntityEmbeddingField },
+  ): Promise<Array<{ entity: IEntity; score: number }>> {
+    assertNotDestroyed(this, 'semanticSearchEntities');
+    if (typeof this.store.semanticSearchEntities !== 'function') return [];
+
+    // Clamp per project convention (topK ≤ 100, minScore ∈ [0,1]).
+    const requestedTopK = Number.isFinite(opts?.topK) ? (opts!.topK as number) : 10;
+    const topK = Math.min(Math.max(Math.trunc(requestedTopK), 1), 100);
+    const requestedMin = Number.isFinite(opts?.minScore) ? (opts!.minScore as number) : 0;
+    const minScore = Math.min(Math.max(requestedMin, 0), 1);
+    const embeddingField: EntityEmbeddingField = opts?.embeddingField ?? 'content';
+
+    // Accept a pre-computed vector to skip the embed round-trip on fan-out.
+    let queryVector: number[];
+    if (typeof queryOrVector === 'string') {
+      if (!this.embedder) return [];
+      try {
+        queryVector = await this.embedder.embed(queryOrVector);
+      } catch (err) {
+        logger.warn(
+          {
+            component: 'MemorySystem.semanticSearchEntities',
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'embed failed; returning empty result',
+        );
+        return [];
+      }
+    } else {
+      queryVector = queryOrVector;
+    }
+
+    try {
+      return await this.store.semanticSearchEntities(
+        queryVector,
+        filter,
+        { topK, minScore, embeddingField },
+        scope,
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          component: 'MemorySystem.semanticSearchEntities',
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'semanticSearchEntities failed; returning empty result',
+      );
+      return [];
+    }
   }
 
   private async resolveRelatedTasks(

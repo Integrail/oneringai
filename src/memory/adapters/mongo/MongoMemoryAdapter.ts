@@ -1682,6 +1682,29 @@ function entitySemanticFilterToMongo(filter: EntitySemanticSearchFilter): MongoF
     // when only one path applies (currently the non-task fallback).
     clauses.push(orPaths.length === 1 ? orPaths[0]! : { $or: orPaths });
   }
+  if (filter.touchesAnyOf !== undefined && filter.touchesAnyOf.length > 0) {
+    // Multi-anchor OR-wildcard — the set-valued analog of `touchesEntity`.
+    // Same type-keyed role enumeration, but each path matches membership in
+    // the anchor set via `$in`. One compound `$or` keeps every anchor-touching
+    // candidate in a single ranked vector query (vs. N per-anchor top-K cuts
+    // unioned client-side). Every path here is declared in
+    // `ENTITIES_FILTER_PATHS`; nothing new is required for Atlas.
+    const ids = filter.touchesAnyOf;
+    const isTaskScoped =
+      filter.type === 'task' ||
+      (filter.types !== undefined &&
+        filter.types.length === 1 &&
+        filter.types[0] === 'task');
+    const orPaths: MongoFilter[] = isTaskScoped
+      ? [
+          { 'metadata.assigneeId': { $in: ids } },
+          { 'metadata.reporterId': { $in: ids } },
+          { 'metadata.projectId': { $in: ids } },
+          { contextIds: { $in: ids } },
+        ]
+      : [{ contextIds: { $in: ids } }];
+    clauses.push(orPaths.length === 1 ? orPaths[0]! : { $or: orPaths });
+  }
   if (clauses.length === 0) return {};
   if (clauses.length === 1) return clauses[0]!;
   return { $and: clauses };

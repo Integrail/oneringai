@@ -648,9 +648,21 @@ ${nextHint}\n`;
  * The rendered block instructs the LLM to reuse these entities' surface forms
  * so the resolver converges on existing rows rather than creating duplicates.
  */
+/**
+ * Prompt render budget for the `knownEntities` block. Callers MUST pass
+ * entities already ranked by relevance — this is the renderer cap, not the
+ * retrieval cap. The list still slices for absolute safety, but if the
+ * caller hasn't ranked, the top of the slice is whatever order they passed.
+ *
+ * Bumped 40 → 60 (2026-05-28) — see icos `feedback_no_silent_truncation`:
+ * 40 was too tight for executive-scale graphs where deterministic baseline
+ * (participants, priorities, lineage) plus semantic top-K easily exceeds 40.
+ */
+const KNOWN_ENTITIES_RENDER_BUDGET = 60;
+
 function renderKnownEntities(entities?: IEntity[]): string {
   if (!entities || entities.length === 0) return '';
-  const lines = entities.slice(0, 40).map(formatKnownEntity).join('\n');
+  const lines = entities.slice(0, KNOWN_ENTITIES_RENDER_BUDGET).map(formatKnownEntity).join('\n');
   return `\n## Known entities (reuse their surface forms when referring to them — the resolver will converge on the existing row)\n${lines}\n`;
 }
 
@@ -844,11 +856,28 @@ function renderFactSchemaSuffix(eagerness: EagernessProfile): string {
  * instructions — but raises the bar for prompt-injection via
  * attacker-derived strings (anchor labels, negative-example snippets).
  */
-function sanitizeInlineString(s: string): string {
-  const noBreaks = s.replace(/[\r\n]+/g, ' ');
+function sanitizeInlineString(s: unknown): string {
+  // Runtime guard: callers pass anchor labels / negative-example snippets /
+  // `f.details` from `renderReconciliationSection`, all typed `string` — but
+  // MongoDB-sourced data can legitimately violate that. Deterministic writers
+  // (e.g. event-change diffs) store structured `details` objects, and older
+  // facts can carry `undefined`. Coerce defensively so one non-string field
+  // never kills prompt construction (mirrors `escapeQuotes` in
+  // entityReconciliationPrompt.ts).
+  const str =
+    typeof s === 'string' ? s : s === undefined || s === null ? '' : safeStringify(s);
+  const noBreaks = str.replace(/[\r\n]+/g, ' ');
   const noFences = noBreaks.replace(/`/g, "'");
   const noHeading = noFences.replace(/^[\s>#]+/, '').trimStart();
   return noHeading.trim();
+}
+
+function safeStringify(s: unknown): string {
+  try {
+    return JSON.stringify(s);
+  } catch {
+    return String(s);
+  }
 }
 
 /**

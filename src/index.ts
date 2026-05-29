@@ -1694,6 +1694,8 @@ export type {
   UpsertEntityResult,
   EntityListFilter,
   EntitySearchOptions,
+  EntitySemanticSearchFilter,
+  EntityEmbeddingField,
   ListOptions,
   SemanticSearchOptions,
   EntityCandidate,

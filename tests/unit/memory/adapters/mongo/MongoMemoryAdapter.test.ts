@@ -21,6 +21,7 @@ function entityInput(overrides: Partial<NewEntity> = {}): NewEntity {
     aliases: overrides.aliases,
     identifiers: overrides.identifiers ?? [],
     metadata: overrides.metadata,
+    contextIds: overrides.contextIds,
     archived: overrides.archived,
     groupId: overrides.groupId,
     ownerId: overrides.ownerId,
@@ -1044,6 +1045,87 @@ describe('MongoMemoryAdapter', () => {
         {},
       );
       expect(res.map((r) => r.entity.id)).toEqual([close.id]);
+    });
+
+    it('applies touchesAnyOf — task-scoped $or over role fields + contextIds', async () => {
+      const aTask = await seedWithEmbedding(
+        { displayName: 'A', type: 'task', metadata: { assigneeId: 'p_alice' } },
+        [1, 0, 0],
+      );
+      const bTask = await seedWithEmbedding(
+        { displayName: 'B', type: 'task', metadata: { reporterId: 'p_bob' } },
+        [1, 0, 0],
+      );
+      const cTask = await seedWithEmbedding(
+        { displayName: 'C', type: 'task', contextIds: ['proj_x'] },
+        [1, 0, 0],
+      );
+      // Touched by none of the anchors — must be excluded.
+      await seedWithEmbedding(
+        { displayName: 'D', type: 'task', metadata: { assigneeId: 'p_carol' } },
+        [1, 0, 0],
+      );
+
+      const res = await adapter.semanticSearchEntities(
+        [1, 0, 0],
+        { type: 'task', touchesAnyOf: ['p_alice', 'p_bob', 'proj_x'] },
+        { topK: 10 },
+        {},
+      );
+      expect(new Set(res.map((r) => r.entity.id))).toEqual(
+        new Set([aTask.id, bTask.id, cTask.id]),
+      );
+    });
+
+    it('applies touchesAnyOf — non-task type narrows on contextIds only', async () => {
+      const onX = await seedWithEmbedding(
+        { displayName: 'On X', type: 'topic', contextIds: ['deal_x'] },
+        [1, 0, 0],
+      );
+      await seedWithEmbedding(
+        { displayName: 'On Y', type: 'topic', contextIds: ['deal_y'] },
+        [1, 0, 0],
+      );
+      // A non-task entity whose assigneeId matches must NOT surface — role
+      // fields are task-scoped; non-task expansion is contextIds-only.
+      await seedWithEmbedding(
+        { displayName: 'Role match', type: 'topic', metadata: { assigneeId: 'deal_x' } },
+        [1, 0, 0],
+      );
+
+      const res = await adapter.semanticSearchEntities(
+        [1, 0, 0],
+        { type: 'topic', touchesAnyOf: ['deal_x'] },
+        { topK: 10 },
+        {},
+      );
+      expect(res.map((r) => r.entity.id)).toEqual([onX.id]);
+    });
+
+    it('touchesEntity AND touchesAnyOf intersect when both are set (not union)', async () => {
+      // Touched by p_alice (assignee) AND proj_x (context) — satisfies the AND.
+      const both = await seedWithEmbedding(
+        { displayName: 'Both', type: 'task', metadata: { assigneeId: 'p_alice' }, contextIds: ['proj_x'] },
+        [1, 0, 0],
+      );
+      // Touched by p_alice only — fails the touchesAnyOf arm, must be excluded.
+      await seedWithEmbedding(
+        { displayName: 'Alice only', type: 'task', metadata: { assigneeId: 'p_alice' } },
+        [1, 0, 0],
+      );
+      // Touched by proj_x only — fails the touchesEntity arm, must be excluded.
+      await seedWithEmbedding(
+        { displayName: 'ProjX only', type: 'task', metadata: { assigneeId: 'p_carol' }, contextIds: ['proj_x'] },
+        [1, 0, 0],
+      );
+
+      const res = await adapter.semanticSearchEntities(
+        [1, 0, 0],
+        { type: 'task', touchesEntity: 'p_alice', touchesAnyOf: ['proj_x'] },
+        { topK: 10 },
+        {},
+      );
+      expect(res.map((r) => r.entity.id)).toEqual([both.id]);
     });
 
     it('uses find() not aggregate() when entityVectorIndexName is unset', async () => {

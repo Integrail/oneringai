@@ -644,6 +644,26 @@ export interface EntitySemanticSearchFilter {
    * touched set.
    */
   touchesEntity?: EntityId;
+  /**
+   * Multi-anchor OR-wildcard match — returns entities touched by ANY id in
+   * this array. The set-valued analog of `touchesEntity`: where the single
+   * form fans out across one entity's relational roles, this fans out across
+   * MANY anchors in a single ranked vector query.
+   *
+   * Expansion mirrors `touchesEntity`, keyed by `filter.type`:
+   *   - `'task'` → entity matches if any anchor appears in `metadata.assigneeId`,
+   *     `metadata.reporterId`, `metadata.projectId`, or top-level `contextIds`.
+   *   - Any other type / unset → match on `contextIds` membership only.
+   *
+   * Pushed into the Atlas `$vectorSearch.filter` as one compound `$or` over
+   * `$in` clauses, so the vector ranker sees every anchor-touching candidate
+   * together rather than competing across N separate per-anchor top-K cuts
+   * (the inferior client-side-union pattern this field exists to replace).
+   *
+   * ANDs with `touchesEntity` when both are set, and with any per-role narrow.
+   * Empty array is treated as "no constraint" (the clause is dropped).
+   */
+  touchesAnyOf?: EntityId[];
 }
 
 /**

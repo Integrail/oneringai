@@ -488,6 +488,40 @@ export class InMemoryAdapter implements IMemoryStore {
       if (filter.assigneeId !== undefined && md?.assigneeId !== filter.assigneeId) continue;
       if (filter.reporterId !== undefined && md?.reporterId !== filter.reporterId) continue;
       if (filter.projectId !== undefined && md?.projectId !== filter.projectId) continue;
+      // OR-wildcard touch match — `touchesEntity` (single) and `touchesAnyOf`
+      // (multi) are SEPARATE conditions, each an OR-over-roles within itself
+      // but AND-ed against each other when both are set. This mirrors the
+      // Mongo adapter, which pushes one `$or` clause per filter into a top-level
+      // `$and` (see entitySemanticFilterToMongo). The documented contract is
+      // "ANDs with `touchesEntity` when both are set" — unioning them into one
+      // anchor set would silently turn that AND into an OR and diverge from
+      // Mongo. (Before this block existed at all, the in-memory path ignored
+      // `touchesEntity` for entity semantic search — a parity gap vs. Mongo.)
+      if (filter.touchesEntity !== undefined || (filter.touchesAnyOf?.length ?? 0) > 0) {
+        const isTaskScoped =
+          filter.type === 'task' ||
+          (filter.types !== undefined &&
+            filter.types.length === 1 &&
+            filter.types[0] === 'task');
+        const touchedByAny = (anchors: readonly string[]): boolean => {
+          const set = new Set(anchors);
+          const contextHit = (e.contextIds ?? []).some((cid) => set.has(cid));
+          const roleHit =
+            isTaskScoped &&
+            ((typeof md?.assigneeId === 'string' && set.has(md.assigneeId)) ||
+              (typeof md?.reporterId === 'string' && set.has(md.reporterId)) ||
+              (typeof md?.projectId === 'string' && set.has(md.projectId)));
+          return contextHit || roleHit;
+        };
+        if (filter.touchesEntity !== undefined && !touchedByAny([filter.touchesEntity])) continue;
+        if (
+          filter.touchesAnyOf &&
+          filter.touchesAnyOf.length > 0 &&
+          !touchedByAny(filter.touchesAnyOf)
+        ) {
+          continue;
+        }
+      }
       if (filter.dueAtRange) {
         const due = md?.dueAt;
         if (!(due instanceof Date)) continue;
