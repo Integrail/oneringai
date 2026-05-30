@@ -1,6 +1,6 @@
 # Memory Permissions — Usage Guide
 
-The memory layer ships a three-principal access-control model on top of the existing scope system. Every entity and fact carries an `ownerId` (required) plus an optional `permissions` block governing what **group members** and **the world** can do with it. Writes are authorized; reads are filtered at the storage layer.
+The memory layer ships a three-principal access-control model on top of the existing scope system. Every entity and fact carries an `ownerId` (required) plus an optional `permissions` block governing what **group members** and **the world** can do with it, plus an optional explicit **`acl`** for per-identity grants beyond those three principals. Writes are authorized; reads are filtered at the storage layer.
 
 This guide covers the model, defaults, migration, and recipes. For the API reference, see [MEMORY_API.md § Access Control](./MEMORY_API.md#access-control).
 
@@ -14,6 +14,7 @@ This guide covers the model, defaults, migration, and recipes. For the API refer
 - [The owner invariant](#the-owner-invariant)
 - [Admin delegation](#admin-delegation)
 - [Read filtering vs write authorization](#read-filtering-vs-write-authorization)
+- [Principal-based ACLs (explicit grants)](#principal-based-acls-explicit-grants)
 - [Recipes](#recipes)
 - [Migration notes](#migration-notes)
 - [Adapter responsibilities](#adapter-responsibilities)
@@ -203,6 +204,160 @@ Affected methods:
 
 ---
 
+## Principal-based ACLs (explicit grants)
+
+Owner / group / world covers the common cases, but it can't express *"this specific other person, agent, or service can read this record."* The principal-ACL layer adds that — explicit, per-identity grants that sit **alongside** owner/group/world, not instead of it.
+
+> **Backwards compatible.** If you never set an `acl` and never pass `scope.principals`, nothing in this section changes anything — the three-principal model runs exactly as documented above.
+
+### Principals
+
+A *principal* is an opaque canonical token identifying an access identity:
+
+| Token | Built with | Means |
+| ----- | ---------- | ----- |
+| `user:<id>` | `principalUser(id)` | A specific user (the owner is always `user:<ownerId>`) |
+| `entity:<id>` | `principalEntity(id)` | A specific entity — typically a `person` (the key to "account links later") |
+| `group:<id>` | `principalGroup(id)` | Every member of a group |
+| `service:<name>` | `principalService(name)` | A non-human service identity |
+| `world` | `PRINCIPAL_WORLD` | Everyone (the broadest read token) |
+
+All are exported from `@everworker/oneringai`. `parsePrincipal(token)` splits a token into `{kind, id}`; an unrecognized prefix parses as `kind: 'unknown'` — **never** `world`, so a malformed or future-prefixed token is never silently treated as public.
+
+### The `acl` field
+
+Entities and facts take an optional `acl: ACLEntry[]`:
+
+```ts
+interface ACLEntry {
+  principal: Principal;              // e.g. principalEntity('alice')
+  actions: Array<'read' | 'write'>;  // [] grants nothing (NOT a silent read)
+}
+```
+
+Example — a user-private fact that a named participant can also read:
+
+```ts
+import { principalEntity } from '@everworker/oneringai';
+
+await mem.addFact(
+  {
+    subjectId: deal.id,
+    predicate: 'note',
+    kind: 'atomic',
+    details: '…',
+    permissions: { group: 'none', world: 'none' },   // owner-private base
+    acl: [{ principal: principalEntity('alice'), actions: ['read'] }],
+  },
+  { userId: 'owner', groupId: 'g1' },
+);
+// Readable by: owner (always) + the holder of entity:alice. Nobody else.
+```
+
+### Materialized token sets
+
+On **every write**, the storage boundary projects `ownerId` + `groupId` + `permissions` + `acl` into two arrays stored on the record:
+
+```ts
+readPrincipals:  string[]   // every principal that may read
+writePrincipals: string[]   // every principal that may write  (⊆ readPrincipals)
+```
+
+- **Library-owned — never set these by hand.** They're recomputed deterministically (and sorted, for stable diffs and idempotent backfills) on each create/update.
+- Owner ⇒ both arrays. `group: 'read'` ⇒ `group:<id>` in read; `group: 'write'` ⇒ both. Same for `world`. Each `acl` entry adds its principal to read and/or write per its `actions`.
+- A read query becomes a single sargable `readPrincipals: { $in: <caller tokens> }`; an in-process check is a set intersection.
+
+### Querying in principal mode — `scope.principals`
+
+A caller opts into the principal model by passing `ScopeFilter.principals`. The **presence** of the field (any length, including empty) is authoritative:
+
+```ts
+import { principalUser, principalGroup, principalEntity, PRINCIPAL_WORLD } from '@everworker/oneringai';
+
+const scope = {
+  principals: [
+    principalUser('alice'),           // own user token → owner access to alice's records
+    principalGroup('g1'),             // groups alice belongs to
+    principalEntity(alicePersonId),   // alice's Person entity (account-link grants)
+    PRINCIPAL_WORLD,                  // see public records
+  ],
+};
+const fact = await mem.getFact(id, scope);   // visible iff tokens intersect readPrincipals
+```
+
+- A record is authorized **iff** the caller's token set intersects the record's `read`/`write` array.
+- **Empty set → nothing.** `{ principals: [] }` matches and authorizes nothing.
+- **Absent → legacy.** Omit `principals` entirely and the unchanged owner/group/world path runs (full backward compatibility).
+- When `principals` is present, `userId` / `groupId` are **ignored for the access decision** — encode those identities as tokens in the set instead.
+
+It is the **host's job to build the token set correctly** (the library trusts it, exactly as it trusts `scope.userId` / `groupId`):
+
+| You must… | …or else |
+| --------- | -------- |
+| include `PRINCIPAL_WORLD` | the caller can't see public records (fails **closed** — safe) |
+| include the caller's own `user:<id>` | the owner loses owner access (fails closed) |
+| include **only** `group:<id>` tokens the caller truly belongs to | over-including a group token **leaks** that group's records (fails **open** — a host bug) |
+
+### Changing access after creation — `setAccess`
+
+`MemorySystem.setAccess` is the first-class mutator for the explicit-grant layer:
+
+```ts
+await mem.setAccess('fact', factId,
+  [{ principal: principalEntity('bob'), actions: ['read'] }],
+  scope,
+);
+```
+
+- Requires `write` on the record (`PermissionDeniedError` otherwise).
+- **Replaces** the record's `acl` with the array you pass, then re-materializes `read` / `writePrincipals`.
+- Touches only the `acl` layer — it does **not** change `ownerId` or the `permissions.{group, world}` block (those remain owner-driven; see [Changing access on an existing record](#changing-access-on-an-existing-record) below).
+
+### "Account links later" — grants follow entity merges
+
+When two `person` entities turn out to be the same identity, `mergeEntities(winner, loser, scope)` rewrites every `entity:<loserId>` grant to `entity:<winnerId>` across all entities and facts (in `acl` and the materialized arrays). A record that was readable via the loser's principal becomes readable via the winner's — so when a contact's accounts are linked, their prior facts stay visible under the surviving identity. (Optional store capability `rewriteEntityPrincipal`; both built-in adapters implement it. Scoped to the caller's tenant; the merge already enforced write access on winner + loser.)
+
+### Migration gate — `backfillAccessPrincipals`
+
+Rows written before the principal model (or by any path predating the storage-boundary stamp) have **no** `readPrincipals`. There is **no legacy fallback for principal callers**: a row lacking `readPrincipals` is invisible to a `scope.principals` caller at query time *and* denied by the in-process `canAccess`. Therefore:
+
+> ⚠️ **You MUST run `backfillAccessPrincipals` to completion before any host code starts passing `scope.principals`.**
+
+```ts
+const res = await mem.backfillAccessPrincipals(scope, { batchSize: 500 });
+// → { entitiesScanned, entitiesUpdated, factsScanned, factsUpdated }
+```
+
+- Recomputes each row's arrays from its own `ownerId` / `groupId` / `permissions` / `acl` and writes **only when they differ** — idempotent; re-running is a no-op.
+- Covers **live and archived** rows. `{ force: true }` rewrites every row regardless (use after the materialization rules change).
+- `batchSize` clamps to `[1, 1000]` (default 500). Paginates by the unique primary key (`_id`), so every row is touched exactly once — even when timestamps tie.
+
+### Authorizing your OWN collections (host extension)
+
+The principal kit in `src/access/principals.ts` is exported from the package root so a host can apply the *same* grammar and materializer to its own (non-memory) collections — no further library change required to extend coverage:
+
+```ts
+import {
+  materializePrincipals, fromLibraryPermissions, fromNimbleAudit,
+  readFilterForPrincipals, writeFilterForPrincipals,
+  principalUser, principalEntity, parsePrincipal,
+} from '@everworker/oneringai';
+
+// Project your collection's native shape → the two arrays, store them, and
+// query with readFilterForPrincipals(callerTokens):
+const { readPrincipals, writePrincipals } = materializePrincipals(
+  fromNimbleAudit(doc.isPublic, doc.ownerId, doc.groupId, doc.acl),
+);
+```
+
+`fromLibraryPermissions` mirrors the memory layer's `{group, world}` defaults; `fromNimbleAudit` maps an `{isPublic, ownerId, groupId}` shape. Both feed the single `materializePrincipals` projector, so every collection stays observationally identical.
+
+### Mongo deployment
+
+`readPrincipals` is covered automatically: `ensureAdapterIndexes()` builds principal-led b-tree indexes (`memory_ent_principals`, `memory_fact_principals_subject` / `_object`), and `ensureVectorSearchIndexes()` declares `readPrincipals` as a `type: 'filter'` path on the Atlas Vector Search indexes. Nothing extra to do — but the footgun is real: if you ever hand-build an Atlas vector index, `readPrincipals` **must** be declared `type: 'filter'` or `$vectorSearch` silently drops the scope clause (a cross-tenant read leak with no error at query time). Use the programmatic helpers. The adapter deliberately never compounds two array fields (`readPrincipals` + `contextIds`), which MongoDB rejects ("cannot index parallel arrays").
+
+---
+
 ## Recipes
 
 ### A team-private note
@@ -268,15 +423,17 @@ await mem.upsertEntity(
 );
 ```
 
-### Changing permissions on an existing record (v1: write-once)
+### Changing access on an existing record
 
-**Permissions are fixed at creation in v1.** No first-class API updates them, and critically, `upsertEntity` does NOT rewrite `permissions` on existing records — if the dirty path fires (adding new identifiers to an already-stored entity), the caller's `input.permissions` is **silently ignored** and the existing permissions persist. This is deliberate: upsert is an idempotent write path, not an admin tool, and it would be a foot-cannon for any code that upserts on a hot path to carry the risk of accidentally rewriting an ACL.
+Two layers, two stories:
 
-Migration / escalation paths:
+- **Explicit `acl` grants are mutable** via the first-class **`setAccess(kind, id, acl, scope)`** (requires `write`; replaces the `acl` and re-materializes the token arrays). See [Principal-based ACLs § Changing access after creation](#changing-access-after-creation--setaccess).
+- **The `permissions.{group, world}` block is still write-once at the `MemorySystem` level.** `upsertEntity` does NOT rewrite `permissions` on existing records — if the dirty path fires (adding new identifiers to an already-stored entity), the caller's `input.permissions` is **silently ignored** and the existing permissions persist. This is deliberate: upsert is an idempotent write path, not an admin tool, and it would be a foot-cannon for any code that upserts on a hot path to carry the risk of accidentally rewriting an ACL.
+
+To change `group` / `world` after creation:
 
 - **Preferred**: get the owner to re-emit the record with the new permissions. Owner-driven permission changes compose with the audit trail via supersession on fact-level profiles or ordinary updates on entities (owner always has write).
-- **Admin escape hatch**: call `store.updateEntity` / `store.updateFact` directly, bypassing `MemorySystem`. You must first verify the caller's authority yourself (the library won't enforce anything here — the store is a lower-level surface).
-- **Future**: a first-class `updatePermissions(id, patch, scope)` method may ship in a later release. When it lands, it will check write access under the old permissions before applying the new ones.
+- **Admin escape hatch**: call `store.updateEntity` / `store.updateFact` directly, bypassing `MemorySystem`. You must first verify the caller's authority yourself (the library won't enforce anything here — the store is a lower-level surface). The storage boundary still re-materializes `read` / `writePrincipals` from the new permissions, so the token arrays never drift.
 
 ---
 
@@ -302,6 +459,10 @@ Existing records without `ownerId` are tolerated on reads (the adapter's filter 
 
 Previously, any caller whose scope could *see* a record could write it. Now writes require the owner shortcut or explicit `group: 'write'` / `world: 'write'`. This is an improvement but may surface bugs in code paths that relied on the permissive old behavior. Expect `PermissionDeniedError` in places that previously silently succeeded.
 
+### 4. Principal mode requires a backfill first
+
+This step applies **only if** you intend to start passing `scope.principals` (the [principal-based ACL](#principal-based-acls-explicit-grants) path). Principal callers have **no legacy fallback** — a row that lacks materialized `readPrincipals` is invisible to them. Run `await mem.backfillAccessPrincipals(scope)` to completion across every tenant before flipping any caller to principal mode. It's idempotent, so it's safe to re-run; new writes are materialized automatically. Callers that never set `scope.principals` are unaffected.
+
 ---
 
 ## Adapter responsibilities
@@ -315,6 +476,8 @@ If you're writing a custom `IMemoryStore` adapter, your contract for permissions
 3. **Store `permissions` verbatim** — don't normalize or default at the storage layer. All default logic lives in `AccessControl.ts` so it stays consistent across adapters.
 
 4. Recommended indexes (Mongo example): compound on `(ownerId, groupId)` covers the owner shortcut + group match branches. Single-field on `permissions.world` and `permissions.group` if you frequently query with filters that depend on those levels.
+
+5. **If you support principal mode**, materialize the token arrays on every write by calling `principalsForLibraryRecord(record)` (from `@everworker/oneringai`) at the storage boundary, storing the returned `readPrincipals` / `writePrincipals` on the row — and recompute them whenever a write touches `acl` / `permissions` / `ownerId` / `groupId` (use `patchTouchesAccessFields(patch)` to gate partial updates). `scopeToFilter` already emits the `readPrincipals: { $in }` branch when `scope.principals` is present, and `canAccess` already honours it; the only adapter responsibility is keeping the materialized arrays current. Optionally implement `rewriteEntityPrincipal(from, to, scope)` so entity merges rewrite `entity:` grants (skipped silently if you don't). Both built-in adapters do all of this — read `InMemoryAdapter` for the minimal reference.
 
 ---
 
@@ -331,3 +494,7 @@ If you're writing a custom `IMemoryStore` adapter, your contract for permissions
 5. **Partial merges / cascades.** A merge or delete can leave dangling references if the caller lacks write on some referenced facts. Not an error — document in your app if full cleanup is required, and re-run with a broader scope.
 
 6. **Admin delegation visibility.** When `admin` creates a record with `ownerId = 'bob'`, the admin may not be able to see it again unless the record also has group or world read permissions. Plan admin tooling accordingly (admin scope usually sees records because it's the group's `ownerId` or because the record is group-visible).
+
+7. **Incomplete principal token sets.** In principal mode (`scope.principals`), the host builds the token set and the library trusts it. Forgetting `PRINCIPAL_WORLD` hides public records; forgetting the caller's own `user:<id>` drops owner access (both fail **closed**). The dangerous direction is the opposite: including a `group:<id>` the caller doesn't belong to **leaks** that group's records (fails **open**). Treat token-set construction with the same care as authenticating `scope.userId`.
+
+8. **Passing `scope.principals` before backfilling.** A principal caller has no legacy fallback — un-materialized rows are invisible. Always run [`backfillAccessPrincipals`](#migration-gate--backfillaccessprincipals) to completion first.

@@ -1223,7 +1223,7 @@ Attached to every `IEntity` and `IFact` as an optional `permissions` field.
 
 - **Owner required.** Every record must have `ownerId`. `MemorySystem.upsertEntity` / `addFact` throw `OwnerRequiredError` when neither input nor scope provides one. Admin delegation is allowed — `input.ownerId` can be any user id; equality with `scope.userId` is NOT enforced.
 - **Owner always wins.** If `record.ownerId === caller.userId`, the caller has full access regardless of `permissions`.
-- **Permissions are write-once in v1.** `MemorySystem.upsertEntity` does NOT rewrite `permissions` on existing records; the dirty path silently preserves stored permissions. Use the store's `updateEntity` / `updateFact` as an admin escape hatch, or re-emit as the owner. See [MEMORY_PERMISSIONS.md § Changing permissions](./MEMORY_PERMISSIONS.md#changing-permissions-on-an-existing-record-v1-write-once).
+- **The `permissions.{group, world}` block is write-once via the first-class API.** `MemorySystem.upsertEntity` does NOT rewrite `permissions` on existing records; the dirty path silently preserves stored permissions. Use the store's `updateEntity` / `updateFact` as an admin escape hatch, or re-emit as the owner. (Explicit `acl` grants ARE mutable — via `setAccess`; see [Principal ACLs](#principal-acls-explicit-grants) below.) See [MEMORY_PERMISSIONS.md § Changing access](./MEMORY_PERMISSIONS.md#changing-access-on-an-existing-record).
 - **Profile regeneration preserves privacy.** `regenerateProfile` inherits the prior profile's `permissions` when one exists (so a private profile stays private across auto-regen). First-time generation uses library defaults.
 - **Supersession chains stay per-subject.** `addFact` with `supersedes` now validates that `predecessor.subjectId === input.subjectId` and throws otherwise — prevents retrieval corruption where "what superseded F1?" returns a fact about a different subject.
 
@@ -1292,6 +1292,74 @@ Reads that aren't visible return empty/null; writes that aren't authorized throw
 ### Cascade caveat
 
 `archiveEntity`, `deleteEntity`, and `mergeEntities` cascade to referencing facts, using BOTH the scope window (visibility) and the permission window (writability). Facts the caller can see but not write are skipped silently — intended (no privilege escalation via cascade), but it means partial cleanup is possible for callers without broad write access.
+
+### Principal ACLs (explicit grants)
+
+An opt-in layer for per-identity grants beyond owner/group/world. Full model + recipes + migration: [MEMORY_PERMISSIONS.md § Principal-based ACLs](./MEMORY_PERMISSIONS.md#principal-based-acls-explicit-grants). API surface:
+
+**Record fields** (on `IEntity` and `IFact`):
+
+```ts
+acl?: ACLEntry[];           // explicit grants — caller-set
+readPrincipals?:  string[]; // materialized at the storage boundary — LIBRARY-OWNED, never set by hand
+writePrincipals?: string[]; // ⊆ readPrincipals
+
+interface ACLEntry {
+  principal: Principal;               // a token string (see helpers)
+  actions: Array<'read' | 'write'>;   // [] grants nothing
+}
+```
+
+**Scope field** (on `ScopeFilter`):
+
+```ts
+principals?: string[];   // PRESENCE is authoritative (any length, incl. empty).
+                         // Present → principal model (readPrincipals ∩ principals); userId/groupId ignored for access.
+                         // Empty → authorizes nothing. Absent → legacy owner/group/world path.
+```
+
+**`MemorySystem` methods:**
+
+```ts
+// Replace a record's explicit acl and re-materialize its token arrays. Requires write. Returns the updated record.
+setAccess(kind: 'entity' | 'fact', id: string, acl: ACLEntry[], scope: ScopeFilter): Promise<IEntity | IFact>;
+
+// THE MIGRATION GATE. Materialize read/writePrincipals on every entity + fact (live AND archived) from their
+// ownerId/groupId/permissions/acl. Idempotent; { force } rewrites all; batchSize clamps to [1, 1000] (default 500).
+// MUST run to completion before any caller passes scope.principals (principal callers have no legacy fallback).
+backfillAccessPrincipals(
+  scope: ScopeFilter,
+  opts?: { batchSize?: number; force?: boolean },
+): Promise<{ entitiesScanned: number; entitiesUpdated: number; factsScanned: number; factsUpdated: number }>;
+```
+
+`mergeEntities(winner, loser, scope)` additionally rewrites every `entity:<loser>` grant to `entity:<winner>` (the "account links later" substrate), via the optional store capability `rewriteEntityPrincipal(from, to, scope)`.
+
+**The principal kit** (exported from `@everworker/oneringai` / `src/access/principals.ts`) — token builders, parser, and the storage-agnostic materializer, usable by hosts to authorize their OWN collections:
+
+```ts
+// Token builders + parser
+const PRINCIPAL_WORLD: 'world';
+function principalUser(id): Principal;     function principalEntity(id): Principal;
+function principalGroup(id): Principal;    function principalService(name): Principal;
+function parsePrincipal(p): { kind: 'user'|'entity'|'group'|'service'|'world'|'unknown'; id?: string };
+
+// Projection + materialization
+function materializePrincipals(input: AccessInput): { readPrincipals: string[]; writePrincipals: string[] };
+function fromLibraryPermissions(perms, ownerId, groupId): AccessInput;   // {group, world} defaults
+function fromNimbleAudit(isPublic, ownerId, groupId, acl?): AccessInput; // {isPublic} host shape
+function principalsForLibraryRecord(rec): { readPrincipals: string[]; writePrincipals: string[] };
+
+// Filters + checks + merge helpers
+function readFilterForPrincipals(p: string[]):  { readPrincipals:  { $in: string[] } };
+function writeFilterForPrincipals(p: string[]): { writePrincipals: { $in: string[] } };
+function canByPrincipals(record, principals: string[], need: 'read' | 'write'): boolean;
+function patchTouchesAccessFields(patch): boolean;   // gate re-materialization on partial updates
+function rewritePrincipalReferences(arr, fromEntityId, toEntityId): string[] | undefined;
+function rewriteAclPrincipalReferences(acl, fromEntityId, toEntityId): ACLEntry[] | undefined;
+
+// Types: Principal, PrincipalKind, ParsedPrincipal, ACLEntry, AccessInput, MaterializedPrincipals
+```
 
 ---
 

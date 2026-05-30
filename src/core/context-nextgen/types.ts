@@ -858,6 +858,17 @@ export interface AgentContextNextGenConfig {
   userId?: string;
 
   /**
+   * Viewer's IANA timezone (e.g. 'America/New_York'). Flows to ToolContext
+   * (`timeZone`) and to the memory plugin, so tools and injected memory
+   * content render instants as wall-clock time in this zone instead of UTC —
+   * the model never converts. Display-only; stored instants are unchanged.
+   * The library is otherwise timezone-agnostic: the host supplies this
+   * explicitly; the library never reads entity metadata to discover it. When
+   * omitted, times are rendered/returned as stored (UTC).
+   */
+  timezone?: string;
+
+  /**
    * Restrict this agent to specific auth identities (connector + optional account alias).
    * When set, only these identities are visible in ToolContext and tool descriptions.
    * Each identity produces its own tool set (e.g., microsoft_work_api, microsoft_personal_api).

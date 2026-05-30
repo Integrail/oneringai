@@ -482,6 +482,11 @@ export interface GoogleMeetingListEntry {
   start: string;
   end: string;
   timeZone: string;
+  /** Human display of `start`/`end` in the viewer's timezone (e.g. "Thu, May 22,
+   *  2026, 2:30 PM EDT"). Present only when the host supplied ToolContext.timeZone.
+   *  `start`/`end` remain canonical UTC for round-trip; use these for display only. */
+  startLocal?: string;
+  endLocal?: string;
   organizer?: string;
   attendees?: string[];
   location?: string;
@@ -504,6 +509,10 @@ export interface GoogleGetMeetingResult {
   start?: string;
   end?: string;
   timeZone?: string;
+  /** Human display of `start`/`end` in the viewer's timezone. Present only when
+   *  the host supplied ToolContext.timeZone. `start`/`end` stay canonical UTC. */
+  startLocal?: string;
+  endLocal?: string;
   organizer?: string;
   attendees?: string[];
   location?: string;

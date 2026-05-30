@@ -20,6 +20,7 @@ import {
   formatMicrosoftToolError,
   graphDateTimeToUtcIso,
 } from './types.js';
+import { utcIsoToLocalDisplay } from '../calendar/dateTime.js';
 
 export interface GetMeetingArgs {
   eventId: string;
@@ -113,7 +114,7 @@ PARAMETER FORMATS:
 - eventId: The calendar event ID string (starts with "AAMk..." or similar). Get this from a list_meetings result.
 
 RESPONSE FORMAT:
-"start" and "end" are returned as UTC ISO 8601 strings ending with "Z" (e.g. "2026-05-22T09:00:00.000Z"). The "timeZone" field carries the IANA zone for display only — never reconstruct an ISO string from a wall-clock value when passing times to other tools.
+"start" and "end" are returned as UTC ISO 8601 strings ending with "Z" (e.g. "2026-05-22T09:00:00.000Z"). When the user's timezone is known, "startLocal"/"endLocal" carry — for a timed meeting the local wall-clock time (e.g. "Thu, May 22, 2026, 2:30 PM EDT"), for an all-day meeting a date with no time. State times to the user using these when present, and never convert "start"/"end" yourself. Pass the canonical "start"/"end" UTC values verbatim when calling other tools.
 
 EXAMPLES:
 - { "eventId": "AAMkADI1M2I3YzgtODg..." }`,
@@ -145,7 +146,7 @@ EXAMPLES:
         const prefix = getUserPathPrefix(connector, args.targetUser, actAs);
 
         const selectFields = [
-          'id', 'subject', 'body', 'bodyPreview', 'start', 'end',
+          'id', 'subject', 'body', 'bodyPreview', 'start', 'end', 'isAllDay',
           'organizer', 'attendees', 'location',
           'isOnlineMeeting', 'onlineMeeting', 'onlineMeetingUrl', 'webLink',
         ].join(',');
@@ -169,14 +170,27 @@ EXAMPLES:
         }
 
         const tz = event.start?.timeZone;
+        // UTC ISO Z — see graphDateTimeToUtcIso for why naïve Graph times
+        // must be normalized here rather than at every consumer.
+        const startUtc = graphDateTimeToUtcIso(event.start?.dateTime, tz);
+        const endUtc = graphDateTimeToUtcIso(event.end?.dateTime, event.end?.timeZone ?? tz);
+        const displayTz = context?.timeZone;
+        const allDay = Boolean(event.isAllDay);
         return {
           success: true,
           eventId: event.id,
           subject: event.subject,
-          // UTC ISO Z — see graphDateTimeToUtcIso for why naïve Graph times
-          // must be normalized here rather than at every consumer.
-          start: graphDateTimeToUtcIso(event.start?.dateTime, tz),
-          end: graphDateTimeToUtcIso(event.end?.dateTime, event.end?.timeZone ?? tz),
+          start: startUtc,
+          end: endUtc,
+          // Localized display when the host supplied the viewer's timezone; the
+          // canonical start/end above stay UTC for round-trip. All-day events
+          // render as a date with no zone conversion so the day doesn't shift.
+          ...(displayTz
+            ? {
+                startLocal: utcIsoToLocalDisplay(startUtc, displayTz, allDay),
+                endLocal: utcIsoToLocalDisplay(endUtc, displayTz, allDay),
+              }
+            : {}),
           timeZone: tz,
           organizer: event.organizer?.emailAddress?.address,
           attendees: event.attendees

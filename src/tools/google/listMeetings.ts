@@ -6,7 +6,7 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
-import { calendarDateTimeToUtcIso } from '../calendar/dateTime.js';
+import { calendarDateTimeToUtcIso, utcIsoToLocalDisplay } from '../calendar/dateTime.js';
 import {
   type GoogleListMeetingsResult,
   type GoogleMeetingListEntry,
@@ -114,7 +114,7 @@ PARAMETER FORMATS:
 - maxResults: integer, max 100. Default: 50
 
 RESPONSE FORMAT:
-Each meeting's "start" and "end" are returned as UTC ISO 8601 strings ending with "Z", regardless of the timeZone you requested. The separate "timeZone" field carries the IANA zone for display only. When passing times to show_calendar or scheduling tools, use "start"/"end" verbatim and never reconstruct them from wall-clock digits.
+Each meeting's "start" and "end" are returned as UTC ISO 8601 strings ending with "Z", regardless of the timeZone you requested. When the user's timezone is known, each meeting also includes "startLocal"/"endLocal" — for timed meetings the local wall-clock time (e.g. "Thu, May 22, 2026, 2:30 PM EDT"); for all-day meetings a date with no time. State times to the user using startLocal/endLocal when present; do NOT convert "start"/"end" yourself. When passing times to show_calendar or scheduling tools, use the canonical "start"/"end" verbatim and never reconstruct them from wall-clock digits.
 
 EXAMPLE:
 { "startDateTime": "2025-01-15T00:00:00Z", "endDateTime": "2025-01-16T00:00:00Z", "timeZone": "America/New_York" }`,
@@ -166,9 +166,23 @@ EXAMPLE:
           }
         );
 
+        const displayTz = context?.timeZone;
         const meetings = (result.items ?? [])
           .filter(e => e.status !== 'cancelled')
-          .map(toMeetingEntry);
+          .map((event) => {
+            const entry = toMeetingEntry(event);
+            // Localized display alongside canonical UTC start/end when the host
+            // supplied the viewer's timezone — so the model states times in the
+            // user's zone without converting. Omitted when no zone. All-day
+            // events (date-only, no dateTime) render as a date with no zone
+            // conversion so the day doesn't shift.
+            if (displayTz) {
+              const allDay = Boolean(event.start?.date && !event.start?.dateTime);
+              entry.startLocal = utcIsoToLocalDisplay(entry.start, displayTz, allDay);
+              entry.endLocal = utcIsoToLocalDisplay(entry.end, displayTz, allDay);
+            }
+            return entry;
+          });
 
         return {
           success: true,

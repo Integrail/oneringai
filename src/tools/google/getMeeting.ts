@@ -6,7 +6,7 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolFunction, ToolContext } from '../../domain/entities/Tool.js';
-import { calendarDateTimeToUtcIso } from '../calendar/dateTime.js';
+import { calendarDateTimeToUtcIso, utcIsoToLocalDisplay } from '../calendar/dateTime.js';
 import {
   type GoogleGetMeetingResult,
   type GoogleCalendarEvent,
@@ -65,7 +65,7 @@ export function createGoogleGetMeetingTool(
 Returns the complete event including description, attendees with response status, Meet link, and location.
 
 RESPONSE FORMAT:
-"start" and "end" are returned as UTC ISO 8601 strings ending with "Z". The "timeZone" field carries the IANA zone for display only; never reconstruct an ISO string from a wall-clock value when passing times to other tools.
+"start" and "end" are returned as UTC ISO 8601 strings ending with "Z". When the user's timezone is known, "startLocal"/"endLocal" carry — for a timed meeting the local wall-clock time (e.g. "Thu, May 22, 2026, 2:30 PM EDT"), for an all-day meeting a date with no time. State times to the user using these when present, and never convert "start"/"end" yourself. Pass the canonical "start"/"end" UTC values verbatim when calling other tools.
 
 EXAMPLE:
 { "eventId": "abc123def456" }`,
@@ -121,12 +121,26 @@ EXAMPLE:
           description = stripHtml(description);
         }
 
+        const startUtc = calendarDateTimeToUtcIso(event.start?.dateTime ?? event.start?.date, tz);
+        const endUtc = calendarDateTimeToUtcIso(event.end?.dateTime ?? event.end?.date, endTz);
+        const displayTz = context?.timeZone;
+        const allDay = Boolean(event.start?.date && !event.start?.dateTime);
+
         return {
           success: true,
           eventId: event.id,
           summary: event.summary,
-          start: calendarDateTimeToUtcIso(event.start?.dateTime ?? event.start?.date, tz),
-          end: calendarDateTimeToUtcIso(event.end?.dateTime ?? event.end?.date, endTz),
+          start: startUtc,
+          end: endUtc,
+          // Localized display when the host supplied the viewer's timezone; the
+          // canonical start/end above stay UTC for round-trip. All-day events
+          // render as a date with no zone conversion so the day doesn't shift.
+          ...(displayTz
+            ? {
+                startLocal: utcIsoToLocalDisplay(startUtc, displayTz, allDay),
+                endLocal: utcIsoToLocalDisplay(endUtc, displayTz, allDay),
+              }
+            : {}),
           timeZone: tz,
           organizer: event.organizer?.email,
           attendees: attendees.length > 0 ? attendees : undefined,

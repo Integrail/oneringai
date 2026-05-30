@@ -74,6 +74,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Behavior rules — `memory_set_agent_rule`
     - Background ingestion via `SessionIngestorPluginNextGen`
     - Permissions and scope (three-principal model)
+    - Principal-based ACLs (explicit grants, `setAccess`, `scope.principals`, backfill)
     - Security invariants (no ghost-writes, contextId downgrade, numeric clamping)
     - Using the tools without the plugin
     - Direct `MemorySystem` access
@@ -4209,6 +4210,68 @@ The plugin's `defaultVisibility` config decides what stamping happens when the L
 | `forOther` (any other entity) | `'private'` | Conservative — prevents accidental cross-user info leakage via shared entities |
 
 Override per-deployment via `defaultVisibility` config or per-call via the LLM's `visibility` arg. Full model: [docs/MEMORY_PERMISSIONS.md](./docs/MEMORY_PERMISSIONS.md).
+
+### Principal-based ACLs (explicit grants)
+
+Owner / group / world handles the common cases, but it can't say *"this **specific** other person, agent, or service can read this record."* The principal-ACL layer adds that — explicit per-identity grants that sit **alongside** owner/group/world. It is fully opt-in and backwards compatible: set no `acl` and pass no `scope.principals`, and nothing below changes.
+
+**Principals** are opaque tokens — `user:<id>`, `entity:<id>` (typically a `person`), `group:<id>`, `service:<name>`, and `world` — built with the exported helpers `principalUser`, `principalEntity`, `principalGroup`, `principalService`, and `PRINCIPAL_WORLD`. (`parsePrincipal(token)` parses one back; an unknown prefix is `kind: 'unknown'`, never `world`.)
+
+**Grant** access with an `acl` on any entity or fact:
+
+```typescript
+import { principalEntity } from '@everworker/oneringai';
+
+await memory.addFact(
+  {
+    subjectId: deal.id,
+    predicate: 'note',
+    kind: 'atomic',
+    details: 'Pricing discussed with Alice',
+    permissions: { group: 'none', world: 'none' },              // owner-private base
+    acl: [{ principal: principalEntity('alice'), actions: ['read'] }],  // …plus Alice
+  },
+  { userId: 'owner', groupId: 'g1' },
+);
+```
+
+`ACLEntry` is `{ principal, actions: Array<'read' | 'write'> }`; an empty `actions` array grants nothing (never a silent read). On every write the storage boundary projects `ownerId` + `groupId` + `permissions` + `acl` into two **library-owned** arrays on the record — `readPrincipals` and `writePrincipals` (`writePrincipals ⊆ readPrincipals`). Never set these by hand; they're recomputed on each write.
+
+**Query in principal mode** by passing `scope.principals` — its *presence* (any length) is authoritative, and a record is visible iff the token sets intersect:
+
+```typescript
+import { principalUser, principalGroup, principalEntity, PRINCIPAL_WORLD } from '@everworker/oneringai';
+
+const scope = {
+  principals: [
+    principalUser('alice'),            // own user token → owner access
+    principalGroup('g1'),              // groups alice belongs to
+    principalEntity(alicePersonId),    // alice's Person entity (account-link grants)
+    PRINCIPAL_WORLD,                   // see public records
+  ],
+};
+await memory.getFact(id, scope);       // visible iff tokens ∩ readPrincipals ≠ ∅
+```
+
+- **Empty set** (`{ principals: [] }`) → sees/authorizes nothing. **Absent** → the legacy owner/group/world path runs unchanged.
+- When present, `userId` / `groupId` are ignored for the access decision — encode them as tokens instead.
+- The **host owns token-set correctness** (the library trusts it like `scope.userId`): include `PRINCIPAL_WORLD` to see public records and the caller's own `user:<id>` for owner access (both fail *closed* if omitted), and include **only** `group:` tokens the caller truly belongs to (over-including one **leaks** that group — fails *open*).
+
+**Mutate access** after creation with `setAccess` (requires `write`; replaces the `acl` and re-materializes the arrays — it does not touch `ownerId` or the `permissions` block):
+
+```typescript
+await memory.setAccess('fact', factId, [{ principal: principalEntity('bob'), actions: ['read'] }], scope);
+```
+
+**"Account links later."** When two `person` entities turn out to be the same identity, `mergeEntities(winner, loser, scope)` rewrites every `entity:<loser>` grant to `entity:<winner>` across all records — so a linked contact's prior facts stay visible under the surviving identity.
+
+> ⚠️ **Migration gate.** Principal callers have **no legacy fallback**: a row written before the principal model (no `readPrincipals`) is invisible to a `scope.principals` caller. Before any host code starts passing `scope.principals`, run the idempotent backfill to completion:
+> ```typescript
+> await memory.backfillAccessPrincipals(scope, { batchSize: 500 });
+> // → { entitiesScanned, entitiesUpdated, factsScanned, factsUpdated }
+> ```
+
+The same primitives (`materializePrincipals`, `fromLibraryPermissions`, `fromNimbleAudit`, `readFilterForPrincipals`, …) are exported so a host can authorize its **own** collections with identical grammar. Full reference: [docs/MEMORY_PERMISSIONS.md § Principal-based ACLs](./docs/MEMORY_PERMISSIONS.md#principal-based-acls-explicit-grants).
 
 ### Security invariants
 

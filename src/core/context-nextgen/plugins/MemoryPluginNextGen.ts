@@ -16,7 +16,7 @@
  *   - ...
  *
  *   ## About the User (<displayName>)
- *   **Timezone:** <iana-tz>                       ← only when entity.metadata.jarvis.tz set
+ *   **Timezone:** <iana-tz>                       ← only when the host passes config.timezone
  *   <profile.details>
  *   ### Recent top facts (up to N)
  *   - ...
@@ -142,6 +142,14 @@ export interface MemoryPluginConfig {
    * undefined for non-grouped deployments.
    */
   groupId?: string;
+  /**
+   * Viewer's IANA timezone (e.g. 'America/New_York'). When set, injected
+   * instants (events, recent-activity timestamps) and the user's `**Timezone:**`
+   * label render in this zone instead of UTC. When absent, instants render as
+   * stored (UTC, explicitly labelled). The host supplies this — the plugin never
+   * reads entity metadata to discover it.
+   */
+  timezone?: string;
   /** Permissions stamped on the bootstrapped user entity. */
   userEntityPermissions?: Permissions;
   /** Permissions stamped on the bootstrapped agent entity. */
@@ -346,6 +354,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
   private readonly agentId: string;
   private readonly userId: string;
   private readonly groupId: string | undefined;
+  private readonly timezone: string | undefined;
   private readonly personaEntityId: EntityId | undefined;
   private readonly userPerms: Permissions | undefined;
   private readonly agentPerms: Permissions | undefined;
@@ -393,6 +402,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     this.agentId = config.agentId;
     this.userId = config.userId;
     this.groupId = config.groupId;
+    this.timezone = config.timezone;
     this.personaEntityId = config.personaEntityId;
     this.userPerms = config.userEntityPermissions;
     this.agentPerms = config.agentEntityPermissions;
@@ -1122,14 +1132,12 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     // headerLabel is a trusted constant from this module; name is untrusted.
     lines.push(`## ${headerLabel} (${name})`);
 
-    // Timezone — host apps stamp this on the user entity via
-    // `metadata.jarvis.tz` (IANA string, e.g. 'Europe/Berlin'). Surfacing it
-    // here lets the agent reason about "today" / "this morning" / scheduling
-    // without guessing UTC or asking. User-only by default — orgs may have
-    // their own timezone but that's a separate convention the host can opt in.
-    if (target.kind === 'user') {
-      const tz = readJarvisString(view.entity.metadata, 'tz');
-      if (tz) lines.push(`**Timezone:** ${escapeInline(tz)}`);
+    // Timezone — the host supplies the viewer's IANA zone via `config.timezone`
+    // (the plugin is timezone-agnostic and never reads entity metadata to find
+    // it). Surfacing it here lets the agent reason about "today" / "this
+    // morning" / scheduling without guessing UTC. User-only by default.
+    if (target.kind === 'user' && this.timezone) {
+      lines.push(`**Timezone:** ${escapeInline(this.timezone)}`);
     }
 
     if (inj.identifiers) {
@@ -1224,6 +1232,11 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     if (inj.relatedEvents && view.relatedEvents && view.relatedEvents.length > 0) {
       lines.push('', '### Recent events');
       for (const e of view.relatedEvents) {
+        // UTC, minute precision. NOT localized to the viewer's zone: an
+        // all-day event's startTime is UTC midnight and zone-converting it
+        // would shift the date. The agent's localized schedule comes from the
+        // host's My Day surface and the calendar tools' startLocal/endLocal,
+        // which carry an all-day flag this injection does not have.
         const when = e.when ? ` @ ${e.when.toISOString().slice(0, 16).replace('T', ' ')}` : '';
         lines.push(`- [${escapeInline(e.role)}] ${escapeInline(e.event.displayName)}${when}`);
       }
@@ -1357,25 +1370,14 @@ function resolveRecentActivity(
 }
 
 /**
- * Read a string field from `metadata.jarvis.<key>` defensively. The `jarvis`
- * namespace inside `entity.metadata` is the host application's reserved area
- * (e.g. `metadata.jarvis.priority.{...}` on `priority` entities, or
- * `metadata.jarvis.tz` on the user). Returns undefined on any shape
- * deviation — callers render nothing rather than surfacing junk.
- */
-function readJarvisString(
-  metadata: Record<string, unknown> | undefined,
-  key: string,
-): string | undefined {
-  const jarvis = metadata?.jarvis;
-  if (!jarvis || typeof jarvis !== 'object') return undefined;
-  const v = (jarvis as Record<string, unknown>)[key];
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-
-/**
  * Read a record field from `metadata.jarvis.<key>` (e.g. the `priority`
- * sub-object on a priority entity). See `readJarvisString` for namespace notes.
+ * sub-object on a priority entity). The `jarvis` namespace inside
+ * `entity.metadata` is the host application's reserved area; returns undefined
+ * on any shape deviation so callers render nothing rather than surfacing junk.
+ *
+ * NOTE: this is the LAST host-namespace reader in the plugin (priorities only).
+ * Timezone rendering was migrated to the generic `config.timezone` seam; this
+ * read should eventually move to a generic config field the same way.
  */
 function readJarvisRecord(
   metadata: Record<string, unknown> | undefined,

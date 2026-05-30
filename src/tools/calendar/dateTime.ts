@@ -78,3 +78,59 @@ export function calendarDateTimeToUtcIso(
     return guess.toISOString();
   }
 }
+
+/**
+ * Render a UTC instant (the `Z`-form produced by `calendarDateTimeToUtcIso`, or
+ * any parseable date string) as human wall-clock time in `displayTimeZone`,
+ * e.g. `Thu, May 22, 2026, 2:30 PM EDT`. This is the read-side companion to
+ * `calendarDateTimeToUtcIso`: tools keep the canonical UTC value for round-trips
+ * and ALSO surface this localized string so the model can state times in the
+ * viewer's zone without converting from UTC itself.
+ *
+ * `allDay` events are anchored to a calendar DATE (stored as UTC midnight), not
+ * an instant — zone-converting them would shift the date backward in
+ * negative-offset zones (e.g. a May 22 all-day event rendering as "May 21,
+ * 8:00 PM"). For those, render the date only, in UTC, so the day is stable and
+ * no spurious wall-clock time appears.
+ *
+ * Returns '' for empty input. On an invalid/missing zone, returns the input
+ * unchanged rather than throwing — callers should pass a value only when the
+ * host supplied `ToolContext.timeZone`.
+ */
+export function utcIsoToLocalDisplay(
+  iso: string | undefined,
+  displayTimeZone: string | undefined,
+  allDay = false,
+): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  if (allDay) {
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: 'UTC',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(d);
+    } catch {
+      return iso.slice(0, 10);
+    }
+  }
+  if (!displayTimeZone) return iso;
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: displayTimeZone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(d);
+  } catch {
+    return iso;
+  }
+}

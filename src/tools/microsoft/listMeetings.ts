@@ -22,6 +22,7 @@ import {
   formatMicrosoftToolError,
   graphDateTimeToUtcIso,
 } from './types.js';
+import { utcIsoToLocalDisplay } from '../calendar/dateTime.js';
 
 export interface ListMeetingsArgs {
   startDateTime: string;
@@ -140,7 +141,7 @@ PARAMETER FORMATS:
 - maxResults: integer, 1-100. Default: 25
 
 RESPONSE FORMAT:
-Each meeting's "start" and "end" are returned as UTC ISO 8601 strings ending with "Z" (e.g. "2026-05-22T09:00:00.000Z"), regardless of the timeZone you requested. The separate "timeZone" field carries the IANA zone the user/calendar was viewed in, for display only. When passing times to other tools (show_calendar, scheduling, etc.) use the "start"/"end" UTC values verbatim — never reconstruct an ISO string from a wall-clock value.
+Each meeting's "start" and "end" are returned as UTC ISO 8601 strings ending with "Z" (e.g. "2026-05-22T09:00:00.000Z"), regardless of the timeZone you requested. When the user's timezone is known, each meeting also includes "startLocal"/"endLocal" — for timed meetings the local wall-clock time (e.g. "Thu, May 22, 2026, 2:30 PM EDT"); for all-day meetings a date with no time. State times to the user using startLocal/endLocal when present; do NOT convert "start"/"end" yourself. When passing times to other tools (show_calendar, scheduling, etc.) use the canonical "start"/"end" UTC values verbatim — never reconstruct an ISO string from a wall-clock value.
 
 EXAMPLES:
 - This week: { "startDateTime": "2025-01-13T00:00:00", "endDateTime": "2025-01-17T23:59:59", "timeZone": "America/New_York" }
@@ -175,7 +176,7 @@ EXAMPLES:
         const top = Math.min(Math.max(args.maxResults ?? 25, 1), 100);
 
         const selectFields = [
-          'id', 'subject', 'bodyPreview', 'start', 'end',
+          'id', 'subject', 'bodyPreview', 'start', 'end', 'isAllDay',
           'organizer', 'attendees', 'location',
           'isOnlineMeeting', 'onlineMeeting', 'onlineMeetingUrl', 'webLink',
         ].join(',');
@@ -199,7 +200,21 @@ EXAMPLES:
           }
         );
 
-        const meetings = (response.value ?? []).map(toMeetingEntry);
+        const displayTz = context?.timeZone;
+        const meetings = (response.value ?? []).map((event) => {
+          const entry = toMeetingEntry(event);
+          // Surface a localized display alongside the canonical UTC start/end
+          // when the host supplied the viewer's timezone — so the model states
+          // times in the user's zone without converting. Omitted when no zone.
+          // All-day events render as a date with no zone conversion so the day
+          // doesn't shift.
+          if (displayTz) {
+            const allDay = Boolean(event.isAllDay);
+            entry.startLocal = utcIsoToLocalDisplay(entry.start, displayTz, allDay);
+            entry.endLocal = utcIsoToLocalDisplay(entry.end, displayTz, allDay);
+          }
+          return entry;
+        });
 
         return {
           success: true,

@@ -137,7 +137,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   // ============================================================================
 
   /** Configuration */
-  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'identities' | 'toolCategories' | 'journalFilter'>> & {
+  private readonly _config: Required<Omit<AgentContextNextGenConfig, 'tools' | 'storage' | 'features' | 'systemPrompt' | 'plugins' | 'compactionStrategy' | 'toolExecutionTimeout' | 'userId' | 'timezone' | 'identities' | 'toolCategories' | 'journalFilter'>> & {
     features: ResolvedContextFeatures;
     storage?: IContextStorage;
     systemPrompt?: string;
@@ -181,6 +181,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** User ID for multi-user scenarios */
   private _userId: string | undefined;
+
+  /** Viewer's IANA timezone — flows to ToolContext + memory plugin for local rendering. */
+  private readonly _timezone: string | undefined;
 
   /** Auth identities this agent is scoped to (connector + optional accountId) */
   private _identities: AuthIdentity[] | undefined;
@@ -263,6 +266,10 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     this._systemPrompt = config.systemPrompt;
     this._agentId = this._config.agentId;
     this._userId = config.userId;
+    // Collapse '' → undefined here so every downstream consumer (the
+    // current-time `??` fallback, the memory-plugin forward, ToolContext)
+    // treats a blank timezone as "not set" consistently.
+    this._timezone = config.timezone || undefined;
     this._identities = config.identities;
     this._journalFilter = config.journalFilter;
 
@@ -381,6 +388,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         agentId: this._agentId,
         userId: resolvedUserId,
         memory: memConfig.memory,
+        timezone: memConfig.timezone ?? this._timezone,
       } as MemoryPluginConfig));
     }
 
@@ -540,6 +548,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       ...existing,
       agentId: this._agentId,
       userId: this._userId,
+      timeZone: this._timezone,
       identities: this._identities,
       connectorAccounts,
       connectorRegistry: this.buildConnectorRegistry(),
@@ -1386,9 +1395,19 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       }
     }
 
-    // 5. Current date and time (always injected)
+    // 5. Current date and time (always injected). Render in the viewer's
+    // timezone when the host supplied one (config.timezone); otherwise fall
+    // back to the host machine's zone (prior behavior). Guard against an
+    // invalid IANA string so a bad zone degrades to ISO instead of throwing.
     const now = new Date();
-    parts.push(`CURRENT DATE AND TIME: ${now.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'long', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`);
+    const displayZone = this._timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let currentDateTime: string;
+    try {
+      currentDateTime = now.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'long', timeZone: displayZone });
+    } catch {
+      currentDateTime = `${now.toISOString()} (UTC)`;
+    }
+    parts.push(`CURRENT DATE AND TIME: ${currentDateTime}`);
 
     // Build final system message
     const systemText = parts.join('\n\n---\n\n');

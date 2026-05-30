@@ -451,6 +451,11 @@ export interface MeetingListEntry {
   start: string;
   end: string;
   timeZone: string;
+  /** Human display of `start`/`end` in the viewer's timezone (e.g. "Thu, May 22,
+   *  2026, 2:30 PM EDT"). Present only when the host supplied ToolContext.timeZone.
+   *  `start`/`end` remain canonical UTC for round-trip; use these for display only. */
+  startLocal?: string;
+  endLocal?: string;
   organizer?: string;
   attendees?: string[];
   location?: string;
@@ -474,6 +479,10 @@ export interface MicrosoftGetMeetingResult {
   start?: string;
   end?: string;
   timeZone?: string;
+  /** Human display of `start`/`end` in the viewer's timezone. Present only when
+   *  the host supplied ToolContext.timeZone. `start`/`end` stay canonical UTC. */
+  startLocal?: string;
+  endLocal?: string;
   organizer?: string;
   attendees?: string[];
   location?: string;
@@ -529,6 +538,9 @@ export interface GraphCalendarViewEvent {
   body?: { contentType?: string; content?: string };
   start?: { dateTime: string; timeZone: string };
   end?: { dateTime: string; timeZone: string };
+  /** Graph all-day flag. When true, start/end are calendar dates at midnight —
+   *  do NOT zone-convert for display (the date would shift). */
+  isAllDay?: boolean;
   organizer?: { emailAddress: { name?: string; address: string } };
   attendees?: { emailAddress: { name?: string; address: string }; type?: string }[];
   location?: { displayName?: string };

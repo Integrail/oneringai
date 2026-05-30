@@ -1213,6 +1213,7 @@ await agent.run('Remember I prefer concise answers');
 **Key Features:**
 - 🧠 **Self-learning** — profiles synthesised from facts via incremental regeneration (prior profile + new facts + invalidated IDs → evolved profile)
 - 🔐 **Three-principal permissions** — owner / group / world, enforced at the adapter
+- 🎟️ **Principal-based ACLs** — opt-in explicit grants beyond owner/group/world via an `acl` of principal tokens (`user:`/`entity:`/`group:`/`service:`/`world`); materialized `read`/`writePrincipals` queried by `scope.principals`, mutated with `setAccess`, and survive `mergeEntities` ("account links later"). Backwards compatible; run `backfillAccessPrincipals` before flipping to principal mode. See [docs/MEMORY_PERMISSIONS.md § Principal-based ACLs](./docs/MEMORY_PERMISSIONS.md#principal-based-acls-explicit-grants)
 - 📊 **Ranked recall** — profile + top facts by `confidence × recency × predicateWeight × importance`
 - 🕸️ **Graph queries** — Mongo native `$graphLookup` when available, iterative BFS fallback
 - 🔍 **Semantic search** — over embedded facts (with Atlas Vector Search at scale)

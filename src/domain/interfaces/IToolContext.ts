@@ -80,6 +80,15 @@ export interface ToolContext {
   /** User ID — auto-populated from Agent config (userId). Also settable manually via agent.tools.setToolContext(). */
   userId?: string;
 
+  /**
+   * Viewer's IANA timezone (e.g. 'America/New_York') — auto-populated from
+   * Agent config (`timezone`). When present, tools that surface instants
+   * SHOULD render them as wall-clock time in this zone so the model never has
+   * to convert from UTC. When absent, tools return times as stored (UTC). The
+   * library never infers this from entity metadata — the host supplies it.
+   */
+  timeZone?: string;
+
   /** Account alias for multi-account OAuth — auto-populated from Agent config (accountId). Allows one user to auth multiple external accounts on the same connector (e.g., 'work', 'personal'). */
   accountId?: string;
 
