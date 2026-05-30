@@ -104,6 +104,8 @@ import type {
   UpsertEntityResult,
 } from './types.js';
 import { computeNormalizedFields } from './normalize.js';
+import { principalsForLibraryRecord } from '../access/principals.js';
+import type { ACLEntry } from '../access/principals.js';
 
 // Defaults --------------------------------------------------------------------
 
@@ -494,6 +496,7 @@ export class MemorySystem implements IDisposable {
         kind: 'entity',
         entityType: input.type,
       }),
+      acl: input.acl,
     };
     // 0.9.1 person rule: single-token person displayName with NO identifier
     // is structurally too weak to dedupe by name — "Pavel" / "John" / "Vlad"
@@ -657,6 +660,7 @@ export class MemorySystem implements IDisposable {
               groupId: input.groupId,
               ownerId: input.ownerId,
               permissions: input.permissions,
+              acl: input.acl,
               metadataMerge: input.metadataMerge,
             },
             scope,
@@ -696,6 +700,7 @@ export class MemorySystem implements IDisposable {
             groupId: input.groupId,
             ownerId: input.ownerId,
             permissions: input.permissions,
+            acl: input.acl,
             metadataMerge: input.metadataMerge,
           },
           scope,
@@ -897,6 +902,7 @@ export class MemorySystem implements IDisposable {
         kind: 'entity',
         entityType: input.type,
       }),
+      acl: input.acl,
     };
     const entity = await this.store.createEntity(newEntity);
     this.queueIdentityEmbedding(entity, scope);
@@ -1531,6 +1537,14 @@ export class MemorySystem implements IDisposable {
       allowCrossOwner: !!options?.allowCrossOwner,
     });
 
+    // Rewrite access grants: any record readable/writable via `entity:loserId`
+    // now grants `entity:winnerId` instead. Without this, records granted to
+    // the loser's principal become invisible to callers holding the winner's
+    // principal after the loser is archived — the substrate for "account links
+    // later, prior facts stay visible". Optional store capability; stores that
+    // don't implement it simply skip ACL-grant rewriting.
+    await this.store.rewriteEntityPrincipal?.(loserId, winnerId, scope);
+
     // Archive loser
     await this.store.archiveEntity(loserId, scope);
 
@@ -1554,6 +1568,50 @@ export class MemorySystem implements IDisposable {
     void this.maybeRegenerateProfile(winnerId, winnerScope);
 
     return nextWinner;
+  }
+
+  /**
+   * Replace the explicit `acl` on an entity or fact and re-materialize its
+   * `readPrincipals`/`writePrincipals` in place. The sanctioned exception to
+   * fact-immutability for ACCESS changes (same category as the merge rewrite).
+   * Caller must have `write` on the record.
+   *
+   * Backs host grant/revoke surfaces. Returns the updated record.
+   */
+  async setAccess(
+    kind: 'entity' | 'fact',
+    id: string,
+    acl: ACLEntry[],
+    scope: ScopeFilter,
+  ): Promise<IEntity | IFact> {
+    assertNotDestroyed(this, 'setAccess');
+    if (kind === 'entity') {
+      const entity = await this.store.getEntity(id, scope);
+      if (!entity) {
+        throw new Error(`setAccess: entity ${id} not found or not visible in caller scope`);
+      }
+      assertCanAccess(entity, scope, 'write', 'entity');
+      const { readPrincipals, writePrincipals } = principalsForLibraryRecord({ ...entity, acl });
+      const next: IEntity = {
+        ...entity,
+        acl,
+        readPrincipals,
+        writePrincipals,
+        version: entity.version + 1,
+        updatedAt: new Date(),
+      };
+      await this.store.updateEntity(next);
+      this.emit({ type: 'entity.upsert', entity: next, created: false });
+      return next;
+    }
+    const fact = await this.store.getFact(id, scope);
+    if (!fact) {
+      throw new Error(`setAccess: fact ${id} not found or not visible in caller scope`);
+    }
+    assertCanAccess(fact, scope, 'write', 'fact');
+    const { readPrincipals, writePrincipals } = principalsForLibraryRecord({ ...fact, acl });
+    await this.store.updateFact(id, { acl, readPrincipals, writePrincipals }, scope);
+    return { ...fact, acl, readPrincipals, writePrincipals };
   }
 
   private async rewriteFactReferences(
@@ -2149,6 +2207,144 @@ export class MemorySystem implements IDisposable {
   }
 
   /**
+   * Backfill `readPrincipals` / `writePrincipals` on every entity + fact (live
+   * AND archived) written before the principal model — or by any path that
+   * predates the storage-boundary stamp. Recomputes each row's arrays from its
+   * `ownerId` / `groupId` / `permissions` / `acl` and writes when they differ.
+   *
+   * THE MIGRATION GATE: a host MUST run this to completion before it starts
+   * passing `scope.principals`. Query-time (Mongo) filtering has NO legacy
+   * fallback for rows lacking `readPrincipals` — an un-backfilled row is simply
+   * invisible to a principal caller (see `ScopeFilter.principals`).
+   *
+   * Idempotent — re-running with the same data is a no-op (arrays are recomputed
+   * deterministically and compared before writing). `{ force: true }` rewrites
+   * every row regardless (use after the materialization rules change).
+   *
+   * Entities go through `updateEntity` (the storage boundary re-stamps the
+   * arrays) with the same retry-once optimistic-concurrency handling as
+   * `backfillNormalizedFields`. Facts are patched directly with the computed
+   * arrays (no `updateFact` recompute is triggered — the patch carries the
+   * arrays, not the access-source fields).
+   */
+  async backfillAccessPrincipals(
+    scope: ScopeFilter,
+    opts?: { batchSize?: number; force?: boolean },
+  ): Promise<{
+    entitiesScanned: number;
+    entitiesUpdated: number;
+    factsScanned: number;
+    factsUpdated: number;
+  }> {
+    assertNotDestroyed(this, 'backfillAccessPrincipals');
+    const batchSize = Math.max(1, Math.min(opts?.batchSize ?? 500, 1000));
+    const force = opts?.force === true;
+    const arrEq = (a: string[] | undefined, b: string[] | undefined): boolean => {
+      const x = a ?? [];
+      const y = b ?? [];
+      return x.length === y.length && x.every((v, i) => v === y[i]);
+    };
+    const matches = (
+      rec: { readPrincipals?: string[]; writePrincipals?: string[] },
+      expected: { readPrincipals: string[]; writePrincipals: string[] },
+    ): boolean =>
+      arrEq(rec.readPrincipals, expected.readPrincipals) &&
+      arrEq(rec.writePrincipals, expected.writePrincipals);
+
+    let entitiesScanned = 0;
+    let entitiesUpdated = 0;
+    // Two passes: live (archived hidden by default) + archived. Entities are
+    // soft-deleted in place (no separate archive collection), so updateEntity
+    // re-stamps archived rows too — and the merge rewrite already touches them.
+    for (const archivedPass of [undefined, true] as const) {
+      let cursor: string | undefined;
+      do {
+        const page = await this.store.listEntities(
+          archivedPass === undefined ? {} : { archived: true },
+          { limit: batchSize, cursor, orderBy: { field: '_id', direction: 'asc' } },
+          scope,
+        );
+        for (const entity of page.items) {
+          entitiesScanned++;
+          if (!force && matches(entity, principalsForLibraryRecord(entity))) continue;
+          // updateEntity re-stamps the arrays at the storage boundary.
+          try {
+            await this.store.updateEntity({
+              ...entity,
+              version: entity.version + 1,
+              updatedAt: new Date(),
+            });
+            entitiesUpdated++;
+          } catch (err) {
+            // Treated as an optimistic-concurrency conflict: another writer
+            // bumped the version in the gap. Re-read and retry once against the
+            // fresh version. `getEntity` hides archived rows, so on the archived
+            // pass a conflict simply defers to a later run / force. NEVER
+            // swallow silently — log with full context so a genuine storage
+            // fault (not a benign race) is visible, then let the retry surface
+            // it by throwing if it recurs.
+            logger.warn(
+              {
+                component: 'MemorySystem.backfillAccessPrincipals',
+                entityId: entity.id,
+                archivedPass: archivedPass === true,
+                error: err instanceof Error ? err.message : String(err),
+              },
+              'updateEntity failed during access-principal backfill; re-reading and retrying once',
+            );
+            const fresh = await this.store.getEntity(entity.id, scope);
+            if (!fresh) continue;
+            await this.store.updateEntity({
+              ...fresh,
+              version: fresh.version + 1,
+              updatedAt: new Date(),
+            });
+            entitiesUpdated++;
+          }
+        }
+        cursor = page.nextCursor;
+      } while (cursor);
+    }
+
+    let factsScanned = 0;
+    let factsUpdated = 0;
+    // Two passes: live (archived hidden by default) + archived. updateFact
+    // resolves the archive collection on its own when the id lives there.
+    // Order by `_id` (unique, immutable) — NOT `createdAt`: bulk-ingested facts
+    // share a millisecond, and offset pagination over a non-unique sort can skip
+    // a tied boundary fact, leaving it un-materialized and so invisible to every
+    // principal caller (this is the migration gate). `_id` is a total order, so
+    // each fact is touched exactly once. Mirrors the entity pass above.
+    for (const archivedPass of [undefined, true] as const) {
+      let cursor: string | undefined;
+      do {
+        const page = await this.store.findFacts(
+          archivedPass === undefined ? {} : { archived: true },
+          { limit: batchSize, cursor, orderBy: { field: '_id', direction: 'asc' } },
+          scope,
+        );
+        for (const fact of page.items) {
+          factsScanned++;
+          const expected = principalsForLibraryRecord(fact);
+          if (!force && matches(fact, expected)) continue;
+          await this.store.updateFact(
+            fact.id,
+            {
+              readPrincipals: expected.readPrincipals,
+              writePrincipals: expected.writePrincipals,
+            },
+            scope,
+          );
+          factsUpdated++;
+        }
+        cursor = page.nextCursor;
+      } while (cursor);
+    }
+
+    return { entitiesScanned, entitiesUpdated, factsScanned, factsUpdated };
+  }
+
+  /**
    * Migration helper — for every fact with the given `predicate`, hoist the
    * fact's `contextIds` array onto the target entity's `contextIds` (union
    * merge). Target entity is the fact's `subject` or `object` depending on
@@ -2606,6 +2802,7 @@ export class MemorySystem implements IDisposable {
         predicate,
         factKind: input.kind,
       }),
+      acl: input.acl,
       groupId: factScope.groupId,
       ownerId: factScope.ownerId,
     };

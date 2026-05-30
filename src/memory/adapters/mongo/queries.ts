@@ -108,12 +108,17 @@ export function factFilterToMongo(
 export function orderByToSort(orderBy?: FactOrderBy): MongoSort | undefined {
   if (!orderBy) return undefined;
   const dir = orderBy.direction === 'asc' ? 1 : -1;
+  // `_id` is the always-indexed unique primary key — a total order, so offset
+  // pagination touches every doc exactly once (no createdAt-tie skips). The
+  // other fields are non-unique semantic sorts.
   const field =
     orderBy.field === 'observedAt'
       ? 'observedAt'
       : orderBy.field === 'confidence'
         ? 'confidence'
-        : 'createdAt';
+        : orderBy.field === '_id'
+          ? '_id'
+          : 'createdAt';
   return { [field]: dir };
 }
 

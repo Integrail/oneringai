@@ -19,6 +19,7 @@
 
 import type { ScopeFilter } from '../../types.js';
 import type { MongoFilter } from './IMongoCollectionLike.js';
+import { PRINCIPAL_WORLD, readFilterForPrincipals } from '../../../access/principals.js';
 
 const WORLD_ALLOWS_READ: MongoFilter = {
   $or: [
@@ -51,6 +52,27 @@ export function scopeToFilter(
   scope: ScopeFilter,
   opts: ScopeToFilterOptions = {},
 ): MongoFilter {
+  // Principal model: the PRESENCE of `scope.principals` (not its length) makes
+  // it authoritative — a single sargable `readPrincipals: {$in: [...]}` branch
+  // replaces the owner/group/world `$or` (those identities are encoded as
+  // tokens in the set). Tenant isolation comes from the `group:<id>` token; no
+  // `groupId` clause is added (it would wrongly exclude `world` records).
+  if (scope.principals !== undefined) {
+    // Honor `disableWorld` by dropping the `world` token — matches the legacy
+    // branch's behavior (the legacy path omits the world branch under this
+    // flag) so the principal path can't silently re-expose world rows a
+    // deployment asked to hide.
+    const principals = opts.disableWorld
+      ? scope.principals.filter((p) => p !== PRINCIPAL_WORLD)
+      : scope.principals;
+    if (principals.length === 0) {
+      // Authoritative empty: principal mode with no (effective) grants → match
+      // nothing. Consistent with `canByPrincipals`, which denies an empty set.
+      return { _id: { $exists: false } } as MongoFilter;
+    }
+    return readFilterForPrincipals(principals);
+  }
+
   const branches: MongoFilter[] = [];
 
   // (a) Owner shortcut.

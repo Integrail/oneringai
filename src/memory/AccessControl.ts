@@ -33,6 +33,7 @@
  */
 
 import type { ScopeFilter } from './types.js';
+import { canByPrincipals } from '../access/principals.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +78,14 @@ export interface AccessControlled {
   ownerId?: string;
   groupId?: string;
   permissions?: Permissions;
+  /**
+   * Materialized principal token sets (see `access/principals.ts`). When the
+   * caller supplies `ScopeFilter.principals` AND the record carries these, the
+   * principal model decides access; otherwise the legacy owner/group/world
+   * path runs.
+   */
+  readPrincipals?: string[];
+  writePrincipals?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +201,18 @@ export function canAccess(
   caller: ScopeFilter,
   need: Permission,
 ): boolean {
+  // Principal model: when the caller passes a principal set (ANY length,
+  // including empty) it is authoritative — `canByPrincipals` decides, and a
+  // record that hasn't been materialized (no `readPrincipals`) is denied. This
+  // is exactly what query-time does (`scopeToFilter` emits only the principal
+  // branch; un-materialized rows don't match the `$in`). There is NO legacy
+  // fallback for principal callers — an empty set authorizes nothing, and rows
+  // must be backfilled before a host passes principals (see
+  // ScopeFilter.principals + MemorySystem.backfillAccessPrincipals). Callers
+  // that pass no principals get the unchanged owner/group/world path below.
+  if (caller.principals !== undefined) {
+    return canByPrincipals(record, caller.principals, need);
+  }
   // Owner: full access.
   if (record.ownerId && caller.userId && record.ownerId === caller.userId) {
     return true;

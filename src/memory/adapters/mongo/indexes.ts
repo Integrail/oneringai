@@ -89,6 +89,15 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
       { ownerId: 1, 'identifiers.kind': 1, 'identifiers.value': 1 } as Record<string, 1 | -1>,
       { name: 'memory_ent_owner_ident' },
     );
+    // Principal-model scope filter: `scopeToFilter` emits a single
+    // `readPrincipals: {$in: [...]}` branch for principal callers. Multikey
+    // (readPrincipals is an array), leading so selective `entity:`/`user:`
+    // tokens seek directly. High-fanout `group:`/`world` tokens lean on the
+    // groupId-led compounds above. See access/principals.ts.
+    await entities.createIndex(
+      { readPrincipals: 1, type: 1, archived: 1 } as Record<string, 1 | -1>,
+      { name: 'memory_ent_principals', background: true },
+    );
     // Normalized-name lookup — drives EntityResolver Tier 2/3 + the atomic
     // upsert path. Lead with groupId (most selective for multi-tenant
     // deployments), then type, then the normalized name. The Mongo planner
@@ -144,6 +153,31 @@ export async function ensureIndexes(args: EnsureIndexesArgs): Promise<void> {
     await facts.createIndex(
       { subjectId: 1, predicate: 1, observedAt: -1 },
       { name: 'memory_fact_subject_pred_observed' },
+    );
+
+    // ── PRINCIPAL-LED INDEXES (principal-model scope filter) ──────────────
+    //
+    // `scopeToFilter` emits `readPrincipals: {$in: [...]}` for principal
+    // callers. Lead with the multikey readPrincipals key, then a SCALAR key +
+    // observedAt sort — so the planner can serve a principal-scoped
+    // "everything about subject/object X" query directly from one index. See
+    // access/principals.ts.
+    //
+    // NOTE — NO `{readPrincipals, contextIds}` index. Both are array fields and
+    // MongoDB forbids compound indexes over two array fields ("cannot index
+    // parallel arrays", error 171) — it would fail `createIndex` on existing
+    // data or reject inserts where a fact has both. Principal-scoped contextId
+    // queries instead use `memory_fact_context_observed` (contextIds-led) and
+    // post-filter the `readPrincipals: {$in}` clause on the small per-context
+    // candidate set — the same access-post-filter strategy the legacy indexes
+    // document.
+    await facts.createIndex(
+      { readPrincipals: 1, subjectId: 1, observedAt: -1 } as Record<string, 1 | -1>,
+      { name: 'memory_fact_principals_subject', background: true },
+    );
+    await facts.createIndex(
+      { readPrincipals: 1, objectId: 1, observedAt: -1 } as Record<string, 1 | -1>,
+      { name: 'memory_fact_principals_object', background: true },
     );
 
     // ── LEGACY GROUPID-LED COMPOUNDS (retained) ───────────────────────────

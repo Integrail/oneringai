@@ -46,6 +46,14 @@ import type {
   SearchIndexDefinition,
 } from './IMongoCollectionLike.js';
 import { mergeFilters, scopeToFilter } from './scopeFilter.js';
+import {
+  patchTouchesAccessFields,
+  principalEntity,
+  principalsForLibraryRecord,
+  rewriteAclPrincipalReferences,
+  rewritePrincipalReferences,
+  type ACLEntry,
+} from '../../../access/principals.js';
 import { ensureIndexes } from './indexes.js';
 import { warnIfLimitWithoutOrder } from '../orderByWarning.js';
 import {
@@ -604,7 +612,25 @@ export class MongoMemoryAdapter implements IMemoryStore {
     this.assertLive();
     const { id: _ignoreId, ...rest } = patch;
     void _ignoreId;
-    const cleanPatch = normalizePartialFactForStorage(rest);
+    let cleanPatch = normalizePartialFactForStorage(rest);
+
+    // If the patch changes an access-affecting field, recompute the
+    // materialized principal arrays from the merged record so they never drift
+    // (the "recomputed on every write" invariant — direct updateFact consumers
+    // patching acl/permissions/ownerId/groupId would otherwise desync). Cold
+    // path: one extra read only when access fields are touched. `setAccess`
+    // already includes the arrays; recomputing yields the same values.
+    if (patchTouchesAccessFields(cleanPatch)) {
+      const current = await this.getFact(id, scope);
+      if (current) {
+        const access = principalsForLibraryRecord({ ...current, ...cleanPatch });
+        cleanPatch = {
+          ...cleanPatch,
+          readPrincipals: access.readPrincipals,
+          writePrincipals: access.writePrincipals,
+        };
+      }
+    }
 
     // Move-on-archive logic. Three cases:
     //   1. archived: true → move primary → archive
@@ -630,6 +656,78 @@ export class MongoMemoryAdapter implements IMemoryStore {
       // Doc may live in archive (e.g. metadata write on an already-archived
       // fact). Apply the patch there.
       await this.factsArchive.updateOne(filter, { $set: cleanPatch });
+    }
+  }
+
+  /**
+   * Rewrite `entity:<from>` → `entity:<to>` access grants across entities,
+   * facts, and (if present) the facts archive. Bulk identity fix used by
+   * `mergeEntities`; scoped to the caller's tenant for safety, no per-record
+   * write check, no version bump (these are access-token rewrites, not
+   * semantic mutations). See IMemoryStore.rewriteEntityPrincipal.
+   */
+  async rewriteEntityPrincipal(
+    fromEntityId: EntityId,
+    toEntityId: EntityId,
+    scope: ScopeFilter,
+  ): Promise<void> {
+    this.assertLive();
+    const groupClause: MongoFilter =
+      scope.groupId !== undefined ? { groupId: scope.groupId } : {};
+    await this.rewritePrincipalInCollection(this.entities, fromEntityId, toEntityId, groupClause);
+    await this.rewritePrincipalInCollection(this.facts, fromEntityId, toEntityId, groupClause);
+    if (this.factsArchive) {
+      await this.rewritePrincipalInCollection(
+        this.factsArchive,
+        fromEntityId,
+        toEntityId,
+        groupClause,
+      );
+    }
+  }
+
+  private async rewritePrincipalInCollection<
+    T extends {
+      id: string;
+      readPrincipals?: string[];
+      writePrincipals?: string[];
+      acl?: ACLEntry[];
+    },
+  >(
+    coll: IMongoCollectionLike<T>,
+    fromEntityId: string,
+    toEntityId: string,
+    groupClause: MongoFilter,
+  ): Promise<void> {
+    const fromTok = principalEntity(fromEntityId);
+    const match = mergeFilters(
+      {
+        $or: [
+          { readPrincipals: fromTok },
+          { writePrincipals: fromTok },
+          { 'acl.principal': fromTok },
+        ],
+      },
+      groupClause,
+    );
+    // Drain pattern (mirrors MemorySystem.rewriteFactReferences): each rewrite
+    // removes the doc from `match` (fromTok is gone), so re-querying from the
+    // start picks up the remainder. Each matched doc is guaranteed to change at
+    // least one field, so the loop strictly shrinks the match set and
+    // terminates.
+    while (true) {
+      const docs = await coll.find(match, { limit: 200 });
+      if (docs.length === 0) break;
+      for (const doc of docs) {
+        const set: Record<string, unknown> = {};
+        const rp = rewritePrincipalReferences(doc.readPrincipals, fromEntityId, toEntityId);
+        const wp = rewritePrincipalReferences(doc.writePrincipals, fromEntityId, toEntityId);
+        const acl = rewriteAclPrincipalReferences(doc.acl, fromEntityId, toEntityId);
+        if (rp !== doc.readPrincipals) set.readPrincipals = rp;
+        if (wp !== doc.writePrincipals) set.writePrincipals = wp;
+        if (acl !== doc.acl) set.acl = acl;
+        await coll.updateOne({ id: doc.id } as unknown as MongoFilter, { $set: set });
+      }
     }
   }
 
@@ -1256,6 +1354,10 @@ function normalizeEntityForStorage(entity: IEntity): IEntity {
     displayName: entity.displayName,
     aliases: entity.aliases,
   });
+  // Materialize access principals at the storage boundary from owner/group/
+  // permissions/acl — computed off the real (pre-null-coercion) scope values so
+  // no MemorySystem write path can forget them. See access/principals.ts.
+  const access = principalsForLibraryRecord(entity);
   return {
     ...entity,
     groupId: entity.groupId ?? (null as unknown as undefined),
@@ -1273,6 +1375,8 @@ function normalizeEntityForStorage(entity: IEntity): IEntity {
     metadata: coerceMetadataDates(entity.metadata),
     normalizedDisplayName: norm.normalizedDisplayName,
     normalizedAliases: norm.normalizedAliases,
+    readPrincipals: access.readPrincipals,
+    writePrincipals: access.writePrincipals,
   };
 }
 
@@ -1284,6 +1388,7 @@ function normalizeNewEntityForStorage(
     displayName: input.displayName,
     aliases: input.aliases,
   });
+  const access = principalsForLibraryRecord(input);
   return {
     ...input,
     groupId: input.groupId ?? (null as unknown as undefined),
@@ -1295,6 +1400,8 @@ function normalizeNewEntityForStorage(
     metadata: coerceMetadataDates(input.metadata),
     normalizedDisplayName: norm.normalizedDisplayName,
     normalizedAliases: norm.normalizedAliases,
+    readPrincipals: access.readPrincipals,
+    writePrincipals: access.writePrincipals,
   };
 }
 
@@ -1304,10 +1411,13 @@ function normalizeNewFactForStorage(
   // Belt-and-suspenders: enforce Date typing on temporal fields + nested
   // metadata at the storage boundary.
   const coerced = coerceFactTemporalFields(input);
+  const access = principalsForLibraryRecord(coerced);
   return {
     ...coerced,
     groupId: coerced.groupId ?? (null as unknown as undefined),
     ownerId: coerced.ownerId ?? (null as unknown as undefined),
+    readPrincipals: access.readPrincipals,
+    writePrincipals: access.writePrincipals,
   };
 }
 
@@ -1727,6 +1837,10 @@ const ENTITIES_FILTER_PATHS: readonly string[] = [
   'ownerId',
   'permissions.group',
   'permissions.world',
+  // Principal-model scope enforcement: the `readPrincipals: {$in}` clause that
+  // `scopeToFilter` emits for principal callers. MUST be declared or Atlas
+  // silently drops it — a cross-tenant leak. See access/principals.ts.
+  'readPrincipals',
   'archived',
   'type',
   // Used by document search (semanticSearchEntities with embeddingField:'content')
@@ -1775,6 +1889,9 @@ const FACTS_FILTER_PATHS: readonly string[] = [
   'ownerId',
   'permissions.group',
   'permissions.world',
+  // Principal-model scope enforcement — see ENTITIES_FILTER_PATHS above. MUST
+  // be declared or Atlas silently drops the `readPrincipals: {$in}` clause.
+  'readPrincipals',
   'archived',
   'subjectId',
   'objectId',

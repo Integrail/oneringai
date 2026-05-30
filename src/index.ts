@@ -1582,6 +1582,38 @@ export {
   defaultFactContentComposer,
   DEFAULT_ENTITY_COMPOSERS,
 } from './memory/index.js';
+
+// ============ Access — principal-based ACL kit ============
+// Storage-agnostic primitives shared by the library (entities/facts) and hosts
+// authorizing their OWN collections with the same grammar + materializer — no
+// further library change required to extend coverage. See src/access/principals.ts.
+export {
+  PRINCIPAL_WORLD,
+  principalUser,
+  principalEntity,
+  principalGroup,
+  principalService,
+  parsePrincipal,
+  materializePrincipals,
+  fromLibraryPermissions,
+  fromNimbleAudit,
+  principalsForLibraryRecord,
+  readFilterForPrincipals,
+  writeFilterForPrincipals,
+  canByPrincipals,
+  patchTouchesAccessFields,
+  rewritePrincipalReferences,
+  rewriteAclPrincipalReferences,
+} from './access/principals.js';
+export type {
+  Principal,
+  PrincipalKind,
+  ParsedPrincipal,
+  ACLEntry,
+  AccessInput,
+  MaterializedPrincipals,
+} from './access/principals.js';
+
 export type {
   // Adapter options
   InMemoryAdapterOptions,

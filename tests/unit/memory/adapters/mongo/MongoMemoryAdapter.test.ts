@@ -1232,6 +1232,7 @@ describe('MongoMemoryAdapter', () => {
           'permissions.group',
           'permissions.world',
           'predicate',
+          'readPrincipals',
           'subjectId',
         ].sort(),
       );
@@ -1261,6 +1262,7 @@ describe('MongoMemoryAdapter', () => {
           'ownerId',
           'permissions.group',
           'permissions.world',
+          'readPrincipals',
           'type',
         ].sort(),
       );
@@ -1304,6 +1306,7 @@ describe('MongoMemoryAdapter', () => {
           'ownerId',
           'permissions.group',
           'permissions.world',
+          'readPrincipals',
           'type',
         ].sort(),
       );

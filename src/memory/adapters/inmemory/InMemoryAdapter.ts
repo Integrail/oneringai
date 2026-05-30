@@ -34,6 +34,12 @@ import type {
   TraversalOptions,
 } from '../../types.js';
 import { canAccess } from '../../AccessControl.js';
+import {
+  patchTouchesAccessFields,
+  principalsForLibraryRecord,
+  rewriteAclPrincipalReferences,
+  rewritePrincipalReferences,
+} from '../../../access/principals.js';
 import { coerceFactTemporalFields, coerceMetadataDates } from '../../dateCoercion.js';
 import { warnIfLimitWithoutOrder } from '../orderByWarning.js';
 import { genericTraverse } from '../../GenericTraversal.js';
@@ -97,6 +103,9 @@ export class InMemoryAdapter implements IMemoryStore {
       })),
       normalizedDisplayName: norm.normalizedDisplayName,
       normalizedAliases: norm.normalizedAliases,
+      // Materialize access principals at the storage boundary — mirrors
+      // MongoMemoryAdapter so the two stores stay observationally identical.
+      ...principalsForLibraryRecord(input),
     };
     this.indexEntity(entity);
     return clone(entity);
@@ -141,6 +150,7 @@ export class InMemoryAdapter implements IMemoryStore {
       })),
       normalizedDisplayName: norm.normalizedDisplayName,
       normalizedAliases: norm.normalizedAliases,
+      ...principalsForLibraryRecord(entity),
     });
   }
 
@@ -356,6 +366,7 @@ export class InMemoryAdapter implements IMemoryStore {
       ...coerced,
       id: newId(),
       createdAt: new Date(),
+      ...principalsForLibraryRecord(coerced),
     };
     this.indexFact(fact);
     return clone(fact);
@@ -403,9 +414,49 @@ export class InMemoryAdapter implements IMemoryStore {
     // metadata in the patch before applying. Mirrors MongoMemoryAdapter so
     // the two stores stay observationally identical.
     const coerced = coerceFactTemporalFields(patch);
-    const next: IFact = { ...f, ...coerced, id: f.id };
+    let next: IFact = { ...f, ...coerced, id: f.id };
+    // If the patch changes an access-affecting field, recompute the
+    // materialized principal arrays from the merged record so they never drift
+    // (the "recomputed on every write" invariant). Mirrors MongoMemoryAdapter.
+    if (patchTouchesAccessFields(coerced)) {
+      const access = principalsForLibraryRecord(next);
+      next = {
+        ...next,
+        readPrincipals: access.readPrincipals,
+        writePrincipals: access.writePrincipals,
+      };
+    }
     this.unindexFact(f);
     this.indexFact(next);
+  }
+
+  /**
+   * Rewrite `entity:<from>` → `entity:<to>` access grants across stored
+   * entities + facts. In-place mutation of the backing maps (reads return
+   * clones, so callers never see partial state). Mirrors
+   * MongoMemoryAdapter.rewriteEntityPrincipal — scoped to the caller's tenant
+   * (`scope.groupId`) for parity + defense-in-depth.
+   */
+  async rewriteEntityPrincipal(
+    fromEntityId: EntityId,
+    toEntityId: EntityId,
+    scope: ScopeFilter,
+  ): Promise<void> {
+    this.assertLive();
+    const inScope = (r: { groupId?: string }): boolean =>
+      scope.groupId === undefined || r.groupId === scope.groupId;
+    for (const e of this.entitiesById.values()) {
+      if (!inScope(e)) continue;
+      e.readPrincipals = rewritePrincipalReferences(e.readPrincipals, fromEntityId, toEntityId);
+      e.writePrincipals = rewritePrincipalReferences(e.writePrincipals, fromEntityId, toEntityId);
+      e.acl = rewriteAclPrincipalReferences(e.acl, fromEntityId, toEntityId);
+    }
+    for (const f of this.factsById.values()) {
+      if (!inScope(f)) continue;
+      f.readPrincipals = rewritePrincipalReferences(f.readPrincipals, fromEntityId, toEntityId);
+      f.writePrincipals = rewritePrincipalReferences(f.writePrincipals, fromEntityId, toEntityId);
+      f.acl = rewriteAclPrincipalReferences(f.acl, fromEntityId, toEntityId);
+    }
   }
 
   async countFacts(filter: FactFilter, scope: ScopeFilter): Promise<number> {
@@ -767,6 +818,13 @@ function factMatches(fact: IFact, filter: FactFilter, scope: ScopeFilter): boole
 function sortFacts(facts: IFact[], orderBy?: FactOrderBy): void {
   if (!orderBy) return;
   const dir = orderBy.direction === 'asc' ? 1 : -1;
+  if (orderBy.field === '_id') {
+    // Unique, immutable key → a total order (no ties). Mirrors the Mongo
+    // adapter's `_id` sort so offset-paginated callers (e.g. backfills) touch
+    // every fact exactly once. In-memory facts key on `id`.
+    facts.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) * dir);
+    return;
+  }
   facts.sort((a, b) => {
     let av: number;
     let bv: number;

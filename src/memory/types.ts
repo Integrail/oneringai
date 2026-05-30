@@ -46,6 +46,7 @@
 
 import type { IDisposable } from '../domain/interfaces/IDisposable.js';
 import type { Permissions, VisibilityPolicy } from './AccessControl.js';
+import type { ACLEntry } from '../access/principals.js';
 
 // Re-export access-control surface so callers only need to import from
 // `@everworker/oneringai` (or the memory barrel) to get the full type set.
@@ -94,6 +95,25 @@ export interface ScopeFields {
 export interface ScopeFilter {
   groupId?: string;
   userId?: string;
+  /**
+   * Caller's principal token set (`user:<id>`, `entity:<id>`, `group:<id>`,
+   * `world`, …). Its PRESENCE (not its length) is AUTHORITATIVE: read/write
+   * filtering and `canAccess` use the principal model
+   * (`readPrincipals`/`writePrincipals` intersect this set) and ignore
+   * `userId`/`groupId` for the access decision — those identities are expected
+   * to already be encoded as tokens here. An empty array means "principal mode,
+   * no grants" → matches/authorizes nothing. When the field is ABSENT, the
+   * legacy owner/group/world path runs unchanged (backward compatible for
+   * consumers that don't supply principals).
+   *
+   * MIGRATION: there is NO legacy fallback for principal callers in EITHER
+   * path. Query-time, a principal `$in` won't match rows lacking
+   * `readPrincipals`; in-process, `canAccess` denies them. So an un-materialized
+   * row is invisible to a principal caller everywhere. Every entity/fact row
+   * MUST be backfilled (see `MemorySystem.backfillAccessPrincipals`) BEFORE a
+   * host starts passing `principals`. See `access/principals.ts`.
+   */
+  principals?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +196,24 @@ export interface IEntity extends ScopeFields {
    * See `AccessControl.ts` for semantics. Owner always has full access.
    */
   permissions?: Permissions;
+  /**
+   * Explicit access grants beyond owner/group/world — principal tokens with
+   * read/write actions. Unioned with the owner/group/world projection when
+   * materializing `readPrincipals`/`writePrincipals`. The seam hosts use to
+   * grant participant (`entity:<id>`) or service access. See
+   * `access/principals.ts`.
+   */
+  acl?: ACLEntry[];
+  /**
+   * Materialized read-principal token set, derived at the storage boundary from
+   * `ownerId` + `groupId` + `permissions` + `acl`. Queried via `$in` against
+   * the caller's principal set. Library-owned — never set this by hand; it is
+   * recomputed on every write. Absent on pre-migration rows (access falls back
+   * to the legacy owner/group/world check).
+   */
+  readPrincipals?: string[];
+  /** Materialized write-principal token set (⊆ `readPrincipals`). */
+  writePrincipals?: string[];
   /**
    * Lightweight embedding over `displayName + top aliases + primary identifier
    * values`, used by EntityResolver for semantic fallback when string matching
@@ -325,6 +363,24 @@ export interface IFact extends ScopeFields {
    */
   permissions?: Permissions;
 
+  /**
+   * Explicit access grants beyond owner/group/world — principal tokens with
+   * read/write actions. Unioned into `readPrincipals`/`writePrincipals` at
+   * write time. For a fact about shared participants, the host passes e.g.
+   * `[{ principal: 'entity:alice', actions: ['read'] }, …]` so every
+   * participant can read it (overriding the user-private default). See
+   * `access/principals.ts`.
+   */
+  acl?: ACLEntry[];
+  /**
+   * Materialized read-principal token set, derived at the storage boundary from
+   * `ownerId` + `groupId` + `permissions` + `acl`. Queried via `$in`.
+   * Library-owned — recomputed on every write. Absent on pre-migration rows.
+   */
+  readPrincipals?: string[];
+  /** Materialized write-principal token set (⊆ `readPrincipals`). */
+  writePrincipals?: string[];
+
   createdAt: Date;
 }
 
@@ -470,7 +526,15 @@ export interface FactFilter {
 }
 
 export interface FactOrderBy {
-  field: 'observedAt' | 'createdAt' | 'confidence';
+  /**
+   * `observedAt` / `createdAt` / `confidence` are semantic sorts. `_id` is the
+   * adapter's unique, immutable primary key — a TOTAL order with no ties. Use it
+   * when a caller must iterate every fact exactly once under offset pagination
+   * (e.g. `backfillAccessPrincipals`): `createdAt` can tie for bulk-ingested
+   * facts, and Mongo's order among ties isn't stable across paged queries, so a
+   * boundary row can be skipped or double-read. `_id` removes that hazard.
+   */
+  field: 'observedAt' | 'createdAt' | 'confidence' | '_id';
   direction: 'asc' | 'desc';
 }
 
@@ -802,6 +866,25 @@ export interface IMemoryStore {
   /** Patch fields on an existing fact. Used for archiving + embedding writes. */
   updateFact(id: FactId, patch: Partial<IFact>, scope: ScopeFilter): Promise<void>;
   countFacts(filter: FactFilter, scope: ScopeFilter): Promise<number>;
+
+  /**
+   * Rewrite every `entity:<fromEntityId>` access grant to `entity:<toEntityId>`
+   * across all entities + facts (in `readPrincipals`, `writePrincipals`, and
+   * `acl`). Used by `mergeEntities` so access grants follow identity
+   * convergence — when a duplicate Person is merged away, records previously
+   * readable via the loser's principal become readable via the winner's. Bulk
+   * identity fix: scoped to the caller's tenant (`scope.groupId`) for safety,
+   * but does not run per-record write checks (the merge already enforced
+   * same-tenant + write access on winner/loser).
+   *
+   * Optional capability — stores that don't implement it simply skip this step
+   * (their merges won't rewrite ACL grants). Both built-in adapters implement it.
+   */
+  rewriteEntityPrincipal?(
+    fromEntityId: EntityId,
+    toEntityId: EntityId,
+    scope: ScopeFilter,
+  ): Promise<void>;
 
   // ----- Graph (optional capability) -----
   traverse?(startId: EntityId, opts: TraversalOptions, scope: ScopeFilter): Promise<Neighborhood>;
