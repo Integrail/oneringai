@@ -81,7 +81,12 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction<RecallArgs>
       if (args.subject === undefined || args.subject === null) {
         return { error: 'subject is required' };
       }
-      const scope = resolveScope(context?.userId, deps.defaultUserId, deps.defaultGroupId);
+      const scope = resolveScope(
+        context?.userId,
+        deps.defaultUserId,
+        deps.defaultGroupId,
+        deps.defaultPrincipals,
+      );
       const resolved = await deps.resolve(args.subject, scope);
       if (!resolved.ok) {
         return { error: resolved.message, candidates: resolved.candidates };

@@ -86,7 +86,12 @@ export function createFindEntityTool(
 
     execute: async (args, context) => {
       const action = args.action ?? 'find';
-      const scope = resolveScope(context?.userId, deps.defaultUserId, deps.defaultGroupId);
+      const scope = resolveScope(
+        context?.userId,
+        deps.defaultUserId,
+        deps.defaultGroupId,
+        deps.defaultPrincipals,
+      );
 
       try {
         if (action === 'find') {

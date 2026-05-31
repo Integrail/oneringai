@@ -143,6 +143,17 @@ export interface MemoryPluginConfig {
    */
   groupId?: string;
   /**
+   * **Trusted** caller principal set (host-resolved), e.g.
+   * `['user:<id>', 'group:<gid>', 'world', 'entity:<selfPersonId>']`. When set,
+   * the plugin's read scope (profile injection / getContext) AND the read tools
+   * authorize by principal intersection (`readPrincipals ∋ caller`) instead of
+   * legacy owner/group/world — so the agent sees facts/entities granted to the
+   * user's Person (`entity:` token), including ones it doesn't own. Omitted →
+   * legacy scope (backward compatible). NEVER derived from LLM input — host-
+   * trusted, same provenance as `groupId`.
+   */
+  principals?: string[];
+  /**
    * Viewer's IANA timezone (e.g. 'America/New_York'). When set, injected
    * instants (events, recent-activity timestamps) and the user's `**Timezone:**`
    * label render in this zone instead of UTC. When absent, instants render as
@@ -354,6 +365,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
   private readonly agentId: string;
   private readonly userId: string;
   private readonly groupId: string | undefined;
+  private readonly principals: string[] | undefined;
   private readonly timezone: string | undefined;
   private readonly personaEntityId: EntityId | undefined;
   private readonly userPerms: Permissions | undefined;
@@ -402,6 +414,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     this.agentId = config.agentId;
     this.userId = config.userId;
     this.groupId = config.groupId;
+    this.principals = config.principals;
     this.timezone = config.timezone;
     this.personaEntityId = config.personaEntityId;
     this.userPerms = config.userEntityPermissions;
@@ -466,7 +479,9 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     try {
       await this.ensureBootstrapped();
       const blocks: string[] = [];
-      const scope = this.scope();
+      // Rendering READS honor `entity:` grants. Bootstrap (above) used the
+      // legacy `scope()` for identity find-or-create — see scope()/readScope().
+      const scope = this.readScope();
 
       // Rules block first — directives override defaults, so the LLM should
       // see them before the user profile. Rendered from facts on the agent
@@ -616,6 +631,7 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
         agentId: this.agentId,
         defaultUserId: this.userId,
         defaultGroupId: this.groupId,
+        defaultPrincipals: this.principals,
         defaultVisibility: this.defaultVisibility,
         autoResolveThreshold: this.autoResolveThreshold,
         getOwnSubjectIds: () => this.getOwnSubjectIds(),
@@ -883,8 +899,33 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     }
   }
 
+  /**
+   * Legacy owner/group scope — NEVER carries principals. Used for identity /
+   * bootstrap WRITES (`doBootstrap` → `upsertEntity` find-or-create) and any
+   * other write path. Bootstrap MUST stay legacy: in principal mode an existing
+   * identity row that isn't yet materialized (`readPrincipals` absent) would be
+   * invisible to the find step, so `upsertEntity` would create a DUPLICATE
+   * user/agent/group entity instead of reusing the legacy row. Reads that should
+   * honor `entity:` grants use `readScope()` instead.
+   */
   private scope(): ScopeFilter {
     return { userId: this.userId, groupId: this.groupId };
+  }
+
+  /**
+   * Read scope carrying the caller's principal set when the host supplied one.
+   * Used for the rendering READS (profile injection, rules, priorities) so the
+   * agent sees facts/entities granted to the user's Person (`entity:` token),
+   * including ones it doesn't own. Pure reads only — NEVER used for identity /
+   * bootstrap writes (see `scope()`). With no principals configured this is
+   * identical to `scope()`.
+   */
+  private readScope(): ScopeFilter {
+    return {
+      userId: this.userId,
+      groupId: this.groupId,
+      ...(this.principals ? { principals: this.principals } : {}),
+    };
   }
 
   private buildPlaceholder(): string {

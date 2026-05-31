@@ -70,7 +70,12 @@ export function createSearchTool(deps: MemoryToolDeps): ToolFunction<SearchArgs>
       if (!args.query || typeof args.query !== 'string' || args.query.trim().length === 0) {
         return { error: 'query is required and must be a non-empty string' };
       }
-      const scope = resolveScope(context?.userId, deps.defaultUserId, deps.defaultGroupId);
+      const scope = resolveScope(
+        context?.userId,
+        deps.defaultUserId,
+        deps.defaultGroupId,
+        deps.defaultPrincipals,
+      );
 
       const filter: FactFilter = {};
       if (args.filter) {

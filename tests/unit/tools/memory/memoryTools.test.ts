@@ -1033,6 +1033,87 @@ describe('security: LLM cannot override group scope via tool args', () => {
 });
 
 // ===========================================================================
+// Principal-based scope: host-trusted defaultPrincipals threads onto reads
+// ===========================================================================
+
+describe('principal scope: defaultPrincipals threads onto read scopes', () => {
+  it('memory_recall stamps deps.defaultPrincipals onto the scope (principal-intersection reads)', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const spy = vi.spyOn(mem, 'getContext');
+
+    const principals = [`user:${USER_ID}`, 'group:G', 'entity:person-1', 'world'];
+    const t = createMemoryTools({
+      memory: mem,
+      agentId: AGENT_ID,
+      defaultUserId: USER_ID,
+      defaultGroupId: 'G',
+      defaultPrincipals: principals,
+      getOwnSubjectIds: () => ({
+        userEntityId: ids.userEntityId,
+        agentEntityId: ids.agentEntityId,
+      }),
+    });
+    const recall = toolByName(t, 'memory_recall');
+    await recall.execute({ subject: 'me' }, { userId: USER_ID });
+
+    expect(spy).toHaveBeenCalled();
+    const scopeArg = spy.mock.calls[0]![2];
+    expect(scopeArg.principals).toEqual(principals);
+  });
+
+  it('omits principals when defaultPrincipals is unset — byte-identical legacy scope (backward compatible)', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const spy = vi.spyOn(mem, 'getContext');
+
+    const t = createMemoryTools({
+      memory: mem,
+      agentId: AGENT_ID,
+      defaultUserId: USER_ID,
+      defaultGroupId: 'G',
+      getOwnSubjectIds: () => ({
+        userEntityId: ids.userEntityId,
+        agentEntityId: ids.agentEntityId,
+      }),
+    });
+    const recall = toolByName(t, 'memory_recall');
+    await recall.execute({ subject: 'me' }, { userId: USER_ID });
+
+    const scopeArg = spy.mock.calls[0]![2];
+    expect(scopeArg.principals).toBeUndefined();
+    expect(scopeArg.groupId).toBe('G');
+  });
+
+  it('refuses a per-call context user that differs from defaultUserId — aborts before any read (no cross-user identity mixing)', async () => {
+    const mem = makeMem();
+    const ids = await bootstrap(mem);
+    const spy = vi.spyOn(mem, 'getContext');
+
+    // group/principals/"me" are all bound to USER_ID in this (shared) tool.
+    const principals = [`user:${USER_ID}`, 'group:G', 'entity:person-1', 'world'];
+    const t = createMemoryTools({
+      memory: mem,
+      agentId: AGENT_ID,
+      defaultUserId: USER_ID,
+      defaultGroupId: 'G',
+      defaultPrincipals: principals,
+      getOwnSubjectIds: () => ({
+        userEntityId: ids.userEntityId,
+        agentEntityId: ids.agentEntityId,
+      }),
+    });
+    const recall = toolByName(t, 'memory_recall');
+    // Invoked under a DIFFERENT user — must refuse before the read so the
+    // original user's group/principal/"me" records can't leak.
+    await expect(
+      recall.execute({ subject: 'me' }, { userId: 'attacker-user' }),
+    ).rejects.toThrow(/does not match the configured user/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
 // DoS: numeric limits are clamped to safe ranges
 // ===========================================================================
 

@@ -99,7 +99,12 @@ export function createListFactsTool(deps: MemoryToolDeps): ToolFunction<ListFact
       if (!args.subject && !args.sourceSignalId) {
         return { error: 'must provide subject, sourceSignalId, or both' };
       }
-      const scope = resolveScope(context?.userId, deps.defaultUserId, deps.defaultGroupId);
+      const scope = resolveScope(
+        context?.userId,
+        deps.defaultUserId,
+        deps.defaultGroupId,
+        deps.defaultPrincipals,
+      );
 
       const filter: FactFilter = {};
       let resolvedSubject: { id: string; displayName?: string } | undefined;

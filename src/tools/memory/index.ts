@@ -80,6 +80,12 @@ export interface CreateMemoryToolsArgs {
    * LLM — see the security review. Leave undefined for non-grouped deployments.
    */
   defaultGroupId?: string;
+  /**
+   * **Trusted** caller principal set (host-resolved). Threaded to read tools so
+   * memory reads authorize by principal intersection (see
+   * `MemoryToolDeps.defaultPrincipals`). Omit for legacy owner/group/world.
+   */
+  defaultPrincipals?: string[];
   defaultVisibility?: {
     forUser?: Visibility;
     forAgent?: Visibility;
@@ -116,6 +122,7 @@ function buildDeps(args: CreateMemoryToolsArgs): MemoryToolDeps {
     agentId: args.agentId,
     defaultUserId: args.defaultUserId,
     defaultGroupId: args.defaultGroupId,
+    defaultPrincipals: args.defaultPrincipals,
     getOwnSubjectIds,
     defaultVisibility: {
       forUser: args.defaultVisibility?.forUser ?? 'private',

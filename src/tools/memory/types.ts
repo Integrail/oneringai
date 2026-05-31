@@ -125,6 +125,16 @@ export interface MemoryToolDeps {
    */
   defaultGroupId?: string;
   /**
+   * **Trusted** caller principal set (host-resolved), e.g.
+   * `['user:<id>', 'group:<gid>', 'world', 'entity:<selfPersonId>']`. When set,
+   * read tools stamp it onto the `ScopeFilter`, so memory reads authorize by
+   * principal intersection (`readPrincipals ∋ caller`) instead of legacy
+   * owner/group/world — letting the agent see facts/entities granted to the
+   * user's Person (`entity:` token), including ones it doesn't own. Omitted →
+   * legacy scope. Like `defaultGroupId`, host-trusted and NEVER from LLM args.
+   */
+  defaultPrincipals?: string[];
+  /**
    * Entity ids bootstrapped by the plugin. Used by the resolver to look up
    * the `"me"` / `"this_agent"` tokens and by `memory_remember` to pick the
    * default visibility class.
@@ -232,15 +242,49 @@ export interface MemoryToolError {
  * config, trusted) — tools do NOT accept a groupId argument from the LLM. See
  * the security review for why: LLM-provided scope would let a user escalate
  * into arbitrary groups.
+ *
+ * `defaultPrincipals` (host-trusted, same provenance as `defaultGroupId`): when
+ * provided, the returned scope carries the caller's principal set, switching the
+ * adapter to principal-intersection authorization (`readPrincipals ∋ caller`).
+ * Absent → legacy owner/group/world scope (backward compatible).
+ *
+ * SECURITY — the deps are a SINGLE-USER identity bundle. `defaultUserId`,
+ * `defaultGroupId`, `defaultPrincipals`, and the closed-over `getOwnSubjectIds`
+ * ("me"/"this_agent") are all resolved once for one user. A per-call
+ * `ToolContext.userId` naming a DIFFERENT user is REFUSED (throws): serving it
+ * from this bundle would cross identities — read the original user's group-,
+ * principal-, and "me"-scoped records. Throwing here aborts BEFORE the group
+ * clause is applied and BEFORE subject ("me") resolution runs, so the guard is
+ * complete (not just principals). Hosts serving multiple users build one
+ * tool/plugin bundle per user; `contextUserId` may still be `undefined` (falls
+ * back to `defaultUserId`) or equal to it.
  */
 export function resolveScope(
   contextUserId: string | undefined,
   defaultUserId: string | undefined,
   defaultGroupId?: string,
+  defaultPrincipals?: string[],
 ): ScopeFilter {
+  if (
+    contextUserId !== undefined &&
+    defaultUserId !== undefined &&
+    contextUserId !== defaultUserId
+  ) {
+    throw new Error(
+      `Memory tool scope: ToolContext.userId '${contextUserId}' does not match the ` +
+        `configured user '${defaultUserId}'. Memory tool deps (group, principals, and ` +
+        `"me"/"this_agent" identity) are bound to a single user; reusing a tool/plugin ` +
+        `across users is unsupported.`,
+    );
+  }
+  const userId = contextUserId ?? defaultUserId;
+  // Principals belong to `defaultUserId`; attach only when the effective user is
+  // that user (guards a `defaultUserId`-unset-but-principals-set misconfig).
+  const principalsApply = defaultPrincipals !== undefined && userId === defaultUserId;
   return {
-    userId: contextUserId ?? defaultUserId,
+    userId,
     groupId: defaultGroupId,
+    ...(principalsApply ? { principals: defaultPrincipals } : {}),
   };
 }
 

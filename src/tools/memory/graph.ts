@@ -147,7 +147,12 @@ export function createGraphTool(deps: MemoryToolDeps): ToolFunction<GraphArgs> {
 
     execute: async (args, context) => {
       if (!args.start) return { error: 'start is required' };
-      const scope = resolveScope(context?.userId, deps.defaultUserId, deps.defaultGroupId);
+      const scope = resolveScope(
+        context?.userId,
+        deps.defaultUserId,
+        deps.defaultGroupId,
+        deps.defaultPrincipals,
+      );
       const resolved = await deps.resolve(args.start, scope);
       if (!resolved.ok) {
         return { error: resolved.message, candidates: resolved.candidates };

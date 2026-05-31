@@ -751,6 +751,60 @@ describe('MemoryPluginNextGen — fresh render every call', () => {
   });
 });
 
+describe('MemoryPluginNextGen — principal scope', () => {
+  it('threads config.principals onto every read scope (profile injection)', async () => {
+    const mem = makeMem();
+    const principals = [`user:${USER_ID}`, 'entity:person-1', 'world'];
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      principals,
+    });
+    const spy = vi.spyOn(mem, 'getContext');
+    await plugin.getContent();
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      expect(call[2]?.principals).toEqual(principals);
+    }
+  });
+
+  it('omits principals when config.principals is unset — legacy scope (backward compatible)', async () => {
+    const mem = makeMem();
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+    });
+    const spy = vi.spyOn(mem, 'getContext');
+    await plugin.getContent();
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      expect(call[2]?.principals).toBeUndefined();
+    }
+  });
+
+  it('bootstrap (upsertEntity find-or-create) uses legacy scope — never principals', async () => {
+    const mem = makeMem();
+    const principals = [`user:${USER_ID}`, 'entity:person-1', 'world'];
+    const upsertSpy = vi.spyOn(mem, 'upsertEntity');
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      principals,
+    });
+    // Triggers ensureBootstrapped → doBootstrap → upsertEntity (find-or-create).
+    await plugin.getContent();
+    expect(upsertSpy).toHaveBeenCalled();
+    // Principal mode on bootstrap could hide an un-materialized legacy identity
+    // row → duplicate entity. The bootstrap scope must stay legacy.
+    for (const call of upsertSpy.mock.calls) {
+      expect(call[1]?.principals).toBeUndefined();
+    }
+  });
+});
+
 describe('MemoryPluginNextGen — graceful degradation', () => {
   it('returns placeholder + logs on memory error instead of throwing', async () => {
     const mem = makeMem();
