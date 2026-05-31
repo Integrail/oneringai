@@ -72,6 +72,11 @@ describe('MongoMemoryAdapter', () => {
       entities: entColl,
       facts: factColl,
       factsCollectionName: 'facts',
+      // Tiny drain wait so the post-drop drain poll in ensureVectorSearchIndexes
+      // resolves (or times out) in milliseconds during tests instead of the 120s
+      // production default.
+      vectorIndexDrainPollMs: 1,
+      vectorIndexDrainTimeoutMs: 30,
     });
   });
 
@@ -1572,11 +1577,14 @@ describe('MongoMemoryAdapter', () => {
       }
     });
 
-    it('rethrows when createSearchIndex fails after drop AND retry shows the OLD definition (post-drop draining)', async () => {
+    it('rethrows when the dropped index never drains and createSearchIndex keeps failing (bounded wait)', async () => {
       // Seed a stale index, override dropSearchIndex to NO-OP (Atlas drop
-      // accepted but still draining), then make createSearchIndex throw.
-      // The post-throw retry sees the old definition — must rethrow so the
-      // next startup retries instead of silently lingering with stale spec.
+      // accepted but the index NEVER drains), make createSearchIndex throw.
+      // New behavior: the helper waits for the index to drain before recreating;
+      // here it never does, so after the (test-shortened) drain timeout it falls
+      // through to createSearchIndex, which throws, and the post-throw retry sees
+      // the old definition — so it rethrows rather than silently lingering. This
+      // proves the bounded wait never hangs and still surfaces a stuck drain.
       factColl.seedSearchIndex({
         name: 'facts_vector',
         type: 'vectorSearch',

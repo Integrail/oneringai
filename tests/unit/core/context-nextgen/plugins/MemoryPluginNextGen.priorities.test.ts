@@ -10,8 +10,8 @@
  *   - Section omitted when all referenced priorities are non-active
  *   - Position: priorities block appears immediately after the user profile,
  *     before the org profile (when group bootstrap is configured)
- *   - Timezone line surfaces `metadata.jarvis.tz` on the user entity, in 3rd
- *     person; absent when not set
+ *   - Timezone line surfaces the host-supplied `config.timezone` on the user
+ *     block; absent when not set or an empty string
  *   - Timezone is NOT rendered on the org block (user-only convention by default)
  */
 
@@ -290,22 +290,16 @@ describe('MemoryPluginNextGen — user timezone surfacing', () => {
     mem = new MemorySystem({ store: new InMemoryAdapter() });
   });
 
-  it('renders **Timezone:** line when metadata.jarvis.tz is set on the user', async () => {
-    const plugin = new MemoryPluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
-    const { userEntityId } = await bootstrap(plugin);
-
-    // Host stamps tz on the user entity post-bootstrap. metadataMerge:'overwrite'
-    // forces the new metadata to win over the bootstrap's empty metadata.
-    await mem.upsertEntity(
-      {
-        type: 'person',
-        displayName: `user:${USER_ID}`,
-        identifiers: [{ kind: 'system_user_id', value: USER_ID }],
-        metadata: { jarvis: { tz: 'Europe/Berlin' } },
-        metadataMerge: 'overwrite',
-      },
-      { userId: USER_ID },
-    );
+  it('renders **Timezone:** line when the host supplies config.timezone', async () => {
+    // Timezone is sourced from the `config.timezone` seam — the plugin is
+    // timezone-agnostic and never reads entity metadata to discover it.
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      timezone: 'Europe/Berlin',
+    });
+    await bootstrap(plugin);
 
     const out = (await plugin.getContent())!;
     expect(out).toContain('**Timezone:** Europe/Berlin');
@@ -315,10 +309,6 @@ describe('MemoryPluginNextGen — user timezone surfacing', () => {
     const tzIdx = out.indexOf('**Timezone:**');
     expect(userIdx).toBeGreaterThan(-1);
     expect(tzIdx).toBeGreaterThan(userIdx);
-
-    // Sanity: the round-trip used the bootstrapped user id.
-    const ent = await mem.getEntity(userEntityId, { userId: USER_ID });
-    expect((ent?.metadata?.jarvis as Record<string, unknown>)?.tz).toBe('Europe/Berlin');
   });
 
   it('omits the **Timezone:** line when not set', async () => {
@@ -328,52 +318,41 @@ describe('MemoryPluginNextGen — user timezone surfacing', () => {
     expect(out).not.toContain('**Timezone:**');
   });
 
-  it('omits the **Timezone:** line when jarvis.tz is empty/non-string', async () => {
-    const plugin = new MemoryPluginNextGen({ memory: mem, agentId: AGENT_ID, userId: USER_ID });
+  it('omits the **Timezone:** line when config.timezone is an empty string', async () => {
+    const plugin = new MemoryPluginNextGen({
+      memory: mem,
+      agentId: AGENT_ID,
+      userId: USER_ID,
+      timezone: '',
+    });
     await bootstrap(plugin);
-
-    await mem.upsertEntity(
-      {
-        type: 'person',
-        displayName: `user:${USER_ID}`,
-        identifiers: [{ kind: 'system_user_id', value: USER_ID }],
-        metadata: { jarvis: { tz: '' } },
-        metadataMerge: 'overwrite',
-      },
-      { userId: USER_ID },
-    );
     const out = (await plugin.getContent())!;
     expect(out).not.toContain('**Timezone:**');
   });
 
   it('does NOT render Timezone on the organization block (user-only by convention)', async () => {
+    // config.timezone is set, so the user block carries a Timezone line — but the
+    // renderer gates it on `target.kind === 'user'`, so the org block must not.
     const plugin = new MemoryPluginNextGen({
       memory: mem,
       agentId: AGENT_ID,
       userId: USER_ID,
       groupId: GROUP_ID,
       groupBootstrap: { displayName: 'Acme Inc.' },
+      timezone: 'America/New_York',
     });
     const { groupEntityId } = await bootstrap(plugin);
 
-    // Plant a tz on the org entity. The renderer must ignore it — `tz` on the
-    // user is the surfaced convention; orgs would use a different field if
-    // ever needed and this prevents accidental cross-render.
-    await mem.upsertEntity(
-      {
-        type: 'organization',
-        displayName: 'Acme Inc.',
-        identifiers: [{ kind: 'system_group_id', value: GROUP_ID }],
-        metadata: { jarvis: { tz: 'America/New_York' } },
-        metadataMerge: 'overwrite',
-      },
-      { userId: USER_ID, groupId: GROUP_ID },
-    );
-
     const out = (await plugin.getContent())!;
-    // The user block has no tz set, so no Timezone line anywhere in output.
-    expect(out).not.toContain('**Timezone:**');
-    expect(out).not.toContain('America/New_York');
+    // Exactly one Timezone line — on the user block, ahead of the org block.
+    const tzMatches = out.match(/\*\*Timezone:\*\*/g) ?? [];
+    expect(tzMatches).toHaveLength(1);
+    const userIdx = out.indexOf('## About the User');
+    const orgIdx = out.indexOf("## About the User's Organization");
+    const tzIdx = out.indexOf('**Timezone:**');
+    expect(orgIdx).toBeGreaterThan(-1);
+    expect(tzIdx).toBeGreaterThan(userIdx);
+    expect(tzIdx).toBeLessThan(orgIdx);
     expect(groupEntityId).toBeDefined();
   });
 });

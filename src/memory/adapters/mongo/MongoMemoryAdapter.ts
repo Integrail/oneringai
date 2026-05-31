@@ -189,6 +189,17 @@ export interface MongoMemoryAdapterOptions {
 
   /** Default page size when a caller doesn't specify `limit`. */
   defaultPageSize?: number;
+
+  /**
+   * When `ensureVectorSearchIndexes` must drop + recreate a drifted index, Atlas
+   * removes the dropped index asynchronously and rejects a same-name create
+   * until it has fully drained. The helper polls until the dropped index is gone
+   * before recreating. These tune that wait. Defaults: poll every 2s, give up
+   * after 120s (then fall through to create + its race handling). Lower them in
+   * tests; raise the timeout for unusually slow Atlas tiers.
+   */
+  vectorIndexDrainPollMs?: number;
+  vectorIndexDrainTimeoutMs?: number;
 }
 
 // =============================================================================
@@ -212,6 +223,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
   private readonly vectorCandidateMultiplier: number;
   private readonly factsCollectionName?: string;
   private readonly defaultPageSize: number;
+  private readonly vectorIndexDrainPollMs: number;
+  private readonly vectorIndexDrainTimeoutMs: number;
   private destroyed = false;
 
   constructor(opts: MongoMemoryAdapterOptions) {
@@ -227,6 +240,9 @@ export class MongoMemoryAdapter implements IMemoryStore {
     this.vectorCandidateMultiplier = opts.vectorCandidateMultiplier ?? 10;
     this.factsCollectionName = opts.factsCollectionName;
     this.defaultPageSize = opts.defaultPageSize ?? DEFAULT_PAGE_SIZE;
+    this.vectorIndexDrainPollMs = opts.vectorIndexDrainPollMs ?? SEARCH_INDEX_DRAIN_POLL_MS;
+    this.vectorIndexDrainTimeoutMs =
+      opts.vectorIndexDrainTimeoutMs ?? SEARCH_INDEX_DRAIN_TIMEOUT_MS;
 
     // H1: surface the disableWorldVisibility security trade-off at boot.
     // Silent toggling of read visibility would violate the project's
@@ -1270,6 +1286,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
         dimensions: opts.dimensions,
         similarity,
         filterPaths: FACTS_FILTER_PATHS,
+        drainPollMs: this.vectorIndexDrainPollMs,
+        drainTimeoutMs: this.vectorIndexDrainTimeoutMs,
       });
     }
     if (entitiesName !== null) {
@@ -1280,6 +1298,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
         dimensions: opts.dimensions,
         similarity,
         filterPaths: ENTITIES_FILTER_PATHS,
+        drainPollMs: this.vectorIndexDrainPollMs,
+        drainTimeoutMs: this.vectorIndexDrainTimeoutMs,
       });
     }
     if (entitiesContentName !== null) {
@@ -1290,6 +1310,8 @@ export class MongoMemoryAdapter implements IMemoryStore {
         dimensions: opts.dimensions,
         similarity,
         filterPaths: ENTITIES_FILTER_PATHS,
+        drainPollMs: this.vectorIndexDrainPollMs,
+        drainTimeoutMs: this.vectorIndexDrainTimeoutMs,
       });
     }
   }
@@ -1907,7 +1929,16 @@ interface EnsureVectorIndexArgs {
   dimensions: number;
   similarity: 'cosine' | 'dotProduct' | 'euclidean';
   filterPaths: readonly string[];
+  /** Poll interval while waiting for a dropped index to drain (ms). */
+  drainPollMs: number;
+  /** Upper bound on the drain wait before falling through to create (ms). */
+  drainTimeoutMs: number;
 }
+
+/** Default poll interval while waiting for a dropped Atlas search index to drain. */
+const SEARCH_INDEX_DRAIN_POLL_MS = 2000;
+/** Default upper bound on the wait for Atlas to finish removing a dropped index. */
+const SEARCH_INDEX_DRAIN_TIMEOUT_MS = 120_000;
 
 /**
  * Ensure a single Atlas Vector Search index exists on a collection.
@@ -1920,6 +1951,13 @@ interface EnsureVectorIndexArgs {
  * Fire-and-forget: returns as soon as Atlas accepts the create request. The
  * index builds asynchronously on Atlas (30–60s typical); runs during
  * startup migrations so it's ready well before real traffic arrives.
+ *
+ * Note: when an existing index has drifted, this first drops it and then blocks
+ * synchronously for up to `drainTimeoutMs` (default 120s) waiting for Atlas to
+ * finish removing the old index before recreating — Atlas rejects a same-name
+ * create while the old index is still draining. The create itself remains
+ * fire-and-forget. On drain timeout the wait is abandoned and we fall through to
+ * create (degrading to the prior retry-on-next-boot semantics; never hangs).
  *
  * Throws if the wrapper does not implement `createSearchIndex` /
  * `listSearchIndexes` (non-Atlas Mongo, older driver, custom wrapper).
@@ -1983,11 +2021,22 @@ async function ensureOneVectorSearchIndex(args: EnsureVectorIndexArgs): Promise<
         );
         if (stillThere) throw dropErr;
       }
-      // After drop, Atlas removes the index asynchronously. listSearchIndexes
-      // may still return it for some seconds with `status: 'DELETING'`. The
-      // catch block on createSearchIndex below distinguishes "old still
-      // draining" from "peer created the new definition" by comparing the
-      // retry's latestDefinition against ours.
+      // After drop, Atlas removes the index asynchronously (it lingers as
+      // `status: 'DELETING'` for some seconds). A same-name createSearchIndex is
+      // REJECTED while the old index is still present, so a drop-then-immediate-
+      // create races the drain. Wait for the index to fully drain before
+      // recreating — this makes a SINGLE ensureVectorSearchIndexes() call
+      // reliably reconcile a drifted index, instead of throwing and relying on a
+      // retry on the next process boot. Bounded: on timeout we fall through and
+      // let createSearchIndex's race handling below apply (degrades to the prior
+      // retry-next-time semantics; never hangs).
+      const drainDeadline = Date.now() + args.drainTimeoutMs;
+      for (;;) {
+        const afterDrain = await collection.listSearchIndexes(name);
+        if (!afterDrain.some((i) => i.name === name)) break; // fully drained
+        if (Date.now() >= drainDeadline) break; // timeout — fall through to create
+        await new Promise((resolve) => setTimeout(resolve, args.drainPollMs));
+      }
     } else {
       return;
     }

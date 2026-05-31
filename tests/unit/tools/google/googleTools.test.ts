@@ -1172,7 +1172,7 @@ describe('Google API Tools', () => {
       const result = await tool.execute({ meetingTitle: 'Nonexistent Meeting' });
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('No transcript found');
+      expect(result.error).toContain('No transcript or Gemini notes found');
       fetchSpy.mockRestore();
     });
 
