@@ -2030,12 +2030,29 @@ async function ensureOneVectorSearchIndex(args: EnsureVectorIndexArgs): Promise<
       // retry on the next process boot. Bounded: on timeout we fall through and
       // let createSearchIndex's race handling below apply (degrades to the prior
       // retry-next-time semantics; never hangs).
-      const drainDeadline = Date.now() + args.drainTimeoutMs;
+      const drainStart = Date.now();
+      const drainDeadline = drainStart + args.drainTimeoutMs;
+      let drained = false;
       for (;;) {
         const afterDrain = await collection.listSearchIndexes(name);
-        if (!afterDrain.some((i) => i.name === name)) break; // fully drained
+        if (!afterDrain.some((i) => i.name === name)) {
+          drained = true;
+          break;
+        }
         if (Date.now() >= drainDeadline) break; // timeout — fall through to create
         await new Promise((resolve) => setTimeout(resolve, args.drainPollMs));
+      }
+      if (drained) {
+        console.log(
+          `[oneringai] ensureVectorSearchIndexes: dropped index "${name}" drained in ` +
+            `${Date.now() - drainStart}ms — recreating with current spec.`,
+        );
+      } else {
+        console.warn(
+          `[oneringai] ensureVectorSearchIndexes: dropped index "${name}" still present after ` +
+            `${args.drainTimeoutMs}ms drain wait — attempting recreate anyway. If createSearchIndex ` +
+            `rejects (still draining) this rethrows; re-run the reconcile to retry.`,
+        );
       }
     } else {
       return;
