@@ -189,6 +189,10 @@ export class EntityResolver {
     return PERSON_ADVISORY_CONFIDENCE_CAP;
   }
 
+  private semanticCanAutoResolve(type: string | undefined): boolean {
+    return !!type && this.semanticAutoResolveTypes.has(type);
+  }
+
   /**
    * Find candidate entities for a surface form. Returns ranked by confidence.
    * Empty array if nothing clears `opts.threshold` (default 0.5).
@@ -379,7 +383,7 @@ export class EntityResolver {
         for (const candidate of seen.values()) {
           const facts = await this.hooks.store.findFacts(
             { touchesEntity: candidate.entity.id },
-            { limit: 50 },
+            { limit: 50, orderBy: { field: 'observedAt', direction: 'desc' } },
             scope,
           );
           let overlap = 0;
@@ -392,6 +396,19 @@ export class EntityResolver {
           }
           if (overlap > 0) {
             candidate.confidence = Math.min(1.0, candidate.confidence + overlap * 0.05);
+            // Context overlap may choose among semantic candidates, but it must
+            // not turn advisory semantic matches (notably default person
+            // matches) into silent auto-resolves. Hosts can still opt a type
+            // into semantic auto-resolve via `semanticAutoResolveTypes`.
+            if (
+              candidate.matchedOn === 'embedding' &&
+              !this.semanticCanAutoResolve(candidate.entity.type)
+            ) {
+              candidate.confidence = Math.min(
+                candidate.confidence,
+                this.semanticCapFor(candidate.entity.type),
+              );
+            }
           }
         }
       }

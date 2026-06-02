@@ -192,6 +192,71 @@ describe('v0.9.1 — semantic auto-resolve at creation', () => {
       await mem.shutdown();
     });
 
+    it('default person semantic candidates stay advisory even after context disambiguation boost', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const embedder = buildKeyedEmbedder({
+        acme: [0, 1, 0, 0],
+        pavel: [1, 0, 0, 0],
+        'pavel other': [1, 0, 0, 0],
+      });
+      const store = new InMemoryAdapter();
+      const mem = new MemorySystem({ store, embedder });
+
+      try {
+        const acme = await mem.upsertEntity(
+          { type: 'organization', displayName: 'Acme', identifiers: [] },
+          scope,
+        );
+        const seeded = await mem.upsertEntity(
+          {
+            type: 'person',
+            displayName: 'Pavel',
+            identifiers: [{ kind: 'email', value: 'a@x.com' }],
+          },
+          scope,
+        );
+        await mem.upsertEntity(
+          {
+            type: 'person',
+            displayName: 'Pavel Other',
+            identifiers: [{ kind: 'email', value: 'b@x.com' }],
+          },
+          scope,
+        );
+        await mem.flushEmbeddings();
+
+        await mem.addFact(
+          {
+            subjectId: seeded.entity.id,
+            predicate: 'works_at',
+            kind: 'atomic',
+            objectId: acme.entity.id,
+          },
+          scope,
+        );
+
+        const result = await mem.upsertEntityBySurface(
+          { surface: 'Pavel', type: 'person', contextEntityIds: [acme.entity.id] },
+          scope,
+        );
+
+        expect(result.resolved).toBe(false);
+        expect(result.entity.id).not.toBe(seeded.entity.id);
+        const semanticCandidate = result.mergeCandidates.find(
+          (c) => c.entity.id === seeded.entity.id && c.matchedOn === 'embedding',
+        );
+        expect(semanticCandidate).toBeDefined();
+        expect(semanticCandidate!.confidence).toBeLessThanOrEqual(0.89);
+        const warnMessages = warnSpy.mock.calls.map((call) => String(call[0]));
+        expect(warnMessages).not.toEqual(
+          expect.arrayContaining([expect.stringContaining('findFacts called with limit=50 but no orderBy')]),
+        );
+      } finally {
+        warnSpy.mockRestore();
+        await mem.shutdown();
+      }
+    });
+
     it('semanticAutoResolveTypes empty array disables auto-resolve for ALL types', async () => {
       const embedder = buildKeyedEmbedder({
         'qux holdings': [1, 0, 0, 0],
